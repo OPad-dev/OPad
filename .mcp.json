@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "flashprobe": {
+      "type": "stdio",
+      "command": ".tools/bin/flashprobe-mcp",
+      "args": [],
+      "env": {}
+    },
+    "espressif-docs": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.espressif.com/docs"
+      ]
+    },
+    "esp-components": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://components.espressif.com/mcp"
+      ]
+    }
+  }
+}

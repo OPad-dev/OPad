@@ -1,0 +1,17 @@
+# Locally built tooling
+.tools/bin/
+.tools/src/
+
+# Rust build artifacts
+target/
+**/target/
+
+# ESP-IDF build artifacts
+build/
+managed_components/
+dependencies.lock
+sdkconfig.old
+
+# Editor / OS noise
+.DS_Store
+*.swp
