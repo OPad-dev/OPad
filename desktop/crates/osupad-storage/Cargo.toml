@@ -1,0 +1,16 @@
+[package]
+name = "osupad-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+rusqlite.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+chrono.workspace = true
+osupad-model = { path = "../osupad-model" }
+
+[dev-dependencies]
+tempfile = "3.12"

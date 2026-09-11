@@ -1,0 +1,168 @@
+syntax = "proto3";
+
+package osupad;
+
+// Protocol version definition
+enum ProtocolVersion {
+    PROTOCOL_VERSION_UNSPECIFIED = 0;
+    PROTOCOL_VERSION_V1 = 1;
+}
+
+// System / Operational state
+enum DeviceState {
+    DEVICE_STATE_UNKNOWN = 0;
+    DEVICE_STATE_IDLE = 1;
+    DEVICE_STATE_PLAYING = 2;
+    DEVICE_STATE_COOLDOWN = 3;
+    DEVICE_STATE_SYNC = 4;
+}
+
+// Severity level for diagnostic events
+enum LogLevel {
+    LOG_LEVEL_DEBUG = 0;
+    LOG_LEVEL_INFO = 1;
+    LOG_LEVEL_WARN = 2;
+    LOG_LEVEL_ERROR = 3;
+}
+
+// -----------------------------------------------------------------------------
+// Core Handshake & Status Messages
+// -----------------------------------------------------------------------------
+
+message Hello {
+    uint32 protocol_version = 1;
+    string client_version = 2;
+}
+
+message HelloAck {
+    uint32 protocol_version = 1;
+    string firmware_version = 2;
+    string board_profile = 3;
+    string device_id = 4;
+    uint32 counter_generation = 5;
+    uint64 lifetime_key1 = 6;
+    uint64 lifetime_key2 = 7;
+}
+
+message DeviceStatus {
+    uint32 uptime_seconds = 1;
+    DeviceState state = 2;
+    uint32 brightness = 3;
+    bool display_asleep = 4;
+    uint64 lifetime_key1 = 5;
+    uint64 lifetime_key2 = 6;
+    uint32 map_key1 = 7;
+    uint32 map_key2 = 8;
+}
+
+// -----------------------------------------------------------------------------
+// Configuration
+// -----------------------------------------------------------------------------
+
+message ConfigPayload {
+    uint32 key1_hid_usage = 1;       // Default: 0x1D ('Z')
+    uint32 key2_hid_usage = 2;       // Default: 0x1B ('X')
+    uint32 debounce_us = 3;          // Lockout window, default: 3000 (3ms)
+    uint32 brightness = 4;           // 0 to 100%, default: 100
+    uint32 display_sleep_seconds = 5;// Inactivity timeout, default: 600 (10 min)
+    uint32 gameplay_display_hz = 6;  // Gameplay refresh rate cap, default: 5
+}
+
+message SetConfig {
+    ConfigPayload config = 1;
+}
+
+message ConfigAck {
+    bool success = 1;
+    string message = 2;
+    ConfigPayload current_config = 3;
+}
+
+// -----------------------------------------------------------------------------
+// Time Synchronization
+// -----------------------------------------------------------------------------
+
+message TimeSync {
+    uint32 year = 1;
+    uint32 month = 2;    // 1 - 12
+    uint32 day = 3;      // 1 - 31
+    uint32 hour = 4;     // 0 - 23
+    uint32 minute = 5;   // 0 - 59
+    uint32 second = 6;   // 0 - 59
+}
+
+// -----------------------------------------------------------------------------
+// Gameplay Telemetry Stream
+// -----------------------------------------------------------------------------
+
+message GameplayDisplayState {
+    string title = 1;
+    string artist = 2;
+    float current_pp = 3;
+    float progress_ratio = 4;         // 0.0 to 1.0
+    uint32 current_map_presses_k1 = 5;
+    uint32 current_map_presses_k2 = 6;
+}
+
+// -----------------------------------------------------------------------------
+// Counter Synchronization & Recovery
+// -----------------------------------------------------------------------------
+
+message CounterState {
+    string device_id = 1;
+    uint32 counter_generation = 2;
+    uint64 lifetime_key1 = 3;
+    uint64 lifetime_key2 = 4;
+}
+
+message CounterSyncRequest {
+    CounterState target_state = 1;
+    bool force_restore = 2;          // Explicit restore from PC/Backup
+}
+
+message CounterSyncResponse {
+    bool success = 1;
+    CounterState synchronized_state = 2;
+}
+
+// -----------------------------------------------------------------------------
+// Diagnostic Events
+// -----------------------------------------------------------------------------
+
+message LogEvent {
+    uint32 timestamp_ms = 1;
+    LogLevel level = 2;
+    string tag = 3;
+    string message = 4;
+}
+
+message LogEventBatch {
+    repeated LogEvent events = 1;
+}
+
+// -----------------------------------------------------------------------------
+// Top-Level Envelopes
+// -----------------------------------------------------------------------------
+
+message HostToDevice {
+    uint32 sequence_number = 1;
+    oneof payload {
+        Hello hello = 2;
+        SetConfig set_config = 3;
+        TimeSync time_sync = 4;
+        GameplayDisplayState gameplay_state = 5;
+        CounterSyncRequest counter_sync = 6;
+        bool request_status = 7;
+    }
+}
+
+message DeviceToHost {
+    uint32 sequence_number = 1;
+    oneof payload {
+        HelloAck hello_ack = 2;
+        DeviceStatus status = 3;
+        ConfigAck config_ack = 4;
+        CounterSyncResponse counter_sync_resp = 5;
+        LogEventBatch log_batch = 6;
+    }
+}

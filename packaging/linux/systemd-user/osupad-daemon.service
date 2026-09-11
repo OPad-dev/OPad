@@ -1,0 +1,14 @@
+[Unit]
+Description=osu!pad background service daemon
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/osupad-daemon
+Restart=on-failure
+RestartSec=3s
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=graphical-session.target

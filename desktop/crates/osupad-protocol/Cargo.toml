@@ -1,0 +1,16 @@
+[package]
+name = "osupad-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+prost.workspace = true
+bytes.workspace = true
+byteorder.workspace = true
+thiserror.workspace = true
+osupad-model = { path = "../osupad-model" }
+
+[build-dependencies]
+prost-build.workspace = true

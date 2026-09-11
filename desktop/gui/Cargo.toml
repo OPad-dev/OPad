@@ -1,0 +1,20 @@
+[package]
+name = "osupad-gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "osupad-gui"
+path = "src/main.rs"
+
+[dependencies]
+iced.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+osupad-model = { path = "../crates/osupad-model" }
+osupad-ipc = { path = "../crates/osupad-ipc" }
