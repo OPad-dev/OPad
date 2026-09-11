@@ -1,0 +1,36 @@
+idf_component_register(
+    SRCS
+        "app_main.c"
+        "../boards/waveshare_esp32s3_touch_lcd_2/board.c"
+        "../boards/waveshare_esp32s3_touch_lcd_2/board_display.c"
+        "input/keypad.c"
+        "usb/usb_descriptors.c"
+        "usb/usb_hid.c"
+        "usb/usb_cdc.c"
+        "counters/counters.c"
+        "display/display.c"
+        "runtime/runtime.c"
+        "protocol/protocol.c"
+        "protocol/osupad.pb.c"
+        "protocol/nanopb/pb_common.c"
+        "protocol/nanopb/pb_encode.c"
+        "protocol/nanopb/pb_decode.c"
+    INCLUDE_DIRS
+        "."
+        ".."
+        "../boards/waveshare_esp32s3_touch_lcd_2"
+        "input"
+        "usb"
+        "counters"
+        "display"
+        "runtime"
+        "protocol"
+        "protocol/nanopb"
+    REQUIRES
+        driver
+        esp_lcd
+        esp_timer
+        nvs_flash
+        freertos
+        esp_tinyusb
+)

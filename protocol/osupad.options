@@ -1,0 +1,11 @@
+osupad.Hello.client_version max_size:32
+osupad.HelloAck.firmware_version max_size:32
+osupad.HelloAck.board_profile max_size:32
+osupad.HelloAck.device_id max_size:32
+osupad.ConfigAck.message max_size:64
+osupad.GameplayDisplayState.title max_size:64
+osupad.GameplayDisplayState.artist max_size:64
+osupad.CounterState.device_id max_size:32
+osupad.LogEvent.tag max_size:16
+osupad.LogEvent.message max_size:64
+osupad.LogEventBatch.events max_count:8
