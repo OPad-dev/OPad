@@ -87,21 +87,20 @@ fi
 if [ -z "$BOOT_PORT" ]; then
     echo ""
     echo "[2/3] The board currently has the previous build without the auto-reset hook."
-    echo "      To enter download mode to flash the landscape firmware (REQUIRED ONCE):"
+    echo "      To enter download mode and flash the landscape firmware (REQUIRED ONCE):"
     echo ""
-    echo "      >>> METHOD 1 (Recommended by Waveshare) <<<"
-    echo "      1. Unplug the USB cable from the ESP32-S3."
-    echo "      2. Hold down the BOOT button on the board."
-    echo "      3. Plug the USB cable back in while holding BOOT."
-    echo "      4. Release the BOOT button."
-    echo ""
-    echo "      >>> METHOD 2 (Hardware Buttons) <<<"
-    echo "      1. Press and hold the BOOT button."
-    echo "      2. Press and release the RESET button."
-    echo "      3. Keep holding BOOT for 1 second, then release."
+    echo "      ============================================================"
+    echo "      IMPORTANT: KEEP HOLDING THE BOOT BUTTON UNTIL FLASHING STARTS"
+    echo "      ============================================================"
+    echo "      1. Press and hold down the BOOT button on the ESP32-S3."
+    echo "      2. While STILL HOLDING the BOOT button:"
+    echo "         - Either press and release the RESET button,"
+    echo "         - Or unplug and plug back in the USB cable."
+    echo "      3. KEEP HOLDING the BOOT button down!"
+    echo "         (Do not let go of BOOT until you see the progress bar!)"
     echo ""
     echo "      Once this update is flashed, ALL future flashes will run"
-    echo "      100% automatically without touching buttons or cables!"
+    echo "      100% automatically without touching any buttons!"
     echo ""
     echo "Waiting for ESP32-S3 ROM Bootloader (303a:1001)..."
 
@@ -111,28 +110,36 @@ if [ -z "$BOOT_PORT" ]; then
             echo "✓ ESP32-S3 ROM Bootloader detected on ${BOOT_PORT}!"
             break
         fi
-        sleep 0.1
+        sleep 0.05
     done
 else
     echo "[2/3] ✓ ESP32-S3 ROM Bootloader detected on ${BOOT_PORT}!"
 fi
 
-echo "[3/3] Flashing landscape firmware binary to ${BOOT_PORT}..."
+echo "[3/3] Bootloader detected! Flashing landscape firmware binary to ${BOOT_PORT}..."
 cd "${REPO_ROOT}/firmware"
 
-# Use --before=usb_reset for ESP32-S3 native USB-Serial/JTAG
-if ! $ESPTOOL --chip esp32s3 -p "${BOOT_PORT}" -b 460800 --before=usb_reset --after=hard_reset write_flash \
+# Try default_reset first, then no_reset, then espflash
+if ! $ESPTOOL --chip esp32s3 -p "${BOOT_PORT}" -b 460800 --before=default_reset --after=hard_reset write_flash \
     --flash_mode dio --flash_freq 80m --flash_size 16MB \
     0x0 "${BUILD_DIR}/bootloader/bootloader.bin" \
     0x10000 "${BUILD_DIR}/osupad-firmware.bin" \
     0x8000 "${BUILD_DIR}/partition_table/partition-table.bin"; then
-    echo "Retrying with espflash..."
-    espflash write-bin --chip esp32s3 -p "${BOOT_PORT}" --before usb-reset --non-interactive 0x10000 "${BUILD_DIR}/osupad-firmware.bin"
+    echo "Retrying with no_reset mode..."
+    if ! $ESPTOOL --chip esp32s3 -p "${BOOT_PORT}" -b 460800 --before=no_reset --after=hard_reset write_flash \
+        --flash_mode dio --flash_freq 80m --flash_size 16MB \
+        0x0 "${BUILD_DIR}/bootloader/bootloader.bin" \
+        0x10000 "${BUILD_DIR}/osupad-firmware.bin" \
+        0x8000 "${BUILD_DIR}/partition_table/partition-table.bin"; then
+        echo "Retrying with espflash..."
+        espflash write-bin --chip esp32s3 -p "${BOOT_PORT}" --before no-reset --non-interactive 0x10000 "${BUILD_DIR}/osupad-firmware.bin"
+    fi
 fi
 
 echo ""
 echo "=================================================="
 echo "✓ Flashing successful! Landscape UI is now active."
+echo "  You may now release the BOOT button if still held."
 echo "  The board is now running firmware with full auto-reset."
 echo "  All future flashes will run hands-free automatically!"
 echo "=================================================="
