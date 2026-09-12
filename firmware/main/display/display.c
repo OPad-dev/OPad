@@ -9,6 +9,7 @@
 #include "freertos/task.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -135,51 +136,78 @@ static const uint8_t font8x8[95][8] = {
     ['z' - 32] = {0x00, 0x00, 0x7E, 0x0C, 0x18, 0x30, 0x7E, 0x00},
 };
 
-// Line buffer for fast drawing without allocating full 153KB framebuffer
-static uint16_t s_line_buf[BOARD_LCD_H_RES];
+// Full 320x240 RGB565 Framebuffer (150 KB)
+static uint16_t *s_fb = NULL;
 
-static void fill_rect(int x1, int y1, int w, int h, uint16_t color)
+// Double-buffered DMA row chunks for high-speed SPI transfer without tearing
+#define CHUNK_LINES 20
+#define CHUNK_BYTES (BOARD_LCD_H_RES * CHUNK_LINES * sizeof(uint16_t))
+static uint16_t *s_dma_buf[2] = {NULL, NULL};
+
+static void fb_fill_rect(int x1, int y1, int w, int h, uint16_t color)
 {
+    if (!s_fb) return;
     if (x1 < 0) { w += x1; x1 = 0; }
     if (y1 < 0) { h += y1; y1 = 0; }
     if (x1 + w > BOARD_LCD_H_RES) w = BOARD_LCD_H_RES - x1;
     if (y1 + h > BOARD_LCD_V_RES) h = BOARD_LCD_V_RES - y1;
     if (w <= 0 || h <= 0) return;
 
-    for (int i = 0; i < w; i++) {
-        s_line_buf[i] = color;
-    }
-
     for (int y = y1; y < y1 + h; y++) {
-        esp_lcd_panel_draw_bitmap(s_panel, x1, y, x1 + w, y + 1, s_line_buf);
+        uint16_t *row = &s_fb[y * BOARD_LCD_H_RES + x1];
+        for (int x = 0; x < w; x++) {
+            row[x] = color;
+        }
     }
 }
 
-static void draw_char(int x, int y, char c, uint16_t fg, uint16_t bg)
+static void fb_draw_char(int x, int y, char c, uint16_t fg, uint16_t bg, int scale)
 {
-    if (c < 32 || c > 126) c = ' ';
+    if (!s_fb || c < 32 || c > 126) c = ' ';
     const uint8_t *glyph = font8x8[c - 32];
+    if (scale < 1) scale = 1;
 
     for (int row = 0; row < 8; row++) {
         uint8_t bits = glyph[row];
-        for (int col = 0; col < 8; col++) {
-            s_line_buf[col] = (bits & (0x80 >> col)) ? fg : bg;
-        }
-        // Double row height for 8x16 look
-        int py = y + (row * 2);
-        if (py < BOARD_LCD_V_RES && x + 8 <= BOARD_LCD_H_RES) {
-            esp_lcd_panel_draw_bitmap(s_panel, x, py, x + 8, py + 1, s_line_buf);
-            esp_lcd_panel_draw_bitmap(s_panel, x, py + 1, x + 8, py + 2, s_line_buf);
+        for (int dy = 0; dy < (scale * 2); dy++) {
+            int py = y + (row * scale * 2) + dy;
+            if (py < 0 || py >= BOARD_LCD_V_RES) continue;
+            for (int col = 0; col < 8; col++) {
+                uint16_t color = (bits & (0x80 >> col)) ? fg : bg;
+                for (int dx = 0; dx < scale; dx++) {
+                    int px = x + (col * scale) + dx;
+                    if (px >= 0 && px < BOARD_LCD_H_RES) {
+                        s_fb[py * BOARD_LCD_H_RES + px] = color;
+                    }
+                }
+            }
         }
     }
 }
 
-static void draw_text(int x, int y, const char *text, uint16_t fg, uint16_t bg)
+static void fb_draw_text(int x, int y, const char *text, uint16_t fg, uint16_t bg, int scale)
 {
     int cur_x = x;
-    while (*text && cur_x < BOARD_LCD_H_RES - 8) {
-        draw_char(cur_x, y, *text++, fg, bg);
-        cur_x += 8;
+    int char_w = 8 * scale;
+    while (*text && cur_x <= BOARD_LCD_H_RES - char_w) {
+        fb_draw_char(cur_x, y, *text++, fg, bg, scale);
+        cur_x += char_w;
+    }
+}
+
+static void display_flush_frame(void)
+{
+    if (!s_panel || !s_fb) return;
+
+    if (s_dma_buf[0] && s_dma_buf[1]) {
+        int buf_idx = 0;
+        for (int y = 0; y < BOARD_LCD_V_RES; y += CHUNK_LINES) {
+            memcpy(s_dma_buf[buf_idx], &s_fb[y * BOARD_LCD_H_RES], CHUNK_BYTES);
+            esp_lcd_panel_draw_bitmap(s_panel, 0, y, BOARD_LCD_H_RES, y + CHUNK_LINES, s_dma_buf[buf_idx]);
+            buf_idx = 1 - buf_idx;
+        }
+    } else {
+        esp_lcd_panel_draw_bitmap(s_panel, 0, 0, BOARD_LCD_H_RES, BOARD_LCD_V_RES, s_fb);
     }
 }
 
@@ -187,9 +215,12 @@ static void render_idle_screen(void)
 {
     char buf[48];
 
-    // Background & Header Bar (Full 320 width)
-    fill_rect(0, 0, BOARD_LCD_H_RES, 28, COLOR_DARK_GRAY);
-    draw_text(56, 6, "=== osu!pad ESP32-S3 ===", COLOR_YELLOW, COLOR_DARK_GRAY);
+    // Clear background to black
+    fb_fill_rect(0, 0, BOARD_LCD_H_RES, BOARD_LCD_V_RES, COLOR_BLACK);
+
+    // Header Bar (Full 320 width)
+    fb_fill_rect(0, 0, BOARD_LCD_H_RES, 24, COLOR_DARK_GRAY);
+    fb_draw_text(60, 4, "=== osu!pad ESP32-S3 ===", COLOR_YELLOW, COLOR_DARK_GRAY, 1);
 
     // Clock & Connection Status Row
     if (s_time_synced) {
@@ -201,109 +232,126 @@ static void render_idle_screen(void)
     } else {
         snprintf(buf, sizeof(buf), "TIME: --:--:--");
     }
-    draw_text(15, 34, buf, COLOR_WHITE, COLOR_BLACK);
+    fb_draw_text(12, 30, buf, COLOR_WHITE, COLOR_BLACK, 1);
 
     bool cdc_ok = usb_cdc_is_connected();
     snprintf(buf, sizeof(buf), "CDC: %s", cdc_ok ? "ONLINE" : "OFFLINE");
-    draw_text(180, 34, buf, cdc_ok ? COLOR_GREEN : COLOR_YELLOW, COLOR_BLACK);
+    fb_draw_text(180, 30, buf, cdc_ok ? COLOR_GREEN : COLOR_YELLOW, COLOR_BLACK, 1);
 
-    draw_text(15, 52, "USB: 1000Hz HID READY", COLOR_GREEN, COLOR_BLACK);
+    fb_draw_text(12, 48, "USB: 1000Hz HID READY", COLOR_GREEN, COLOR_BLACK, 1);
 
     counters_snapshot_t snap;
     counters_get(&snap);
     snprintf(buf, sizeof(buf), "GEN: #%lu", (unsigned long)snap.generation);
-    draw_text(180, 52, buf, COLOR_GRAY, COLOR_BLACK);
+    fb_draw_text(180, 48, buf, COLOR_GRAY, COLOR_BLACK, 1);
 
     // Divider line
-    fill_rect(10, 72, BOARD_LCD_H_RES - 20, 2, COLOR_GRAY);
+    fb_fill_rect(10, 68, BOARD_LCD_H_RES - 20, 2, COLOR_GRAY);
 
     // Lifetime Counters Section Header & Cards
-    draw_text(15, 80, "LIFETIME COUNTERS", COLOR_PINK, COLOR_BLACK);
+    fb_draw_text(12, 74, "LIFETIME COUNTERS", COLOR_PINK, COLOR_BLACK, 1);
 
-    // Key 1 Card
-    fill_rect(15, 98, 138, 44, COLOR_DARK_GRAY);
-    draw_text(25, 103, "KEY 1 (Z)", COLOR_PINK, COLOR_DARK_GRAY);
+    // Key 1 Card: x=12, y=92, w=142, h=52
+    fb_fill_rect(12, 92, 142, 52, COLOR_DARK_GRAY);
+    fb_draw_text(20, 96, "KEY 1 (Z)", COLOR_PINK, COLOR_DARK_GRAY, 1);
     snprintf(buf, sizeof(buf), "%llu", (unsigned long long)snap.lifetime_key1);
-    draw_text(25, 121, buf, COLOR_WHITE, COLOR_DARK_GRAY);
+    // Draw count in BIG BOLD scale=2 (16x32 font)
+    fb_draw_text(20, 112, buf, COLOR_WHITE, COLOR_DARK_GRAY, 2);
 
-    // Key 2 Card
-    fill_rect(167, 98, 138, 44, COLOR_DARK_GRAY);
-    draw_text(177, 103, "KEY 2 (X)", COLOR_PINK, COLOR_DARK_GRAY);
+    // Key 2 Card: x=166, y=92, w=142, h=52
+    fb_fill_rect(166, 92, 142, 52, COLOR_DARK_GRAY);
+    fb_draw_text(174, 96, "KEY 2 (X)", COLOR_PINK, COLOR_DARK_GRAY, 1);
     snprintf(buf, sizeof(buf), "%llu", (unsigned long long)snap.lifetime_key2);
-    draw_text(177, 121, buf, COLOR_WHITE, COLOR_DARK_GRAY);
+    // Draw count in BIG BOLD scale=2 (16x32 font)
+    fb_draw_text(174, 112, buf, COLOR_WHITE, COLOR_DARK_GRAY, 2);
 
     // Divider line
-    fill_rect(10, 150, BOARD_LCD_H_RES - 20, 2, COLOR_GRAY);
+    fb_fill_rect(10, 150, BOARD_LCD_H_RES - 20, 2, COLOR_GRAY);
 
-    // Live Switch Indicators (Horizontal Side-by-Side)
-    bool k1 = keypad_is_pressed(KEY_ID_1);
-    bool k2 = keypad_is_pressed(KEY_ID_2);
+    // Live Switch Indicators (Sticky latch: 120ms hold so mechanical taps are easily visible)
+    int64_t now = esp_timer_get_time();
+    bool k1_pressed = keypad_is_pressed(KEY_ID_1);
+    bool k2_pressed = keypad_is_pressed(KEY_ID_2);
+    bool k1_visual = k1_pressed || ((now - keypad_get_last_press_us(KEY_ID_1)) < 120000);
+    bool k2_visual = k2_pressed || ((now - keypad_get_last_press_us(KEY_ID_2)) < 120000);
 
-    fill_rect(20, 162, 130, 64, k1 ? COLOR_GREEN : COLOR_DARK_GRAY);
-    draw_text(55, 186, "KEY 1", k1 ? COLOR_BLACK : COLOR_WHITE, k1 ? COLOR_GREEN : COLOR_DARK_GRAY);
+    // Key 1 Box
+    uint16_t k1_bg = k1_visual ? COLOR_GREEN : COLOR_DARK_GRAY;
+    uint16_t k1_fg = k1_visual ? COLOR_BLACK : COLOR_WHITE;
+    fb_fill_rect(16, 158, 138, 74, k1_bg);
+    fb_draw_text(45, 178, "KEY 1", k1_fg, k1_bg, 2);
 
-    fill_rect(170, 162, 130, 64, k2 ? COLOR_GREEN : COLOR_DARK_GRAY);
-    draw_text(205, 186, "KEY 2", k2 ? COLOR_BLACK : COLOR_WHITE, k2 ? COLOR_GREEN : COLOR_DARK_GRAY);
+    // Key 2 Box
+    uint16_t k2_bg = k2_visual ? COLOR_GREEN : COLOR_DARK_GRAY;
+    uint16_t k2_fg = k2_visual ? COLOR_BLACK : COLOR_WHITE;
+    fb_fill_rect(166, 158, 138, 74, k2_bg);
+    fb_draw_text(195, 178, "KEY 2", k2_fg, k2_bg, 2);
 }
 
 static void render_gameplay_screen(void)
 {
     char buf[48];
 
-    // Banner & PP Counter
-    fill_rect(0, 0, BOARD_LCD_H_RES, 28, COLOR_PINK);
-    draw_text(15, 6, "** osu! PLAYING **", COLOR_BLACK, COLOR_PINK);
-    snprintf(buf, sizeof(buf), "%0.1f pp", s_gameplay_state.current_pp);
-    draw_text(225, 6, buf, COLOR_BLACK, COLOR_PINK);
+    // Clear background
+    fb_fill_rect(0, 0, BOARD_LCD_H_RES, BOARD_LCD_V_RES, COLOR_BLACK);
 
-    // Song Title & Artist (Wider text display)
-    fill_rect(15, 34, BOARD_LCD_H_RES - 30, 36, COLOR_BLACK);
-    draw_text(15, 34, s_gameplay_state.title[0] ? s_gameplay_state.title : "Playing Map", COLOR_WHITE, COLOR_BLACK);
-    draw_text(15, 52, s_gameplay_state.artist[0] ? s_gameplay_state.artist : "Unknown Artist", COLOR_GRAY, COLOR_BLACK);
+    // Banner & PP Counter
+    fb_fill_rect(0, 0, BOARD_LCD_H_RES, 24, COLOR_PINK);
+    fb_draw_text(12, 4, "** osu! PLAYING **", COLOR_BLACK, COLOR_PINK, 1);
+    snprintf(buf, sizeof(buf), "%0.1f pp", s_gameplay_state.current_pp);
+    fb_draw_text(225, 4, buf, COLOR_BLACK, COLOR_PINK, 1);
+
+    // Song Title & Artist
+    fb_draw_text(12, 30, s_gameplay_state.title[0] ? s_gameplay_state.title : "Playing Map", COLOR_WHITE, COLOR_BLACK, 1);
+    fb_draw_text(12, 48, s_gameplay_state.artist[0] ? s_gameplay_state.artist : "Unknown Artist", COLOR_GRAY, COLOR_BLACK, 1);
 
     // Map Progress Bar
     float ratio = s_gameplay_state.progress_ratio;
     if (ratio < 0.0f) ratio = 0.0f;
     if (ratio > 1.0f) ratio = 1.0f;
 
-    draw_text(15, 74, "Progress:", COLOR_WHITE, COLOR_BLACK);
+    fb_draw_text(12, 68, "Progress:", COLOR_WHITE, COLOR_BLACK, 1);
     snprintf(buf, sizeof(buf), "%d%%", (int)(ratio * 100.0f));
-    draw_text(260, 74, buf, COLOR_YELLOW, COLOR_BLACK);
+    fb_draw_text(260, 68, buf, COLOR_YELLOW, COLOR_BLACK, 1);
 
-    int bar_x = 15, bar_y = 92, bar_w = 290, bar_h = 10;
-    fill_rect(bar_x, bar_y, bar_w, bar_h, COLOR_DARK_GRAY);
+    int bar_x = 12, bar_y = 86, bar_w = 296, bar_h = 10;
+    fb_fill_rect(bar_x, bar_y, bar_w, bar_h, COLOR_DARK_GRAY);
     int fill_w = (int)(ratio * bar_w);
     if (fill_w > 0) {
-        fill_rect(bar_x, bar_y, fill_w, bar_h, COLOR_GREEN);
+        fb_fill_rect(bar_x, bar_y, fill_w, bar_h, COLOR_GREEN);
     }
 
     // Map Press Counts
     snprintf(buf, sizeof(buf), "Map K1: %lu", (unsigned long)s_gameplay_state.current_map_presses_k1);
-    draw_text(20, 112, buf, COLOR_WHITE, COLOR_BLACK);
+    fb_draw_text(16, 104, buf, COLOR_WHITE, COLOR_BLACK, 1);
 
     snprintf(buf, sizeof(buf), "Map K2: %lu", (unsigned long)s_gameplay_state.current_map_presses_k2);
-    draw_text(175, 112, buf, COLOR_WHITE, COLOR_BLACK);
+    fb_draw_text(170, 104, buf, COLOR_WHITE, COLOR_BLACK, 1);
 
     // Divider line
-    fill_rect(10, 132, BOARD_LCD_H_RES - 20, 2, COLOR_GRAY);
+    fb_fill_rect(10, 124, BOARD_LCD_H_RES - 20, 2, COLOR_GRAY);
 
-    // Live Indicators (Side-by-side large boxes for gameplay visibility)
-    bool k1 = keypad_is_pressed(KEY_ID_1);
-    bool k2 = keypad_is_pressed(KEY_ID_2);
+    // Live Indicators
+    int64_t now = esp_timer_get_time();
+    bool k1_pressed = keypad_is_pressed(KEY_ID_1);
+    bool k2_pressed = keypad_is_pressed(KEY_ID_2);
+    bool k1_visual = k1_pressed || ((now - keypad_get_last_press_us(KEY_ID_1)) < 120000);
+    bool k2_visual = k2_pressed || ((now - keypad_get_last_press_us(KEY_ID_2)) < 120000);
 
-    fill_rect(20, 144, 130, 82, k1 ? COLOR_PINK : COLOR_DARK_GRAY);
-    draw_text(65, 175, "K1", k1 ? COLOR_BLACK : COLOR_WHITE, k1 ? COLOR_PINK : COLOR_DARK_GRAY);
+    uint16_t k1_bg = k1_visual ? COLOR_PINK : COLOR_DARK_GRAY;
+    uint16_t k1_fg = k1_visual ? COLOR_BLACK : COLOR_WHITE;
+    fb_fill_rect(16, 134, 138, 98, k1_bg);
+    fb_draw_text(60, 166, "K1", k1_fg, k1_bg, 2);
 
-    fill_rect(170, 144, 130, 82, k2 ? COLOR_PINK : COLOR_DARK_GRAY);
-    draw_text(215, 175, "K2", k2 ? COLOR_BLACK : COLOR_WHITE, k2 ? COLOR_PINK : COLOR_DARK_GRAY);
+    uint16_t k2_bg = k2_visual ? COLOR_PINK : COLOR_DARK_GRAY;
+    uint16_t k2_fg = k2_visual ? COLOR_BLACK : COLOR_WHITE;
+    fb_fill_rect(166, 134, 138, 98, k2_bg);
+    fb_draw_text(210, 166, "K2", k2_fg, k2_bg, 2);
 }
 
 static void display_task(void *pvParameters)
 {
-    ESP_LOGI(TAG, "Display render task started on core %d (low-latency priority +2)", xPortGetCoreID());
-
-    // Clear whole screen to black at boot
-    fill_rect(0, 0, BOARD_LCD_H_RES, BOARD_LCD_V_RES, COLOR_BLACK);
+    ESP_LOGI(TAG, "Display render task started on core %d (smooth ~30 FPS RAM framebuffer)", xPortGetCoreID());
 
     s_last_activity_us = esp_timer_get_time();
 
@@ -325,11 +373,12 @@ static void display_task(void *pvParameters)
         osupad_state_t state = runtime_get_state();
         if (state == OSUPAD_STATE_PLAYING && s_has_gameplay) {
             render_gameplay_screen();
-            vTaskDelay(pdMS_TO_TICKS(100)); // 10 Hz refresh during gameplay
         } else {
             render_idle_screen();
-            vTaskDelay(pdMS_TO_TICKS(200)); // 5 Hz refresh during idle
         }
+
+        display_flush_frame();
+        vTaskDelay(pdMS_TO_TICKS(33)); // ~30 FPS
     }
 }
 
@@ -340,6 +389,27 @@ esp_err_t display_init(void)
         ESP_LOGE(TAG, "Failed to initialize display panel: %s", esp_err_to_name(err));
         return err;
     }
+
+    // Allocate 320x240 RGB565 Framebuffer (150 KB)
+    s_fb = (uint16_t *)heap_caps_malloc(BOARD_LCD_H_RES * BOARD_LCD_V_RES * sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!s_fb) {
+        s_fb = (uint16_t *)heap_caps_malloc(BOARD_LCD_H_RES * BOARD_LCD_V_RES * sizeof(uint16_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    if (!s_fb) {
+        ESP_LOGE(TAG, "Failed to allocate display framebuffer");
+        return ESP_ERR_NO_MEM;
+    }
+
+    // Allocate double-buffered DMA row chunks (2x 12.8 KB)
+    s_dma_buf[0] = (uint16_t *)heap_caps_malloc(CHUNK_BYTES, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    s_dma_buf[1] = (uint16_t *)heap_caps_malloc(CHUNK_BYTES, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (!s_dma_buf[0] || !s_dma_buf[1]) {
+        ESP_LOGW(TAG, "DMA chunk allocation failed, falling back to direct flush");
+    }
+
+    // Clear screen to black initially
+    fb_fill_rect(0, 0, BOARD_LCD_H_RES, BOARD_LCD_V_RES, COLOR_BLACK);
+    display_flush_frame();
 
     board_backlight_set(s_brightness);
 
@@ -360,6 +430,7 @@ esp_err_t display_init(void)
 
     return ESP_OK;
 }
+
 
 void display_set_time(uint32_t year, uint32_t month, uint32_t day, uint32_t hour, uint32_t minute, uint32_t second)
 {

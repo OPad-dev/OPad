@@ -1,5 +1,6 @@
 #include "keypad.h"
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
+#include "display/display.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_timer.h"
@@ -16,6 +17,8 @@ static keypad_config_t s_config = {
 
 static volatile bool s_key_state[KEY_ID_COUNT] = {false, false};
 static volatile int64_t s_last_transition_us[KEY_ID_COUNT] = {0, 0};
+static volatile int64_t s_key1_last_press_us = 0;
+static volatile int64_t s_key2_last_press_us = 0;
 
 static atomic_uint_least64_t s_key1_lifetime_presses = 0;
 static atomic_uint_least64_t s_key2_lifetime_presses = 0;
@@ -43,8 +46,10 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
             if (current_pressed) {
                 if (key_index == 0) {
                     atomic_fetch_add_explicit(&s_key1_lifetime_presses, 1, memory_order_relaxed);
+                    s_key1_last_press_us = now;
                 } else {
                     atomic_fetch_add_explicit(&s_key2_lifetime_presses, 1, memory_order_relaxed);
+                    s_key2_last_press_us = now;
                 }
             }
 
@@ -72,6 +77,9 @@ static void keypad_task(void *pvParameters)
             bool current = s_key_state[i];
             if (current != reported_state[i]) {
                 reported_state[i] = current;
+                if (current) {
+                    display_notify_activity();
+                }
                 if (s_callback) {
                     s_callback(i, current);
                 }
@@ -138,6 +146,13 @@ void keypad_get_lifetime_presses(uint64_t *key1_presses, uint64_t *key2_presses)
     if (key2_presses) {
         *key2_presses = atomic_load_explicit(&s_key2_lifetime_presses, memory_order_relaxed);
     }
+}
+
+int64_t keypad_get_last_press_us(keypad_key_id_t key_id)
+{
+    if (key_id == KEY_ID_1) return s_key1_last_press_us;
+    if (key_id == KEY_ID_2) return s_key2_last_press_us;
+    return 0;
 }
 
 void keypad_set_config(const keypad_config_t *config)
