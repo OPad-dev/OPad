@@ -33,16 +33,16 @@ IS_BOOTLOADER=$(lsusb 2>/dev/null | grep -i "303a:1001" || true)
 if [ -z "$IS_BOOTLOADER" ]; then
     echo "[2/3] Board is running application firmware (303a:4001)."
     echo "      Waiting for download mode..."
-    echo "      -> Hold the BOOT button, press & release RESET, then release BOOT."
+    echo "      -> Hold BOOT, press & release RESET, then release BOOT."
     echo ""
     while true; do
         if lsusb 2>/dev/null | grep -q -i "303a:1001"; then
             echo "✓ Detected ESP32-S3 ROM Bootloader (303a:1001)!"
             break
         fi
-        sleep 0.3
+        sleep 0.2
     done
-    sleep 1
+    sleep 0.8
 else
     echo "[2/3] ✓ ESP32-S3 already in ROM Bootloader mode (303a:1001)!"
 fi
@@ -51,7 +51,13 @@ fi
 TARGET_PORT=$(ls /dev/ttyACM* 2>/dev/null | head -n 1 || echo "/dev/ttyACM0")
 echo "[3/3] Flashing landscape firmware binary to ${TARGET_PORT}..."
 cd "${REPO_ROOT}/firmware"
-python -m esptool --chip esp32s3 -p "${TARGET_PORT}" -b 460800 --before=default_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 build/bootloader/bootloader.bin 0x10000 build/osupad-firmware.bin 0x8000 build/partition_table/partition-table.bin
+
+# Use --before=no_reset because the device is ALREADY in the ROM bootloader!
+# Default reset would toggle RTS and kick the chip back into the user app!
+if ! python -m esptool --chip esp32s3 -p "${TARGET_PORT}" -b 460800 --before=no_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 build/bootloader/bootloader.bin 0x10000 build/osupad-firmware.bin 0x8000 build/partition_table/partition-table.bin; then
+    echo "Retrying with usb_reset mode..."
+    python -m esptool --chip esp32s3 -p "${TARGET_PORT}" -b 460800 --before=usb_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 build/bootloader/bootloader.bin 0x10000 build/osupad-firmware.bin 0x8000 build/partition_table/partition-table.bin
+fi
 
 echo ""
 echo "=================================================="
