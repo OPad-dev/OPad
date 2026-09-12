@@ -10,8 +10,6 @@ static const char *TAG = "counters";
 static const char *NVS_NAMESPACE = "osupad";
 
 static uint32_t s_generation = 1;
-static uint64_t s_baseline_key1 = 0;
-static uint64_t s_baseline_key2 = 0;
 static uint64_t s_last_saved_key1 = 0;
 static uint64_t s_last_saved_key2 = 0;
 static bool s_initialized = false;
@@ -42,29 +40,33 @@ esp_err_t counters_init(void)
         nvs_set_u32(handle, "generation", s_generation);
     }
 
-    err = nvs_get_u64(handle, "key1_cnt", &s_baseline_key1);
+    uint64_t k1 = 0;
+    err = nvs_get_u64(handle, "key1_cnt", &k1);
     if (err == ESP_ERR_NVS_NOT_FOUND) {
-        s_baseline_key1 = 0;
-        nvs_set_u64(handle, "key1_cnt", s_baseline_key1);
+        k1 = 0;
+        nvs_set_u64(handle, "key1_cnt", k1);
     }
 
-    err = nvs_get_u64(handle, "key2_cnt", &s_baseline_key2);
+    uint64_t k2 = 0;
+    err = nvs_get_u64(handle, "key2_cnt", &k2);
     if (err == ESP_ERR_NVS_NOT_FOUND) {
-        s_baseline_key2 = 0;
-        nvs_set_u64(handle, "key2_cnt", s_baseline_key2);
+        k2 = 0;
+        nvs_set_u64(handle, "key2_cnt", k2);
     }
 
     nvs_commit(handle);
     nvs_close(handle);
 
-    s_last_saved_key1 = s_baseline_key1;
-    s_last_saved_key2 = s_baseline_key2;
+    keypad_set_lifetime_presses(k1, k2);
+
+    s_last_saved_key1 = k1;
+    s_last_saved_key2 = k2;
     s_initialized = true;
 
     ESP_LOGI(TAG, "Counters initialized: Gen=%lu, Key1=%llu, Key2=%llu",
              (unsigned long)s_generation,
-             (unsigned long long)s_baseline_key1,
-             (unsigned long long)s_baseline_key2);
+             (unsigned long long)k1,
+             (unsigned long long)k2);
     return ESP_OK;
 }
 
@@ -79,8 +81,8 @@ void counters_get(counters_snapshot_t *snapshot)
     keypad_get_lifetime_presses(&ram_k1, &ram_k2);
 
     snapshot->generation = s_generation;
-    snapshot->lifetime_key1 = s_baseline_key1 + ram_k1;
-    snapshot->lifetime_key2 = s_baseline_key2 + ram_k2;
+    snapshot->lifetime_key1 = ram_k1;
+    snapshot->lifetime_key2 = ram_k2;
 }
 
 esp_err_t counters_sync_from_host(uint32_t generation, uint64_t k1, uint64_t k2, bool force)
@@ -107,8 +109,7 @@ esp_err_t counters_sync_from_host(uint32_t generation, uint64_t k1, uint64_t k2,
     }
 
     s_generation = generation;
-    s_baseline_key1 = k1;
-    s_baseline_key2 = k2;
+    keypad_set_lifetime_presses(k1, k2);
 
     return counters_checkpoint(true);
 }
@@ -161,8 +162,7 @@ esp_err_t counters_reset(void)
     }
 
     s_generation++;
-    s_baseline_key1 = 0;
-    s_baseline_key2 = 0;
+    keypad_set_lifetime_presses(0, 0);
 
     return counters_checkpoint(true);
 }

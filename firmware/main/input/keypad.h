@@ -43,6 +43,11 @@ bool keypad_is_pressed(keypad_key_id_t key_id);
 void keypad_get_lifetime_presses(uint64_t *key1_presses, uint64_t *key2_presses);
 
 /**
+ * @brief Set RAM lifetime press counters (used on boot load, sync, or reset).
+ */
+void keypad_set_lifetime_presses(uint64_t key1_presses, uint64_t key2_presses);
+
+/**
  * @brief Get timestamp in microseconds of the last keypress down event.
  */
 int64_t keypad_get_last_press_us(keypad_key_id_t key_id);

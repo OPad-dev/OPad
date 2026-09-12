@@ -148,6 +148,12 @@ void keypad_get_lifetime_presses(uint64_t *key1_presses, uint64_t *key2_presses)
     }
 }
 
+void keypad_set_lifetime_presses(uint64_t key1_presses, uint64_t key2_presses)
+{
+    atomic_store_explicit(&s_key1_lifetime_presses, key1_presses, memory_order_relaxed);
+    atomic_store_explicit(&s_key2_lifetime_presses, key2_presses, memory_order_relaxed);
+}
+
 int64_t keypad_get_last_press_us(keypad_key_id_t key_id)
 {
     if (key_id == KEY_ID_1) return s_key1_last_press_us;
