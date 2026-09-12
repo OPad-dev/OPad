@@ -6,8 +6,10 @@
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
 #include "input/keypad.h"
 #include "counters/counters.h"
-#include "display/display.h"
+#include "ui/ui.h"
+#include "ui/ui_store.h"
 #include "runtime/runtime.h"
+#include "input/latency_stats.h"
 #include "esp_mac.h"
 #include "esp_log.h"
 #include <string.h>
@@ -110,20 +112,25 @@ esp_err_t protocol_send_status(void)
     counters_snapshot_t snap;
     counters_get(&snap);
 
-    keypad_config_t cfg;
-    keypad_get_config(&cfg);
-
     osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
     msg.sequence_number = s_out_sequence++;
     msg.which_payload = osupad_DeviceToHost_status_tag;
     msg.payload.status.uptime_seconds = runtime_get_uptime_seconds();
     msg.payload.status.state = (osupad_DeviceState)runtime_get_state();
     msg.payload.status.brightness = board_backlight_get();
-    msg.payload.status.display_asleep = display_is_asleep();
+    msg.payload.status.display_asleep = ui_is_asleep();
     msg.payload.status.lifetime_key1 = snap.lifetime_key1;
     msg.payload.status.lifetime_key2 = snap.lifetime_key2;
-    msg.payload.status.map_key1 = cfg.keycode1;
-    msg.payload.status.map_key2 = cfg.keycode2;
+    keypad_get_map_presses(&msg.payload.status.map_key1, &msg.payload.status.map_key2);
+
+    latency_stats_t lat;
+    latency_stats_get(&lat);
+    msg.payload.status.latency_samples = lat.samples;
+    msg.payload.status.latency_p50_us = lat.p50_us;
+    msg.payload.status.latency_p99_us = lat.p99_us;
+    msg.payload.status.latency_p999_us = lat.p999_us;
+    msg.payload.status.latency_max_us = lat.max_us;
+    msg.payload.status.hid_dropped_reports = lat.dropped_reports;
 
     return send_envelope(&msg);
 }
@@ -170,6 +177,50 @@ esp_err_t protocol_send_counter_sync_resp(uint32_t seq, bool success)
     return send_envelope(&msg);
 }
 
+esp_err_t protocol_send_layout_ack(uint32_t seq, uint32_t screen, bool success, const char *text)
+{
+    osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+    msg.sequence_number = seq ? seq : s_out_sequence++;
+    msg.which_payload = osupad_DeviceToHost_layout_ack_tag;
+    msg.payload.layout_ack.screen = screen;
+    msg.payload.layout_ack.success = success;
+    if (text) {
+        strncpy(msg.payload.layout_ack.message, text, sizeof(msg.payload.layout_ack.message) - 1);
+    }
+    return send_envelope(&msg);
+}
+
+static void layout_from_proto(const osupad_SetLayout *in, ui_layout_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    out->background = in->background;
+    out->count = in->widgets_count > UI_MAX_WIDGETS ? UI_MAX_WIDGETS : in->widgets_count;
+    for (int i = 0; i < out->count; i++) {
+        const osupad_UiWidget *src = &in->widgets[i];
+        ui_widget_t *w = &out->widgets[i];
+        // Out-of-range values are clamped into ones the validator rejects
+        w->kind = src->kind > UINT8_MAX ? UINT8_MAX : src->kind;
+        w->source = src->source > UINT8_MAX ? UINT8_MAX : src->source;
+        w->font = src->font > UINT8_MAX ? UINT8_MAX : src->font;
+        w->align = src->align > UINT8_MAX ? UINT8_MAX : src->align;
+        w->x = (int16_t)src->x;
+        w->y = (int16_t)src->y;
+        w->w = src->w > INT16_MAX ? 0 : (int16_t)src->w;
+        w->h = src->h > INT16_MAX ? 0 : (int16_t)src->h;
+        w->fg = src->fg;
+        w->bg = src->bg;
+        w->accent = src->accent;
+        w->radius = src->radius > UINT8_MAX ? UINT8_MAX : src->radius;
+        w->decimals = src->decimals > UINT8_MAX ? UINT8_MAX : src->decimals;
+        w->flags = src->flags > UINT8_MAX ? 0 : src->flags;
+        strncpy(w->label, src->label, UI_LABEL_MAX - 1);
+        strncpy(w->suffix, src->suffix, UI_SUFFIX_MAX - 1);
+    }
+}
+
+// Last attempt id seen from the host; a new id means a new attempt
+static uint32_t s_play_id = 0;
+
 static void handle_host_message(const osupad_HostToDevice *msg)
 {
     switch (msg->which_payload) {
@@ -191,10 +242,10 @@ static void handle_host_message(const osupad_HostToDevice *msg)
             usb_hid_set_keycodes(cfg.keycode1, cfg.keycode2);
 
             if (c->brightness > 0 && c->brightness <= 100) {
-                display_set_brightness((uint8_t)c->brightness);
+                ui_set_brightness((uint8_t)c->brightness);
             }
             if (c->display_sleep_seconds > 0) {
-                display_set_sleep_timeout(c->display_sleep_seconds);
+                ui_set_sleep_timeout(c->display_sleep_seconds);
             }
 
             protocol_send_config_ack(msg->sequence_number, true, "Configuration applied successfully");
@@ -202,7 +253,7 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         break;
 
     case osupad_HostToDevice_time_sync_tag:
-        display_set_time(
+        ui_set_time(
             msg->payload.time_sync.year,
             msg->payload.time_sync.month,
             msg->payload.time_sync.day,
@@ -210,11 +261,6 @@ static void handle_host_message(const osupad_HostToDevice *msg)
             msg->payload.time_sync.minute,
             msg->payload.time_sync.second
         );
-        break;
-
-    case osupad_HostToDevice_gameplay_state_tag:
-        display_update_gameplay_state(&msg->payload.gameplay_state);
-        runtime_notify_gameplay(true);
         break;
 
     case osupad_HostToDevice_counter_sync_tag:
@@ -233,6 +279,69 @@ static void handle_host_message(const osupad_HostToDevice *msg)
     case osupad_HostToDevice_request_status_tag:
         protocol_send_status();
         break;
+
+    case osupad_HostToDevice_reset_latency_stats_tag:
+        latency_stats_reset();
+        break;
+
+    case osupad_HostToDevice_host_status_tag: {
+        const osupad_HostStatus *hs = &msg->payload.host_status;
+        if (hs->play_id != s_play_id) {
+            s_play_id = hs->play_id;
+            keypad_reset_map_presses();
+        }
+        ui_set_tosu_connected(hs->tosu_connected);
+        runtime_notify_gameplay(hs->playing);
+        break;
+    }
+
+    case osupad_HostToDevice_set_layout_tag: {
+        static ui_layout_t layout;  // ~2 KB, protocol task only
+        const osupad_SetLayout *sl = &msg->payload.set_layout;
+        char err[64] = "";
+        layout_from_proto(sl, &layout);
+        bool ok = ui_set_layout((uint8_t)sl->screen, &layout, err, sizeof(err));
+        if (ok) {
+            if (runtime_get_state() == OSUPAD_STATE_PLAYING) {
+                // Flash writes would stall the key core: apply now, the host resends later
+                snprintf(err, sizeof(err), "applied, not saved while playing");
+            } else if (ui_store_save((uint8_t)sl->screen, &layout) != ESP_OK) {
+                snprintf(err, sizeof(err), "applied, but saving to flash failed");
+            }
+        }
+        protocol_send_layout_ack(msg->sequence_number, sl->screen, ok, err);
+        break;
+    }
+
+    case osupad_HostToDevice_reset_layout_tag: {
+        uint32_t screen = msg->payload.reset_layout;
+        const ui_layout_t *def = ui_default_layout(screen <= UINT8_MAX ? (uint8_t)screen : UINT8_MAX);
+        char err[64] = "";
+        bool ok = def && ui_set_layout((uint8_t)screen, def, err, sizeof(err));
+        if (ok && runtime_get_state() != OSUPAD_STATE_PLAYING) {
+            ui_store_erase((uint8_t)screen);
+        }
+        protocol_send_layout_ack(msg->sequence_number, screen, ok, def ? err : "unknown screen");
+        break;
+    }
+
+    case osupad_HostToDevice_data_update_tag: {
+        const osupad_DataUpdate *du = &msg->payload.data_update;
+        ui_lock();
+        for (pb_size_t i = 0; i < du->values_count; i++) {
+            const osupad_DataValue *v = &du->values[i];
+            if (v->source > UINT8_MAX) {
+                continue;
+            }
+            switch (v->which_value) {
+            case osupad_DataValue_number_tag: ui_data_set_number((uint8_t)v->source, v->value.number); break;
+            case osupad_DataValue_text_tag:   ui_data_set_string((uint8_t)v->source, v->value.text); break;
+            default:                          ui_data_clear((uint8_t)v->source); break;
+            }
+        }
+        ui_unlock();
+        break;
+    }
 
     default:
         ESP_LOGD(TAG, "Unhandled host message payload tag: %d", msg->which_payload);
@@ -271,7 +380,9 @@ void protocol_feed_cdc_bytes(const uint8_t *data, size_t len)
             break;
         }
 
-        osupad_HostToDevice msg = osupad_HostToDevice_init_zero;
+        // Static: a DataUpdate makes the decoded message several KB (single protocol task)
+        static osupad_HostToDevice msg;
+        msg = (osupad_HostToDevice)osupad_HostToDevice_init_zero;
         if (protocol_decode_host_message(s_rx_frame_buf + 4, expected_len, &msg)) {
             handle_host_message(&msg);
         }

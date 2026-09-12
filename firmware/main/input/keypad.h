@@ -20,7 +20,11 @@ typedef struct {
     uint16_t debounce_ms;   // Debounce interval in milliseconds (default 5ms)
 } keypad_config_t;
 
-typedef void (*keypad_state_callback_t)(uint8_t key_index, bool pressed);
+/**
+ * Key state change handler, run from the keypad task. Returns true if the change
+ * was submitted to the host immediately.
+ */
+typedef bool (*keypad_state_callback_t)(uint8_t key_index, bool pressed);
 
 /**
  * @brief Initialize keypad subsystem, GPIOs, ISR, and high-priority input processing task.
@@ -46,6 +50,16 @@ void keypad_get_lifetime_presses(uint64_t *key1_presses, uint64_t *key2_presses)
  * @brief Set RAM lifetime press counters (used on boot load, sync, or reset).
  */
 void keypad_set_lifetime_presses(uint64_t key1_presses, uint64_t key2_presses);
+
+/**
+ * @brief Get press counters for the current osu! attempt.
+ */
+void keypad_get_map_presses(uint32_t *key1_presses, uint32_t *key2_presses);
+
+/**
+ * @brief Zero the current-attempt press counters (lifetime counters are untouched).
+ */
+void keypad_reset_map_presses(void);
 
 /**
  * @brief Get timestamp in microseconds of the last keypress down event.

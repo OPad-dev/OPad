@@ -13,7 +13,11 @@ static int64_t s_boot_time_us = 0;
 static int64_t s_cooldown_start_us = 0;
 static int64_t s_last_checkpoint_us = 0;
 
+static atomic_llong s_last_gameplay_us = ATOMIC_VAR_INIT(0);
+
 static const int64_t COOLDOWN_DURATION_US = 5000000; // 5 seconds
+// Host streams gameplay at >=1 Hz; leave PLAYING if it stops (daemon/tosu died)
+static const int64_t GAMEPLAY_TIMEOUT_US = 3000000; // 3 seconds
 static const int64_t IDLE_CHECKPOINT_INTERVAL_US = 300000000; // 5 minutes
 
 static void runtime_supervisor_task(void *pvParameters)
@@ -25,7 +29,12 @@ static void runtime_supervisor_task(void *pvParameters)
         int64_t now = esp_timer_get_time();
         osupad_state_t current = (osupad_state_t)atomic_load(&s_state);
 
-        if (current == OSUPAD_STATE_COOLDOWN) {
+        if (current == OSUPAD_STATE_PLAYING) {
+            if ((now - atomic_load(&s_last_gameplay_us)) >= GAMEPLAY_TIMEOUT_US) {
+                ESP_LOGI(TAG, "No gameplay updates from host, leaving PLAYING");
+                runtime_notify_gameplay(false);
+            }
+        } else if (current == OSUPAD_STATE_COOLDOWN) {
             if ((now - s_cooldown_start_us) >= COOLDOWN_DURATION_US) {
                 atomic_store(&s_state, OSUPAD_STATE_IDLE);
                 ESP_LOGI(TAG, "State transition: COOLDOWN -> IDLE");
@@ -48,13 +57,15 @@ esp_err_t runtime_init(void)
     s_boot_time_us = esp_timer_get_time();
     s_last_checkpoint_us = s_boot_time_us;
 
-    BaseType_t res = xTaskCreate(
+    // Core 1: counter checkpoints write NVS, which must stay away from the key/USB core
+    BaseType_t res = xTaskCreatePinnedToCore(
         runtime_supervisor_task,
         "runtime_task",
         4096,
         NULL,
         tskIDLE_PRIORITY + 1,
-        NULL
+        NULL,
+        1
     );
     if (res != pdPASS) {
         ESP_LOGE(TAG, "Failed to create runtime supervisor task");
@@ -75,6 +86,7 @@ void runtime_notify_gameplay(bool is_playing)
     osupad_state_t current = (osupad_state_t)atomic_load(&s_state);
 
     if (is_playing) {
+        atomic_store(&s_last_gameplay_us, esp_timer_get_time());
         if (current != OSUPAD_STATE_PLAYING) {
             atomic_store(&s_state, OSUPAD_STATE_PLAYING);
             ESP_LOGI(TAG, "State transition: %d -> PLAYING", current);

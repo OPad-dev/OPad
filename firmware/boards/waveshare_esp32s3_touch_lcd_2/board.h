@@ -46,7 +46,7 @@ uint8_t board_backlight_get(void);
  * @brief Initialize ST7789 LCD panel.
  * @param[out] out_panel Handle to the initialized esp_lcd panel.
  */
-esp_err_t board_display_init(esp_lcd_panel_handle_t *out_panel);
+esp_err_t board_display_init(esp_lcd_panel_io_handle_t *out_io, esp_lcd_panel_handle_t *out_panel);
 
 #ifdef __cplusplus
 }

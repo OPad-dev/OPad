@@ -58,6 +58,13 @@ typedef struct _osupad_DeviceStatus {
     uint64_t lifetime_key2;
     uint32_t map_key1;
     uint32_t map_key2;
+    /* Key edge (GPIO ISR) to HID report submit, since boot or last reset */
+    uint32_t latency_samples;
+    uint32_t latency_p50_us;
+    uint32_t latency_p99_us;
+    uint32_t latency_p999_us;
+    uint32_t latency_max_us;
+    uint32_t hid_dropped_reports; /* Reports not submitted because the endpoint was busy */
 } osupad_DeviceStatus;
 
 typedef struct _osupad_ConfigPayload {
@@ -67,6 +74,7 @@ typedef struct _osupad_ConfigPayload {
     uint32_t brightness; /* 0 to 100%, default: 100 */
     uint32_t display_sleep_seconds; /* Inactivity timeout, default: 600 (10 min) */
     uint32_t gameplay_display_hz; /* Gameplay refresh rate cap, default: 5 */
+    uint32_t press_color_rgb; /* Key press highlight 0xRRGGBB on the gameplay screen, 0 = unchanged */
 } osupad_ConfigPayload;
 
 typedef struct _osupad_SetConfig {
@@ -97,7 +105,66 @@ typedef struct _osupad_GameplayDisplayState {
     float progress_ratio; /* 0.0 to 1.0 */
     uint32_t current_map_presses_k1;
     uint32_t current_map_presses_k2;
+    uint32_t play_id; /* Changes on every new attempt (new map, retry); device zeroes map counters */
+    char difficulty[32]; /* Difficulty name, e.g. "Lunatic" */
+    float stars; /* Star rating including mods */
 } osupad_GameplayDisplayState;
+
+/* Host-side integration status, sent periodically and on every change */
+typedef struct _osupad_HostStatus {
+    bool tosu_connected; /* Daemon has a live tosu WebSocket */
+    bool playing; /* osu! is currently playing a map */
+    uint32_t play_id; /* Changes on every new attempt (new map, retry); device zeroes map counters */
+} osupad_HostStatus;
+
+/* One UI data source value. Source ids: firmware/main/ui/core/ui_ids.h (ui_source_t) */
+typedef struct _osupad_DataValue {
+    uint32_t source;
+    pb_size_t which_value;
+    union {
+        double number;
+        char text[64];
+        bool clear; /* Source has no value */
+    } value;
+} osupad_DataValue;
+
+/* Changed data source values only; the host resends everything after a reconnect */
+typedef struct _osupad_DataUpdate {
+    pb_size_t values_count;
+    osupad_DataValue values[32];
+} osupad_DataUpdate;
+
+typedef struct _osupad_UiWidget {
+    uint32_t kind; /* ui_widget_kind_t */
+    uint32_t source; /* ui_source_t */
+    uint32_t font; /* ui_font_id_t */
+    uint32_t align; /* ui_align_t */
+    int32_t x;
+    int32_t y;
+    uint32_t w;
+    uint32_t h;
+    uint32_t fg; /* 0xRRGGBB */
+    uint32_t bg;
+    uint32_t accent;
+    uint32_t radius;
+    uint32_t decimals; /* 255 = source default */
+    uint32_t flags; /* UI_FLAG_* */
+    char label[32];
+    char suffix[12];
+} osupad_UiWidget;
+
+typedef struct _osupad_SetLayout {
+    uint32_t screen; /* ui_screen_id_t */
+    uint32_t background; /* 0xRRGGBB */
+    pb_size_t widgets_count;
+    osupad_UiWidget widgets[32];
+} osupad_SetLayout;
+
+typedef struct _osupad_LayoutAck {
+    uint32_t screen;
+    bool success;
+    char message[64];
+} osupad_LayoutAck;
 
 typedef struct _osupad_CounterState {
     char device_id[32];
@@ -140,6 +207,11 @@ typedef struct _osupad_HostToDevice {
         osupad_GameplayDisplayState gameplay_state;
         osupad_CounterSyncRequest counter_sync;
         bool request_status;
+        osupad_HostStatus host_status;
+        bool reset_latency_stats;
+        osupad_DataUpdate data_update;
+        osupad_SetLayout set_layout;
+        uint32_t reset_layout; /* screen id: back to the built-in default */
     } payload;
 } osupad_HostToDevice;
 
@@ -152,6 +224,7 @@ typedef struct _osupad_DeviceToHost {
         osupad_ConfigAck config_ack;
         osupad_CounterSyncResponse counter_sync_resp;
         osupad_LogEventBatch log_batch;
+        osupad_LayoutAck layout_ack;
     } payload;
 } osupad_DeviceToHost;
 
@@ -185,6 +258,12 @@ extern "C" {
 
 
 
+
+
+
+
+
+
 #define osupad_LogEvent_level_ENUMTYPE osupad_LogLevel
 
 
@@ -194,12 +273,18 @@ extern "C" {
 /* Initializer values for message structs */
 #define osupad_Hello_init_default                {0, ""}
 #define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0}
-#define osupad_DeviceStatus_init_default         {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0}
-#define osupad_ConfigPayload_init_default        {0, 0, 0, 0, 0, 0}
+#define osupad_DeviceStatus_init_default         {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+#define osupad_ConfigPayload_init_default        {0, 0, 0, 0, 0, 0, 0}
 #define osupad_SetConfig_init_default            {false, osupad_ConfigPayload_init_default}
 #define osupad_ConfigAck_init_default            {0, "", false, osupad_ConfigPayload_init_default}
 #define osupad_TimeSync_init_default             {0, 0, 0, 0, 0, 0}
-#define osupad_GameplayDisplayState_init_default {"", "", 0, 0, 0, 0}
+#define osupad_GameplayDisplayState_init_default {"", "", 0, 0, 0, 0, 0, "", 0}
+#define osupad_HostStatus_init_default           {0, 0, 0}
+#define osupad_DataValue_init_default            {0, 0, {0}}
+#define osupad_DataUpdate_init_default           {0, {osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default, osupad_DataValue_init_default}}
+#define osupad_UiWidget_init_default             {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "", ""}
+#define osupad_SetLayout_init_default            {0, 0, 0, {osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default}}
+#define osupad_LayoutAck_init_default            {0, 0, ""}
 #define osupad_CounterState_init_default         {"", 0, 0, 0}
 #define osupad_CounterSyncRequest_init_default   {false, osupad_CounterState_init_default, 0}
 #define osupad_CounterSyncResponse_init_default  {0, false, osupad_CounterState_init_default}
@@ -209,12 +294,18 @@ extern "C" {
 #define osupad_DeviceToHost_init_default         {0, 0, {osupad_HelloAck_init_default}}
 #define osupad_Hello_init_zero                   {0, ""}
 #define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0}
-#define osupad_DeviceStatus_init_zero            {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0}
-#define osupad_ConfigPayload_init_zero           {0, 0, 0, 0, 0, 0}
+#define osupad_DeviceStatus_init_zero            {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+#define osupad_ConfigPayload_init_zero           {0, 0, 0, 0, 0, 0, 0}
 #define osupad_SetConfig_init_zero               {false, osupad_ConfigPayload_init_zero}
 #define osupad_ConfigAck_init_zero               {0, "", false, osupad_ConfigPayload_init_zero}
 #define osupad_TimeSync_init_zero                {0, 0, 0, 0, 0, 0}
-#define osupad_GameplayDisplayState_init_zero    {"", "", 0, 0, 0, 0}
+#define osupad_GameplayDisplayState_init_zero    {"", "", 0, 0, 0, 0, 0, "", 0}
+#define osupad_HostStatus_init_zero              {0, 0, 0}
+#define osupad_DataValue_init_zero               {0, 0, {0}}
+#define osupad_DataUpdate_init_zero              {0, {osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero, osupad_DataValue_init_zero}}
+#define osupad_UiWidget_init_zero                {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "", ""}
+#define osupad_SetLayout_init_zero               {0, 0, 0, {osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero}}
+#define osupad_LayoutAck_init_zero               {0, 0, ""}
 #define osupad_CounterState_init_zero            {"", 0, 0, 0}
 #define osupad_CounterSyncRequest_init_zero      {false, osupad_CounterState_init_zero, 0}
 #define osupad_CounterSyncResponse_init_zero     {0, false, osupad_CounterState_init_zero}
@@ -241,12 +332,19 @@ extern "C" {
 #define osupad_DeviceStatus_lifetime_key2_tag    6
 #define osupad_DeviceStatus_map_key1_tag         7
 #define osupad_DeviceStatus_map_key2_tag         8
+#define osupad_DeviceStatus_latency_samples_tag  9
+#define osupad_DeviceStatus_latency_p50_us_tag   10
+#define osupad_DeviceStatus_latency_p99_us_tag   11
+#define osupad_DeviceStatus_latency_p999_us_tag  12
+#define osupad_DeviceStatus_latency_max_us_tag   13
+#define osupad_DeviceStatus_hid_dropped_reports_tag 14
 #define osupad_ConfigPayload_key1_hid_usage_tag  1
 #define osupad_ConfigPayload_key2_hid_usage_tag  2
 #define osupad_ConfigPayload_debounce_us_tag     3
 #define osupad_ConfigPayload_brightness_tag      4
 #define osupad_ConfigPayload_display_sleep_seconds_tag 5
 #define osupad_ConfigPayload_gameplay_display_hz_tag 6
+#define osupad_ConfigPayload_press_color_rgb_tag 7
 #define osupad_SetConfig_config_tag              1
 #define osupad_ConfigAck_success_tag             1
 #define osupad_ConfigAck_message_tag             2
@@ -263,6 +361,39 @@ extern "C" {
 #define osupad_GameplayDisplayState_progress_ratio_tag 4
 #define osupad_GameplayDisplayState_current_map_presses_k1_tag 5
 #define osupad_GameplayDisplayState_current_map_presses_k2_tag 6
+#define osupad_GameplayDisplayState_play_id_tag  7
+#define osupad_GameplayDisplayState_difficulty_tag 8
+#define osupad_GameplayDisplayState_stars_tag    9
+#define osupad_HostStatus_tosu_connected_tag     1
+#define osupad_HostStatus_playing_tag            2
+#define osupad_HostStatus_play_id_tag            3
+#define osupad_DataValue_source_tag              1
+#define osupad_DataValue_number_tag              2
+#define osupad_DataValue_text_tag                3
+#define osupad_DataValue_clear_tag               4
+#define osupad_DataUpdate_values_tag             1
+#define osupad_UiWidget_kind_tag                 1
+#define osupad_UiWidget_source_tag               2
+#define osupad_UiWidget_font_tag                 3
+#define osupad_UiWidget_align_tag                4
+#define osupad_UiWidget_x_tag                    5
+#define osupad_UiWidget_y_tag                    6
+#define osupad_UiWidget_w_tag                    7
+#define osupad_UiWidget_h_tag                    8
+#define osupad_UiWidget_fg_tag                   9
+#define osupad_UiWidget_bg_tag                   10
+#define osupad_UiWidget_accent_tag               11
+#define osupad_UiWidget_radius_tag               12
+#define osupad_UiWidget_decimals_tag             13
+#define osupad_UiWidget_flags_tag                14
+#define osupad_UiWidget_label_tag                15
+#define osupad_UiWidget_suffix_tag               16
+#define osupad_SetLayout_screen_tag              1
+#define osupad_SetLayout_background_tag          2
+#define osupad_SetLayout_widgets_tag             3
+#define osupad_LayoutAck_screen_tag              1
+#define osupad_LayoutAck_success_tag             2
+#define osupad_LayoutAck_message_tag             3
 #define osupad_CounterState_device_id_tag        1
 #define osupad_CounterState_counter_generation_tag 2
 #define osupad_CounterState_lifetime_key1_tag    3
@@ -283,12 +414,18 @@ extern "C" {
 #define osupad_HostToDevice_gameplay_state_tag   5
 #define osupad_HostToDevice_counter_sync_tag     6
 #define osupad_HostToDevice_request_status_tag   7
+#define osupad_HostToDevice_host_status_tag      8
+#define osupad_HostToDevice_reset_latency_stats_tag 9
+#define osupad_HostToDevice_data_update_tag      10
+#define osupad_HostToDevice_set_layout_tag       11
+#define osupad_HostToDevice_reset_layout_tag     12
 #define osupad_DeviceToHost_sequence_number_tag  1
 #define osupad_DeviceToHost_hello_ack_tag        2
 #define osupad_DeviceToHost_status_tag           3
 #define osupad_DeviceToHost_config_ack_tag       4
 #define osupad_DeviceToHost_counter_sync_resp_tag 5
 #define osupad_DeviceToHost_log_batch_tag        6
+#define osupad_DeviceToHost_layout_ack_tag       7
 
 /* Struct field encoding specification for nanopb */
 #define osupad_Hello_FIELDLIST(X, a) \
@@ -316,7 +453,13 @@ X(a, STATIC,   SINGULAR, BOOL,     display_asleep,    4) \
 X(a, STATIC,   SINGULAR, UINT64,   lifetime_key1,     5) \
 X(a, STATIC,   SINGULAR, UINT64,   lifetime_key2,     6) \
 X(a, STATIC,   SINGULAR, UINT32,   map_key1,          7) \
-X(a, STATIC,   SINGULAR, UINT32,   map_key2,          8)
+X(a, STATIC,   SINGULAR, UINT32,   map_key2,          8) \
+X(a, STATIC,   SINGULAR, UINT32,   latency_samples,   9) \
+X(a, STATIC,   SINGULAR, UINT32,   latency_p50_us,   10) \
+X(a, STATIC,   SINGULAR, UINT32,   latency_p99_us,   11) \
+X(a, STATIC,   SINGULAR, UINT32,   latency_p999_us,  12) \
+X(a, STATIC,   SINGULAR, UINT32,   latency_max_us,   13) \
+X(a, STATIC,   SINGULAR, UINT32,   hid_dropped_reports,  14)
 #define osupad_DeviceStatus_CALLBACK NULL
 #define osupad_DeviceStatus_DEFAULT NULL
 
@@ -326,7 +469,8 @@ X(a, STATIC,   SINGULAR, UINT32,   key2_hid_usage,    2) \
 X(a, STATIC,   SINGULAR, UINT32,   debounce_us,       3) \
 X(a, STATIC,   SINGULAR, UINT32,   brightness,        4) \
 X(a, STATIC,   SINGULAR, UINT32,   display_sleep_seconds,   5) \
-X(a, STATIC,   SINGULAR, UINT32,   gameplay_display_hz,   6)
+X(a, STATIC,   SINGULAR, UINT32,   gameplay_display_hz,   6) \
+X(a, STATIC,   SINGULAR, UINT32,   press_color_rgb,   7)
 #define osupad_ConfigPayload_CALLBACK NULL
 #define osupad_ConfigPayload_DEFAULT NULL
 
@@ -360,9 +504,68 @@ X(a, STATIC,   SINGULAR, STRING,   artist,            2) \
 X(a, STATIC,   SINGULAR, FLOAT,    current_pp,        3) \
 X(a, STATIC,   SINGULAR, FLOAT,    progress_ratio,    4) \
 X(a, STATIC,   SINGULAR, UINT32,   current_map_presses_k1,   5) \
-X(a, STATIC,   SINGULAR, UINT32,   current_map_presses_k2,   6)
+X(a, STATIC,   SINGULAR, UINT32,   current_map_presses_k2,   6) \
+X(a, STATIC,   SINGULAR, UINT32,   play_id,           7) \
+X(a, STATIC,   SINGULAR, STRING,   difficulty,        8) \
+X(a, STATIC,   SINGULAR, FLOAT,    stars,             9)
 #define osupad_GameplayDisplayState_CALLBACK NULL
 #define osupad_GameplayDisplayState_DEFAULT NULL
+
+#define osupad_HostStatus_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BOOL,     tosu_connected,    1) \
+X(a, STATIC,   SINGULAR, BOOL,     playing,           2) \
+X(a, STATIC,   SINGULAR, UINT32,   play_id,           3)
+#define osupad_HostStatus_CALLBACK NULL
+#define osupad_HostStatus_DEFAULT NULL
+
+#define osupad_DataValue_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   source,            1) \
+X(a, STATIC,   ONEOF,    DOUBLE,   (value,number,value.number),   2) \
+X(a, STATIC,   ONEOF,    STRING,   (value,text,value.text),   3) \
+X(a, STATIC,   ONEOF,    BOOL,     (value,clear,value.clear),   4)
+#define osupad_DataValue_CALLBACK NULL
+#define osupad_DataValue_DEFAULT NULL
+
+#define osupad_DataUpdate_FIELDLIST(X, a) \
+X(a, STATIC,   REPEATED, MESSAGE,  values,            1)
+#define osupad_DataUpdate_CALLBACK NULL
+#define osupad_DataUpdate_DEFAULT NULL
+#define osupad_DataUpdate_values_MSGTYPE osupad_DataValue
+
+#define osupad_UiWidget_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   kind,              1) \
+X(a, STATIC,   SINGULAR, UINT32,   source,            2) \
+X(a, STATIC,   SINGULAR, UINT32,   font,              3) \
+X(a, STATIC,   SINGULAR, UINT32,   align,             4) \
+X(a, STATIC,   SINGULAR, SINT32,   x,                 5) \
+X(a, STATIC,   SINGULAR, SINT32,   y,                 6) \
+X(a, STATIC,   SINGULAR, UINT32,   w,                 7) \
+X(a, STATIC,   SINGULAR, UINT32,   h,                 8) \
+X(a, STATIC,   SINGULAR, UINT32,   fg,                9) \
+X(a, STATIC,   SINGULAR, UINT32,   bg,               10) \
+X(a, STATIC,   SINGULAR, UINT32,   accent,           11) \
+X(a, STATIC,   SINGULAR, UINT32,   radius,           12) \
+X(a, STATIC,   SINGULAR, UINT32,   decimals,         13) \
+X(a, STATIC,   SINGULAR, UINT32,   flags,            14) \
+X(a, STATIC,   SINGULAR, STRING,   label,            15) \
+X(a, STATIC,   SINGULAR, STRING,   suffix,           16)
+#define osupad_UiWidget_CALLBACK NULL
+#define osupad_UiWidget_DEFAULT NULL
+
+#define osupad_SetLayout_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   screen,            1) \
+X(a, STATIC,   SINGULAR, UINT32,   background,        2) \
+X(a, STATIC,   REPEATED, MESSAGE,  widgets,           3)
+#define osupad_SetLayout_CALLBACK NULL
+#define osupad_SetLayout_DEFAULT NULL
+#define osupad_SetLayout_widgets_MSGTYPE osupad_UiWidget
+
+#define osupad_LayoutAck_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   screen,            1) \
+X(a, STATIC,   SINGULAR, BOOL,     success,           2) \
+X(a, STATIC,   SINGULAR, STRING,   message,           3)
+#define osupad_LayoutAck_CALLBACK NULL
+#define osupad_LayoutAck_DEFAULT NULL
 
 #define osupad_CounterState_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, STRING,   device_id,         1) \
@@ -407,7 +610,12 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,set_config,payload.set_config),   3)
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,time_sync,payload.time_sync),   4) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,gameplay_state,payload.gameplay_state),   5) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,counter_sync,payload.counter_sync),   6) \
-X(a, STATIC,   ONEOF,    BOOL,     (payload,request_status,payload.request_status),   7)
+X(a, STATIC,   ONEOF,    BOOL,     (payload,request_status,payload.request_status),   7) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,host_status,payload.host_status),   8) \
+X(a, STATIC,   ONEOF,    BOOL,     (payload,reset_latency_stats,payload.reset_latency_stats),   9) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,data_update,payload.data_update),  10) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,set_layout,payload.set_layout),  11) \
+X(a, STATIC,   ONEOF,    UINT32,   (payload,reset_layout,payload.reset_layout),  12)
 #define osupad_HostToDevice_CALLBACK NULL
 #define osupad_HostToDevice_DEFAULT NULL
 #define osupad_HostToDevice_payload_hello_MSGTYPE osupad_Hello
@@ -415,6 +623,9 @@ X(a, STATIC,   ONEOF,    BOOL,     (payload,request_status,payload.request_statu
 #define osupad_HostToDevice_payload_time_sync_MSGTYPE osupad_TimeSync
 #define osupad_HostToDevice_payload_gameplay_state_MSGTYPE osupad_GameplayDisplayState
 #define osupad_HostToDevice_payload_counter_sync_MSGTYPE osupad_CounterSyncRequest
+#define osupad_HostToDevice_payload_host_status_MSGTYPE osupad_HostStatus
+#define osupad_HostToDevice_payload_data_update_MSGTYPE osupad_DataUpdate
+#define osupad_HostToDevice_payload_set_layout_MSGTYPE osupad_SetLayout
 
 #define osupad_DeviceToHost_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   sequence_number,   1) \
@@ -422,7 +633,8 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,hello_ack,payload.hello_ack),   2) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,status,payload.status),   3) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,config_ack,payload.config_ack),   4) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,counter_sync_resp,payload.counter_sync_resp),   5) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,log_batch,payload.log_batch),   6)
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,log_batch,payload.log_batch),   6) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,layout_ack,payload.layout_ack),   7)
 #define osupad_DeviceToHost_CALLBACK NULL
 #define osupad_DeviceToHost_DEFAULT NULL
 #define osupad_DeviceToHost_payload_hello_ack_MSGTYPE osupad_HelloAck
@@ -430,6 +642,7 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,log_batch,payload.log_batch),   6)
 #define osupad_DeviceToHost_payload_config_ack_MSGTYPE osupad_ConfigAck
 #define osupad_DeviceToHost_payload_counter_sync_resp_MSGTYPE osupad_CounterSyncResponse
 #define osupad_DeviceToHost_payload_log_batch_MSGTYPE osupad_LogEventBatch
+#define osupad_DeviceToHost_payload_layout_ack_MSGTYPE osupad_LayoutAck
 
 extern const pb_msgdesc_t osupad_Hello_msg;
 extern const pb_msgdesc_t osupad_HelloAck_msg;
@@ -439,6 +652,12 @@ extern const pb_msgdesc_t osupad_SetConfig_msg;
 extern const pb_msgdesc_t osupad_ConfigAck_msg;
 extern const pb_msgdesc_t osupad_TimeSync_msg;
 extern const pb_msgdesc_t osupad_GameplayDisplayState_msg;
+extern const pb_msgdesc_t osupad_HostStatus_msg;
+extern const pb_msgdesc_t osupad_DataValue_msg;
+extern const pb_msgdesc_t osupad_DataUpdate_msg;
+extern const pb_msgdesc_t osupad_UiWidget_msg;
+extern const pb_msgdesc_t osupad_SetLayout_msg;
+extern const pb_msgdesc_t osupad_LayoutAck_msg;
 extern const pb_msgdesc_t osupad_CounterState_msg;
 extern const pb_msgdesc_t osupad_CounterSyncRequest_msg;
 extern const pb_msgdesc_t osupad_CounterSyncResponse_msg;
@@ -456,6 +675,12 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_ConfigAck_fields &osupad_ConfigAck_msg
 #define osupad_TimeSync_fields &osupad_TimeSync_msg
 #define osupad_GameplayDisplayState_fields &osupad_GameplayDisplayState_msg
+#define osupad_HostStatus_fields &osupad_HostStatus_msg
+#define osupad_DataValue_fields &osupad_DataValue_msg
+#define osupad_DataUpdate_fields &osupad_DataUpdate_msg
+#define osupad_UiWidget_fields &osupad_UiWidget_msg
+#define osupad_SetLayout_fields &osupad_SetLayout_msg
+#define osupad_LayoutAck_fields &osupad_LayoutAck_msg
 #define osupad_CounterState_fields &osupad_CounterState_msg
 #define osupad_CounterSyncRequest_fields &osupad_CounterSyncRequest_msg
 #define osupad_CounterSyncResponse_fields &osupad_CounterSyncResponse_msg
@@ -465,22 +690,28 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_DeviceToHost_fields &osupad_DeviceToHost_msg
 
 /* Maximum encoded size of messages (where known) */
-#define OSUPAD_OSUPAD_PB_H_MAX_SIZE              osupad_DeviceToHost_size
-#define osupad_ConfigAck_size                    105
-#define osupad_ConfigPayload_size                36
+#define OSUPAD_OSUPAD_PB_H_MAX_SIZE              osupad_HostToDevice_size
+#define osupad_ConfigAck_size                    111
+#define osupad_ConfigPayload_size                42
 #define osupad_CounterState_size                 61
 #define osupad_CounterSyncRequest_size           65
 #define osupad_CounterSyncResponse_size          65
-#define osupad_DeviceStatus_size                 50
+#define osupad_DataUpdate_size                   2336
+#define osupad_DataValue_size                    71
+#define osupad_DeviceStatus_size                 86
 #define osupad_DeviceToHost_size                 745
-#define osupad_GameplayDisplayState_size         152
+#define osupad_GameplayDisplayState_size         196
 #define osupad_HelloAck_size                     133
 #define osupad_Hello_size                        39
-#define osupad_HostToDevice_size                 161
+#define osupad_HostStatus_size                   10
+#define osupad_HostToDevice_size                 4309
+#define osupad_LayoutAck_size                    73
 #define osupad_LogEventBatch_size                736
 #define osupad_LogEvent_size                     90
-#define osupad_SetConfig_size                    38
+#define osupad_SetConfig_size                    44
+#define osupad_SetLayout_size                    4300
 #define osupad_TimeSync_size                     36
+#define osupad_UiWidget_size                     131
 
 #ifdef __cplusplus
 } /* extern "C" */

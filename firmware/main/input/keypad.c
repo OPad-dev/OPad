@@ -1,11 +1,12 @@
 #include "keypad.h"
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
-#include "display/display.h"
+#include "ui/ui.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_timer.h"
 #include "esp_log.h"
 #include <stdatomic.h>
+#include "input/latency_stats.h"
 
 static const char *TAG = "keypad";
 
@@ -22,6 +23,9 @@ static volatile int64_t s_key2_last_press_us = 0;
 
 static atomic_uint_least64_t s_key1_lifetime_presses = 0;
 static atomic_uint_least64_t s_key2_lifetime_presses = 0;
+// Presses in the current osu! attempt; zeroed by the host on every new play
+static atomic_uint_least32_t s_key1_map_presses = 0;
+static atomic_uint_least32_t s_key2_map_presses = 0;
 
 static TaskHandle_t s_input_task_handle = NULL;
 static keypad_state_callback_t s_callback = NULL;
@@ -46,9 +50,11 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
             if (current_pressed) {
                 if (key_index == 0) {
                     atomic_fetch_add_explicit(&s_key1_lifetime_presses, 1, memory_order_relaxed);
+                    atomic_fetch_add_explicit(&s_key1_map_presses, 1, memory_order_relaxed);
                     s_key1_last_press_us = now;
                 } else {
                     atomic_fetch_add_explicit(&s_key2_lifetime_presses, 1, memory_order_relaxed);
+                    atomic_fetch_add_explicit(&s_key2_map_presses, 1, memory_order_relaxed);
                     s_key2_last_press_us = now;
                 }
             }
@@ -77,11 +83,17 @@ static void keypad_task(void *pvParameters)
             bool current = s_key_state[i];
             if (current != reported_state[i]) {
                 reported_state[i] = current;
-                if (current) {
-                    display_notify_activity();
-                }
+                // HID report first; activity bookkeeping only after it is submitted
                 if (s_callback) {
-                    s_callback(i, current);
+                    int64_t edge_us = s_last_transition_us[i];
+                    if (s_callback(i, current)) {
+                        latency_stats_record((uint32_t)(esp_timer_get_time() - edge_us));
+                    } else {
+                        latency_stats_record_drop();
+                    }
+                }
+                if (current) {
+                    ui_notify_activity();
                 }
             }
         }
@@ -152,6 +164,22 @@ void keypad_set_lifetime_presses(uint64_t key1_presses, uint64_t key2_presses)
 {
     atomic_store_explicit(&s_key1_lifetime_presses, key1_presses, memory_order_relaxed);
     atomic_store_explicit(&s_key2_lifetime_presses, key2_presses, memory_order_relaxed);
+}
+
+void keypad_get_map_presses(uint32_t *key1_presses, uint32_t *key2_presses)
+{
+    if (key1_presses) {
+        *key1_presses = atomic_load_explicit(&s_key1_map_presses, memory_order_relaxed);
+    }
+    if (key2_presses) {
+        *key2_presses = atomic_load_explicit(&s_key2_map_presses, memory_order_relaxed);
+    }
+}
+
+void keypad_reset_map_presses(void)
+{
+    atomic_store_explicit(&s_key1_map_presses, 0, memory_order_relaxed);
+    atomic_store_explicit(&s_key2_map_presses, 0, memory_order_relaxed);
 }
 
 int64_t keypad_get_last_press_us(keypad_key_id_t key_id)

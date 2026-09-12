@@ -32,7 +32,10 @@ size_t usb_cdc_write(const uint8_t *data, size_t len);
  */
 void usb_cdc_flush(void);
 
-void usb_cdc_task_poll(void);
+/**
+ * @brief Start the core-1 task that handles incoming CDC data and the host protocol.
+ */
+esp_err_t usb_cdc_start_task(void);
 
 /**
  * @brief Reboot chip directly into the ROM download bootloader.

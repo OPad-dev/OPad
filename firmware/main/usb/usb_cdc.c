@@ -15,6 +15,17 @@ static volatile bool s_cdc_connected = false;
 static bool s_prev_rts_state = false;
 static volatile bool s_download_mode_armed = false;
 static volatile bool s_need_bootloader_reboot = false;
+static TaskHandle_t s_cdc_task = NULL;
+// Set by the TinyUSB task (core 0) on DTR drop; the framing buffer is only touched by the protocol task
+static volatile bool s_rx_reset_requested = false;
+
+static void schedule_bootloader_reboot(void)
+{
+    s_need_bootloader_reboot = true;
+    if (s_cdc_task) {
+        xTaskNotifyGive(s_cdc_task);
+    }
+}
 
 esp_err_t usb_cdc_init(void)
 {
@@ -64,7 +75,7 @@ void usb_cdc_flush(void)
 
 void usb_cdc_reboot_to_bootloader(void)
 {
-    s_need_bootloader_reboot = true;
+    schedule_bootloader_reboot();
 }
 
 /*
@@ -151,33 +162,55 @@ static bool is_bootloader_command(const uint8_t *buf, size_t len)
     return true;
 }
 
-void usb_cdc_task_poll(void)
+static void usb_cdc_task_poll(void)
 {
+    if (s_rx_reset_requested) {
+        s_rx_reset_requested = false;
+        protocol_reset_rx();
+    }
+
     if (s_need_bootloader_reboot) {
         s_need_bootloader_reboot = false;
         reboot_to_rom_download();
     }
 
-    if (!tud_cdc_n_available(0)) {
-        return;
-    }
-
     uint8_t rx_buf[256];
-    uint32_t count = tud_cdc_n_read(0, rx_buf, sizeof(rx_buf));
-    if (count > 0) {
+    uint32_t count;
+    while (tud_cdc_n_available(0) && (count = tud_cdc_n_read(0, rx_buf, sizeof(rx_buf))) > 0) {
         if (protocol_rx_idle() && is_bootloader_command(rx_buf, count)) {
             ESP_LOGI(TAG, "CDC serial command received: entering bootloader...");
-            s_need_bootloader_reboot = true;
+            schedule_bootloader_reboot();
             return;
         }
         protocol_feed_cdc_bytes(rx_buf, count);
     }
 }
 
+// Protocol/CDC handling lives on core 1, away from the key ISR and USB stack on core 0.
+// Woken by tud_cdc_rx_cb instead of polling; the timeout is only a safety net.
+static void usb_cdc_task(void *arg)
+{
+    (void)arg;
+    while (1) {
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(200));
+        usb_cdc_task_poll();
+    }
+}
+
+esp_err_t usb_cdc_start_task(void)
+{
+    BaseType_t res = xTaskCreatePinnedToCore(usb_cdc_task, "cdc_proto", 6144, NULL,
+                                             tskIDLE_PRIORITY + 3, &s_cdc_task, 1);
+    return res == pdPASS ? ESP_OK : ESP_FAIL;
+}
+
 // TinyUSB CDC Callbacks
 void tud_cdc_rx_cb(uint8_t itf)
 {
     (void)itf;
+    if (s_cdc_task) {
+        xTaskNotifyGive(s_cdc_task);
+    }
 }
 
 void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
@@ -187,13 +220,16 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
     ESP_LOGD(TAG, "CDC line state: DTR=%d, RTS=%d", dtr, rts);
 
     if (!dtr) {
-        protocol_reset_rx();
+        s_rx_reset_requested = true;
+        if (s_cdc_task) {
+            xTaskNotifyGive(s_cdc_task);
+        }
     }
 
     // 1. Magic 1200 baud touch armed: clearing DTR (host closing port) triggers download mode
     if (s_download_mode_armed && !dtr) {
         ESP_LOGI(TAG, "Port closed after 1200 baud touch, entering bootloader...");
-        s_need_bootloader_reboot = true;
+        schedule_bootloader_reboot();
         return;
     }
 
@@ -201,7 +237,7 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
     // When RTS falls from HIGH to LOW while DTR is HIGH (classic esptool pattern)
     if (!rts && s_prev_rts_state && dtr) {
         ESP_LOGI(TAG, "CDC DTR/RTS bootloader trigger detected, scheduling download mode...");
-        s_need_bootloader_reboot = true;
+        schedule_bootloader_reboot();
     }
     s_prev_rts_state = rts;
 }
@@ -213,7 +249,7 @@ void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const* p_line_coding)
         s_download_mode_armed = true;
         // Fire immediately if host already has DTR low
         if (!s_cdc_connected) {
-            s_need_bootloader_reboot = true;
+            schedule_bootloader_reboot();
         }
         return;
     }

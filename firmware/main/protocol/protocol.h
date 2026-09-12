@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-#define PROTOCOL_MAX_FRAME_SIZE 4096
+#define PROTOCOL_MAX_FRAME_SIZE 8192
 
 /**
  * @brief Encode a DeviceToHost protobuf message with a 4-byte LE length prefix.
@@ -60,6 +60,11 @@ esp_err_t protocol_send_hello_ack(uint32_t seq);
  * @brief Send ConfigAck response to host over CDC.
  */
 esp_err_t protocol_send_config_ack(uint32_t seq, bool success, const char *msg);
+
+/**
+ * @brief Report the result of a SetLayout / reset_layout request.
+ */
+esp_err_t protocol_send_layout_ack(uint32_t seq, uint32_t screen, bool success, const char *msg);
 
 /**
  * @brief Send CounterSyncResponse to host over CDC.

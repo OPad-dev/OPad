@@ -1,0 +1,288 @@
+#include "ui.h"
+#include "ui/ui_store.h"
+#include "ui/core/ui_internal.h"
+#include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
+#include "input/keypad.h"
+#include "runtime/runtime.h"
+#include "usb/usb_cdc.h"
+#include "esp_lvgl_port.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include <stdatomic.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/time.h>
+#include <time.h>
+
+static const char *TAG = "ui";
+
+#define PAD_TIMER_PERIOD_MS 20
+#define KEY_FLASH_HOLD_US   80000     // keep a tap visible for at least one frame or two
+#define KPS_WINDOW          (1000 / PAD_TIMER_PERIOD_MS)
+
+static lv_display_t *s_disp;
+static esp_lcd_panel_handle_t s_panel;
+
+static ui_layout_t s_layouts[UI_SCREEN_COUNT];
+static lv_obj_t *s_screens[UI_SCREEN_COUNT];
+static int s_active_screen = -1;
+
+static atomic_llong s_last_activity_us;
+static volatile uint8_t s_brightness = 80;
+static volatile uint32_t s_sleep_timeout_s = 600;
+static volatile bool s_asleep;
+
+static uint64_t s_kps_ring[KPS_WINDOW];
+static int s_kps_pos;
+
+// ---- helpers (LVGL lock held) -------------------------------------------------------
+
+static uint32_t ui_tick_ms(void)
+{
+    return (uint32_t)(esp_timer_get_time() / 1000);
+}
+
+static void rebuild_screen(uint8_t screen)
+{
+    lv_obj_t *old = s_screens[screen];
+    lv_obj_t *fresh = ui_screen_create(&s_layouts[screen]);
+    if (!fresh) {
+        ESP_LOGE(TAG, "Failed to build screen %u", screen);
+        return;
+    }
+    s_screens[screen] = fresh;
+    if (s_active_screen == screen) {
+        lv_screen_load(fresh);
+    }
+    if (old) {
+        lv_obj_delete(old);
+    }
+}
+
+static void update_pad_sources(int64_t now_us)
+{
+    uint64_t k1_life = 0, k2_life = 0;
+    uint32_t k1_map = 0, k2_map = 0;
+    keypad_get_lifetime_presses(&k1_life, &k2_life);
+    keypad_get_map_presses(&k1_map, &k2_map);
+
+    ui_data_set_number(UI_SRC_PAD_K1_LIFETIME, (double)k1_life);
+    ui_data_set_number(UI_SRC_PAD_K2_LIFETIME, (double)k2_life);
+    ui_data_set_number(UI_SRC_PAD_TOTAL_LIFETIME, (double)(k1_life + k2_life));
+    ui_data_set_number(UI_SRC_PAD_K1_MAP, k1_map);
+    ui_data_set_number(UI_SRC_PAD_K2_MAP, k2_map);
+    ui_data_set_number(UI_SRC_PAD_TOTAL_MAP, (double)k1_map + k2_map);
+
+    bool k1_down = keypad_is_pressed(KEY_ID_1) || (now_us - keypad_get_last_press_us(KEY_ID_1)) < KEY_FLASH_HOLD_US;
+    bool k2_down = keypad_is_pressed(KEY_ID_2) || (now_us - keypad_get_last_press_us(KEY_ID_2)) < KEY_FLASH_HOLD_US;
+    ui_data_set_number(UI_SRC_PAD_K1_DOWN, k1_down);
+    ui_data_set_number(UI_SRC_PAD_K2_DOWN, k2_down);
+
+    // Taps in the last second
+    uint64_t total = k1_life + k2_life;
+    uint64_t oldest = s_kps_ring[s_kps_pos];
+    s_kps_ring[s_kps_pos] = total;
+    s_kps_pos = (s_kps_pos + 1) % KPS_WINDOW;
+    ui_data_set_number(UI_SRC_PAD_KPS, oldest ? (double)(total - oldest) : 0);
+
+    ui_data_set_number(UI_SRC_STATUS_PC, usb_cdc_is_connected());
+    ui_data_set_number(UI_SRC_PAD_UPTIME, (double)(now_us / 1000000 * 1000));
+
+    time_t t = time(NULL);
+    if (t > 1600000000) {  // set by the host
+        struct tm tm;
+        localtime_r(&t, &tm);
+        char buf[24];
+        strftime(buf, sizeof(buf), "%H:%M", &tm);
+        ui_data_set_string(UI_SRC_PAD_CLOCK, buf);
+        strftime(buf, sizeof(buf), "%a %d %b", &tm);
+        ui_data_set_string(UI_SRC_PAD_DATE, buf);
+    }
+}
+
+static void update_sleep(int64_t now_us)
+{
+    int64_t idle_us = now_us - atomic_load(&s_last_activity_us);
+    bool should_sleep = s_sleep_timeout_s > 0 && idle_us > (int64_t)s_sleep_timeout_s * 1000000;
+
+    if (should_sleep && !s_asleep) {
+        s_asleep = true;
+        lv_display_enable_invalidation(s_disp, false);
+        board_backlight_set(0);
+        esp_lcd_panel_disp_on_off(s_panel, false);
+        ESP_LOGI(TAG, "Display asleep");
+    } else if (!should_sleep && s_asleep) {
+        s_asleep = false;
+        esp_lcd_panel_disp_on_off(s_panel, true);
+        lv_display_enable_invalidation(s_disp, true);
+        lv_obj_invalidate(lv_screen_active());
+        board_backlight_set(s_brightness);
+    }
+}
+
+// Runs in the LVGL task (core 1) every PAD_TIMER_PERIOD_MS
+static void pad_timer_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    int64_t now_us = esp_timer_get_time();
+
+    int want = runtime_get_state() == OSUPAD_STATE_PLAYING ? UI_SCREEN_PLAYING : UI_SCREEN_IDLE;
+    if (want != s_active_screen && s_screens[want]) {
+        s_active_screen = want;
+        lv_screen_load(s_screens[want]);
+    }
+
+    update_sleep(now_us);
+    if (!s_asleep) {
+        update_pad_sources(now_us);
+    }
+}
+
+// ---- public API ----------------------------------------------------------------------
+
+esp_err_t ui_init(void)
+{
+    esp_lcd_panel_io_handle_t io = NULL;
+    esp_err_t err = board_display_init(&io, &s_panel);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    // Core 1, low priority: rendering never competes with the key/USB path on core 0
+    lvgl_port_cfg_t port_cfg = ESP_LVGL_PORT_INIT_CONFIG();
+    port_cfg.task_affinity = 1;
+    port_cfg.task_priority = 2;
+    port_cfg.task_max_sleep_ms = 500;
+    err = lvgl_port_init(&port_cfg);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    const lvgl_port_display_cfg_t disp_cfg = {
+        .io_handle = io,
+        .panel_handle = s_panel,
+        .buffer_size = UI_SCREEN_W * 40,
+        .double_buffer = true,
+        .hres = UI_SCREEN_W,
+        .vres = UI_SCREEN_H,
+        .color_format = LV_COLOR_FORMAT_RGB565,
+        .rotation = { .swap_xy = true, .mirror_x = true, .mirror_y = false },
+        // ST7789 over SPI wants big-endian RGB565; with the panel in RGB order (see
+        // board_display.c) this gives the exact design colors
+        .flags = { .buff_dma = true, .swap_bytes = true },
+    };
+    s_disp = lvgl_port_add_disp(&disp_cfg);
+    if (!s_disp) {
+        return ESP_FAIL;
+    }
+
+    atomic_store(&s_last_activity_us, esp_timer_get_time());
+
+    lvgl_port_lock(0);
+    // esp_lvgl_port drives lv_tick from a periodic esp_timer, whose task and ISR live on
+    // core 0. Stop it and let LVGL read the clock directly instead.
+    lvgl_port_stop();
+    lv_tick_set_cb(ui_tick_ms);
+    lv_timer_enable(true);
+
+    ui_data_init();
+    for (int s = 0; s < UI_SCREEN_COUNT; s++) {
+        if (!ui_store_load(s, &s_layouts[s])) {
+            s_layouts[s] = *ui_default_layout(s);
+        }
+        rebuild_screen(s);
+    }
+    s_active_screen = UI_SCREEN_IDLE;
+    lv_screen_load(s_screens[UI_SCREEN_IDLE]);
+    lv_timer_create(pad_timer_cb, PAD_TIMER_PERIOD_MS, NULL);
+    lvgl_port_unlock();
+
+    board_backlight_set(s_brightness);
+    ESP_LOGI(TAG, "LVGL UI started on core 1");
+    return ESP_OK;
+}
+
+void ui_notify_activity(void)
+{
+    atomic_store(&s_last_activity_us, esp_timer_get_time());
+}
+
+void ui_set_time(uint32_t year, uint32_t month, uint32_t day, uint32_t hour, uint32_t minute, uint32_t second)
+{
+    // Host local time stored as UTC (no TZ on the device), so localtime() returns it unchanged
+    struct tm tm = {
+        .tm_year = (int)year - 1900, .tm_mon = (int)month - 1, .tm_mday = (int)day,
+        .tm_hour = (int)hour, .tm_min = (int)minute, .tm_sec = (int)second,
+    };
+    struct timeval tv = { .tv_sec = mktime(&tm) };
+    settimeofday(&tv, NULL);
+}
+
+void ui_set_brightness(uint8_t percent)
+{
+    s_brightness = percent > 100 ? 100 : percent;
+    if (!s_asleep) {
+        board_backlight_set(s_brightness);
+    }
+}
+
+void ui_set_sleep_timeout(uint32_t seconds)
+{
+    s_sleep_timeout_s = seconds;
+}
+
+bool ui_is_asleep(void)
+{
+    return s_asleep;
+}
+
+void ui_set_tosu_connected(bool connected)
+{
+    lvgl_port_lock(0);
+    ui_data_set_number(UI_SRC_STATUS_TOSU, connected);
+    if (!connected) {
+        ui_data_clear_host_sources();
+        ui_data_set_number(UI_SRC_STATUS_OSU, 0);
+    }
+    lvgl_port_unlock();
+}
+
+void ui_lock(void)
+{
+    lvgl_port_lock(0);
+}
+
+void ui_unlock(void)
+{
+    lvgl_port_unlock();
+}
+
+void ui_set_number(uint8_t source, double value)
+{
+    lvgl_port_lock(0);
+    ui_data_set_number(source, value);
+    lvgl_port_unlock();
+}
+
+void ui_set_string(uint8_t source, const char *value)
+{
+    lvgl_port_lock(0);
+    ui_data_set_string(source, value);
+    lvgl_port_unlock();
+}
+
+bool ui_set_layout(uint8_t screen, const ui_layout_t *layout, char *err, size_t err_len)
+{
+    if (screen >= UI_SCREEN_COUNT) {
+        snprintf(err, err_len, "unknown screen %u", screen);
+        return false;
+    }
+    if (!ui_layout_validate(layout, err, err_len)) {
+        return false;
+    }
+    lvgl_port_lock(0);
+    s_layouts[screen] = *layout;
+    rebuild_screen(screen);
+    lvgl_port_unlock();
+    return true;
+}

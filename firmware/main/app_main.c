@@ -11,7 +11,7 @@
 #include "usb/usb_hid.h"
 #include "usb/usb_cdc.h"
 #include "counters/counters.h"
-#include "display/display.h"
+#include "ui/ui.h"
 #include "runtime/runtime.h"
 #include "soc/rtc_cntl_reg.h"
 
@@ -52,31 +52,19 @@ void app_main(void)
 #if (TUD_OPT_HIGH_SPEED)
     tusb_cfg.descriptor.high_speed_config = osupad_usb_config_desc;
 #endif
+    // Core 0 with the key ISR and keypad task (the only higher priority), so HID
+    // submits and USB completions never wait on the display or protocol on core 1
+    tusb_cfg.task.xCoreID = 0;
+    tusb_cfg.task.priority = configMAX_PRIORITIES - 2;
 
     ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
     ESP_LOGI(TAG, "TinyUSB stack installed successfully");
 
-    // 6. Initialize ST7789 Display Subsystem (Core 1)
-    ESP_ERROR_CHECK(display_init());
+    // 6. Host protocol (core 1)
+    ESP_ERROR_CHECK(usb_cdc_start_task());
 
-    ESP_LOGI(TAG, "osu!pad initialized and ready! Polling USB CDC in background...");
+    // 7. Display UI (LVGL, core 1)
+    ESP_ERROR_CHECK(ui_init());
 
-    // Background loop for CDC housekeeping and periodic health logging
-    uint32_t loop_counter = 0;
-    while (1) {
-        usb_cdc_task_poll();
-        vTaskDelay(pdMS_TO_TICKS(10));
-
-        loop_counter++;
-        if (loop_counter % 500 == 0) { // Every 5 seconds
-            counters_snapshot_t snap;
-            counters_get(&snap);
-            ESP_LOGD(TAG, "Health check: State=%d, Gen=%lu, K1=%llu, K2=%llu, Asleep=%d",
-                     runtime_get_state(),
-                     (unsigned long)snap.generation,
-                     (unsigned long long)snap.lifetime_key1,
-                     (unsigned long long)snap.lifetime_key2,
-                     display_is_asleep());
-        }
-    }
+    ESP_LOGI(TAG, "osu!pad initialized and ready");
 }

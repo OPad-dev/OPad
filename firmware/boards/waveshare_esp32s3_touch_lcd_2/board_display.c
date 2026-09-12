@@ -7,7 +7,7 @@
 
 static const char *TAG = "board_display";
 
-esp_err_t board_display_init(esp_lcd_panel_handle_t *out_panel)
+esp_err_t board_display_init(esp_lcd_panel_io_handle_t *out_io, esp_lcd_panel_handle_t *out_panel)
 {
     if (!out_panel) {
         return ESP_ERR_INVALID_ARG;
@@ -24,6 +24,8 @@ esp_err_t board_display_init(esp_lcd_panel_handle_t *out_panel)
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
         .max_transfer_sz = BOARD_LCD_H_RES * 40 * sizeof(uint16_t),
+        // Keep LCD DMA transfer interrupts off core 0, which serves the key ISR and USB
+        .isr_cpu_id = ESP_INTR_CPU_AFFINITY_1,
     };
     esp_err_t ret = spi_bus_initialize(BOARD_LCD_SPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
     if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
@@ -52,7 +54,8 @@ esp_err_t board_display_init(esp_lcd_panel_handle_t *out_panel)
     esp_lcd_panel_handle_t panel_handle = NULL;
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = BOARD_LCD_RST_GPIO,
-        .rgb_endian = LCD_RGB_ENDIAN_BGR,
+        // RGB: with BGR, red and blue were swapped on screen (#FF66AA pink showed as purple)
+        .rgb_endian = LCD_RGB_ENDIAN_RGB,
         .bits_per_pixel = 16,
     };
     ret = esp_lcd_new_panel_st7789(io_handle, &panel_config, &panel_handle);
@@ -79,6 +82,7 @@ esp_err_t board_display_init(esp_lcd_panel_handle_t *out_panel)
     esp_lcd_panel_invert_color(panel_handle, true);
     esp_lcd_panel_disp_on_off(panel_handle, true);
 
+    *out_io = io_handle;
     *out_panel = panel_handle;
     ESP_LOGI(TAG, "ST7789 display initialized successfully (%dx%d)", BOARD_LCD_H_RES, BOARD_LCD_V_RES);
     return ESP_OK;

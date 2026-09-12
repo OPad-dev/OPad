@@ -30,6 +30,24 @@ PB_BIND(osupad_TimeSync, osupad_TimeSync, AUTO)
 PB_BIND(osupad_GameplayDisplayState, osupad_GameplayDisplayState, AUTO)
 
 
+PB_BIND(osupad_HostStatus, osupad_HostStatus, AUTO)
+
+
+PB_BIND(osupad_DataValue, osupad_DataValue, AUTO)
+
+
+PB_BIND(osupad_DataUpdate, osupad_DataUpdate, 2)
+
+
+PB_BIND(osupad_UiWidget, osupad_UiWidget, AUTO)
+
+
+PB_BIND(osupad_SetLayout, osupad_SetLayout, 2)
+
+
+PB_BIND(osupad_LayoutAck, osupad_LayoutAck, AUTO)
+
+
 PB_BIND(osupad_CounterState, osupad_CounterState, AUTO)
 
 
@@ -45,7 +63,7 @@ PB_BIND(osupad_LogEvent, osupad_LogEvent, AUTO)
 PB_BIND(osupad_LogEventBatch, osupad_LogEventBatch, 2)
 
 
-PB_BIND(osupad_HostToDevice, osupad_HostToDevice, AUTO)
+PB_BIND(osupad_HostToDevice, osupad_HostToDevice, 2)
 
 
 PB_BIND(osupad_DeviceToHost, osupad_DeviceToHost, 2)
@@ -57,4 +75,12 @@ PB_BIND(osupad_DeviceToHost, osupad_DeviceToHost, 2)
 
 
 
+
+#ifndef PB_CONVERT_DOUBLE_FLOAT
+/* On some platforms (such as AVR), double is really float.
+ * To be able to encode/decode double on these platforms, you need.
+ * to define PB_CONVERT_DOUBLE_FLOAT in pb.h or compiler command line.
+ */
+PB_STATIC_ASSERT(sizeof(double) == 8, DOUBLE_MUST_BE_8_BYTES)
+#endif
 

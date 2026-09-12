@@ -53,6 +53,13 @@ message DeviceStatus {
     uint64 lifetime_key2 = 6;
     uint32 map_key1 = 7;
     uint32 map_key2 = 8;
+    // Key edge (GPIO ISR) to HID report submit, since boot or last reset
+    uint32 latency_samples = 9;
+    uint32 latency_p50_us = 10;
+    uint32 latency_p99_us = 11;
+    uint32 latency_p999_us = 12;
+    uint32 latency_max_us = 13;
+    uint32 hid_dropped_reports = 14;  // Reports not submitted because the endpoint was busy
 }
 
 // -----------------------------------------------------------------------------
@@ -66,6 +73,7 @@ message ConfigPayload {
     uint32 brightness = 4;           // 0 to 100%, default: 100
     uint32 display_sleep_seconds = 5;// Inactivity timeout, default: 600 (10 min)
     uint32 gameplay_display_hz = 6;  // Gameplay refresh rate cap, default: 5
+    uint32 press_color_rgb = 7;      // Key press highlight 0xRRGGBB on the gameplay screen, 0 = unchanged
 }
 
 message SetConfig {
@@ -102,6 +110,66 @@ message GameplayDisplayState {
     float progress_ratio = 4;         // 0.0 to 1.0
     uint32 current_map_presses_k1 = 5;
     uint32 current_map_presses_k2 = 6;
+    uint32 play_id = 7;               // Changes on every new attempt (new map, retry); device zeroes map counters
+    string difficulty = 8;            // Difficulty name, e.g. "Lunatic"
+    float stars = 9;                  // Star rating including mods
+}
+
+// Host-side integration status, sent periodically and on every change
+message HostStatus {
+    bool tosu_connected = 1;          // Daemon has a live tosu WebSocket
+    bool playing = 2;                 // osu! is currently playing a map
+    uint32 play_id = 3;               // Changes on every new attempt (new map, retry); device zeroes map counters
+}
+
+// One UI data source value. Source ids: firmware/main/ui/core/ui_ids.h (ui_source_t)
+message DataValue {
+    uint32 source = 1;
+    oneof value {
+        double number = 2;
+        string text = 3;
+        bool clear = 4;               // Source has no value
+    }
+}
+
+// Changed data source values only; the host resends everything after a reconnect
+message DataUpdate {
+    repeated DataValue values = 1;
+}
+
+// -----------------------------------------------------------------------------
+// Screen layouts (PC designer). Field meanings: firmware/main/ui/core/ui_core.h (ui_widget_t)
+// -----------------------------------------------------------------------------
+
+message UiWidget {
+    uint32 kind = 1;         // ui_widget_kind_t
+    uint32 source = 2;       // ui_source_t
+    uint32 font = 3;         // ui_font_id_t
+    uint32 align = 4;        // ui_align_t
+    sint32 x = 5;
+    sint32 y = 6;
+    uint32 w = 7;
+    uint32 h = 8;
+    uint32 fg = 9;           // 0xRRGGBB
+    uint32 bg = 10;
+    uint32 accent = 11;
+    uint32 radius = 12;
+    uint32 decimals = 13;    // 255 = source default
+    uint32 flags = 14;       // UI_FLAG_*
+    string label = 15;
+    string suffix = 16;
+}
+
+message SetLayout {
+    uint32 screen = 1;       // ui_screen_id_t
+    uint32 background = 2;   // 0xRRGGBB
+    repeated UiWidget widgets = 3;
+}
+
+message LayoutAck {
+    uint32 screen = 1;
+    bool success = 2;
+    string message = 3;
 }
 
 // -----------------------------------------------------------------------------
@@ -153,6 +221,11 @@ message HostToDevice {
         GameplayDisplayState gameplay_state = 5;
         CounterSyncRequest counter_sync = 6;
         bool request_status = 7;
+        HostStatus host_status = 8;
+        bool reset_latency_stats = 9;
+        DataUpdate data_update = 10;
+        SetLayout set_layout = 11;
+        uint32 reset_layout = 12;    // screen id: back to the built-in default
     }
 }
 
@@ -164,5 +237,6 @@ message DeviceToHost {
         ConfigAck config_ack = 4;
         CounterSyncResponse counter_sync_resp = 5;
         LogEventBatch log_batch = 6;
+        LayoutAck layout_ack = 7;
     }
 }
