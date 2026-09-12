@@ -48,3 +48,20 @@ While standard Bluetooth LE (BLE) introduces 7.5–15 ms latency and Wi-Fi intro
 4. **Pairing**:
    - Out-of-the-box hardcoded default channel/MAC pairing.
    - Optional touchscreen "Pair New Dongle" utility on the keypad's LCD.
+
+---
+
+## 🪨 Milestone: Heavy Ballast & Deskmat Anti-Slip Grip (Case V2)
+
+### 1. Increased Weight & Mass
+- **Requirement**: Add heavy ballast/weight to the enclosure so high-BPM streaming (240+ BPM) doesn't cause the keypad to budge or lift.
+- **Design Approaches**:
+  - Internal ballast chambers in the bottom plate for standard hardware weights (e.g. steel M8/M10 nuts, lead sinkers, or steel coins/washers).
+  - High-density solid ballast base option (100% solid perimeter/infill base floor).
+
+### 2. Deskmat Anti-Slip High-Traction Bottom Pattern
+- **Requirement**: Molded textured pattern on the bottom plate that physically locks into cloth and hybrid mousepads/deskmats.
+- **Design Approaches**:
+  - Molded herringbone / knurled diamond pyramid micro-tread pattern across the bottom surface.
+  - Dual hybrid system: Molded textured tooth grid + perimeter recess pockets for silicone/rubber grip pads.
+
