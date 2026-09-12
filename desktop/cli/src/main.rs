@@ -38,6 +38,13 @@ enum Commands {
         #[arg(short, long, default_value_t = 50)]
         limit: usize,
     },
+    /// Flash new firmware binary onto the ESP32-S3 using espflash
+    Flash {
+        #[arg(help = "Path to firmware binary (.bin)")]
+        firmware: PathBuf,
+        #[arg(long, help = "Explicit serial port (default: auto-detect)")]
+        port: Option<String>,
+    },
     /// Perform initial system setup (udev permissions & directories)
     Setup,
 }
@@ -175,6 +182,58 @@ async fn main() -> Result<()> {
                     println!("{}", line);
                 }
             }
+        }
+
+        Commands::Flash { firmware, port } => {
+            if !firmware.exists() {
+                bail!("Firmware binary file does not exist: {}", firmware.display());
+            }
+
+            println!("Coordinating with osupad-daemon for firmware flashing...");
+            let resp = send_request(&mut stream, &IpcRequest::PrepareFlash).await?;
+            let detected_port = match resp {
+                IpcResponse::ReadyForFlash { port } => port,
+                IpcResponse::OperationRejected { reason } => {
+                    bail!("Firmware flash rejected by daemon: {}", reason);
+                }
+                _ => None,
+            };
+
+            let target_port = port
+                .or(detected_port)
+                .or_else(osupad_device::find_target_port)
+                .unwrap_or_else(|| "/dev/ttyACM0".to_string());
+
+            println!("Target serial port: {}", target_port);
+            println!("Writing firmware binary via espflash at 0x10000...");
+
+            let status = std::process::Command::new("espflash")
+                .arg("write-bin")
+                .arg("--chip")
+                .arg("esp32s3")
+                .arg("-p")
+                .arg(&target_port)
+                .arg("--non-interactive")
+                .arg("0x10000")
+                .arg(&firmware)
+                .status();
+
+            match status {
+                Ok(exit) if exit.success() => {
+                    println!("✓ Firmware flashing completed successfully!");
+                }
+                Ok(exit) => {
+                    bail!("espflash exited with error code: {:?}", exit.code());
+                }
+                Err(e) => {
+                    bail!("Failed to execute espflash: {}. Ensure espflash is installed.", e);
+                }
+            }
+
+            println!("Resuming daemon device communication...");
+            let _ = send_request(&mut stream, &IpcRequest::FinishFlash).await;
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            println!("✓ Device reconnected successfully!");
         }
 
         Commands::Setup => unreachable!(),

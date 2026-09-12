@@ -35,6 +35,8 @@ pub enum IpcRequest {
     GetLogEntries {
         limit: usize,
     },
+    PrepareFlash,
+    FinishFlash,
 }
 
 /// Daemon responses to clients
@@ -69,6 +71,9 @@ pub enum IpcResponse {
         success: bool,
         counters: CounterState,
         config: DeviceConfig,
+    },
+    ReadyForFlash {
+        port: Option<String>,
     },
     LogEntries(Vec<String>),
     OperationRejected {

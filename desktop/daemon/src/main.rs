@@ -465,6 +465,32 @@ async fn handle_ipc_request(
             };
             IpcResponse::LogEntries(logs)
         }
+
+        IpcRequest::PrepareFlash => {
+            if mode == RuntimeMode::Playing {
+                return IpcResponse::OperationRejected {
+                    reason: "Cannot flash firmware during gameplay".to_string(),
+                };
+            }
+            log_info(log_hub, "Releasing serial port for firmware flash...");
+            device.pause();
+            {
+                let mut st = state.lock().unwrap();
+                st.device_connected = false;
+            }
+            let port = osupad_device::find_target_port();
+            IpcResponse::ReadyForFlash { port }
+        }
+
+        IpcRequest::FinishFlash => {
+            log_info(log_hub, "Flash finished, resuming device discovery...");
+            device.resume();
+            IpcResponse::HandshakeAck {
+                daemon_version: "1.0.0".to_string(),
+                daemon_protocol: IPC_PROTOCOL_VERSION,
+                device_connected: state.lock().unwrap().device_connected,
+            }
+        }
     }
 }
 

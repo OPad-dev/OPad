@@ -39,6 +39,7 @@ pub struct DeviceManager {
     cmd_tx: mpsc::Sender<HostToDevice>,
     event_tx: broadcast::Sender<DeviceEvent>,
     is_connected: Arc<AtomicBool>,
+    is_paused: Arc<AtomicBool>,
     seq_counter: Arc<AtomicU32>,
 }
 
@@ -47,9 +48,11 @@ impl DeviceManager {
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<HostToDevice>(64);
         let (event_tx, event_rx) = broadcast::channel(64);
         let is_connected = Arc::new(AtomicBool::new(false));
+        let is_paused = Arc::new(AtomicBool::new(false));
         let seq_counter = Arc::new(AtomicU32::new(1));
 
         let is_conn_clone = is_connected.clone();
+        let is_paused_clone = is_paused.clone();
         let event_tx_clone = event_tx.clone();
 
         // Spawn background worker managing the serial port lifecycle
@@ -57,6 +60,11 @@ impl DeviceManager {
             let mut read_buf = BytesMut::with_capacity(8192);
 
             loop {
+                if is_paused_clone.load(Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_millis(200));
+                    continue;
+                }
+
                 // Discover target serial port
                 let port_path = match find_target_port() {
                     Some(p) => p,
@@ -99,6 +107,11 @@ impl DeviceManager {
 
                 // Inner communication loop
                 loop {
+                    if is_paused_clone.load(Ordering::SeqCst) {
+                        info!("Pause requested; releasing serial port on {}", port_path);
+                        break;
+                    }
+
                     // 1. Drain incoming command queue to transmit to device
                     while let Ok(cmd) = cmd_rx.try_recv() {
                         if let Ok(encoded) = encode_host_message(&cmd) {
@@ -142,10 +155,21 @@ impl DeviceManager {
                 cmd_tx,
                 event_tx,
                 is_connected,
+                is_paused,
                 seq_counter,
             },
             event_rx,
         )
+    }
+
+    pub fn pause(&self) {
+        self.is_paused.store(true, Ordering::SeqCst);
+        self.is_connected.store(false, Ordering::SeqCst);
+        let _ = self.event_tx.send(DeviceEvent::Disconnected);
+    }
+
+    pub fn resume(&self) {
+        self.is_paused.store(false, Ordering::SeqCst);
     }
 
     pub fn is_connected(&self) -> bool {
