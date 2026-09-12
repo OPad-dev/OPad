@@ -1,5 +1,6 @@
 #include "runtime.h"
 #include "counters/counters.h"
+#include "config/device_config.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_timer.h"
@@ -22,10 +23,11 @@ static const int64_t IDLE_CHECKPOINT_INTERVAL_US = 300000000; // 5 minutes
 
 static void runtime_supervisor_task(void *pvParameters)
 {
+    (void)pvParameters;
     ESP_LOGI(TAG, "Runtime supervisor task started");
 
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(100));
         int64_t now = esp_timer_get_time();
         osupad_state_t current = (osupad_state_t)atomic_load(&s_state);
 
@@ -39,13 +41,15 @@ static void runtime_supervisor_task(void *pvParameters)
                 atomic_store(&s_state, OSUPAD_STATE_IDLE);
                 ESP_LOGI(TAG, "State transition: COOLDOWN -> IDLE");
 
-                // Checkpoint dirty counters safely now that gameplay is ended and cooldown expired
+                // Checkpoint dirty counters and config safely now that gameplay has ended
                 counters_checkpoint(false);
+                device_config_flush();
                 s_last_checkpoint_us = now;
             }
         } else if (current == OSUPAD_STATE_IDLE) {
             if ((now - s_last_checkpoint_us) >= IDLE_CHECKPOINT_INTERVAL_US) {
                 counters_checkpoint(false);
+                device_config_flush();
                 s_last_checkpoint_us = now;
             }
         }

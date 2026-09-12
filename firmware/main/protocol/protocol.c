@@ -4,6 +4,7 @@
 #include "usb/usb_cdc.h"
 #include "usb/usb_hid.h"
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
+#include "config/device_config.h"
 #include "input/keypad.h"
 #include "counters/counters.h"
 #include "ui/ui.h"
@@ -140,8 +141,8 @@ esp_err_t protocol_send_status(void)
 
 esp_err_t protocol_send_config_ack(uint32_t seq, bool success, const char *text)
 {
-    keypad_config_t cfg;
-    keypad_get_config(&cfg);
+    device_config_data_t cfg;
+    device_config_get(&cfg);
 
     osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
     msg.sequence_number = seq ? seq : s_out_sequence++;
@@ -151,10 +152,13 @@ esp_err_t protocol_send_config_ack(uint32_t seq, bool success, const char *text)
         strncpy(msg.payload.config_ack.message, text, sizeof(msg.payload.config_ack.message) - 1);
     }
     msg.payload.config_ack.has_current_config = true;
-    msg.payload.config_ack.current_config.key1_hid_usage = cfg.keycode1;
-    msg.payload.config_ack.current_config.key2_hid_usage = cfg.keycode2;
+    msg.payload.config_ack.current_config.key1_hid_usage = cfg.key1_usage;
+    msg.payload.config_ack.current_config.key2_hid_usage = cfg.key2_usage;
     msg.payload.config_ack.current_config.debounce_us = cfg.debounce_us;
-    msg.payload.config_ack.current_config.brightness = board_backlight_get();
+    msg.payload.config_ack.current_config.brightness = cfg.brightness;
+    msg.payload.config_ack.current_config.display_sleep_seconds = cfg.sleep_s;
+    msg.payload.config_ack.current_config.gameplay_display_hz = 10;
+    msg.payload.config_ack.current_config.press_color_rgb = 0;
 
     return send_envelope(&msg);
 }
@@ -237,24 +241,26 @@ static void handle_host_message(const osupad_HostToDevice *msg)
     case osupad_HostToDevice_set_config_tag:
         if (msg->payload.set_config.has_config) {
             const osupad_ConfigPayload *c = &msg->payload.set_config.config;
-            keypad_config_t cfg;
-            keypad_get_config(&cfg);
+            device_config_data_t dcfg;
+            device_config_get(&dcfg);
 
-            if (c->key1_hid_usage > 0) cfg.keycode1 = (uint8_t)c->key1_hid_usage;
-            if (c->key2_hid_usage > 0) cfg.keycode2 = (uint8_t)c->key2_hid_usage;
-            if (c->debounce_us > 0) cfg.debounce_us = c->debounce_us;
+            if (c->key1_hid_usage > 0) dcfg.key1_usage = c->key1_hid_usage;
+            if (c->key2_hid_usage > 0) dcfg.key2_usage = c->key2_hid_usage;
+            if (c->debounce_us > 0) dcfg.debounce_us = c->debounce_us;
+            dcfg.brightness = c->brightness;
+            dcfg.sleep_s = c->display_sleep_seconds;
 
-            keypad_set_config(&cfg);
-            usb_hid_set_keycodes(cfg.keycode1, cfg.keycode2);
-
-            if (c->brightness > 0 && c->brightness <= 100) {
-                ui_set_brightness((uint8_t)c->brightness);
+            char err_msg[64] = "";
+            if (!device_config_validate(&dcfg, err_msg, sizeof(err_msg))) {
+                protocol_send_config_ack(msg->sequence_number, false, err_msg);
+            } else {
+                esp_err_t err = device_config_set(&dcfg);
+                if (err != ESP_OK) {
+                    protocol_send_config_ack(msg->sequence_number, false, "Failed to persist configuration");
+                } else {
+                    protocol_send_config_ack(msg->sequence_number, true, "Configuration applied successfully");
+                }
             }
-            if (c->display_sleep_seconds > 0) {
-                ui_set_sleep_timeout(c->display_sleep_seconds);
-            }
-
-            protocol_send_config_ack(msg->sequence_number, true, "Configuration applied successfully");
         }
         break;
 

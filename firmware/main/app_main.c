@@ -6,6 +6,7 @@
 #include "tinyusb_default_config.h"
 
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
+#include "config/device_config.h"
 #include "input/keypad.h"
 #include "usb/usb_descriptors.h"
 #include "usb/usb_hid.h"
@@ -30,11 +31,23 @@ void app_main(void)
     // 1. Initialize Board Peripherals: Switch GPIOs only (FATAL if fails)
     ESP_ERROR_CHECK(board_init());
 
-    // 2. Initialize Keypad with Eager Debouncing (RAM counters start at 0) (FATAL if fails)
-    ESP_ERROR_CHECK(keypad_init(NULL));
+    // 2. Load device configuration from NVS (or fall back to defaults) (NON-FATAL)
+    device_config_init();
+    device_config_data_t dev_cfg;
+    device_config_get(&dev_cfg);
 
-    // 3. Initialize USB HID Subsystem and install TinyUSB stack (FATAL if fails)
+    keypad_config_t k_cfg = {
+        .keycode1 = (uint8_t)dev_cfg.key1_usage,
+        .keycode2 = (uint8_t)dev_cfg.key2_usage,
+        .debounce_us = dev_cfg.debounce_us,
+    };
+
+    // 3. Initialize Keypad with configured usages and debouncing (FATAL if fails)
+    ESP_ERROR_CHECK(keypad_init(&k_cfg));
+
+    // 4. Initialize USB HID Subsystem and install TinyUSB stack (FATAL if fails)
     ESP_ERROR_CHECK(usb_hid_init());
+    usb_hid_set_keycodes(k_cfg.keycode1, k_cfg.keycode2);
 
     ESP_LOGI(TAG, "Configuring TinyUSB Composite Stack (HID 1000Hz + CDC-ACM)...");
     tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
@@ -90,6 +103,9 @@ void app_main(void)
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "ui_init failed: %s (continuing in headless mode)", esp_err_to_name(err));
     }
+
+    // Apply brightness and sleep timeout to display & UI
+    device_config_apply(&dev_cfg);
 
     ESP_LOGI(TAG, "osu!pad initialized and ready");
 }
