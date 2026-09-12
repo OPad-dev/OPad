@@ -93,12 +93,14 @@ fi
 
 if [ -z "$BOOT_PORT" ]; then
     echo ""
-    echo "[2/3] The board currently has the previous build without the auto-reset hook."
-    echo "      To enter download mode and flash this update (REQUIRED ONCE):"
+    echo "[2/3] The board currently has the previous build without the software auto-reset hook."
+    echo "      To install this firmware update (REQUIRED ONCE):"
     echo ""
+    echo "      ============================================================"
     echo "      1. Press and hold down the BOOT button on the ESP32-S3."
-    echo "      2. While STILL HOLDING the BOOT button, press and release RESET."
-    echo "      3. Release the BOOT button."
+    echo "      2. While STILL HOLDING the BOOT button, press & release RESET."
+    echo "      3. KEEP HOLDING the BOOT button until flashing starts!"
+    echo "      ============================================================"
     echo ""
     echo "      Once this update is flashed, ALL future flashes will run"
     echo "      100% automatically over USB without touching any buttons!"
@@ -124,15 +126,16 @@ for i in {1..30}; do
     fi
     sleep 0.1
 done
-sleep 0.5
+sleep 0.4
 
 echo "[3/3] Bootloader ready! Flashing firmware to ${BOOT_PORT}..."
 cd "${REPO_ROOT}/firmware"
 
 FLASH_SUCCESS=false
 
-# Try 1: esptool with usb_reset
-if $ESPTOOL --chip esp32s3 -p "${BOOT_PORT}" -b 460800 --before=usb_reset --after=hard_reset write_flash \
+# Try 1: esptool with no_reset (chip is already in download mode)
+echo "Writing flash with esptool (no_reset)..."
+if $ESPTOOL --chip esp32s3 -p "${BOOT_PORT}" -b 460800 --before=no_reset --after=hard_reset write_flash \
     --flash_mode dio --flash_freq 80m --flash_size 16MB \
     0x0 "${BUILD_DIR}/bootloader/bootloader.bin" \
     0x10000 "${BUILD_DIR}/osupad-firmware.bin" \
@@ -140,11 +143,11 @@ if $ESPTOOL --chip esp32s3 -p "${BOOT_PORT}" -b 460800 --before=usb_reset --afte
     FLASH_SUCCESS=true
 fi
 
-# Try 2: esptool with no_reset
+# Try 2: esptool with usb_reset
 if [ "$FLASH_SUCCESS" = false ]; then
-    echo "Retrying esptool with no_reset..."
+    echo "Retrying esptool with usb_reset..."
     sleep 0.5
-    if $ESPTOOL --chip esp32s3 -p "${BOOT_PORT}" -b 460800 --before=no_reset --after=hard_reset write_flash \
+    if $ESPTOOL --chip esp32s3 -p "${BOOT_PORT}" -b 460800 --before=usb_reset --after=hard_reset write_flash \
         --flash_mode dio --flash_freq 80m --flash_size 16MB \
         0x0 "${BUILD_DIR}/bootloader/bootloader.bin" \
         0x10000 "${BUILD_DIR}/osupad-firmware.bin" \
