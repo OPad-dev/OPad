@@ -13,4 +13,5 @@ tracing.workspace = true
 thiserror.workspace = true
 chrono.workspace = true
 osupad-model = { path = "../osupad-model" }
+osupad-layout = { path = "../osupad-layout" }
 osupad-protocol = { path = "../osupad-protocol" }

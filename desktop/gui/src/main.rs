@@ -1,3 +1,5 @@
+mod designer;
+
 use futures_util::SinkExt;
 use iced::widget::{
     button, column, container, row, scrollable, slider, text, text_input, Space,
@@ -16,7 +18,8 @@ pub fn main() -> iced::Result {
         .theme(|_| Theme::Dark)
         .subscription(OsuPadGui::subscription)
         .exit_on_close_request(false)
-        .window_size(Size::new(820.0, 580.0))
+        .window_size(Size::new(1320.0, 820.0))
+        .font(iced_aw::iced_fonts::REQUIRED_FONT_BYTES)
         .centered()
         .run_with(OsuPadGui::new)
 }
@@ -24,6 +27,7 @@ pub fn main() -> iced::Result {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
     Overview,
+    Designer,
     Statistics,
     Input,
     Display,
@@ -52,6 +56,7 @@ pub struct OsuPadTray {
     tx: tokio::sync::mpsc::UnboundedSender<TrayAction>,
     pub device_connected: bool,
     pub daemon_online: bool,
+    pub tosu_connected: bool,
     pub total_presses: u64,
     pub mode: String,
 }
@@ -74,11 +79,11 @@ impl ksni::Tray for OsuPadTray {
             "Daemon: Offline".to_string()
         } else if self.device_connected {
             format!(
-                "Device: Connected ({} presses)\nMode: {}",
-                self.total_presses, self.mode
+                "Device: Connected ({} presses)\nMode: {}\n{}",
+                self.total_presses, self.mode, tosu_label(self.tosu_connected)
             )
         } else {
-            "Device: Disconnected\nDaemon: Online".to_string()
+            format!("Device: Disconnected\nDaemon: Online\n{}", tosu_label(self.tosu_connected))
         };
 
         ksni::ToolTip {
@@ -136,6 +141,7 @@ fn tray_stream() -> impl futures_util::Stream<Item = Message> {
             tx,
             device_connected: false,
             daemon_online: false,
+            tosu_connected: false,
             total_presses: 0,
             mode: "Idle".to_string(),
         };
@@ -158,6 +164,7 @@ struct OsuPadGui {
     current_tab: Tab,
     daemon_online: bool,
     device_connected: bool,
+    tosu_connected: bool,
     mode: RuntimeMode,
     device_info: Option<DeviceInfo>,
     counters: CounterState,
@@ -169,12 +176,14 @@ struct OsuPadGui {
     debounce_slider: u32,
     brightness_slider: u32,
     sleep_slider: u32,
+    config_loaded: bool,
     // Monitor state
     logs: Vec<String>,
     status_banner: Option<String>,
     // Window & Tray management
     main_window_id: Option<iced::window::Id>,
     tray_handle: Option<TrayHandle>,
+    designer: designer::Designer,
 }
 
 #[derive(Debug, Clone)]
@@ -189,6 +198,7 @@ enum Message {
     DebounceChanged(u32),
     BrightnessChanged(u32),
     SleepChanged(u32),
+    Designer(designer::Message),
     SaveConfig,
     ConfigSaved(Result<IpcResponse, String>),
     // Actions
@@ -207,10 +217,12 @@ enum Message {
 
 impl OsuPadGui {
     fn new() -> (Self, Task<Message>) {
+        let (designer, designer_task) = designer::Designer::new();
         let initial = Self {
             current_tab: Tab::Overview,
             daemon_online: false,
             device_connected: false,
+            tosu_connected: false,
             mode: RuntimeMode::Idle,
             device_info: None,
             counters: CounterState::default(),
@@ -221,6 +233,8 @@ impl OsuPadGui {
             debounce_slider: 3000,
             brightness_slider: 100,
             sleep_slider: 600,
+            designer,
+            config_loaded: false,
             logs: Vec::new(),
             status_banner: None,
             main_window_id: None,
@@ -230,6 +244,7 @@ impl OsuPadGui {
         let tasks = Task::batch([
             Task::perform(fetch_status(), Message::StatusReceived),
             iced::window::get_latest().map(Message::WindowIdCaptured),
+            designer_task.map(Message::Designer),
         ]);
 
         (initial, tasks)
@@ -243,6 +258,11 @@ impl OsuPadGui {
             iced::window::close_requests().map(Message::CloseRequested),
             // Run system tray stream in background
             iced::Subscription::run(tray_stream),
+            if self.current_tab == Tab::Designer {
+                self.designer.subscription().map(Message::Designer)
+            } else {
+                iced::Subscription::none()
+            },
         ])
     }
 
@@ -251,6 +271,7 @@ impl OsuPadGui {
             let handle = tray.0.clone();
             let connected = self.device_connected;
             let daemon = self.daemon_online;
+            let tosu = self.tosu_connected;
             let presses = self.counters.total_lifetime_presses();
             let mode = format!("{:?}", self.mode);
             tokio::spawn(async move {
@@ -258,6 +279,7 @@ impl OsuPadGui {
                     .update(move |t| {
                         t.device_connected = connected;
                         t.daemon_online = daemon;
+                        t.tosu_connected = tosu;
                         t.total_presses = presses;
                         t.mode = mode;
                     })
@@ -294,25 +316,32 @@ impl OsuPadGui {
                         counters,
                         config,
                         last_sync_time,
+                        tosu_connected,
                         ..
                     }) => {
                         self.daemon_online = true;
+                        self.tosu_connected = tosu_connected;
                         self.mode = mode;
                         self.device_connected = device_connected;
                         self.device_info = device_info;
                         self.counters = counters;
-                        // Synchronize form values if not edited
-                        self.k1_input = config.key1_char();
-                        self.k2_input = config.key2_char();
-                        self.debounce_slider = config.debounce_us;
-                        self.brightness_slider = config.brightness;
-                        self.sleep_slider = config.display_sleep_seconds;
+                        // Refresh the form only when the saved config changed (first poll,
+                        // after saving, or edited elsewhere), so polling never discards unsaved edits
+                        if !self.config_loaded || self.config != config {
+                            self.config_loaded = true;
+                            self.k1_input = config.key1_char();
+                            self.k2_input = config.key2_char();
+                            self.debounce_slider = config.debounce_us;
+                            self.brightness_slider = config.brightness;
+                            self.sleep_slider = config.display_sleep_seconds;
+                        }
                         self.config = config;
                         self.last_sync_time = last_sync_time;
                     }
                     _ => {
                         self.daemon_online = false;
                         self.device_connected = false;
+                        self.tosu_connected = false;
                     }
                 }
                 self.update_tray();
@@ -351,6 +380,8 @@ impl OsuPadGui {
                 Task::none()
             }
 
+            Message::Designer(msg) => self.designer.update(msg).map(Message::Designer),
+
             Message::SaveConfig => {
                 let k1_usage = char_to_hid_usage(&self.k1_input).unwrap_or(self.config.key1_hid_usage);
                 let k2_usage = char_to_hid_usage(&self.k2_input).unwrap_or(self.config.key2_hid_usage);
@@ -363,6 +394,7 @@ impl OsuPadGui {
                     display_sleep_seconds: self.sleep_slider,
                     gameplay_display_hz: self.config.gameplay_display_hz,
                     tosu_endpoint: self.config.tosu_endpoint.clone(),
+                    press_color_rgb: self.config.press_color_rgb,
                 };
 
                 self.status_banner = Some("Applying new configuration...".to_string());
@@ -513,6 +545,7 @@ impl OsuPadGui {
             text("osu!pad").size(24),
             Space::with_height(Length::Fixed(16.0)),
             nav_item(Tab::Overview, "Overview"),
+            nav_item(Tab::Designer, "Designer"),
             nav_item(Tab::Statistics, "Statistics"),
             nav_item(Tab::Input, "Input"),
             nav_item(Tab::Display, "Display"),
@@ -530,6 +563,7 @@ impl OsuPadGui {
                 if self.device_connected { "Connected" } else { "Disconnected" }
             ))
             .size(13),
+            text(tosu_label(self.tosu_connected)).size(13),
             Space::with_height(Length::Fixed(8.0)),
             row![
                 button(text("To Tray").size(12))
@@ -549,6 +583,7 @@ impl OsuPadGui {
 
         let content: Element<'_, Message> = match self.current_tab {
             Tab::Overview => self.view_overview(),
+            Tab::Designer => self.designer.view().map(Message::Designer),
             Tab::Statistics => self.view_statistics(),
             Tab::Input => self.view_input(),
             Tab::Display => self.view_display(),
@@ -582,6 +617,10 @@ impl OsuPadGui {
             text(format!(
                 "ESP32 Connection: {}",
                 if self.device_connected { "Connected" } else { "Disconnected" }
+            )),
+            text(format!(
+                "tosu (osu! telemetry): {}",
+                if self.tosu_connected { "Connected" } else { "Not running" }
             )),
             text(format!(
                 "Hardware Profile: {}",
@@ -670,6 +709,8 @@ impl OsuPadGui {
             Space::with_height(Length::Fixed(8.0)),
             text(format!("Display Sleep Timeout: {} seconds", self.sleep_slider)),
             slider(60..=3600, self.sleep_slider, Message::SleepChanged),
+            Space::with_height(Length::Fixed(8.0)),
+            text("Colors and layout of the pad screens are edited in the Designer tab.").size(13),
             Space::with_height(Length::Fixed(16.0)),
             button("Save Display Settings").on_press(Message::SaveConfig),
         ]
@@ -724,6 +765,10 @@ impl OsuPadGui {
         .spacing(8)
         .into()
     }
+}
+
+fn tosu_label(connected: bool) -> &'static str {
+    if connected { "tosu: Connected" } else { "tosu: Not running" }
 }
 
 // -----------------------------------------------------------------------------

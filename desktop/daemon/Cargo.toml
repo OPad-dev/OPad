@@ -26,3 +26,4 @@ osupad-storage = { path = "../crates/osupad-storage" }
 osupad-ipc = { path = "../crates/osupad-ipc" }
 osupad-tosu = { path = "../crates/osupad-tosu" }
 osupad-device = { path = "../crates/osupad-device" }
+osupad-layout = { path = "../crates/osupad-layout" }

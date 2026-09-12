@@ -6,11 +6,15 @@ use osupad_ipc::{
     IPC_PROTOCOL_VERSION,
 };
 use osupad_model::{
-    char_to_hid_usage, CounterState, DeviceConfig, DeviceInfo, JsonBackup,
+    char_to_hid_usage, CounterState, DeviceConfig, DeviceInfo, JsonBackup, LatencyStats,
     RuntimeMode,
 };
 use osupad_storage::{reconcile_counters, Storage};
-use osupad_tosu::TosuManager;
+use osupad_layout::{Layout, Screen};
+use osupad_model::ui_source::SourceValue;
+use osupad_tosu::{spawn_tosu_supervisor, TosuManager};
+mod telemetry;
+
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -18,6 +22,13 @@ use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 
 const COOLDOWN_DURATION: Duration = Duration::from_secs(5);
+/// Firmware drops out of PLAYING after 3s without a playing HostStatus, and treats
+/// status older than 10s as unknown
+const HOST_STATUS_INTERVAL: Duration = Duration::from_secs(1);
+/// Poll DeviceStatus for live lifetime / current-map counters
+const STATUS_POLL_INTERVAL: Duration = Duration::from_secs(1);
+/// A song position jump backwards larger than this is a retry of the same map
+const RETRY_REWIND_MS: f64 = 2000.0;
 const MAX_LOG_ENTRIES: usize = 500;
 
 #[derive(Clone)]
@@ -29,6 +40,9 @@ pub struct DaemonState {
     pub config: DeviceConfig,
     pub last_sync_time: Option<String>,
     pub tosu_connected: bool,
+    pub latency: Option<LatencyStats>,
+    /// Latest tosu-derived UI values (for the designer's live preview)
+    pub ui_values: Vec<(u8, SourceValue)>,
 }
 
 #[tokio::main]
@@ -67,10 +81,14 @@ async fn main() -> Result<()> {
         config: initial_config.clone(),
         last_sync_time: None,
         tosu_connected: false,
+        latency: None,
+        ui_values: Vec::new(),
     }));
 
-    // Start tosu WebSocket manager
+    // Launch and supervise tosu, then follow its WebSocket
+    spawn_tosu_supervisor(initial_config.tosu_endpoint.clone(), get_tosu_log_path());
     let (tosu_manager, mut tosu_rx) = TosuManager::new(initial_config.tosu_endpoint.clone());
+    let mut tosu_connected_rx = tosu_manager.subscribe_connected();
     tosu_manager.start();
 
     // Start Device CDC manager
@@ -124,8 +142,16 @@ async fn main() -> Result<()> {
 
     // Main Runtime Coordinator loop (§11: IDLE <-> PLAYING <-> COOLDOWN <-> SYNC)
     let mut cooldown_deadline: Option<Instant> = None;
-    let mut last_gameplay_update = Instant::now();
-    let gameplay_interval = Duration::from_millis(1000 / initial_config.gameplay_display_hz.max(1) as u64);
+    let mut data_sync = telemetry::DataSync::default();
+    // An interval, not a fresh sleep per select! iteration: tosu frames arrive every
+    // ~150ms and would otherwise starve this branch (cooldown would never expire)
+    let mut tick = tokio::time::interval(Duration::from_millis(50));
+    let mut last_host_status = Instant::now() - HOST_STATUS_INTERVAL;
+    let mut last_status_poll = Instant::now();
+    // Identifies the current osu! attempt; the device zeroes its map counters when it changes.
+    // Seeded from the clock so a daemon restart never reuses the device's last id.
+    let mut play_id = Utc::now().timestamp() as u32;
+    let mut last_live_ms: Option<f64> = None;
 
     loop {
         tokio::select! {
@@ -140,11 +166,36 @@ async fn main() -> Result<()> {
                         st.device_connected = true;
                         st.device_info = Some(info.clone());
 
-                        // Send time sync immediately (§14.3)
+                        // Send time sync, config and host status immediately (§14.3).
+                        // The device does not persist its config, so push it on every connect.
                         let dm = device_manager.clone();
+                        let (tosu, playing) = (st.tosu_connected, st.mode == RuntimeMode::Playing);
+                        let config = st.config.clone();
+                        let current_play = play_id;
                         tokio::spawn(async move {
                             let _ = dm.send_time_sync().await;
+                            let _ = dm.send_config(&config).await;
+                            let _ = dm.send_host_status(tosu, playing, current_play).await;
                         });
+                        // The device starts with empty data: resend every value
+                        data_sync.reset_sent();
+
+                        // Re-push saved layouts (the device skips the flash write when unchanged)
+                        let layouts: Vec<(Screen, Layout)> = Screen::ALL
+                            .iter()
+                            .filter_map(|screen| {
+                                let json = storage.lock().unwrap().load_layout(screen.to_wire()).ok().flatten()?;
+                                Some((*screen, Layout::from_json(&json).ok()?))
+                            })
+                            .collect();
+                        if !layouts.is_empty() {
+                            let dm = device_manager.clone();
+                            tokio::spawn(async move {
+                                for (screen, layout) in layouts {
+                                    let _ = dm.send_layout(screen, &layout).await;
+                                }
+                            });
+                        }
                     }
                     DeviceEvent::Disconnected => {
                         warn!("ESP32 Device Disconnected");
@@ -160,9 +211,31 @@ async fn main() -> Result<()> {
                         if !c.device_id.is_empty() {
                             st.counters.device_id = c.device_id;
                             st.counters.counter_generation = c.counter_generation;
+                        } else {
+                            // DeviceStatus: carries the device-side current-map counters
+                            st.counters.map_key1 = c.map_key1;
+                            st.counters.map_key2 = c.map_key2;
                         }
                     }
-                    DeviceEvent::StatusUpdate(_) => {}
+                    DeviceEvent::StatusUpdate(status) => {
+                        daemon_state.lock().unwrap().latency = Some(LatencyStats {
+                            samples: status.latency_samples,
+                            p50_us: status.latency_p50_us,
+                            p99_us: status.latency_p99_us,
+                            p999_us: status.latency_p999_us,
+                            max_us: status.latency_max_us,
+                            dropped_reports: status.hid_dropped_reports,
+                        });
+                    }
+                    DeviceEvent::LayoutAck { screen, success, message } => {
+                        let note = if message.is_empty() { String::new() } else { format!(" ({})", message) };
+                        log_info(&log_hub, &format!(
+                            "Layout {} {}{}",
+                            Screen::from_wire(screen).map_or("?", |s| s.label()),
+                            if success { "applied" } else { "rejected" },
+                            note
+                        ));
+                    }
                     DeviceEvent::LogBatch(batch) => {
                         for ev in batch.events {
                             let entry = format!("ESP [{}]: {}", ev.tag, ev.message);
@@ -175,38 +248,90 @@ async fn main() -> Result<()> {
             // 2. Telemetry events from tosu
             Ok(telemetry) = tosu_rx.recv() => {
                 let current_mode = { daemon_state.lock().unwrap().mode };
+                data_sync.ingest(telemetry.values.iter().cloned());
+                daemon_state.lock().unwrap().ui_values = telemetry.values.clone();
 
                 if telemetry.is_playing {
+                    let rewound = last_live_ms.is_some_and(|prev| telemetry.live_time_ms < prev - RETRY_REWIND_MS);
+                    let new_attempt = current_mode != RuntimeMode::Playing || rewound;
+                    last_live_ms = Some(telemetry.live_time_ms);
+                    if new_attempt {
+                        play_id = play_id.wrapping_add(1);
+                        if rewound {
+                            log_info(&log_hub, &format!("Retry detected ({})", telemetry.title));
+                        }
+                    }
+
                     // Enter PLAYING mode
                     if current_mode != RuntimeMode::Playing {
                         info!("State transition -> PLAYING (osu! map active)");
                         log_info(&log_hub, &format!("State -> PLAYING ({})", telemetry.title));
-                        let mut st = daemon_state.lock().unwrap();
-                        st.mode = RuntimeMode::Playing;
-                        cooldown_deadline = None;
+                        {
+                            let mut st = daemon_state.lock().unwrap();
+                            st.mode = RuntimeMode::Playing;
+                            cooldown_deadline = None;
+                        }
                     }
-
-                    // Rate-limited gameplay display stream (§14.2)
-                    if last_gameplay_update.elapsed() >= gameplay_interval {
-                        last_gameplay_update = Instant::now();
-                        let (k1, k2) = {
-                            let st = daemon_state.lock().unwrap();
-                            (st.counters.map_key1, st.counters.map_key2)
-                        };
-                        let _ = device_manager.send_gameplay_state(&telemetry, k1, k2).await;
+                    if new_attempt {
+                        // Right away, so the device zeroes its map counters immediately
+                        let _ = device_manager.send_host_status(true, true, play_id).await;
+                        last_host_status = Instant::now();
+                        let changes = data_sync.take_changes(true, true);
+                        let _ = device_manager.send_data_update(&changes).await;
                     }
                 } else if current_mode == RuntimeMode::Playing {
+                    last_live_ms = None;
                     // Left playing mode -> start COOLDOWN timer (§11.2)
-                    info!("State transition -> COOLDOWN (5s window started)");
-                    log_info(&log_hub, "State -> COOLDOWN (5s)");
-                    let mut st = daemon_state.lock().unwrap();
-                    st.mode = RuntimeMode::Cooldown;
-                    cooldown_deadline = Some(Instant::now() + COOLDOWN_DURATION);
+                    enter_cooldown(&daemon_state, &log_hub, &mut cooldown_deadline);
+                    let _ = device_manager.send_host_status(true, false, play_id).await;
                 }
             }
 
-            // 3. Periodic tick for cooldown expiration and background time maintenance
-            _ = tokio::time::sleep(Duration::from_millis(200)) => {
+            // 3. tosu WebSocket connected / disconnected
+            Ok(()) = tosu_connected_rx.changed() => {
+                let connected = *tosu_connected_rx.borrow_and_update();
+                log_info(&log_hub, if connected { "tosu connected" } else { "tosu disconnected" });
+                let was_playing = {
+                    let mut st = daemon_state.lock().unwrap();
+                    st.tosu_connected = connected;
+                    st.mode == RuntimeMode::Playing
+                };
+                // Without tosu there is no way to see the map end; don't stay stuck in PLAYING
+                if !connected && was_playing {
+                    enter_cooldown(&daemon_state, &log_hub, &mut cooldown_deadline);
+                    last_live_ms = None;
+                }
+                if !connected {
+                    data_sync.clear();
+                }
+                let _ = device_manager.send_host_status(connected, false, play_id).await;
+                last_host_status = Instant::now();
+            }
+
+            // 4. Periodic tick for cooldown expiration, host status and time maintenance
+            _ = tick.tick() => {
+                if last_status_poll.elapsed() >= STATUS_POLL_INTERVAL {
+                    last_status_poll = Instant::now();
+                    if daemon_state.lock().unwrap().device_connected {
+                        let _ = device_manager.request_status().await;
+                    }
+                }
+
+                let (device_connected, tosu, playing) = {
+                    let st = daemon_state.lock().unwrap();
+                    (st.device_connected, st.tosu_connected, st.mode == RuntimeMode::Playing)
+                };
+                if device_connected && last_host_status.elapsed() >= HOST_STATUS_INTERVAL {
+                    last_host_status = Instant::now();
+                    let _ = device_manager.send_host_status(tosu, playing, play_id).await;
+                }
+                if device_connected {
+                    let changes = data_sync.take_changes(playing, false);
+                    if !changes.is_empty() {
+                        let _ = device_manager.send_data_update(&changes).await;
+                    }
+                }
+
                 let mut should_sync = false;
                 {
                     let mut st = daemon_state.lock().unwrap();
@@ -229,6 +354,17 @@ async fn main() -> Result<()> {
             }
         }
     }
+}
+
+fn enter_cooldown(
+    state: &Arc<Mutex<DaemonState>>,
+    log_hub: &Arc<Mutex<VecDeque<String>>>,
+    cooldown_deadline: &mut Option<Instant>,
+) {
+    info!("State transition -> COOLDOWN (5s window started)");
+    log_info(log_hub, "State -> COOLDOWN (5s)");
+    state.lock().unwrap().mode = RuntimeMode::Cooldown;
+    *cooldown_deadline = Some(Instant::now() + COOLDOWN_DURATION);
 }
 
 async fn perform_sync(
@@ -321,6 +457,66 @@ async fn handle_ipc_request(
                 config: st.config.clone(),
                 last_sync_time: st.last_sync_time.clone(),
                 tosu_connected: st.tosu_connected,
+                latency: st.latency,
+            }
+        }
+
+        IpcRequest::GetLayouts => {
+            let load = |screen: Screen| {
+                let json = storage.lock().unwrap().load_layout(screen.to_wire()).ok().flatten()?;
+                Layout::from_json(&json).ok()
+            };
+            IpcResponse::Layouts { idle: load(Screen::Idle), playing: load(Screen::Playing) }
+        }
+
+        IpcRequest::SetLayout { screen, layout } => {
+            if let Err(e) = layout.validate() {
+                return IpcResponse::OperationRejected { reason: format!("Invalid layout: {}", e) };
+            }
+            if let Err(e) = storage.lock().unwrap().save_layout(screen.to_wire(), &layout.to_json()) {
+                return IpcResponse::Error(format!("Failed to save layout: {}", e));
+            }
+            log_info(log_hub, &format!("Layout {} saved", screen.label()));
+            if !state.lock().unwrap().device_connected {
+                return IpcResponse::LayoutApplied {
+                    screen,
+                    message: "Saved; it will be applied when the pad connects".to_string(),
+                };
+            }
+            let mut events = device.subscribe();
+            if let Err(e) = device.send_layout(screen, &layout).await {
+                return IpcResponse::Error(format!("Failed to send layout: {}", e));
+            }
+            wait_for_layout_ack(&mut events, screen).await
+        }
+
+        IpcRequest::ResetLayout { screen } => {
+            if let Err(e) = storage.lock().unwrap().delete_layout(screen.to_wire()) {
+                return IpcResponse::Error(format!("Failed to delete layout: {}", e));
+            }
+            log_info(log_hub, &format!("Layout {} reset to default", screen.label()));
+            if !state.lock().unwrap().device_connected {
+                return IpcResponse::LayoutApplied { screen, message: "Reset; the pad will use its default".to_string() };
+            }
+            let mut events = device.subscribe();
+            if let Err(e) = device.reset_layout(screen).await {
+                return IpcResponse::Error(format!("Failed to reset layout: {}", e));
+            }
+            wait_for_layout_ack(&mut events, screen).await
+        }
+
+        IpcRequest::GetUiValues => IpcResponse::UiValues(state.lock().unwrap().ui_values.clone()),
+
+        IpcRequest::ResetLatencyStats => {
+            if let Err(e) = device.reset_latency_stats().await {
+                return IpcResponse::Error(format!("Failed to reset latency stats: {}", e));
+            }
+            state.lock().unwrap().latency = None;
+            log_info(log_hub, "Latency statistics reset");
+            IpcResponse::HandshakeAck {
+                daemon_version: "1.0.0".to_string(),
+                daemon_protocol: IPC_PROTOCOL_VERSION,
+                device_connected: state.lock().unwrap().device_connected,
             }
         }
 
@@ -417,7 +613,8 @@ async fn handle_ipc_request(
                 brightness: backup.config.brightness,
                 display_sleep_seconds: backup.config.display_sleep_seconds,
                 gameplay_display_hz: backup.config.gameplay_display_hz,
-                tosu_endpoint: "ws://127.0.0.1:24050/ws".to_string(),
+                tosu_endpoint: "ws://127.0.0.1:24050/websocket/v2".to_string(),
+                press_color_rgb: state.lock().unwrap().config.press_color_rgb,
             };
 
             let new_counters = CounterState {
@@ -499,6 +696,30 @@ async fn handle_ipc_request(
     }
 }
 
+async fn wait_for_layout_ack(
+    events: &mut tokio::sync::broadcast::Receiver<DeviceEvent>,
+    screen: Screen,
+) -> IpcResponse {
+    let wait = async {
+        loop {
+            match events.recv().await {
+                Ok(DeviceEvent::LayoutAck { screen: s, success, message }) if s == screen.to_wire() => {
+                    return if success {
+                        IpcResponse::LayoutApplied { screen, message }
+                    } else {
+                        IpcResponse::OperationRejected { reason: format!("The pad rejected the layout: {}", message) }
+                    };
+                }
+                Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(_) => return IpcResponse::Error("Device event stream closed".to_string()),
+            }
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(3), wait)
+        .await
+        .unwrap_or_else(|_| IpcResponse::Error("The pad did not confirm the layout within 3s".to_string()))
+}
+
 fn log_info(hub: &Arc<Mutex<VecDeque<String>>>, msg: &str) {
     let now = Utc::now().format("%H:%M:%S").to_string();
     let mut h = hub.lock().unwrap();
@@ -506,6 +727,14 @@ fn log_info(hub: &Arc<Mutex<VecDeque<String>>>, msg: &str) {
         h.pop_front();
     }
     h.push_back(format!("{} HOST {}", now, msg));
+}
+
+fn get_tosu_log_path() -> PathBuf {
+    let state_dir = std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local").join("state")))
+        .unwrap_or_else(|| PathBuf::from("."));
+    state_dir.join("osupad").join("tosu.log")
 }
 
 fn get_database_path() -> PathBuf {

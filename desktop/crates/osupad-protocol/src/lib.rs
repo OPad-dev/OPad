@@ -8,7 +8,8 @@ use prost::Message;
 use std::io::Cursor;
 use thiserror::Error;
 
-pub const MAX_PAYLOAD_BYTES: usize = 4096;
+/// Matches PROTOCOL_MAX_FRAME_SIZE (8192) on the device minus the 4-byte length prefix
+pub const MAX_PAYLOAD_BYTES: usize = 8188;
 pub const HEADER_BYTES: usize = 4;
 
 #[derive(Debug, Error)]
@@ -151,6 +152,7 @@ mod tests {
                 lifetime_key2: 67890,
                 map_key1: 50,
                 map_key2: 60,
+                ..Default::default()
             })),
         };
 

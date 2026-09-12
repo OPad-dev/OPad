@@ -1,6 +1,19 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+pub mod ui_source;
+
+/// Key edge to HID report submit latency, measured on the device
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct LatencyStats {
+    pub samples: u32,
+    pub p50_us: u32,
+    pub p99_us: u32,
+    pub p999_us: u32,
+    pub max_us: u32,
+    pub dropped_reports: u32,
+}
+
 /// Operational mode of the system (§11)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -60,7 +73,15 @@ pub struct DeviceConfig {
     pub brightness: u32,           // 0..100, default: 100
     pub display_sleep_seconds: u32,// Default: 600 (10 min)
     pub gameplay_display_hz: u32,  // Default: 5
-    pub tosu_endpoint: String,     // Default: "ws://127.0.0.1:24050/ws"
+    pub tosu_endpoint: String,     // Default: "ws://127.0.0.1:24050/websocket/v2"
+    #[serde(default = "default_press_color_rgb")]
+    pub press_color_rgb: u32,      // Gameplay screen key press highlight 0xRRGGBB, default: red
+}
+
+pub const DEFAULT_PRESS_COLOR_RGB: u32 = 0xFF0000;
+
+fn default_press_color_rgb() -> u32 {
+    DEFAULT_PRESS_COLOR_RGB
 }
 
 impl Default for DeviceConfig {
@@ -72,7 +93,8 @@ impl Default for DeviceConfig {
             brightness: 100,
             display_sleep_seconds: 600,
             gameplay_display_hz: 5,
-            tosu_endpoint: "ws://127.0.0.1:24050/ws".to_string(),
+            tosu_endpoint: "ws://127.0.0.1:24050/websocket/v2".to_string(),
+            press_color_rgb: DEFAULT_PRESS_COLOR_RGB,
         }
     }
 }
@@ -128,11 +150,11 @@ pub fn char_to_hid_usage(ch: &str) -> Option<u32> {
 pub struct GameplayTelemetry {
     pub is_playing: bool,
     pub title: String,
-    pub artist: String,
-    pub current_pp: f32,
-    pub progress_ratio: f32, // 0.0 to 1.0
-    pub map_presses_k1: u32,
-    pub map_presses_k2: u32,
+    #[serde(default)]
+    pub live_time_ms: f64,   // Song position; jumps back on retry
+    /// Every UI data source this frame provides (see `ui_source`)
+    #[serde(default)]
+    pub values: Vec<(u8, ui_source::SourceValue)>,
 }
 
 /// Portable JSON Backup Format (§21)

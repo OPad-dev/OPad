@@ -1,4 +1,6 @@
-use osupad_model::{CounterState, DeviceConfig, DeviceInfo, JsonBackup, RuntimeMode};
+use osupad_layout::{Layout, Screen};
+use osupad_model::ui_source::SourceValue;
+use osupad_model::{CounterState, DeviceConfig, DeviceInfo, JsonBackup, LatencyStats, RuntimeMode};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -37,6 +39,15 @@ pub enum IpcRequest {
     },
     PrepareFlash,
     FinishFlash,
+    ResetLatencyStats,
+    /// Custom layouts saved in the daemon (None = the device's built-in default)
+    GetLayouts,
+    /// Validate, save and push a layout to the device
+    SetLayout { screen: Screen, layout: Layout },
+    /// Forget a custom layout and return the device to its default
+    ResetLayout { screen: Screen },
+    /// Latest UI data values the daemon knows (tosu data), for a live designer preview
+    GetUiValues,
 }
 
 /// Daemon responses to clients
@@ -55,6 +66,8 @@ pub enum IpcResponse {
         config: DeviceConfig,
         last_sync_time: Option<String>,
         tosu_connected: bool,
+        #[serde(default)]
+        latency: Option<LatencyStats>,
     },
     ConfigUpdated {
         config: DeviceConfig,
@@ -76,6 +89,16 @@ pub enum IpcResponse {
         port: Option<String>,
     },
     LogEntries(Vec<String>),
+    Layouts {
+        idle: Option<Layout>,
+        playing: Option<Layout>,
+    },
+    /// The device applied the layout; `message` carries notes such as "not saved while playing"
+    LayoutApplied {
+        screen: Screen,
+        message: String,
+    },
+    UiValues(Vec<(u8, SourceValue)>),
     OperationRejected {
         reason: String,
     },

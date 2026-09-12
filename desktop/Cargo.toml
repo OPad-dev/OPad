@@ -7,6 +7,8 @@ members = [
     "crates/osupad-ipc",
     "crates/osupad-tosu",
     "crates/osupad-device",
+    "crates/osupad-ui-preview",
+    "crates/osupad-layout",
     "daemon",
     "gui",
     "cli",

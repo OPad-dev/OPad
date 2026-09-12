@@ -64,6 +64,60 @@ impl Storage {
         if v < 1 {
             self.apply_v1()?;
         }
+        if v < 2 {
+            self.apply_v2()?;
+        }
+        if v < 3 {
+            self.apply_v3()?;
+        }
+        Ok(())
+    }
+
+    /// v2: configurable key press highlight color for the gameplay screen
+    fn apply_v2(&self) -> Result<(), StorageError> {
+        self.conn.execute_batch(
+            "BEGIN TRANSACTION;
+            ALTER TABLE config ADD COLUMN press_color_rgb INTEGER NOT NULL DEFAULT 16711680;
+            INSERT INTO schema_migrations (version, applied_at) VALUES (2, datetime('now'));
+            COMMIT;",
+        )?;
+        Ok(())
+    }
+
+    /// v3: custom screen layouts from the PC designer
+    fn apply_v3(&self) -> Result<(), StorageError> {
+        self.conn.execute_batch(
+            "BEGIN TRANSACTION;
+            CREATE TABLE IF NOT EXISTS layouts (
+                screen INTEGER PRIMARY KEY,
+                json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            INSERT INTO schema_migrations (version, applied_at) VALUES (3, datetime('now'));
+            COMMIT;",
+        )?;
+        Ok(())
+    }
+
+    /// Custom layout JSON for a screen, if one was saved
+    pub fn load_layout(&self, screen: u8) -> Result<Option<String>, StorageError> {
+        self.conn
+            .query_row("SELECT json FROM layouts WHERE screen = ?1", params![screen], |row| row.get(0))
+            .optional()
+            .map_err(StorageError::from)
+    }
+
+    pub fn save_layout(&self, screen: u8, json: &str) -> Result<(), StorageError> {
+        self.conn.execute(
+            "INSERT INTO layouts (screen, json, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(screen) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at",
+            params![screen, json, Utc::now().to_rfc3339()],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_layout(&self, screen: u8) -> Result<(), StorageError> {
+        self.conn.execute("DELETE FROM layouts WHERE screen = ?1", params![screen])?;
         Ok(())
     }
 
@@ -110,7 +164,7 @@ impl Storage {
     pub fn load_config(&self) -> Result<DeviceConfig, StorageError> {
         self.conn.query_row(
             "SELECT key1_hid_usage, key2_hid_usage, debounce_us, brightness,
-                    display_sleep_seconds, gameplay_display_hz, tosu_endpoint
+                    display_sleep_seconds, gameplay_display_hz, tosu_endpoint, press_color_rgb
              FROM config WHERE id = 1",
             [],
             |row| {
@@ -122,6 +176,7 @@ impl Storage {
                     display_sleep_seconds: row.get(4)?,
                     gameplay_display_hz: row.get(5)?,
                     tosu_endpoint: row.get(6)?,
+                    press_color_rgb: row.get(7)?,
                 })
             },
         ).map_err(StorageError::from)
@@ -136,7 +191,8 @@ impl Storage {
                 brightness = ?4,
                 display_sleep_seconds = ?5,
                 gameplay_display_hz = ?6,
-                tosu_endpoint = ?7
+                tosu_endpoint = ?7,
+                press_color_rgb = ?8
              WHERE id = 1",
             params![
                 config.key1_hid_usage,
@@ -146,6 +202,7 @@ impl Storage {
                 config.display_sleep_seconds,
                 config.gameplay_display_hz,
                 config.tosu_endpoint,
+                config.press_color_rgb,
             ],
         )?;
         Ok(())
@@ -243,6 +300,17 @@ pub fn reconcile_counters(pc: &CounterState, esp: &CounterState) -> CounterState
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn layouts_round_trip() {
+        let storage = Storage::open_in_memory().expect("open");
+        assert_eq!(storage.load_layout(1).unwrap(), None);
+        storage.save_layout(1, "{\"a\":1}").unwrap();
+        storage.save_layout(1, "{\"a\":2}").unwrap();
+        assert_eq!(storage.load_layout(1).unwrap().as_deref(), Some("{\"a\":2}"));
+        storage.delete_layout(1).unwrap();
+        assert_eq!(storage.load_layout(1).unwrap(), None);
+    }
 
     #[test]
     fn test_storage_lifecycle() {

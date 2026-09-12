@@ -1,17 +1,13 @@
 [package]
-name = "osupad-ipc"
+name = "osupad-layout"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
+description = "osu!pad screen layout model shared by the daemon, GUI designer and preview"
 
 [dependencies]
-tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tracing.workspace = true
 osupad-model = { path = "../osupad-model" }
-osupad-layout = { path = "../osupad-layout" }
-bytes.workspace = true
-byteorder.workspace = true

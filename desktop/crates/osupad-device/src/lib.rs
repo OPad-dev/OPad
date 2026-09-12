@@ -1,6 +1,8 @@
 use bytes::BytesMut;
 use chrono::{Datelike, Local, Timelike};
-use osupad_model::{CounterState, DeviceConfig, DeviceInfo, GameplayTelemetry};
+use osupad_layout::{Layout, Screen};
+use osupad_model::ui_source::SourceValue;
+use osupad_model::{CounterState, DeviceConfig, DeviceInfo};
 use osupad_protocol::proto::{self, host_to_device, DeviceToHost, HostToDevice};
 use osupad_protocol::{decode_device_message, encode_host_message};
 use serialport::SerialPortType;
@@ -37,6 +39,7 @@ pub enum DeviceEvent {
     StatusUpdate(proto::DeviceStatus),
     Counters(CounterState),
     LogBatch(proto::LogEventBatch),
+    LayoutAck { screen: u8, success: bool, message: String },
 }
 
 pub struct DeviceManager {
@@ -249,6 +252,7 @@ impl DeviceManager {
                     brightness: config.brightness,
                     display_sleep_seconds: config.display_sleep_seconds,
                     gameplay_display_hz: config.gameplay_display_hz,
+                    press_color_rgb: config.press_color_rgb,
                 }),
             })),
         };
@@ -256,24 +260,104 @@ impl DeviceManager {
         Ok(())
     }
 
-    pub async fn send_gameplay_state(
-        &self,
-        telemetry: &GameplayTelemetry,
-        k1_count: u32,
-        k2_count: u32,
-    ) -> Result<(), DeviceError> {
+    /// Send changed UI data source values, split to fit the device's 32-value messages
+    pub async fn send_data_update(&self, values: &[(u8, SourceValue)]) -> Result<(), DeviceError> {
+        const MAX_VALUES: usize = 32;
+        const TEXT_MAX: usize = 64; // nanopb max_size, including NUL
+        for chunk in values.chunks(MAX_VALUES) {
+            let msg = HostToDevice {
+                sequence_number: self.next_seq(),
+                payload: Some(host_to_device::Payload::DataUpdate(proto::DataUpdate {
+                    values: chunk
+                        .iter()
+                        .map(|(source, value)| proto::DataValue {
+                            source: *source as u32,
+                            value: Some(match value {
+                                SourceValue::Number(n) => proto::data_value::Value::Number(*n),
+                                SourceValue::Text(t) => proto::data_value::Value::Text(fit_nanopb_string(t, TEXT_MAX)),
+                                SourceValue::Clear => proto::data_value::Value::Clear(true),
+                            }),
+                        })
+                        .collect(),
+                })),
+            };
+            self.cmd_tx.send(msg).await.map_err(|_| DeviceError::NotConnected)?;
+        }
+        Ok(())
+    }
+
+    pub async fn reset_latency_stats(&self) -> Result<(), DeviceError> {
         let msg = HostToDevice {
             sequence_number: self.next_seq(),
-            payload: Some(host_to_device::Payload::GameplayState(
-                proto::GameplayDisplayState {
-                    title: telemetry.title.clone(),
-                    artist: telemetry.artist.clone(),
-                    current_pp: telemetry.current_pp,
-                    progress_ratio: telemetry.progress_ratio,
-                    current_map_presses_k1: k1_count,
-                    current_map_presses_k2: k2_count,
-                },
-            )),
+            payload: Some(host_to_device::Payload::ResetLatencyStats(true)),
+        };
+        self.cmd_tx.send(msg).await.map_err(|_| DeviceError::NotConnected)?;
+        Ok(())
+    }
+
+    /// Apply a screen layout on the device (it also stores it, unless playing)
+    pub async fn send_layout(&self, screen: Screen, layout: &Layout) -> Result<(), DeviceError> {
+        let msg = HostToDevice {
+            sequence_number: self.next_seq(),
+            payload: Some(host_to_device::Payload::SetLayout(proto::SetLayout {
+                screen: screen.to_wire() as u32,
+                background: layout.background,
+                widgets: layout
+                    .widgets
+                    .iter()
+                    .map(|w| proto::UiWidget {
+                        kind: w.kind.to_wire() as u32,
+                        source: w.source as u32,
+                        font: w.font.to_wire() as u32,
+                        align: w.align.to_wire() as u32,
+                        x: w.x as i32,
+                        y: w.y as i32,
+                        w: w.w.max(0) as u32,
+                        h: w.h.max(0) as u32,
+                        fg: w.fg,
+                        bg: w.bg,
+                        accent: w.accent,
+                        radius: w.radius as u32,
+                        decimals: w.decimals as u32,
+                        flags: w.flags as u32,
+                        label: fit_nanopb_string(&w.label, osupad_layout::LABEL_MAX_BYTES + 1),
+                        suffix: fit_nanopb_string(&w.suffix, osupad_layout::SUFFIX_MAX_BYTES + 1),
+                    })
+                    .collect(),
+            })),
+        };
+        self.cmd_tx.send(msg).await.map_err(|_| DeviceError::NotConnected)?;
+        Ok(())
+    }
+
+    /// Return a screen to the device's built-in layout
+    pub async fn reset_layout(&self, screen: Screen) -> Result<(), DeviceError> {
+        let msg = HostToDevice {
+            sequence_number: self.next_seq(),
+            payload: Some(host_to_device::Payload::ResetLayout(screen.to_wire() as u32)),
+        };
+        self.cmd_tx.send(msg).await.map_err(|_| DeviceError::NotConnected)?;
+        Ok(())
+    }
+
+    /// Ask the device for a DeviceStatus (lifetime and current-map counters)
+    pub async fn request_status(&self) -> Result<(), DeviceError> {
+        let msg = HostToDevice {
+            sequence_number: self.next_seq(),
+            payload: Some(host_to_device::Payload::RequestStatus(true)),
+        };
+        self.cmd_tx.send(msg).await.map_err(|_| DeviceError::NotConnected)?;
+        Ok(())
+    }
+
+    pub async fn send_host_status(&self, tosu_connected: bool, playing: bool, play_id: u32) -> Result<(), DeviceError> {
+        let msg = HostToDevice {
+            sequence_number: self.next_seq(),
+            payload: Some(host_to_device::Payload::HostStatus(proto::HostStatus {
+                tosu_connected,
+                playing,
+                play_id,
+            })),
         };
         self.cmd_tx.send(msg).await.map_err(|_| DeviceError::NotConnected)?;
         Ok(())
@@ -301,6 +385,20 @@ impl DeviceManager {
         self.cmd_tx.send(msg).await.map_err(|_| DeviceError::NotConnected)?;
         Ok(())
     }
+}
+
+/// Truncate to fit a nanopb fixed `char[max_size]` field (max_size - 1 bytes + NUL).
+/// nanopb rejects the whole message if a string is too long, which would freeze the display.
+fn fit_nanopb_string(s: &str, max_size: usize) -> String {
+    let limit = max_size - 1;
+    if s.len() <= limit {
+        return s.to_string();
+    }
+    let mut end = limit;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s[..end].to_string()
 }
 
 fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>) {
@@ -349,6 +447,13 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
             proto::device_to_host::Payload::LogBatch(batch) => {
                 let _ = tx.send(DeviceEvent::LogBatch(batch.clone()));
             }
+            proto::device_to_host::Payload::LayoutAck(ack) => {
+                let _ = tx.send(DeviceEvent::LayoutAck {
+                    screen: ack.screen.min(u8::MAX as u32) as u8,
+                    success: ack.success,
+                    message: ack.message.clone(),
+                });
+            }
             _ => {}
         }
     }
@@ -373,4 +478,19 @@ fn find_usb_port(vid: u16, pid: u16) -> Option<String> {
         .into_iter()
         .find(|p| matches!(&p.port_type, SerialPortType::UsbPort(info) if info.vid == vid && info.pid == pid))
         .map(|p| p.port_name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fit_nanopb_string;
+
+    #[test]
+    fn test_fit_nanopb_string() {
+        assert_eq!(fit_nanopb_string("Lunatic", 32), "Lunatic");
+        assert_eq!(fit_nanopb_string(&"a".repeat(100), 64).len(), 63);
+        // Never splits a multi-byte UTF-8 character
+        let jp = "灰".repeat(30); // 3 bytes each
+        let fitted = fit_nanopb_string(&jp, 64);
+        assert!(fitted.len() <= 63 && fitted.chars().all(|c| c == '灰'));
+    }
 }

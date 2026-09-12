@@ -54,6 +54,11 @@ enum Commands {
         #[arg(long, help = "Explicit serial port (default: auto-detect)")]
         port: Option<String>,
     },
+    /// Show key-press-to-HID latency measured on the device
+    Latency {
+        #[arg(long, help = "Clear the collected samples (e.g. right before playing a map)")]
+        reset: bool,
+    },
     /// Perform initial system setup (udev permissions & directories)
     Setup,
 }
@@ -89,6 +94,7 @@ async fn main() -> Result<()> {
                 config,
                 last_sync_time,
                 tosu_connected,
+                latency,
             } = resp
             {
                 println!("=== osu!pad Status ===");
@@ -105,6 +111,9 @@ async fn main() -> Result<()> {
                 println!("Generation:       {}", counters.counter_generation);
                 println!("Last Sync:        {}", last_sync_time.as_deref().unwrap_or("Never"));
                 println!("tosu (osu!lazer): {}", if tosu_connected { "Active" } else { "Offline" });
+                if let Some(l) = latency {
+                    println!("Key Latency:      p50 {}µs, p99.9 {}µs, max {}µs ({} samples)", l.p50_us, l.p999_us, l.max_us, l.samples);
+                }
                 println!("Debounce Lockout: {} µs", config.debounce_us);
                 println!("Brightness:       {}%", config.brightness);
                 println!("Sleep Timeout:    {}s", config.display_sleep_seconds);
@@ -222,6 +231,31 @@ async fn main() -> Result<()> {
             let _ = send_request(&mut stream, &IpcRequest::FinishFlash).await;
             let boot_port = result?;
             println!("✓ Device is in ROM download mode on {}", boot_port);
+        }
+
+        Commands::Latency { reset } => {
+            if reset {
+                match send_request(&mut stream, &IpcRequest::ResetLatencyStats).await? {
+                    IpcResponse::Error(e) => bail!("{}", e),
+                    _ => println!("✓ Latency statistics reset"),
+                }
+            } else {
+                match send_request(&mut stream, &IpcRequest::GetStatus).await? {
+                    IpcResponse::Status { latency: Some(l), .. } => {
+                        println!("=== Key edge -> HID submit latency (device-side) ===");
+                        println!("Samples:          {}", l.samples);
+                        println!("p50:              {} µs", l.p50_us);
+                        println!("p99:              {} µs", l.p99_us);
+                        println!("p99.9:            {} µs", l.p999_us);
+                        println!("max:              {} µs", l.max_us);
+                        println!("Dropped reports:  {}", l.dropped_reports);
+                    }
+                    IpcResponse::Status { latency: None, .. } => {
+                        println!("No latency data yet (device not connected, or old firmware)");
+                    }
+                    other => bail!("Unexpected response from daemon: {:?}", other),
+                }
+            }
         }
 
         Commands::Setup => unreachable!(),
