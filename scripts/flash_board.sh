@@ -116,11 +116,15 @@ fi
 echo "[3/3] Port ready: ${TARGET_PORT}. Flashing landscape firmware binary..."
 cd "${REPO_ROOT}/firmware"
 
-$ESPTOOL --chip esp32s3 -p "${TARGET_PORT}" -b 460800 --before=no_reset --after=hard_reset write_flash \
+# Use --before=usb_reset to properly synchronize ESP32-S3 native USB-Serial/JTAG
+if ! $ESPTOOL --chip esp32s3 -p "${TARGET_PORT}" -b 460800 --before=usb_reset --after=hard_reset write_flash \
     --flash_mode dio --flash_freq 80m --flash_size 16MB \
     0x0 "${BUILD_DIR}/bootloader/bootloader.bin" \
     0x10000 "${BUILD_DIR}/osupad-firmware.bin" \
-    0x8000 "${BUILD_DIR}/partition_table/partition-table.bin"
+    0x8000 "${BUILD_DIR}/partition_table/partition-table.bin"; then
+    echo "Retrying with espflash..."
+    espflash write-bin --chip esp32s3 -p "${TARGET_PORT}" --before usb-reset --non-interactive 0x10000 "${BUILD_DIR}/osupad-firmware.bin"
+fi
 
 echo ""
 echo "=================================================="
