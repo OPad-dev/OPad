@@ -284,3 +284,13 @@ void protocol_feed_cdc_bytes(const uint8_t *data, size_t len)
         s_rx_frame_len = remaining;
     }
 }
+
+void protocol_reset_rx(void)
+{
+    s_rx_frame_len = 0;
+}
+
+bool protocol_rx_idle(void)
+{
+    return s_rx_frame_len == 0;
+}

@@ -1,16 +1,19 @@
 #include "usb_cdc.h"
 #include "protocol/protocol.h"
 #include "tusb.h"
+#include "tinyusb.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "soc/rtc_cntl_reg.h"
-#include "esp32s3/rom/usb/chip_usb_dw_wrapper.h"
+#include "hal/usb_serial_jtag_ll.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <string.h>
 
 static const char *TAG = "usb_cdc";
 static volatile bool s_cdc_connected = false;
 static bool s_prev_rts_state = false;
+static volatile bool s_download_mode_armed = false;
 static volatile bool s_need_bootloader_reboot = false;
 
 esp_err_t usb_cdc_init(void)
@@ -26,7 +29,7 @@ bool usb_cdc_is_connected(void)
 
 size_t usb_cdc_write(const uint8_t *data, size_t len)
 {
-    if (!tud_cdc_n_connected(0)) {
+    if (!tud_ready()) {
         return 0;
     }
 
@@ -64,15 +67,95 @@ void usb_cdc_reboot_to_bootloader(void)
     s_need_bootloader_reboot = true;
 }
 
+/*
+ * Hand the internal USB PHY back to the USB-Serial-JTAG (USJ) controller and
+ * restart into the ROM download bootloader, so the board enumerates as
+ * 303a:1001 and can be flashed without touching BOOT/RST.
+ *
+ * The USJ controller is a fixed-function device that enumerates in hardware,
+ * so it does not need the CPU. But it was already enumerated at power-on
+ * before TinyUSB took the PHY, so it still holds a stale bus address. The
+ * host must see a real disconnect + reconnect and send a bus reset, otherwise
+ * it never re-enumerates the port (seen as error -71 and the app coming back).
+ * Same sequence as arduino-esp32's usb_switch_to_cdc_jtag().
+ */
+static void reboot_to_rom_download(void)
+{
+    ESP_LOGI(TAG, "Rebooting into ROM Download Bootloader...");
+    tud_cdc_n_write_flush(0);
+    vTaskDelay(pdMS_TO_TICKS(50));
+
+    // Soft-detach USB-OTG. Deliberately not tinyusb_driver_uninstall(): it frees
+    // TinyUSB mutexes/FIFOs while the HID and protocol tasks may still call tud_*,
+    // and a crash here reboots straight back into the app.
+    tud_disconnect();
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    // Route the internal FSLS PHY back to USJ
+    CLEAR_PERI_REG_MASK(RTC_CNTL_USB_CONF_REG,
+                        RTC_CNTL_SW_HW_USB_PHY_SEL | RTC_CNTL_SW_USB_PHY_SEL | RTC_CNTL_USB_PAD_ENABLE);
+    usb_serial_jtag_ll_phy_enable_external(false);
+    usb_serial_jtag_ll_phy_enable_pad(true);
+
+    // Hold SE0 (no pull-up, both lines pulled down) long enough for the hub to report a detach
+    const usb_serial_jtag_pull_override_vals_t detach = {
+        .dp_pu = false, .dm_pu = false, .dp_pd = true, .dm_pd = true,
+    };
+    usb_serial_jtag_ll_phy_enable_pull_override(&detach);
+    vTaskDelay(pdMS_TO_TICKS(300));
+
+    // Re-attach with the D+ pull-up and wait for the host's bus reset. dp_pullup
+    // must be restored to 1 before dropping the override: the hardware keeps
+    // using that bit, and leaving it 0 means the host never sees the device.
+    usb_serial_jtag_ll_clr_intsts_mask(USB_SERIAL_JTAG_INTR_BUS_RESET);
+    const usb_serial_jtag_pull_override_vals_t attach = {
+        .dp_pu = true, .dm_pu = false, .dp_pd = false, .dm_pd = false,
+    };
+    usb_serial_jtag_ll_phy_enable_pull_override(&attach);
+    usb_serial_jtag_ll_phy_disable_pull_override();
+    bool got_reset = false;
+    for (int i = 0; i < 150 && !got_reset; i++) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        got_reset = (usb_serial_jtag_ll_get_intraw_mask() & USB_SERIAL_JTAG_INTR_BUS_RESET) != 0;
+    }
+    if (!got_reset) {
+        ESP_LOGW(TAG, "No USJ bus reset seen from host, restarting anyway");
+    }
+
+    // ROM reads this after the CPU reset done by esp_restart() and stays in download mode
+    REG_WRITE(RTC_CNTL_OPTION1_REG, RTC_CNTL_FORCE_DOWNLOAD_BOOT);
+    esp_restart();
+}
+
+/*
+ * The plain-text "BOOTLOADER" command is only honoured when it is the entire
+ * read ("BOOTLOADER", optionally followed by \r/\n) and arrives between protocol
+ * frames. Searching the stream for the text instead would reboot the pad whenever
+ * a protobuf payload (e.g. a song title) happened to contain it. At a frame
+ * boundary those bytes would decode as an oversized length prefix, so a valid
+ * frame can never be mistaken for the command.
+ */
+static bool is_bootloader_command(const uint8_t *buf, size_t len)
+{
+    static const char cmd[] = "BOOTLOADER";
+    const size_t cmd_len = sizeof(cmd) - 1;
+
+    if (len < cmd_len || memcmp(buf, cmd, cmd_len) != 0) {
+        return false;
+    }
+    for (size_t i = cmd_len; i < len; i++) {
+        if (buf[i] != '\r' && buf[i] != '\n') {
+            return false;
+        }
+    }
+    return true;
+}
+
 void usb_cdc_task_poll(void)
 {
     if (s_need_bootloader_reboot) {
         s_need_bootloader_reboot = false;
-        ESP_LOGI(TAG, "Rebooting into ROM Download Bootloader...");
-        vTaskDelay(pdMS_TO_TICKS(50));
-        chip_usb_set_persist_flags(0);
-        REG_WRITE(RTC_CNTL_OPTION1_REG, RTC_CNTL_FORCE_DOWNLOAD_BOOT);
-        esp_restart();
+        reboot_to_rom_download();
     }
 
     if (!tud_cdc_n_available(0)) {
@@ -82,10 +165,10 @@ void usb_cdc_task_poll(void)
     uint8_t rx_buf[256];
     uint32_t count = tud_cdc_n_read(0, rx_buf, sizeof(rx_buf));
     if (count > 0) {
-        if (memmem(rx_buf, count, "BOOTLOADER", 10) != NULL ||
-            memmem(rx_buf, count, "REBOOT", 6) != NULL) {
+        if (protocol_rx_idle() && is_bootloader_command(rx_buf, count)) {
             ESP_LOGI(TAG, "CDC serial command received: entering bootloader...");
             s_need_bootloader_reboot = true;
+            return;
         }
         protocol_feed_cdc_bytes(rx_buf, count);
     }
@@ -103,7 +186,18 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
     s_cdc_connected = dtr;
     ESP_LOGD(TAG, "CDC line state: DTR=%d, RTS=%d", dtr, rts);
 
-    // Standard Espressif CDC-ACM bootloader reset trigger:
+    if (!dtr) {
+        protocol_reset_rx();
+    }
+
+    // 1. Magic 1200 baud touch armed: clearing DTR (host closing port) triggers download mode
+    if (s_download_mode_armed && !dtr) {
+        ESP_LOGI(TAG, "Port closed after 1200 baud touch, entering bootloader...");
+        s_need_bootloader_reboot = true;
+        return;
+    }
+
+    // 2. Standard Espressif CDC-ACM bootloader reset trigger:
     // When RTS falls from HIGH to LOW while DTR is HIGH (classic esptool pattern)
     if (!rts && s_prev_rts_state && dtr) {
         ESP_LOGI(TAG, "CDC DTR/RTS bootloader trigger detected, scheduling download mode...");
@@ -114,9 +208,14 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
 
 void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const* p_line_coding)
 {
-    (void)itf;
     if (p_line_coding && p_line_coding->bit_rate == 1200) {
-        ESP_LOGI(TAG, "1200 baud touch detected, scheduling download mode...");
-        s_need_bootloader_reboot = true;
+        ESP_LOGI(TAG, "1200 baud touch detected, arming download mode reset");
+        s_download_mode_armed = true;
+        // Fire immediately if host already has DTR low
+        if (!s_cdc_connected) {
+            s_need_bootloader_reboot = true;
+        }
+        return;
     }
+    s_download_mode_armed = false;
 }

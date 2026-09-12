@@ -37,6 +37,16 @@ bool protocol_decode_host_message(const uint8_t *payload, size_t payload_len, os
 void protocol_feed_cdc_bytes(const uint8_t *data, size_t len);
 
 /**
+ * @brief Reset the RX framing buffer (called on CDC disconnect or framing reset).
+ */
+void protocol_reset_rx(void);
+
+/**
+ * @brief True when no partial frame is buffered (the next byte starts a new frame).
+ */
+bool protocol_rx_idle(void);
+
+/**
  * @brief Send current DeviceStatus to host over CDC.
  */
 esp_err_t protocol_send_status(void);
