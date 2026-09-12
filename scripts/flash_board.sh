@@ -43,14 +43,28 @@ find_esp_port() {
     return 1
 }
 
-# 1. Determine current state
-CURRENT_PORT=$(find_esp_port || echo "/dev/ttyACM0")
-IS_BOOTLOADER=$(lsusb 2>/dev/null | grep -i "303a:1001" || true)
+# 1. Check if device is already in ROM bootloader (303a:1001)
+get_bootloader_port() {
+    for p in /dev/ttyACM0 /dev/ttyACM1 /dev/ttyACM2 /dev/ttyUSB0; do
+        if [ -c "$p" ]; then
+            local model_id vid
+            vid=$(udevadm info -q property -n "$p" 2>/dev/null | grep "^ID_VENDOR_ID=" | cut -d= -f2 || true)
+            model_id=$(udevadm info -q property -n "$p" 2>/dev/null | grep "^ID_MODEL_ID=" | cut -d= -f2 || true)
+            if [ "$vid" = "303a" ] && [ "$model_id" = "1001" ]; then
+                echo "$p"
+                return 0
+            fi
+        fi
+    done
+    return 1
+}
 
-if [ -z "$IS_BOOTLOADER" ]; then
+CURRENT_PORT=$(find_esp_port || echo "/dev/ttyACM0")
+BOOT_PORT=$(get_bootloader_port || true)
+
+if [ -z "$BOOT_PORT" ]; then
     echo "[1/3] Device running application on ${CURRENT_PORT} (303a:4001)."
-    echo "      Sending 1200-baud auto-reset touch to trigger bootloader..."
-    
+    echo "      Attempting 1200-baud auto-reset touch..."
     python3 -c "
 import serial, time
 try:
@@ -61,69 +75,59 @@ except Exception:
     pass
 " 2>/dev/null || true
 
-    # Wait up to 2.5s for bootloader mode
-    for i in {1..12}; do
-        sleep 0.2
-        if lsusb 2>/dev/null | grep -q -i "303a:1001"; then
-            IS_BOOTLOADER="yes"
+    for i in {1..10}; do
+        sleep 0.15
+        BOOT_PORT=$(get_bootloader_port || true)
+        if [ -n "$BOOT_PORT" ]; then
             break
         fi
     done
 fi
 
-if [ -z "$IS_BOOTLOADER" ]; then
+if [ -z "$BOOT_PORT" ]; then
     echo ""
-    echo "[2/3] NOTE: The board is currently running the previous firmware build"
-    echo "      which does not have the auto-bootloader hook."
+    echo "[2/3] The board currently has the previous build without the auto-reset hook."
+    echo "      To enter download mode to flash the landscape firmware (REQUIRED ONCE):"
     echo ""
-    echo "      To flash this update (REQUIRED ONCE):"
-    echo "      1. Press and hold the BOOT button"
-    echo "      2. Press and release the RESET button"
-    echo "      3. Release the BOOT button"
+    echo "      >>> METHOD 1 (Recommended by Waveshare) <<<"
+    echo "      1. Unplug the USB cable from the ESP32-S3."
+    echo "      2. Hold down the BOOT button on the board."
+    echo "      3. Plug the USB cable back in while holding BOOT."
+    echo "      4. Release the BOOT button."
     echo ""
-    echo "      Once this update is flashed, ALL future updates will reboot"
-    echo "      and flash 100% automatically without touching any buttons."
+    echo "      >>> METHOD 2 (Hardware Buttons) <<<"
+    echo "      1. Press and hold the BOOT button."
+    echo "      2. Press and release the RESET button."
+    echo "      3. Keep holding BOOT for 1 second, then release."
+    echo ""
+    echo "      Once this update is flashed, ALL future flashes will run"
+    echo "      100% automatically without touching buttons or cables!"
     echo ""
     echo "Waiting for ESP32-S3 ROM Bootloader (303a:1001)..."
+
     while true; do
-        if lsusb 2>/dev/null | grep -q -i "303a:1001"; then
-            echo "✓ ESP32-S3 ROM Bootloader detected!"
+        BOOT_PORT=$(get_bootloader_port || true)
+        if [ -n "$BOOT_PORT" ]; then
+            echo "✓ ESP32-S3 ROM Bootloader detected on ${BOOT_PORT}!"
             break
         fi
-        sleep 0.3
+        sleep 0.1
     done
 else
-    echo "[2/3] ✓ ESP32-S3 ROM Bootloader (303a:1001) detected!"
+    echo "[2/3] ✓ ESP32-S3 ROM Bootloader detected on ${BOOT_PORT}!"
 fi
 
-# Wait for Linux udev device node to be created and settled
-echo "Waiting for serial port to settle..."
-sleep 1.5
-
-TARGET_PORT=""
-for i in {1..30}; do
-    TARGET_PORT=$(find_esp_port || true)
-    if [ -n "$TARGET_PORT" ] && [ -c "$TARGET_PORT" ]; then
-        break
-    fi
-    sleep 0.2
-done
-
-if [ -z "$TARGET_PORT" ]; then
-    TARGET_PORT="/dev/ttyACM0"
-fi
-
-echo "[3/3] Port ready: ${TARGET_PORT}. Flashing landscape firmware binary..."
+echo "[3/3] Flashing landscape firmware binary to ${BOOT_PORT}..."
 cd "${REPO_ROOT}/firmware"
 
-# Use --before=usb_reset to properly synchronize ESP32-S3 native USB-Serial/JTAG
-if ! $ESPTOOL --chip esp32s3 -p "${TARGET_PORT}" -b 460800 --before=usb_reset --after=hard_reset write_flash \
+# Use --before=usb_reset for ESP32-S3 native USB-Serial/JTAG
+if ! $ESPTOOL --chip esp32s3 -p "${BOOT_PORT}" -b 460800 --before=usb_reset --after=hard_reset write_flash \
     --flash_mode dio --flash_freq 80m --flash_size 16MB \
     0x0 "${BUILD_DIR}/bootloader/bootloader.bin" \
     0x10000 "${BUILD_DIR}/osupad-firmware.bin" \
     0x8000 "${BUILD_DIR}/partition_table/partition-table.bin"; then
     echo "Retrying with espflash..."
-    espflash write-bin --chip esp32s3 -p "${TARGET_PORT}" --before usb-reset --non-interactive 0x10000 "${BUILD_DIR}/osupad-firmware.bin"
+    espflash write-bin --chip esp32s3 -p "${BOOT_PORT}" --before usb-reset --non-interactive 0x10000 "${BUILD_DIR}/osupad-firmware.bin"
 fi
 
 echo ""
