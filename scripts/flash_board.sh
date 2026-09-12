@@ -42,18 +42,32 @@ if [ -z "$IS_BOOTLOADER" ]; then
         fi
         sleep 0.2
     done
-    sleep 0.8
 else
     echo "[2/3] ✓ ESP32-S3 already in ROM Bootloader mode (303a:1001)!"
 fi
 
-# Find active ACM port
-TARGET_PORT=$(ls /dev/ttyACM* 2>/dev/null | head -n 1 || echo "/dev/ttyACM0")
-echo "[3/3] Flashing landscape firmware binary to ${TARGET_PORT}..."
+echo "Waiting for serial port to initialize..."
+TARGET_PORT=""
+for i in {1..60}; do
+    for p in /dev/ttyACM0 /dev/ttyACM1 /dev/ttyACM2; do
+        if [ -e "$p" ]; then
+            if python3 -c "import serial; s=serial.Serial('$p', 115200, timeout=0.1); s.close()" 2>/dev/null; then
+                TARGET_PORT="$p"
+                break 2
+            fi
+        fi
+    done
+    sleep 0.1
+done
+
+if [ -z "$TARGET_PORT" ]; then
+    TARGET_PORT="/dev/ttyACM0"
+fi
+
+echo "[3/3] Port ready: ${TARGET_PORT}. Flashing landscape firmware binary..."
 cd "${REPO_ROOT}/firmware"
 
 # Use --before=no_reset because the device is ALREADY in the ROM bootloader!
-# Default reset would toggle RTS and kick the chip back into the user app!
 if ! python -m esptool --chip esp32s3 -p "${TARGET_PORT}" -b 460800 --before=no_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 build/bootloader/bootloader.bin 0x10000 build/osupad-firmware.bin 0x8000 build/partition_table/partition-table.bin; then
     echo "Retrying with usb_reset mode..."
     python -m esptool --chip esp32s3 -p "${TARGET_PORT}" -b 460800 --before=usb_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 build/bootloader/bootloader.bin 0x10000 build/osupad-firmware.bin 0x8000 build/partition_table/partition-table.bin
