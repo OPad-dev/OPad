@@ -4,6 +4,7 @@ idf_component_register(
         "../boards/waveshare_esp32s3_touch_lcd_2/board.c"
         "../boards/waveshare_esp32s3_touch_lcd_2/board_display.c"
         "input/keypad.c"
+        "input/debounce.c"
         "input/latency_stats.c"
         "usb/usb_descriptors.c"
         "usb/usb_hid.c"

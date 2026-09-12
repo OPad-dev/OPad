@@ -17,7 +17,7 @@ typedef enum {
 typedef struct {
     uint8_t keycode1;       // USB HID Keycode for Key 1 (default 0x1D = 'z')
     uint8_t keycode2;       // USB HID Keycode for Key 2 (default 0x1B = 'x')
-    uint16_t debounce_ms;   // Debounce interval in milliseconds (default 5ms)
+    uint32_t debounce_us;   // Debounce interval in microseconds (default 3000us)
 } keypad_config_t;
 
 /**

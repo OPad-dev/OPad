@@ -192,7 +192,7 @@ pub fn settings(app: &App) -> Element<'_, Message> {
                 .spacing(24),
             column![
                 row![caption("DEBOUNCE LOCKOUT"), Space::new().width(Length::Fill), text(format!("{:.1} ms", app.debounce as f32 / 1000.0)).size(14)],
-                slider(500..=10000, app.debounce, Message::Debounce).step(500u32),
+                slider(500..=20000, app.debounce, Message::Debounce).step(500u32),
                 muted("Presses within this window after a switch change are ignored.").size(12),
             ]
             .spacing(8),

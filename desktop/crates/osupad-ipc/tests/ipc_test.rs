@@ -62,7 +62,7 @@ async fn test_ipc_roundtrip_requests() {
                         IpcRequest::ExportBackup => {
                             let info = DeviceInfo {
                                 device_id: "OSUPAD-TEST".to_string(),
-                                board_profile: "waveshare".to_string(),
+                                board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                                 firmware_version: "1.0.0".to_string(),
                                 protocol_version: 1,
                             };

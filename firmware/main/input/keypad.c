@@ -1,6 +1,8 @@
 #include "keypad.h"
+#include "debounce.h"
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
 #include "ui/ui.h"
+#include "usb/usb_hid.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_timer.h"
@@ -10,11 +12,17 @@
 
 static const char *TAG = "keypad";
 
+static portMUX_TYPE s_keypad_spinlock = portMUX_INITIALIZER_UNLOCKED;
+static debounce_state_t s_key_debounce[KEY_ID_COUNT];
+
 static keypad_config_t s_config = {
     .keycode1 = 0x1D,       // 'z'
     .keycode2 = 0x1B,       // 'x'
-    .debounce_ms = 5,
+    .debounce_us = DEBOUNCE_DEFAULT_US,
 };
+
+static keypad_config_t s_staged_config;
+static volatile bool s_config_staged = false;
 
 static volatile bool s_key_state[KEY_ID_COUNT] = {false, false};
 static volatile int64_t s_last_transition_us[KEY_ID_COUNT] = {0, 0};
@@ -38,54 +46,147 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
     }
 
     int64_t now = esp_timer_get_time();
-    int64_t debounce_us = (int64_t)s_config.debounce_ms * 1000;
-
     bool current_pressed = (key_index == 0) ? board_key1_read() : board_key2_read();
 
-    if (current_pressed != s_key_state[key_index]) {
-        if ((now - s_last_transition_us[key_index]) >= debounce_us) {
-            s_key_state[key_index] = current_pressed;
-            s_last_transition_us[key_index] = now;
+    portENTER_CRITICAL_ISR(&s_keypad_spinlock);
+    debounce_action_t action = debounce_step(
+        &s_key_debounce[key_index],
+        now,
+        current_pressed,
+        DEBOUNCE_SOURCE_EDGE,
+        s_config.debounce_us
+    );
 
-            if (current_pressed) {
-                if (key_index == 0) {
-                    atomic_fetch_add_explicit(&s_key1_lifetime_presses, 1, memory_order_relaxed);
-                    atomic_fetch_add_explicit(&s_key1_map_presses, 1, memory_order_relaxed);
-                    s_key1_last_press_us = now;
-                } else {
-                    atomic_fetch_add_explicit(&s_key2_lifetime_presses, 1, memory_order_relaxed);
-                    atomic_fetch_add_explicit(&s_key2_map_presses, 1, memory_order_relaxed);
-                    s_key2_last_press_us = now;
-                }
+    if (action != DEBOUNCE_ACTION_NONE) {
+        s_key_state[key_index] = s_key_debounce[key_index].accepted_pressed;
+        s_last_transition_us[key_index] = s_key_debounce[key_index].last_transition_us;
+
+        // Counting rule: only accepted press transitions increment counters.
+        if (action == DEBOUNCE_ACTION_PRESS) {
+            if (key_index == 0) {
+                atomic_fetch_add_explicit(&s_key1_lifetime_presses, 1, memory_order_relaxed);
+                atomic_fetch_add_explicit(&s_key1_map_presses, 1, memory_order_relaxed);
+                s_key1_last_press_us = now;
+            } else {
+                atomic_fetch_add_explicit(&s_key2_lifetime_presses, 1, memory_order_relaxed);
+                atomic_fetch_add_explicit(&s_key2_map_presses, 1, memory_order_relaxed);
+                s_key2_last_press_us = now;
             }
+        }
 
-            BaseType_t high_task_wakeup = pdFALSE;
-            if (s_input_task_handle != NULL) {
-                vTaskNotifyGiveFromISR(s_input_task_handle, &high_task_wakeup);
-                if (high_task_wakeup) {
-                    portYIELD_FROM_ISR();
-                }
+        BaseType_t high_task_wakeup = pdFALSE;
+        if (s_input_task_handle != NULL) {
+            vTaskNotifyGiveFromISR(s_input_task_handle, &high_task_wakeup);
+            if (high_task_wakeup) {
+                portYIELD_FROM_ISR();
             }
         }
     }
+    portEXIT_CRITICAL_ISR(&s_keypad_spinlock);
 }
 
 static void keypad_task(void *pvParameters)
 {
+    (void)pvParameters;
     ESP_LOGI(TAG, "Keypad high-priority processing task started on core %d", xPortGetCoreID());
 
     bool reported_state[KEY_ID_COUNT] = {false, false};
 
     while (1) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        // Calculate wait timeout based on smallest remaining lockout
+        int64_t now_us = esp_timer_get_time();
+        TickType_t wait_ticks = portMAX_DELAY;
+        int64_t min_rem_us = -1;
 
+        portENTER_CRITICAL(&s_keypad_spinlock);
         for (int i = 0; i < KEY_ID_COUNT; i++) {
-            bool current = s_key_state[i];
+            if (!s_key_debounce[i].resampled && s_key_debounce[i].lockout_end_us > 0) {
+                int64_t rem = s_key_debounce[i].lockout_end_us - now_us;
+                if (rem <= 0) {
+                    min_rem_us = 0;
+                    break;
+                }
+                if (min_rem_us < 0 || rem < min_rem_us) {
+                    min_rem_us = rem;
+                }
+            }
+        }
+        portEXIT_CRITICAL(&s_keypad_spinlock);
+
+        if (min_rem_us >= 0) {
+            if (min_rem_us == 0) {
+                wait_ticks = 0;
+            } else {
+                uint32_t ms = (uint32_t)((min_rem_us + 999) / 1000);
+                wait_ticks = pdMS_TO_TICKS(ms);
+                if (wait_ticks == 0) {
+                    wait_ticks = 1;
+                }
+            }
+        }
+
+        ulTaskNotifyTake(pdTRUE, wait_ticks);
+
+        now_us = esp_timer_get_time();
+
+        // 1. Re-sample keys whose lockout has expired
+        for (int i = 0; i < KEY_ID_COUNT; i++) {
+            bool need_resample = false;
+            portENTER_CRITICAL(&s_keypad_spinlock);
+            if (!s_key_debounce[i].resampled && s_key_debounce[i].lockout_end_us > 0 &&
+                now_us >= s_key_debounce[i].lockout_end_us) {
+                need_resample = true;
+            }
+            portEXIT_CRITICAL(&s_keypad_spinlock);
+
+            if (need_resample) {
+                bool pin_level = (i == 0) ? board_key1_read() : board_key2_read();
+                portENTER_CRITICAL(&s_keypad_spinlock);
+                debounce_action_t action = debounce_step(
+                    &s_key_debounce[i],
+                    now_us,
+                    pin_level,
+                    DEBOUNCE_SOURCE_RESAMPLE,
+                    s_config.debounce_us
+                );
+
+                if (action != DEBOUNCE_ACTION_NONE) {
+                    s_key_state[i] = s_key_debounce[i].accepted_pressed;
+                    s_last_transition_us[i] = s_key_debounce[i].last_transition_us;
+
+                    // Counting rule: only accepted press transitions increment counters,
+                    // including presses applied by resample. A glitch press that is later
+                    // corrected will have been counted once; that is acceptable.
+                    if (action == DEBOUNCE_ACTION_PRESS) {
+                        if (i == 0) {
+                            atomic_fetch_add_explicit(&s_key1_lifetime_presses, 1, memory_order_relaxed);
+                            atomic_fetch_add_explicit(&s_key1_map_presses, 1, memory_order_relaxed);
+                            s_key1_last_press_us = now_us;
+                        } else {
+                            atomic_fetch_add_explicit(&s_key2_lifetime_presses, 1, memory_order_relaxed);
+                            atomic_fetch_add_explicit(&s_key2_map_presses, 1, memory_order_relaxed);
+                            s_key2_last_press_us = now_us;
+                        }
+                    }
+                }
+                portEXIT_CRITICAL(&s_keypad_spinlock);
+            }
+        }
+
+        // 2. Submit state changes to USB HID
+        for (int i = 0; i < KEY_ID_COUNT; i++) {
+            bool current;
+            int64_t edge_us;
+
+            portENTER_CRITICAL(&s_keypad_spinlock);
+            current = s_key_state[i];
+            edge_us = s_last_transition_us[i];
+            portEXIT_CRITICAL(&s_keypad_spinlock);
+
             if (current != reported_state[i]) {
                 reported_state[i] = current;
                 // HID report first; activity bookkeeping only after it is submitted
                 if (s_callback) {
-                    int64_t edge_us = s_last_transition_us[i];
                     if (s_callback(i, current, edge_us)) {
                         latency_stats_record((uint32_t)(esp_timer_get_time() - edge_us));
                     } else {
@@ -98,18 +199,36 @@ static void keypad_task(void *pvParameters)
                 }
             }
         }
+
+        // 3. If both keys are currently released, apply any staged config change
+        portENTER_CRITICAL(&s_keypad_spinlock);
+        if (s_config_staged && !s_key_state[0] && !s_key_state[1] &&
+            !reported_state[0] && !reported_state[1]) {
+            s_config = s_staged_config;
+            usb_hid_set_keycodes(s_config.keycode1, s_config.keycode2);
+            s_config_staged = false;
+        }
+        portEXIT_CRITICAL(&s_keypad_spinlock);
     }
 }
 
 esp_err_t keypad_init(const keypad_config_t *config)
 {
     if (config) {
-        s_config = *config;
+        keypad_set_config(config);
+    } else {
+        s_config.keycode1 = 0x1D;
+        s_config.keycode2 = 0x1B;
+        s_config.debounce_us = DEBOUNCE_DEFAULT_US;
     }
 
     // Initial state read
-    s_key_state[0] = board_key1_read();
-    s_key_state[1] = board_key2_read();
+    bool k1_init = board_key1_read();
+    bool k2_init = board_key2_read();
+    debounce_init(&s_key_debounce[0], k1_init);
+    debounce_init(&s_key_debounce[1], k2_init);
+    s_key_state[0] = k1_init;
+    s_key_state[1] = k2_init;
 
     // Spawn high-priority task (configMAX_PRIORITIES - 1) pinned to Core 0
     BaseType_t res = xTaskCreatePinnedToCore(
@@ -133,8 +252,8 @@ esp_err_t keypad_init(const keypad_config_t *config)
         return err;
     }
 
-    ESP_LOGI(TAG, "Keypad initialized (debouncing=%ums, Key1: 0x%02X, Key2: 0x%02X)",
-             s_config.debounce_ms, s_config.keycode1, s_config.keycode2);
+    ESP_LOGI(TAG, "Keypad initialized (debouncing=%lu us, Key1: 0x%02X, Key2: 0x%02X)",
+             (unsigned long)s_config.debounce_us, s_config.keycode1, s_config.keycode2);
     return ESP_OK;
 }
 
@@ -198,14 +317,34 @@ int64_t keypad_get_last_press_us(keypad_key_id_t key_id)
 
 void keypad_set_config(const keypad_config_t *config)
 {
-    if (config) {
-        s_config = *config;
+    if (!config) {
+        return;
     }
+
+    keypad_config_t clamped = *config;
+    if (clamped.debounce_us < DEBOUNCE_MIN_US) {
+        clamped.debounce_us = DEBOUNCE_MIN_US;
+    } else if (clamped.debounce_us > DEBOUNCE_MAX_US) {
+        clamped.debounce_us = DEBOUNCE_MAX_US;
+    }
+
+    portENTER_CRITICAL(&s_keypad_spinlock);
+    if (!s_key_state[0] && !s_key_state[1]) {
+        s_config = clamped;
+        usb_hid_set_keycodes(clamped.keycode1, clamped.keycode2);
+        s_config_staged = false;
+    } else {
+        s_staged_config = clamped;
+        s_config_staged = true;
+    }
+    portEXIT_CRITICAL(&s_keypad_spinlock);
 }
 
 void keypad_get_config(keypad_config_t *out_config)
 {
     if (out_config) {
+        portENTER_CRITICAL(&s_keypad_spinlock);
         *out_config = s_config;
+        portEXIT_CRITICAL(&s_keypad_spinlock);
     }
 }

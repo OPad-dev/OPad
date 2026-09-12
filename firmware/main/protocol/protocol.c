@@ -153,7 +153,7 @@ esp_err_t protocol_send_config_ack(uint32_t seq, bool success, const char *text)
     msg.payload.config_ack.has_current_config = true;
     msg.payload.config_ack.current_config.key1_hid_usage = cfg.keycode1;
     msg.payload.config_ack.current_config.key2_hid_usage = cfg.keycode2;
-    msg.payload.config_ack.current_config.debounce_us = (uint32_t)cfg.debounce_ms * 1000;
+    msg.payload.config_ack.current_config.debounce_us = cfg.debounce_us;
     msg.payload.config_ack.current_config.brightness = board_backlight_get();
 
     return send_envelope(&msg);
@@ -242,7 +242,7 @@ static void handle_host_message(const osupad_HostToDevice *msg)
 
             if (c->key1_hid_usage > 0) cfg.keycode1 = (uint8_t)c->key1_hid_usage;
             if (c->key2_hid_usage > 0) cfg.keycode2 = (uint8_t)c->key2_hid_usage;
-            if (c->debounce_us > 0) cfg.debounce_ms = (uint16_t)(c->debounce_us / 1000);
+            if (c->debounce_us > 0) cfg.debounce_us = c->debounce_us;
 
             keypad_set_config(&cfg);
             usb_hid_set_keycodes(cfg.keycode1, cfg.keycode2);

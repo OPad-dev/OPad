@@ -521,6 +521,12 @@ async fn handle_ipc_request(
         }
 
         IpcRequest::UpdateConfig(new_config) => {
+            if let Err(e) = new_config.validate() {
+                return IpcResponse::OperationRejected {
+                    reason: format!("Invalid configuration: {}", e),
+                };
+            }
+
             // Check §30 policy: Defer or reject config updates while playing
             if mode == RuntimeMode::Playing {
                 return IpcResponse::OperationRejected {

@@ -102,6 +102,28 @@ impl Default for DeviceConfig {
 }
 
 impl DeviceConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.key1_hid_usage < 0x04 || self.key1_hid_usage > 0xE7 {
+            return Err(format!("Invalid key1 HID usage: 0x{:02X}", self.key1_hid_usage));
+        }
+        if self.key2_hid_usage < 0x04 || self.key2_hid_usage > 0xE7 {
+            return Err(format!("Invalid key2 HID usage: 0x{:02X}", self.key2_hid_usage));
+        }
+        if self.debounce_us < 500 || self.debounce_us > 20000 {
+            return Err(format!("Debounce lockout must be between 500 and 20000 µs (got {})", self.debounce_us));
+        }
+        if self.brightness > 100 {
+            return Err(format!("Brightness must be between 0 and 100 (got {})", self.brightness));
+        }
+        if self.display_sleep_seconds != 0 && (self.display_sleep_seconds < 10 || self.display_sleep_seconds > 86400) {
+            return Err(format!("Display sleep must be 0 or 10..=86400 seconds (got {})", self.display_sleep_seconds));
+        }
+        if self.gameplay_display_hz < 1 || self.gameplay_display_hz > 30 {
+            return Err(format!("Gameplay display Hz must be between 1 and 30 (got {})", self.gameplay_display_hz));
+        }
+        Ok(())
+    }
+
     pub fn key1_char(&self) -> String {
         hid_usage_to_char(self.key1_hid_usage)
     }
@@ -221,8 +243,29 @@ impl JsonBackup {
         if self.format_version != 1 {
             return Err(format!("Unsupported backup format version: {}", self.format_version));
         }
+        if self.device.board_profile != "waveshare_esp32s3_touch_lcd_2" {
+            return Err(format!("Unsupported board profile: {}", self.device.board_profile));
+        }
+        if self.stats.lifetime_key1 > i64::MAX as u64 {
+            return Err("lifetime_key1 exceeds maximum integer size".to_string());
+        }
+        if self.stats.lifetime_key2 > i64::MAX as u64 {
+            return Err("lifetime_key2 exceeds maximum integer size".to_string());
+        }
+        if self.exported_at > chrono::Utc::now() + chrono::Duration::days(1) {
+            return Err("Backup timestamp is in the future".to_string());
+        }
+        if self.config.debounce_us < 500 || self.config.debounce_us > 20000 {
+            return Err(format!("Debounce lockout must be between 500 and 20000 µs (got {})", self.config.debounce_us));
+        }
         if self.config.brightness > 100 {
             return Err("Brightness must be between 0 and 100".to_string());
+        }
+        if self.config.display_sleep_seconds != 0 && (self.config.display_sleep_seconds < 10 || self.config.display_sleep_seconds > 86400) {
+            return Err(format!("Display sleep must be 0 or 10..=86400 seconds (got {})", self.config.display_sleep_seconds));
+        }
+        if self.config.gameplay_display_hz < 1 || self.config.gameplay_display_hz > 30 {
+            return Err(format!("Gameplay display Hz must be between 1 and 30 (got {})", self.config.gameplay_display_hz));
         }
         if char_to_hid_usage(&self.config.key1).is_none() {
             return Err(format!("Invalid key1 mapping: {}", self.config.key1));
