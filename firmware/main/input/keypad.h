@@ -52,6 +52,11 @@ void keypad_get_lifetime_presses(uint64_t *key1_presses, uint64_t *key2_presses)
 void keypad_set_lifetime_presses(uint64_t key1_presses, uint64_t key2_presses);
 
 /**
+ * @brief Add to RAM lifetime press counters without overwriting (used during boot NVS load).
+ */
+void keypad_add_lifetime_presses(uint64_t key1_presses, uint64_t key2_presses);
+
+/**
  * @brief Get press counters for the current osu! attempt.
  */
 void keypad_get_map_presses(uint32_t *key1_presses, uint32_t *key2_presses);

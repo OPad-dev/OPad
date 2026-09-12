@@ -1,0 +1,40 @@
+menu "osu!pad Testing and Benchmark"
+
+    config OSUPAD_TEST_FAIL_LCD
+        bool "Force display initialization to fail (P0-1 test)"
+        default n
+        help
+            Forces board_display_init to return ESP_FAIL to test headless keyboard fallback.
+
+    config OSUPAD_TEST_FAIL_NVS
+        bool "Force NVS initialization to fail (P0-1 test)"
+        default n
+        help
+            Forces counters_init to fail NVS initialization to test RAM-only counter fallback.
+
+    config OSUPAD_BENCH_HID_ONLY
+        bool "HID-only benchmark mode (skips UI, CDC task, runtime supervisor)"
+        default n
+        help
+            Stage A latency benchmarking: only USB HID and keypad task run.
+
+    config OSUPAD_BENCH_NO_DISPLAY
+        bool "Stage B benchmark mode (daemon connected, no display updates)"
+        default n
+        help
+            Stage B latency benchmarking: CDC task runs, but display updates are disabled.
+
+    config OSUPAD_BENCH_DEBUG_GPIO
+        bool "Toggle debug GPIO right after HID submit"
+        default n
+        help
+            Toggles a debug GPIO immediately after HID report submission for logic analyzer correlation.
+
+    config OSUPAD_BENCH_DEBUG_GPIO_NUM
+        int "Debug GPIO number"
+        default 4
+        depends on OSUPAD_BENCH_DEBUG_GPIO
+        help
+            Free GPIO pin on Waveshare header (default 4).
+
+endmenu

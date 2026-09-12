@@ -65,6 +65,9 @@ typedef struct _osupad_DeviceStatus {
     uint32_t latency_p999_us;
     uint32_t latency_max_us;
     uint32_t hid_deferred_reports; /* Key changes that waited for the next USB poll, then resent */
+    bool display_ok;
+    bool nvs_ok;
+    uint32_t nvs_writes;
 } osupad_DeviceStatus;
 
 typedef struct _osupad_ConfigPayload {
@@ -183,6 +186,7 @@ typedef struct _osupad_CounterSyncResponse {
     bool success;
     bool has_synchronized_state;
     osupad_CounterState synchronized_state;
+    char message[64];
 } osupad_CounterSyncResponse;
 
 typedef struct _osupad_LogEvent {
@@ -190,6 +194,9 @@ typedef struct _osupad_LogEvent {
     osupad_LogLevel level;
     char tag[16];
     char message[64];
+    uint32_t event_id;
+    uint32_t arg0;
+    uint32_t arg1;
 } osupad_LogEvent;
 
 typedef struct _osupad_LogEventBatch {
@@ -212,6 +219,7 @@ typedef struct _osupad_HostToDevice {
         osupad_DataUpdate data_update;
         osupad_SetLayout set_layout;
         uint32_t reset_layout; /* screen id: back to the built-in default */
+        bool request_logs;
     } payload;
 } osupad_HostToDevice;
 
@@ -273,7 +281,7 @@ extern "C" {
 /* Initializer values for message structs */
 #define osupad_Hello_init_default                {0, ""}
 #define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0}
-#define osupad_DeviceStatus_init_default         {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+#define osupad_DeviceStatus_init_default         {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_ConfigPayload_init_default        {0, 0, 0, 0, 0, 0, 0}
 #define osupad_SetConfig_init_default            {false, osupad_ConfigPayload_init_default}
 #define osupad_ConfigAck_init_default            {0, "", false, osupad_ConfigPayload_init_default}
@@ -287,14 +295,14 @@ extern "C" {
 #define osupad_LayoutAck_init_default            {0, 0, ""}
 #define osupad_CounterState_init_default         {"", 0, 0, 0}
 #define osupad_CounterSyncRequest_init_default   {false, osupad_CounterState_init_default, 0}
-#define osupad_CounterSyncResponse_init_default  {0, false, osupad_CounterState_init_default}
-#define osupad_LogEvent_init_default             {0, _osupad_LogLevel_MIN, "", ""}
+#define osupad_CounterSyncResponse_init_default  {0, false, osupad_CounterState_init_default, ""}
+#define osupad_LogEvent_init_default             {0, _osupad_LogLevel_MIN, "", "", 0, 0, 0}
 #define osupad_LogEventBatch_init_default        {0, {osupad_LogEvent_init_default, osupad_LogEvent_init_default, osupad_LogEvent_init_default, osupad_LogEvent_init_default, osupad_LogEvent_init_default, osupad_LogEvent_init_default, osupad_LogEvent_init_default, osupad_LogEvent_init_default}}
 #define osupad_HostToDevice_init_default         {0, 0, {osupad_Hello_init_default}}
 #define osupad_DeviceToHost_init_default         {0, 0, {osupad_HelloAck_init_default}}
 #define osupad_Hello_init_zero                   {0, ""}
 #define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0}
-#define osupad_DeviceStatus_init_zero            {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+#define osupad_DeviceStatus_init_zero            {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_ConfigPayload_init_zero           {0, 0, 0, 0, 0, 0, 0}
 #define osupad_SetConfig_init_zero               {false, osupad_ConfigPayload_init_zero}
 #define osupad_ConfigAck_init_zero               {0, "", false, osupad_ConfigPayload_init_zero}
@@ -308,8 +316,8 @@ extern "C" {
 #define osupad_LayoutAck_init_zero               {0, 0, ""}
 #define osupad_CounterState_init_zero            {"", 0, 0, 0}
 #define osupad_CounterSyncRequest_init_zero      {false, osupad_CounterState_init_zero, 0}
-#define osupad_CounterSyncResponse_init_zero     {0, false, osupad_CounterState_init_zero}
-#define osupad_LogEvent_init_zero                {0, _osupad_LogLevel_MIN, "", ""}
+#define osupad_CounterSyncResponse_init_zero     {0, false, osupad_CounterState_init_zero, ""}
+#define osupad_LogEvent_init_zero                {0, _osupad_LogLevel_MIN, "", "", 0, 0, 0}
 #define osupad_LogEventBatch_init_zero           {0, {osupad_LogEvent_init_zero, osupad_LogEvent_init_zero, osupad_LogEvent_init_zero, osupad_LogEvent_init_zero, osupad_LogEvent_init_zero, osupad_LogEvent_init_zero, osupad_LogEvent_init_zero, osupad_LogEvent_init_zero}}
 #define osupad_HostToDevice_init_zero            {0, 0, {osupad_Hello_init_zero}}
 #define osupad_DeviceToHost_init_zero            {0, 0, {osupad_HelloAck_init_zero}}
@@ -338,6 +346,9 @@ extern "C" {
 #define osupad_DeviceStatus_latency_p999_us_tag  12
 #define osupad_DeviceStatus_latency_max_us_tag   13
 #define osupad_DeviceStatus_hid_deferred_reports_tag 14
+#define osupad_DeviceStatus_display_ok_tag       15
+#define osupad_DeviceStatus_nvs_ok_tag           16
+#define osupad_DeviceStatus_nvs_writes_tag       17
 #define osupad_ConfigPayload_key1_hid_usage_tag  1
 #define osupad_ConfigPayload_key2_hid_usage_tag  2
 #define osupad_ConfigPayload_debounce_us_tag     3
@@ -402,10 +413,14 @@ extern "C" {
 #define osupad_CounterSyncRequest_force_restore_tag 2
 #define osupad_CounterSyncResponse_success_tag   1
 #define osupad_CounterSyncResponse_synchronized_state_tag 2
+#define osupad_CounterSyncResponse_message_tag   3
 #define osupad_LogEvent_timestamp_ms_tag         1
 #define osupad_LogEvent_level_tag                2
 #define osupad_LogEvent_tag_tag                  3
 #define osupad_LogEvent_message_tag              4
+#define osupad_LogEvent_event_id_tag             5
+#define osupad_LogEvent_arg0_tag                 6
+#define osupad_LogEvent_arg1_tag                 7
 #define osupad_LogEventBatch_events_tag          1
 #define osupad_HostToDevice_sequence_number_tag  1
 #define osupad_HostToDevice_hello_tag            2
@@ -419,6 +434,7 @@ extern "C" {
 #define osupad_HostToDevice_data_update_tag      10
 #define osupad_HostToDevice_set_layout_tag       11
 #define osupad_HostToDevice_reset_layout_tag     12
+#define osupad_HostToDevice_request_logs_tag     13
 #define osupad_DeviceToHost_sequence_number_tag  1
 #define osupad_DeviceToHost_hello_ack_tag        2
 #define osupad_DeviceToHost_status_tag           3
@@ -459,7 +475,10 @@ X(a, STATIC,   SINGULAR, UINT32,   latency_p50_us,   10) \
 X(a, STATIC,   SINGULAR, UINT32,   latency_p99_us,   11) \
 X(a, STATIC,   SINGULAR, UINT32,   latency_p999_us,  12) \
 X(a, STATIC,   SINGULAR, UINT32,   latency_max_us,   13) \
-X(a, STATIC,   SINGULAR, UINT32,   hid_deferred_reports,  14)
+X(a, STATIC,   SINGULAR, UINT32,   hid_deferred_reports,  14) \
+X(a, STATIC,   SINGULAR, BOOL,     display_ok,       15) \
+X(a, STATIC,   SINGULAR, BOOL,     nvs_ok,           16) \
+X(a, STATIC,   SINGULAR, UINT32,   nvs_writes,       17)
 #define osupad_DeviceStatus_CALLBACK NULL
 #define osupad_DeviceStatus_DEFAULT NULL
 
@@ -584,7 +603,8 @@ X(a, STATIC,   SINGULAR, BOOL,     force_restore,     2)
 
 #define osupad_CounterSyncResponse_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, BOOL,     success,           1) \
-X(a, STATIC,   OPTIONAL, MESSAGE,  synchronized_state,   2)
+X(a, STATIC,   OPTIONAL, MESSAGE,  synchronized_state,   2) \
+X(a, STATIC,   SINGULAR, STRING,   message,           3)
 #define osupad_CounterSyncResponse_CALLBACK NULL
 #define osupad_CounterSyncResponse_DEFAULT NULL
 #define osupad_CounterSyncResponse_synchronized_state_MSGTYPE osupad_CounterState
@@ -593,7 +613,10 @@ X(a, STATIC,   OPTIONAL, MESSAGE,  synchronized_state,   2)
 X(a, STATIC,   SINGULAR, UINT32,   timestamp_ms,      1) \
 X(a, STATIC,   SINGULAR, UENUM,    level,             2) \
 X(a, STATIC,   SINGULAR, STRING,   tag,               3) \
-X(a, STATIC,   SINGULAR, STRING,   message,           4)
+X(a, STATIC,   SINGULAR, STRING,   message,           4) \
+X(a, STATIC,   SINGULAR, UINT32,   event_id,          5) \
+X(a, STATIC,   SINGULAR, UINT32,   arg0,              6) \
+X(a, STATIC,   SINGULAR, UINT32,   arg1,              7)
 #define osupad_LogEvent_CALLBACK NULL
 #define osupad_LogEvent_DEFAULT NULL
 
@@ -615,7 +638,8 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,host_status,payload.host_status),   
 X(a, STATIC,   ONEOF,    BOOL,     (payload,reset_latency_stats,payload.reset_latency_stats),   9) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,data_update,payload.data_update),  10) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,set_layout,payload.set_layout),  11) \
-X(a, STATIC,   ONEOF,    UINT32,   (payload,reset_layout,payload.reset_layout),  12)
+X(a, STATIC,   ONEOF,    UINT32,   (payload,reset_layout,payload.reset_layout),  12) \
+X(a, STATIC,   ONEOF,    BOOL,     (payload,request_logs,payload.request_logs),  13)
 #define osupad_HostToDevice_CALLBACK NULL
 #define osupad_HostToDevice_DEFAULT NULL
 #define osupad_HostToDevice_payload_hello_MSGTYPE osupad_Hello
@@ -695,19 +719,19 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_ConfigPayload_size                42
 #define osupad_CounterState_size                 61
 #define osupad_CounterSyncRequest_size           65
-#define osupad_CounterSyncResponse_size          65
+#define osupad_CounterSyncResponse_size          130
 #define osupad_DataUpdate_size                   2336
 #define osupad_DataValue_size                    71
-#define osupad_DeviceStatus_size                 86
-#define osupad_DeviceToHost_size                 745
+#define osupad_DeviceStatus_size                 98
+#define osupad_DeviceToHost_size                 889
 #define osupad_GameplayDisplayState_size         196
 #define osupad_HelloAck_size                     133
 #define osupad_Hello_size                        39
 #define osupad_HostStatus_size                   10
 #define osupad_HostToDevice_size                 4309
 #define osupad_LayoutAck_size                    73
-#define osupad_LogEventBatch_size                736
-#define osupad_LogEvent_size                     90
+#define osupad_LogEventBatch_size                880
+#define osupad_LogEvent_size                     108
 #define osupad_SetConfig_size                    44
 #define osupad_SetLayout_size                    4300
 #define osupad_TimeSync_size                     36

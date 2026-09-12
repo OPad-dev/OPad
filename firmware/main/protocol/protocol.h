@@ -69,7 +69,7 @@ esp_err_t protocol_send_layout_ack(uint32_t seq, uint32_t screen, bool success, 
 /**
  * @brief Send CounterSyncResponse to host over CDC.
  */
-esp_err_t protocol_send_counter_sync_resp(uint32_t seq, bool success);
+esp_err_t protocol_send_counter_sync_resp(uint32_t seq, bool success, const char *msg);
 
 #ifdef __cplusplus
 }

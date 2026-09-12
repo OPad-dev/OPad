@@ -13,9 +13,14 @@ extern "C" {
 #endif
 
 /**
- * @brief Initialize low-level board peripherals (GPIOs, backlight timer).
+ * @brief Initialize low-level board key GPIOs.
  */
 esp_err_t board_init(void);
+
+/**
+ * @brief Initialize LCD backlight PWM (LEDC).
+ */
+esp_err_t board_backlight_init(void);
 
 /**
  * @brief Register ISR handler for the physical key inputs.

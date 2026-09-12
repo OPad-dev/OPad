@@ -167,6 +167,12 @@ void keypad_set_lifetime_presses(uint64_t key1_presses, uint64_t key2_presses)
     atomic_store_explicit(&s_key2_lifetime_presses, key2_presses, memory_order_relaxed);
 }
 
+void keypad_add_lifetime_presses(uint64_t key1_presses, uint64_t key2_presses)
+{
+    atomic_fetch_add_explicit(&s_key1_lifetime_presses, key1_presses, memory_order_relaxed);
+    atomic_fetch_add_explicit(&s_key2_lifetime_presses, key2_presses, memory_order_relaxed);
+}
+
 void keypad_get_map_presses(uint32_t *key1_presses, uint32_t *key2_presses)
 {
     if (key1_presses) {

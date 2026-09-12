@@ -131,6 +131,9 @@ esp_err_t protocol_send_status(void)
     msg.payload.status.latency_p999_us = lat.p999_us;
     msg.payload.status.latency_max_us = lat.max_us;
     msg.payload.status.hid_deferred_reports = lat.deferred_reports;
+    msg.payload.status.display_ok = ui_is_ok();
+    msg.payload.status.nvs_ok = counters_is_nvs_ok();
+    msg.payload.status.nvs_writes = counters_get_nvs_writes();
 
     return send_envelope(&msg);
 }
@@ -156,7 +159,7 @@ esp_err_t protocol_send_config_ack(uint32_t seq, bool success, const char *text)
     return send_envelope(&msg);
 }
 
-esp_err_t protocol_send_counter_sync_resp(uint32_t seq, bool success)
+esp_err_t protocol_send_counter_sync_resp(uint32_t seq, bool success, const char *msg_text)
 {
     counters_snapshot_t snap;
     counters_get(&snap);
@@ -168,6 +171,9 @@ esp_err_t protocol_send_counter_sync_resp(uint32_t seq, bool success)
     msg.sequence_number = seq ? seq : s_out_sequence++;
     msg.which_payload = osupad_DeviceToHost_counter_sync_resp_tag;
     msg.payload.counter_sync_resp.success = success;
+    if (msg_text && msg_text[0]) {
+        strncpy(msg.payload.counter_sync_resp.message, msg_text, sizeof(msg.payload.counter_sync_resp.message) - 1);
+    }
     msg.payload.counter_sync_resp.has_synchronized_state = true;
     strncpy(msg.payload.counter_sync_resp.synchronized_state.device_id, dev_id, sizeof(msg.payload.counter_sync_resp.synchronized_state.device_id) - 1);
     msg.payload.counter_sync_resp.synchronized_state.counter_generation = snap.generation;
@@ -266,13 +272,16 @@ static void handle_host_message(const osupad_HostToDevice *msg)
     case osupad_HostToDevice_counter_sync_tag:
         if (msg->payload.counter_sync.has_target_state) {
             const osupad_CounterState *tgt = &msg->payload.counter_sync.target_state;
+            char err_msg[64] = "";
             esp_err_t err = counters_sync_from_host(
                 tgt->counter_generation,
                 tgt->lifetime_key1,
                 tgt->lifetime_key2,
-                msg->payload.counter_sync.force_restore
+                msg->payload.counter_sync.force_restore,
+                err_msg,
+                sizeof(err_msg)
             );
-            protocol_send_counter_sync_resp(msg->sequence_number, (err == ESP_OK));
+            protocol_send_counter_sync_resp(msg->sequence_number, (err == ESP_OK), err_msg);
         }
         break;
 

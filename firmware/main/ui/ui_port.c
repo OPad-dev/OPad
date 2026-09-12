@@ -138,13 +138,23 @@ static void pad_timer_cb(lv_timer_t *timer)
     }
 }
 
+static bool s_ui_ok = false;
+
 // ---- public API ----------------------------------------------------------------------
+
+bool ui_is_ok(void)
+{
+    return s_ui_ok;
+}
 
 esp_err_t ui_init(void)
 {
+    s_ui_ok = false;
+
     esp_lcd_panel_io_handle_t io = NULL;
     esp_err_t err = board_display_init(&io, &s_panel);
     if (err != ESP_OK) {
+        ESP_LOGE(TAG, "board_display_init failed: %s", esp_err_to_name(err));
         return err;
     }
 
@@ -155,6 +165,7 @@ esp_err_t ui_init(void)
     port_cfg.task_max_sleep_ms = 500;
     err = lvgl_port_init(&port_cfg);
     if (err != ESP_OK) {
+        ESP_LOGE(TAG, "lvgl_port_init failed: %s", esp_err_to_name(err));
         return err;
     }
 
@@ -173,6 +184,7 @@ esp_err_t ui_init(void)
     };
     s_disp = lvgl_port_add_disp(&disp_cfg);
     if (!s_disp) {
+        ESP_LOGE(TAG, "lvgl_port_add_disp failed");
         return ESP_FAIL;
     }
 
@@ -198,12 +210,14 @@ esp_err_t ui_init(void)
     lvgl_port_unlock();
 
     board_backlight_set(s_brightness);
+    s_ui_ok = true;
     ESP_LOGI(TAG, "LVGL UI started on core 1");
     return ESP_OK;
 }
 
 void ui_notify_activity(void)
 {
+    if (!s_ui_ok) return;
     atomic_store(&s_last_activity_us, esp_timer_get_time());
 }
 
@@ -221,6 +235,7 @@ void ui_set_time(uint32_t year, uint32_t month, uint32_t day, uint32_t hour, uin
 void ui_set_brightness(uint8_t percent)
 {
     s_brightness = percent > 100 ? 100 : percent;
+    if (!s_ui_ok) return;
     if (!s_asleep) {
         board_backlight_set(s_brightness);
     }
@@ -233,11 +248,13 @@ void ui_set_sleep_timeout(uint32_t seconds)
 
 bool ui_is_asleep(void)
 {
+    if (!s_ui_ok) return false;
     return s_asleep;
 }
 
 void ui_set_tosu_connected(bool connected)
 {
+    if (!s_ui_ok) return;
     lvgl_port_lock(0);
     ui_data_set_number(UI_SRC_STATUS_TOSU, connected);
     if (!connected) {
@@ -249,16 +266,19 @@ void ui_set_tosu_connected(bool connected)
 
 void ui_lock(void)
 {
+    if (!s_ui_ok) return;
     lvgl_port_lock(0);
 }
 
 void ui_unlock(void)
 {
+    if (!s_ui_ok) return;
     lvgl_port_unlock();
 }
 
 void ui_set_number(uint8_t source, double value)
 {
+    if (!s_ui_ok) return;
     lvgl_port_lock(0);
     ui_data_set_number(source, value);
     lvgl_port_unlock();
@@ -266,6 +286,7 @@ void ui_set_number(uint8_t source, double value)
 
 void ui_set_string(uint8_t source, const char *value)
 {
+    if (!s_ui_ok) return;
     lvgl_port_lock(0);
     ui_data_set_string(source, value);
     lvgl_port_unlock();
@@ -273,6 +294,12 @@ void ui_set_string(uint8_t source, const char *value)
 
 bool ui_set_layout(uint8_t screen, const ui_layout_t *layout, char *err, size_t err_len)
 {
+    if (!s_ui_ok) {
+        if (err && err_len > 0) {
+            snprintf(err, err_len, "UI disabled (LCD init failed)");
+        }
+        return false;
+    }
     if (screen >= UI_SCREEN_COUNT) {
         snprintf(err, err_len, "unknown screen %u", screen);
         return false;

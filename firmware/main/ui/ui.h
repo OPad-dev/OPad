@@ -13,6 +13,7 @@ extern "C" {
 #endif
 
 esp_err_t ui_init(void);
+bool ui_is_ok(void);
 
 /** Lock-free timestamp write; safe from the keypad task. */
 void ui_notify_activity(void);

@@ -60,6 +60,9 @@ message DeviceStatus {
     uint32 latency_p999_us = 12;
     uint32 latency_max_us = 13;
     uint32 hid_deferred_reports = 14; // Key changes that waited for the next USB poll, then resent
+    bool display_ok = 15;
+    bool nvs_ok = 16;
+    uint32 nvs_writes = 17;
 }
 
 // -----------------------------------------------------------------------------
@@ -191,6 +194,7 @@ message CounterSyncRequest {
 message CounterSyncResponse {
     bool success = 1;
     CounterState synchronized_state = 2;
+    string message = 3;
 }
 
 // -----------------------------------------------------------------------------
@@ -202,6 +206,9 @@ message LogEvent {
     LogLevel level = 2;
     string tag = 3;
     string message = 4;
+    uint32 event_id = 5;
+    uint32 arg0 = 6;
+    uint32 arg1 = 7;
 }
 
 message LogEventBatch {
@@ -226,6 +233,7 @@ message HostToDevice {
         DataUpdate data_update = 10;
         SetLayout set_layout = 11;
         uint32 reset_layout = 12;    // screen id: back to the built-in default
+        bool request_logs = 13;
     }
 }
 

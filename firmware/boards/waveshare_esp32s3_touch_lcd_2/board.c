@@ -4,14 +4,14 @@
 #include "driver/ledc.h"
 
 static const char *TAG = "board";
-static uint8_t s_backlight_percent = 80;
+static uint8_t s_backlight_percent = 100;
 static bool s_gpio_isr_service_installed = false;
 
 esp_err_t board_init(void)
 {
-    ESP_LOGI(TAG, "Initializing Waveshare ESP32-S3-Touch-LCD-2 board...");
+    ESP_LOGI(TAG, "Initializing Waveshare ESP32-S3-Touch-LCD-2 key GPIOs...");
 
-    // 1. Configure Switch GPIOs (Active LOW, internal pull-up)
+    // Configure Switch GPIOs (Active LOW, internal pull-up)
     gpio_config_t key_cfg = {
         .pin_bit_mask = (1ULL << BOARD_KEY1_GPIO) | (1ULL << BOARD_KEY2_GPIO),
         .mode = GPIO_MODE_INPUT,
@@ -25,7 +25,16 @@ esp_err_t board_init(void)
         return err;
     }
 
-    // 2. Configure Backlight PWM (LEDC)
+    ESP_LOGI(TAG, "Board key GPIOs initialized successfully (Key1: GPIO%d, Key2: GPIO%d)",
+             BOARD_KEY1_GPIO, BOARD_KEY2_GPIO);
+    return ESP_OK;
+}
+
+esp_err_t board_backlight_init(void)
+{
+    ESP_LOGI(TAG, "Initializing Backlight PWM (LEDC)...");
+
+    // Configure Backlight PWM (LEDC)
     ledc_timer_config_t ledc_timer = {
         .speed_mode       = LEDC_LOW_SPEED_MODE,
         .timer_num        = LEDC_TIMER_0,
@@ -33,7 +42,7 @@ esp_err_t board_init(void)
         .freq_hz          = 5000,
         .clk_cfg          = LEDC_AUTO_CLK,
     };
-    err = ledc_timer_config(&ledc_timer);
+    esp_err_t err = ledc_timer_config(&ledc_timer);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to configure LEDC timer: %s", esp_err_to_name(err));
         return err;
@@ -54,8 +63,8 @@ esp_err_t board_init(void)
         return err;
     }
 
-    ESP_LOGI(TAG, "Board initialized successfully (Key1: GPIO%d, Key2: GPIO%d, BL: GPIO%d)",
-             BOARD_KEY1_GPIO, BOARD_KEY2_GPIO, BOARD_LCD_BL_GPIO);
+    ESP_LOGI(TAG, "Backlight initialized successfully (BL: GPIO%d, duty: %u%%)",
+             BOARD_LCD_BL_GPIO, s_backlight_percent);
     return ESP_OK;
 }
 

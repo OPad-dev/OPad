@@ -27,21 +27,14 @@ void app_main(void)
     ESP_LOGI(TAG, "  Ultra Low-Latency 2-Key osu! Keypad   ");
     ESP_LOGI(TAG, "========================================");
 
-    // 1. Initialize Board Peripherals (Switch GPIOs, Backlight PWM)
+    // 1. Initialize Board Peripherals: Switch GPIOs only (FATAL if fails)
     ESP_ERROR_CHECK(board_init());
 
-    // 2. Initialize Persistent NVS Lifetime Counters
-    ESP_ERROR_CHECK(counters_init());
-
-    // 3. Initialize Runtime Supervisor and State Machine
-    ESP_ERROR_CHECK(runtime_init());
-
-    // 4. Initialize Keypad with Eager Debouncing
+    // 2. Initialize Keypad with Eager Debouncing (RAM counters start at 0) (FATAL if fails)
     ESP_ERROR_CHECK(keypad_init(NULL));
 
-    // 5. Initialize USB Subsystems
+    // 3. Initialize USB HID Subsystem and install TinyUSB stack (FATAL if fails)
     ESP_ERROR_CHECK(usb_hid_init());
-    ESP_ERROR_CHECK(usb_cdc_init());
 
     ESP_LOGI(TAG, "Configuring TinyUSB Composite Stack (HID 1000Hz + CDC-ACM)...");
     tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
@@ -58,13 +51,45 @@ void app_main(void)
     tusb_cfg.task.priority = configMAX_PRIORITIES - 2;
 
     ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
-    ESP_LOGI(TAG, "TinyUSB stack installed successfully");
+    ESP_LOGI(TAG, "TinyUSB stack installed successfully (HID operational)");
 
-    // 6. Host protocol (core 1)
-    ESP_ERROR_CHECK(usb_cdc_start_task());
+    // Step ii complete: HID is now fully operational! Everything below is NON-FATAL.
 
-    // 7. Display UI (LVGL, core 1)
-    ESP_ERROR_CHECK(ui_init());
+    // 4. USB CDC-ACM and protocol task (core 1)
+    esp_err_t err = usb_cdc_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "usb_cdc_init failed: %s (continuing)", esp_err_to_name(err));
+    } else {
+        err = usb_cdc_start_task();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "usb_cdc_start_task failed: %s (continuing)", esp_err_to_name(err));
+        }
+    }
+
+    // 5. Persistent NVS Lifetime Counters (NON-FATAL)
+    // Keypad starts with RAM counters at 0. counters_init adds NVS values
+    // (keypad_add_lifetime_presses) rather than overwriting, so any keypresses
+    // that occurred between HID-ready and counters_init are preserved.
+    err = counters_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "counters_init failed: %s (continuing with RAM counters)", esp_err_to_name(err));
+    }
+
+    // 6. Runtime Supervisor and State Machine (core 1, NON-FATAL)
+    err = runtime_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "runtime_init failed: %s (continuing)", esp_err_to_name(err));
+    }
+
+    // 7. Backlight PWM and Display UI (LVGL, core 1, NON-FATAL)
+    err = board_backlight_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "board_backlight_init failed: %s (continuing)", esp_err_to_name(err));
+    }
+    err = ui_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "ui_init failed: %s (continuing in headless mode)", esp_err_to_name(err));
+    }
 
     ESP_LOGI(TAG, "osu!pad initialized and ready");
 }
