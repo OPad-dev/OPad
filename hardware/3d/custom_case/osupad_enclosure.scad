@@ -1,41 +1,58 @@
 // =============================================================================
-//  osu!pad ESP32-S3 Parametric Enclosure
-//  Enclosure for Waveshare ESP32-S3-Touch-LCD-2 and 2x Cherry/Gateron/Kailh MX Switches
+//  osu!pad ESP32-S3 Screwless Ergonomic Enclosure
+//  - Flat front deck (0°) for 2x mechanical MX switches (Z & X)
+//  - 12.5° Angled rear deck for Waveshare 2.0" Touch LCD (Landscape)
+//  - USB-C port cutout with lead-in on top-right of right side wall
+//  - 100% Screwless Snap-Fit Cantilever closure mechanism
+//  - Internal PCB support cradle & anti-slip rubber foot recesses
 // =============================================================================
 
-// --- Configuration Parameters (all units in millimeters) ---
-$fn = 60; // Circle smoothness
+$fn = 60; // Smooth curves
 
-// MX Switch Specifications
-MX_CUTOUT_W         = 14.0;   // Standard Cherry MX cutout width
-MX_CUTOUT_H         = 14.0;   // Standard Cherry MX cutout height
-MX_PLATE_THICKNESS  = 1.5;    // Standard retention clip thickness (1.5mm)
-MX_SPACING          = 19.05;  // Standard 1u key spacing (center to center)
+// --- Dimensions & Clearances (mm) ---
 
-// Waveshare 2.0" LCD ESP32-S3 Board Specifications (from official blueprint)
-WS_LENS_W           = 37.5;   // Glass lens width (+0.4mm tolerance)
-WS_LENS_L           = 59.2;   // Glass lens length (+0.4mm tolerance)
-WS_LENS_CORNER_R    = 2.6;    // Glass lens corner radius
-WS_VA_W             = 31.5;   // Active view area width
-WS_VA_L             = 41.5;   // Active view area length
-WS_PCB_W            = 35.4;   // PCB width (+0.4mm tolerance)
-WS_PCB_L            = 48.6;   // PCB length (+0.4mm tolerance)
-WS_MOUNT_X_DIST     = 29.0;   // M2 mounting hole horizontal pitch
-WS_MOUNT_Y_DIST     = 42.2;   // M2 mounting hole vertical pitch
-WS_TOTAL_THICKNESS  = 10.0;   // Board + LCD depth clearance
+// MX Mechanical Switch Specifications
+MX_CUTOUT_W         = 14.0;   // Cherry MX hole width
+MX_CUTOUT_H         = 14.0;   // Cherry MX hole height
+MX_PLATE_T          = 1.5;    // Plate thickness for switch retention clips
+MX_PITCH            = 19.05;  // Standard mechanical keycap 1u pitch
 
-// Enclosure Dimensions
-CASE_W              = 78.0;   // Outer width
-CASE_L              = 105.0;  // Outer length
-CASE_H_FRONT        = 18.0;   // Front height (ergonomic low profile)
-CASE_H_BACK         = 28.0;   // Back height (gives ~8° ergonomic incline)
-WALL_THICKNESS      = 2.4;    // Outer shell wall thickness
-CORNER_RADIUS       = 6.0;    // Outer enclosure corner fillet
+// Waveshare ESP32-S3-Touch-LCD-2 Specifications (Landscape)
+// Front Glass Lens: 58.8mm (X) x 37.1mm (Y) x 1.1mm (Z)
+LCD_LENS_X          = 59.4;   // Glass lens length (+0.6mm tolerance)
+LCD_LENS_Y          = 37.7;   // Glass lens width (+0.6mm tolerance)
+LCD_LENS_R          = 2.8;    // Glass lens corner radius
+LCD_POCKET_DEPTH    = 1.2;    // Recessed flush pocket depth
 
-// Part selector: "assembly", "top_case", "bottom_plate"
+// Through-cutout for PCB & Module insertion
+PCB_THROUGH_X       = 50.0;   // 48.2mm PCB length + tolerance
+PCB_THROUGH_Y       = 36.2;   // 35.0mm PCB width + tolerance
+
+// Overall Case Outer Dimensions
+CASE_W              = 76.0;   // Total width (X axis)
+CASE_L              = 92.0;   // Total length (Y axis)
+FRONT_ZONE_L        = 38.0;   // Length of flat key switch zone
+REAR_ZONE_L         = 54.0;   // Length of angled display zone (38 to 92mm)
+H_FLAT              = 16.0;   // Height of the flat key deck
+H_REAR              = 28.0;   // Height at the very rear (gives ~12.5° tilt)
+CORNER_R            = 5.0;    // Outer corner fillet radius
+WALL_T              = 2.2;    // Outer shell wall thickness
+TOLERANCE           = 0.20;   // FDM 3D printing snap-fit clearance
+
+// Snap-fit parameters
+SNAP_BEAD_H         = 0.65;   // Snap bead protrusion outward
+SNAP_TAB_W          = 9.0;    // Width of flexible cantilever snap tab
+SNAP_Z              = 2.6;    // Height above base where snap locks
+
+// Part Selector: "assembly", "top_case", "bottom_plate"
 PART = "assembly";
 
-module rounded_rect(w, l, h, r) {
+// Calculated Deck Incline Angle
+DECK_TILT = atan2(H_REAR - H_FLAT, REAR_ZONE_L); // 12.5288°
+
+// --- Helper Modules ---
+
+module rounded_box(w, l, h, r) {
     hull() {
         translate([r, r, 0]) cylinder(h=h, r=r);
         translate([w - r, r, 0]) cylinder(h=h, r=r);
@@ -44,132 +61,267 @@ module rounded_rect(w, l, h, r) {
     }
 }
 
-// Standard MX switch socket cutout with side retention notches
+// 2-tier outer shell hull (Flat front + Angled rear)
+module case_outer_hull(extra_inset=0) {
+    w = CASE_W - 2 * extra_inset;
+    l = CASE_L - 2 * extra_inset;
+    r = max(1.0, CORNER_R - extra_inset);
+
+    translate([extra_inset, extra_inset, 0])
+    hull() {
+        // Flat front deck (Z = H_FLAT)
+        translate([r, r, 0]) cylinder(h=H_FLAT, r=r);
+        translate([w - r, r, 0]) cylinder(h=H_FLAT, r=r);
+        translate([r, FRONT_ZONE_L - extra_inset, 0]) cylinder(h=H_FLAT, r=r);
+        translate([w - r, FRONT_ZONE_L - extra_inset, 0]) cylinder(h=H_FLAT, r=r);
+
+        // Angled rear deck (sloping to H_REAR at the back)
+        translate([r, l - r, 0]) cylinder(h=H_REAR, r=r);
+        translate([w - r, l - r, 0]) cylinder(h=H_REAR, r=r);
+    }
+}
+
+// MX Switch Snap-in Cutout with retention clip tabs
 module mx_switch_cutout() {
     union() {
-        // Main 14x14 mm square through-hole
+        // 14.0 x 14.0 mm through-hole for switch body
         translate([-MX_CUTOUT_W/2, -MX_CUTOUT_H/2, -5])
             cube([MX_CUTOUT_W, MX_CUTOUT_H, 15]);
 
-        // Side clip relief notches (for Cherry MX snap-in tabs)
-        translate([-14.5/2, -3.5/2, 0])
-            cube([14.5, 3.5, MX_PLATE_THICKNESS + 0.2]);
-        translate([-3.5/2, -14.5/2, 0])
-            cube([3.5, 14.5, MX_PLATE_THICKNESS + 0.2]);
+        // North & South clip notches (Cherry/Gateron clip tabs)
+        translate([-14.6/2, -3.8/2, -0.1])
+            cube([14.6, 3.8, MX_PLATE_T + 0.2]);
+        translate([-3.8/2, -14.6/2, -0.1])
+            cube([3.8, 14.6, MX_PLATE_T + 0.2]);
 
-        // Underside body clearance
-        translate([-16/2, -16/2, -12])
-            cube([16, 16, 12 - MX_PLATE_THICKNESS]);
+        // Underside clearance for switch base & wiring
+        translate([-16.0/2, -16.0/2, -15])
+            cube([16.0, 16.0, 15 - MX_PLATE_T]);
     }
 }
 
-// Waveshare 2.0" LCD pocket & view window
-module waveshare_screen_cutout() {
+// Screen Cutout for Waveshare Touch LCD
+module screen_cutout() {
     union() {
-        // Active view window cutout (through top plate)
-        translate([-WS_VA_L/2, -WS_VA_W/2, -5])
-            cube([WS_VA_L, WS_VA_W, 10]);
+        // 1. Recessed flush pocket for glass lens (outer surface)
+        translate([-LCD_LENS_X/2, -LCD_LENS_Y/2, -LCD_POCKET_DEPTH])
+            rounded_box(LCD_LENS_X, LCD_LENS_Y, 10, LCD_LENS_R);
 
-        // Recessed pocket for glass lens (flush or 0.8mm recessed)
-        translate([-WS_LENS_L/2, -WS_LENS_W/2, -1.2])
-            rounded_rect(WS_LENS_L, WS_LENS_W, 3, WS_LENS_CORNER_R);
+        // 2. Through-cutout for PCB and display module into internal cavity
+        translate([-PCB_THROUGH_X/2, -PCB_THROUGH_Y/2, -15])
+            cube([PCB_THROUGH_X, PCB_THROUGH_Y, 16]);
 
-        // Internal cavity for PCB and components
-        translate([-WS_PCB_L/2 - 1, -WS_PCB_W/2 - 1, -WS_TOTAL_THICKNESS - 1.2])
-            cube([WS_PCB_L + 2, WS_PCB_W + 2, WS_TOTAL_THICKNESS]);
+        // 3. Right-side exit channel connecting to USB-C port
+        translate([PCB_THROUGH_X/2 - 2.0, -10.0, -15])
+            cube([15.0, 20.0, 16]);
     }
 }
 
-// USB-C cable access port
-module usbc_port_cutout() {
-    hull() {
-        translate([-6, 0, -3.5]) rotate([90, 0, 0]) cylinder(h=15, r=3.5, center=true);
-        translate([6, 0, -3.5]) rotate([90, 0, 0]) cylinder(h=15, r=3.5, center=true);
+// USB-C side wall cutout with 45° lead-in chamfer
+module usbc_cutout() {
+    union() {
+        // Core through-port (14.5mm wide in Y x 7.5mm tall in Z)
+        hull() {
+            translate([0, -3.75, 0]) rotate([0, 90, 0]) cylinder(h=20, r=3.75, center=true);
+            translate([0, 3.75, 0]) rotate([0, 90, 0]) cylinder(h=20, r=3.75, center=true);
+        }
+
+        // Exterior lead-in flare / chamfer for wide cable heads
+        translate([6.0, 0, 0])
+        hull() {
+            translate([0, -4.5, 0]) rotate([0, 90, 0]) cylinder(h=8, r=5.0, center=true);
+            translate([0, 4.5, 0]) rotate([0, 90, 0]) cylinder(h=8, r=5.0, center=true);
+        }
     }
 }
 
-// Top Case Enclosure
+// --- Top Case Module ---
+
 module top_case() {
     difference() {
-        // Solid wedge enclosure with rounded corners
-        hull() {
-            // Front low profile edge
-            translate([CORNER_RADIUS, CORNER_RADIUS, 0])
-                cylinder(h=CASE_H_FRONT, r=CORNER_RADIUS);
-            translate([CASE_W - CORNER_RADIUS, CORNER_RADIUS, 0])
-                cylinder(h=CASE_H_FRONT, r=CORNER_RADIUS);
+        // 1. Outer Solid Case
+        case_outer_hull(0);
 
-            // Back inclined edge
-            translate([CORNER_RADIUS, CASE_L - CORNER_RADIUS, 0])
-                cylinder(h=CASE_H_BACK, r=CORNER_RADIUS);
-            translate([CASE_W - CORNER_RADIUS, CASE_L - CORNER_RADIUS, 0])
-                cylinder(h=CASE_H_BACK, r=CORNER_RADIUS);
-        }
-
-        // Hollow interior cavity (leave 2.4mm walls & 3.0mm top plate)
-        translate([WALL_THICKNESS, WALL_THICKNESS, -1])
+        // 2. Main Internal Hollow Cavity (leaves WALL_T perimeter walls)
+        translate([WALL_T, WALL_T, -1])
             hull() {
-                translate([CORNER_RADIUS/2, CORNER_RADIUS/2, 0])
-                    cylinder(h=CASE_H_FRONT - 3.0, r=CORNER_RADIUS/2);
-                translate([CASE_W - 2*WALL_THICKNESS - CORNER_RADIUS/2, CORNER_RADIUS/2, 0])
-                    cylinder(h=CASE_H_FRONT - 3.0, r=CORNER_RADIUS/2);
-                translate([CORNER_RADIUS/2, CASE_L - 2*WALL_THICKNESS - CORNER_RADIUS/2, 0])
-                    cylinder(h=CASE_H_BACK - 3.0, r=CORNER_RADIUS/2);
-                translate([CASE_W - 2*WALL_THICKNESS - CORNER_RADIUS/2, CASE_L - 2*WALL_THICKNESS - CORNER_RADIUS/2, 0])
-                    cylinder(h=CASE_H_BACK - 3.0, r=CORNER_RADIUS/2);
+                translate([CORNER_R/2, CORNER_R/2, 0])
+                    cylinder(h=H_FLAT - 2.8, r=CORNER_R/2);
+                translate([CASE_W - 2*WALL_T - CORNER_R/2, CORNER_R/2, 0])
+                    cylinder(h=H_FLAT - 2.8, r=CORNER_R/2);
+                translate([CORNER_R/2, FRONT_ZONE_L - WALL_T, 0])
+                    cylinder(h=H_FLAT - 2.8, r=CORNER_R/2);
+                translate([CASE_W - 2*WALL_T - CORNER_R/2, FRONT_ZONE_L - WALL_T, 0])
+                    cylinder(h=H_FLAT - 2.8, r=CORNER_R/2);
+
+                translate([CORNER_R/2, CASE_L - 2*WALL_T - CORNER_R/2, 0])
+                    cylinder(h=H_REAR - 2.8, r=CORNER_R/2);
+                translate([CASE_W - 2*WALL_T - CORNER_R/2, CASE_L - 2*WALL_T - CORNER_R/2, 0])
+                    cylinder(h=H_REAR - 2.8, r=CORNER_R/2);
             }
 
-        // 2x MX Switch Cutouts (Bottom Front Area - ergonomic wrist position)
-        // Key 1 (Z)
-        translate([CASE_W/2 - MX_SPACING/2, 28, CASE_H_FRONT - 2.5])
-            mx_switch_cutout();
-
-        // Key 2 (X)
-        translate([CASE_W/2 + MX_SPACING/2, 28, CASE_H_FRONT - 2.5])
-            mx_switch_cutout();
-
-        // Waveshare Screen Cutout (Top Rear Area - oriented landscape)
-        translate([CASE_W/2, 70, CASE_H_BACK - 3.5])
-            waveshare_screen_cutout();
-
-        // Rear USB-C Port Cutout
-        translate([CASE_W/2, CASE_L, 8])
-            usbc_port_cutout();
-
-        // 4x Bottom screw assembly holes (M3 counterbore)
-        for (pos = [[8, 8], [CASE_W - 8, 8], [8, CASE_L - 8], [CASE_W - 8, CASE_L - 8]]) {
-            translate([pos[0], pos[1], -1])
-                cylinder(h=12, r=1.6); // M3 tap hole
+        // 3. Snap-Fit Internal Latch Grooves (depth 0.8mm into inner wall)
+        // Left & Right walls (at Y = 20.0mm front and Y = 83.0mm rear, clear of USB-C)
+        for (y_pos = [20.0, 83.0]) {
+            // Left inner wall groove
+            translate([WALL_T - 0.8, y_pos - (SNAP_TAB_W + 1.0)/2, SNAP_Z])
+                cube([1.0, SNAP_TAB_W + 1.0, 1.4]);
+            // Right inner wall groove
+            translate([CASE_W - WALL_T - 0.2, y_pos - (SNAP_TAB_W + 1.0)/2, SNAP_Z])
+                cube([1.0, SNAP_TAB_W + 1.0, 1.4]);
         }
+        // Front & Rear walls (1 on each side)
+        // Front inner wall groove
+        translate([CASE_W/2 - (SNAP_TAB_W + 1.0)/2, WALL_T - 0.8, SNAP_Z])
+            cube([SNAP_TAB_W + 1.0, 1.0, 1.4]);
+        // Rear inner wall groove
+        translate([CASE_W/2 - (SNAP_TAB_W + 1.0)/2, CASE_L - WALL_T - 0.2, SNAP_Z])
+            cube([SNAP_TAB_W + 1.0, 1.0, 1.4]);
+
+        // 4. MX Switch Cutouts on FLAT Front Deck (0° horizontal)
+        // Key 1 (Z) - Left
+        translate([CASE_W/2 - MX_PITCH/2, 19.0, H_FLAT])
+            mx_switch_cutout();
+
+        // Key 2 (X) - Right
+        translate([CASE_W/2 + MX_PITCH/2, 19.0, H_FLAT])
+            mx_switch_cutout();
+
+        // 5. Waveshare 2.0" LCD on ANGLED Rear Deck
+        // Deck surface point at Y = 64.0mm is at Z = H_FLAT + 26.0 * tan(DECK_TILT) = 21.78mm
+        translate([CASE_W/2, FRONT_ZONE_L + 26.0, H_FLAT + 26.0 * tan(DECK_TILT)])
+            rotate([DECK_TILT, 0, 0])
+                screen_cutout();
+
+        // 6. USB-C Port Cutout on RIGHT SIDE WALL (aligned with board)
+        // Center at Y = 65.8mm, Z = 13.6mm
+        translate([CASE_W - WALL_T/2, 65.8, 13.6])
+            usbc_cutout();
+
+        // 7. Rear Pry Notch (for opening with a coin or pick without damage)
+        translate([CASE_W/2 - 6.0, CASE_L - 2.0, -0.1])
+            cube([12.0, 4.0, 2.2]);
     }
 }
 
-// Bottom Base Plate
+// --- Bottom Plate Module (100% Screwless Snap-Fit) ---
+
 module bottom_plate() {
-    difference() {
-        // Solid bottom plate with lip
-        rounded_rect(CASE_W - 0.4, CASE_L - 0.4, 2.8, CORNER_RADIUS - 0.2);
+    inner_w = CASE_W - 2 * WALL_T - 2 * TOLERANCE;
+    inner_l = CASE_L - 2 * WALL_T - 2 * TOLERANCE;
+    rim_r   = max(1.0, CORNER_R - WALL_T - TOLERANCE);
+    rim_h   = 4.6; // Rim height above base
 
-        // 4x M3 Countersunk Screws
-        for (pos = [[8, 8], [CASE_W - 8, 8], [8, CASE_L - 8], [CASE_W - 8, CASE_L - 8]]) {
-            translate([pos[0], pos[1], -1])
-                cylinder(h=6, r=1.7); // M3 clearance
-            translate([pos[0], pos[1], 1.2])
-                cylinder(h=3, r1=1.7, r2=3.2); // Countersink
+    union() {
+        // 1. Base Plate Bottom Shell (flush with desk and outer case)
+        difference() {
+            // Main bottom plate
+            rounded_box(CASE_W, CASE_L, 2.0, CORNER_R);
+
+            // 4x Non-slip rubber foot circular recesses (10mm dia, 1.0mm deep)
+            for (pos = [[13, 13], [CASE_W - 13, 13], [13, CASE_L - 13], [CASE_W - 13, CASE_L - 13]]) {
+                translate([pos[0], pos[1], -0.1])
+                    cylinder(h=1.1, r=5.0);
+            }
+
+            // Rear pry notch coin relief
+            translate([CASE_W/2 - 6.0, CASE_L - 3.0, -0.1])
+                cube([12.0, 5.0, 1.4]);
         }
 
-        // 4x Anti-slip rubber foot circular recesses (10mm diameter, 1.2mm deep)
-        for (pos = [[16, 16], [CASE_W - 16, 16], [16, CASE_L - 16], [CASE_W - 16, CASE_L - 16]]) {
-            translate([pos[0], pos[1], -0.1])
-                cylinder(h=1.2, r=5.0);
+        // 2. Interlocking Perimeter Rim with Vertical Cantilever Relief Cuts
+        translate([WALL_T + TOLERANCE, WALL_T + TOLERANCE, 2.0])
+        difference() {
+            // Solid outer rim flange
+            rounded_box(inner_w, inner_l, rim_h, rim_r);
+
+            // Hollow interior (1.4mm rim wall thickness)
+            translate([1.4, 1.4, -0.1])
+                rounded_box(inner_w - 2.8, inner_l - 2.8, rim_h + 1.0, max(0.5, rim_r - 1.4));
+
+            // Vertical relief cuts on sides of each cantilever snap tab
+            // Left & Right tabs (at Y = 20.0mm and Y = 83.0mm)
+            for (y_pos = [20.0 - (WALL_T + TOLERANCE), 83.0 - (WALL_T + TOLERANCE)]) {
+                // Left wall relief cuts (two 1.0mm slits)
+                translate([-0.5, y_pos - SNAP_TAB_W/2 - 1.0, -0.1])
+                    cube([2.5, 1.0, rim_h + 1.0]);
+                translate([-0.5, y_pos + SNAP_TAB_W/2, -0.1])
+                    cube([2.5, 1.0, rim_h + 1.0]);
+
+                // Right wall relief cuts (two 1.0mm slits)
+                translate([inner_w - 2.0, y_pos - SNAP_TAB_W/2 - 1.0, -0.1])
+                    cube([2.5, 1.0, rim_h + 1.0]);
+                translate([inner_w - 2.0, y_pos + SNAP_TAB_W/2, -0.1])
+                    cube([2.5, 1.0, rim_h + 1.0]);
+            }
+            // Front & Rear tabs
+            // Front wall relief cuts
+            translate([inner_w/2 - SNAP_TAB_W/2 - 1.0, -0.5, -0.1])
+                cube([1.0, 2.5, rim_h + 1.0]);
+            translate([inner_w/2 + SNAP_TAB_W/2, -0.5, -0.1])
+                cube([1.0, 2.5, rim_h + 1.0]);
+            // Rear wall relief cuts
+            translate([inner_w/2 - SNAP_TAB_W/2 - 1.0, inner_l - 2.0, -0.1])
+                cube([1.0, 2.5, rim_h + 1.0]);
+            translate([inner_w/2 + SNAP_TAB_W/2, inner_l - 2.0, -0.1])
+                cube([1.0, 2.5, rim_h + 1.0]);
         }
+
+        // 3. Cantilever Snap Beads (with lead-in chamfer and retaining shoulder)
+        // Height aligned with top case latch groove at Z_top = SNAP_Z (2.6mm) -> Z_plate = 2.0 + 2.6 = 4.6mm
+        // Overlap by 0.5mm into the tab wall to guarantee 100% manifold solid!
+        // Left & Right beads (at Y = 20.0mm and Y = 83.0mm)
+        for (y_pos = [20.0, 83.0]) {
+            // Left bead (protrudes towards -X)
+            translate([WALL_T + TOLERANCE - SNAP_BEAD_H, y_pos - SNAP_TAB_W/2, 2.0 + SNAP_Z])
+                hull() {
+                    cube([SNAP_BEAD_H + 0.5, SNAP_TAB_W, 0.4]);
+                    translate([SNAP_BEAD_H * 0.4, 0, 0.7])
+                        cube([SNAP_BEAD_H * 0.6 + 0.5, SNAP_TAB_W, 0.3]);
+                }
+            // Right bead (protrudes towards +X)
+            translate([CASE_W - WALL_T - TOLERANCE - 0.5, y_pos - SNAP_TAB_W/2, 2.0 + SNAP_Z])
+                hull() {
+                    cube([SNAP_BEAD_H + 0.5, SNAP_TAB_W, 0.4]);
+                    translate([0, 0, 0.7])
+                        cube([SNAP_BEAD_H * 0.6 + 0.5, SNAP_TAB_W, 0.3]);
+                }
+        }
+        // Front & Rear beads
+        // Front bead (protrudes towards -Y)
+        translate([CASE_W/2 - SNAP_TAB_W/2, WALL_T + TOLERANCE - SNAP_BEAD_H, 2.0 + SNAP_Z])
+            hull() {
+                cube([SNAP_TAB_W, SNAP_BEAD_H + 0.5, 0.4]);
+                translate([0, SNAP_BEAD_H * 0.4, 0.7])
+                    cube([SNAP_TAB_W, SNAP_BEAD_H * 0.6 + 0.5, 0.3]);
+            }
+        // Rear bead (protrudes towards +Y)
+        translate([CASE_W/2 - SNAP_TAB_W/2, CASE_L - WALL_T - TOLERANCE - 0.5, 2.0 + SNAP_Z])
+            hull() {
+                cube([SNAP_TAB_W, SNAP_BEAD_H + 0.5, 0.4]);
+                translate([0, 0, 0.7])
+                    cube([SNAP_TAB_W, SNAP_BEAD_H * 0.6 + 0.5, 0.3]);
+            }
+
+        // 4. Screen Rear Support Pillars (aligned with Waveshare brass standoffs)
+        // Front PCB edge support (at Y = 49.5mm, h = 6.8mm)
+        translate([18.6, 49.5, 2.0])
+            cylinder(h=6.8, r1=2.5, r2=2.0);
+        translate([60.8, 49.5, 2.0])
+            cylinder(h=6.8, r1=2.5, r2=2.0);
+
+        // Rear PCB edge support (at Y = 78.5mm, h = 13.2mm)
+        translate([18.6, 78.5, 2.0])
+            cylinder(h=13.2, r1=2.5, r2=2.0);
+        translate([60.8, 78.5, 2.0])
+            cylinder(h=13.2, r1=2.5, r2=2.0);
     }
 }
 
-// Render selection
+// --- Render Selection ---
 if (PART == "assembly") {
-    color([0.2, 0.2, 0.2, 0.9]) top_case();
-    translate([0.2, 0.2, -4]) color([0.1, 0.1, 0.1, 0.95]) bottom_plate();
+    color([0.22, 0.22, 0.25, 0.95]) top_case();
+    translate([0, 0, -4.0]) color([0.15, 0.15, 0.16, 1.0]) bottom_plate();
 } else if (PART == "top_case") {
     top_case();
 } else if (PART == "bottom_plate") {
