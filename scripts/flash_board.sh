@@ -59,24 +59,31 @@ get_bootloader_port() {
     return 1
 }
 
+trigger_auto_reset() {
+    local port="$1"
+    python3 -c "
+import serial, time
+try:
+    s = serial.Serial('$port', 1200, timeout=0.2, write_timeout=0.2)
+    time.sleep(0.05)
+    s.dtr = False
+    s.rts = False
+    s.close()
+except Exception:
+    pass
+" 2>/dev/null || true
+}
+
 CURRENT_PORT=$(find_esp_port || echo "/dev/ttyACM0")
 BOOT_PORT=$(get_bootloader_port || true)
 
 if [ -z "$BOOT_PORT" ]; then
     echo "[1/3] Device running application on ${CURRENT_PORT} (303a:4001)."
-    echo "      Attempting 1200-baud auto-reset touch..."
-    python3 -c "
-import serial, time
-try:
-    ser = serial.Serial('$CURRENT_PORT', 1200, timeout=0.1)
-    time.sleep(0.05)
-    ser.close()
-except Exception:
-    pass
-" 2>/dev/null || true
+    echo "      Sending USB auto-reset signal..."
+    trigger_auto_reset "$CURRENT_PORT"
 
-    for i in {1..10}; do
-        sleep 0.15
+    for i in {1..20}; do
+        sleep 0.1
         BOOT_PORT=$(get_bootloader_port || true)
         if [ -n "$BOOT_PORT" ]; then
             break
@@ -87,54 +94,74 @@ fi
 if [ -z "$BOOT_PORT" ]; then
     echo ""
     echo "[2/3] The board currently has the previous build without the auto-reset hook."
-    echo "      To enter download mode and flash the landscape firmware (REQUIRED ONCE):"
+    echo "      To enter download mode and flash this update (REQUIRED ONCE):"
     echo ""
-    echo "      ============================================================"
-    echo "      IMPORTANT: KEEP HOLDING THE BOOT BUTTON UNTIL FLASHING STARTS"
-    echo "      ============================================================"
     echo "      1. Press and hold down the BOOT button on the ESP32-S3."
-    echo "      2. While STILL HOLDING the BOOT button:"
-    echo "         - Either press and release the RESET button,"
-    echo "         - Or unplug and plug back in the USB cable."
-    echo "      3. KEEP HOLDING the BOOT button down!"
-    echo "         (Do not let go of BOOT until you see the progress bar!)"
+    echo "      2. While STILL HOLDING the BOOT button, press and release RESET."
+    echo "      3. Release the BOOT button."
     echo ""
     echo "      Once this update is flashed, ALL future flashes will run"
-    echo "      100% automatically without touching any buttons!"
+    echo "      100% automatically over USB without touching any buttons!"
     echo ""
     echo "Waiting for ESP32-S3 ROM Bootloader (303a:1001)..."
 
     while true; do
         BOOT_PORT=$(get_bootloader_port || true)
         if [ -n "$BOOT_PORT" ]; then
-            echo "✓ ESP32-S3 ROM Bootloader detected on ${BOOT_PORT}!"
             break
         fi
         sleep 0.05
     done
-else
-    echo "[2/3] ✓ ESP32-S3 ROM Bootloader detected on ${BOOT_PORT}!"
 fi
 
-echo "[3/3] Bootloader detected! Flashing landscape firmware binary to ${BOOT_PORT}..."
+echo "[2/3] ✓ ESP32-S3 ROM Bootloader detected on ${BOOT_PORT}!"
+echo "      Waiting for serial port to stabilize..."
+
+# Wait up to 3 seconds for port to become writable
+for i in {1..30}; do
+    if [ -w "${BOOT_PORT}" ]; then
+        break
+    fi
+    sleep 0.1
+done
+sleep 0.5
+
+echo "[3/3] Bootloader ready! Flashing firmware to ${BOOT_PORT}..."
 cd "${REPO_ROOT}/firmware"
 
-# Use --before=no_reset directly because the chip is ALREADY in the ROM bootloader.
-# Toggling RTS via default_reset/usb_reset pulses the ESP32-S3 hardware reset line,
-# causing an immediate USB disconnect (Errno 19)!
-if ! $ESPTOOL --chip esp32s3 -p "${BOOT_PORT}" -b 460800 --before=no_reset --after=hard_reset write_flash \
+FLASH_SUCCESS=false
+
+# Try 1: esptool with usb_reset
+if $ESPTOOL --chip esp32s3 -p "${BOOT_PORT}" -b 460800 --before=usb_reset --after=hard_reset write_flash \
     --flash_mode dio --flash_freq 80m --flash_size 16MB \
     0x0 "${BUILD_DIR}/bootloader/bootloader.bin" \
     0x10000 "${BUILD_DIR}/osupad-firmware.bin" \
     0x8000 "${BUILD_DIR}/partition_table/partition-table.bin"; then
-    echo "Retrying with espflash (no-reset)..."
-    espflash write-bin --chip esp32s3 -p "${BOOT_PORT}" --before no-reset --non-interactive 0x10000 "${BUILD_DIR}/osupad-firmware.bin"
+    FLASH_SUCCESS=true
+fi
+
+# Try 2: esptool with no_reset
+if [ "$FLASH_SUCCESS" = false ]; then
+    echo "Retrying esptool with no_reset..."
+    sleep 0.5
+    if $ESPTOOL --chip esp32s3 -p "${BOOT_PORT}" -b 460800 --before=no_reset --after=hard_reset write_flash \
+        --flash_mode dio --flash_freq 80m --flash_size 16MB \
+        0x0 "${BUILD_DIR}/bootloader/bootloader.bin" \
+        0x10000 "${BUILD_DIR}/osupad-firmware.bin" \
+        0x8000 "${BUILD_DIR}/partition_table/partition-table.bin"; then
+        FLASH_SUCCESS=true
+    fi
+fi
+
+# Try 3: espflash write-bin fallback
+if [ "$FLASH_SUCCESS" = false ]; then
+    echo "Retrying with espflash..."
+    sleep 0.5
+    espflash write-bin --chip esp32s3 -p "${BOOT_PORT}" --non-interactive 0x10000 "${BUILD_DIR}/osupad-firmware.bin"
 fi
 
 echo ""
 echo "=================================================="
-echo "✓ Flashing successful! Landscape UI is now active."
-echo "  You may now release the BOOT button if still held."
-echo "  The board is now running firmware with full auto-reset."
-echo "  All future flashes will run hands-free automatically!"
+echo "✓ Flashing successful! Firmware is active."
+echo "  All future flashes will now run hands-free automatically!"
 echo "=================================================="

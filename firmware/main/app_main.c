@@ -13,11 +13,15 @@
 #include "counters/counters.h"
 #include "display/display.h"
 #include "runtime/runtime.h"
+#include "soc/rtc_cntl_reg.h"
 
 static const char *TAG = "app_main";
 
 void app_main(void)
 {
+    // Clear any previous software bootloader download flag
+    REG_WRITE(RTC_CNTL_OPTION1_REG, 0);
+
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "  osu!pad ESP32-S3 Firmware v1.0.0      ");
     ESP_LOGI(TAG, "  Ultra Low-Latency 2-Key osu! Keypad   ");
