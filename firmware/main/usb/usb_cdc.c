@@ -5,8 +5,11 @@
 #include "esp_system.h"
 #include "soc/rtc_cntl_reg.h"
 
+#include "esp_timer.h"
+
 static const char *TAG = "usb_cdc";
 static volatile bool s_cdc_connected = false;
+static bool s_prev_rts_state = false;
 
 esp_err_t usb_cdc_init(void)
 {
@@ -67,11 +70,26 @@ void usb_cdc_task_poll(void)
     }
 }
 
-void usb_cdc_reboot_to_bootloader(void)
+static void deferred_bootloader_reboot_cb(void *arg)
 {
-    ESP_LOGI(TAG, "Rebooting to ROM download bootloader...");
+    (void)arg;
+    ESP_LOGI(TAG, "Rebooting into ESP32-S3 ROM Download Bootloader...");
     REG_WRITE(RTC_CNTL_OPTION1_REG, RTC_CNTL_FORCE_DOWNLOAD_BOOT);
     esp_restart();
+}
+
+void usb_cdc_reboot_to_bootloader(void)
+{
+    static esp_timer_handle_t s_reboot_timer = NULL;
+    if (!s_reboot_timer) {
+        const esp_timer_create_args_t timer_args = {
+            .callback = &deferred_bootloader_reboot_cb,
+            .name = "cdc_reboot_timer",
+        };
+        esp_timer_create(&timer_args, &s_reboot_timer);
+    }
+    // Give TinyUSB 50ms to acknowledge the USB control request cleanly before rebooting
+    esp_timer_start_once(s_reboot_timer, 50 * 1000);
 }
 
 // TinyUSB CDC Callbacks
@@ -87,17 +105,13 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
     s_cdc_connected = dtr;
     ESP_LOGD(TAG, "CDC line state: DTR=%d, RTS=%d", dtr, rts);
 
-    // DTR/RTS bootloader reset detection (standard esptool pattern)
-    static uint8_t reset_step = 0;
-    if (!dtr && rts) {
-        reset_step = 1;
-    } else if (dtr && rts && reset_step == 1) {
-        reset_step = 2;
-    } else if (dtr && !rts && reset_step == 2) {
+    // Standard Espressif CDC-ACM bootloader reset trigger:
+    // When RTS falls from HIGH to LOW while DTR is HIGH (classic esptool pattern)
+    if (!rts && s_prev_rts_state && dtr) {
+        ESP_LOGI(TAG, "CDC DTR/RTS bootloader trigger detected, entering download mode...");
         usb_cdc_reboot_to_bootloader();
-    } else {
-        reset_step = 0;
     }
+    s_prev_rts_state = rts;
 }
 
 void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const* p_line_coding)
