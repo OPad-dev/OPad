@@ -224,7 +224,7 @@ async fn main() -> Result<()> {
                             p99_us: status.latency_p99_us,
                             p999_us: status.latency_p999_us,
                             max_us: status.latency_max_us,
-                            dropped_reports: status.hid_dropped_reports,
+                            deferred_reports: status.hid_deferred_reports,
                         });
                     }
                     DeviceEvent::LayoutAck { screen, success, message } => {

@@ -10,7 +10,7 @@
 static atomic_uint_least32_t s_buckets[BUCKET_COUNT];
 static atomic_uint_least32_t s_samples;
 static atomic_uint_least32_t s_max_us;
-static atomic_uint_least32_t s_dropped;
+static atomic_uint_least32_t s_deferred;
 
 void IRAM_ATTR latency_stats_record(uint32_t latency_us)
 {
@@ -25,9 +25,9 @@ void IRAM_ATTR latency_stats_record(uint32_t latency_us)
     }
 }
 
-void IRAM_ATTR latency_stats_record_drop(void)
+void IRAM_ATTR latency_stats_record_deferred(void)
 {
-    atomic_fetch_add_explicit(&s_dropped, 1, memory_order_relaxed);
+    atomic_fetch_add_explicit(&s_deferred, 1, memory_order_relaxed);
 }
 
 static uint32_t percentile_us(const uint32_t *buckets, uint32_t total, uint32_t per_mille)
@@ -56,7 +56,7 @@ void latency_stats_get(latency_stats_t *out)
     memset(out, 0, sizeof(*out));
     out->samples = total;
     out->max_us = atomic_load_explicit(&s_max_us, memory_order_relaxed);
-    out->dropped_reports = atomic_load_explicit(&s_dropped, memory_order_relaxed);
+    out->deferred_reports = atomic_load_explicit(&s_deferred, memory_order_relaxed);
     if (total > 0) {
         out->p50_us = percentile_us(snapshot, total, 500);
         out->p99_us = percentile_us(snapshot, total, 990);
@@ -71,5 +71,5 @@ void latency_stats_reset(void)
     }
     atomic_store_explicit(&s_samples, 0, memory_order_relaxed);
     atomic_store_explicit(&s_max_us, 0, memory_order_relaxed);
-    atomic_store_explicit(&s_dropped, 0, memory_order_relaxed);
+    atomic_store_explicit(&s_deferred, 0, memory_order_relaxed);
 }

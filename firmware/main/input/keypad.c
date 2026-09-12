@@ -86,10 +86,11 @@ static void keypad_task(void *pvParameters)
                 // HID report first; activity bookkeeping only after it is submitted
                 if (s_callback) {
                     int64_t edge_us = s_last_transition_us[i];
-                    if (s_callback(i, current)) {
+                    if (s_callback(i, current, edge_us)) {
                         latency_stats_record((uint32_t)(esp_timer_get_time() - edge_us));
                     } else {
-                        latency_stats_record_drop();
+                        // Resent by the HID layer, which records the latency then
+                        latency_stats_record_deferred();
                     }
                 }
                 if (current) {

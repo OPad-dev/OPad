@@ -59,7 +59,7 @@ message DeviceStatus {
     uint32 latency_p99_us = 11;
     uint32 latency_p999_us = 12;
     uint32 latency_max_us = 13;
-    uint32 hid_dropped_reports = 14;  // Reports not submitted because the endpoint was busy
+    uint32 hid_deferred_reports = 14; // Key changes that waited for the next USB poll, then resent
 }
 
 // -----------------------------------------------------------------------------

@@ -4,12 +4,13 @@
 mod overlay;
 
 use iced::widget::{
-    button, canvas, checkbox, column, container, horizontal_rule, image, pick_list, row, scrollable, stack,
+    button, canvas, checkbox, column, container, image, pick_list, row, scrollable, stack,
     text, text_input, Space,
 };
 use iced::{keyboard, Alignment, Color, Element, Length, Subscription, Task};
 use iced_aw::helpers::{color_picker, number_input};
-use osupad_ipc::{get_socket_path, send_request, IpcRequest, IpcResponse};
+use crate::theme;
+use osupad_ipc::{IpcRequest, IpcResponse};
 use osupad_layout::{
     all_sources, source_info, Align, Font, Layout, Screen, SourceInfo, Widget, WidgetKind, DECIMALS_DEFAULT,
     FLAG_BG_FILL, FLAG_BORDER, FLAG_HIDE_WHEN_EMPTY, MAX_WIDGETS,
@@ -17,7 +18,6 @@ use osupad_layout::{
 use osupad_model::ui_source::{self, SourceValue};
 use osupad_ui_preview as preview;
 use std::time::Duration;
-use tokio::net::UnixStream;
 
 /// Preview zoom (pad pixels -> screen pixels)
 pub const SCALE: f32 = 2.0;
@@ -434,7 +434,10 @@ impl Designer {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        let keys = keyboard::on_key_press(|key, modifiers| {
+        let keys = keyboard::listen().filter_map(|event| {
+            let keyboard::Event::KeyPressed { key, modifiers, .. } = event else {
+                return None;
+            };
             let step = if modifiers.shift() { 10 } else { 1 };
             match key {
                 keyboard::Key::Named(keyboard::key::Named::ArrowLeft) => Some(Message::Nudge(-step, 0)),
@@ -457,7 +460,7 @@ impl Designer {
 
         let screens = row(Screen::ALL.iter().map(|s| {
             button(text(format!("{} screen", s)))
-                .style(if *s == self.screen { button::primary } else { button::secondary })
+                .style(if *s == self.screen { theme::primary } else { theme::secondary })
                 .on_press(Message::SelectScreen(*s))
                 .into()
         }))
@@ -478,43 +481,47 @@ impl Designer {
 
         let actions = row![
             button(text(if self.dirty() { "Apply to pad •" } else { "Apply to pad" }))
-                .style(button::primary)
+                .style(theme::primary)
                 .on_press_maybe((!self.busy).then_some(Message::Apply)),
-            button("Revert").style(button::secondary).on_press(Message::Revert),
-            button("Reset to default").style(button::secondary).on_press(Message::ResetDefault),
-            button("Export").style(button::secondary).on_press(Message::Export),
-            button("Import").style(button::secondary).on_press(Message::Import),
+            button("Revert").style(theme::secondary).on_press(Message::Revert),
+            button("Reset to default").style(theme::secondary).on_press(Message::ResetDefault),
+            button("Export").style(theme::secondary).on_press(Message::Export),
+            button("Import").style(theme::secondary).on_press(Message::Import),
         ]
         .spacing(8);
 
         let toggles = row![
-            checkbox("Live data from osu!", self.live).on_toggle(Message::LiveData),
-            checkbox("Show keys pressed", self.press).on_toggle(Message::SimulatePress),
+            checkbox(self.live).label("Live data from osu!").on_toggle(Message::LiveData),
+            checkbox(self.press).label("Show keys pressed").on_toggle(Message::SimulatePress),
         ]
         .spacing(20);
 
         let left = column![
-            screens,
-            container(canvas_area).style(container::bordered_box).padding(2),
-            text(&self.status).size(13),
+            row![theme::heading("Designer"), Space::new().width(20), screens].spacing(12).align_y(Alignment::Center),
+            container(canvas_area).style(theme::card).padding(6),
+            theme::muted(&self.status).size(13),
             actions,
             toggles,
-            text("Arrow keys nudge the selection (Shift = 10 px), Delete removes it.").size(12),
+            theme::caption("Arrow keys nudge the selection (Shift = 10 px), Delete removes it."),
         ]
         .spacing(10)
         .width(Length::Shrink);
 
-        let right = column![self.palette(), horizontal_rule(1), self.widget_list(), horizontal_rule(1), self.properties()]
-            .spacing(10)
-            .width(Length::Fill);
+        let right = column![
+            container(self.palette()).padding(16).width(Length::Fill).style(theme::card),
+            container(self.widget_list()).padding(16).width(Length::Fill).style(theme::card),
+            container(self.properties()).padding(16).width(Length::Fill).style(theme::card),
+        ]
+        .spacing(12)
+        .width(Length::Fill);
 
         row![left, scrollable(right).height(Length::Fill)].spacing(16).into()
     }
 
     fn palette(&self) -> Element<'_, Message> {
         column![
-            text("Add widget").size(16),
-            row(WidgetKind::ALL.iter().map(|k| button(text(k.label()).size(12)).padding([4, 8]).on_press(Message::Add(*k)).into()))
+            text("Add widget").size(16).font(theme::FONT_BOLD),
+            row(WidgetKind::ALL.iter().map(|k| button(text(k.label()).size(12)).padding([5, 10]).style(theme::secondary).on_press(Message::Add(*k)).into()))
                 .spacing(6)
                 .wrap(),
         ]
@@ -530,7 +537,7 @@ impl Designer {
             button(text(format!("{}  ·  {}", w.kind.label(), what)).size(12))
                 .width(Length::Fill)
                 .padding([3, 8])
-                .style(if Some(i) == self.selected { button::primary } else { button::text })
+                .style(theme::list_item(Some(i) == self.selected))
                 .on_press(Message::Select(i))
                 .into()
         }))
@@ -538,17 +545,17 @@ impl Designer {
 
         column![
             row![
-                text(format!("Widgets ({}/{})", layout.widgets.len(), MAX_WIDGETS)).size(16),
-                Space::with_width(Length::Fill),
-                text("top of list = drawn on top").size(11),
+                text(format!("Widgets ({}/{})", layout.widgets.len(), MAX_WIDGETS)).size(16).font(theme::FONT_BOLD),
+                Space::new().width(Length::Fill),
+                theme::caption("top of list = drawn on top").size(11),
             ]
             .align_y(Alignment::Center),
             scrollable(items).height(170),
             row![
-                button(text("Raise").size(12)).on_press_maybe(self.selected.map(|_| Message::Raise)),
-                button(text("Lower").size(12)).on_press_maybe(self.selected.map(|_| Message::Lower)),
-                button(text("Duplicate").size(12)).on_press_maybe(self.selected.map(|_| Message::Duplicate)),
-                button(text("Delete").size(12)).style(button::danger).on_press_maybe(self.selected.map(|_| Message::Delete)),
+                button(text("Raise").size(12)).style(theme::secondary).on_press_maybe(self.selected.map(|_| Message::Raise)),
+                button(text("Lower").size(12)).style(theme::secondary).on_press_maybe(self.selected.map(|_| Message::Lower)),
+                button(text("Duplicate").size(12)).style(theme::secondary).on_press_maybe(self.selected.map(|_| Message::Duplicate)),
+                button(text("Delete").size(12)).style(theme::danger).on_press_maybe(self.selected.map(|_| Message::Delete)),
             ]
             .spacing(6),
         ]
@@ -557,7 +564,7 @@ impl Designer {
     }
 
     fn color_row(&self, label: &'static str, field: ColorField, value: u32) -> Element<'_, Message> {
-        let swatch = button(Space::new(28, 18))
+        let swatch = button(Space::new().width(28).height(18))
             .style(move |_theme, _status| button::Style {
                 background: Some(color(value).into()),
                 border: iced::Border { color: Color::WHITE, width: 1.0, radius: 3.0.into() },
@@ -565,7 +572,7 @@ impl Designer {
             })
             .on_press(Message::OpenColor(field));
         row![
-            text(label).width(90),
+            theme::muted(label).size(13).width(90),
             color_picker(self.picker == Some(field), color(value), swatch, Message::CancelColor, Message::SubmitColor),
             text_input("#RRGGBB", &self.hex[field as usize])
                 .on_input(move |s| Message::Hex(field, s))
@@ -581,19 +588,19 @@ impl Designer {
         let background = self.color_row("Screen bg", ColorField::Background, layout.background);
 
         let Some(w) = self.selected.and_then(|i| layout.widgets.get(i)) else {
-            return column![text("Properties").size(16), background, text("Select a widget to edit it.").size(13)]
+            return column![text("Properties").size(16).font(theme::FONT_BOLD), background, theme::muted("Select a widget to edit it.").size(13)]
                 .spacing(8)
                 .into();
         };
 
         let field = |label: &'static str, input: Element<'static, Message>| -> Element<'static, Message> {
-            row![text(label).width(90), input].spacing(8).align_y(Alignment::Center).into()
+            row![theme::muted(label).size(13).width(90), input].spacing(8).align_y(Alignment::Center).into()
         };
         let sources = all_sources();
         let current_source = source_info(w.source);
 
         column![
-            text("Properties").size(16),
+            text("Properties").size(16).font(theme::FONT_BOLD),
             field("Type", pick_list(WidgetKind::ALL, Some(w.kind), Message::Kind).into()),
             field("Data", pick_list(sources, current_source, Message::Source).width(Length::Fill).into()),
             field("Font", pick_list(Font::ALL, Some(w.font), Message::Font).into()),
@@ -615,13 +622,13 @@ impl Designer {
             self.color_row("Text / fg", ColorField::Fg, w.fg),
             self.color_row("Background", ColorField::Bg, w.bg),
             self.color_row("Accent", ColorField::Accent, w.accent),
-            checkbox("Fill background (text)", w.has_flag(FLAG_BG_FILL)).on_toggle(|on| Message::Flag(FLAG_BG_FILL, on)),
-            checkbox("Border", w.has_flag(FLAG_BORDER)).on_toggle(|on| Message::Flag(FLAG_BORDER, on)),
-            checkbox("Hide when there is no data", w.has_flag(FLAG_HIDE_WHEN_EMPTY))
+            checkbox(w.has_flag(FLAG_BG_FILL)).label("Fill background (text)").on_toggle(|on| Message::Flag(FLAG_BG_FILL, on)),
+            checkbox(w.has_flag(FLAG_BORDER)).label("Border").on_toggle(|on| Message::Flag(FLAG_BORDER, on)),
+            checkbox(w.has_flag(FLAG_HIDE_WHEN_EMPTY)).label("Hide when there is no data")
                 .on_toggle(|on| Message::Flag(FLAG_HIDE_WHEN_EMPTY, on)),
-            horizontal_rule(1),
+            iced::widget::rule::horizontal(1),
             background,
-            text(kind_help(w.kind)).size(12),
+            theme::muted(kind_help(w.kind)).size(12),
         ]
         .spacing(8)
         .into()
@@ -649,10 +656,7 @@ fn truncate(s: &str, max: usize) -> String {
 
 // ---- daemon & file I/O ------------------------------------------------------------------
 
-async fn ipc(request: IpcRequest) -> Result<IpcResponse, String> {
-    let mut stream = UnixStream::connect(get_socket_path()).await.map_err(|e| e.to_string())?;
-    send_request(&mut stream, &request).await.map_err(|e| e.to_string())
-}
+use crate::ipc::request as ipc;
 
 async fn load_layouts() -> Result<(Option<Layout>, Option<Layout>), String> {
     match ipc(IpcRequest::GetLayouts).await? {

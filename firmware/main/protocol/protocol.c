@@ -130,7 +130,7 @@ esp_err_t protocol_send_status(void)
     msg.payload.status.latency_p99_us = lat.p99_us;
     msg.payload.status.latency_p999_us = lat.p999_us;
     msg.payload.status.latency_max_us = lat.max_us;
-    msg.payload.status.hid_dropped_reports = lat.dropped_reports;
+    msg.payload.status.hid_deferred_reports = lat.deferred_reports;
 
     return send_envelope(&msg);
 }

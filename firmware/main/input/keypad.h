@@ -21,10 +21,10 @@ typedef struct {
 } keypad_config_t;
 
 /**
- * Key state change handler, run from the keypad task. Returns true if the change
- * was submitted to the host immediately.
+ * Key state change handler, run from the keypad task. edge_us is the GPIO interrupt
+ * timestamp of the change. Returns true if it was submitted to the host immediately.
  */
-typedef bool (*keypad_state_callback_t)(uint8_t key_index, bool pressed);
+typedef bool (*keypad_state_callback_t)(uint8_t key_index, bool pressed, int64_t edge_us);
 
 /**
  * @brief Initialize keypad subsystem, GPIOs, ISR, and high-priority input processing task.

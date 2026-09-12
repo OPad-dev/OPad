@@ -64,7 +64,7 @@ typedef struct _osupad_DeviceStatus {
     uint32_t latency_p99_us;
     uint32_t latency_p999_us;
     uint32_t latency_max_us;
-    uint32_t hid_dropped_reports; /* Reports not submitted because the endpoint was busy */
+    uint32_t hid_deferred_reports; /* Key changes that waited for the next USB poll, then resent */
 } osupad_DeviceStatus;
 
 typedef struct _osupad_ConfigPayload {
@@ -337,7 +337,7 @@ extern "C" {
 #define osupad_DeviceStatus_latency_p99_us_tag   11
 #define osupad_DeviceStatus_latency_p999_us_tag  12
 #define osupad_DeviceStatus_latency_max_us_tag   13
-#define osupad_DeviceStatus_hid_dropped_reports_tag 14
+#define osupad_DeviceStatus_hid_deferred_reports_tag 14
 #define osupad_ConfigPayload_key1_hid_usage_tag  1
 #define osupad_ConfigPayload_key2_hid_usage_tag  2
 #define osupad_ConfigPayload_debounce_us_tag     3
@@ -459,7 +459,7 @@ X(a, STATIC,   SINGULAR, UINT32,   latency_p50_us,   10) \
 X(a, STATIC,   SINGULAR, UINT32,   latency_p99_us,   11) \
 X(a, STATIC,   SINGULAR, UINT32,   latency_p999_us,  12) \
 X(a, STATIC,   SINGULAR, UINT32,   latency_max_us,   13) \
-X(a, STATIC,   SINGULAR, UINT32,   hid_dropped_reports,  14)
+X(a, STATIC,   SINGULAR, UINT32,   hid_deferred_reports,  14)
 #define osupad_DeviceStatus_CALLBACK NULL
 #define osupad_DeviceStatus_DEFAULT NULL
 

@@ -248,7 +248,7 @@ async fn main() -> Result<()> {
                         println!("p99:              {} µs", l.p99_us);
                         println!("p99.9:            {} µs", l.p999_us);
                         println!("max:              {} µs", l.max_us);
-                        println!("Dropped reports:  {}", l.dropped_reports);
+                        println!("Deferred reports: {} (waited for the next USB poll, then sent)", l.deferred_reports);
                     }
                     IpcResponse::Status { latency: None, .. } => {
                         println!("No latency data yet (device not connected, or old firmware)");

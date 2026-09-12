@@ -13,19 +13,20 @@ typedef struct {
     uint32_t p99_us;
     uint32_t p999_us;
     uint32_t max_us;
-    uint32_t dropped_reports;  // HID reports that could not be submitted (endpoint busy)
+    uint32_t deferred_reports; // Key changes that waited for the next USB poll (endpoint busy), then resent
 } latency_stats_t;
 
 /**
  * @brief Record one key-edge-to-HID-submit latency sample.
- * Single writer: only call from the keypad task. Lock-free, no allocation.
+ * Called from the keypad task and the TinyUSB task (both core 0). Lock-free, no allocation.
  */
 void latency_stats_record(uint32_t latency_us);
 
 /**
- * @brief Count a HID report that could not be submitted immediately.
+ * @brief Count a key change whose report could not be submitted immediately.
+ * Its latency is recorded when the report is resent.
  */
-void latency_stats_record_drop(void);
+void latency_stats_record_deferred(void);
 
 /**
  * @brief Compute a snapshot (percentiles from the histogram). Safe from any task.

@@ -2,7 +2,7 @@
 //! and mouse input translated into pad coordinates.
 
 use iced::mouse;
-use iced::widget::canvas::{self, event, Event, Frame, Geometry, Path, Stroke};
+use iced::widget::canvas::{self, Action, Event, Frame, Geometry, Path, Stroke};
 use iced::{Color, Point, Rectangle, Renderer, Size, Theme};
 
 use super::{Message, HANDLE, SCALE};
@@ -28,32 +28,31 @@ impl canvas::Program<Message> for Overlay {
     fn update(
         &self,
         state: &mut State,
-        event: Event,
+        event: &Event,
         bounds: Rectangle,
         cursor: mouse::Cursor,
-    ) -> (event::Status, Option<Message>) {
+    ) -> Option<Action<Message>> {
         let Event::Mouse(mouse_event) = event else {
-            return (event::Status::Ignored, None);
+            return None;
         };
-        match mouse_event {
-            mouse::Event::ButtonPressed(mouse::Button::Left) => match pad_point(bounds, cursor) {
-                Some(p) => {
-                    state.pressed = true;
-                    (event::Status::Captured, Some(Message::PointerDown { x: p.x, y: p.y }))
-                }
-                None => (event::Status::Ignored, None),
-            },
+        let message = match mouse_event {
+            mouse::Event::ButtonPressed(mouse::Button::Left) => {
+                let p = pad_point(bounds, cursor)?;
+                state.pressed = true;
+                Message::PointerDown { x: p.x, y: p.y }
+            }
             mouse::Event::CursorMoved { position } if state.pressed => {
                 // Keep dragging even when the cursor leaves the preview
                 let p = Point::new((position.x - bounds.x) / SCALE, (position.y - bounds.y) / SCALE);
-                (event::Status::Captured, Some(Message::PointerMove { x: p.x, y: p.y }))
+                Message::PointerMove { x: p.x, y: p.y }
             }
             mouse::Event::ButtonReleased(mouse::Button::Left) if state.pressed => {
                 state.pressed = false;
-                (event::Status::Captured, Some(Message::PointerUp))
+                Message::PointerUp
             }
-            _ => (event::Status::Ignored, None),
-        }
+            _ => return None,
+        };
+        Some(Action::publish(message).and_capture())
     }
 
     fn draw(

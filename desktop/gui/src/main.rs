@@ -1,225 +1,129 @@
+mod chrome;
 mod designer;
+mod ipc;
+mod pages;
+mod single_instance;
+mod theme;
+mod tray;
 
-use futures_util::SinkExt;
-use iced::widget::{
-    button, column, container, row, scrollable, slider, text, text_input, Space,
-};
-use iced::{Alignment, Element, Length, Size, Task, Theme};
-use ksni::TrayMethods;
-use osupad_ipc::{get_socket_path, send_request, IpcRequest, IpcResponse, IPC_PROTOCOL_VERSION};
-use osupad_model::{
-    char_to_hid_usage, CounterState, DeviceConfig, DeviceInfo, RuntimeMode,
-};
+use iced::widget::{button, column, container, row, stack, text, Space};
+use iced::{window, Alignment, Element, Length, Size, Subscription, Task};
+use osupad_ipc::{IpcRequest, IpcResponse};
+use osupad_model::ui_source::SourceValue;
+use osupad_model::{char_to_hid_usage, CounterState, DeviceConfig, DeviceInfo, LatencyStats, RuntimeMode};
+use std::collections::HashMap;
 use std::time::Duration;
-use tokio::net::UnixStream;
 
 pub fn main() -> iced::Result {
-    iced::application("osu!pad Configuration & Monitor", OsuPadGui::update, OsuPadGui::view)
-        .theme(|_| Theme::Dark)
-        .subscription(OsuPadGui::subscription)
-        .exit_on_close_request(false)
-        .window_size(Size::new(1320.0, 820.0))
-        .font(iced_aw::iced_fonts::REQUIRED_FONT_BYTES)
-        .centered()
-        .run_with(OsuPadGui::new)
+    if !single_instance::claim() {
+        // Another instance was asked to show its window
+        return Ok(());
+    }
+    let start_hidden = std::env::args().any(|a| a == "--tray");
+
+    // A daemon keeps running with no window open, living in the tray (Discord-style)
+    iced::daemon(move || App::new(start_hidden), App::update, App::view)
+        .title(App::title)
+        .theme(|_: &App, _| theme::theme())
+        .subscription(App::subscription)
+        .font(iced_aw::ICED_AW_FONT_BYTES)
+        .font(theme::FONT_MEDIUM_BYTES)
+        .font(theme::FONT_BOLD_BYTES)
+        .default_font(theme::FONT)
+        .run()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Tab {
-    Overview,
+pub enum Page {
+    Dashboard,
     Designer,
-    Statistics,
-    Input,
-    Display,
+    Settings,
     Device,
-    Backup,
     Monitor,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TrayAction {
-    ShowWindow,
-    SyncNow,
-    Quit,
+impl Page {
+    const ALL: [(Page, &'static str); 5] = [
+        (Page::Dashboard, "Dashboard"),
+        (Page::Designer, "Designer"),
+        (Page::Settings, "Settings"),
+        (Page::Device, "Device"),
+        (Page::Monitor, "Monitor"),
+    ];
 }
 
-#[derive(Clone)]
-pub struct TrayHandle(pub ksni::Handle<OsuPadTray>);
+pub struct App {
+    pub page: Page,
+    window: Option<window::Id>,
+    maximized: bool,
+    tray: Option<tray::TrayHandle>,
+    /// None until the tray reports in; false means closing the window quits
+    tray_available: Option<bool>,
 
-impl std::fmt::Debug for TrayHandle {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TrayHandle").finish()
-    }
-}
-
-pub struct OsuPadTray {
-    tx: tokio::sync::mpsc::UnboundedSender<TrayAction>,
-    pub device_connected: bool,
     pub daemon_online: bool,
+    pub device_connected: bool,
     pub tosu_connected: bool,
-    pub total_presses: u64,
-    pub mode: String,
-}
+    pub mode: RuntimeMode,
+    pub device_info: Option<DeviceInfo>,
+    pub counters: CounterState,
+    pub config: DeviceConfig,
+    pub last_sync_time: Option<String>,
+    pub latency: Option<LatencyStats>,
+    pub ui_values: HashMap<u8, SourceValue>,
 
-impl ksni::Tray for OsuPadTray {
-    fn id(&self) -> String {
-        "osupad".into()
-    }
-
-    fn title(&self) -> String {
-        "osu!pad".into()
-    }
-
-    fn icon_name(&self) -> String {
-        "input-keyboard-symbolic".into()
-    }
-
-    fn tool_tip(&self) -> ksni::ToolTip {
-        let description = if !self.daemon_online {
-            "Daemon: Offline".to_string()
-        } else if self.device_connected {
-            format!(
-                "Device: Connected ({} presses)\nMode: {}\n{}",
-                self.total_presses, self.mode, tosu_label(self.tosu_connected)
-            )
-        } else {
-            format!("Device: Disconnected\nDaemon: Online\n{}", tosu_label(self.tosu_connected))
-        };
-
-        ksni::ToolTip {
-            title: "osu!pad Monitor".to_string(),
-            description,
-            icon_name: "input-keyboard-symbolic".to_string(),
-            ..Default::default()
-        }
-    }
-
-    fn activate(&mut self, _x: i32, _y: i32) {
-        let _ = self.tx.send(TrayAction::ShowWindow);
-    }
-
-    fn secondary_activate(&mut self, _x: i32, _y: i32) {
-        let _ = self.tx.send(TrayAction::ShowWindow);
-    }
-
-    fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
-        use ksni::menu::StandardItem;
-        vec![
-            StandardItem {
-                label: "Show osu!pad".into(),
-                activate: Box::new(|tray: &mut OsuPadTray| {
-                    let _ = tray.tx.send(TrayAction::ShowWindow);
-                }),
-                ..Default::default()
-            }
-            .into(),
-            StandardItem {
-                label: "Sync Device Now".into(),
-                activate: Box::new(|tray: &mut OsuPadTray| {
-                    let _ = tray.tx.send(TrayAction::SyncNow);
-                }),
-                ..Default::default()
-            }
-            .into(),
-            ksni::MenuItem::Separator,
-            StandardItem {
-                label: "Quit".into(),
-                activate: Box::new(|tray: &mut OsuPadTray| {
-                    let _ = tray.tx.send(TrayAction::Quit);
-                }),
-                ..Default::default()
-            }
-            .into(),
-        ]
-    }
-}
-
-fn tray_stream() -> impl futures_util::Stream<Item = Message> {
-    iced::stream::channel(20, |mut output| async move {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<TrayAction>();
-        let tray = OsuPadTray {
-            tx,
-            device_connected: false,
-            daemon_online: false,
-            tosu_connected: false,
-            total_presses: 0,
-            mode: "Idle".to_string(),
-        };
-
-        match tray.spawn().await {
-            Ok(handle) => {
-                let _ = output.send(Message::TrayStarted(TrayHandle(handle))).await;
-                while let Some(action) = rx.recv().await {
-                    let _ = output.send(Message::TrayAction(action)).await;
-                }
-            }
-            Err(e) => {
-                tracing::error!("Failed to spawn system tray: {e}");
-            }
-        }
-    })
-}
-
-struct OsuPadGui {
-    current_tab: Tab,
-    daemon_online: bool,
-    device_connected: bool,
-    tosu_connected: bool,
-    mode: RuntimeMode,
-    device_info: Option<DeviceInfo>,
-    counters: CounterState,
-    config: DeviceConfig,
-    last_sync_time: Option<String>,
-    // Input form state
-    k1_input: String,
-    k2_input: String,
-    debounce_slider: u32,
-    brightness_slider: u32,
-    sleep_slider: u32,
+    // Settings form
+    pub k1_input: String,
+    pub k2_input: String,
+    pub debounce: u32,
+    pub brightness: u32,
+    pub sleep_seconds: u32,
     config_loaded: bool,
-    // Monitor state
-    logs: Vec<String>,
-    status_banner: Option<String>,
-    // Window & Tray management
-    main_window_id: Option<iced::window::Id>,
-    tray_handle: Option<TrayHandle>,
-    designer: designer::Designer,
+
+    pub logs: Vec<String>,
+    pub banner: Option<String>,
+    pub designer: designer::Designer,
 }
 
 #[derive(Debug, Clone)]
-enum Message {
-    SelectTab(Tab),
-    PollDaemon,
-    StatusReceived(Result<IpcResponse, String>),
-    LogsReceived(Result<IpcResponse, String>),
-    // Config controls
-    Key1Changed(String),
-    Key2Changed(String),
-    DebounceChanged(u32),
-    BrightnessChanged(u32),
-    SleepChanged(u32),
-    Designer(designer::Message),
+pub enum Message {
+    Navigate(Page),
+    Poll,
+    Status(Result<IpcResponse, String>),
+    UiValues(Result<IpcResponse, String>),
+    Logs(Result<IpcResponse, String>),
+    // Settings
+    Key1(String),
+    Key2(String),
+    Debounce(u32),
+    Brightness(u32),
+    SleepSeconds(u32),
     SaveConfig,
-    ConfigSaved(Result<IpcResponse, String>),
     // Actions
-    SyncRequested,
-    SyncCompleted(Result<IpcResponse, String>),
-    ResetRequested,
-    ResetCompleted(Result<IpcResponse, String>),
-    // Window & Tray events
-    CloseRequested(iced::window::Id),
-    WindowIdCaptured(Option<iced::window::Id>),
-    TrayStarted(TrayHandle),
-    TrayAction(TrayAction),
-    HideToTray,
-    QuitApp,
+    Sync,
+    ResetCounters,
+    ResetLatency,
+    ActionDone(Result<IpcResponse, String>),
+    DismissBanner,
+    Designer(designer::Message),
+    // Window & tray
+    WindowOpened(window::Id),
+    CloseRequested(window::Id),
+    Tray(tray::TrayEvent),
+    ShowRequested,
+    Window(chrome::WindowAction),
+    Resized,
+    Maximized(bool),
 }
 
-impl OsuPadGui {
-    fn new() -> (Self, Task<Message>) {
+impl App {
+    fn new(start_hidden: bool) -> (Self, Task<Message>) {
         let (designer, designer_task) = designer::Designer::new();
-        let initial = Self {
-            current_tab: Tab::Overview,
+        let mut app = App {
+            page: Page::Dashboard,
+            window: None,
+            maximized: false,
+            tray: None,
+            tray_available: None,
             daemon_online: false,
             device_connected: false,
             tosu_connected: false,
@@ -228,115 +132,107 @@ impl OsuPadGui {
             counters: CounterState::default(),
             config: DeviceConfig::default(),
             last_sync_time: None,
-            k1_input: "Z".to_string(),
-            k2_input: "X".to_string(),
-            debounce_slider: 3000,
-            brightness_slider: 100,
-            sleep_slider: 600,
-            designer,
+            latency: None,
+            ui_values: HashMap::new(),
+            k1_input: "Z".into(),
+            k2_input: "X".into(),
+            debounce: 3000,
+            brightness: 100,
+            sleep_seconds: 600,
             config_loaded: false,
             logs: Vec::new(),
-            status_banner: None,
-            main_window_id: None,
-            tray_handle: None,
+            banner: None,
+            designer,
         };
-
-        let tasks = Task::batch([
-            Task::perform(fetch_status(), Message::StatusReceived),
-            iced::window::get_latest().map(Message::WindowIdCaptured),
-            designer_task.map(Message::Designer),
-        ]);
-
-        (initial, tasks)
+        let mut tasks = vec![designer_task.map(Message::Designer), app.poll()];
+        if !start_hidden {
+            tasks.push(app.open_window());
+        }
+        (app, Task::batch(tasks))
     }
 
-    fn subscription(&self) -> iced::Subscription<Message> {
-        iced::Subscription::batch([
-            // Poll daemon every 1.5 seconds
-            iced::time::every(Duration::from_millis(1500)).map(|_| Message::PollDaemon),
-            // Intercept window close button to minimize/hide to tray
-            iced::window::close_requests().map(Message::CloseRequested),
-            // Run system tray stream in background
-            iced::Subscription::run(tray_stream),
-            if self.current_tab == Tab::Designer {
-                self.designer.subscription().map(Message::Designer)
-            } else {
-                iced::Subscription::none()
+    fn title(&self, _window: window::Id) -> String {
+        "osu!pad".to_string()
+    }
+
+    fn open_window(&mut self) -> Task<Message> {
+        if let Some(id) = self.window {
+            return window::gain_focus(id);
+        }
+        let (id, open) = window::open(window::Settings {
+            size: Size::new(1360.0, 860.0),
+            min_size: Some(Size::new(1100.0, 700.0)),
+            position: window::Position::Centered,
+            exit_on_close_request: false,
+            // Our own title bar and resize edges (chrome.rs)
+            decorations: false,
+            platform_specific: window::settings::PlatformSpecific {
+                application_id: "osupad".to_string(),
+                ..Default::default()
             },
-        ])
+            ..Default::default()
+        });
+        self.window = Some(id);
+        open.map(Message::WindowOpened)
+    }
+
+    fn poll(&self) -> Task<Message> {
+        let mut tasks = vec![
+            Task::perform(ipc::request(IpcRequest::GetStatus), Message::Status),
+            Task::perform(ipc::request(IpcRequest::GetUiValues), Message::UiValues),
+        ];
+        if self.page == Page::Monitor && self.window.is_some() {
+            tasks.push(Task::perform(ipc::request(IpcRequest::GetLogEntries { limit: 200 }), Message::Logs));
+        }
+        Task::batch(tasks)
     }
 
     fn update_tray(&self) {
-        if let Some(tray) = &self.tray_handle {
-            let handle = tray.0.clone();
-            let connected = self.device_connected;
-            let daemon = self.daemon_online;
-            let tosu = self.tosu_connected;
-            let presses = self.counters.total_lifetime_presses();
-            let mode = format!("{:?}", self.mode);
-            tokio::spawn(async move {
-                let _ = handle
-                    .update(move |t| {
-                        t.device_connected = connected;
-                        t.daemon_online = daemon;
-                        t.tosu_connected = tosu;
-                        t.total_presses = presses;
-                        t.mode = mode;
-                    })
-                    .await;
-            });
+        if let Some(handle) = &self.tray {
+            tray::update(
+                handle,
+                tray::TrayStatus {
+                    daemon_online: self.daemon_online,
+                    device_connected: self.device_connected,
+                    tosu_connected: self.tosu_connected,
+                    total_presses: self.counters.total_lifetime_presses(),
+                    mode: format!("{:?}", self.mode),
+                },
+            );
         }
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::SelectTab(tab) => {
-                self.current_tab = tab;
-                if tab == Tab::Monitor {
-                    return Task::perform(fetch_logs(), Message::LogsReceived);
-                }
-                Task::none()
+            Message::Navigate(page) => {
+                self.page = page;
+                return self.poll();
             }
-
-            Message::PollDaemon => {
-                let status_task = Task::perform(fetch_status(), Message::StatusReceived);
-                if self.current_tab == Tab::Monitor {
-                    Task::batch([status_task, Task::perform(fetch_logs(), Message::LogsReceived)])
-                } else {
-                    status_task
-                }
-            }
-
-            Message::StatusReceived(res) => {
-                match res {
+            Message::Poll => return self.poll(),
+            Message::Status(result) => {
+                match result {
                     Ok(IpcResponse::Status {
-                        mode,
-                        device_connected,
-                        device_info,
-                        counters,
-                        config,
-                        last_sync_time,
-                        tosu_connected,
-                        ..
+                        mode, device_connected, device_info, counters, config, last_sync_time, tosu_connected, latency,
                     }) => {
                         self.daemon_online = true;
-                        self.tosu_connected = tosu_connected;
                         self.mode = mode;
                         self.device_connected = device_connected;
                         self.device_info = device_info;
                         self.counters = counters;
-                        // Refresh the form only when the saved config changed (first poll,
-                        // after saving, or edited elsewhere), so polling never discards unsaved edits
+                        self.tosu_connected = tosu_connected;
+                        self.latency = latency;
+                        self.last_sync_time = last_sync_time;
+                        // Refresh the form only when the saved config changed, so polling
+                        // never discards unsaved edits
                         if !self.config_loaded || self.config != config {
                             self.config_loaded = true;
                             self.k1_input = config.key1_char();
                             self.k2_input = config.key2_char();
-                            self.debounce_slider = config.debounce_us;
-                            self.brightness_slider = config.brightness;
-                            self.sleep_slider = config.display_sleep_seconds;
+                            self.debounce = config.debounce_us;
+                            self.brightness = config.brightness;
+                            self.sleep_seconds = config.display_sleep_seconds;
                         }
                         self.config = config;
-                        self.last_sync_time = last_sync_time;
                     }
                     _ => {
                         self.daemon_online = false;
@@ -345,496 +241,192 @@ impl OsuPadGui {
                     }
                 }
                 self.update_tray();
-                Task::none()
             }
-
-            Message::LogsReceived(res) => {
-                if let Ok(IpcResponse::LogEntries(entries)) = res {
+            Message::UiValues(result) => {
+                if let Ok(IpcResponse::UiValues(values)) = result {
+                    self.ui_values = values.into_iter().collect();
+                }
+            }
+            Message::Logs(result) => {
+                if let Ok(IpcResponse::LogEntries(entries)) = result {
                     self.logs = entries;
                 }
-                Task::none()
             }
-
-            Message::Key1Changed(s) => {
-                self.k1_input = s.chars().take(2).collect();
-                Task::none()
-            }
-
-            Message::Key2Changed(s) => {
-                self.k2_input = s.chars().take(2).collect();
-                Task::none()
-            }
-
-            Message::DebounceChanged(val) => {
-                self.debounce_slider = val;
-                Task::none()
-            }
-
-            Message::BrightnessChanged(val) => {
-                self.brightness_slider = val;
-                Task::none()
-            }
-
-            Message::SleepChanged(val) => {
-                self.sleep_slider = val;
-                Task::none()
-            }
-
-            Message::Designer(msg) => self.designer.update(msg).map(Message::Designer),
-
+            Message::Key1(s) => self.k1_input = s.chars().take(1).collect::<String>().to_uppercase(),
+            Message::Key2(s) => self.k2_input = s.chars().take(1).collect::<String>().to_uppercase(),
+            Message::Debounce(v) => self.debounce = v,
+            Message::Brightness(v) => self.brightness = v,
+            Message::SleepSeconds(v) => self.sleep_seconds = v,
             Message::SaveConfig => {
-                let k1_usage = char_to_hid_usage(&self.k1_input).unwrap_or(self.config.key1_hid_usage);
-                let k2_usage = char_to_hid_usage(&self.k2_input).unwrap_or(self.config.key2_hid_usage);
-
-                let new_config = DeviceConfig {
-                    key1_hid_usage: k1_usage,
-                    key2_hid_usage: k2_usage,
-                    debounce_us: self.debounce_slider,
-                    brightness: self.brightness_slider,
-                    display_sleep_seconds: self.sleep_slider,
-                    gameplay_display_hz: self.config.gameplay_display_hz,
-                    tosu_endpoint: self.config.tosu_endpoint.clone(),
-                    press_color_rgb: self.config.press_color_rgb,
+                let config = DeviceConfig {
+                    key1_hid_usage: char_to_hid_usage(&self.k1_input).unwrap_or(self.config.key1_hid_usage),
+                    key2_hid_usage: char_to_hid_usage(&self.k2_input).unwrap_or(self.config.key2_hid_usage),
+                    debounce_us: self.debounce,
+                    brightness: self.brightness,
+                    display_sleep_seconds: self.sleep_seconds,
+                    ..self.config.clone()
                 };
-
-                self.status_banner = Some("Applying new configuration...".to_string());
-                Task::perform(update_config_request(new_config), Message::ConfigSaved)
+                self.banner = Some("Saving settings...".into());
+                return Task::perform(ipc::request(IpcRequest::UpdateConfig(config)), Message::ActionDone);
             }
-
-            Message::ConfigSaved(res) => {
-                match res {
-                    Ok(IpcResponse::ConfigUpdated { config }) => {
-                        self.config = config;
-                        self.status_banner = Some("Configuration updated successfully!".to_string());
-                    }
-                    Ok(IpcResponse::OperationRejected { reason }) => {
-                        self.status_banner = Some(format!("Rejected: {}", reason));
-                    }
-                    Err(e) => {
-                        self.status_banner = Some(format!("Error: {}", e));
-                    }
-                    _ => {}
-                }
-                Task::none()
+            Message::Sync => {
+                self.banner = Some("Syncing counters and clock with the pad...".into());
+                return Task::perform(ipc::request(IpcRequest::ForceSync), Message::ActionDone);
             }
-
-            Message::SyncRequested => {
-                self.status_banner = Some("Synchronizing counters and clock with ESP...".to_string());
-                Task::perform(force_sync_request(), Message::SyncCompleted)
+            Message::ResetCounters => {
+                self.banner = Some("Resetting lifetime counters...".into());
+                return Task::perform(ipc::request(IpcRequest::ResetCounters), Message::ActionDone);
             }
-
-            Message::SyncCompleted(res) => {
-                match res {
-                    Ok(IpcResponse::SyncCompleted { success: true, counters }) => {
-                        self.counters = counters;
-                        self.status_banner = Some("Synchronization successful!".to_string());
-                    }
-                    Ok(IpcResponse::OperationRejected { reason }) => {
-                        self.status_banner = Some(format!("Rejected: {}", reason));
-                    }
-                    _ => {
-                        self.status_banner = Some("Synchronization failed".to_string());
-                    }
-                }
-                self.update_tray();
-                Task::none()
+            Message::ResetLatency => {
+                return Task::perform(ipc::request(IpcRequest::ResetLatencyStats), Message::ActionDone);
             }
-
-            Message::ResetRequested => {
-                self.status_banner = Some("Resetting lifetime counters...".to_string());
-                Task::perform(reset_counters_request(), Message::ResetCompleted)
+            Message::ActionDone(result) => {
+                self.banner = Some(match result {
+                    Ok(IpcResponse::ConfigUpdated { .. }) => "Settings saved and sent to the pad".into(),
+                    Ok(IpcResponse::SyncCompleted { success: true, .. }) => "Pad synced".into(),
+                    Ok(IpcResponse::CountersReset { .. }) => "Lifetime counters reset".into(),
+                    Ok(IpcResponse::HandshakeAck { .. }) => "Latency statistics reset".into(),
+                    Ok(IpcResponse::OperationRejected { reason }) => format!("Not possible right now: {}", reason),
+                    Ok(IpcResponse::Error(e)) | Err(e) => format!("Error: {}", e),
+                    Ok(other) => format!("Unexpected response: {:?}", other),
+                });
+                return self.poll();
             }
+            Message::DismissBanner => self.banner = None,
+            Message::Designer(msg) => return self.designer.update(msg).map(Message::Designer),
 
-            Message::ResetCompleted(res) => {
-                match res {
-                    Ok(IpcResponse::CountersReset { counters }) => {
-                        self.counters = counters;
-                        self.status_banner = Some("Lifetime counters reset to zero with incremented generation.".to_string());
-                    }
-                    Ok(IpcResponse::OperationRejected { reason }) => {
-                        self.status_banner = Some(format!("Rejected: {}", reason));
-                    }
-                    _ => {}
-                }
-                self.update_tray();
-                Task::none()
-            }
-
+            Message::WindowOpened(_) => {}
             Message::CloseRequested(id) => {
-                self.main_window_id = Some(id);
-                self.status_banner = Some("osu!pad minimized to tray.".to_string());
-                iced::window::change_mode(id, iced::window::Mode::Hidden)
-            }
-
-            Message::WindowIdCaptured(maybe_id) => {
-                if let Some(id) = maybe_id {
-                    self.main_window_id = Some(id);
+                if self.tray_available == Some(false) {
+                    // Nowhere to live without a window
+                    return iced::exit();
                 }
-                Task::none()
+                self.window = None;
+                return window::close(id);
             }
-
-            Message::TrayStarted(handle) => {
-                self.tray_handle = Some(handle);
-                self.update_tray();
-                Task::none()
+            Message::ShowRequested => return self.open_window(),
+            Message::Window(action) => {
+                let Some(id) = self.window else { return Task::none() };
+                return match action {
+                    chrome::WindowAction::Drag => window::drag(id),
+                    chrome::WindowAction::ToggleMaximize => window::toggle_maximize(id),
+                    chrome::WindowAction::Minimize => window::minimize(id, true),
+                    chrome::WindowAction::Close => self.update(Message::CloseRequested(id)),
+                    chrome::WindowAction::Resize(direction) if !self.maximized => window::drag_resize(id, direction),
+                    chrome::WindowAction::Resize(_) => Task::none(),
+                };
             }
-
-            Message::TrayAction(action) => match action {
-                TrayAction::ShowWindow => {
-                    if let Some(id) = self.main_window_id {
-                        Task::batch([
-                            iced::window::change_mode(id, iced::window::Mode::Windowed),
-                            iced::window::gain_focus(id),
-                        ])
-                    } else {
-                        iced::window::get_latest().then(|maybe_id| {
-                            if let Some(id) = maybe_id {
-                                Task::batch([
-                                    iced::window::change_mode(id, iced::window::Mode::Windowed),
-                                    iced::window::gain_focus(id),
-                                ])
-                            } else {
-                                Task::none()
-                            }
-                        })
+            Message::Resized => {
+                if let Some(id) = self.window {
+                    return window::is_maximized(id).map(Message::Maximized);
+                }
+            }
+            Message::Maximized(maximized) => self.maximized = maximized,
+            Message::Tray(event) => match event {
+                tray::TrayEvent::Started(handle) => {
+                    self.tray = Some(handle);
+                    self.tray_available = Some(true);
+                    self.update_tray();
+                }
+                tray::TrayEvent::Unavailable => {
+                    self.tray_available = Some(false);
+                    if self.window.is_none() {
+                        return self.open_window();
                     }
                 }
-                TrayAction::SyncNow => {
-                    self.status_banner = Some("Synchronizing counters and clock with ESP...".to_string());
-                    Task::perform(force_sync_request(), Message::SyncCompleted)
-                }
-                TrayAction::Quit => {
-                    std::process::exit(0);
-                }
+                tray::TrayEvent::Action(tray::TrayAction::ShowWindow) => return self.open_window(),
+                tray::TrayEvent::Action(tray::TrayAction::SyncNow) => return self.update(Message::Sync),
+                tray::TrayEvent::Action(tray::TrayAction::Quit) => return iced::exit(),
             },
+        }
+        Task::none()
+    }
 
-            Message::HideToTray => {
-                if let Some(id) = self.main_window_id {
-                    iced::window::change_mode(id, iced::window::Mode::Hidden)
-                } else {
-                    iced::window::get_latest().then(|maybe_id| {
-                        if let Some(id) = maybe_id {
-                            iced::window::change_mode(id, iced::window::Mode::Hidden)
-                        } else {
-                            Task::none()
-                        }
-                    })
-                }
-            }
+    fn subscription(&self) -> Subscription<Message> {
+        let mut subscriptions = vec![
+            iced::time::every(Duration::from_millis(if self.window.is_some() { 1000 } else { 3000 }))
+                .map(|_| Message::Poll),
+            window::close_requests().map(Message::CloseRequested),
+            window::resize_events().map(|_| Message::Resized),
+            Subscription::run(tray::stream).map(Message::Tray),
+            Subscription::run(single_instance::show_requests).map(|_| Message::ShowRequested),
+        ];
+        if self.window.is_some() && self.page == Page::Designer {
+            subscriptions.push(self.designer.subscription().map(Message::Designer));
+        }
+        Subscription::batch(subscriptions)
+    }
 
-            Message::QuitApp => {
-                std::process::exit(0);
-            }
+    fn view(&self, _window: window::Id) -> Element<'_, Message> {
+        let nav = column(Page::ALL.iter().map(|(page, label)| {
+            button(text(*label).size(15))
+                .width(Length::Fill)
+                .padding([10, 14])
+                .style(theme::nav(self.page == *page))
+                .on_press(Message::Navigate(*page))
+                .into()
+        }))
+        .spacing(6);
+
+        let status_line = |on: bool, label: &'static str, state: &'static str| {
+            row![
+                container(Space::new().width(10).height(10)).style(theme::dot(on)),
+                text(label).size(13),
+                Space::new().width(Length::Fill),
+                theme::caption(state),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center)
+        };
+
+        let sidebar = container(
+            column![
+                nav,
+                Space::new().height(Length::Fill),
+                status_line(self.device_connected, "Pad", if self.device_connected { "connected" } else { "offline" }),
+                status_line(self.tosu_connected, "tosu", if self.tosu_connected { "connected" } else { "offline" }),
+                status_line(self.daemon_online, "Daemon", if self.daemon_online { "running" } else { "offline" }),
+                Space::new().height(4),
+                theme::caption("Close the window to keep osu!pad in the tray"),
+            ]
+            .spacing(8)
+            .padding(18),
+        )
+        .width(220)
+        .height(Length::Fill)
+        .style(theme::sidebar);
+
+        let page: Element<'_, Message> = match self.page {
+            Page::Dashboard => pages::dashboard(self),
+            Page::Designer => self.designer.view().map(Message::Designer),
+            Page::Settings => pages::settings(self),
+            Page::Device => pages::device(self),
+            Page::Monitor => pages::monitor(self),
+        };
+
+        let mut main = column![].spacing(14).padding(24).width(Length::Fill).height(Length::Fill);
+        if let Some(banner) = &self.banner {
+            main = main.push(
+                container(
+                    row![
+                        text(banner).size(14),
+                        Space::new().width(Length::Fill),
+                        button(text("Dismiss").size(12)).style(theme::secondary).on_press(Message::DismissBanner),
+                    ]
+                    .align_y(Alignment::Center),
+                )
+                .padding([8, 14])
+                .style(theme::banner),
+            );
+        }
+        main = main.push(page);
+
+        let body = column![chrome::title_bar(self.maximized), row![sidebar, main].height(Length::Fill)];
+        let framed = container(body).style(chrome::frame);
+        if self.maximized {
+            framed.into()
+        } else {
+            stack![framed, chrome::resize_edges()].into()
         }
     }
-
-    fn view(&self) -> Element<'_, Message> {
-        let nav_item = |tab: Tab, label: &'static str| {
-            let is_selected = self.current_tab == tab;
-            button(text(label))
-                .padding([8, 16])
-                .style(if is_selected {
-                    button::primary
-                } else {
-                    button::secondary
-                })
-                .on_press(Message::SelectTab(tab))
-        };
-
-        let sidebar = column![
-            text("osu!pad").size(24),
-            Space::with_height(Length::Fixed(16.0)),
-            nav_item(Tab::Overview, "Overview"),
-            nav_item(Tab::Designer, "Designer"),
-            nav_item(Tab::Statistics, "Statistics"),
-            nav_item(Tab::Input, "Input"),
-            nav_item(Tab::Display, "Display"),
-            nav_item(Tab::Device, "Device"),
-            nav_item(Tab::Backup, "Backup"),
-            nav_item(Tab::Monitor, "Monitor"),
-            Space::with_height(Length::Fill),
-            text(format!(
-                "Daemon: {}",
-                if self.daemon_online { "Online" } else { "Offline" }
-            ))
-            .size(13),
-            text(format!(
-                "Device: {}",
-                if self.device_connected { "Connected" } else { "Disconnected" }
-            ))
-            .size(13),
-            text(tosu_label(self.tosu_connected)).size(13),
-            Space::with_height(Length::Fixed(8.0)),
-            row![
-                button(text("To Tray").size(12))
-                    .padding([5, 10])
-                    .style(button::secondary)
-                    .on_press(Message::HideToTray),
-                button(text("Quit").size(12))
-                    .padding([5, 10])
-                    .style(button::danger)
-                    .on_press(Message::QuitApp),
-            ]
-            .spacing(8),
-        ]
-        .spacing(8)
-        .padding(16)
-        .width(Length::Fixed(180.0));
-
-        let content: Element<'_, Message> = match self.current_tab {
-            Tab::Overview => self.view_overview(),
-            Tab::Designer => self.designer.view().map(Message::Designer),
-            Tab::Statistics => self.view_statistics(),
-            Tab::Input => self.view_input(),
-            Tab::Display => self.view_display(),
-            Tab::Device => self.view_device(),
-            Tab::Backup => self.view_backup(),
-            Tab::Monitor => self.view_monitor(),
-        };
-
-        let main_view = column![
-            if let Some(banner) = &self.status_banner {
-                container(text(banner).size(14))
-                    .padding(8)
-                    .style(container::bordered_box)
-            } else {
-                container(Space::with_height(Length::Fixed(0.0)))
-            },
-            content,
-        ]
-        .spacing(12)
-        .padding(20)
-        .width(Length::Fill);
-
-        row![sidebar, main_view].into()
-    }
-
-    fn view_overview(&self) -> Element<'_, Message> {
-        column![
-            text("System Overview").size(22),
-            Space::with_height(Length::Fixed(12.0)),
-            text(format!("Operational Mode: {:?}", self.mode)),
-            text(format!(
-                "ESP32 Connection: {}",
-                if self.device_connected { "Connected" } else { "Disconnected" }
-            )),
-            text(format!(
-                "tosu (osu! telemetry): {}",
-                if self.tosu_connected { "Connected" } else { "Not running" }
-            )),
-            text(format!(
-                "Hardware Profile: {}",
-                self.device_info.as_ref().map(|i| i.board_profile.as_str()).unwrap_or("Waveshare ESP32-S3-Touch-LCD-2")
-            )),
-            text(format!(
-                "Firmware Version: {}",
-                self.device_info.as_ref().map(|i| i.firmware_version.as_str()).unwrap_or("v1.0.0")
-            )),
-            Space::with_height(Length::Fixed(12.0)),
-            text(format!(
-                "Key 1 ({}): {} presses",
-                self.config.key1_char(),
-                self.counters.lifetime_key1
-            )),
-            text(format!(
-                "Key 2 ({}): {} presses",
-                self.config.key2_char(),
-                self.counters.lifetime_key2
-            )),
-            text(format!(
-                "Total Presses: {}",
-                self.counters.total_lifetime_presses()
-            )),
-            Space::with_height(Length::Fixed(12.0)),
-            text(format!(
-                "Last Sync: {}",
-                self.last_sync_time.as_deref().unwrap_or("Never")
-            )),
-        ]
-        .spacing(8)
-        .into()
-    }
-
-    fn view_statistics(&self) -> Element<'_, Message> {
-        column![
-            text("Lifetime Statistics").size(22),
-            Space::with_height(Length::Fixed(12.0)),
-            text(format!("Key 1 Lifetime: {} presses", self.counters.lifetime_key1)),
-            text(format!("Key 2 Lifetime: {} presses", self.counters.lifetime_key2)),
-            text(format!("Total Combined: {} presses", self.counters.total_lifetime_presses())),
-            text(format!("Counter Generation: {}", self.counters.counter_generation)),
-            Space::with_height(Length::Fixed(16.0)),
-            text("Current Session / Map:").size(16),
-            text(format!("Map Key 1: {} presses", self.counters.map_key1)),
-            text(format!("Map Key 2: {} presses", self.counters.map_key2)),
-        ]
-        .spacing(8)
-        .into()
-    }
-
-    fn view_input(&self) -> Element<'_, Message> {
-        column![
-            text("Input Configuration").size(22),
-            Space::with_height(Length::Fixed(12.0)),
-            row![
-                text("Key 1 Character:").width(Length::Fixed(140.0)),
-                text_input("Z", &self.k1_input)
-                    .on_input(Message::Key1Changed)
-                    .width(Length::Fixed(80.0)),
-            ]
-            .align_y(Alignment::Center),
-            row![
-                text("Key 2 Character:").width(Length::Fixed(140.0)),
-                text_input("X", &self.k2_input)
-                    .on_input(Message::Key2Changed)
-                    .width(Length::Fixed(80.0)),
-            ]
-            .align_y(Alignment::Center),
-            Space::with_height(Length::Fixed(8.0)),
-            text(format!("Eager Debounce Lockout: {} µs", self.debounce_slider)),
-            slider(500..=10000, self.debounce_slider, Message::DebounceChanged),
-            Space::with_height(Length::Fixed(16.0)),
-            button("Apply Input Settings").on_press(Message::SaveConfig),
-        ]
-        .spacing(10)
-        .into()
-    }
-
-    fn view_display(&self) -> Element<'_, Message> {
-        column![
-            text("Display Settings").size(22),
-            Space::with_height(Length::Fixed(12.0)),
-            text(format!("Backlight Brightness: {}%", self.brightness_slider)),
-            slider(10..=100, self.brightness_slider, Message::BrightnessChanged),
-            Space::with_height(Length::Fixed(8.0)),
-            text(format!("Display Sleep Timeout: {} seconds", self.sleep_slider)),
-            slider(60..=3600, self.sleep_slider, Message::SleepChanged),
-            Space::with_height(Length::Fixed(8.0)),
-            text("Colors and layout of the pad screens are edited in the Designer tab.").size(13),
-            Space::with_height(Length::Fixed(16.0)),
-            button("Save Display Settings").on_press(Message::SaveConfig),
-        ]
-        .spacing(10)
-        .into()
-    }
-
-    fn view_device(&self) -> Element<'_, Message> {
-        column![
-            text("Device Management").size(22),
-            Space::with_height(Length::Fixed(12.0)),
-            text(format!("Device ID: {}", self.device_info.as_ref().map(|i| i.device_id.as_str()).unwrap_or("N/A"))),
-            text("Actions:"),
-            row![
-                button("Synchronize Now").on_press(Message::SyncRequested),
-                button("Reset Counters").on_press(Message::ResetRequested),
-                button("Minimize to Tray").on_press(Message::HideToTray),
-            ]
-            .spacing(12),
-        ]
-        .spacing(10)
-        .into()
-    }
-
-    fn view_backup(&self) -> Element<'_, Message> {
-        column![
-            text("Backup & Portable Restore").size(22),
-            Space::with_height(Length::Fixed(12.0)),
-            text("You can export or import portable JSON backups using `osupadctl`:"),
-            text("  $ osupadctl export backup.json"),
-            text("  $ osupadctl import backup.json"),
-        ]
-        .spacing(10)
-        .into()
-    }
-
-    fn view_monitor(&self) -> Element<'_, Message> {
-        let log_lines: Element<'_, Message> = column(
-            self.logs
-                .iter()
-                .map(|line| text(line).size(13).into())
-                .collect::<Vec<_>>(),
-        )
-        .spacing(4)
-        .into();
-
-        column![
-            text("Live System & ESP Diagnostic Monitor").size(22),
-            Space::with_height(Length::Fixed(8.0)),
-            scrollable(log_lines).height(Length::Fixed(400.0)),
-        ]
-        .spacing(8)
-        .into()
-    }
-}
-
-fn tosu_label(connected: bool) -> &'static str {
-    if connected { "tosu: Connected" } else { "tosu: Not running" }
-}
-
-// -----------------------------------------------------------------------------
-// IPC Async Tasks
-// -----------------------------------------------------------------------------
-
-async fn fetch_status() -> Result<IpcResponse, String> {
-    let socket = get_socket_path();
-    let mut stream = UnixStream::connect(&socket)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let _ = send_request(
-        &mut stream,
-        &IpcRequest::Handshake {
-            client_version: "1.0.0".to_string(),
-            client_protocol: IPC_PROTOCOL_VERSION,
-        },
-    )
-    .await;
-
-    send_request(&mut stream, &IpcRequest::GetStatus)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-async fn fetch_logs() -> Result<IpcResponse, String> {
-    let socket = get_socket_path();
-    let mut stream = UnixStream::connect(&socket)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    send_request(&mut stream, &IpcRequest::GetLogEntries { limit: 100 })
-        .await
-        .map_err(|e| e.to_string())
-}
-
-async fn update_config_request(cfg: DeviceConfig) -> Result<IpcResponse, String> {
-    let socket = get_socket_path();
-    let mut stream = UnixStream::connect(&socket)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    send_request(&mut stream, &IpcRequest::UpdateConfig(cfg))
-        .await
-        .map_err(|e| e.to_string())
-}
-
-async fn force_sync_request() -> Result<IpcResponse, String> {
-    let socket = get_socket_path();
-    let mut stream = UnixStream::connect(&socket)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    send_request(&mut stream, &IpcRequest::ForceSync)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-async fn reset_counters_request() -> Result<IpcResponse, String> {
-    let socket = get_socket_path();
-    let mut stream = UnixStream::connect(&socket)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    send_request(&mut stream, &IpcRequest::ResetCounters)
-        .await
-        .map_err(|e| e.to_string())
 }

@@ -11,7 +11,9 @@ pub struct LatencyStats {
     pub p99_us: u32,
     pub p999_us: u32,
     pub max_us: u32,
-    pub dropped_reports: u32,
+    /// Key changes that waited for the next USB poll (endpoint busy) and were resent
+    #[serde(alias = "dropped_reports")]
+    pub deferred_reports: u32,
 }
 
 /// Operational mode of the system (§11)

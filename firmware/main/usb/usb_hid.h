@@ -33,7 +33,7 @@ void usb_hid_set_keycodes(uint8_t key1_code, uint8_t key2_code);
 /**
  * @brief Handler dispatched when keypad physical state changes.
  */
-bool usb_hid_handle_key_event(uint8_t key_index, bool pressed);
+bool usb_hid_handle_key_event(uint8_t key_index, bool pressed, int64_t edge_us);
 
 #ifdef __cplusplus
 }
