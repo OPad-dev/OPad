@@ -1,7 +1,9 @@
+use futures_util::SinkExt;
 use iced::widget::{
     button, column, container, row, scrollable, slider, text, text_input, Space,
 };
-use iced::{Alignment, Element, Length, Task, Theme};
+use iced::{Alignment, Element, Length, Size, Task, Theme};
+use ksni::TrayMethods;
 use osupad_ipc::{get_socket_path, send_request, IpcRequest, IpcResponse, IPC_PROTOCOL_VERSION};
 use osupad_model::{
     char_to_hid_usage, CounterState, DeviceConfig, DeviceInfo, RuntimeMode,
@@ -13,6 +15,9 @@ pub fn main() -> iced::Result {
     iced::application("osu!pad Configuration & Monitor", OsuPadGui::update, OsuPadGui::view)
         .theme(|_| Theme::Dark)
         .subscription(OsuPadGui::subscription)
+        .exit_on_close_request(false)
+        .window_size(Size::new(820.0, 580.0))
+        .centered()
         .run_with(OsuPadGui::new)
 }
 
@@ -25,6 +30,128 @@ enum Tab {
     Device,
     Backup,
     Monitor,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TrayAction {
+    ShowWindow,
+    SyncNow,
+    Quit,
+}
+
+#[derive(Clone)]
+pub struct TrayHandle(pub ksni::Handle<OsuPadTray>);
+
+impl std::fmt::Debug for TrayHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TrayHandle").finish()
+    }
+}
+
+pub struct OsuPadTray {
+    tx: tokio::sync::mpsc::UnboundedSender<TrayAction>,
+    pub device_connected: bool,
+    pub daemon_online: bool,
+    pub total_presses: u64,
+    pub mode: String,
+}
+
+impl ksni::Tray for OsuPadTray {
+    fn id(&self) -> String {
+        "osupad".into()
+    }
+
+    fn title(&self) -> String {
+        "osu!pad".into()
+    }
+
+    fn icon_name(&self) -> String {
+        "input-keyboard-symbolic".into()
+    }
+
+    fn tool_tip(&self) -> ksni::ToolTip {
+        let description = if !self.daemon_online {
+            "Daemon: Offline".to_string()
+        } else if self.device_connected {
+            format!(
+                "Device: Connected ({} presses)\nMode: {}",
+                self.total_presses, self.mode
+            )
+        } else {
+            "Device: Disconnected\nDaemon: Online".to_string()
+        };
+
+        ksni::ToolTip {
+            title: "osu!pad Monitor".to_string(),
+            description,
+            icon_name: "input-keyboard-symbolic".to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn activate(&mut self, _x: i32, _y: i32) {
+        let _ = self.tx.send(TrayAction::ShowWindow);
+    }
+
+    fn secondary_activate(&mut self, _x: i32, _y: i32) {
+        let _ = self.tx.send(TrayAction::ShowWindow);
+    }
+
+    fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
+        use ksni::menu::StandardItem;
+        vec![
+            StandardItem {
+                label: "Show osu!pad".into(),
+                activate: Box::new(|tray: &mut OsuPadTray| {
+                    let _ = tray.tx.send(TrayAction::ShowWindow);
+                }),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: "Sync Device Now".into(),
+                activate: Box::new(|tray: &mut OsuPadTray| {
+                    let _ = tray.tx.send(TrayAction::SyncNow);
+                }),
+                ..Default::default()
+            }
+            .into(),
+            ksni::MenuItem::Separator,
+            StandardItem {
+                label: "Quit".into(),
+                activate: Box::new(|tray: &mut OsuPadTray| {
+                    let _ = tray.tx.send(TrayAction::Quit);
+                }),
+                ..Default::default()
+            }
+            .into(),
+        ]
+    }
+}
+
+fn tray_stream() -> impl futures_util::Stream<Item = Message> {
+    iced::stream::channel(20, |mut output| async move {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<TrayAction>();
+        let tray = OsuPadTray {
+            tx,
+            device_connected: false,
+            daemon_online: false,
+            total_presses: 0,
+            mode: "Idle".to_string(),
+        };
+
+        match tray.spawn().await {
+            Ok(handle) => {
+                let _ = output.send(Message::TrayStarted(TrayHandle(handle))).await;
+                while let Some(action) = rx.recv().await {
+                    let _ = output.send(Message::TrayAction(action)).await;
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to spawn system tray: {e}");
+            }
+        }
+    })
 }
 
 struct OsuPadGui {
@@ -45,6 +172,9 @@ struct OsuPadGui {
     // Monitor state
     logs: Vec<String>,
     status_banner: Option<String>,
+    // Window & Tray management
+    main_window_id: Option<iced::window::Id>,
+    tray_handle: Option<TrayHandle>,
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +196,13 @@ enum Message {
     SyncCompleted(Result<IpcResponse, String>),
     ResetRequested,
     ResetCompleted(Result<IpcResponse, String>),
+    // Window & Tray events
+    CloseRequested(iced::window::Id),
+    WindowIdCaptured(Option<iced::window::Id>),
+    TrayStarted(TrayHandle),
+    TrayAction(TrayAction),
+    HideToTray,
+    QuitApp,
 }
 
 impl OsuPadGui {
@@ -86,14 +223,47 @@ impl OsuPadGui {
             sleep_slider: 600,
             logs: Vec::new(),
             status_banner: None,
+            main_window_id: None,
+            tray_handle: None,
         };
 
-        (initial, Task::perform(fetch_status(), Message::StatusReceived))
+        let tasks = Task::batch([
+            Task::perform(fetch_status(), Message::StatusReceived),
+            iced::window::get_latest().map(Message::WindowIdCaptured),
+        ]);
+
+        (initial, tasks)
     }
 
     fn subscription(&self) -> iced::Subscription<Message> {
-        // Poll daemon every 1.5 seconds
-        iced::time::every(Duration::from_millis(1500)).map(|_| Message::PollDaemon)
+        iced::Subscription::batch([
+            // Poll daemon every 1.5 seconds
+            iced::time::every(Duration::from_millis(1500)).map(|_| Message::PollDaemon),
+            // Intercept window close button to minimize/hide to tray
+            iced::window::close_requests().map(Message::CloseRequested),
+            // Run system tray stream in background
+            iced::Subscription::run(tray_stream),
+        ])
+    }
+
+    fn update_tray(&self) {
+        if let Some(tray) = &self.tray_handle {
+            let handle = tray.0.clone();
+            let connected = self.device_connected;
+            let daemon = self.daemon_online;
+            let presses = self.counters.total_lifetime_presses();
+            let mode = format!("{:?}", self.mode);
+            tokio::spawn(async move {
+                let _ = handle
+                    .update(move |t| {
+                        t.device_connected = connected;
+                        t.daemon_online = daemon;
+                        t.total_presses = presses;
+                        t.mode = mode;
+                    })
+                    .await;
+            });
+        }
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -145,6 +315,7 @@ impl OsuPadGui {
                         self.device_connected = false;
                     }
                 }
+                self.update_tray();
                 Task::none()
             }
 
@@ -233,6 +404,7 @@ impl OsuPadGui {
                         self.status_banner = Some("Synchronization failed".to_string());
                     }
                 }
+                self.update_tray();
                 Task::none()
             }
 
@@ -252,7 +424,74 @@ impl OsuPadGui {
                     }
                     _ => {}
                 }
+                self.update_tray();
                 Task::none()
+            }
+
+            Message::CloseRequested(id) => {
+                self.main_window_id = Some(id);
+                self.status_banner = Some("osu!pad minimized to tray.".to_string());
+                iced::window::change_mode(id, iced::window::Mode::Hidden)
+            }
+
+            Message::WindowIdCaptured(maybe_id) => {
+                if let Some(id) = maybe_id {
+                    self.main_window_id = Some(id);
+                }
+                Task::none()
+            }
+
+            Message::TrayStarted(handle) => {
+                self.tray_handle = Some(handle);
+                self.update_tray();
+                Task::none()
+            }
+
+            Message::TrayAction(action) => match action {
+                TrayAction::ShowWindow => {
+                    if let Some(id) = self.main_window_id {
+                        Task::batch([
+                            iced::window::change_mode(id, iced::window::Mode::Windowed),
+                            iced::window::gain_focus(id),
+                        ])
+                    } else {
+                        iced::window::get_latest().then(|maybe_id| {
+                            if let Some(id) = maybe_id {
+                                Task::batch([
+                                    iced::window::change_mode(id, iced::window::Mode::Windowed),
+                                    iced::window::gain_focus(id),
+                                ])
+                            } else {
+                                Task::none()
+                            }
+                        })
+                    }
+                }
+                TrayAction::SyncNow => {
+                    self.status_banner = Some("Synchronizing counters and clock with ESP...".to_string());
+                    Task::perform(force_sync_request(), Message::SyncCompleted)
+                }
+                TrayAction::Quit => {
+                    std::process::exit(0);
+                }
+            },
+
+            Message::HideToTray => {
+                if let Some(id) = self.main_window_id {
+                    iced::window::change_mode(id, iced::window::Mode::Hidden)
+                } else {
+                    iced::window::get_latest().then(|maybe_id| {
+                        if let Some(id) = maybe_id {
+                            iced::window::change_mode(id, iced::window::Mode::Hidden)
+                        } else {
+                            Task::none()
+                        }
+                    })
+                }
+            }
+
+            Message::QuitApp => {
+                std::process::exit(0);
             }
         }
     }
@@ -291,6 +530,18 @@ impl OsuPadGui {
                 if self.device_connected { "Connected" } else { "Disconnected" }
             ))
             .size(13),
+            Space::with_height(Length::Fixed(8.0)),
+            row![
+                button(text("To Tray").size(12))
+                    .padding([5, 10])
+                    .style(button::secondary)
+                    .on_press(Message::HideToTray),
+                button(text("Quit").size(12))
+                    .padding([5, 10])
+                    .style(button::danger)
+                    .on_press(Message::QuitApp),
+            ]
+            .spacing(8),
         ]
         .spacing(8)
         .padding(16)
@@ -435,6 +686,7 @@ impl OsuPadGui {
             row![
                 button("Synchronize Now").on_press(Message::SyncRequested),
                 button("Reset Counters").on_press(Message::ResetRequested),
+                button("Minimize to Tray").on_press(Message::HideToTray),
             ]
             .spacing(12),
         ]
