@@ -119,21 +119,16 @@ fi
 echo "[3/3] Bootloader detected! Flashing landscape firmware binary to ${BOOT_PORT}..."
 cd "${REPO_ROOT}/firmware"
 
-# Try default_reset first, then no_reset, then espflash
-if ! $ESPTOOL --chip esp32s3 -p "${BOOT_PORT}" -b 460800 --before=default_reset --after=hard_reset write_flash \
+# Use --before=no_reset directly because the chip is ALREADY in the ROM bootloader.
+# Toggling RTS via default_reset/usb_reset pulses the ESP32-S3 hardware reset line,
+# causing an immediate USB disconnect (Errno 19)!
+if ! $ESPTOOL --chip esp32s3 -p "${BOOT_PORT}" -b 460800 --before=no_reset --after=hard_reset write_flash \
     --flash_mode dio --flash_freq 80m --flash_size 16MB \
     0x0 "${BUILD_DIR}/bootloader/bootloader.bin" \
     0x10000 "${BUILD_DIR}/osupad-firmware.bin" \
     0x8000 "${BUILD_DIR}/partition_table/partition-table.bin"; then
-    echo "Retrying with no_reset mode..."
-    if ! $ESPTOOL --chip esp32s3 -p "${BOOT_PORT}" -b 460800 --before=no_reset --after=hard_reset write_flash \
-        --flash_mode dio --flash_freq 80m --flash_size 16MB \
-        0x0 "${BUILD_DIR}/bootloader/bootloader.bin" \
-        0x10000 "${BUILD_DIR}/osupad-firmware.bin" \
-        0x8000 "${BUILD_DIR}/partition_table/partition-table.bin"; then
-        echo "Retrying with espflash..."
-        espflash write-bin --chip esp32s3 -p "${BOOT_PORT}" --before no-reset --non-interactive 0x10000 "${BUILD_DIR}/osupad-firmware.bin"
-    fi
+    echo "Retrying with espflash (no-reset)..."
+    espflash write-bin --chip esp32s3 -p "${BOOT_PORT}" --before no-reset --non-interactive 0x10000 "${BUILD_DIR}/osupad-firmware.bin"
 fi
 
 echo ""
