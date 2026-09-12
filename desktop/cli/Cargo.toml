@@ -18,3 +18,4 @@ serde_json.workspace = true
 osupad-model = { path = "../crates/osupad-model" }
 osupad-ipc = { path = "../crates/osupad-ipc" }
 osupad-device = { path = "../crates/osupad-device" }
+serialport.workspace = true

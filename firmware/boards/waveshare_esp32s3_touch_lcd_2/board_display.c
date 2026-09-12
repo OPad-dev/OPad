@@ -73,9 +73,10 @@ esp_err_t board_display_init(esp_lcd_panel_handle_t *out_panel)
         return ret;
     }
 
-    // Waveshare ST7789 configuration: invert colors, normal mirror
+    // Waveshare ST7789 configuration: landscape orientation (swap X/Y)
+    esp_lcd_panel_swap_xy(panel_handle, true);
+    esp_lcd_panel_mirror(panel_handle, true, false);
     esp_lcd_panel_invert_color(panel_handle, true);
-    esp_lcd_panel_mirror(panel_handle, false, false);
     esp_lcd_panel_disp_on_off(panel_handle, true);
 
     *out_panel = panel_handle;

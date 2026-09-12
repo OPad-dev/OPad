@@ -32,10 +32,12 @@ size_t usb_cdc_write(const uint8_t *data, size_t len);
  */
 void usb_cdc_flush(void);
 
-/**
- * @brief Process CDC incoming data (invoked from USB background task).
- */
 void usb_cdc_task_poll(void);
+
+/**
+ * @brief Reboot chip directly into the ROM download bootloader.
+ */
+void usb_cdc_reboot_to_bootloader(void);
 
 #ifdef __cplusplus
 }

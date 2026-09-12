@@ -19,8 +19,8 @@
 #define BOARD_LCD_RST_GPIO      GPIO_NUM_NC   // Handled via power or software reset
 #define BOARD_LCD_BL_GPIO       GPIO_NUM_1    // LEDC PWM Backlight
 
-#define BOARD_LCD_H_RES         240
-#define BOARD_LCD_V_RES         320
+#define BOARD_LCD_H_RES         320
+#define BOARD_LCD_V_RES         240
 #define BOARD_LCD_PIXEL_CLOCK_HZ (40 * 1000 * 1000)
 
 // -----------------------------------------------------------------------------

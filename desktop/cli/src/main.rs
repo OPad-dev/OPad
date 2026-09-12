@@ -205,6 +205,12 @@ async fn main() -> Result<()> {
                 .unwrap_or_else(|| "/dev/ttyACM0".to_string());
 
             println!("Target serial port: {}", target_port);
+            println!("Resetting device into ROM download bootloader...");
+            let _ = serialport::new(&target_port, 1200)
+                .timeout(std::time::Duration::from_millis(200))
+                .open();
+            tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+
             println!("Writing firmware binary via espflash at 0x10000...");
 
             let status = std::process::Command::new("espflash")

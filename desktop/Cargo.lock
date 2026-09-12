@@ -3128,6 +3128,7 @@ dependencies = [
  "osupad-model",
  "serde",
  "serde_json",
+ "serialport",
  "tokio",
 ]
 

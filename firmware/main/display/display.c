@@ -187,87 +187,90 @@ static void render_idle_screen(void)
 {
     char buf[48];
 
-    // Background & Header
-    fill_rect(0, 0, BOARD_LCD_H_RES, 35, COLOR_DARK_GRAY);
-    draw_text(16, 10, "=== osu!pad S3 ===", COLOR_YELLOW, COLOR_DARK_GRAY);
+    // Background & Header Bar (Full 320 width)
+    fill_rect(0, 0, BOARD_LCD_H_RES, 28, COLOR_DARK_GRAY);
+    draw_text(56, 6, "=== osu!pad ESP32-S3 ===", COLOR_YELLOW, COLOR_DARK_GRAY);
 
-    // Clock
+    // Clock & Connection Status Row
     if (s_time_synced) {
         int64_t elapsed_sec = (esp_timer_get_time() - s_time_sync_us) / 1000000;
         int sec = (s_second + elapsed_sec) % 60;
         int min = (s_minute + (s_second + elapsed_sec) / 60) % 60;
         int hr  = (s_hour + (s_minute + (s_second + elapsed_sec) / 60) / 60) % 24;
-        snprintf(buf, sizeof(buf), "TIME:  %02d:%02d:%02d", hr, min, sec);
+        snprintf(buf, sizeof(buf), "TIME: %02d:%02d:%02d", hr, min, sec);
     } else {
-        snprintf(buf, sizeof(buf), "TIME:  --:--:--");
+        snprintf(buf, sizeof(buf), "TIME: --:--:--");
     }
-    draw_text(20, 50, buf, COLOR_WHITE, COLOR_BLACK);
+    draw_text(15, 34, buf, COLOR_WHITE, COLOR_BLACK);
 
-    // USB & Protocol Status
     bool cdc_ok = usb_cdc_is_connected();
-    snprintf(buf, sizeof(buf), "USB HID:  READY (1kHz)");
-    draw_text(20, 75, buf, COLOR_GREEN, COLOR_BLACK);
+    snprintf(buf, sizeof(buf), "CDC: %s", cdc_ok ? "ONLINE" : "OFFLINE");
+    draw_text(180, 34, buf, cdc_ok ? COLOR_GREEN : COLOR_YELLOW, COLOR_BLACK);
 
-    snprintf(buf, sizeof(buf), "CDC HOST: %s", cdc_ok ? "CONNECTED" : "OFFLINE");
-    draw_text(20, 95, buf, cdc_ok ? COLOR_GREEN : COLOR_YELLOW, COLOR_BLACK);
+    draw_text(15, 52, "USB: 1000Hz HID READY", COLOR_GREEN, COLOR_BLACK);
 
-    // Lifetime Counters
     counters_snapshot_t snap;
     counters_get(&snap);
+    snprintf(buf, sizeof(buf), "GEN: #%lu", (unsigned long)snap.generation);
+    draw_text(180, 52, buf, COLOR_GRAY, COLOR_BLACK);
 
-    fill_rect(10, 130, BOARD_LCD_H_RES - 20, 2, COLOR_GRAY);
+    // Divider line
+    fill_rect(10, 72, BOARD_LCD_H_RES - 20, 2, COLOR_GRAY);
 
-    draw_text(20, 145, "LIFETIME PRESSES", COLOR_PINK, COLOR_BLACK);
-    snprintf(buf, sizeof(buf), "Gen: %lu", (unsigned long)snap.generation);
-    draw_text(160, 145, buf, COLOR_GRAY, COLOR_BLACK);
+    // Lifetime Counters Section Header & Cards
+    draw_text(15, 80, "LIFETIME COUNTERS", COLOR_PINK, COLOR_BLACK);
 
-    snprintf(buf, sizeof(buf), "KEY 1 (Z): %llu", (unsigned long long)snap.lifetime_key1);
-    draw_text(20, 175, buf, COLOR_WHITE, COLOR_BLACK);
+    // Key 1 Card
+    fill_rect(15, 98, 138, 44, COLOR_DARK_GRAY);
+    draw_text(25, 103, "KEY 1 (Z)", COLOR_PINK, COLOR_DARK_GRAY);
+    snprintf(buf, sizeof(buf), "%llu", (unsigned long long)snap.lifetime_key1);
+    draw_text(25, 121, buf, COLOR_WHITE, COLOR_DARK_GRAY);
 
-    snprintf(buf, sizeof(buf), "KEY 2 (X): %llu", (unsigned long long)snap.lifetime_key2);
-    draw_text(20, 205, buf, COLOR_WHITE, COLOR_BLACK);
+    // Key 2 Card
+    fill_rect(167, 98, 138, 44, COLOR_DARK_GRAY);
+    draw_text(177, 103, "KEY 2 (X)", COLOR_PINK, COLOR_DARK_GRAY);
+    snprintf(buf, sizeof(buf), "%llu", (unsigned long long)snap.lifetime_key2);
+    draw_text(177, 121, buf, COLOR_WHITE, COLOR_DARK_GRAY);
 
-    fill_rect(10, 240, BOARD_LCD_H_RES - 20, 2, COLOR_GRAY);
+    // Divider line
+    fill_rect(10, 150, BOARD_LCD_H_RES - 20, 2, COLOR_GRAY);
 
-    // Live Switch Indicators
+    // Live Switch Indicators (Horizontal Side-by-Side)
     bool k1 = keypad_is_pressed(KEY_ID_1);
     bool k2 = keypad_is_pressed(KEY_ID_2);
 
-    fill_rect(30, 260, 80, 35, k1 ? COLOR_GREEN : COLOR_DARK_GRAY);
-    draw_text(50, 270, "K1", k1 ? COLOR_BLACK : COLOR_WHITE, k1 ? COLOR_GREEN : COLOR_DARK_GRAY);
+    fill_rect(20, 162, 130, 64, k1 ? COLOR_GREEN : COLOR_DARK_GRAY);
+    draw_text(55, 186, "KEY 1", k1 ? COLOR_BLACK : COLOR_WHITE, k1 ? COLOR_GREEN : COLOR_DARK_GRAY);
 
-    fill_rect(130, 260, 80, 35, k2 ? COLOR_GREEN : COLOR_DARK_GRAY);
-    draw_text(150, 270, "K2", k2 ? COLOR_BLACK : COLOR_WHITE, k2 ? COLOR_GREEN : COLOR_DARK_GRAY);
+    fill_rect(170, 162, 130, 64, k2 ? COLOR_GREEN : COLOR_DARK_GRAY);
+    draw_text(205, 186, "KEY 2", k2 ? COLOR_BLACK : COLOR_WHITE, k2 ? COLOR_GREEN : COLOR_DARK_GRAY);
 }
 
 static void render_gameplay_screen(void)
 {
     char buf[48];
 
-    // Banner
-    fill_rect(0, 0, BOARD_LCD_H_RES, 35, COLOR_PINK);
-    draw_text(24, 10, "** osu! PLAYING **", COLOR_BLACK, COLOR_PINK);
-
-    // Song Title & Artist
-    fill_rect(10, 45, BOARD_LCD_H_RES - 20, 40, COLOR_BLACK);
-    draw_text(15, 48, s_gameplay_state.title[0] ? s_gameplay_state.title : "Playing Map", COLOR_WHITE, COLOR_BLACK);
-    draw_text(15, 68, s_gameplay_state.artist[0] ? s_gameplay_state.artist : "Unknown Artist", COLOR_GRAY, COLOR_BLACK);
-
-    // PP Counter
-    fill_rect(10, 95, BOARD_LCD_H_RES - 20, 40, COLOR_DARK_GRAY);
+    // Banner & PP Counter
+    fill_rect(0, 0, BOARD_LCD_H_RES, 28, COLOR_PINK);
+    draw_text(15, 6, "** osu! PLAYING **", COLOR_BLACK, COLOR_PINK);
     snprintf(buf, sizeof(buf), "%0.1f pp", s_gameplay_state.current_pp);
-    draw_text(80, 108, buf, COLOR_YELLOW, COLOR_DARK_GRAY);
+    draw_text(225, 6, buf, COLOR_BLACK, COLOR_PINK);
+
+    // Song Title & Artist (Wider text display)
+    fill_rect(15, 34, BOARD_LCD_H_RES - 30, 36, COLOR_BLACK);
+    draw_text(15, 34, s_gameplay_state.title[0] ? s_gameplay_state.title : "Playing Map", COLOR_WHITE, COLOR_BLACK);
+    draw_text(15, 52, s_gameplay_state.artist[0] ? s_gameplay_state.artist : "Unknown Artist", COLOR_GRAY, COLOR_BLACK);
 
     // Map Progress Bar
     float ratio = s_gameplay_state.progress_ratio;
     if (ratio < 0.0f) ratio = 0.0f;
     if (ratio > 1.0f) ratio = 1.0f;
 
-    draw_text(15, 150, "Progress:", COLOR_WHITE, COLOR_BLACK);
+    draw_text(15, 74, "Progress:", COLOR_WHITE, COLOR_BLACK);
     snprintf(buf, sizeof(buf), "%d%%", (int)(ratio * 100.0f));
-    draw_text(180, 150, buf, COLOR_YELLOW, COLOR_BLACK);
+    draw_text(260, 74, buf, COLOR_YELLOW, COLOR_BLACK);
 
-    int bar_x = 15, bar_y = 175, bar_w = 210, bar_h = 16;
+    int bar_x = 15, bar_y = 92, bar_w = 290, bar_h = 10;
     fill_rect(bar_x, bar_y, bar_w, bar_h, COLOR_DARK_GRAY);
     int fill_w = (int)(ratio * bar_w);
     if (fill_w > 0) {
@@ -275,23 +278,24 @@ static void render_gameplay_screen(void)
     }
 
     // Map Press Counts
-    fill_rect(10, 210, BOARD_LCD_H_RES - 20, 2, COLOR_GRAY);
-
     snprintf(buf, sizeof(buf), "Map K1: %lu", (unsigned long)s_gameplay_state.current_map_presses_k1);
-    draw_text(20, 230, buf, COLOR_WHITE, COLOR_BLACK);
+    draw_text(20, 112, buf, COLOR_WHITE, COLOR_BLACK);
 
     snprintf(buf, sizeof(buf), "Map K2: %lu", (unsigned long)s_gameplay_state.current_map_presses_k2);
-    draw_text(20, 255, buf, COLOR_WHITE, COLOR_BLACK);
+    draw_text(175, 112, buf, COLOR_WHITE, COLOR_BLACK);
 
-    // Live Indicators
+    // Divider line
+    fill_rect(10, 132, BOARD_LCD_H_RES - 20, 2, COLOR_GRAY);
+
+    // Live Indicators (Side-by-side large boxes for gameplay visibility)
     bool k1 = keypad_is_pressed(KEY_ID_1);
     bool k2 = keypad_is_pressed(KEY_ID_2);
 
-    fill_rect(30, 280, 80, 25, k1 ? COLOR_PINK : COLOR_DARK_GRAY);
-    draw_text(55, 285, "K1", k1 ? COLOR_BLACK : COLOR_WHITE, k1 ? COLOR_PINK : COLOR_DARK_GRAY);
+    fill_rect(20, 144, 130, 82, k1 ? COLOR_PINK : COLOR_DARK_GRAY);
+    draw_text(65, 175, "K1", k1 ? COLOR_BLACK : COLOR_WHITE, k1 ? COLOR_PINK : COLOR_DARK_GRAY);
 
-    fill_rect(130, 280, 80, 25, k2 ? COLOR_PINK : COLOR_DARK_GRAY);
-    draw_text(155, 285, "K2", k2 ? COLOR_BLACK : COLOR_WHITE, k2 ? COLOR_PINK : COLOR_DARK_GRAY);
+    fill_rect(170, 144, 130, 82, k2 ? COLOR_PINK : COLOR_DARK_GRAY);
+    draw_text(215, 175, "K2", k2 ? COLOR_BLACK : COLOR_WHITE, k2 ? COLOR_PINK : COLOR_DARK_GRAY);
 }
 
 static void display_task(void *pvParameters)
