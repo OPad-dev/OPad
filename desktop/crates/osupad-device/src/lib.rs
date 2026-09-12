@@ -7,12 +7,16 @@ use serialport::SerialPortType;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, info, warn};
 
 pub const ESPRESSIF_VID: u16 = 0x303A;
+/// USB PID of the osu!pad application firmware (TinyUSB composite device)
+pub const OSUPAD_APP_PID: u16 = 0x4001;
+/// USB PID of the ESP32-S3 ROM download bootloader (USB-Serial-JTAG)
+pub const ESP_ROM_BOOTLOADER_PID: u16 = 0x1001;
 
 #[derive(Debug, Error)]
 pub enum DeviceError {
@@ -40,6 +44,7 @@ pub struct DeviceManager {
     event_tx: broadcast::Sender<DeviceEvent>,
     is_connected: Arc<AtomicBool>,
     is_paused: Arc<AtomicBool>,
+    is_port_open: Arc<AtomicBool>,
     seq_counter: Arc<AtomicU32>,
 }
 
@@ -53,6 +58,8 @@ impl DeviceManager {
 
         let is_conn_clone = is_connected.clone();
         let is_paused_clone = is_paused.clone();
+        let is_port_open = Arc::new(AtomicBool::new(false));
+        let is_open_clone = is_port_open.clone();
         let event_tx_clone = event_tx.clone();
 
         // Spawn background worker managing the serial port lifecycle
@@ -80,7 +87,11 @@ impl DeviceManager {
                     .timeout(Duration::from_millis(100));
 
                 let mut port = match port_builder.open() {
-                    Ok(p) => p,
+                    Ok(mut p) => {
+                        let _ = p.write_data_terminal_ready(true);
+                        let _ = p.write_request_to_send(true);
+                        p
+                    }
                     Err(e) => {
                         debug!("Failed to open port {}: {}", port_path, e);
                         std::thread::sleep(Duration::from_millis(1500));
@@ -88,28 +99,34 @@ impl DeviceManager {
                     }
                 };
 
+                is_open_clone.store(true, Ordering::SeqCst);
                 is_conn_clone.store(true, Ordering::SeqCst);
                 info!("Connected to osu!pad on {}", port_path);
 
-                // Send initial Hello
-                let hello_msg = HostToDevice {
-                    sequence_number: 1,
-                    payload: Some(host_to_device::Payload::Hello(proto::Hello {
-                        protocol_version: 1,
-                        client_version: "1.0.0".to_string(),
-                    })),
-                };
-                if let Ok(encoded) = encode_host_message(&hello_msg) {
-                    let _ = port.write_all(&encoded);
-                }
-
                 let mut raw_buf = [0u8; 1024];
+                let mut last_hello = Instant::now() - Duration::from_secs(10);
+                let mut has_hello_ack = false;
 
                 // Inner communication loop
                 loop {
                     if is_paused_clone.load(Ordering::SeqCst) {
                         info!("Pause requested; releasing serial port on {}", port_path);
                         break;
+                    }
+
+                    // Periodic Hello retry until HelloAck is received (§6.1)
+                    if !has_hello_ack && last_hello.elapsed() >= Duration::from_millis(800) {
+                        last_hello = Instant::now();
+                        let hello_msg = HostToDevice {
+                            sequence_number: 1,
+                            payload: Some(host_to_device::Payload::Hello(proto::Hello {
+                                protocol_version: 1,
+                                client_version: "1.0.0".to_string(),
+                            })),
+                        };
+                        if let Ok(encoded) = encode_host_message(&hello_msg) {
+                            let _ = port.write_all(&encoded);
+                        }
                     }
 
                     // 1. Drain incoming command queue to transmit to device
@@ -129,6 +146,9 @@ impl DeviceManager {
 
                             // Parse all ready frames
                             while let Ok(Some(msg)) = decode_device_message(&mut read_buf) {
+                                if let Some(proto::device_to_host::Payload::HelloAck(_)) = &msg.payload {
+                                    has_hello_ack = true;
+                                }
                                 handle_device_message(&msg, &event_tx_clone);
                             }
                         }
@@ -143,6 +163,8 @@ impl DeviceManager {
                     std::thread::sleep(Duration::from_millis(5));
                 }
 
+                drop(port);
+                is_open_clone.store(false, Ordering::SeqCst);
                 is_conn_clone.store(false, Ordering::SeqCst);
                 let _ = event_tx_clone.send(DeviceEvent::Disconnected);
                 read_buf.clear();
@@ -156,6 +178,7 @@ impl DeviceManager {
                 event_tx,
                 is_connected,
                 is_paused,
+                is_port_open,
                 seq_counter,
             },
             event_rx,
@@ -166,6 +189,20 @@ impl DeviceManager {
         self.is_paused.store(true, Ordering::SeqCst);
         self.is_connected.store(false, Ordering::SeqCst);
         let _ = self.event_tx.send(DeviceEvent::Disconnected);
+    }
+
+    /// Pause and wait until the worker has actually closed the serial port,
+    /// so a flasher can open it without hitting EBUSY. Returns false on timeout.
+    pub async fn pause_and_release(&self, timeout: Duration) -> bool {
+        self.pause();
+        let deadline = Instant::now() + timeout;
+        while self.is_port_open.load(Ordering::SeqCst) {
+            if Instant::now() >= deadline {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        true
     }
 
     pub fn resume(&self) {
@@ -317,19 +354,23 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
     }
 }
 
-/// Finds the most likely serial port path for the ESP32-S3
+/// Finds the serial port of the osu!pad running its application firmware.
+///
+/// Deliberately ignores the ROM bootloader (303a:1001): opening that port
+/// toggles DTR/RTS, which resets the chip out of download mode mid-flash.
 pub fn find_target_port() -> Option<String> {
-    let ports = serialport::available_ports().ok()?;
-    for p in ports {
-        if let SerialPortType::UsbPort(info) = p.port_type {
-            if info.vid == ESPRESSIF_VID {
-                return Some(p.port_name);
-            }
-        }
-    }
-    // Fallback: search for /dev/ttyACM0
-    if std::path::Path::new("/dev/ttyACM0").exists() {
-        return Some("/dev/ttyACM0".to_string());
-    }
-    None
+    find_usb_port(ESPRESSIF_VID, OSUPAD_APP_PID)
+}
+
+/// Finds the serial port of the ESP32-S3 ROM download bootloader.
+pub fn find_bootloader_port() -> Option<String> {
+    find_usb_port(ESPRESSIF_VID, ESP_ROM_BOOTLOADER_PID)
+}
+
+fn find_usb_port(vid: u16, pid: u16) -> Option<String> {
+    serialport::available_ports()
+        .ok()?
+        .into_iter()
+        .find(|p| matches!(&p.port_type, SerialPortType::UsbPort(info) if info.vid == vid && info.pid == pid))
+        .map(|p| p.port_name)
 }

@@ -473,7 +473,12 @@ async fn handle_ipc_request(
                 };
             }
             log_info(log_hub, "Releasing serial port for firmware flash...");
-            device.pause();
+            if !device.pause_and_release(std::time::Duration::from_secs(2)).await {
+                device.resume();
+                return IpcResponse::OperationRejected {
+                    reason: "Timed out waiting for the serial port to be released".to_string(),
+                };
+            }
             {
                 let mut st = state.lock().unwrap();
                 st.device_connected = false;

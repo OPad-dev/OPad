@@ -1,8 +1,12 @@
+mod esp_rom;
+
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use osupad_ipc::{get_socket_path, send_request, IpcRequest, IpcResponse, IPC_PROTOCOL_VERSION};
 use osupad_model::JsonBackup;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 use tokio::net::UnixStream;
 
 #[derive(Parser)]
@@ -42,6 +46,11 @@ enum Commands {
     Flash {
         #[arg(help = "Path to firmware binary (.bin)")]
         firmware: PathBuf,
+        #[arg(long, help = "Explicit serial port (default: auto-detect)")]
+        port: Option<String>,
+    },
+    /// Reboot device into ROM download bootloader mode hands-free over USB
+    Bootloader {
         #[arg(long, help = "Explicit serial port (default: auto-detect)")]
         port: Option<String>,
     },
@@ -190,62 +199,110 @@ async fn main() -> Result<()> {
             }
 
             println!("Coordinating with osupad-daemon for firmware flashing...");
-            let resp = send_request(&mut stream, &IpcRequest::PrepareFlash).await?;
-            let detected_port = match resp {
-                IpcResponse::ReadyForFlash { port } => port,
-                IpcResponse::OperationRejected { reason } => {
-                    bail!("Firmware flash rejected by daemon: {}", reason);
-                }
-                _ => None,
-            };
-
-            let target_port = port
-                .or(detected_port)
-                .or_else(osupad_device::find_target_port)
-                .unwrap_or_else(|| "/dev/ttyACM0".to_string());
-
-            println!("Target serial port: {}", target_port);
-            println!("Resetting device into ROM download bootloader...");
-            let _ = serialport::new(&target_port, 1200)
-                .timeout(std::time::Duration::from_millis(200))
-                .open();
-            tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-
-            println!("Writing firmware binary via espflash at 0x10000...");
-
-            let status = std::process::Command::new("espflash")
-                .arg("write-bin")
-                .arg("--chip")
-                .arg("esp32s3")
-                .arg("-p")
-                .arg(&target_port)
-                .arg("--non-interactive")
-                .arg("0x10000")
-                .arg(&firmware)
-                .status();
-
-            match status {
-                Ok(exit) if exit.success() => {
-                    println!("✓ Firmware flashing completed successfully!");
-                }
-                Ok(exit) => {
-                    bail!("espflash exited with error code: {:?}", exit.code());
-                }
-                Err(e) => {
-                    bail!("Failed to execute espflash: {}. Ensure espflash is installed.", e);
-                }
-            }
-
+            let app_port = prepare_flash(&mut stream, port).await?;
+            // Always hand the port back to the daemon, even if flashing failed
+            let result = flash_firmware(&firmware, app_port.as_deref()).await;
             println!("Resuming daemon device communication...");
             let _ = send_request(&mut stream, &IpcRequest::FinishFlash).await;
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            println!("✓ Device reconnected successfully!");
+            result?;
+
+            println!("Waiting for osu!pad to boot the new firmware...");
+            match wait_for_port(osupad_device::find_target_port, Duration::from_secs(10)).await {
+                Some(p) => println!("✓ Firmware flashed; osu!pad is back on {}", p),
+                None => bail!("Flash succeeded but the osu!pad app (303a:4001) did not come back within 10s"),
+            }
+        }
+
+        Commands::Bootloader { port } => {
+            println!("Coordinating with osupad-daemon...");
+            let app_port = prepare_flash(&mut stream, port).await?;
+            let result = enter_bootloader(app_port.as_deref()).await;
+            // The daemon only opens the app port (303a:4001), so resuming now cannot
+            // interfere with the bootloader; it reconnects once the app is flashed
+            let _ = send_request(&mut stream, &IpcRequest::FinishFlash).await;
+            let boot_port = result?;
+            println!("✓ Device is in ROM download mode on {}", boot_port);
         }
 
         Commands::Setup => unreachable!(),
     }
 
     Ok(())
+}
+
+/// Ask the daemon to release the serial port. Returns the app port to trigger,
+/// or None if the device is already sitting in the ROM bootloader.
+async fn prepare_flash(stream: &mut UnixStream, explicit_port: Option<String>) -> Result<Option<String>> {
+    match send_request(stream, &IpcRequest::PrepareFlash).await? {
+        IpcResponse::ReadyForFlash { port } => Ok(explicit_port.or(port).or_else(osupad_device::find_target_port)),
+        IpcResponse::OperationRejected { reason } => bail!("Rejected by daemon: {}", reason),
+        other => bail!("Unexpected response from daemon: {:?}", other),
+    }
+}
+
+/// Reboot the running app into the ROM download bootloader and return the bootloader port.
+async fn enter_bootloader(app_port: Option<&str>) -> Result<String> {
+    if let Some(p) = osupad_device::find_bootloader_port() {
+        return Ok(p);
+    }
+    let Some(app_port) = app_port else {
+        bail!("osu!pad not found: neither the app (303a:4001) nor the ROM bootloader (303a:1001) is connected");
+    };
+
+    println!("Sending bootloader reboot trigger to {}...", app_port);
+    // Firmware reacts to the "BOOTLOADER" command and to a 1200-baud touch; send both
+    let mut sp = open_port_with_retry(app_port, 1200, Duration::from_secs(2)).await?;
+    sp.write_all(b"BOOTLOADER\n").context("Failed to send bootloader trigger")?;
+    let _ = sp.flush();
+    drop(sp);
+
+    wait_for_port(osupad_device::find_bootloader_port, Duration::from_secs(6))
+        .await
+        .context("Device did not re-enumerate as the ROM bootloader (303a:1001) within 6s")
+}
+
+async fn flash_firmware(firmware: &Path, app_port: Option<&str>) -> Result<()> {
+    let boot_port = enter_bootloader(app_port).await?;
+    println!("Writing firmware binary via espflash at 0x10000 on {}...", boot_port);
+
+    let status = std::process::Command::new("espflash")
+        .args(["write-bin", "--chip", "esp32s3", "-p", &boot_port])
+        // Already in download mode. Stay in the stub afterwards: espflash cannot reset an
+        // ESP32-S3 out of forced download mode, esp_rom::reset_to_app does that below
+        .args(["--before", "no-reset", "--after", "no-reset-no-stub", "--non-interactive", "0x10000"])
+        .arg(firmware)
+        .status()
+        .context("Failed to execute espflash. Ensure espflash is installed.")?;
+    if !status.success() {
+        bail!("espflash exited with error code: {:?}", status.code());
+    }
+    println!("✓ Firmware written, rebooting into application...");
+    esp_rom::reset_to_app(&boot_port).context("Firmware written, but failed to reboot the device")
+
+}
+
+async fn open_port_with_retry(path: &str, baud: u32, timeout: Duration) -> Result<Box<dyn serialport::SerialPort>> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        match serialport::new(path, baud).timeout(Duration::from_millis(300)).open() {
+            Ok(sp) => return Ok(sp),
+            Err(e) if tokio::time::Instant::now() >= deadline => {
+                return Err(e).with_context(|| format!("Failed to open {}", path));
+            }
+            Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
+        }
+    }
+}
+
+async fn wait_for_port(find: fn() -> Option<String>, timeout: Duration) -> Option<String> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    while tokio::time::Instant::now() < deadline {
+        if let Some(p) = find() {
+            return Some(p);
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    None
 }
 
 fn run_setup() -> Result<()> {
