@@ -5,6 +5,8 @@ mod pages;
 mod single_instance;
 mod theme;
 mod tray;
+#[cfg(target_os = "linux")]
+mod platform_linux;
 
 use iced::widget::{button, checkbox, column, container, row, scrollable, stack, text, text_input, Space};
 use iced::{window, Alignment, Element, Length, Size, Subscription, Task};
@@ -161,6 +163,11 @@ pub enum Message {
     FirmwarePicked(Option<std::path::PathBuf>),
     FlashFinished((Vec<String>, bool)),
     CloseFlashModal,
+    // Daemon offline recovery
+    StartDaemon,
+    DaemonStarted(Result<(), String>),
+    InstallSystemdService,
+    SystemdServiceInstalled(Result<(), String>),
     // Settings
     Key1(String),
     Key2(String),
@@ -599,6 +606,47 @@ impl App {
                 self.flash_modal = None;
                 return self.poll();
             }
+            Message::StartDaemon => {
+                self.banner = Some("Starting osupad-daemon...".into());
+                return Task::perform(start_daemon_process(), Message::DaemonStarted);
+            }
+            Message::DaemonStarted(res) => {
+                match res {
+                    Ok(()) => {
+                        self.banner = Some("Launched osupad-daemon. Connecting...".into());
+                        return self.poll();
+                    }
+                    Err(e) => {
+                        self.banner = Some(format!("Failed to start daemon: {}", e));
+                    }
+                }
+            }
+            Message::InstallSystemdService => {
+                #[cfg(target_os = "linux")]
+                {
+                    let bin = find_daemon_executable();
+                    self.banner = Some("Installing systemd user service...".into());
+                    return Task::perform(
+                        async move { platform_linux::install_systemd_user_service(&bin) },
+                        Message::SystemdServiceInstalled,
+                    );
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    self.banner = Some("Systemd services are only supported on Linux".into());
+                }
+            }
+            Message::SystemdServiceInstalled(res) => {
+                match res {
+                    Ok(()) => {
+                        self.banner = Some("systemd service installed and started!".into());
+                        return self.poll();
+                    }
+                    Err(e) => {
+                        self.banner = Some(format!("Failed to install service: {}", e));
+                    }
+                }
+            }
             Message::Key1(s) => self.k1_input = s.chars().take(1).collect::<String>().to_uppercase(),
             Message::Key2(s) => self.k2_input = s.chars().take(1).collect::<String>().to_uppercase(),
             Message::Debounce(v) => self.debounce = v,
@@ -705,7 +753,7 @@ impl App {
 
     fn subscription(&self) -> Subscription<Message> {
         let mut subscriptions = vec![
-            iced::time::every(Duration::from_millis(if self.window.is_some() { 1000 } else { 3000 }))
+            iced::time::every(Duration::from_millis(if !self.daemon_online { 2000 } else if self.window.is_some() { 1000 } else { 3000 }))
                 .map(|_| Message::Poll),
             window::close_requests().map(Message::CloseRequested),
             window::resize_events().map(|_| Message::Resized),
@@ -766,6 +814,43 @@ impl App {
         };
 
         let mut main = column![].spacing(14).padding(24).width(Length::Fill).height(Length::Fill);
+
+        if !self.daemon_online {
+            let mut offline_actions = row![
+                button(text("Start daemon").size(12))
+                    .padding([6, 12])
+                    .style(theme::primary)
+                    .on_press(Message::StartDaemon),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center);
+
+            #[cfg(target_os = "linux")]
+            {
+                offline_actions = offline_actions.push(
+                    button(text("Install user service").size(12))
+                        .padding([6, 12])
+                        .style(theme::secondary)
+                        .on_press(Message::InstallSystemdService),
+                );
+            }
+
+            main = main.push(
+                container(
+                    row![
+                        text("⚠ osupad-daemon is offline. Communication, synchronization, and persistence are paused.")
+                            .size(13)
+                            .color(theme::YELLOW),
+                        Space::new().width(Length::Fill),
+                        offline_actions,
+                    ]
+                    .spacing(12)
+                    .align_y(Alignment::Center),
+                )
+                .padding([10, 16])
+                .style(theme::banner),
+            );
+        }
         if let Some(incompat) = &self.incompatible {
             main = main.push(
                 container(
@@ -1211,4 +1296,28 @@ fn find_osupadctl() -> std::path::PathBuf {
         }
     }
     std::path::PathBuf::from("osupadctl")
+}
+
+fn find_daemon_executable() -> std::path::PathBuf {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join("osupad-daemon");
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+    }
+    std::path::PathBuf::from("osupad-daemon")
+}
+
+async fn start_daemon_process() -> Result<(), String> {
+    let exe = find_daemon_executable();
+    std::process::Command::new(exe)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn osupad-daemon: {}", e))?;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    Ok(())
 }
