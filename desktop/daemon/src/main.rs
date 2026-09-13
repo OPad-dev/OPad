@@ -317,6 +317,9 @@ async fn main() -> Result<()> {
                                 perform_sync(&ds, &stg, &dm_clone, &po).await;
                             });
                         }
+                        last_periodic_sync = Instant::now();
+                        last_periodic_time_sync = Instant::now();
+                        last_synced_counters = Some(st.counters.clone());
                     }
                     DeviceEvent::Disconnected => {
                         warn!("ESP32 Device Disconnected");
