@@ -116,6 +116,8 @@ pub enum IpcResponse {
         last_sync_time: Option<String>,
         #[serde(default)]
         last_sync_error: Option<String>,
+        #[serde(default)]
+        storage_error: Option<String>,
         tosu_connected: bool,
         #[serde(default)]
         latency: Option<LatencyStats>,

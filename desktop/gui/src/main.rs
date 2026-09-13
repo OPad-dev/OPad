@@ -126,6 +126,7 @@ pub struct App {
     pub config: DeviceConfig,
     pub last_sync_time: Option<String>,
     pub last_sync_error: Option<String>,
+    pub storage_error: Option<String>,
     pub latency: Option<LatencyStats>,
     pub pending_replacement: Option<String>,
     pub incompatible: Option<IncompatibleDevice>,
@@ -245,6 +246,7 @@ impl App {
             config: DeviceConfig::default(),
             last_sync_time: None,
             last_sync_error: None,
+            storage_error: None,
             latency: None,
             pending_replacement: None,
             incompatible: None,
@@ -371,6 +373,7 @@ impl App {
                         config,
                         last_sync_time,
                         last_sync_error,
+                        storage_error,
                         tosu_connected,
                         latency,
                         pending_replacement,
@@ -385,6 +388,7 @@ impl App {
                         self.pc_counters = pc_counters;
                         self.esp_counters = esp_counters;
                         self.last_sync_error = last_sync_error;
+                        self.storage_error = storage_error;
                         self.pending_replacement = pending_replacement;
                         self.incompatible = incompatible;
                         self.tosu_connected = tosu_connected;
@@ -922,6 +926,20 @@ impl App {
                         offline_actions,
                     ]
                     .spacing(12)
+                    .align_y(Alignment::Center),
+                )
+                .padding([10, 16])
+                .style(theme::banner),
+            );
+        }
+        if let Some(err) = &self.storage_error {
+            main = main.push(
+                container(
+                    row![
+                        text(format!("⚠ Database offline: {}. Desktop persistence, backup restore, and PC counter authority are paused.", err))
+                            .size(13)
+                            .color(theme::RED),
+                    ]
                     .align_y(Alignment::Center),
                 )
                 .padding([10, 16])

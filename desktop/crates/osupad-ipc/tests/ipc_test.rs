@@ -44,6 +44,7 @@ async fn test_ipc_roundtrip_requests() {
                                 config: DeviceConfig::default(),
                                 last_sync_time: Some("2026-09-12T00:00:00Z".to_string()),
                                 last_sync_error: None,
+                                storage_error: None,
                                 tosu_connected: false,
                                 latency: None,
                                 pending_replacement: None,

@@ -18,6 +18,7 @@ mod log_hub;
 mod telemetry;
 
 use log_hub::{LogHub, LogHubLayer};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -46,12 +47,14 @@ pub struct DaemonState {
     pub config: DeviceConfig,
     pub last_sync_time: Option<String>,
     pub last_sync_error: Option<String>,
+    pub storage_error: Option<String>,
     pub tosu_connected: bool,
     pub latency: Option<LatencyStats>,
     pub pending_replacement: Option<String>,
     pub incompatible: Option<IncompatibleDevice>,
     /// Latest tosu-derived UI values (for the designer's live preview)
     pub ui_values: Vec<(u8, SourceValue)>,
+    pub custom_layouts: HashMap<Screen, Layout>,
 }
 
 #[derive(Default)]
@@ -79,7 +82,6 @@ async fn main() -> Result<()> {
     info!("Starting osupad-daemon v1.0.0");
 
     let socket_path = get_socket_path();
-    // Check if another daemon instance is already running (§P2-6)
     if socket_path.exists() {
         if tokio::net::UnixStream::connect(&socket_path).await.is_ok() {
             anyhow::bail!(
@@ -91,20 +93,38 @@ async fn main() -> Result<()> {
 
     let db_path = get_database_path();
     info!("Using SQLite database at {}", db_path.display());
-    let storage = Arc::new(Mutex::new(Storage::open(&db_path)?));
-
-    // Load initial configuration and latest device state from PC SQLite database (§P1-4)
-    let (initial_config, initial_device, initial_counters) = {
-        let s = storage.lock().unwrap();
-        let cfg = s.load_config().unwrap_or_default();
-        let latest = s.load_latest_device_state().unwrap_or(None);
-        match latest {
-            Some((info, counters)) => (cfg, Some(info), counters),
-            None => (cfg, None, CounterState::default()),
+    let (storage, storage_error, initial_config, initial_device, initial_counters, initial_layouts) = match Storage::open(&db_path) {
+        Ok(s) => {
+            let cfg = s.load_config().unwrap_or_default();
+            let latest = s.load_latest_device_state().unwrap_or(None);
+            let mut layouts = HashMap::new();
+            for screen in Screen::ALL {
+                if let Ok(Some(json)) = s.load_layout(screen.to_wire()) {
+                    if let Ok(layout) = Layout::from_json(&json) {
+                        layouts.insert(*screen, layout);
+                    }
+                }
+            }
+            let (init_dev, init_cnt) = match latest {
+                Some((info, counters)) => (Some(info), counters),
+                None => (None, CounterState::default()),
+            };
+            info!("osupad-daemon initialized, storage loaded successfully");
+            (Arc::new(Mutex::new(Some(s))), None, cfg, init_dev, init_cnt, layouts)
+        }
+        Err(e) => {
+            let err_msg = format!("Database error ({}): {}", db_path.display(), e);
+            error!("Failed to open/migrate SQLite database: {}. Starting in degraded mode (§P2-12)", err_msg);
+            (
+                Arc::new(Mutex::new(None)),
+                Some(err_msg),
+                DeviceConfig::default(),
+                None,
+                CounterState::default(),
+                HashMap::new(),
+            )
         }
     };
-
-    info!("osupad-daemon initialized, storage loaded successfully");
 
     let daemon_state = Arc::new(Mutex::new(DaemonState {
         mode: RuntimeMode::Idle,
@@ -112,16 +132,18 @@ async fn main() -> Result<()> {
         device_info: initial_device,
         counters: initial_counters.clone(),
         counters_source: CounterSource::Pc,
-        pc_counters: Some(initial_counters),
+        pc_counters: if initial_counters.device_id.is_empty() { None } else { Some(initial_counters) },
         esp_counters: None,
         config: initial_config.clone(),
         last_sync_time: None,
         last_sync_error: None,
+        storage_error,
         tosu_connected: false,
         latency: None,
         pending_replacement: None,
         incompatible: None,
         ui_values: Vec::new(),
+        custom_layouts: initial_layouts,
     }));
 
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
@@ -208,6 +230,7 @@ async fn main() -> Result<()> {
     let mut last_periodic_time_sync = Instant::now();
     let mut last_instant = Instant::now();
     let mut last_system_time = std::time::SystemTime::now();
+    let mut last_db_retry = Instant::now();
 
     loop {
         tokio::select! {
@@ -235,46 +258,42 @@ async fn main() -> Result<()> {
 
                         // Handle device registration & replacement (§P1-2)
                         let stored_row = {
-                            let s = storage.lock().unwrap();
-                            s.load_device_state(&info.device_id).unwrap_or(None)
+                            let s_guard = storage.lock().unwrap();
+                            s_guard.as_ref().and_then(|s| s.load_device_state(&info.device_id).unwrap_or(None))
                         };
                         st.pc_counters = stored_row.clone();
                         st.esp_counters = Some(st.counters.clone());
 
-                        if stored_row.is_none() {
-                            let existing_states = {
-                                let s = storage.lock().unwrap();
-                                s.list_device_states().unwrap_or_default()
-                            };
+                        if let Some(s) = storage.lock().unwrap().as_ref() {
+                            if stored_row.is_none() {
+                                let existing_states = s.list_device_states().unwrap_or_default();
 
-                            if existing_states.is_empty() {
-                                // First device ever seen: import into SQLite
-                                if st.mode == RuntimeMode::Idle {
-                                    let s = storage.lock().unwrap();
-                                    let _ = s.save_device_state(&info, &st.counters);
-                                    let _ = s.touch_device_last_seen(&info.device_id);
+                                if existing_states.is_empty() {
+                                    // First device ever seen: import into SQLite
+                                    if st.mode == RuntimeMode::Idle {
+                                        let _ = s.save_device_state(&info, &st.counters);
+                                        let _ = s.touch_device_last_seen(&info.device_id);
+                                    } else {
+                                        pending_ops.lock().unwrap().pending_last_seen = Some(info.device_id.clone());
+                                    }
+                                } else if st.counters.counter_generation <= 1 && st.counters.lifetime_key1 < 1000 && st.counters.lifetime_key2 < 1000 {
+                                    // Fresh replacement device
+                                    st.pending_replacement = Some(existing_states[0].0.device_id.clone());
+                                    warn!("Detected potential ESP replacement with device_id: {}", info.device_id);
                                 } else {
-                                    pending_ops.lock().unwrap().pending_last_seen = Some(info.device_id.clone());
+                                    // Distinct device with real counters: register it
+                                    if st.mode == RuntimeMode::Idle {
+                                        let _ = s.save_device_state(&info, &st.counters);
+                                        let _ = s.touch_device_last_seen(&info.device_id);
+                                    } else {
+                                        pending_ops.lock().unwrap().pending_last_seen = Some(info.device_id.clone());
+                                    }
                                 }
-                            } else if st.counters.counter_generation <= 1 && st.counters.lifetime_key1 < 1000 && st.counters.lifetime_key2 < 1000 {
-                                // Fresh replacement device
-                                st.pending_replacement = Some(existing_states[0].0.device_id.clone());
-                                warn!("Detected potential ESP replacement with device_id: {}", info.device_id);
+                            } else if st.mode == RuntimeMode::Idle {
+                                let _ = s.touch_device_last_seen(&info.device_id);
                             } else {
-                                // Distinct device with real counters: register it
-                                if st.mode == RuntimeMode::Idle {
-                                    let s = storage.lock().unwrap();
-                                    let _ = s.save_device_state(&info, &st.counters);
-                                    let _ = s.touch_device_last_seen(&info.device_id);
-                                } else {
-                                    pending_ops.lock().unwrap().pending_last_seen = Some(info.device_id.clone());
-                                }
+                                pending_ops.lock().unwrap().pending_last_seen = Some(info.device_id.clone());
                             }
-                        } else if st.mode == RuntimeMode::Idle {
-                            let s = storage.lock().unwrap();
-                            let _ = s.touch_device_last_seen(&info.device_id);
-                        } else {
-                            pending_ops.lock().unwrap().pending_last_seen = Some(info.device_id.clone());
                         }
 
                         // Send time sync, config and host status immediately (§14.3).
@@ -291,13 +310,7 @@ async fn main() -> Result<()> {
                         data_sync.reset_sent();
 
                         // Re-push saved layouts (the device skips the flash write when unchanged)
-                        let layouts: Vec<(Screen, Layout)> = Screen::ALL
-                            .iter()
-                            .filter_map(|screen| {
-                                let json = storage.lock().unwrap().load_layout(screen.to_wire()).ok().flatten()?;
-                                Some((*screen, Layout::from_json(&json).ok()?))
-                            })
-                            .collect();
+                        let layouts: Vec<(Screen, Layout)> = st.custom_layouts.iter().map(|(s, l)| (*s, l.clone())).collect();
                         if !layouts.is_empty() {
                             let dm = device_manager.clone();
                             tokio::spawn(async move {
@@ -307,8 +320,8 @@ async fn main() -> Result<()> {
                             });
                         }
 
-                        // P1-2: Reconcile on connect if Idle and not pending replacement
-                        if st.pending_replacement.is_none() && st.mode == RuntimeMode::Idle {
+                        // P1-2: Reconcile on connect if Idle, storage is available, and not pending replacement
+                        if storage.lock().unwrap().is_some() && st.pending_replacement.is_none() && st.mode == RuntimeMode::Idle {
                             let ds = daemon_state.clone();
                             let stg = storage.clone();
                             let dm_clone = device_manager.clone();
@@ -406,7 +419,9 @@ async fn main() -> Result<()> {
                     // Enter PLAYING mode
                     if current_mode != RuntimeMode::Playing {
                         info!("State transition -> PLAYING (osu! map active: {})", telemetry.title);
-                        storage.lock().unwrap().set_writes_allowed(false);
+                        if let Some(s) = storage.lock().unwrap().as_mut() {
+                            s.set_writes_allowed(false);
+                        }
                         {
                             let mut st = daemon_state.lock().unwrap();
                             st.mode = RuntimeMode::Playing;
@@ -452,6 +467,37 @@ async fn main() -> Result<()> {
 
             // 4. Periodic tick for cooldown expiration, host status and time maintenance
             _ = tick.tick() => {
+                // Retry opening SQLite every 60s if unavailable (§P2-12)
+                if storage.lock().unwrap().is_none() && last_db_retry.elapsed() >= Duration::from_secs(60) {
+                    last_db_retry = Instant::now();
+                    info!("Retrying SQLite database connection at {}", db_path.display());
+                    match Storage::open(&db_path) {
+                        Ok(s) => {
+                            info!("Successfully reconnected to SQLite database at {}", db_path.display());
+                            if let Ok(cfg) = s.load_config() {
+                                daemon_state.lock().unwrap().config = cfg;
+                            }
+                            for screen in Screen::ALL {
+                                if let Ok(Some(json)) = s.load_layout(screen.to_wire()) {
+                                    if let Ok(layout) = Layout::from_json(&json) {
+                                        daemon_state.lock().unwrap().custom_layouts.insert(*screen, layout);
+                                    }
+                                }
+                            }
+                            if let Some(info) = &daemon_state.lock().unwrap().device_info {
+                                let stored = s.load_device_state(&info.device_id).unwrap_or(None);
+                                daemon_state.lock().unwrap().pc_counters = stored;
+                            }
+                            daemon_state.lock().unwrap().storage_error = None;
+                            *storage.lock().unwrap() = Some(s);
+                        }
+                        Err(e) => {
+                            warn!("SQLite database reconnection attempt failed: {}", e);
+                            daemon_state.lock().unwrap().storage_error = Some(format!("Database error ({}): {}", db_path.display(), e));
+                        }
+                    }
+                }
+
                 if last_status_poll.elapsed() >= STATUS_POLL_INTERVAL {
                     last_status_poll = Instant::now();
                     if daemon_state.lock().unwrap().device_connected {
@@ -539,22 +585,33 @@ async fn main() -> Result<()> {
 
 fn enter_cooldown(
     state: &Arc<Mutex<DaemonState>>,
-    storage: &Arc<Mutex<Storage>>,
+    storage: &Arc<Mutex<Option<Storage>>>,
     cooldown_deadline: &mut Option<Instant>,
 ) {
     info!("State transition -> COOLDOWN (5s window started)");
-    storage.lock().unwrap().set_writes_allowed(false);
+    if let Some(s) = storage.lock().unwrap().as_mut() {
+        s.set_writes_allowed(false);
+    }
     state.lock().unwrap().mode = RuntimeMode::Cooldown;
     *cooldown_deadline = Some(Instant::now() + COOLDOWN_DURATION);
 }
 
 async fn perform_sync(
     state: &Arc<Mutex<DaemonState>>,
-    storage: &Arc<Mutex<Storage>>,
+    storage: &Arc<Mutex<Option<Storage>>>,
     device: &Arc<DeviceManager>,
     pending_ops: &Arc<Mutex<PendingOperations>>,
 ) {
     info!("Performing atomic state synchronization (§11.3, §13)...");
+
+    let is_storage_available = storage.lock().unwrap().is_some();
+    if !is_storage_available {
+        warn!("perform_sync skipped: SQLite storage unavailable (P2-12). ESP counters will not be modified.");
+        let mut st = state.lock().unwrap();
+        st.mode = RuntimeMode::Idle;
+        st.last_sync_error = Some("Sync skipped: persistent storage unavailable".to_string());
+        return;
+    }
 
     let (info_opt, in_memory_counters, is_connected) = {
         let st = state.lock().unwrap();
@@ -564,14 +621,18 @@ async fn perform_sync(
     let Some(info) = info_opt else {
         let mut st = state.lock().unwrap();
         st.mode = RuntimeMode::Idle;
-        storage.lock().unwrap().set_writes_allowed(true);
+        if let Some(s) = storage.lock().unwrap().as_mut() {
+            s.set_writes_allowed(true);
+        }
         return;
     };
 
     if !is_connected {
         let mut st = state.lock().unwrap();
         st.mode = RuntimeMode::Idle;
-        storage.lock().unwrap().set_writes_allowed(true);
+        if let Some(s) = storage.lock().unwrap().as_mut() {
+            s.set_writes_allowed(true);
+        }
         return;
     }
 
@@ -610,8 +671,8 @@ async fn perform_sync(
     }
 
     let stored_counters = {
-        let s = storage.lock().unwrap();
-        s.load_device_state(&info.device_id).unwrap_or(None).unwrap_or_else(|| CounterState {
+        let s_guard = storage.lock().unwrap();
+        s_guard.as_ref().and_then(|s| s.load_device_state(&info.device_id).unwrap_or(None)).unwrap_or_else(|| CounterState {
             device_id: info.device_id.clone(),
             counter_generation: in_memory_counters.counter_generation,
             lifetime_key1: 0,
@@ -626,10 +687,11 @@ async fn perform_sync(
 
     // Save reconciled state to SQLite (writes allowed in sync)
     {
-        let s = storage.lock().unwrap();
-        s.set_writes_allowed(true);
-        if let Err(e) = s.save_device_state(&info, &reconciled) {
-            error!("Failed to save reconciled device state to SQLite: {}", e);
+        if let Some(s) = storage.lock().unwrap().as_mut() {
+            s.set_writes_allowed(true);
+            if let Err(e) = s.save_device_state(&info, &reconciled) {
+                error!("Failed to save reconciled device state to SQLite: {}", e);
+            }
         }
     }
 
@@ -693,9 +755,10 @@ async fn perform_sync(
     let now_str = Utc::now().to_rfc3339();
 
     {
-        let s = storage.lock().unwrap();
-        let _ = s.save_device_state(&info, &reconciled);
-        let _ = s.touch_device_last_seen(&info.device_id);
+        if let Some(s) = storage.lock().unwrap().as_ref() {
+            let _ = s.save_device_state(&info, &reconciled);
+            let _ = s.touch_device_last_seen(&info.device_id);
+        }
     }
 
     // Drain pending operations (§P1-3)
@@ -706,8 +769,9 @@ async fn perform_sync(
 
     if let Some(cfg) = pending_cfg {
         {
-            let s = storage.lock().unwrap();
-            let _ = s.save_config(&cfg);
+            if let Some(s) = storage.lock().unwrap().as_ref() {
+                let _ = s.save_config(&cfg);
+            }
         }
         let _ = device.send_config(&cfg).await;
     }
@@ -715,22 +779,25 @@ async fn perform_sync(
     for (screen, layout_opt) in pending_layouts {
         if let Some(layout) = layout_opt {
             {
-                let s = storage.lock().unwrap();
-                let _ = s.save_layout(screen.to_wire(), &layout.to_json());
+                if let Some(s) = storage.lock().unwrap().as_ref() {
+                    let _ = s.save_layout(screen.to_wire(), &layout.to_json());
+                }
             }
             let _ = device.send_layout(screen, &layout).await;
         } else {
             {
-                let s = storage.lock().unwrap();
-                let _ = s.delete_layout(screen.to_wire());
+                if let Some(s) = storage.lock().unwrap().as_ref() {
+                    let _ = s.delete_layout(screen.to_wire());
+                }
             }
             let _ = device.reset_layout(screen).await;
         }
     }
 
     if let Some(seen_id) = pending_seen {
-        let s = storage.lock().unwrap();
-        let _ = s.touch_device_last_seen(&seen_id);
+        if let Some(s) = storage.lock().unwrap().as_ref() {
+            let _ = s.touch_device_last_seen(&seen_id);
+        }
     }
 
     {
@@ -743,14 +810,16 @@ async fn perform_sync(
         st.mode = RuntimeMode::Idle;
     }
 
-    storage.lock().unwrap().set_writes_allowed(true);
+    if let Some(s) = storage.lock().unwrap().as_mut() {
+        s.set_writes_allowed(true);
+    }
     info!("Synchronization completed successfully");
 }
 
 async fn handle_ipc_request(
     req: IpcRequest,
     state: &Arc<Mutex<DaemonState>>,
-    storage: &Arc<Mutex<Storage>>,
+    storage: &Arc<Mutex<Option<Storage>>>,
     device: &Arc<DeviceManager>,
     log_hub: &LogHub,
     pending_ops: &Arc<Mutex<PendingOperations>>,
@@ -781,7 +850,8 @@ async fn handle_ipc_request(
         IpcRequest::GetStatus => {
             let st = state.lock().unwrap();
             let pc_counters = if let Some(info) = &st.device_info {
-                storage.lock().unwrap().load_device_state(&info.device_id).unwrap_or(None).or_else(|| st.pc_counters.clone())
+                let s_guard = storage.lock().unwrap();
+                s_guard.as_ref().and_then(|s| s.load_device_state(&info.device_id).unwrap_or(None)).or_else(|| st.pc_counters.clone())
             } else {
                 st.pc_counters.clone()
             };
@@ -796,6 +866,7 @@ async fn handle_ipc_request(
                 config: st.config.clone(),
                 last_sync_time: st.last_sync_time.clone(),
                 last_sync_error: st.last_sync_error.clone(),
+                storage_error: st.storage_error.clone(),
                 tosu_connected: st.tosu_connected,
                 latency: st.latency,
                 pending_replacement: st.pending_replacement.clone(),
@@ -804,17 +875,18 @@ async fn handle_ipc_request(
         }
 
         IpcRequest::GetLayouts => {
-            let load = |screen: Screen| {
-                let json = storage.lock().unwrap().load_layout(screen.to_wire()).ok().flatten()?;
-                Layout::from_json(&json).ok()
-            };
-            IpcResponse::Layouts { idle: load(Screen::Idle), playing: load(Screen::Playing) }
+            let st = state.lock().unwrap();
+            IpcResponse::Layouts {
+                idle: st.custom_layouts.get(&Screen::Idle).cloned(),
+                playing: st.custom_layouts.get(&Screen::Playing).cloned(),
+            }
         }
 
         IpcRequest::SetLayout { screen, layout } => {
             if let Err(e) = layout.validate() {
                 return IpcResponse::OperationRejected { reason: format!("Invalid layout: {}", e) };
             }
+            state.lock().unwrap().custom_layouts.insert(screen, layout.clone());
             if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
                 let _ = device.send_layout(screen, &layout).await;
                 pending_ops.lock().unwrap().pending_layouts.push((screen, Some(layout)));
@@ -823,8 +895,10 @@ async fn handle_ipc_request(
                     message: "Layout applied to pad RAM; will be saved after gameplay".to_string(),
                 };
             }
-            if let Err(e) = storage.lock().unwrap().save_layout(screen.to_wire(), &layout.to_json()) {
-                return IpcResponse::Error(format!("Failed to save layout: {}", e));
+            if let Some(s) = storage.lock().unwrap().as_ref() {
+                if let Err(e) = s.save_layout(screen.to_wire(), &layout.to_json()) {
+                    warn!("Failed to save layout: {}", e);
+                }
             }
             info!("Layout {} saved", screen.label());
             if !state.lock().unwrap().device_connected {
@@ -841,6 +915,7 @@ async fn handle_ipc_request(
         }
 
         IpcRequest::ResetLayout { screen } => {
+            state.lock().unwrap().custom_layouts.remove(&screen);
             if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
                 let _ = device.reset_layout(screen).await;
                 pending_ops.lock().unwrap().pending_layouts.push((screen, None));
@@ -849,8 +924,10 @@ async fn handle_ipc_request(
                     message: "Layout reset in pad RAM; will be saved after gameplay".to_string(),
                 };
             }
-            if let Err(e) = storage.lock().unwrap().delete_layout(screen.to_wire()) {
-                return IpcResponse::Error(format!("Failed to delete layout: {}", e));
+            if let Some(s) = storage.lock().unwrap().as_ref() {
+                if let Err(e) = s.delete_layout(screen.to_wire()) {
+                    warn!("Failed to delete layout: {}", e);
+                }
             }
             info!("Layout {} reset to default", screen.label());
             if !state.lock().unwrap().device_connected {
@@ -913,8 +990,7 @@ async fn handle_ipc_request(
                 };
             }
 
-            {
-                let s = storage.lock().unwrap();
+            if let Some(s) = storage.lock().unwrap().as_ref() {
                 if let Err(e) = s.save_config(&new_config) {
                     return IpcResponse::Error(format!("Failed to save config: {}", e));
                 }
@@ -939,6 +1015,11 @@ async fn handle_ipc_request(
                     reason: "Cannot force synchronization during gameplay or cooldown".to_string(),
                 };
             }
+            if storage.lock().unwrap().is_none() {
+                return IpcResponse::OperationRejected {
+                    reason: "Database unavailable: counter sync is rejected without persistent storage".to_string(),
+                };
+            }
             perform_sync(state, storage, device, pending_ops).await;
             let counters = { state.lock().unwrap().counters.clone() };
             IpcResponse::SyncCompleted {
@@ -960,6 +1041,12 @@ async fn handle_ipc_request(
                 };
             }
 
+            if storage.lock().unwrap().is_none() {
+                return IpcResponse::OperationRejected {
+                    reason: "Database unavailable: counter reset is rejected without persistent storage".to_string(),
+                };
+            }
+
             let updated = {
                 let mut st = state.lock().unwrap();
                 st.counters.counter_generation = st.counters.counter_generation.saturating_add(1);
@@ -968,8 +1055,9 @@ async fn handle_ipc_request(
                 let updated = st.counters.clone();
 
                 if let Some(info) = &st.device_info {
-                    let s = storage.lock().unwrap();
-                    let _ = s.save_device_state(info, &updated);
+                    if let Some(s) = storage.lock().unwrap().as_ref() {
+                        let _ = s.save_device_state(info, &updated);
+                    }
                 } else {
                     pending_ops.lock().unwrap().pending_device_push = true;
                 }
@@ -996,6 +1084,11 @@ async fn handle_ipc_request(
                     reason: "Confirmation required to force-restore ESP counters from PC".to_string(),
                 };
             }
+            if storage.lock().unwrap().is_none() {
+                return IpcResponse::OperationRejected {
+                    reason: "Database unavailable: restore from PC is rejected without persistent storage".to_string(),
+                };
+            }
             let (info_opt, in_memory_counters, is_connected) = {
                 let st = state.lock().unwrap();
                 (st.device_info.clone(), st.counters.clone(), st.device_connected)
@@ -1012,8 +1105,8 @@ async fn handle_ipc_request(
             }
 
             let pc_state = {
-                let s = storage.lock().unwrap();
-                s.load_device_state(&info.device_id).unwrap_or(None)
+                let s_guard = storage.lock().unwrap();
+                s_guard.as_ref().and_then(|s| s.load_device_state(&info.device_id).unwrap_or(None))
             };
             let Some(pc_counters) = pc_state else {
                 return IpcResponse::OperationRejected {
@@ -1031,8 +1124,7 @@ async fn handle_ipc_request(
                 map_key2: 0,
             };
 
-            {
-                let s = storage.lock().unwrap();
+            if let Some(s) = storage.lock().unwrap().as_ref() {
                 let _ = s.save_device_state(&info, &target);
                 let _ = s.touch_device_last_seen(&info.device_id);
             }
@@ -1059,6 +1151,11 @@ async fn handle_ipc_request(
                     reason: "Confirmation required to overwrite PC counters from ESP".to_string(),
                 };
             }
+            if storage.lock().unwrap().is_none() {
+                return IpcResponse::OperationRejected {
+                    reason: "Database unavailable: import from device is rejected without persistent storage".to_string(),
+                };
+            }
             let (info_opt, in_memory_counters, is_connected) = {
                 let st = state.lock().unwrap();
                 (st.device_info.clone(), st.counters.clone(), st.device_connected)
@@ -1075,8 +1172,8 @@ async fn handle_ipc_request(
             }
 
             let pc_state = {
-                let s = storage.lock().unwrap();
-                s.load_device_state(&info.device_id).unwrap_or(None)
+                let s_guard = storage.lock().unwrap();
+                s_guard.as_ref().and_then(|s| s.load_device_state(&info.device_id).unwrap_or(None))
             };
             let pc_gen = pc_state.as_ref().map(|c| c.counter_generation).unwrap_or(0);
 
@@ -1090,8 +1187,7 @@ async fn handle_ipc_request(
                 map_key2: 0,
             };
 
-            {
-                let s = storage.lock().unwrap();
+            if let Some(s) = storage.lock().unwrap().as_ref() {
                 let _ = s.save_device_state(&info, &target);
                 let _ = s.touch_device_last_seen(&info.device_id);
             }
@@ -1113,6 +1209,11 @@ async fn handle_ipc_request(
                     reason: "Cannot resolve replacement during gameplay or cooldown".to_string(),
                 };
             }
+            if storage.lock().unwrap().is_none() {
+                return IpcResponse::OperationRejected {
+                    reason: "Database unavailable: resolving replacement is rejected without persistent storage".to_string(),
+                };
+            }
 
             let (old_device_id_opt, current_info_opt, current_counters) = {
                 let mut st = state.lock().unwrap();
@@ -1128,8 +1229,8 @@ async fn handle_ipc_request(
             if restore {
                 if let Some(old_id) = old_device_id_opt {
                     let old_state = {
-                        let s = storage.lock().unwrap();
-                        s.load_device_state(&old_id).unwrap_or(None)
+                        let s_guard = storage.lock().unwrap();
+                        s_guard.as_ref().and_then(|s| s.load_device_state(&old_id).unwrap_or(None))
                     };
                     if let Some(old_c) = old_state {
                         let new_gen = std::cmp::max(old_c.counter_generation, current_counters.counter_generation).saturating_add(1);
@@ -1141,8 +1242,7 @@ async fn handle_ipc_request(
                             map_key1: 0,
                             map_key2: 0,
                         };
-                        {
-                            let s = storage.lock().unwrap();
+                        if let Some(s) = storage.lock().unwrap().as_ref() {
                             let _ = s.save_device_state(&current_info, &restored);
                             let _ = s.touch_device_last_seen(&current_info.device_id);
                         }
@@ -1157,8 +1257,7 @@ async fn handle_ipc_request(
                 }
             } else {
                 // Treat as new pad: register it in SQLite
-                {
-                    let s = storage.lock().unwrap();
+                if let Some(s) = storage.lock().unwrap().as_ref() {
                     let _ = s.save_device_state(&current_info, &current_counters);
                     let _ = s.touch_device_last_seen(&current_info.device_id);
                 }
@@ -1237,6 +1336,12 @@ async fn handle_ipc_request(
                 };
             }
 
+            if storage.lock().unwrap().is_none() {
+                return IpcResponse::OperationRejected {
+                    reason: "Database unavailable: backup import is rejected without persistent storage".to_string(),
+                };
+            }
+
             if let Err(err) = backup.validate() {
                 return IpcResponse::Error(format!("Invalid backup: {}", err));
             }
@@ -1269,8 +1374,7 @@ async fn handle_ipc_request(
                 map_key2: 0,
             };
 
-            {
-                let s = storage.lock().unwrap();
+            if let Some(s) = storage.lock().unwrap().as_ref() {
                 let _ = s.save_config(&new_config);
                 let info = DeviceInfo {
                     device_id: backup.device.device_id,
@@ -1398,5 +1502,139 @@ fn get_database_path() -> PathBuf {
             .join("osupad.db")
     } else {
         PathBuf::from("osupad.db")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_sqlite_failure_isolation() {
+        let (device_manager, _) = DeviceManager::new_dummy();
+        let device_manager = Arc::new(device_manager);
+        let log_hub = LogHub::new();
+        let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+        let storage: Arc<Mutex<Option<Storage>>> = Arc::new(Mutex::new(None));
+
+        let daemon_state = Arc::new(Mutex::new(DaemonState {
+            mode: RuntimeMode::Idle,
+            device_connected: true,
+            device_info: Some(DeviceInfo {
+                device_id: "OSUPAD-TEST".to_string(),
+                board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+                firmware_version: "1.0.0".to_string(),
+                protocol_version: 1,
+            }),
+            counters: CounterState {
+                device_id: "OSUPAD-TEST".to_string(),
+                counter_generation: 1,
+                lifetime_key1: 50,
+                lifetime_key2: 60,
+                map_key1: 0,
+                map_key2: 0,
+            },
+            counters_source: CounterSource::Device,
+            pc_counters: None,
+            esp_counters: Some(CounterState {
+                device_id: "OSUPAD-TEST".to_string(),
+                counter_generation: 1,
+                lifetime_key1: 50,
+                lifetime_key2: 60,
+                map_key1: 0,
+                map_key2: 0,
+            }),
+            config: DeviceConfig::default(),
+            last_sync_time: None,
+            last_sync_error: None,
+            storage_error: Some("Database permission denied".to_string()),
+            tosu_connected: false,
+            latency: None,
+            pending_replacement: None,
+            incompatible: None,
+            ui_values: Vec::new(),
+            custom_layouts: HashMap::new(),
+        }));
+
+        // 1. GetStatus surfaces storage_error
+        let resp = handle_ipc_request(
+            IpcRequest::GetStatus,
+            &daemon_state,
+            &storage,
+            &device_manager,
+            &log_hub,
+            &pending_ops,
+        )
+        .await;
+        match resp {
+            IpcResponse::Status { storage_error, .. } => {
+                assert_eq!(storage_error, Some("Database permission denied".to_string()));
+            }
+            other => panic!("Expected Status response, got {:?}", other),
+        }
+
+        // 2. Destructive/reconciliation operations rejected without SQLite
+        let resp = handle_ipc_request(
+            IpcRequest::ForceSync,
+            &daemon_state,
+            &storage,
+            &device_manager,
+            &log_hub,
+            &pending_ops,
+        )
+        .await;
+        assert!(matches!(resp, IpcResponse::OperationRejected { .. }));
+
+        let resp = handle_ipc_request(
+            IpcRequest::ResetCounters { confirm: true },
+            &daemon_state,
+            &storage,
+            &device_manager,
+            &log_hub,
+            &pending_ops,
+        )
+        .await;
+        assert!(matches!(resp, IpcResponse::OperationRejected { .. }));
+
+        let resp = handle_ipc_request(
+            IpcRequest::RestoreDeviceFromPc { confirm: true },
+            &daemon_state,
+            &storage,
+            &device_manager,
+            &log_hub,
+            &pending_ops,
+        )
+        .await;
+        assert!(matches!(resp, IpcResponse::OperationRejected { .. }));
+
+        let resp = handle_ipc_request(
+            IpcRequest::ImportPcFromDevice { confirm: true },
+            &daemon_state,
+            &storage,
+            &device_manager,
+            &log_hub,
+            &pending_ops,
+        )
+        .await;
+        assert!(matches!(resp, IpcResponse::OperationRejected { .. }));
+
+        // 3. Layouts still work in-memory
+        let resp = handle_ipc_request(
+            IpcRequest::GetLayouts,
+            &daemon_state,
+            &storage,
+            &device_manager,
+            &log_hub,
+            &pending_ops,
+        )
+        .await;
+        assert!(matches!(resp, IpcResponse::Layouts { idle: None, playing: None }));
+
+        // 4. perform_sync does not modify ESP counters when storage is None
+        perform_sync(&daemon_state, &storage, &device_manager, &pending_ops).await;
+        let st = daemon_state.lock().unwrap();
+        assert_eq!(st.counters.lifetime_key1, 50);
+        assert_eq!(st.counters.lifetime_key2, 60);
+        assert!(st.last_sync_error.is_some());
     }
 }

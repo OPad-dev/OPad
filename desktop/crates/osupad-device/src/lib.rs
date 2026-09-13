@@ -67,6 +67,29 @@ pub struct DeviceManager {
 }
 
 impl DeviceManager {
+    pub fn new_dummy() -> (Self, broadcast::Receiver<DeviceEvent>) {
+        let (cmd_tx, mut cmd_rx) = mpsc::channel::<HostToDevice>(64);
+        let (event_tx, event_rx) = broadcast::channel(64);
+        let is_connected = Arc::new(AtomicBool::new(false));
+        let is_paused = Arc::new(AtomicBool::new(false));
+        let is_port_open = Arc::new(AtomicBool::new(false));
+        let seq_counter = Arc::new(AtomicU32::new(1));
+        tokio::spawn(async move {
+            while cmd_rx.recv().await.is_some() {}
+        });
+        (
+            Self {
+                cmd_tx,
+                event_tx,
+                is_connected,
+                is_paused,
+                is_port_open,
+                seq_counter,
+            },
+            event_rx,
+        )
+    }
+
     pub fn new() -> (Self, broadcast::Receiver<DeviceEvent>) {
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<HostToDevice>(64);
         let (event_tx, event_rx) = broadcast::channel(64);

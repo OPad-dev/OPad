@@ -95,6 +95,7 @@ async fn main() -> Result<()> {
                 config,
                 last_sync_time,
                 last_sync_error,
+                storage_error,
                 tosu_connected,
                 latency,
                 pending_replacement,
@@ -118,6 +119,9 @@ async fn main() -> Result<()> {
                 println!("Last Sync:        {}", last_sync_time.as_deref().unwrap_or("Never"));
                 if let Some(err) = last_sync_error {
                     println!("Last Sync Error:  ⚠ {}", err);
+                }
+                if let Some(err) = storage_error {
+                    println!("Database Error:   ⚠ {}", err);
                 }
                 if let Some(old_id) = pending_replacement {
                     println!("Replacement:      ⚠ New pad detected (previous: {}). Run GUI to restore or adopt.", old_id);
