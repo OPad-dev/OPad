@@ -75,6 +75,131 @@ impl CounterState {
     }
 }
 
+/// A header GPIO a key switch can be wired to (switch to GND, internal pull-up)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KeyPin {
+    pub gpio: u32,
+    /// Waveshare header (P1 / P2) and pin number
+    pub header: &'static str,
+    pub pin: u8,
+}
+
+impl std::fmt::Display for KeyPin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "GPIO{} ({} pin {})", self.gpio, self.header, self.pin)
+    }
+}
+
+/// Key switch pins supported on the Waveshare ESP32-S3-Touch-LCD-2, from its schematic.
+/// Mirrors KEY_GPIO_ALLOWED in firmware/main/config/config_validate.c.
+/// Left out: GPIO19/20 (USB D-/D+), GPIO43/44 (UART0 console), GPIO47/48 (touch and IMU I2C),
+/// GPIO17 (CAM_PWDN, pulled down on the board). The rest are camera pins, free with no camera.
+pub const KEY_PINS: &[KeyPin] = &[
+    KeyPin {
+        gpio: 2,
+        header: "P1",
+        pin: 1,
+    },
+    KeyPin {
+        gpio: 4,
+        header: "P1",
+        pin: 2,
+    },
+    KeyPin {
+        gpio: 6,
+        header: "P1",
+        pin: 3,
+    },
+    KeyPin {
+        gpio: 7,
+        header: "P1",
+        pin: 9,
+    },
+    KeyPin {
+        gpio: 8,
+        header: "P1",
+        pin: 8,
+    },
+    KeyPin {
+        gpio: 9,
+        header: "P2",
+        pin: 12,
+    },
+    KeyPin {
+        gpio: 10,
+        header: "P1",
+        pin: 10,
+    },
+    KeyPin {
+        gpio: 11,
+        header: "P2",
+        pin: 9,
+    },
+    KeyPin {
+        gpio: 12,
+        header: "P2",
+        pin: 10,
+    },
+    KeyPin {
+        gpio: 13,
+        header: "P2",
+        pin: 8,
+    },
+    KeyPin {
+        gpio: 14,
+        header: "P2",
+        pin: 11,
+    },
+    KeyPin {
+        gpio: 15,
+        header: "P2",
+        pin: 7,
+    },
+    KeyPin {
+        gpio: 16,
+        header: "P1",
+        pin: 4,
+    },
+    KeyPin {
+        gpio: 18,
+        header: "P1",
+        pin: 6,
+    },
+    KeyPin {
+        gpio: 21,
+        header: "P1",
+        pin: 7,
+    },
+];
+
+pub const DEFAULT_KEY1_GPIO: u32 = 14;
+pub const DEFAULT_KEY2_GPIO: u32 = 9;
+
+pub fn key_pin(gpio: u32) -> Option<KeyPin> {
+    KEY_PINS.iter().copied().find(|p| p.gpio == gpio)
+}
+
+fn default_key1_gpio() -> u32 {
+    DEFAULT_KEY1_GPIO
+}
+
+fn default_key2_gpio() -> u32 {
+    DEFAULT_KEY2_GPIO
+}
+
+fn validate_key_gpios(key1_gpio: u32, key2_gpio: u32) -> Result<(), String> {
+    if key_pin(key1_gpio).is_none() {
+        return Err(format!("Unsupported key 1 pin: GPIO{}", key1_gpio));
+    }
+    if key_pin(key2_gpio).is_none() {
+        return Err(format!("Unsupported key 2 pin: GPIO{}", key2_gpio));
+    }
+    if key1_gpio == key2_gpio {
+        return Err(format!("Key 1 and key 2 cannot share GPIO{}", key1_gpio));
+    }
+    Ok(())
+}
+
 /// Device configuration parameters (§37)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeviceConfig {
@@ -85,6 +210,10 @@ pub struct DeviceConfig {
     pub display_sleep_seconds: u32, // Default: 600 (10 min)
     pub gameplay_display_hz: u32,   // Default: 10
     pub tosu_endpoint: String,      // Default: "ws://127.0.0.1:24050/websocket/v2"
+    #[serde(default = "default_key1_gpio")]
+    pub key1_gpio: u32, // Default: 14
+    #[serde(default = "default_key2_gpio")]
+    pub key2_gpio: u32, // Default: 9
 }
 
 impl Default for DeviceConfig {
@@ -97,6 +226,8 @@ impl Default for DeviceConfig {
             display_sleep_seconds: 600,
             gameplay_display_hz: 10,
             tosu_endpoint: "ws://127.0.0.1:24050/websocket/v2".to_string(),
+            key1_gpio: DEFAULT_KEY1_GPIO,
+            key2_gpio: DEFAULT_KEY2_GPIO,
         }
     }
 }
@@ -141,7 +272,7 @@ impl DeviceConfig {
                 self.gameplay_display_hz
             ));
         }
-        Ok(())
+        validate_key_gpios(self.key1_gpio, self.key2_gpio)
     }
 
     pub fn key1_char(&self) -> String {
@@ -232,6 +363,10 @@ pub struct JsonBackupConfig {
     pub brightness: u32,
     pub display_sleep_seconds: u32,
     pub gameplay_display_hz: u32,
+    #[serde(default = "default_key1_gpio")]
+    pub key1_gpio: u32,
+    #[serde(default = "default_key2_gpio")]
+    pub key2_gpio: u32,
 }
 
 impl JsonBackup {
@@ -255,6 +390,8 @@ impl JsonBackup {
                 brightness: config.brightness,
                 display_sleep_seconds: config.display_sleep_seconds,
                 gameplay_display_hz: config.gameplay_display_hz,
+                key1_gpio: config.key1_gpio,
+                key2_gpio: config.key2_gpio,
             },
         }
     }
@@ -310,7 +447,7 @@ impl JsonBackup {
         if char_to_hid_usage(&self.config.key2).is_none() {
             return Err(format!("Invalid key2 mapping: {}", self.config.key2));
         }
-        Ok(())
+        validate_key_gpios(self.config.key1_gpio, self.config.key2_gpio)
     }
 }
 
@@ -387,6 +524,48 @@ mod tests {
         assert!(b.validate().is_err());
 
         b.config.gameplay_display_hz = 15;
+        assert!(b.validate().is_ok());
+    }
+
+    #[test]
+    fn test_key_gpio_validation() {
+        let mut b = valid_backup();
+        b.config.key1_gpio = 19; // USB D-
+        assert!(b.validate().is_err());
+
+        b.config.key1_gpio = 9; // Same pin as key 2
+        assert!(b.validate().is_err());
+
+        b.config.key1_gpio = 21;
+        b.config.key2_gpio = 2;
+        assert!(b.validate().is_ok());
+
+        let mut c = DeviceConfig::default();
+        assert!(c.validate().is_ok());
+        for gpio in [0, 17, 20, 43, 44, 47, 48] {
+            c.key2_gpio = gpio;
+            assert!(c.validate().is_err(), "GPIO{} accepted", gpio);
+        }
+    }
+
+    #[test]
+    fn test_key_pins_match_firmware_list() {
+        let gpios: Vec<u32> = KEY_PINS.iter().map(|p| p.gpio).collect();
+        assert_eq!(
+            gpios,
+            [2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 21]
+        );
+        assert!(key_pin(DEFAULT_KEY1_GPIO).is_some() && key_pin(DEFAULT_KEY2_GPIO).is_some());
+    }
+
+    #[test]
+    fn test_backup_without_pins_uses_defaults() {
+        let mut json = serde_json::to_value(valid_backup()).unwrap();
+        let cfg = json["config"].as_object_mut().unwrap();
+        cfg.remove("key1_gpio");
+        cfg.remove("key2_gpio");
+        let b: JsonBackup = serde_json::from_value(json).unwrap();
+        assert_eq!((b.config.key1_gpio, b.config.key2_gpio), (14, 9));
         assert!(b.validate().is_ok());
     }
 

@@ -3,10 +3,12 @@
 use crate::theme::{self, caption, heading, muted};
 use crate::{App, Message};
 use iced::widget::{
-    button, checkbox, column, container, row, scrollable, slider, text, text_input, Space,
+    button, checkbox, column, container, pick_list, row, scrollable, slider, text, text_input,
+    Space,
 };
 use iced::{Alignment, Color, Element, Length};
 use osupad_model::ui_source::{self as src, SourceValue};
+use osupad_model::{key_pin, KeyPin, KEY_PINS};
 
 fn grouped(n: u64) -> String {
     let digits = n.to_string();
@@ -242,6 +244,24 @@ pub fn settings(app: &App) -> Element<'_, Message> {
         .spacing(6)
     };
 
+    // Only supported header pins, minus the one the other key uses
+    let pin_select =
+        |label: &'static str, gpio: u32, other: u32, on_select: fn(KeyPin) -> Message| {
+            let options: Vec<KeyPin> = KEY_PINS
+                .iter()
+                .copied()
+                .filter(|p| p.gpio != other)
+                .collect();
+            column![
+                caption(label),
+                pick_list(options, key_pin(gpio), on_select)
+                    .placeholder(format!("GPIO{} (unsupported)", gpio))
+                    .width(Length::Fill)
+                    .padding(10)
+            ]
+            .spacing(6)
+        };
+
     let keys = card(
         column![
             text("Keys").size(18).font(theme::FONT_BOLD),
@@ -250,6 +270,15 @@ pub fn settings(app: &App) -> Element<'_, Message> {
                 key_input("KEY 2", &app.k2_input, Message::Key2)
             ]
             .spacing(24),
+            column![
+                row![
+                    pin_select("KEY 1 PIN", app.k1_gpio, app.k2_gpio, Message::Key1Pin),
+                    pin_select("KEY 2 PIN", app.k2_gpio, app.k1_gpio, Message::Key2Pin),
+                ]
+                .spacing(24),
+                muted("Header pin each switch is wired to (other leg to GND). Camera pins are listed; don't use them with a camera fitted.").size(12),
+            ]
+            .spacing(8),
             column![
                 row![
                     caption("DEBOUNCE LOCKOUT"),

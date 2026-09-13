@@ -101,6 +101,9 @@ impl Storage {
         if v < 5 {
             self.apply_v5()?;
         }
+        if v < 6 {
+            self.apply_v6()?;
+        }
         Ok(())
     }
 
@@ -147,6 +150,18 @@ impl Storage {
             "BEGIN TRANSACTION;
             UPDATE config SET tosu_endpoint = 'ws://127.0.0.1:24050/websocket/v2' WHERE tosu_endpoint = 'ws://127.0.0.1:24050/ws';
             INSERT INTO schema_migrations (version, applied_at) VALUES (5, datetime('now'));
+            COMMIT;",
+        )?;
+        Ok(())
+    }
+
+    /// v6: configurable key switch GPIOs (defaults: the original fixed pins)
+    fn apply_v6(&self) -> Result<(), StorageError> {
+        self.conn.execute_batch(
+            "BEGIN TRANSACTION;
+            ALTER TABLE config ADD COLUMN key1_gpio INTEGER NOT NULL DEFAULT 14;
+            ALTER TABLE config ADD COLUMN key2_gpio INTEGER NOT NULL DEFAULT 9;
+            INSERT INTO schema_migrations (version, applied_at) VALUES (6, datetime('now'));
             COMMIT;",
         )?;
         Ok(())
@@ -225,7 +240,8 @@ impl Storage {
         self.conn
             .query_row(
                 "SELECT key1_hid_usage, key2_hid_usage, debounce_us, brightness,
-                    display_sleep_seconds, gameplay_display_hz, tosu_endpoint
+                    display_sleep_seconds, gameplay_display_hz, tosu_endpoint,
+                    key1_gpio, key2_gpio
              FROM config WHERE id = 1",
                 [],
                 |row| {
@@ -237,6 +253,8 @@ impl Storage {
                         display_sleep_seconds: row.get(4)?,
                         gameplay_display_hz: row.get(5)?,
                         tosu_endpoint: row.get(6)?,
+                        key1_gpio: row.get(7)?,
+                        key2_gpio: row.get(8)?,
                     })
                 },
             )
@@ -253,7 +271,9 @@ impl Storage {
                 brightness = ?4,
                 display_sleep_seconds = ?5,
                 gameplay_display_hz = ?6,
-                tosu_endpoint = ?7
+                tosu_endpoint = ?7,
+                key1_gpio = ?8,
+                key2_gpio = ?9
              WHERE id = 1",
             params![
                 config.key1_hid_usage,
@@ -263,6 +283,8 @@ impl Storage {
                 config.display_sleep_seconds,
                 config.gameplay_display_hz,
                 config.tosu_endpoint,
+                config.key1_gpio,
+                config.key2_gpio,
             ],
         )?;
         Ok(())
@@ -440,15 +462,19 @@ mod tests {
         assert_eq!(config.key1_hid_usage, 29); // 'Z'
         assert_eq!(config.key2_hid_usage, 27); // 'X'
         assert_eq!(config.brightness, 100);
+        assert_eq!((config.key1_gpio, config.key2_gpio), (14, 9));
 
         let mut updated = config.clone();
         updated.brightness = 85;
         updated.debounce_us = 2500;
+        updated.key1_gpio = 21;
+        updated.key2_gpio = 2;
         storage.save_config(&updated).expect("save_config");
 
         let loaded = storage.load_config().expect("load_config");
         assert_eq!(loaded.brightness, 85);
         assert_eq!(loaded.debounce_us, 2500);
+        assert_eq!((loaded.key1_gpio, loaded.key2_gpio), (21, 2));
 
         let info = DeviceInfo {
             device_id: "test-dev-01".to_string(),
@@ -585,16 +611,16 @@ mod tests {
         let cfg = storage.load_config().unwrap();
         assert_eq!(cfg.gameplay_display_hz, 10);
 
-        // Manually update to 5, reset migration version to 3, and run migrate()
+        // Manually update to 5, then re-run v4
         storage
             .conn
             .execute("UPDATE config SET gameplay_display_hz = 5 WHERE id = 1", [])
             .unwrap();
         storage
             .conn
-            .execute("DELETE FROM schema_migrations WHERE version >= 4", [])
+            .execute("DELETE FROM schema_migrations WHERE version = 4", [])
             .unwrap();
-        storage.migrate().unwrap();
+        storage.apply_v4().unwrap();
 
         let migrated = storage.load_config().unwrap();
         assert_eq!(migrated.gameplay_display_hz, 10);
@@ -609,9 +635,9 @@ mod tests {
             .unwrap();
         storage
             .conn
-            .execute("DELETE FROM schema_migrations WHERE version >= 4", [])
+            .execute("DELETE FROM schema_migrations WHERE version = 4", [])
             .unwrap();
-        storage.migrate().unwrap();
+        storage.apply_v4().unwrap();
 
         let custom = storage.load_config().unwrap();
         assert_eq!(custom.gameplay_display_hz, 20);
@@ -623,7 +649,7 @@ mod tests {
         let cfg = storage.load_config().unwrap();
         assert_eq!(cfg.tosu_endpoint, "ws://127.0.0.1:24050/websocket/v2");
 
-        // Manually update to legacy '/ws', delete migration 5, and run migrate()
+        // Manually update to legacy '/ws', then re-run v5
         storage
             .conn
             .execute(
@@ -635,9 +661,28 @@ mod tests {
             .conn
             .execute("DELETE FROM schema_migrations WHERE version = 5", [])
             .unwrap();
-        storage.migrate().unwrap();
+        storage.apply_v5().unwrap();
 
         let migrated = storage.load_config().unwrap();
         assert_eq!(migrated.tosu_endpoint, "ws://127.0.0.1:24050/websocket/v2");
+    }
+
+    #[test]
+    fn test_migration_v6_adds_default_key_gpios() {
+        let storage = Storage::open_in_memory().expect("open");
+        storage
+            .conn
+            .execute_batch(
+                "UPDATE config SET debounce_us = 4000 WHERE id = 1;
+                 ALTER TABLE config DROP COLUMN key1_gpio;
+                 ALTER TABLE config DROP COLUMN key2_gpio;
+                 DELETE FROM schema_migrations WHERE version = 6;",
+            )
+            .unwrap();
+        storage.migrate().unwrap();
+
+        let migrated = storage.load_config().unwrap();
+        assert_eq!((migrated.key1_gpio, migrated.key2_gpio), (14, 9));
+        assert_eq!(migrated.debounce_us, 4000);
     }
 }

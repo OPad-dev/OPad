@@ -55,10 +55,7 @@ void app_main(void)
     ESP_LOGI(TAG, "  Ultra Low-Latency 2-Key osu! Keypad   ");
     ESP_LOGI(TAG, "========================================");
 
-    // 1. Initialize Board Peripherals: Switch GPIOs only (FATAL if fails)
-    ESP_ERROR_CHECK(board_init());
-
-    // 2. Load device configuration from NVS (or fall back to defaults) (NON-FATAL)
+    // 1. Load device configuration from NVS (or fall back to defaults) (NON-FATAL)
     device_config_init();
     device_config_data_t dev_cfg;
     device_config_get(&dev_cfg);
@@ -67,9 +64,11 @@ void app_main(void)
         .keycode1 = (uint8_t)dev_cfg.key1_usage,
         .keycode2 = (uint8_t)dev_cfg.key2_usage,
         .debounce_us = dev_cfg.debounce_us,
+        .key1_gpio = (uint8_t)dev_cfg.key1_gpio,
+        .key2_gpio = (uint8_t)dev_cfg.key2_gpio,
     };
 
-    // 3. Initialize Keypad with configured usages and debouncing (FATAL if fails)
+    // 2. Initialize Keypad: switch GPIOs, usages and debouncing (FATAL if fails)
     ESP_ERROR_CHECK(keypad_init(&k_cfg));
 
     // 4. Initialize USB HID Subsystem and install TinyUSB stack (FATAL if fails)

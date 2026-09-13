@@ -307,6 +307,8 @@ impl DeviceManager {
                     gameplay_display_hz: config.gameplay_display_hz,
                     #[allow(deprecated)]
                     press_color_rgb: 0,
+                    key1_gpio: config.key1_gpio,
+                    key2_gpio: config.key2_gpio,
                 }),
             })),
         };
@@ -526,6 +528,17 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     display_sleep_seconds: c.display_sleep_seconds,
                     gameplay_display_hz: c.gameplay_display_hz,
                     tosu_endpoint: "".to_string(),
+                    // 0 from firmware without configurable pins, which uses the defaults
+                    key1_gpio: if c.key1_gpio == 0 {
+                        osupad_model::DEFAULT_KEY1_GPIO
+                    } else {
+                        c.key1_gpio
+                    },
+                    key2_gpio: if c.key2_gpio == 0 {
+                        osupad_model::DEFAULT_KEY2_GPIO
+                    } else {
+                        c.key2_gpio
+                    },
                 });
                 let _ = tx.send(DeviceEvent::ConfigAck {
                     seq: msg.sequence_number,

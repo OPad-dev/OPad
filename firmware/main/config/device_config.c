@@ -10,6 +10,7 @@
 #include "nvs.h"
 #include "esp_log.h"
 #include "diag/diag.h"
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -25,7 +26,12 @@ static device_config_data_t s_current_config = {
     .brightness = DEVICE_CONFIG_DEFAULT_BRIGHTNESS,
     .sleep_s = DEVICE_CONFIG_DEFAULT_SLEEP_S,
     .gameplay_display_hz = DEVICE_CONFIG_DEFAULT_GAMEPLAY_DISPLAY_HZ,
+    .key1_gpio = DEVICE_CONFIG_DEFAULT_KEY1_GPIO,
+    .key2_gpio = DEVICE_CONFIG_DEFAULT_KEY2_GPIO,
 };
+
+// v1 blobs end before key1_gpio; they load with the default pins
+#define DEVICE_CONFIG_V1_SIZE offsetof(device_config_data_t, key1_gpio)
 
 static bool s_dirty = false;
 
@@ -38,6 +44,8 @@ static void set_defaults(device_config_data_t *cfg)
     cfg->brightness = DEVICE_CONFIG_DEFAULT_BRIGHTNESS;
     cfg->sleep_s = DEVICE_CONFIG_DEFAULT_SLEEP_S;
     cfg->gameplay_display_hz = DEVICE_CONFIG_DEFAULT_GAMEPLAY_DISPLAY_HZ;
+    cfg->key1_gpio = DEVICE_CONFIG_DEFAULT_KEY1_GPIO;
+    cfg->key2_gpio = DEVICE_CONFIG_DEFAULT_KEY2_GPIO;
 }
 
 
@@ -63,8 +71,9 @@ static esp_err_t write_to_nvs(const device_config_data_t *cfg)
         if (err == ESP_OK) {
             s_dirty = false;
             counters_record_nvs_write();
-            ESP_LOGI(TAG, "Device config persisted to NVS: K1=0x%02lx, K2=0x%02lx, debounce=%lu us, brightness=%lu%%, sleep=%lu s",
-                     (unsigned long)cfg->key1_usage, (unsigned long)cfg->key2_usage,
+            ESP_LOGI(TAG, "Device config persisted to NVS: K1=0x%02lx@GPIO%lu, K2=0x%02lx@GPIO%lu, debounce=%lu us, brightness=%lu%%, sleep=%lu s",
+                     (unsigned long)cfg->key1_usage, (unsigned long)cfg->key1_gpio,
+                     (unsigned long)cfg->key2_usage, (unsigned long)cfg->key2_gpio,
                      (unsigned long)cfg->debounce_us, (unsigned long)cfg->brightness,
                      (unsigned long)cfg->sleep_s);
         }
@@ -82,6 +91,8 @@ void device_config_apply(const device_config_data_t *cfg)
         .keycode1 = (uint8_t)cfg->key1_usage,
         .keycode2 = (uint8_t)cfg->key2_usage,
         .debounce_us = cfg->debounce_us,
+        .key1_gpio = (uint8_t)cfg->key1_gpio,
+        .key2_gpio = (uint8_t)cfg->key2_gpio,
     };
     keypad_set_config(&k_cfg);
     usb_hid_set_keycodes(k_cfg.keycode1, k_cfg.keycode2);
@@ -113,15 +124,23 @@ esp_err_t device_config_init(void)
     err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);
     if (err == ESP_OK) {
         device_config_data_t loaded;
+        set_defaults(&loaded);
         size_t len = sizeof(loaded);
         err = nvs_get_blob(handle, NVS_KEY, &loaded, &len);
         nvs_close(handle);
 
-        if (err == ESP_OK && len == sizeof(loaded) && loaded.version == DEVICE_CONFIG_VERSION &&
-            device_config_validate(&loaded, NULL, 0)) {
+        bool layout_ok = (len == sizeof(loaded) && loaded.version == DEVICE_CONFIG_VERSION) ||
+                         (len == DEVICE_CONFIG_V1_SIZE && loaded.version == 1);
+        if (err == ESP_OK && layout_ok && device_config_validate(&loaded, NULL, 0)) {
+            if (loaded.version != DEVICE_CONFIG_VERSION) {
+                ESP_LOGI(TAG, "Migrating NVS config v%lu -> v%d (default key GPIOs)",
+                         (unsigned long)loaded.version, DEVICE_CONFIG_VERSION);
+                loaded.version = DEVICE_CONFIG_VERSION;
+            }
             s_current_config = loaded;
-            ESP_LOGI(TAG, "Loaded config from NVS: K1=0x%02lx, K2=0x%02lx, debounce=%lu us, brightness=%lu%%, sleep=%lu s",
-                     (unsigned long)loaded.key1_usage, (unsigned long)loaded.key2_usage,
+            ESP_LOGI(TAG, "Loaded config from NVS: K1=0x%02lx@GPIO%lu, K2=0x%02lx@GPIO%lu, debounce=%lu us, brightness=%lu%%, sleep=%lu s",
+                     (unsigned long)loaded.key1_usage, (unsigned long)loaded.key1_gpio,
+                     (unsigned long)loaded.key2_usage, (unsigned long)loaded.key2_gpio,
                      (unsigned long)loaded.debounce_us, (unsigned long)loaded.brightness,
                      (unsigned long)loaded.sleep_s);
         } else {

@@ -78,6 +78,8 @@ typedef struct _osupad_ConfigPayload {
     uint32_t display_sleep_seconds; /* Inactivity timeout, default: 600 (10 min) */
     uint32_t gameplay_display_hz; /* Gameplay refresh rate cap, default: 10 */
     uint32_t press_color_rgb; /* Deprecated: key highlight colors now come from layouts */
+    uint32_t key1_gpio; /* Switch GPIO for key 1, default: 14. 0 = keep current */
+    uint32_t key2_gpio; /* Switch GPIO for key 2, default: 9. 0 = keep current */
 } osupad_ConfigPayload;
 
 typedef struct _osupad_SetConfig {
@@ -282,7 +284,7 @@ extern "C" {
 #define osupad_Hello_init_default                {0, ""}
 #define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0}
 #define osupad_DeviceStatus_init_default         {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-#define osupad_ConfigPayload_init_default        {0, 0, 0, 0, 0, 0, 0}
+#define osupad_ConfigPayload_init_default        {0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_SetConfig_init_default            {false, osupad_ConfigPayload_init_default}
 #define osupad_ConfigAck_init_default            {0, "", false, osupad_ConfigPayload_init_default}
 #define osupad_TimeSync_init_default             {0, 0, 0, 0, 0, 0}
@@ -303,7 +305,7 @@ extern "C" {
 #define osupad_Hello_init_zero                   {0, ""}
 #define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0}
 #define osupad_DeviceStatus_init_zero            {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-#define osupad_ConfigPayload_init_zero           {0, 0, 0, 0, 0, 0, 0}
+#define osupad_ConfigPayload_init_zero           {0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_SetConfig_init_zero               {false, osupad_ConfigPayload_init_zero}
 #define osupad_ConfigAck_init_zero               {0, "", false, osupad_ConfigPayload_init_zero}
 #define osupad_TimeSync_init_zero                {0, 0, 0, 0, 0, 0}
@@ -356,6 +358,8 @@ extern "C" {
 #define osupad_ConfigPayload_display_sleep_seconds_tag 5
 #define osupad_ConfigPayload_gameplay_display_hz_tag 6
 #define osupad_ConfigPayload_press_color_rgb_tag 7
+#define osupad_ConfigPayload_key1_gpio_tag       8
+#define osupad_ConfigPayload_key2_gpio_tag       9
 #define osupad_SetConfig_config_tag              1
 #define osupad_ConfigAck_success_tag             1
 #define osupad_ConfigAck_message_tag             2
@@ -489,7 +493,9 @@ X(a, STATIC,   SINGULAR, UINT32,   debounce_us,       3) \
 X(a, STATIC,   SINGULAR, UINT32,   brightness,        4) \
 X(a, STATIC,   SINGULAR, UINT32,   display_sleep_seconds,   5) \
 X(a, STATIC,   SINGULAR, UINT32,   gameplay_display_hz,   6) \
-X(a, STATIC,   SINGULAR, UINT32,   press_color_rgb,   7)
+X(a, STATIC,   SINGULAR, UINT32,   press_color_rgb,   7) \
+X(a, STATIC,   SINGULAR, UINT32,   key1_gpio,         8) \
+X(a, STATIC,   SINGULAR, UINT32,   key2_gpio,         9)
 #define osupad_ConfigPayload_CALLBACK NULL
 #define osupad_ConfigPayload_DEFAULT NULL
 
@@ -715,8 +721,8 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 
 /* Maximum encoded size of messages (where known) */
 #define OSUPAD_OSUPAD_PB_H_MAX_SIZE              osupad_HostToDevice_size
-#define osupad_ConfigAck_size                    111
-#define osupad_ConfigPayload_size                42
+#define osupad_ConfigAck_size                    123
+#define osupad_ConfigPayload_size                54
 #define osupad_CounterState_size                 61
 #define osupad_CounterSyncRequest_size           65
 #define osupad_CounterSyncResponse_size          130
@@ -732,7 +738,7 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_LayoutAck_size                    73
 #define osupad_LogEventBatch_size                880
 #define osupad_LogEvent_size                     108
-#define osupad_SetConfig_size                    44
+#define osupad_SetConfig_size                    56
 #define osupad_SetLayout_size                    4300
 #define osupad_TimeSync_size                     36
 #define osupad_UiWidget_size                     131

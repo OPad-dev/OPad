@@ -1,8 +1,33 @@
 #include "device_config.h"
 #include <stdio.h>
 
+#ifdef ESP_PLATFORM
+#include "sdkconfig.h"
+#endif
+
 #define DEBOUNCE_MIN_US     500
 #define DEBOUNCE_MAX_US     20000
+
+// Header GPIOs of the Waveshare ESP32-S3-Touch-LCD-2 (schematic, P1/P2) that can take a
+// switch to GND with the internal pull-up. Keep in sync with KEY_GPIO_PINS in osupad-model.
+// Left out: 19/20 (USB D-/D+), 43/44 (UART0 console), 47/48 (touch + IMU I2C),
+// 17 (CAM_PWDN, 10k pull-down to GND). The rest are camera pins, free with no camera fitted.
+static const uint8_t KEY_GPIO_ALLOWED[] = {2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 21};
+
+bool device_config_key_gpio_supported(uint32_t gpio)
+{
+#if defined(CONFIG_OSUPAD_BENCH_DEBUG_GPIO)
+    if (gpio == (uint32_t)CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM) {
+        return false;
+    }
+#endif
+    for (size_t i = 0; i < sizeof(KEY_GPIO_ALLOWED); i++) {
+        if (KEY_GPIO_ALLOWED[i] == gpio) {
+            return true;
+        }
+    }
+    return false;
+}
 
 bool device_config_validate(const device_config_data_t *cfg, char *err_msg, size_t err_msg_len)
 {
@@ -32,6 +57,18 @@ bool device_config_validate(const device_config_data_t *cfg, char *err_msg, size
     }
     if (cfg->gameplay_display_hz != 0 && (cfg->gameplay_display_hz < 1 || cfg->gameplay_display_hz > 60)) {
         if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "gameplay display hz %lu out of range [1, 60]", (unsigned long)cfg->gameplay_display_hz);
+        return false;
+    }
+    if (!device_config_key_gpio_supported(cfg->key1_gpio)) {
+        if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "unsupported key1 gpio %lu", (unsigned long)cfg->key1_gpio);
+        return false;
+    }
+    if (!device_config_key_gpio_supported(cfg->key2_gpio)) {
+        if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "unsupported key2 gpio %lu", (unsigned long)cfg->key2_gpio);
+        return false;
+    }
+    if (cfg->key1_gpio == cfg->key2_gpio) {
+        if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "key1 and key2 share gpio %lu", (unsigned long)cfg->key1_gpio);
         return false;
     }
     return true;

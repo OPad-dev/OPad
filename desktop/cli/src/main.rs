@@ -160,6 +160,10 @@ async fn main() -> Result<()> {
                         l.p50_us, l.p999_us, l.max_us, l.samples
                     );
                 }
+                println!(
+                    "Key Pins:         K1 GPIO{}, K2 GPIO{}",
+                    config.key1_gpio, config.key2_gpio
+                );
                 println!("Debounce Lockout: {} µs", config.debounce_us);
                 println!("Brightness:       {}%", config.brightness);
                 println!("Sleep Timeout:    {}s", config.display_sleep_seconds);

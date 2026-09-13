@@ -77,6 +77,8 @@ message ConfigPayload {
     uint32 display_sleep_seconds = 5;// Inactivity timeout, default: 600 (10 min)
     uint32 gameplay_display_hz = 6;  // Gameplay refresh rate cap, default: 10
     uint32 press_color_rgb = 7 [deprecated = true]; // Deprecated: key highlight colors now come from layouts
+    uint32 key1_gpio = 8;            // Switch GPIO for key 1, default: 14. 0 = keep current
+    uint32 key2_gpio = 9;            // Switch GPIO for key 2, default: 9. 0 = keep current
 }
 
 message SetConfig {

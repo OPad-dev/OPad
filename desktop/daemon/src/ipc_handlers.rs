@@ -186,13 +186,16 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 let keys_or_debounce_changed = current_cfg.key1_hid_usage
                     != new_config.key1_hid_usage
                     || current_cfg.key2_hid_usage != new_config.key2_hid_usage
-                    || current_cfg.debounce_us != new_config.debounce_us;
+                    || current_cfg.debounce_us != new_config.debounce_us
+                    || current_cfg.key1_gpio != new_config.key1_gpio
+                    || current_cfg.key2_gpio != new_config.key2_gpio;
 
                 if keys_or_debounce_changed {
                     pending_ops.lock().unwrap().pending_config = Some(new_config);
                     return IpcResponse::OperationDeferred {
-                        reason: "Key mapping and debounce changes are deferred until IDLE mode"
-                            .to_string(),
+                        reason:
+                            "Key mapping, pin and debounce changes are deferred until IDLE mode"
+                                .to_string(),
                     };
                 }
 
@@ -656,6 +659,8 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 display_sleep_seconds: backup.config.display_sleep_seconds,
                 gameplay_display_hz: backup.config.gameplay_display_hz,
                 tosu_endpoint: current_tosu,
+                key1_gpio: backup.config.key1_gpio,
+                key2_gpio: backup.config.key2_gpio,
             };
 
             let new_counters = CounterState {

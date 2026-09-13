@@ -67,6 +67,15 @@ Standard MX mechanical switches have no polarity. Connect each switch between it
 
 *Note: Pins 11, 12, and 13 are directly adjacent on Header P2 for simple breadboard/Dupont jumper wiring.*
 
+These are the defaults. Each key's pin can be changed in the app under **Settings → Keys**. The list only offers header pins that work with a switch to GND:
+
+| Header | Pins (GPIO) |
+|---|---|
+| **P1** | 1 (`GPIO 2`), 2 (`GPIO 4`), 3 (`GPIO 6`), 4 (`GPIO 16`), 6 (`GPIO 18`), 7 (`GPIO 21`), 8 (`GPIO 8`), 9 (`GPIO 7`), 10 (`GPIO 10`) |
+| **P2** | 7 (`GPIO 15`), 8 (`GPIO 13`), 9 (`GPIO 11`), 10 (`GPIO 12`), 11 (`GPIO 14`), 12 (`GPIO 9`) |
+
+Left out: `GPIO 19/20` (USB), `GPIO 43/44` (UART0 console), `GPIO 47/48` (touch and IMU I2C) and `GPIO 17` (pulled down on the board). Most listed pins are also wired to the camera connector, so don't use them with a camera fitted.
+
 ---
 
 ## 🛠️ Building From Source

@@ -101,7 +101,7 @@ The daemon tracks osu!lazer gameplay status through tosu's WebSocket API and adv
 
 | Topic | Decision | Technical Rationale |
 |---|---|---|
-| **Switch Pinout** | `GPIO 14` (Key 1), `GPIO 9` (Key 2) | Directly exposed on Header P2 (pins 11 & 12) next to GND (pin 13). Neither GPIO interferes with S3 strapping pins, USB JTAG, or octal PSRAM/Flash. |
+| **Switch Pinout** | Default `GPIO 14` (Key 1), `GPIO 9` (Key 2); configurable | Defaults are on Header P2 (pins 11 & 12) next to GND (pin 13). Other pins are chosen from a fixed list of header GPIOs (`config_validate.c`, `KEY_PINS` in `osupad-model`) that avoids strapping pins, USB, UART0, the I2C bus, and `GPIO 17` (board pull-down). |
 | **Graphics Engine** | LVGL v8 (`esp_lvgl_port`) | Provides anti-aliased font rendering, robust object hierarchy, and native FreeRTOS SPI DMA task synchronization on Core 1. |
 | **Core Affinity** | Core 0: Input & HID; Core 1: Display & Protocol | Guarantees hard physical isolation so display rendering and serial framing cannot interrupt or jitter the 1000 Hz USB HID loop. |
 | **Gameplay Hz** | Default 10 Hz (configurable 1–60 Hz) | Eliminates bus contention on Core 1 during dense mania/standard maps while maintaining fluid visual feedback. |

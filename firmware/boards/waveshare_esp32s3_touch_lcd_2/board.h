@@ -13,9 +13,10 @@ extern "C" {
 #endif
 
 /**
- * @brief Initialize low-level board key GPIOs.
+ * @brief Configure (or move) the key switch GPIOs: input, pull-up, any-edge interrupt.
+ * Moves an already registered key ISR to the new pins. Call from one task only.
  */
-esp_err_t board_init(void);
+esp_err_t board_keys_set_gpio(int key1_gpio, int key2_gpio);
 
 /**
  * @brief Initialize LCD backlight PWM (LEDC).
@@ -23,9 +24,10 @@ esp_err_t board_init(void);
 esp_err_t board_backlight_init(void);
 
 /**
- * @brief Register ISR handler for the physical key inputs.
+ * @brief Register ISR handler for the physical key inputs (arg is the 1-based key index).
+ * Requires board_keys_set_gpio first.
  */
-esp_err_t board_keys_register_isr(gpio_isr_t isr_handler, void *arg);
+esp_err_t board_keys_register_isr(gpio_isr_t isr_handler);
 
 /**
  * @brief Read raw physical state of Key 1 (true = pressed / active low).

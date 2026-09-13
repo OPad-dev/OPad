@@ -42,7 +42,7 @@ message DeviceToHost {
 |---|---|---|
 | 1 | `Hello` | Initial handshake upon port discovery. Contains `protocol_version` (1) and `client_version`. |
 | 2 | `TimeSync` | Real-time clock synchronization with year, month, day, hour, minute, second. |
-| 3 | `SetConfig` | Applies device parameters: `key1_hid_usage`, `key2_hid_usage`, `debounce_us` (500–20,000 µs), `brightness` (0–100%), `display_sleep_seconds`, and `gameplay_display_hz` (1–60). *(Note: `press_color_rgb` is deprecated; highlight colors now come from layouts).* |
+| 3 | `SetConfig` | Applies device parameters: `key1_hid_usage`, `key2_hid_usage`, `debounce_us` (500–20,000 µs), `brightness` (0–100%), `display_sleep_seconds`, `gameplay_display_hz` (1–60), and `key1_gpio` / `key2_gpio` (switch pins; 0 keeps the current pin). Pins must be one of the supported header GPIOs 2, 4, 6–16, 18, 21 and differ; a pin move is applied by the keypad task once both keys are released. *(Note: `press_color_rgb` is deprecated; highlight colors now come from layouts).* |
 | 4 | `CounterSync` | Lifetime counter synchronization with `target_state` (`counter_generation`, `lifetime_key1`, `lifetime_key2`) and `force_restore` flag. |
 | 5 | `HostStatus` | Host daemon status: `daemon_state` (`IDLE`, `PLAYING`, `COOLDOWN`) and `active_screen`. |
 | 6 | `DataUpdate` | Real-time telemetry batch containing up to 32 `DataValue` elements (`source` ID `0..31`, variant of `number` or `text`). |

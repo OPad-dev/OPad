@@ -16,7 +16,7 @@ use osupad_ipc::{CurrentBackupState, IpcRequest, IpcResponse};
 use osupad_model::ui_source::SourceValue;
 use osupad_model::{
     char_to_hid_usage, CounterSource, CounterState, DeviceConfig, DeviceInfo, IncompatibleDevice,
-    JsonBackup, LatencyStats, LogEntry, LogLevel, LogSource, RuntimeMode,
+    JsonBackup, KeyPin, LatencyStats, LogEntry, LogLevel, LogSource, RuntimeMode,
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -145,6 +145,8 @@ pub struct App {
     // Settings form
     pub k1_input: String,
     pub k2_input: String,
+    pub k1_gpio: u32,
+    pub k2_gpio: u32,
     pub debounce: u32,
     pub brightness: u32,
     pub sleep_seconds: u32,
@@ -206,6 +208,8 @@ pub enum Message {
     // Settings
     Key1(String),
     Key2(String),
+    Key1Pin(KeyPin),
+    Key2Pin(KeyPin),
     Debounce(u32),
     Brightness(u32),
     SleepSeconds(u32),
@@ -265,6 +269,8 @@ impl App {
             ui_values: HashMap::new(),
             k1_input: "Z".into(),
             k2_input: "X".into(),
+            k1_gpio: osupad_model::DEFAULT_KEY1_GPIO,
+            k2_gpio: osupad_model::DEFAULT_KEY2_GPIO,
             debounce: 3000,
             brightness: 100,
             sleep_seconds: 600,
@@ -422,6 +428,8 @@ impl App {
                             self.config_loaded = true;
                             self.k1_input = config.key1_char();
                             self.k2_input = config.key2_char();
+                            self.k1_gpio = config.key1_gpio;
+                            self.k2_gpio = config.key2_gpio;
                             self.debounce = config.debounce_us;
                             self.brightness = config.brightness;
                             self.sleep_seconds = config.display_sleep_seconds;
@@ -590,6 +598,8 @@ impl App {
                     self.config = config.clone();
                     self.k1_input = config.key1_char();
                     self.k2_input = config.key2_char();
+                    self.k1_gpio = config.key1_gpio;
+                    self.k2_gpio = config.key2_gpio;
                     self.debounce = config.debounce_us;
                     self.brightness = config.brightness;
                     self.sleep_seconds = config.display_sleep_seconds;
@@ -722,6 +732,8 @@ impl App {
             Message::Key2(s) => {
                 self.k2_input = s.chars().take(1).collect::<String>().to_uppercase()
             }
+            Message::Key1Pin(pin) => self.k1_gpio = pin.gpio,
+            Message::Key2Pin(pin) => self.k2_gpio = pin.gpio,
             Message::Debounce(v) => self.debounce = v,
             Message::Brightness(v) => self.brightness = v,
             Message::SleepSeconds(v) => self.sleep_seconds = v,
@@ -742,6 +754,8 @@ impl App {
                     key2_hid_usage: char_to_hid_usage(&self.k2_input)
                         .unwrap_or(self.config.key2_hid_usage),
                     debounce_us: self.debounce,
+                    key1_gpio: self.k1_gpio,
+                    key2_gpio: self.k2_gpio,
                     brightness: self.brightness,
                     display_sleep_seconds: self.sleep_seconds,
                     gameplay_display_hz: self.gameplay_display_hz,
@@ -1288,6 +1302,27 @@ impl App {
                     ))
                     .size(13)
                     .color(k2_color)
+                    .width(Length::FillPortion(3)),
+                ],
+                row![
+                    text("Key pins").size(13).width(Length::FillPortion(2)),
+                    text(
+                        modal
+                            .current
+                            .as_ref()
+                            .map(|c| format!(
+                                "GPIO{} / GPIO{}",
+                                c.config.key1_gpio, c.config.key2_gpio
+                            ))
+                            .unwrap_or_else(|| "-".to_string())
+                    )
+                    .size(13)
+                    .width(Length::FillPortion(3)),
+                    text(format!(
+                        "GPIO{} / GPIO{}",
+                        modal.incoming.config.key1_gpio, modal.incoming.config.key2_gpio
+                    ))
+                    .size(13)
                     .width(Length::FillPortion(3)),
                 ],
                 row![

@@ -165,6 +165,8 @@ esp_err_t protocol_send_config_ack(uint32_t seq, bool success, const char *text)
     msg.payload.config_ack.current_config.display_sleep_seconds = cfg.sleep_s;
     msg.payload.config_ack.current_config.gameplay_display_hz = cfg.gameplay_display_hz ? cfg.gameplay_display_hz : 10;
     msg.payload.config_ack.current_config.press_color_rgb = 0;
+    msg.payload.config_ack.current_config.key1_gpio = cfg.key1_gpio;
+    msg.payload.config_ack.current_config.key2_gpio = cfg.key2_gpio;
 
     return send_envelope(&msg);
 }
@@ -327,6 +329,8 @@ static void handle_host_message(const osupad_HostToDevice *msg)
             dcfg.brightness = c->brightness;
             dcfg.sleep_s = c->display_sleep_seconds;
             if (c->gameplay_display_hz > 0) dcfg.gameplay_display_hz = c->gameplay_display_hz;
+            if (c->key1_gpio > 0) dcfg.key1_gpio = c->key1_gpio;
+            if (c->key2_gpio > 0) dcfg.key2_gpio = c->key2_gpio;
 
             char err_msg[64] = "";
             if (!device_config_validate(&dcfg, err_msg, sizeof(err_msg))) {

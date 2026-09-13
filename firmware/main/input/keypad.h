@@ -18,6 +18,8 @@ typedef struct {
     uint8_t keycode1;       // USB HID Keycode for Key 1 (default 0x1D = 'z')
     uint8_t keycode2;       // USB HID Keycode for Key 2 (default 0x1B = 'x')
     uint32_t debounce_us;   // Debounce interval in microseconds (default 3000us)
+    uint8_t key1_gpio;      // Switch GPIO for Key 1 (default 14)
+    uint8_t key2_gpio;      // Switch GPIO for Key 2 (default 9)
 } keypad_config_t;
 
 /**
@@ -72,7 +74,8 @@ void keypad_reset_map_presses(void);
 int64_t keypad_get_last_press_us(keypad_key_id_t key_id);
 
 /**
- * @brief Update keypad configuration (debouncing and key mappings).
+ * @brief Update keypad configuration (debouncing, key mappings and switch GPIOs).
+ * Once the keypad task runs, applied by it while both keys are released.
  */
 void keypad_set_config(const keypad_config_t *config);
 

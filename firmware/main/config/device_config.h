@@ -16,13 +16,15 @@ typedef int esp_err_t;
 extern "C" {
 #endif
 
-#define DEVICE_CONFIG_VERSION               1
+#define DEVICE_CONFIG_VERSION               2
 #define DEVICE_CONFIG_DEFAULT_KEY1          0x1D // 'Z'
 #define DEVICE_CONFIG_DEFAULT_KEY2          0x1B // 'X'
 #define DEVICE_CONFIG_DEFAULT_DEBOUNCE_US   3000
 #define DEVICE_CONFIG_DEFAULT_BRIGHTNESS    100
 #define DEVICE_CONFIG_DEFAULT_SLEEP_S       600
 #define DEVICE_CONFIG_DEFAULT_GAMEPLAY_DISPLAY_HZ 10
+#define DEVICE_CONFIG_DEFAULT_KEY1_GPIO     14   // Header P2, pin 11
+#define DEVICE_CONFIG_DEFAULT_KEY2_GPIO     9    // Header P2, pin 12
 
 typedef struct __attribute__((packed)) {
     uint32_t version;
@@ -32,6 +34,9 @@ typedef struct __attribute__((packed)) {
     uint32_t brightness;
     uint32_t sleep_s;
     uint32_t gameplay_display_hz;
+    // v2
+    uint32_t key1_gpio;
+    uint32_t key2_gpio;
 } device_config_data_t;
 
 /**
@@ -44,6 +49,11 @@ esp_err_t device_config_init(void);
  * @brief Validate configuration parameters.
  */
 bool device_config_validate(const device_config_data_t *cfg, char *err_msg, size_t err_msg_len);
+
+/**
+ * @brief True if a key switch can be wired to this GPIO on the board's headers.
+ */
+bool device_config_key_gpio_supported(uint32_t gpio);
 
 /**
  * @brief Get current configuration snapshot.

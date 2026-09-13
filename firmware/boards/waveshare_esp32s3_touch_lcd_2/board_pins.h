@@ -2,11 +2,8 @@
 
 #include "driver/gpio.h"
 
-// -----------------------------------------------------------------------------
-// Keypad Switch Pins (Header P2, Active LOW with Internal Pull-Up)
-// -----------------------------------------------------------------------------
-#define BOARD_KEY1_GPIO         GPIO_NUM_14   // Header P2, Pin 11
-#define BOARD_KEY2_GPIO         GPIO_NUM_9    // Header P2, Pin 12
+// Keypad switch pins are configurable at runtime (device config, defaults GPIO14 / GPIO9
+// on header P2 pins 11 / 12). Allowed pins: config/config_validate.c
 
 // -----------------------------------------------------------------------------
 // Waveshare 2.0" ST7789 LCD (SPI) & Backlight (PWM)

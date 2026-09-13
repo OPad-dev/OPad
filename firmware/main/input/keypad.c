@@ -16,10 +16,15 @@ static const char *TAG = "keypad";
 static portMUX_TYPE s_keypad_spinlock = portMUX_INITIALIZER_UNLOCKED;
 static debounce_state_t s_key_debounce[KEY_ID_COUNT];
 
+#define KEYPAD_DEFAULT_KEY1_GPIO 14
+#define KEYPAD_DEFAULT_KEY2_GPIO 9
+
 static keypad_config_t s_config = {
     .keycode1 = 0x1D,       // 'z'
     .keycode2 = 0x1B,       // 'x'
     .debounce_us = DEBOUNCE_DEFAULT_US,
+    .key1_gpio = KEYPAD_DEFAULT_KEY1_GPIO,
+    .key2_gpio = KEYPAD_DEFAULT_KEY2_GPIO,
 };
 
 static keypad_config_t s_staged_config;
@@ -205,14 +210,40 @@ static void keypad_task(void *pvParameters)
         }
 
         // 3. If both keys are currently released, apply any staged config change
+        bool move_pins = false;
+        keypad_config_t applied;
         portENTER_CRITICAL(&s_keypad_spinlock);
         if (s_config_staged && !s_key_state[0] && !s_key_state[1] &&
             !reported_state[0] && !reported_state[1]) {
+            move_pins = s_staged_config.key1_gpio != s_config.key1_gpio ||
+                        s_staged_config.key2_gpio != s_config.key2_gpio;
             s_config = s_staged_config;
+            applied = s_config;
             usb_hid_set_keycodes(s_config.keycode1, s_config.keycode2);
             s_config_staged = false;
         }
         portEXIT_CRITICAL(&s_keypad_spinlock);
+
+        if (move_pins) {
+            // gpio_config and ISR (de)registration cannot run inside the spinlock
+            esp_err_t err = board_keys_set_gpio(applied.key1_gpio, applied.key2_gpio);
+            if (err != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to move keys to GPIO%u/GPIO%u: %s",
+                         applied.key1_gpio, applied.key2_gpio, esp_err_to_name(err));
+            }
+            // Start debouncing from the new pins; a switch already held down is reported
+            bool levels[KEY_ID_COUNT] = {board_key1_read(), board_key2_read()};
+            portENTER_CRITICAL(&s_keypad_spinlock);
+            for (int i = 0; i < KEY_ID_COUNT; i++) {
+                debounce_init(&s_key_debounce[i], levels[i]);
+                s_key_state[i] = levels[i];
+                s_last_transition_us[i] = esp_timer_get_time();
+            }
+            portEXIT_CRITICAL(&s_keypad_spinlock);
+            if (levels[0] || levels[1]) {
+                xTaskNotifyGive(s_input_task_handle);
+            }
+        }
     }
 }
 
@@ -224,6 +255,21 @@ esp_err_t keypad_init(const keypad_config_t *config)
         s_config.keycode1 = 0x1D;
         s_config.keycode2 = 0x1B;
         s_config.debounce_us = DEBOUNCE_DEFAULT_US;
+        s_config.key1_gpio = KEYPAD_DEFAULT_KEY1_GPIO;
+        s_config.key2_gpio = KEYPAD_DEFAULT_KEY2_GPIO;
+    }
+
+    esp_err_t err = board_keys_set_gpio(s_config.key1_gpio, s_config.key2_gpio);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Key GPIO%u/GPIO%u rejected (%s), using GPIO%d/GPIO%d",
+                 s_config.key1_gpio, s_config.key2_gpio, esp_err_to_name(err),
+                 KEYPAD_DEFAULT_KEY1_GPIO, KEYPAD_DEFAULT_KEY2_GPIO);
+        s_config.key1_gpio = KEYPAD_DEFAULT_KEY1_GPIO;
+        s_config.key2_gpio = KEYPAD_DEFAULT_KEY2_GPIO;
+        err = board_keys_set_gpio(s_config.key1_gpio, s_config.key2_gpio);
+        if (err != ESP_OK) {
+            return err;
+        }
     }
 
 #if defined(CONFIG_OSUPAD_BENCH_DEBUG_GPIO) || defined(OSUPAD_BENCH_DEBUG_GPIO)
@@ -263,14 +309,15 @@ esp_err_t keypad_init(const keypad_config_t *config)
     }
 
     // Register board GPIO ISR
-    esp_err_t err = board_keys_register_isr(gpio_isr_handler, NULL);
+    err = board_keys_register_isr(gpio_isr_handler);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to register keypad ISR: %s", esp_err_to_name(err));
         return err;
     }
 
-    ESP_LOGI(TAG, "Keypad initialized (debouncing=%lu us, Key1: 0x%02X, Key2: 0x%02X)",
-             (unsigned long)s_config.debounce_us, s_config.keycode1, s_config.keycode2);
+    ESP_LOGI(TAG, "Keypad initialized (debouncing=%lu us, Key1: 0x%02X@GPIO%u, Key2: 0x%02X@GPIO%u)",
+             (unsigned long)s_config.debounce_us, s_config.keycode1, s_config.key1_gpio,
+             s_config.keycode2, s_config.key2_gpio);
     return ESP_OK;
 }
 
@@ -345,16 +392,30 @@ void keypad_set_config(const keypad_config_t *config)
         clamped.debounce_us = DEBOUNCE_MAX_US;
     }
 
+    if (s_input_task_handle == NULL) {
+        // Before keypad_init: pins are configured from s_config there
+        s_config = clamped;
+        usb_hid_set_keycodes(clamped.keycode1, clamped.keycode2);
+        return;
+    }
+
+    bool pins_changed;
     portENTER_CRITICAL(&s_keypad_spinlock);
-    if (!s_key_state[0] && !s_key_state[1]) {
+    pins_changed = clamped.key1_gpio != s_config.key1_gpio || clamped.key2_gpio != s_config.key2_gpio;
+    if (!pins_changed && !s_key_state[0] && !s_key_state[1]) {
         s_config = clamped;
         usb_hid_set_keycodes(clamped.keycode1, clamped.keycode2);
         s_config_staged = false;
     } else {
+        // Pin moves always go through the keypad task, the only task touching key GPIOs
         s_staged_config = clamped;
         s_config_staged = true;
     }
     portEXIT_CRITICAL(&s_keypad_spinlock);
+
+    if (pins_changed) {
+        xTaskNotifyGive(s_input_task_handle);
+    }
 }
 
 void keypad_get_config(keypad_config_t *out_config)
