@@ -19,15 +19,41 @@ use osupad_model::{
 use std::collections::HashMap;
 use std::time::Duration;
 
+pub fn parse_page_arg() -> Option<Page> {
+    let args: Vec<String> = std::env::args().collect();
+    for i in 0..args.len() {
+        if (args[i] == "--page" || args[i] == "-p") && i + 1 < args.len() {
+            return match args[i + 1].to_lowercase().as_str() {
+                "dashboard" => Some(Page::Dashboard),
+                "designer" => Some(Page::Designer),
+                "settings" => Some(Page::Settings),
+                "device" => Some(Page::Device),
+                "monitor" => Some(Page::Monitor),
+                _ => None,
+            };
+        }
+    }
+    None
+}
+
 pub fn main() -> iced::Result {
-    if !single_instance::claim() {
+    let target_page = parse_page_arg();
+    let page_str = target_page.map(|p| match p {
+        Page::Dashboard => "dashboard",
+        Page::Designer => "designer",
+        Page::Settings => "settings",
+        Page::Device => "device",
+        Page::Monitor => "monitor",
+    });
+
+    if !single_instance::claim(page_str) {
         // Another instance was asked to show its window
         return Ok(());
     }
     let start_hidden = std::env::args().any(|a| a == "--tray");
 
     // A daemon keeps running with no window open, living in the tray (Discord-style)
-    iced::daemon(move || App::new(start_hidden), App::update, App::view)
+    iced::daemon(move || App::new(start_hidden, target_page), App::update, App::view)
         .title(App::title)
         .theme(|_: &App, _| theme::theme())
         .subscription(App::subscription)
@@ -116,6 +142,7 @@ pub struct App {
     pub brightness: u32,
     pub sleep_seconds: u32,
     pub gameplay_display_hz: u32,
+    pub autostart_tray: bool,
     config_loaded: bool,
 
     pub logs: Vec<LogEntry>,
@@ -176,6 +203,7 @@ pub enum Message {
     Brightness(u32),
     SleepSeconds(u32),
     GameplayDisplayHz(u32),
+    ToggleAutostartTray(bool),
     SaveConfig,
     // Actions
     Sync,
@@ -192,17 +220,17 @@ pub enum Message {
     WindowOpened(window::Id),
     CloseRequested(window::Id),
     Tray(tray::TrayEvent),
-    ShowRequested,
+    ShowRequested(Option<String>),
     Window(chrome::WindowAction),
     Resized,
     Maximized(bool),
 }
 
 impl App {
-    fn new(start_hidden: bool) -> (Self, Task<Message>) {
+    fn new(start_hidden: bool, initial_page: Option<Page>) -> (Self, Task<Message>) {
         let (designer, designer_task) = designer::Designer::new();
         let mut app = App {
-            page: Page::Dashboard,
+            page: initial_page.unwrap_or(Page::Dashboard),
             window: None,
             maximized: false,
             tray: None,
@@ -233,6 +261,10 @@ impl App {
             brightness: 100,
             sleep_seconds: 600,
             gameplay_display_hz: 10,
+            #[cfg(target_os = "linux")]
+            autostart_tray: platform_linux::is_gui_autostart_enabled(),
+            #[cfg(not(target_os = "linux"))]
+            autostart_tray: false,
             config_loaded: false,
             logs: Vec::new(),
             latest_log_seq: 0,
@@ -296,11 +328,21 @@ impl App {
 
     fn update_tray(&self) {
         if let Some(handle) = &self.tray {
+            let is_playing_or_cooldown = matches!(self.mode, RuntimeMode::Playing | RuntimeMode::Cooldown);
+            let k1 = if let Some(pc) = &self.pc_counters { pc.lifetime_key1 } else { self.counters.lifetime_key1 };
+            let k2 = if let Some(pc) = &self.pc_counters { pc.lifetime_key2 } else { self.counters.lifetime_key2 };
             tray::update(
                 handle,
                 tray::TrayStatus {
                     daemon_online: self.daemon_online,
                     device_connected: self.device_connected,
+                    incompatible: self.incompatible.is_some(),
+                    firmware_version: self.device_info.as_ref().map(|i| i.firmware_version.clone()),
+                    key1_presses: k1,
+                    key2_presses: k2,
+                    last_sync_time: self.last_sync_time.clone(),
+                    last_sync_error: self.last_sync_error.clone(),
+                    is_playing_or_cooldown,
                     tosu_connected: self.tosu_connected,
                     total_presses: self.counters.total_lifetime_presses(),
                     mode: format!("{:?}", self.mode),
@@ -657,6 +699,15 @@ impl App {
             Message::Brightness(v) => self.brightness = v,
             Message::SleepSeconds(v) => self.sleep_seconds = v,
             Message::GameplayDisplayHz(v) => self.gameplay_display_hz = v,
+            Message::ToggleAutostartTray(enabled) => {
+                self.autostart_tray = enabled;
+                #[cfg(target_os = "linux")]
+                {
+                    if let Err(e) = platform_linux::set_gui_autostart_enabled(enabled) {
+                        self.banner = Some(format!("Failed to update autostart: {}", e));
+                    }
+                }
+            }
             Message::SaveConfig => {
                 let config = DeviceConfig {
                     key1_hid_usage: char_to_hid_usage(&self.k1_input).unwrap_or(self.config.key1_hid_usage),
@@ -719,7 +770,19 @@ impl App {
                 self.window = None;
                 return window::close(id);
             }
-            Message::ShowRequested => return self.open_window(),
+            Message::ShowRequested(target) => {
+                if let Some(target_str) = target {
+                    match target_str.to_lowercase().as_str() {
+                        "monitor" => self.page = Page::Monitor,
+                        "device" => self.page = Page::Device,
+                        "settings" => self.page = Page::Settings,
+                        "designer" => self.page = Page::Designer,
+                        "dashboard" => self.page = Page::Dashboard,
+                        _ => {}
+                    }
+                }
+                return self.open_window();
+            }
             Message::Window(action) => {
                 let Some(id) = self.window else { return Task::none() };
                 return match action {
@@ -745,11 +808,19 @@ impl App {
                 }
                 tray::TrayEvent::Unavailable => {
                     self.tray_available = Some(false);
+                    if self.banner.is_none() {
+                        self.banner = Some("No system tray found; the app will quit when closed. The pad keeps working.".into());
+                    }
                     if self.window.is_none() {
                         return self.open_window();
                     }
                 }
                 tray::TrayEvent::Action(tray::TrayAction::ShowWindow) => return self.open_window(),
+                tray::TrayEvent::Action(tray::TrayAction::OpenMonitor) => {
+                    self.page = Page::Monitor;
+                    return self.open_window();
+                }
+                tray::TrayEvent::Action(tray::TrayAction::StartDaemon) => return self.update(Message::StartDaemon),
                 tray::TrayEvent::Action(tray::TrayAction::SyncNow) => return self.update(Message::Sync),
                 tray::TrayEvent::Action(tray::TrayAction::Quit) => return iced::exit(),
             },
@@ -764,7 +835,7 @@ impl App {
             window::close_requests().map(Message::CloseRequested),
             window::resize_events().map(|_| Message::Resized),
             Subscription::run(tray::stream).map(Message::Tray),
-            Subscription::run(single_instance::show_requests).map(|_| Message::ShowRequested),
+            Subscription::run(single_instance::show_requests).map(Message::ShowRequested),
         ];
         if self.window.is_some() && self.page == Page::Designer {
             subscriptions.push(self.designer.subscription().map(Message::Designer));

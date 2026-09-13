@@ -64,3 +64,40 @@ WantedBy=default.target
 
     Ok(())
 }
+
+pub fn get_user_autostart_dir() -> Result<PathBuf, String> {
+    if let Ok(config_home) = std::env::var("XDG_CONFIG_HOME") {
+        if !config_home.trim().is_empty() {
+            return Ok(PathBuf::from(config_home).join("autostart"));
+        }
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.trim().is_empty() {
+            return Ok(PathBuf::from(home).join(".config").join("autostart"));
+        }
+    }
+    Err("Neither $XDG_CONFIG_HOME nor $HOME environment variable is set".to_string())
+}
+
+pub fn is_gui_autostart_enabled() -> bool {
+    if let Ok(dir) = get_user_autostart_dir() {
+        dir.join("osupad-gui.desktop").exists()
+    } else {
+        false
+    }
+}
+
+pub fn set_gui_autostart_enabled(enabled: bool) -> Result<(), String> {
+    let dir = get_user_autostart_dir()?;
+    let path = dir.join("osupad-gui.desktop");
+    if enabled {
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("Failed to create directory {}: {}", dir.display(), e))?;
+        let content = "[Desktop Entry]\nType=Application\nName=osu!pad Tray\nComment=osu!pad configuration and system tray applet\nExec=osupad-gui --tray\nIcon=input-keyboard\nTerminal=false\nCategories=Utility;HardwareSettings;\nX-GNOME-Autostart-enabled=true\n";
+        std::fs::write(&path, content)
+            .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    } else if path.exists() {
+        let _ = std::fs::remove_file(&path);
+    }
+    Ok(())
+}

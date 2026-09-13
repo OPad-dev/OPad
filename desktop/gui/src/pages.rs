@@ -2,7 +2,7 @@
 
 use crate::theme::{self, caption, heading, muted};
 use crate::{App, Message};
-use iced::widget::{button, column, container, row, scrollable, slider, text, text_input, Space};
+use iced::widget::{button, checkbox, column, container, row, scrollable, slider, text, text_input, Space};
 use iced::{Alignment, Color, Element, Length};
 use osupad_model::ui_source::{self as src, SourceValue};
 
@@ -236,6 +236,11 @@ pub fn settings(app: &App) -> Element<'_, Message> {
                 muted("Rate at which real-time map statistics (PP, progress, hit counts) are streamed to the pad display during play (1–30 Hz, default: 10 Hz).").size(12),
             ]
             .spacing(8),
+            column![
+                checkbox(app.autostart_tray).label("Start in tray at login").on_toggle(Message::ToggleAutostartTray),
+                muted("Automatically start the applet minimized in the system tray when logging into your desktop session.").size(12),
+            ]
+            .spacing(6),
         ]
         .spacing(18),
     );

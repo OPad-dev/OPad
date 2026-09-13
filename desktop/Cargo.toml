@@ -40,6 +40,4 @@ interprocess = { version = "2.2", features = ["tokio"] }
 chrono = { version = "0.4", features = ["serde"] }
 bytes = "1.7"
 byteorder = "1.5"
-tray-icon = "0.19"
-winit = "0.30"
 iced = { version = "0.14", features = ["tokio", "advanced"] }

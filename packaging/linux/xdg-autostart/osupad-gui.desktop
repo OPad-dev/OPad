@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=osu!pad Tray
+Comment=osu!pad configuration and system tray applet
+Exec=osupad-gui --tray
+Icon=input-keyboard
+Terminal=false
+Categories=Utility;HardwareSettings;
+X-GNOME-Autostart-enabled=true
