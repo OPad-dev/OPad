@@ -1,6 +1,7 @@
 #include "usb_hid.h"
 #include "input/keypad.h"
 #include "input/latency_stats.h"
+#include "diag/diag.h"
 #include "esp_timer.h"
 #include "tusb.h"
 #include "class/hid/hid_device.h"

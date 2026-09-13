@@ -1,5 +1,6 @@
 #include "usb_cdc.h"
 #include "protocol/protocol.h"
+#include "diag/diag.h"
 #include "tusb.h"
 #include "tinyusb.h"
 #include "esp_log.h"
@@ -184,6 +185,8 @@ static void usb_cdc_task_poll(void)
         }
         protocol_feed_cdc_bytes(rx_buf, count);
     }
+
+    protocol_drain_diag_logs();
 }
 
 // Protocol/CDC handling lives on core 1, away from the key ISR and USB stack on core 0.
@@ -216,6 +219,13 @@ void tud_cdc_rx_cb(uint8_t itf)
 void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
 {
     (void)itf;
+    if (dtr != s_cdc_connected) {
+        if (dtr) {
+            diag_record(DIAG_EVENT_CDC_OPENED, 1 /* INFO */, 0, 0);
+        } else {
+            diag_record(DIAG_EVENT_CDC_CLOSED, 1 /* INFO */, 0, 0);
+        }
+    }
     s_cdc_connected = dtr;
     ESP_LOGD(TAG, "CDC line state: DTR=%d, RTS=%d", dtr, rts);
 

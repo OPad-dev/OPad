@@ -38,6 +38,11 @@ void latency_stats_get(latency_stats_t *out);
  */
 void latency_stats_reset(void);
 
+/**
+ * @brief Drain any recorded latency outliers (> 1000 us). Safe from any task.
+ */
+bool latency_stats_drain_outlier(uint32_t *out_max_us, uint32_t *out_count);
+
 #ifdef __cplusplus
 }
 #endif

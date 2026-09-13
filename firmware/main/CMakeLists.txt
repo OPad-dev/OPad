@@ -22,10 +22,12 @@ idf_component_register(
         "protocol/nanopb/pb_common.c"
         "protocol/nanopb/pb_encode.c"
         "protocol/nanopb/pb_decode.c"
+        "diag/diag.c"
     INCLUDE_DIRS
         "."
         ".."
         "../boards/waveshare_esp32s3_touch_lcd_2"
+        "diag"
         "config"
         "input"
         "usb"

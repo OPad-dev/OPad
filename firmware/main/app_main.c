@@ -15,13 +15,39 @@
 #include "ui/ui.h"
 #include "runtime/runtime.h"
 #include "soc/rtc_cntl_reg.h"
+#include "esp_system.h"
+#include "diag/diag.h"
 
 static const char *TAG = "app_main";
+
+static void usb_event_handler(tinyusb_event_t *event, void *arg)
+{
+    (void)arg;
+    switch (event->id) {
+    case TINYUSB_EVENT_ATTACHED:
+        diag_record(DIAG_EVENT_HID_MOUNTED, 1 /* INFO */, 0, 0);
+        break;
+    case TINYUSB_EVENT_DETACHED:
+        diag_record(DIAG_EVENT_HID_UNMOUNTED, 1 /* INFO */, 0, 0);
+        break;
+#ifdef CONFIG_TINYUSB_SUSPEND_CALLBACK
+    case TINYUSB_EVENT_SUSPENDED:
+        diag_record(DIAG_EVENT_HID_SUSPENDED, 1 /* INFO */, 0, 0);
+        break;
+#endif
+    default:
+        break;
+    }
+}
 
 void app_main(void)
 {
     // Clear any previous software bootloader download flag
     REG_WRITE(RTC_CNTL_OPTION1_REG, 0);
+
+    diag_init();
+    esp_reset_reason_t rst_reason = esp_reset_reason();
+    diag_record(DIAG_EVENT_BOOT, 1 /* INFO */, (uint32_t)rst_reason, 0);
 
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "  osu!pad ESP32-S3 Firmware v1.0.0      ");
@@ -62,6 +88,7 @@ void app_main(void)
     // submits and USB completions never wait on the display or protocol on core 1
     tusb_cfg.task.xCoreID = 0;
     tusb_cfg.task.priority = configMAX_PRIORITIES - 2;
+    tusb_cfg.event_cb = usb_event_handler;
 
     ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
     ESP_LOGI(TAG, "TinyUSB stack installed successfully (HID operational)");
@@ -101,6 +128,7 @@ void app_main(void)
     }
     err = ui_init();
     if (err != ESP_OK) {
+        diag_record(DIAG_EVENT_LCD_INIT_FAILED, 3 /* ERROR */, (uint32_t)err, 0);
         ESP_LOGE(TAG, "ui_init failed: %s (continuing in headless mode)", esp_err_to_name(err));
     }
 

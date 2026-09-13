@@ -1,6 +1,7 @@
 #include "counters.h"
 #include "input/keypad.h"
 #include "runtime/runtime.h"
+#include "diag/diag.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
@@ -42,8 +43,10 @@ esp_err_t counters_init(void)
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_LOGW(TAG, "Erasing corrupted/outdated NVS flash...");
+        diag_record(DIAG_EVENT_NVS_ERASED, 2 /* WARN */, 0, 0);
         esp_err_t erase_err = nvs_flash_erase();
         if (erase_err != ESP_OK) {
+            diag_record(DIAG_EVENT_NVS_INIT_FAILED, 3 /* ERROR */, (uint32_t)erase_err, 0);
             ESP_LOGE(TAG, "Failed to erase NVS: %s", esp_err_to_name(erase_err));
             s_counters_nvs_ok = false;
             return erase_err;
@@ -51,6 +54,7 @@ esp_err_t counters_init(void)
         err = nvs_flash_init();
     }
     if (err != ESP_OK) {
+        diag_record(DIAG_EVENT_NVS_INIT_FAILED, 3 /* ERROR */, (uint32_t)err, 0);
         ESP_LOGE(TAG, "Failed to initialize NVS flash: %s (continuing with RAM counters)", esp_err_to_name(err));
         s_counters_nvs_ok = false;
         return err;
@@ -59,6 +63,7 @@ esp_err_t counters_init(void)
     nvs_handle_t handle;
     err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
     if (err != ESP_OK) {
+        diag_record(DIAG_EVENT_NVS_INIT_FAILED, 3 /* ERROR */, (uint32_t)err, 0);
         ESP_LOGE(TAG, "Failed to open NVS namespace '%s': %s (continuing with RAM counters)", NVS_NAMESPACE, esp_err_to_name(err));
         s_counters_nvs_ok = false;
         return err;

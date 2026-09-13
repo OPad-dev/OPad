@@ -12,7 +12,9 @@
 #include "runtime/runtime.h"
 #include "input/latency_stats.h"
 #include "esp_mac.h"
+#include "esp_timer.h"
 #include "esp_log.h"
+#include "diag/diag.h"
 #include <string.h>
 
 static const char *TAG = "protocol";
@@ -59,6 +61,7 @@ bool protocol_decode_host_message(const uint8_t *payload, size_t payload_len, os
 
     pb_istream_t stream = pb_istream_from_buffer(payload, payload_len);
     if (!pb_decode(&stream, osupad_HostToDevice_fields, out_msg)) {
+        diag_record(DIAG_EVENT_DECODE_FAILED, 3 /* ERROR */, (uint32_t)payload_len, 0);
         ESP_LOGE(TAG, "NanoPB decode failed: %s", PB_GET_ERROR(&stream));
         return false;
     }
@@ -68,7 +71,7 @@ bool protocol_decode_host_message(const uint8_t *payload, size_t payload_len, os
 
 static esp_err_t send_envelope(const osupad_DeviceToHost *msg)
 {
-    uint8_t tx_buf[512];
+    uint8_t tx_buf[1024];
     size_t tx_len = 0;
 
     esp_err_t err = protocol_encode_device_message(msg, tx_buf, sizeof(tx_buf), &tx_len);
@@ -78,6 +81,7 @@ static esp_err_t send_envelope(const osupad_DeviceToHost *msg)
 
     size_t written = usb_cdc_write(tx_buf, tx_len);
     if (written < tx_len) {
+        diag_record(DIAG_EVENT_CDC_WRITE_DROPPED, 2 /* WARN */, (uint32_t)tx_len, (uint32_t)(tx_len - written));
         ESP_LOGW(TAG, "CDC TX dropped bytes (%zu / %zu)", written, tx_len);
         return ESP_FAIL;
     }
@@ -200,6 +204,77 @@ esp_err_t protocol_send_layout_ack(uint32_t seq, uint32_t screen, bool success, 
     return send_envelope(&msg);
 }
 
+esp_err_t protocol_send_log_batch(void)
+{
+    if (!usb_cdc_is_connected()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    uint32_t dropped = 0;
+    diag_entry_t entries[8];
+    size_t count = diag_drain(entries, 8, &dropped);
+
+    // If there was an overflow drop, and we have space in this batch, synthesize an overflow event
+    if (dropped > 0 && count < 8) {
+        entries[count].timestamp_ms = (uint32_t)(esp_timer_get_time() / 1000);
+        entries[count].event_id = DIAG_EVENT_BUFFER_OVERFLOW;
+        entries[count].level = 2; // WARN
+        entries[count].arg0 = dropped;
+        entries[count].arg1 = 0;
+        count++;
+    }
+
+    if (count == 0) {
+        return ESP_OK;
+    }
+
+    osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+    msg.sequence_number = s_out_sequence++;
+    msg.which_payload = osupad_DeviceToHost_log_batch_tag;
+    msg.payload.log_batch.events_count = (pb_size_t)count;
+
+    for (size_t i = 0; i < count; i++) {
+        msg.payload.log_batch.events[i].timestamp_ms = entries[i].timestamp_ms;
+        msg.payload.log_batch.events[i].level = (osupad_LogLevel)entries[i].level;
+        msg.payload.log_batch.events[i].event_id = entries[i].event_id;
+        msg.payload.log_batch.events[i].arg0 = entries[i].arg0;
+        msg.payload.log_batch.events[i].arg1 = entries[i].arg1;
+        msg.payload.log_batch.events[i].tag[0] = '\0';
+        msg.payload.log_batch.events[i].message[0] = '\0';
+    }
+
+    return send_envelope(&msg);
+}
+
+void protocol_drain_diag_logs(void)
+{
+    if (!usb_cdc_is_connected()) {
+        return;
+    }
+    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+        return;
+    }
+
+    uint32_t outlier_max = 0;
+    uint32_t outlier_count = 0;
+    if (latency_stats_drain_outlier(&outlier_max, &outlier_count)) {
+        diag_record(DIAG_EVENT_LATENCY_OUTLIER, 2 /* WARN */, outlier_max, outlier_count);
+    }
+
+    static int64_t s_last_drain_us = 0;
+    int64_t now_us = esp_timer_get_time();
+    if (now_us - s_last_drain_us < 1000000) { // 1 second rate limit
+        return;
+    }
+    s_last_drain_us = now_us;
+
+    for (int b = 0; b < 8 && diag_available() > 0; b++) {
+        if (protocol_send_log_batch() != ESP_OK) {
+            break;
+        }
+    }
+}
+
 static void layout_from_proto(const osupad_SetLayout *in, ui_layout_t *out)
 {
     memset(out, 0, sizeof(*out));
@@ -252,10 +327,12 @@ static void handle_host_message(const osupad_HostToDevice *msg)
 
             char err_msg[64] = "";
             if (!device_config_validate(&dcfg, err_msg, sizeof(err_msg))) {
+                diag_record(DIAG_EVENT_CONFIG_REJECTED, 2 /* WARN */, 1, 0);
                 protocol_send_config_ack(msg->sequence_number, false, err_msg);
             } else {
                 esp_err_t err = device_config_set(&dcfg);
                 if (err != ESP_OK) {
+                    diag_record(DIAG_EVENT_CONFIG_REJECTED, 2 /* WARN */, (uint32_t)err, 0);
                     protocol_send_config_ack(msg->sequence_number, false, "Failed to persist configuration");
                 } else {
                     protocol_send_config_ack(msg->sequence_number, true, "Configuration applied successfully");
@@ -287,6 +364,9 @@ static void handle_host_message(const osupad_HostToDevice *msg)
                 err_msg,
                 sizeof(err_msg)
             );
+            if (err != ESP_OK) {
+                diag_record(DIAG_EVENT_COUNTER_SYNC_REJECTED, 2 /* WARN */, (uint32_t)err, 0);
+            }
             protocol_send_counter_sync_resp(msg->sequence_number, (err == ESP_OK), err_msg);
         }
         break;
@@ -324,6 +404,8 @@ static void handle_host_message(const osupad_HostToDevice *msg)
             } else if (ui_store_save((uint8_t)sl->screen, &layout) != ESP_OK) {
                 snprintf(err, sizeof(err), "applied, but saving to flash failed");
             }
+        } else {
+            diag_record(DIAG_EVENT_LAYOUT_REJECTED, 2 /* WARN */, sl->screen, 0);
         }
         protocol_send_layout_ack(msg->sequence_number, sl->screen, ok, err);
         break;
@@ -341,6 +423,8 @@ static void handle_host_message(const osupad_HostToDevice *msg)
             } else if (ui_store_erase((uint8_t)screen) != ESP_OK) {
                 snprintf(err, sizeof(err), "reset applied, but erasing from flash failed");
             }
+        } else {
+            diag_record(DIAG_EVENT_LAYOUT_REJECTED, 2 /* WARN */, screen, 0);
         }
         protocol_send_layout_ack(msg->sequence_number, screen, ok, def ? err : "unknown screen");
         break;
@@ -364,7 +448,18 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         break;
     }
 
+    case osupad_HostToDevice_request_logs_tag:
+        if (msg->payload.request_logs && runtime_get_state() == OSUPAD_STATE_IDLE) {
+            for (int b = 0; b < 8 && diag_available() > 0; b++) {
+                if (protocol_send_log_batch() != ESP_OK) {
+                    break;
+                }
+            }
+        }
+        break;
+
     default:
+        diag_record(DIAG_EVENT_UNKNOWN_HOST_MSG, 0 /* DEBUG */, msg->which_payload, 0);
         ESP_LOGD(TAG, "Unhandled host message payload tag: %d", msg->which_payload);
         break;
     }
@@ -391,6 +486,7 @@ void protocol_feed_cdc_bytes(const uint8_t *data, size_t len)
                                 ((uint32_t)s_rx_frame_buf[3] << 24);
 
         if (expected_len > PROTOCOL_MAX_FRAME_SIZE - 4) {
+            diag_record(DIAG_EVENT_FRAME_TOO_LARGE, 3 /* ERROR */, expected_len, 0);
             ESP_LOGE(TAG, "Frame length exceeds max allowed (%lu bytes), dropping buffer", (unsigned long)expected_len);
             s_rx_frame_len = 0;
             return;

@@ -4,6 +4,7 @@
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
 #include "input/keypad.h"
 #include "runtime/runtime.h"
+#include "diag/diag.h"
 #include "usb/usb_cdc.h"
 #include "esp_lvgl_port.h"
 #include "esp_log.h"
@@ -110,6 +111,7 @@ static void update_sleep(int64_t now_us)
         lv_display_enable_invalidation(s_disp, false);
         board_backlight_set(0);
         esp_lcd_panel_disp_on_off(s_panel, false);
+        diag_record(DIAG_EVENT_DISPLAY_SLEEP, 1 /* INFO */, 0, 0);
         ESP_LOGI(TAG, "Display asleep");
     } else if (!should_sleep && s_asleep) {
         s_asleep = false;
@@ -117,6 +119,7 @@ static void update_sleep(int64_t now_us)
         lv_display_enable_invalidation(s_disp, true);
         lv_obj_invalidate(lv_screen_active());
         board_backlight_set(s_brightness);
+        diag_record(DIAG_EVENT_DISPLAY_WAKE, 1 /* INFO */, 0, 0);
     }
 }
 

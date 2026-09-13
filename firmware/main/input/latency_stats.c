@@ -11,6 +11,8 @@ static atomic_uint_least32_t s_buckets[BUCKET_COUNT];
 static atomic_uint_least32_t s_samples;
 static atomic_uint_least32_t s_max_us;
 static atomic_uint_least32_t s_deferred;
+static atomic_uint_least32_t s_outlier_count;
+static atomic_uint_least32_t s_outlier_max_us;
 
 void IRAM_ATTR latency_stats_record(uint32_t latency_us)
 {
@@ -22,6 +24,12 @@ void IRAM_ATTR latency_stats_record(uint32_t latency_us)
     atomic_fetch_add_explicit(&s_samples, 1, memory_order_relaxed);
     if (latency_us > atomic_load_explicit(&s_max_us, memory_order_relaxed)) {
         atomic_store_explicit(&s_max_us, latency_us, memory_order_relaxed);
+    }
+    if (latency_us > 1000) {
+        atomic_fetch_add_explicit(&s_outlier_count, 1, memory_order_relaxed);
+        uint32_t cur_max = atomic_load_explicit(&s_outlier_max_us, memory_order_relaxed);
+        while (latency_us > cur_max && !atomic_compare_exchange_weak_explicit(&s_outlier_max_us, &cur_max, latency_us, memory_order_relaxed, memory_order_relaxed)) {
+        }
     }
 }
 
@@ -72,4 +80,17 @@ void latency_stats_reset(void)
     atomic_store_explicit(&s_samples, 0, memory_order_relaxed);
     atomic_store_explicit(&s_max_us, 0, memory_order_relaxed);
     atomic_store_explicit(&s_deferred, 0, memory_order_relaxed);
+    atomic_store_explicit(&s_outlier_count, 0, memory_order_relaxed);
+    atomic_store_explicit(&s_outlier_max_us, 0, memory_order_relaxed);
+}
+
+bool latency_stats_drain_outlier(uint32_t *out_max_us, uint32_t *out_count)
+{
+    uint32_t count = atomic_exchange_explicit(&s_outlier_count, 0, memory_order_relaxed);
+    if (count == 0) {
+        return false;
+    }
+    if (out_count) *out_count = count;
+    if (out_max_us) *out_max_us = atomic_exchange_explicit(&s_outlier_max_us, 0, memory_order_relaxed);
+    return true;
 }

@@ -1,6 +1,7 @@
 #include "ui_store.h"
 #include "counters/counters.h"
 #include "runtime/runtime.h"
+#include "diag/diag.h"
 #include "nvs.h"
 #include "esp_log.h"
 #include <stdio.h>
@@ -136,12 +137,15 @@ esp_err_t ui_store_flush_dirty(void)
     }
 
     esp_err_t last_err = ESP_OK;
+    uint32_t flushed_count = 0;
     for (uint8_t i = 0; i < UI_SCREEN_COUNT; i++) {
         if (s_dirty_save_mask & (1 << i)) {
             s_dirty_save_mask &= ~(1 << i);
             esp_err_t err = ui_store_save(i, &s_pending_layouts[i]);
             if (err != ESP_OK) {
                 last_err = err;
+            } else {
+                flushed_count++;
             }
         }
         if (s_dirty_erase_mask & (1 << i)) {
@@ -149,8 +153,13 @@ esp_err_t ui_store_flush_dirty(void)
             esp_err_t err = ui_store_erase(i);
             if (err != ESP_OK) {
                 last_err = err;
+            } else {
+                flushed_count++;
             }
         }
+    }
+    if (flushed_count > 0) {
+        diag_record(DIAG_EVENT_DEFERRED_WRITE_FLUSHED, 1 /* INFO */, flushed_count, 0);
     }
     return last_err;
 }

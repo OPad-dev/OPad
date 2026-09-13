@@ -71,6 +71,16 @@ esp_err_t protocol_send_layout_ack(uint32_t seq, uint32_t screen, bool success, 
  */
 esp_err_t protocol_send_counter_sync_resp(uint32_t seq, bool success, const char *msg);
 
+/**
+ * @brief Send a batch of diagnostic log events to host over CDC (only in IDLE).
+ */
+esp_err_t protocol_send_log_batch(void);
+
+/**
+ * @brief Periodically check and drain diagnostic log events over CDC.
+ */
+void protocol_drain_diag_logs(void);
+
 #ifdef __cplusplus
 }
 #endif
