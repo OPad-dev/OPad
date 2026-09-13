@@ -207,7 +207,8 @@ impl RuntimeController {
                                 info.clone(),
                                 self.state.counters.clone(),
                             ));
-                            actions.push(RuntimeAction::TouchDeviceLastSeen(info.device_id.clone()));
+                            actions
+                                .push(RuntimeAction::TouchDeviceLastSeen(info.device_id.clone()));
                         } else {
                             self.pending_ops.pending_last_seen = Some(info.device_id.clone());
                         }
@@ -229,7 +230,8 @@ impl RuntimeController {
                                 info.clone(),
                                 self.state.counters.clone(),
                             ));
-                            actions.push(RuntimeAction::TouchDeviceLastSeen(info.device_id.clone()));
+                            actions
+                                .push(RuntimeAction::TouchDeviceLastSeen(info.device_id.clone()));
                         } else {
                             self.pending_ops.pending_last_seen = Some(info.device_id.clone());
                         }
@@ -431,7 +433,8 @@ impl RuntimeController {
 
                 // 5. Periodic idle sync and time sync
                 if self.state.device_connected && self.state.mode == RuntimeMode::Idle {
-                    if now.duration_since(self.last_periodic_time_sync) >= Duration::from_secs(600) {
+                    if now.duration_since(self.last_periodic_time_sync) >= Duration::from_secs(600)
+                    {
                         self.last_periodic_time_sync = now;
                         actions.push(RuntimeAction::SendTimeSync);
                     }

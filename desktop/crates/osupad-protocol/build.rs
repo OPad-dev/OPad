@@ -12,8 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("cargo:rerun-if-changed={}", proto_file.display());
 
-    prost_build::Config::new()
-        .compile_protos(&[proto_file], &[proto_dir])?;
+    prost_build::Config::new().compile_protos(&[proto_file], &[proto_dir])?;
 
     Ok(())
 }

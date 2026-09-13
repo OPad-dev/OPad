@@ -2,13 +2,15 @@ mod chrome;
 mod designer;
 mod ipc;
 mod pages;
+#[cfg(target_os = "linux")]
+mod platform_linux;
 mod single_instance;
 mod theme;
 mod tray;
-#[cfg(target_os = "linux")]
-mod platform_linux;
 
-use iced::widget::{button, checkbox, column, container, row, scrollable, stack, text, text_input, Space};
+use iced::widget::{
+    button, checkbox, column, container, row, scrollable, stack, text, text_input, Space,
+};
 use iced::{window, Alignment, Element, Length, Size, Subscription, Task};
 use osupad_ipc::{CurrentBackupState, IpcRequest, IpcResponse};
 use osupad_model::ui_source::SourceValue;
@@ -53,15 +55,19 @@ pub fn main() -> iced::Result {
     let start_hidden = std::env::args().any(|a| a == "--tray");
 
     // A daemon keeps running with no window open, living in the tray (Discord-style)
-    iced::daemon(move || App::new(start_hidden, target_page), App::update, App::view)
-        .title(App::title)
-        .theme(|_: &App, _| theme::theme())
-        .subscription(App::subscription)
-        .font(iced_aw::ICED_AW_FONT_BYTES)
-        .font(theme::FONT_MEDIUM_BYTES)
-        .font(theme::FONT_BOLD_BYTES)
-        .default_font(theme::FONT)
-        .run()
+    iced::daemon(
+        move || App::new(start_hidden, target_page),
+        App::update,
+        App::view,
+    )
+    .title(App::title)
+    .theme(|_: &App, _| theme::theme())
+    .subscription(App::subscription)
+    .font(iced_aw::ICED_AW_FONT_BYTES)
+    .font(theme::FONT_MEDIUM_BYTES)
+    .font(theme::FONT_BOLD_BYTES)
+    .default_font(theme::FONT)
+    .run()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -321,7 +327,10 @@ impl App {
                 None
             };
             tasks.push(Task::perform(
-                ipc::request(IpcRequest::GetLogEntries { since_seq, limit: 200 }),
+                ipc::request(IpcRequest::GetLogEntries {
+                    since_seq,
+                    limit: 200,
+                }),
                 Message::Logs,
             ));
         }
@@ -330,16 +339,28 @@ impl App {
 
     fn update_tray(&self) {
         if let Some(handle) = &self.tray {
-            let is_playing_or_cooldown = matches!(self.mode, RuntimeMode::Playing | RuntimeMode::Cooldown);
-            let k1 = if let Some(pc) = &self.pc_counters { pc.lifetime_key1 } else { self.counters.lifetime_key1 };
-            let k2 = if let Some(pc) = &self.pc_counters { pc.lifetime_key2 } else { self.counters.lifetime_key2 };
+            let is_playing_or_cooldown =
+                matches!(self.mode, RuntimeMode::Playing | RuntimeMode::Cooldown);
+            let k1 = if let Some(pc) = &self.pc_counters {
+                pc.lifetime_key1
+            } else {
+                self.counters.lifetime_key1
+            };
+            let k2 = if let Some(pc) = &self.pc_counters {
+                pc.lifetime_key2
+            } else {
+                self.counters.lifetime_key2
+            };
             tray::update(
                 handle,
                 tray::TrayStatus {
                     daemon_online: self.daemon_online,
                     device_connected: self.device_connected,
                     incompatible: self.incompatible.is_some(),
-                    firmware_version: self.device_info.as_ref().map(|i| i.firmware_version.clone()),
+                    firmware_version: self
+                        .device_info
+                        .as_ref()
+                        .map(|i| i.firmware_version.clone()),
                     key1_presses: k1,
                     key2_presses: k2,
                     last_sync_time: self.last_sync_time.clone(),
@@ -421,7 +442,11 @@ impl App {
                 }
             }
             Message::Logs(result) => {
-                if let Ok(IpcResponse::LogEntries { entries, latest_seq }) = result {
+                if let Ok(IpcResponse::LogEntries {
+                    entries,
+                    latest_seq,
+                }) = result
+                {
                     if self.latest_log_seq == 0 {
                         self.logs = entries;
                     } else {
@@ -457,13 +482,11 @@ impl App {
                 let text = self.formatted_visible_logs().join("\n");
                 return Task::perform(save_logs_dialog(text), Message::LogsSaved);
             }
-            Message::LogsSaved(res) => {
-                match res {
-                    Ok(path) => self.banner = Some(format!("Saved log to {}", path)),
-                    Err(e) if e.is_empty() => {}
-                    Err(e) => self.banner = Some(format!("Failed to save log: {}", e)),
-                }
-            }
+            Message::LogsSaved(res) => match res {
+                Ok(path) => self.banner = Some(format!("Saved log to {}", path)),
+                Err(e) if e.is_empty() => {}
+                Err(e) => self.banner = Some(format!("Failed to save log: {}", e)),
+            },
             Message::ToggleAutoScroll => {
                 self.log_auto_scroll = !self.log_auto_scroll;
             }
@@ -472,29 +495,28 @@ impl App {
                     self.banner = Some("Cannot export backup during gameplay or cooldown.".into());
                     return Task::none();
                 }
-                return Task::perform(ipc::request(IpcRequest::ExportBackup), Message::ExportBackupReceived);
+                return Task::perform(
+                    ipc::request(IpcRequest::ExportBackup),
+                    Message::ExportBackupReceived,
+                );
             }
-            Message::ExportBackupReceived(result) => {
-                match result {
-                    Ok(IpcResponse::BackupExported(backup)) => {
-                        return Task::perform(export_backup_dialog(backup), Message::ExportBackupDone);
-                    }
-                    Ok(IpcResponse::OperationRejected { reason }) => {
-                        self.banner = Some(format!("Export rejected: {}", reason));
-                    }
-                    Ok(IpcResponse::Error(e)) | Err(e) => {
-                        self.banner = Some(format!("Export error: {}", e));
-                    }
-                    _ => {}
+            Message::ExportBackupReceived(result) => match result {
+                Ok(IpcResponse::BackupExported(backup)) => {
+                    return Task::perform(export_backup_dialog(backup), Message::ExportBackupDone);
                 }
-            }
-            Message::ExportBackupDone(result) => {
-                match result {
-                    Ok(path) => self.banner = Some(format!("Backup exported to {}", path)),
-                    Err(e) if e.is_empty() => {}
-                    Err(e) => self.banner = Some(format!("Export failed: {}", e)),
+                Ok(IpcResponse::OperationRejected { reason }) => {
+                    self.banner = Some(format!("Export rejected: {}", reason));
                 }
-            }
+                Ok(IpcResponse::Error(e)) | Err(e) => {
+                    self.banner = Some(format!("Export error: {}", e));
+                }
+                _ => {}
+            },
+            Message::ExportBackupDone(result) => match result {
+                Ok(path) => self.banner = Some(format!("Backup exported to {}", path)),
+                Err(e) if e.is_empty() => {}
+                Err(e) => self.banner = Some(format!("Export failed: {}", e)),
+            },
             Message::StartImportBackup => {
                 if matches!(self.mode, RuntimeMode::Playing | RuntimeMode::Cooldown) {
                     self.banner = Some("Cannot import backup during gameplay or cooldown.".into());
@@ -502,42 +524,41 @@ impl App {
                 }
                 return Task::perform(pick_backup_dialog(), Message::FilePickedForImport);
             }
-            Message::FilePickedForImport(result) => {
-                match result {
-                    Ok(backup) => {
-                        return Task::perform(ipc::request(IpcRequest::PreviewImport(backup)), Message::ImportPreviewReady);
-                    }
-                    Err(e) if e.is_empty() => {}
-                    Err(e) => self.banner = Some(e),
+            Message::FilePickedForImport(result) => match result {
+                Ok(backup) => {
+                    return Task::perform(
+                        ipc::request(IpcRequest::PreviewImport(backup)),
+                        Message::ImportPreviewReady,
+                    );
                 }
-            }
-            Message::ImportPreviewReady(result) => {
-                match result {
-                    Ok(IpcResponse::ImportPreview {
+                Err(e) if e.is_empty() => {}
+                Err(e) => self.banner = Some(e),
+            },
+            Message::ImportPreviewReady(result) => match result {
+                Ok(IpcResponse::ImportPreview {
+                    current,
+                    incoming,
+                    device_id_matches,
+                    is_counter_rollback,
+                    warnings,
+                }) => {
+                    self.import_modal = Some(ImportModalState {
                         current,
                         incoming,
                         device_id_matches,
                         is_counter_rollback,
                         warnings,
-                    }) => {
-                        self.import_modal = Some(ImportModalState {
-                            current,
-                            incoming,
-                            device_id_matches,
-                            is_counter_rollback,
-                            warnings,
-                            rollback_confirmed: false,
-                        });
-                    }
-                    Ok(IpcResponse::OperationRejected { reason }) => {
-                        self.banner = Some(format!("Import rejected: {}", reason));
-                    }
-                    Ok(IpcResponse::Error(e)) | Err(e) => {
-                        self.banner = Some(format!("Preview failed: {}", e));
-                    }
-                    _ => {}
+                        rollback_confirmed: false,
+                    });
                 }
-            }
+                Ok(IpcResponse::OperationRejected { reason }) => {
+                    self.banner = Some(format!("Import rejected: {}", reason));
+                }
+                Ok(IpcResponse::Error(e)) | Err(e) => {
+                    self.banner = Some(format!("Preview failed: {}", e));
+                }
+                _ => {}
+            },
             Message::ToggleImportRollbackConfirm(confirmed) => {
                 if let Some(modal) = &mut self.import_modal {
                     modal.rollback_confirmed = confirmed;
@@ -558,30 +579,32 @@ impl App {
                     );
                 }
             }
-            Message::ImportCompleted(result) => {
-                match result {
-                    Ok(IpcResponse::BackupImported { success: true, counters, config }) => {
-                        self.counters = counters.clone();
-                        self.config = config.clone();
-                        self.k1_input = config.key1_char();
-                        self.k2_input = config.key2_char();
-                        self.debounce = config.debounce_us;
-                        self.brightness = config.brightness;
-                        self.sleep_seconds = config.display_sleep_seconds;
-                        self.banner = Some(format!(
-                            "Backup successfully imported and synced! (generation: {})",
-                            counters.counter_generation
-                        ));
-                    }
-                    Ok(IpcResponse::OperationRejected { reason }) => {
-                        self.banner = Some(format!("Import rejected: {}", reason));
-                    }
-                    Ok(IpcResponse::Error(e)) | Err(e) => {
-                        self.banner = Some(format!("Import failed: {}", e));
-                    }
-                    _ => {}
+            Message::ImportCompleted(result) => match result {
+                Ok(IpcResponse::BackupImported {
+                    success: true,
+                    counters,
+                    config,
+                }) => {
+                    self.counters = counters.clone();
+                    self.config = config.clone();
+                    self.k1_input = config.key1_char();
+                    self.k2_input = config.key2_char();
+                    self.debounce = config.debounce_us;
+                    self.brightness = config.brightness;
+                    self.sleep_seconds = config.display_sleep_seconds;
+                    self.banner = Some(format!(
+                        "Backup successfully imported and synced! (generation: {})",
+                        counters.counter_generation
+                    ));
                 }
-            }
+                Ok(IpcResponse::OperationRejected { reason }) => {
+                    self.banner = Some(format!("Import rejected: {}", reason));
+                }
+                Ok(IpcResponse::Error(e)) | Err(e) => {
+                    self.banner = Some(format!("Import failed: {}", e));
+                }
+                _ => {}
+            },
             Message::PromptRestoreDeviceFromPc => {
                 self.recovery_modal = Some(RecoveryAction::RestoreDeviceFromPc);
             }
@@ -607,29 +630,28 @@ impl App {
             Message::CancelRecoveryModal => {
                 self.recovery_modal = None;
             }
-            Message::RecoveryCompleted(result) => {
-                match result {
-                    Ok(IpcResponse::CountersRestored { counters }) => {
-                        self.counters = counters.clone();
-                        self.pc_counters = Some(counters.clone());
-                        self.esp_counters = Some(counters.clone());
-                        self.banner = Some(format!(
-                            "Counters synchronized! New generation: {}",
-                            counters.counter_generation
-                        ));
-                    }
-                    Ok(IpcResponse::OperationRejected { reason }) => {
-                        self.banner = Some(format!("Operation rejected: {}", reason));
-                    }
-                    Ok(IpcResponse::Error(e)) | Err(e) => {
-                        self.banner = Some(format!("Operation failed: {}", e));
-                    }
-                    _ => {}
+            Message::RecoveryCompleted(result) => match result {
+                Ok(IpcResponse::CountersRestored { counters }) => {
+                    self.counters = counters.clone();
+                    self.pc_counters = Some(counters.clone());
+                    self.esp_counters = Some(counters.clone());
+                    self.banner = Some(format!(
+                        "Counters synchronized! New generation: {}",
+                        counters.counter_generation
+                    ));
                 }
-            }
+                Ok(IpcResponse::OperationRejected { reason }) => {
+                    self.banner = Some(format!("Operation rejected: {}", reason));
+                }
+                Ok(IpcResponse::Error(e)) | Err(e) => {
+                    self.banner = Some(format!("Operation failed: {}", e));
+                }
+                _ => {}
+            },
             Message::PromptUpdateFirmware => {
                 if matches!(self.mode, RuntimeMode::Playing | RuntimeMode::Cooldown) {
-                    self.banner = Some("Cannot update firmware during active gameplay or cooldown".into());
+                    self.banner =
+                        Some("Cannot update firmware during active gameplay or cooldown".into());
                     return Task::none();
                 }
                 return Task::perform(pick_firmware_dialog(), Message::FirmwarePicked);
@@ -660,17 +682,15 @@ impl App {
                 self.banner = Some("Starting osupad-daemon...".into());
                 return Task::perform(start_daemon_process(), Message::DaemonStarted);
             }
-            Message::DaemonStarted(res) => {
-                match res {
-                    Ok(()) => {
-                        self.banner = Some("Launched osupad-daemon. Connecting...".into());
-                        return self.poll();
-                    }
-                    Err(e) => {
-                        self.banner = Some(format!("Failed to start daemon: {}", e));
-                    }
+            Message::DaemonStarted(res) => match res {
+                Ok(()) => {
+                    self.banner = Some("Launched osupad-daemon. Connecting...".into());
+                    return self.poll();
                 }
-            }
+                Err(e) => {
+                    self.banner = Some(format!("Failed to start daemon: {}", e));
+                }
+            },
             Message::InstallSystemdService => {
                 #[cfg(target_os = "linux")]
                 {
@@ -686,19 +706,21 @@ impl App {
                     self.banner = Some("Systemd services are only supported on Linux".into());
                 }
             }
-            Message::SystemdServiceInstalled(res) => {
-                match res {
-                    Ok(()) => {
-                        self.banner = Some("systemd service installed and started!".into());
-                        return self.poll();
-                    }
-                    Err(e) => {
-                        self.banner = Some(format!("Failed to install service: {}", e));
-                    }
+            Message::SystemdServiceInstalled(res) => match res {
+                Ok(()) => {
+                    self.banner = Some("systemd service installed and started!".into());
+                    return self.poll();
                 }
+                Err(e) => {
+                    self.banner = Some(format!("Failed to install service: {}", e));
+                }
+            },
+            Message::Key1(s) => {
+                self.k1_input = s.chars().take(1).collect::<String>().to_uppercase()
             }
-            Message::Key1(s) => self.k1_input = s.chars().take(1).collect::<String>().to_uppercase(),
-            Message::Key2(s) => self.k2_input = s.chars().take(1).collect::<String>().to_uppercase(),
+            Message::Key2(s) => {
+                self.k2_input = s.chars().take(1).collect::<String>().to_uppercase()
+            }
             Message::Debounce(v) => self.debounce = v,
             Message::Brightness(v) => self.brightness = v,
             Message::SleepSeconds(v) => self.sleep_seconds = v,
@@ -714,8 +736,10 @@ impl App {
             }
             Message::SaveConfig => {
                 let config = DeviceConfig {
-                    key1_hid_usage: char_to_hid_usage(&self.k1_input).unwrap_or(self.config.key1_hid_usage),
-                    key2_hid_usage: char_to_hid_usage(&self.k2_input).unwrap_or(self.config.key2_hid_usage),
+                    key1_hid_usage: char_to_hid_usage(&self.k1_input)
+                        .unwrap_or(self.config.key1_hid_usage),
+                    key2_hid_usage: char_to_hid_usage(&self.k2_input)
+                        .unwrap_or(self.config.key2_hid_usage),
                     debounce_us: self.debounce,
                     brightness: self.brightness,
                     display_sleep_seconds: self.sleep_seconds,
@@ -723,7 +747,10 @@ impl App {
                     ..self.config.clone()
                 };
                 self.banner = Some("Saving settings...".into());
-                return Task::perform(ipc::request(IpcRequest::UpdateConfig(config)), Message::ActionDone);
+                return Task::perform(
+                    ipc::request(IpcRequest::UpdateConfig(config)),
+                    Message::ActionDone,
+                );
             }
             Message::Sync => {
                 self.banner = Some("Syncing counters and clock with the pad...".into());
@@ -741,22 +768,39 @@ impl App {
             Message::ConfirmResetCounters => {
                 self.reset_modal = None;
                 self.banner = Some("Resetting lifetime counters...".into());
-                return Task::perform(ipc::request(IpcRequest::ResetCounters { confirm: true }), Message::ActionDone);
+                return Task::perform(
+                    ipc::request(IpcRequest::ResetCounters { confirm: true }),
+                    Message::ActionDone,
+                );
             }
             Message::ResolveReplacement(restore) => {
-                self.banner = Some(if restore { "Restoring counters from previous pad...".into() } else { "Adopting new pad...".into() });
-                return Task::perform(ipc::request(IpcRequest::ResolveReplacement { restore }), Message::ActionDone);
+                self.banner = Some(if restore {
+                    "Restoring counters from previous pad...".into()
+                } else {
+                    "Adopting new pad...".into()
+                });
+                return Task::perform(
+                    ipc::request(IpcRequest::ResolveReplacement { restore }),
+                    Message::ActionDone,
+                );
             }
             Message::ResetLatency => {
-                return Task::perform(ipc::request(IpcRequest::ResetLatencyStats), Message::ActionDone);
+                return Task::perform(
+                    ipc::request(IpcRequest::ResetLatencyStats),
+                    Message::ActionDone,
+                );
             }
             Message::ActionDone(result) => {
                 self.banner = Some(match result {
-                    Ok(IpcResponse::ConfigUpdated { .. }) => "Settings saved and sent to the pad".into(),
+                    Ok(IpcResponse::ConfigUpdated { .. }) => {
+                        "Settings saved and sent to the pad".into()
+                    }
                     Ok(IpcResponse::SyncCompleted { success: true, .. }) => "Pad synced".into(),
                     Ok(IpcResponse::CountersReset { .. }) => "Lifetime counters reset".into(),
                     Ok(IpcResponse::HandshakeAck { .. }) => "Latency statistics reset".into(),
-                    Ok(IpcResponse::OperationRejected { reason }) => format!("Not possible right now: {}", reason),
+                    Ok(IpcResponse::OperationRejected { reason }) => {
+                        format!("Not possible right now: {}", reason)
+                    }
                     Ok(IpcResponse::Error(e)) | Err(e) => format!("Error: {}", e),
                     Ok(other) => format!("Unexpected response: {:?}", other),
                 });
@@ -788,13 +832,17 @@ impl App {
                 return self.open_window();
             }
             Message::Window(action) => {
-                let Some(id) = self.window else { return Task::none() };
+                let Some(id) = self.window else {
+                    return Task::none();
+                };
                 return match action {
                     chrome::WindowAction::Drag => window::drag(id),
                     chrome::WindowAction::ToggleMaximize => window::toggle_maximize(id),
                     chrome::WindowAction::Minimize => window::minimize(id, true),
                     chrome::WindowAction::Close => self.update(Message::CloseRequested(id)),
-                    chrome::WindowAction::Resize(direction) if !self.maximized => window::drag_resize(id, direction),
+                    chrome::WindowAction::Resize(direction) if !self.maximized => {
+                        window::drag_resize(id, direction)
+                    }
                     chrome::WindowAction::Resize(_) => Task::none(),
                 };
             }
@@ -824,8 +872,12 @@ impl App {
                     self.page = Page::Monitor;
                     return self.open_window();
                 }
-                tray::TrayEvent::Action(tray::TrayAction::StartDaemon) => return self.update(Message::StartDaemon),
-                tray::TrayEvent::Action(tray::TrayAction::SyncNow) => return self.update(Message::Sync),
+                tray::TrayEvent::Action(tray::TrayAction::StartDaemon) => {
+                    return self.update(Message::StartDaemon)
+                }
+                tray::TrayEvent::Action(tray::TrayAction::SyncNow) => {
+                    return self.update(Message::Sync)
+                }
                 tray::TrayEvent::Action(tray::TrayAction::Quit) => return iced::exit(),
             },
         }
@@ -834,8 +886,14 @@ impl App {
 
     fn subscription(&self) -> Subscription<Message> {
         let mut subscriptions = vec![
-            iced::time::every(Duration::from_millis(if !self.daemon_online { 2000 } else if self.window.is_some() { 1000 } else { 3000 }))
-                .map(|_| Message::Poll),
+            iced::time::every(Duration::from_millis(if !self.daemon_online {
+                2000
+            } else if self.window.is_some() {
+                1000
+            } else {
+                3000
+            }))
+            .map(|_| Message::Poll),
             window::close_requests().map(Message::CloseRequested),
             window::resize_events().map(|_| Message::Resized),
             Subscription::run(tray::stream).map(Message::Tray),
@@ -873,9 +931,33 @@ impl App {
             column![
                 nav,
                 Space::new().height(Length::Fill),
-                status_line(self.device_connected, "Pad", if self.device_connected { "connected" } else { "offline" }),
-                status_line(self.tosu_connected, "tosu", if self.tosu_connected { "connected" } else { "offline" }),
-                status_line(self.daemon_online, "Daemon", if self.daemon_online { "running" } else { "offline" }),
+                status_line(
+                    self.device_connected,
+                    "Pad",
+                    if self.device_connected {
+                        "connected"
+                    } else {
+                        "offline"
+                    }
+                ),
+                status_line(
+                    self.tosu_connected,
+                    "tosu",
+                    if self.tosu_connected {
+                        "connected"
+                    } else {
+                        "offline"
+                    }
+                ),
+                status_line(
+                    self.daemon_online,
+                    "Daemon",
+                    if self.daemon_online {
+                        "running"
+                    } else {
+                        "offline"
+                    }
+                ),
                 Space::new().height(4),
                 theme::caption("Close the window to keep osu!pad in the tray"),
             ]
@@ -894,15 +976,17 @@ impl App {
             Page::Monitor => pages::monitor(self),
         };
 
-        let mut main = column![].spacing(14).padding(24).width(Length::Fill).height(Length::Fill);
+        let mut main = column![]
+            .spacing(14)
+            .padding(24)
+            .width(Length::Fill)
+            .height(Length::Fill);
 
         if !self.daemon_online {
-            let mut offline_actions = row![
-                button(text("Start daemon").size(12))
-                    .padding([6, 12])
-                    .style(theme::primary)
-                    .on_press(Message::StartDaemon),
-            ]
+            let mut offline_actions = row![button(text("Start daemon").size(12))
+                .padding([6, 12])
+                .style(theme::primary)
+                .on_press(Message::StartDaemon),]
             .spacing(8)
             .align_y(Alignment::Center);
 
@@ -962,11 +1046,19 @@ impl App {
             main = main.push(
                 container(
                     row![
-                        text(format!("This looks like a new pad. Restore counters from {}?", old_id)).size(14),
+                        text(format!(
+                            "This looks like a new pad. Restore counters from {}?",
+                            old_id
+                        ))
+                        .size(14),
                         Space::new().width(Length::Fill),
-                        button(text("Restore from previous pad").size(12)).style(theme::primary).on_press(Message::ResolveReplacement(true)),
+                        button(text("Restore from previous pad").size(12))
+                            .style(theme::primary)
+                            .on_press(Message::ResolveReplacement(true)),
                         Space::new().width(8),
-                        button(text("Treat as new pad").size(12)).style(theme::secondary).on_press(Message::ResolveReplacement(false)),
+                        button(text("Treat as new pad").size(12))
+                            .style(theme::secondary)
+                            .on_press(Message::ResolveReplacement(false)),
                     ]
                     .align_y(Alignment::Center),
                 )
@@ -980,7 +1072,9 @@ impl App {
                     row![
                         text(banner).size(14),
                         Space::new().width(Length::Fill),
-                        button(text("Dismiss").size(12)).style(theme::secondary).on_press(Message::DismissBanner),
+                        button(text("Dismiss").size(12))
+                            .style(theme::secondary)
+                            .on_press(Message::DismissBanner),
                     ]
                     .align_y(Alignment::Center),
                 )
@@ -990,38 +1084,69 @@ impl App {
         }
         main = main.push(page);
 
-        let body = column![chrome::title_bar(self.maximized), row![sidebar, main].height(Length::Fill)];
+        let body = column![
+            chrome::title_bar(self.maximized),
+            row![sidebar, main].height(Length::Fill)
+        ];
         let framed = container(body).style(chrome::frame);
 
         if let Some(input_text) = &self.reset_modal {
             let modal_box = container(
                 column![
-                    text("Reset Lifetime Counters").size(20).font(theme::FONT_BOLD).color(theme::RED),
-                    text("This action will permanently reset hardware and database counters to 0.").size(13).color(theme::MUTED),
+                    text("Reset Lifetime Counters")
+                        .size(20)
+                        .font(theme::FONT_BOLD)
+                        .color(theme::RED),
+                    text("This action will permanently reset hardware and database counters to 0.")
+                        .size(13)
+                        .color(theme::MUTED),
                     Space::new().height(6),
-                    text(format!("Key 1 (K1): {} presses", self.counters.lifetime_key1)).size(14),
-                    text(format!("Key 2 (K2): {} presses", self.counters.lifetime_key2)).size(14),
-                    text(format!("Total: {} presses", self.counters.total_lifetime_presses())).size(14).font(theme::FONT_BOLD),
+                    text(format!(
+                        "Key 1 (K1): {} presses",
+                        self.counters.lifetime_key1
+                    ))
+                    .size(14),
+                    text(format!(
+                        "Key 2 (K2): {} presses",
+                        self.counters.lifetime_key2
+                    ))
+                    .size(14),
+                    text(format!(
+                        "Total: {} presses",
+                        self.counters.total_lifetime_presses()
+                    ))
+                    .size(14)
+                    .font(theme::FONT_BOLD),
                     Space::new().height(10),
-                    text("Type RESET below to confirm:").size(13).color(theme::MUTED),
+                    text("Type RESET below to confirm:")
+                        .size(13)
+                        .color(theme::MUTED),
                     text_input("RESET", input_text)
                         .on_input(Message::ResetModalInput)
                         .padding(10)
                         .size(14),
                     Space::new().height(14),
                     row![
-                        button(text("Cancel").size(14)).padding([10, 20]).style(theme::secondary).on_press(Message::CancelResetModal),
+                        button(text("Cancel").size(14))
+                            .padding([10, 20])
+                            .style(theme::secondary)
+                            .on_press(Message::CancelResetModal),
                         Space::new().width(Length::Fill),
                         if input_text == "RESET" {
-                            button(text("Confirm Reset").size(14)).padding([10, 20]).style(theme::danger).on_press(Message::ConfirmResetCounters)
+                            button(text("Confirm Reset").size(14))
+                                .padding([10, 20])
+                                .style(theme::danger)
+                                .on_press(Message::ConfirmResetCounters)
                         } else {
-                            button(text("Confirm Reset").size(14)).padding([10, 20]).style(theme::secondary)
+                            button(text("Confirm Reset").size(14))
+                                .padding([10, 20])
+                                .style(theme::secondary)
                         }
                     ]
                 ]
                 .spacing(8)
                 .padding(24)
-                .width(420)
+                .width(420),
             )
             .style(theme::card);
 
@@ -1031,7 +1156,13 @@ impl App {
                 .center_x(Length::Fill)
                 .center_y(Length::Fill)
                 .style(|_| container::Style {
-                    background: Some(iced::Color { a: 0.75, ..theme::BG }.into()),
+                    background: Some(
+                        iced::Color {
+                            a: 0.75,
+                            ..theme::BG
+                        }
+                        .into(),
+                    ),
                     ..Default::default()
                 });
 
@@ -1043,14 +1174,24 @@ impl App {
         }
 
         if let Some(modal) = &self.import_modal {
-            let cur_dev = modal.current.as_ref().map(|c| c.device_id.as_str()).unwrap_or("None");
+            let cur_dev = modal
+                .current
+                .as_ref()
+                .map(|c| c.device_id.as_str())
+                .unwrap_or("None");
             let inc_dev = modal.incoming.device.device_id.as_str();
 
             let mut modal_col = column![
-                text("Import Backup Preview").size(20).font(theme::FONT_BOLD).color(theme::WHITE),
-                text("Review the changes before applying this backup to your pad and host.").size(13).color(theme::MUTED),
+                text("Import Backup Preview")
+                    .size(20)
+                    .font(theme::FONT_BOLD)
+                    .color(theme::WHITE),
+                text("Review the changes before applying this backup to your pad and host.")
+                    .size(13)
+                    .color(theme::MUTED),
                 Space::new().height(6),
-            ].spacing(8);
+            ]
+            .spacing(8);
 
             if !modal.device_id_matches {
                 modal_col = modal_col.push(
@@ -1068,49 +1209,112 @@ impl App {
             let inc_k1 = modal.incoming.stats.lifetime_key1;
             let cur_k2 = modal.current.as_ref().map(|c| c.lifetime_key2).unwrap_or(0);
             let inc_k2 = modal.incoming.stats.lifetime_key2;
-            let cur_gen = modal.current.as_ref().map(|c| c.counter_generation).unwrap_or(0);
+            let cur_gen = modal
+                .current
+                .as_ref()
+                .map(|c| c.counter_generation)
+                .unwrap_or(0);
             let next_gen = cur_gen + 1;
 
-            let k1_color = if inc_k1 < cur_k1 { theme::RED } else { theme::WHITE };
-            let k2_color = if inc_k2 < cur_k2 { theme::RED } else { theme::WHITE };
+            let k1_color = if inc_k1 < cur_k1 {
+                theme::RED
+            } else {
+                theme::WHITE
+            };
+            let k2_color = if inc_k2 < cur_k2 {
+                theme::RED
+            } else {
+                theme::WHITE
+            };
 
-            let cur_k1_str = modal.current.as_ref().map(|c| c.config.key1_char()).unwrap_or_else(|| "Z".to_string());
-            let cur_k2_str = modal.current.as_ref().map(|c| c.config.key2_char()).unwrap_or_else(|| "X".to_string());
+            let cur_k1_str = modal
+                .current
+                .as_ref()
+                .map(|c| c.config.key1_char())
+                .unwrap_or_else(|| "Z".to_string());
+            let cur_k2_str = modal
+                .current
+                .as_ref()
+                .map(|c| c.config.key2_char())
+                .unwrap_or_else(|| "X".to_string());
 
             let table = column![
                 row![
-                    text("Field").size(12).color(theme::MUTED).width(Length::FillPortion(2)),
-                    text("Current").size(12).color(theme::MUTED).width(Length::FillPortion(3)),
-                    text("Incoming").size(12).color(theme::MUTED).width(Length::FillPortion(3)),
+                    text("Field")
+                        .size(12)
+                        .color(theme::MUTED)
+                        .width(Length::FillPortion(2)),
+                    text("Current")
+                        .size(12)
+                        .color(theme::MUTED)
+                        .width(Length::FillPortion(3)),
+                    text("Incoming")
+                        .size(12)
+                        .color(theme::MUTED)
+                        .width(Length::FillPortion(3)),
                 ],
                 row![
                     text("Generation").size(13).width(Length::FillPortion(2)),
-                    text(format!("{}", cur_gen)).size(13).width(Length::FillPortion(3)),
-                    text(format!("{} (+1)", next_gen)).size(13).color(theme::CYAN).width(Length::FillPortion(3)),
+                    text(format!("{}", cur_gen))
+                        .size(13)
+                        .width(Length::FillPortion(3)),
+                    text(format!("{} (+1)", next_gen))
+                        .size(13)
+                        .color(theme::CYAN)
+                        .width(Length::FillPortion(3)),
                 ],
                 row![
                     text("Key 1").size(13).width(Length::FillPortion(2)),
-                    text(format!("{} ({} presses)", cur_k1_str, cur_k1)).size(13).width(Length::FillPortion(3)),
-                    text(format!("{} ({} presses)", modal.incoming.config.key1, inc_k1)).size(13).color(k1_color).width(Length::FillPortion(3)),
+                    text(format!("{} ({} presses)", cur_k1_str, cur_k1))
+                        .size(13)
+                        .width(Length::FillPortion(3)),
+                    text(format!(
+                        "{} ({} presses)",
+                        modal.incoming.config.key1, inc_k1
+                    ))
+                    .size(13)
+                    .color(k1_color)
+                    .width(Length::FillPortion(3)),
                 ],
                 row![
                     text("Key 2").size(13).width(Length::FillPortion(2)),
-                    text(format!("{} ({} presses)", cur_k2_str, cur_k2)).size(13).width(Length::FillPortion(3)),
-                    text(format!("{} ({} presses)", modal.incoming.config.key2, inc_k2)).size(13).color(k2_color).width(Length::FillPortion(3)),
+                    text(format!("{} ({} presses)", cur_k2_str, cur_k2))
+                        .size(13)
+                        .width(Length::FillPortion(3)),
+                    text(format!(
+                        "{} ({} presses)",
+                        modal.incoming.config.key2, inc_k2
+                    ))
+                    .size(13)
+                    .color(k2_color)
+                    .width(Length::FillPortion(3)),
                 ],
                 row![
                     text("Debounce").size(13).width(Length::FillPortion(2)),
-                    text(format!("{} µs", modal.current.as_ref().map(|c| c.config.debounce_us).unwrap_or(0))).size(13).width(Length::FillPortion(3)),
-                    text(format!("{} µs", modal.incoming.config.debounce_us)).size(13).width(Length::FillPortion(3)),
+                    text(format!(
+                        "{} µs",
+                        modal
+                            .current
+                            .as_ref()
+                            .map(|c| c.config.debounce_us)
+                            .unwrap_or(0)
+                    ))
+                    .size(13)
+                    .width(Length::FillPortion(3)),
+                    text(format!("{} µs", modal.incoming.config.debounce_us))
+                        .size(13)
+                        .width(Length::FillPortion(3)),
                 ],
-            ].spacing(6);
+            ]
+            .spacing(6);
 
             modal_col = modal_col.push(table);
 
             if !modal.warnings.is_empty() {
                 let mut warn_col = column![theme::caption("WARNINGS:")].spacing(4);
                 for w in &modal.warnings {
-                    warn_col = warn_col.push(text(format!("• {}", w)).size(12).color(theme::YELLOW));
+                    warn_col =
+                        warn_col.push(text(format!("• {}", w)).size(12).color(theme::YELLOW));
                 }
                 modal_col = modal_col.push(warn_col);
             }
@@ -1127,13 +1331,20 @@ impl App {
             let can_apply = !modal.is_counter_rollback || modal.rollback_confirmed;
             let mut apply_btn = button(text("Apply Backup").size(14))
                 .padding([10, 20])
-                .style(if can_apply { theme::primary } else { theme::secondary });
+                .style(if can_apply {
+                    theme::primary
+                } else {
+                    theme::secondary
+                });
             if can_apply {
                 apply_btn = apply_btn.on_press(Message::ConfirmApplyImport);
             }
 
             let actions_row = row![
-                button(text("Cancel").size(14)).padding([10, 20]).style(theme::secondary).on_press(Message::CancelImportModal),
+                button(text("Cancel").size(14))
+                    .padding([10, 20])
+                    .style(theme::secondary)
+                    .on_press(Message::CancelImportModal),
                 Space::new().width(Length::Fill),
                 apply_btn,
             ];
@@ -1150,7 +1361,13 @@ impl App {
                 .center_x(Length::Fill)
                 .center_y(Length::Fill)
                 .style(|_| container::Style {
-                    background: Some(iced::Color { a: 0.75, ..theme::BG }.into()),
+                    background: Some(
+                        iced::Color {
+                            a: 0.75,
+                            ..theme::BG
+                        }
+                        .into(),
+                    ),
                     ..Default::default()
                 });
 
@@ -1175,52 +1392,98 @@ impl App {
                 ),
             };
 
-            let pc_k1 = self.pc_counters.as_ref().map(|c| c.lifetime_key1).unwrap_or(0);
-            let pc_k2 = self.pc_counters.as_ref().map(|c| c.lifetime_key2).unwrap_or(0);
-            let esp_k1 = self.esp_counters.as_ref().map(|c| c.lifetime_key1).unwrap_or(self.counters.lifetime_key1);
-            let esp_k2 = self.esp_counters.as_ref().map(|c| c.lifetime_key2).unwrap_or(self.counters.lifetime_key2);
+            let pc_k1 = self
+                .pc_counters
+                .as_ref()
+                .map(|c| c.lifetime_key1)
+                .unwrap_or(0);
+            let pc_k2 = self
+                .pc_counters
+                .as_ref()
+                .map(|c| c.lifetime_key2)
+                .unwrap_or(0);
+            let esp_k1 = self
+                .esp_counters
+                .as_ref()
+                .map(|c| c.lifetime_key1)
+                .unwrap_or(self.counters.lifetime_key1);
+            let esp_k2 = self
+                .esp_counters
+                .as_ref()
+                .map(|c| c.lifetime_key2)
+                .unwrap_or(self.counters.lifetime_key2);
 
             let modal_box = container(
                 column![
-                    text(title).size(20).font(theme::FONT_BOLD).color(theme::WHITE),
+                    text(title)
+                        .size(20)
+                        .font(theme::FONT_BOLD)
+                        .color(theme::WHITE),
                     text(desc).size(13).color(theme::MUTED),
                     Space::new().height(8),
                     container(
                         column![
                             row![
                                 text("").width(Length::FillPortion(2)),
-                                text("PC Database").size(12).color(theme::MUTED).width(Length::FillPortion(3)),
-                                text("PAD Hardware").size(12).color(theme::MUTED).width(Length::FillPortion(3)),
+                                text("PC Database")
+                                    .size(12)
+                                    .color(theme::MUTED)
+                                    .width(Length::FillPortion(3)),
+                                text("PAD Hardware")
+                                    .size(12)
+                                    .color(theme::MUTED)
+                                    .width(Length::FillPortion(3)),
                             ],
                             row![
                                 text("Key 1").size(13).width(Length::FillPortion(2)),
-                                text(format!("{} presses", pc_k1)).size(13).width(Length::FillPortion(3)),
-                                text(format!("{} presses", esp_k1)).size(13).width(Length::FillPortion(3)),
+                                text(format!("{} presses", pc_k1))
+                                    .size(13)
+                                    .width(Length::FillPortion(3)),
+                                text(format!("{} presses", esp_k1))
+                                    .size(13)
+                                    .width(Length::FillPortion(3)),
                             ],
                             row![
                                 text("Key 2").size(13).width(Length::FillPortion(2)),
-                                text(format!("{} presses", pc_k2)).size(13).width(Length::FillPortion(3)),
-                                text(format!("{} presses", esp_k2)).size(13).width(Length::FillPortion(3)),
+                                text(format!("{} presses", pc_k2))
+                                    .size(13)
+                                    .width(Length::FillPortion(3)),
+                                text(format!("{} presses", esp_k2))
+                                    .size(13)
+                                    .width(Length::FillPortion(3)),
                             ],
                             row![
                                 text("Total").size(13).width(Length::FillPortion(2)),
-                                text(format!("{} presses", pc_k1 + pc_k2)).size(13).font(theme::FONT_BOLD).width(Length::FillPortion(3)),
-                                text(format!("{} presses", esp_k1 + esp_k2)).size(13).font(theme::FONT_BOLD).width(Length::FillPortion(3)),
+                                text(format!("{} presses", pc_k1 + pc_k2))
+                                    .size(13)
+                                    .font(theme::FONT_BOLD)
+                                    .width(Length::FillPortion(3)),
+                                text(format!("{} presses", esp_k1 + esp_k2))
+                                    .size(13)
+                                    .font(theme::FONT_BOLD)
+                                    .width(Length::FillPortion(3)),
                             ],
-                        ].spacing(6)
+                        ]
+                        .spacing(6)
                     )
                     .padding(12)
                     .style(theme::card),
                     Space::new().height(12),
                     row![
-                        button(text("Cancel").size(14)).padding([10, 20]).style(theme::secondary).on_press(Message::CancelRecoveryModal),
+                        button(text("Cancel").size(14))
+                            .padding([10, 20])
+                            .style(theme::secondary)
+                            .on_press(Message::CancelRecoveryModal),
                         Space::new().width(Length::Fill),
-                        button(text("Confirm").size(14)).padding([10, 20]).style(theme::danger).on_press(confirm_msg),
+                        button(text("Confirm").size(14))
+                            .padding([10, 20])
+                            .style(theme::danger)
+                            .on_press(confirm_msg),
                     ]
                 ]
                 .spacing(10)
                 .padding(24)
-                .width(460)
+                .width(460),
             )
             .style(theme::card);
 
@@ -1230,7 +1493,13 @@ impl App {
                 .center_x(Length::Fill)
                 .center_y(Length::Fill)
                 .style(|_| container::Style {
-                    background: Some(iced::Color { a: 0.75, ..theme::BG }.into()),
+                    background: Some(
+                        iced::Color {
+                            a: 0.75,
+                            ..theme::BG
+                        }
+                        .into(),
+                    ),
                     ..Default::default()
                 });
 
@@ -1243,18 +1512,23 @@ impl App {
 
         if let Some(modal) = &self.flash_modal {
             let status_text = match modal.success {
-                None => text("Flashing firmware in progress... Please do not disconnect pad.").size(14).color(theme::YELLOW),
-                Some(true) => text("✓ Firmware update completed successfully!").size(14).color(theme::GREEN),
-                Some(false) => text("✗ Firmware update failed. Check the log below.").size(14).color(theme::RED),
+                None => text("Flashing firmware in progress... Please do not disconnect pad.")
+                    .size(14)
+                    .color(theme::YELLOW),
+                Some(true) => text("✓ Firmware update completed successfully!")
+                    .size(14)
+                    .color(theme::GREEN),
+                Some(false) => text("✗ Firmware update failed. Check the log below.")
+                    .size(14)
+                    .color(theme::RED),
             };
 
-            let log_lines = column(
-                modal.output.iter().map(|line| {
-                    text(line).size(12).into()
-                })
-            ).spacing(4);
+            let log_lines =
+                column(modal.output.iter().map(|line| text(line).size(12).into())).spacing(4);
 
-            let mut close_btn = button(text("Close").size(14)).padding([10, 20]).style(theme::primary);
+            let mut close_btn = button(text("Close").size(14))
+                .padding([10, 20])
+                .style(theme::primary);
             if !modal.running {
                 close_btn = close_btn.on_press(Message::CloseFlashModal);
             } else {
@@ -1263,17 +1537,20 @@ impl App {
 
             let modal_box = container(
                 column![
-                    text("Firmware Flasher").size(20).font(theme::FONT_BOLD).color(theme::WHITE),
+                    text("Firmware Flasher")
+                        .size(20)
+                        .font(theme::FONT_BOLD)
+                        .color(theme::WHITE),
                     status_text,
-                    container(scrollable(log_lines).height(240)).padding(10).style(theme::card).height(240),
-                    row![
-                        Space::new().width(Length::Fill),
-                        close_btn,
-                    ]
+                    container(scrollable(log_lines).height(240))
+                        .padding(10)
+                        .style(theme::card)
+                        .height(240),
+                    row![Space::new().width(Length::Fill), close_btn,]
                 ]
                 .spacing(12)
                 .padding(24)
-                .width(540)
+                .width(540),
             )
             .style(theme::card);
 
@@ -1283,7 +1560,13 @@ impl App {
                 .center_x(Length::Fill)
                 .center_y(Length::Fill)
                 .style(|_| container::Style {
-                    background: Some(iced::Color { a: 0.75, ..theme::BG }.into()),
+                    background: Some(
+                        iced::Color {
+                            a: 0.75,
+                            ..theme::BG
+                        }
+                        .into(),
+                    ),
                     ..Default::default()
                 });
 
@@ -1305,8 +1588,8 @@ impl App {
         self.logs
             .iter()
             .filter(|e| e.seq > self.log_cleared_seq)
-            .filter(|e| self.log_filter_level.map_or(true, |l| e.level >= l))
-            .filter(|e| self.log_filter_source.map_or(true, |s| e.source == s))
+            .filter(|e| self.log_filter_level.is_none_or(|l| e.level >= l))
+            .filter(|e| self.log_filter_source.is_none_or(|s| e.source == s))
             .map(|e| e.format_line())
             .collect()
     }
@@ -1324,7 +1607,10 @@ async fn save_logs_dialog(content: String) -> Result<String, String> {
 }
 
 async fn export_backup_dialog(backup: JsonBackup) -> Result<String, String> {
-    let filename = format!("osupad-backup-{}.json", chrono::Local::now().format("%Y%m%d"));
+    let filename = format!(
+        "osupad-backup-{}.json",
+        chrono::Local::now().format("%Y%m%d")
+    );
     let file = rfd::AsyncFileDialog::new()
         .set_file_name(filename)
         .add_filter("JSON Backup", &["json"])
@@ -1342,9 +1628,13 @@ async fn pick_backup_dialog() -> Result<JsonBackup, String> {
         .pick_file()
         .await
         .ok_or_else(String::new)?;
-    let content = std::fs::read_to_string(file.path()).map_err(|e| format!("Failed to read file: {}", e))?;
-    let backup: JsonBackup = serde_json::from_str(&content).map_err(|e| format!("Malformed JSON backup: {}", e))?;
-    backup.validate().map_err(|e| format!("Backup validation error: {}", e))?;
+    let content =
+        std::fs::read_to_string(file.path()).map_err(|e| format!("Failed to read file: {}", e))?;
+    let backup: JsonBackup =
+        serde_json::from_str(&content).map_err(|e| format!("Malformed JSON backup: {}", e))?;
+    backup
+        .validate()
+        .map_err(|e| format!("Backup validation error: {}", e))?;
     Ok(backup)
 }
 
@@ -1375,9 +1665,7 @@ async fn run_flash_tool(path: std::path::PathBuf) -> (Vec<String>, bool) {
             }
             (lines, output.status.success())
         }
-        Err(e) => {
-            (vec![format!("Failed to execute flash tool: {}", e)], false)
-        }
+        Err(e) => (vec![format!("Failed to execute flash tool: {}", e)], false),
     }
 }
 

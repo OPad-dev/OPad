@@ -55,7 +55,9 @@ pub fn encode_device_message(msg: &proto::DeviceToHost) -> Result<Vec<u8>, Proto
 /// Attempts to decode one DeviceToHost message from the incoming stream buffer.
 /// Returns Ok(Some(msg)) if a complete frame is available, Ok(None) if more data is needed,
 /// or Err on invalid frames.
-pub fn decode_device_message(buf: &mut BytesMut) -> Result<Option<proto::DeviceToHost>, ProtocolError> {
+pub fn decode_device_message(
+    buf: &mut BytesMut,
+) -> Result<Option<proto::DeviceToHost>, ProtocolError> {
     if buf.len() < HEADER_BYTES {
         return Ok(None);
     }
@@ -83,7 +85,9 @@ pub fn decode_device_message(buf: &mut BytesMut) -> Result<Option<proto::DeviceT
 }
 
 /// Attempts to decode one HostToDevice message from the incoming stream buffer.
-pub fn decode_host_message(buf: &mut BytesMut) -> Result<Option<proto::HostToDevice>, ProtocolError> {
+pub fn decode_host_message(
+    buf: &mut BytesMut,
+) -> Result<Option<proto::HostToDevice>, ProtocolError> {
     if buf.len() < HEADER_BYTES {
         return Ok(None);
     }
@@ -143,17 +147,19 @@ mod tests {
     fn test_device_to_host_roundtrip() {
         let msg = proto::DeviceToHost {
             sequence_number: 101,
-            payload: Some(proto::device_to_host::Payload::Status(proto::DeviceStatus {
-                uptime_seconds: 3600,
-                state: proto::DeviceState::Idle as i32,
-                brightness: 80,
-                display_asleep: false,
-                lifetime_key1: 12345,
-                lifetime_key2: 67890,
-                map_key1: 50,
-                map_key2: 60,
-                ..Default::default()
-            })),
+            payload: Some(proto::device_to_host::Payload::Status(
+                proto::DeviceStatus {
+                    uptime_seconds: 3600,
+                    state: proto::DeviceState::Idle as i32,
+                    brightness: 80,
+                    display_asleep: false,
+                    lifetime_key1: 12345,
+                    lifetime_key2: 67890,
+                    map_key1: 50,
+                    map_key2: 60,
+                    ..Default::default()
+                },
+            )),
         };
 
         let encoded = encode_device_message(&msg).expect("encode should succeed");

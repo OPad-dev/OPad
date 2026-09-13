@@ -391,7 +391,12 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
         }));
 
         // Set storage writes blocked guard
-        storage.lock().unwrap().as_mut().unwrap().set_writes_allowed(false);
+        storage
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .set_writes_allowed(false);
 
         // 1. ForceSync rejected
         let r = handle_ipc_request(
@@ -482,8 +487,10 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
         assert!(matches!(r, IpcResponse::OperationRejected { .. }));
 
         // 8. UpdateConfig with key change is deferred (no storage write)
-        let mut new_cfg = DeviceConfig::default();
-        new_cfg.debounce_us = 5000;
+        let new_cfg = DeviceConfig {
+            debounce_us: 5000,
+            ..Default::default()
+        };
         let r = handle_ipc_request(
             IpcRequest::UpdateConfig(new_cfg),
             &daemon_state,
@@ -747,7 +754,11 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
     assert_eq!(device.sent_syncs.lock().unwrap().len(), 3);
     // Verify error is surfaced in daemon state
     let st = daemon_state.lock().unwrap();
-    assert!(st.last_sync_error.as_ref().unwrap().contains("flash write failure"));
+    assert!(st
+        .last_sync_error
+        .as_ref()
+        .unwrap()
+        .contains("flash write failure"));
 }
 
 // 7. JSON validation rules and preview/confirm (P1-5)

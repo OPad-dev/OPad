@@ -31,7 +31,12 @@ impl DataSync {
     }
 
     /// Changed values if the flush interval elapsed (or `force`); marks them as sent
-    pub fn take_changes(&mut self, playing: bool, playing_hz: u32, force: bool) -> Vec<(u8, SourceValue)> {
+    pub fn take_changes(
+        &mut self,
+        playing: bool,
+        playing_hz: u32,
+        force: bool,
+    ) -> Vec<(u8, SourceValue)> {
         let interval = if playing {
             flush_interval_playing(playing_hz)
         } else {
@@ -84,11 +89,20 @@ mod tests {
     #[test]
     fn only_changes_are_sent() {
         let mut sync = DataSync::default();
-        sync.ingest([(1, SourceValue::Text("a".into())), (20, SourceValue::Number(1.0))]);
+        sync.ingest([
+            (1, SourceValue::Text("a".into())),
+            (20, SourceValue::Number(1.0)),
+        ]);
         assert_eq!(sync.take_changes(true, 10, true).len(), 2);
 
-        sync.ingest([(1, SourceValue::Text("a".into())), (20, SourceValue::Number(2.0))]);
-        assert_eq!(sync.take_changes(true, 10, true), vec![(20, SourceValue::Number(2.0))]);
+        sync.ingest([
+            (1, SourceValue::Text("a".into())),
+            (20, SourceValue::Number(2.0)),
+        ]);
+        assert_eq!(
+            sync.take_changes(true, 10, true),
+            vec![(20, SourceValue::Number(2.0))]
+        );
 
         sync.reset_sent();
         assert_eq!(sync.take_changes(true, 10, true).len(), 2);

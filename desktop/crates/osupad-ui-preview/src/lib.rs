@@ -78,8 +78,16 @@ fn lvgl() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     let guard = LOCK
         .get_or_init(|| {
-            assert_eq!(unsafe { preview_sizeof_widget() }, std::mem::size_of::<RawWidget>(), "ui_widget_t layout mismatch");
-            assert_eq!(unsafe { preview_sizeof_layout() }, std::mem::size_of::<RawLayout>(), "ui_layout_t layout mismatch");
+            assert_eq!(
+                unsafe { preview_sizeof_widget() },
+                std::mem::size_of::<RawWidget>(),
+                "ui_widget_t layout mismatch"
+            );
+            assert_eq!(
+                unsafe { preview_sizeof_layout() },
+                std::mem::size_of::<RawLayout>(),
+                "ui_layout_t layout mismatch"
+            );
             unsafe { preview_init() };
             Mutex::new(())
         })
@@ -142,7 +150,11 @@ pub fn encode_png(rgba: &[u8], scale: usize) -> Vec<u8> {
         let mut encoder = png::Encoder::new(&mut out, w as u32, h as u32);
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
-        encoder.write_header().unwrap().write_image_data(&scaled).unwrap();
+        encoder
+            .write_header()
+            .unwrap()
+            .write_image_data(&scaled)
+            .unwrap();
     }
     out
 }
@@ -237,10 +249,29 @@ fn c_str(bytes: &[u8]) -> String {
 impl From<&osupad_layout::Layout> for RawLayout {
     fn from(layout: &osupad_layout::Layout) -> Self {
         let empty = RawWidget {
-            kind: 0, source: 0, font: 0, align: 0, x: 0, y: 0, w: 0, h: 0, fg: 0, bg: 0, accent: 0,
-            radius: 0, decimals: 0, flags: 0, reserved: 0, label: [0; LABEL_MAX], suffix: [0; SUFFIX_MAX],
+            kind: 0,
+            source: 0,
+            font: 0,
+            align: 0,
+            x: 0,
+            y: 0,
+            w: 0,
+            h: 0,
+            fg: 0,
+            bg: 0,
+            accent: 0,
+            radius: 0,
+            decimals: 0,
+            flags: 0,
+            reserved: 0,
+            label: [0; LABEL_MAX],
+            suffix: [0; SUFFIX_MAX],
         };
-        let mut raw = RawLayout { background: layout.background, count: 0, widgets: [empty; MAX_WIDGETS] };
+        let mut raw = RawLayout {
+            background: layout.background,
+            count: 0,
+            widgets: [empty; MAX_WIDGETS],
+        };
         for (slot, w) in raw.widgets.iter_mut().zip(&layout.widgets) {
             *slot = RawWidget {
                 kind: w.kind.to_wire(),
@@ -328,16 +359,29 @@ mod tests {
         for (id, name) in ALL {
             assert_eq!(source_name(*id).as_deref(), Some(*name), "source {}", id);
         }
-        let defined = (1..=u8::MAX).filter(|id| source_name(*id).is_some()).count();
-        assert_eq!(defined, ALL.len(), "firmware defines sources missing from osupad_model::ui_source");
+        let defined = (1..=u8::MAX)
+            .filter(|id| source_name(*id).is_some())
+            .count();
+        assert_eq!(
+            defined,
+            ALL.len(),
+            "firmware defines sources missing from osupad_model::ui_source"
+        );
     }
 
     #[test]
     fn model_round_trip_matches_defaults() {
         for screen in osupad_layout::Screen::ALL {
             let model = default_model(*screen);
-            assert!(model.validate().is_ok(), "default {:?} passes Rust validation", screen);
-            assert_eq!(RawLayout::from(&model), default_layout(screen.to_wire()).unwrap());
+            assert!(
+                model.validate().is_ok(),
+                "default {:?} passes Rust validation",
+                screen
+            );
+            assert_eq!(
+                RawLayout::from(&model),
+                default_layout(screen.to_wire()).unwrap()
+            );
         }
     }
 

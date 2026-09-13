@@ -1,6 +1,6 @@
+use chrono::Utc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use chrono::Utc;
 use tokio::sync::broadcast;
 use tracing::{error, info, warn};
 
@@ -62,7 +62,8 @@ impl DeviceLink for DeviceManager {
         is_playing: bool,
         play_id: u32,
     ) -> Result<(), DeviceError> {
-        self.send_host_status(tosu_connected, is_playing, play_id).await
+        self.send_host_status(tosu_connected, is_playing, play_id)
+            .await
     }
 
     async fn send_data_update(&self, values: &[(u8, SourceValue)]) -> Result<(), DeviceError> {
@@ -265,8 +266,7 @@ pub async fn perform_sync<D: DeviceLink>(
                         );
                     }
                     Err(_) => {
-                        last_error_msg =
-                            "Timeout waiting for CounterSyncResponse (2s)".to_string();
+                        last_error_msg = "Timeout waiting for CounterSyncResponse (2s)".to_string();
                         warn!(
                             "Timeout waiting for CounterSync response (attempt {})",
                             attempt + 1

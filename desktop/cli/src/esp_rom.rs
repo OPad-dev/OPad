@@ -26,16 +26,32 @@ pub fn reset_to_app(port_path: &str) -> Result<()> {
         .open()
         .with_context(|| format!("Failed to open {}", port_path))?;
 
-    write_reg(&mut *port, RTC_CNTL_OPTION1_REG, 0, true).context("Failed to clear FORCE_DOWNLOAD_BOOT")?;
-    write_reg(&mut *port, RTC_CNTL_WDTWPROTECT_REG, RTC_CNTL_WDT_WKEY, true)?;
+    write_reg(&mut *port, RTC_CNTL_OPTION1_REG, 0, true)
+        .context("Failed to clear FORCE_DOWNLOAD_BOOT")?;
+    write_reg(
+        &mut *port,
+        RTC_CNTL_WDTWPROTECT_REG,
+        RTC_CNTL_WDT_WKEY,
+        true,
+    )?;
     write_reg(&mut *port, RTC_CNTL_WDTCONFIG1_REG, 2000, true)?;
-    write_reg(&mut *port, RTC_CNTL_WDTCONFIG0_REG, RTC_WDT_CONFIG0_RESET_RTC, true)?;
+    write_reg(
+        &mut *port,
+        RTC_CNTL_WDTCONFIG0_REG,
+        RTC_WDT_CONFIG0_RESET_RTC,
+        true,
+    )?;
     // The chip may reset before it answers the final write
     write_reg(&mut *port, RTC_CNTL_WDTWPROTECT_REG, 0, false)?;
     Ok(())
 }
 
-fn write_reg(port: &mut dyn serialport::SerialPort, addr: u32, value: u32, expect_reply: bool) -> Result<()> {
+fn write_reg(
+    port: &mut dyn serialport::SerialPort,
+    addr: u32,
+    value: u32,
+    expect_reply: bool,
+) -> Result<()> {
     let mut data = Vec::with_capacity(16);
     for word in [addr, value, 0xFFFF_FFFF, 0] {
         data.extend_from_slice(&word.to_le_bytes());
@@ -55,10 +71,18 @@ fn write_reg(port: &mut dyn serialport::SerialPort, addr: u32, value: u32, expec
     let reply = read_slip_frame(port, Duration::from_secs(1))?;
     // Response: direction(0x01) cmd size(u16) value(u32) data... ending in status(0 = ok)
     if reply.len() < 10 || reply[0] != 0x01 || reply[1] != CMD_WRITE_REG {
-        bail!("Unexpected bootloader reply to WRITE_REG {:#010x}: {:02x?}", addr, reply);
+        bail!(
+            "Unexpected bootloader reply to WRITE_REG {:#010x}: {:02x?}",
+            addr,
+            reply
+        );
     }
     if reply[8] != 0 {
-        bail!("Bootloader rejected WRITE_REG {:#010x} (status {:#04x})", addr, reply[8]);
+        bail!(
+            "Bootloader rejected WRITE_REG {:#010x} (status {:#04x})",
+            addr,
+            reply[8]
+        );
     }
     Ok(())
 }
@@ -96,9 +120,18 @@ fn read_slip_frame(port: &mut dyn serialport::SerialPort, timeout: Duration) -> 
             (0xC0, true, _) => return Ok(frame),
             (_, false, _) => {}
             (0xDB, true, false) => escaped = true,
-            (0xDC, true, true) => { frame.push(0xC0); escaped = false; }
-            (0xDD, true, true) => { frame.push(0xDB); escaped = false; }
-            (b, true, _) => { frame.push(b); escaped = false; }
+            (0xDC, true, true) => {
+                frame.push(0xC0);
+                escaped = false;
+            }
+            (0xDD, true, true) => {
+                frame.push(0xDB);
+                escaped = false;
+            }
+            (b, true, _) => {
+                frame.push(b);
+                escaped = false;
+            }
         }
     }
     bail!("Timed out waiting for bootloader reply")

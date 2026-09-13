@@ -2,6 +2,9 @@
 
 fn main() {
     for screen in osupad_layout::Screen::ALL {
-        println!("{}", serde_json::json!({ "screen": screen, "layout": osupad_ui_preview::default_model(*screen) }));
+        println!(
+            "{}",
+            serde_json::json!({ "screen": screen, "layout": osupad_ui_preview::default_model(*screen) })
+        );
     }
 }

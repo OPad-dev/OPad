@@ -79,11 +79,9 @@ impl Storage {
 
         let current_version: Option<i64> = self
             .conn
-            .query_row(
-                "SELECT MAX(version) FROM schema_migrations",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT MAX(version) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
             .optional()?
             .flatten();
 
@@ -143,7 +141,11 @@ impl Storage {
     /// Custom layout JSON for a screen, if one was saved
     pub fn load_layout(&self, screen: u8) -> Result<Option<String>, StorageError> {
         self.conn
-            .query_row("SELECT json FROM layouts WHERE screen = ?1", params![screen], |row| row.get(0))
+            .query_row(
+                "SELECT json FROM layouts WHERE screen = ?1",
+                params![screen],
+                |row| row.get(0),
+            )
             .optional()
             .map_err(StorageError::from)
     }
@@ -160,7 +162,8 @@ impl Storage {
 
     pub fn delete_layout(&self, screen: u8) -> Result<(), StorageError> {
         self.check_writes_allowed()?;
-        self.conn.execute("DELETE FROM layouts WHERE screen = ?1", params![screen])?;
+        self.conn
+            .execute("DELETE FROM layouts WHERE screen = ?1", params![screen])?;
         Ok(())
     }
 
@@ -205,24 +208,26 @@ impl Storage {
     }
 
     pub fn load_config(&self) -> Result<DeviceConfig, StorageError> {
-        self.conn.query_row(
-            "SELECT key1_hid_usage, key2_hid_usage, debounce_us, brightness,
+        self.conn
+            .query_row(
+                "SELECT key1_hid_usage, key2_hid_usage, debounce_us, brightness,
                     display_sleep_seconds, gameplay_display_hz, tosu_endpoint, press_color_rgb
              FROM config WHERE id = 1",
-            [],
-            |row| {
-                Ok(DeviceConfig {
-                    key1_hid_usage: row.get(0)?,
-                    key2_hid_usage: row.get(1)?,
-                    debounce_us: row.get(2)?,
-                    brightness: row.get(3)?,
-                    display_sleep_seconds: row.get(4)?,
-                    gameplay_display_hz: row.get(5)?,
-                    tosu_endpoint: row.get(6)?,
-                    press_color_rgb: row.get(7)?,
-                })
-            },
-        ).map_err(StorageError::from)
+                [],
+                |row| {
+                    Ok(DeviceConfig {
+                        key1_hid_usage: row.get(0)?,
+                        key2_hid_usage: row.get(1)?,
+                        debounce_us: row.get(2)?,
+                        brightness: row.get(3)?,
+                        display_sleep_seconds: row.get(4)?,
+                        gameplay_display_hz: row.get(5)?,
+                        tosu_endpoint: row.get(6)?,
+                        press_color_rgb: row.get(7)?,
+                    })
+                },
+            )
+            .map_err(StorageError::from)
     }
 
     pub fn save_config(&self, config: &DeviceConfig) -> Result<(), StorageError> {
@@ -313,7 +318,9 @@ impl Storage {
         Ok(list)
     }
 
-    pub fn load_latest_device_state(&self) -> Result<Option<(DeviceInfo, CounterState)>, StorageError> {
+    pub fn load_latest_device_state(
+        &self,
+    ) -> Result<Option<(DeviceInfo, CounterState)>, StorageError> {
         let states = self.list_device_states()?;
         Ok(states.into_iter().next())
     }
@@ -407,7 +414,10 @@ mod tests {
         assert_eq!(storage.load_layout(1).unwrap(), None);
         storage.save_layout(1, "{\"a\":1}").unwrap();
         storage.save_layout(1, "{\"a\":2}").unwrap();
-        assert_eq!(storage.load_layout(1).unwrap().as_deref(), Some("{\"a\":2}"));
+        assert_eq!(
+            storage.load_layout(1).unwrap().as_deref(),
+            Some("{\"a\":2}")
+        );
         storage.delete_layout(1).unwrap();
         assert_eq!(storage.load_layout(1).unwrap(), None);
     }
@@ -444,7 +454,9 @@ mod tests {
             map_key2: 20,
         };
 
-        storage.save_device_state(&info, &counters).expect("save_state");
+        storage
+            .save_device_state(&info, &counters)
+            .expect("save_state");
         let fetched = storage
             .load_device_state("test-dev-01")
             .expect("load_state")
@@ -563,16 +575,31 @@ mod tests {
         assert_eq!(cfg.gameplay_display_hz, 10);
 
         // Manually update to 5, reset migration version to 3, and run migrate()
-        storage.conn.execute("UPDATE config SET gameplay_display_hz = 5 WHERE id = 1", []).unwrap();
-        storage.conn.execute("DELETE FROM schema_migrations WHERE version = 4", []).unwrap();
+        storage
+            .conn
+            .execute("UPDATE config SET gameplay_display_hz = 5 WHERE id = 1", [])
+            .unwrap();
+        storage
+            .conn
+            .execute("DELETE FROM schema_migrations WHERE version = 4", [])
+            .unwrap();
         storage.migrate().unwrap();
 
         let migrated = storage.load_config().unwrap();
         assert_eq!(migrated.gameplay_display_hz, 10);
 
         // A custom value (e.g. 20) should not be altered by v4
-        storage.conn.execute("UPDATE config SET gameplay_display_hz = 20 WHERE id = 1", []).unwrap();
-        storage.conn.execute("DELETE FROM schema_migrations WHERE version = 4", []).unwrap();
+        storage
+            .conn
+            .execute(
+                "UPDATE config SET gameplay_display_hz = 20 WHERE id = 1",
+                [],
+            )
+            .unwrap();
+        storage
+            .conn
+            .execute("DELETE FROM schema_migrations WHERE version = 4", [])
+            .unwrap();
         storage.migrate().unwrap();
 
         let custom = storage.load_config().unwrap();

@@ -291,7 +291,9 @@ impl SourceInfo {
         let mut words: Vec<String> = short.split('_').map(str::to_string).collect();
         for word in &mut words {
             *word = match word.as_str() {
-                "pp" | "ur" | "bpm" | "ar" | "cs" | "od" | "hp" | "kps" | "pc" => word.to_uppercase(),
+                "pp" | "ur" | "bpm" | "ar" | "cs" | "od" | "hp" | "kps" | "pc" => {
+                    word.to_uppercase()
+                }
                 "k1" | "k2" => word.to_uppercase(),
                 _ => word.clone(),
             };
@@ -314,23 +316,30 @@ impl std::fmt::Display for SourceInfo {
     }
 }
 
-pub const STATIC_SOURCE: SourceInfo = SourceInfo { id: 0, key: "none", category: SourceCategory::Static };
+pub const STATIC_SOURCE: SourceInfo = SourceInfo {
+    id: 0,
+    key: "none",
+    category: SourceCategory::Static,
+};
 
 pub fn source_info(id: u8) -> Option<SourceInfo> {
     if id == 0 {
         return Some(STATIC_SOURCE);
     }
-    ui_source::ALL.iter().find(|(sid, _)| *sid == id).map(|(id, key)| SourceInfo {
-        id: *id,
-        key,
-        category: match key.split('.').next() {
-            Some("map") => SourceCategory::Map,
-            Some("play") => SourceCategory::Play,
-            Some("profile" | "session" | "game") => SourceCategory::Profile,
-            Some("pad") => SourceCategory::Pad,
-            _ => SourceCategory::Status,
-        },
-    })
+    ui_source::ALL
+        .iter()
+        .find(|(sid, _)| *sid == id)
+        .map(|(id, key)| SourceInfo {
+            id: *id,
+            key,
+            category: match key.split('.').next() {
+                Some("map") => SourceCategory::Map,
+                Some("play") => SourceCategory::Play,
+                Some("profile" | "session" | "game") => SourceCategory::Profile,
+                Some("pad") => SourceCategory::Pad,
+                _ => SourceCategory::Status,
+            },
+        })
 }
 
 /// Every source, static text first, in firmware id order
@@ -348,14 +357,20 @@ mod tests {
 
     #[test]
     fn json_round_trip() {
-        let layout = Layout { background: 0x0E0E16, widgets: WidgetKind::ALL.iter().map(|k| Widget::new(*k)).collect() };
+        let layout = Layout {
+            background: 0x0E0E16,
+            widgets: WidgetKind::ALL.iter().map(|k| Widget::new(*k)).collect(),
+        };
         assert_eq!(Layout::from_json(&layout.to_json()).unwrap(), layout);
         assert!(layout.validate().is_ok());
     }
 
     #[test]
     fn validation_matches_firmware_rules() {
-        let mut layout = Layout { background: 0, widgets: vec![Widget::new(WidgetKind::Text)] };
+        let mut layout = Layout {
+            background: 0,
+            widgets: vec![Widget::new(WidgetKind::Text)],
+        };
         layout.widgets[0].w = 0;
         assert!(layout.validate().is_err());
         layout.widgets[0].w = 10;
@@ -365,13 +380,19 @@ mod tests {
         layout.widgets[0].source = 42; // reserved id
         assert!(layout.validate().is_err());
         layout.widgets = vec![Widget::new(WidgetKind::Rect); MAX_WIDGETS + 1];
-        assert_eq!(layout.validate(), Err(LayoutError::TooManyWidgets(MAX_WIDGETS + 1)));
+        assert_eq!(
+            layout.validate(),
+            Err(LayoutError::TooManyWidgets(MAX_WIDGETS + 1))
+        );
     }
 
     #[test]
     fn source_labels() {
         assert_eq!(source_info(ui_source::PLAY_PP_FC).unwrap().label(), "PP fc");
-        assert_eq!(source_info(ui_source::MAP_TITLE).unwrap().category, SourceCategory::Map);
+        assert_eq!(
+            source_info(ui_source::MAP_TITLE).unwrap().category,
+            SourceCategory::Map
+        );
         assert!(all_sources().iter().all(|s| s.id != ui_source::PAD_K1_DOWN));
     }
 }

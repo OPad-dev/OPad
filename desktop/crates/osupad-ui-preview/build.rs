@@ -6,7 +6,10 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    let firmware = manifest.join("../../../firmware").canonicalize().expect("firmware directory");
+    let firmware = manifest
+        .join("../../../firmware")
+        .canonicalize()
+        .expect("firmware directory");
     let lvgl = firmware.join("managed_components/lvgl__lvgl");
     let ui_core = firmware.join("main/ui/core");
     let sdkconfig = firmware.join("sdkconfig");
@@ -27,7 +30,10 @@ fn main() {
         .include(&lvgl)
         .include(lvgl.join("src"))
         .include(&ui_core)
-        .define("LV_CONF_KCONFIG_EXTERNAL_INCLUDE", Some(format!("\"{}\"", kconfig_header.display()).as_str()))
+        .define(
+            "LV_CONF_KCONFIG_EXTERNAL_INCLUDE",
+            Some(format!("\"{}\"", kconfig_header.display()).as_str()),
+        )
         .flag_if_supported("-std=gnu11")
         .flag_if_supported("-w")
         .opt_level(2)
@@ -51,7 +57,9 @@ fn main() {
 fn lvgl_defines(sdkconfig: &Path) -> String {
     let mut header = String::from("#pragma once\n");
     for line in std::fs::read_to_string(sdkconfig).unwrap().lines() {
-        let Some((key, value)) = line.split_once('=') else { continue };
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
         if !key.starts_with("CONFIG_LV_") && !key.starts_with("CONFIG_LVGL_") {
             continue;
         }

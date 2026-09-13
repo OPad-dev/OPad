@@ -82,9 +82,14 @@ pub enum IpcRequest {
     /// Custom layouts saved in the daemon (None = the device's built-in default)
     GetLayouts,
     /// Validate, save and push a layout to the device
-    SetLayout { screen: Screen, layout: Layout },
+    SetLayout {
+        screen: Screen,
+        layout: Layout,
+    },
     /// Forget a custom layout and return the device to its default
-    ResetLayout { screen: Screen },
+    ResetLayout {
+        screen: Screen,
+    },
     /// Latest UI data values the daemon knows (tosu data), for a live designer preview
     GetUiValues,
 }
@@ -188,7 +193,9 @@ pub enum IpcResponse {
 /// Resolves standard socket path in a cross-platform/Linux-friendly manner
 pub fn get_socket_path() -> PathBuf {
     if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
-        PathBuf::from(runtime_dir).join("osupad").join("daemon.sock")
+        PathBuf::from(runtime_dir)
+            .join("osupad")
+            .join("daemon.sock")
     } else {
         let uid = rustix::process::getuid().as_raw();
         PathBuf::from(format!("/tmp/osupad-{}", uid)).join("daemon.sock")
@@ -201,9 +208,15 @@ pub async fn connect_and_handshake() -> Result<(UnixStream, IpcResponse), IpcErr
 }
 
 /// Connects to a specific socket path and performs the handshake
-pub async fn connect_and_handshake_at<P: AsRef<Path>>(path: P) -> Result<(UnixStream, IpcResponse), IpcError> {
+pub async fn connect_and_handshake_at<P: AsRef<Path>>(
+    path: P,
+) -> Result<(UnixStream, IpcResponse), IpcError> {
     let mut stream = UnixStream::connect(path.as_ref()).await.map_err(|e| {
-        IpcError::NotConnected(format!("Failed to connect to {}: {}", path.as_ref().display(), e))
+        IpcError::NotConnected(format!(
+            "Failed to connect to {}: {}",
+            path.as_ref().display(),
+            e
+        ))
     })?;
 
     let handshake = IpcRequest::Handshake {
@@ -228,7 +241,10 @@ pub async fn connect_and_handshake_at<P: AsRef<Path>>(path: P) -> Result<(UnixSt
 }
 
 /// Sends a request over a UnixStream and waits for the typed response
-pub async fn send_request(stream: &mut UnixStream, req: &IpcRequest) -> Result<IpcResponse, IpcError> {
+pub async fn send_request(
+    stream: &mut UnixStream,
+    req: &IpcRequest,
+) -> Result<IpcResponse, IpcError> {
     let payload = serde_json::to_vec(req)?;
     if payload.len() > MAX_REQUEST_FRAME_SIZE {
         return Err(IpcError::Protocol(format!(

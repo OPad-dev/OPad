@@ -54,7 +54,11 @@ pub enum DeviceEvent {
         current_config: Option<DeviceConfig>,
     },
     LogBatch(proto::LogEventBatch),
-    LayoutAck { screen: u8, success: bool, message: String },
+    LayoutAck {
+        screen: u8,
+        success: bool,
+        message: String,
+    },
 }
 
 pub struct DeviceManager {
@@ -74,9 +78,7 @@ impl DeviceManager {
         let is_paused = Arc::new(AtomicBool::new(false));
         let is_port_open = Arc::new(AtomicBool::new(false));
         let seq_counter = Arc::new(AtomicU32::new(1));
-        tokio::spawn(async move {
-            while cmd_rx.recv().await.is_some() {}
-        });
+        tokio::spawn(async move { while cmd_rx.recv().await.is_some() {} });
         (
             Self {
                 cmd_tx,
@@ -124,8 +126,8 @@ impl DeviceManager {
                 };
 
                 info!("Opening osu!pad serial port at {}", port_path);
-                let port_builder = serialport::new(&port_path, 115200)
-                    .timeout(Duration::from_millis(100));
+                let port_builder =
+                    serialport::new(&port_path, 115200).timeout(Duration::from_millis(100));
 
                 let mut port = match port_builder.open() {
                     Ok(mut p) => {
@@ -187,7 +189,9 @@ impl DeviceManager {
 
                             // Parse all ready frames
                             while let Ok(Some(msg)) = decode_device_message(&mut read_buf) {
-                                if let Some(proto::device_to_host::Payload::HelloAck(_)) = &msg.payload {
+                                if let Some(proto::device_to_host::Payload::HelloAck(_)) =
+                                    &msg.payload
+                                {
                                     has_hello_ack = true;
                                 }
                                 handle_device_message(&msg, &event_tx_clone);
@@ -322,7 +326,9 @@ impl DeviceManager {
                             source: *source as u32,
                             value: Some(match value {
                                 SourceValue::Number(n) => proto::data_value::Value::Number(*n),
-                                SourceValue::Text(t) => proto::data_value::Value::Text(fit_nanopb_string(t, TEXT_MAX)),
+                                SourceValue::Text(t) => {
+                                    proto::data_value::Value::Text(fit_nanopb_string(t, TEXT_MAX))
+                                }
                                 SourceValue::Clear => proto::data_value::Value::Clear(true),
                             }),
                         })
@@ -402,7 +408,12 @@ impl DeviceManager {
         self.send_msg(msg)
     }
 
-    pub async fn send_host_status(&self, tosu_connected: bool, playing: bool, play_id: u32) -> Result<(), DeviceError> {
+    pub async fn send_host_status(
+        &self,
+        tosu_connected: bool,
+        playing: bool,
+        play_id: u32,
+    ) -> Result<(), DeviceError> {
         let msg = HostToDevice {
             sequence_number: self.next_seq(),
             payload: Some(host_to_device::Payload::HostStatus(proto::HostStatus {
@@ -474,7 +485,7 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                 }));
             }
             proto::device_to_host::Payload::Status(st) => {
-                let _ = tx.send(DeviceEvent::StatusUpdate(st.clone()));
+                let _ = tx.send(DeviceEvent::StatusUpdate(*st));
                 let _ = tx.send(DeviceEvent::Counters(CounterState {
                     device_id: "".to_string(),
                     counter_generation: 0,

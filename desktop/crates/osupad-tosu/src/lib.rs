@@ -83,7 +83,10 @@ impl TosuManager {
                         self.connected_tx.send_replace(false);
                     }
                     Err(e) => {
-                        debug!("tosu WebSocket connection failed (tosu not running?): {}", e);
+                        debug!(
+                            "tosu WebSocket connection failed (tosu not running?): {}",
+                            e
+                        );
                     }
                 }
 
@@ -139,19 +142,32 @@ pub fn parse_tosu_v2_json(json_str: &str) -> Option<GameplayTelemetry> {
         (src::MAP_DIFFICULTY, as_text(text("/beatmap/version"))),
         (src::MAP_STATUS, as_text(text("/beatmap/status/name"))),
         (src::MAP_STARS, as_num(num("/beatmap/stats/stars/total"))),
-        (src::MAP_STARS_LIVE, as_num(num("/beatmap/stats/stars/live"))),
+        (
+            src::MAP_STARS_LIVE,
+            as_num(num("/beatmap/stats/stars/live")),
+        ),
         (src::MAP_AR, as_num(num("/beatmap/stats/ar/converted"))),
         (src::MAP_CS, as_num(num("/beatmap/stats/cs/converted"))),
         (src::MAP_OD, as_num(num("/beatmap/stats/od/converted"))),
         (src::MAP_HP, as_num(num("/beatmap/stats/hp/converted"))),
         (src::MAP_BPM, as_num(num("/beatmap/stats/bpm/common"))),
-        (src::MAP_OBJECTS, as_num(num("/beatmap/stats/objects/total"))),
+        (
+            src::MAP_OBJECTS,
+            as_num(num("/beatmap/stats/objects/total")),
+        ),
         (src::MAP_MAX_COMBO, as_num(num("/beatmap/stats/maxCombo"))),
         (src::MAP_LENGTH, as_num(length)),
         (src::MAP_TIME_ELAPSED, as_num(elapsed)),
         (src::MAP_TIME_REMAINING, as_num(remaining)),
         (src::MAP_PROGRESS, as_num(progress)),
-        (src::MAP_KIAI, as_num(root.pointer("/beatmap/isKiai").and_then(|v| v.as_bool()).map(f64::from))),
+        (
+            src::MAP_KIAI,
+            as_num(
+                root.pointer("/beatmap/isKiai")
+                    .and_then(|v| v.as_bool())
+                    .map(f64::from),
+            ),
+        ),
         (src::PLAY_PP, as_num(num("/play/pp/current"))),
         (src::PLAY_PP_FC, as_num(num("/play/pp/fc"))),
         (src::PLAY_PP_MAX, as_num(num("/play/pp/maxAchievable"))),
@@ -164,22 +180,47 @@ pub fn parse_tosu_v2_json(json_str: &str) -> Option<GameplayTelemetry> {
         (src::PLAY_HITS_100, as_num(num("/play/hits/100"))),
         (src::PLAY_HITS_50, as_num(num("/play/hits/50"))),
         (src::PLAY_HITS_MISS, as_num(num("/play/hits/0"))),
-        (src::PLAY_SLIDER_BREAKS, as_num(num("/play/hits/sliderBreaks"))),
+        (
+            src::PLAY_SLIDER_BREAKS,
+            as_num(num("/play/hits/sliderBreaks")),
+        ),
         (src::PLAY_UR, as_num(num("/play/unstableRate"))),
-        (src::PLAY_HEALTH, as_num(num("/play/healthBar/normal").map(|h| (h / 100.0).clamp(0.0, 1.0)))),
+        (
+            src::PLAY_HEALTH,
+            as_num(num("/play/healthBar/normal").map(|h| (h / 100.0).clamp(0.0, 1.0))),
+        ),
         (src::PLAY_MODS, as_text(text("/play/mods/name"))),
         (src::PLAY_PLAYER, as_text(text("/play/playerName"))),
-        (src::PLAY_FAILED, as_num(root.pointer("/play/failed").and_then(|v| v.as_bool()).map(f64::from))),
+        (
+            src::PLAY_FAILED,
+            as_num(
+                root.pointer("/play/failed")
+                    .and_then(|v| v.as_bool())
+                    .map(f64::from),
+            ),
+        ),
         (src::PROFILE_NAME, as_text(text("/profile/name"))),
-        (src::PROFILE_RANK, as_num(num("/profile/globalRank").filter(|r| *r > 0.0))),
-        (src::PROFILE_PP, as_num(num("/profile/pp").filter(|p| *p > 0.0))),
+        (
+            src::PROFILE_RANK,
+            as_num(num("/profile/globalRank").filter(|r| *r > 0.0)),
+        ),
+        (
+            src::PROFILE_PP,
+            as_num(num("/profile/pp").filter(|p| *p > 0.0)),
+        ),
         (src::PROFILE_ACCURACY, as_num(num("/profile/accuracy"))),
         (src::PROFILE_PLAYCOUNT, as_num(num("/profile/playCount"))),
         (src::PROFILE_LEVEL, as_num(num("/profile/level"))),
-        (src::PROFILE_COUNTRY, as_text(text("/profile/countryCode/name"))),
+        (
+            src::PROFILE_COUNTRY,
+            as_text(text("/profile/countryCode/name")),
+        ),
         (src::SESSION_PLAYTIME, as_num(num("/session/playTime"))),
         (src::SESSION_PLAYCOUNT, as_num(num("/session/playCount"))),
-        (src::GAME_STATE, as_text(text("/state/name").map(|s| friendly_state(&s)))),
+        (
+            src::GAME_STATE,
+            as_text(text("/state/name").map(|s| friendly_state(&s))),
+        ),
         (src::STATUS_OSU, SourceValue::Number(1.0)),
     ];
 
@@ -216,7 +257,8 @@ pub fn find_tosu_binary() -> Option<PathBuf> {
     if let Some(p) = std::env::var_os("OSUPAD_TOSU_PATH") {
         return Some(PathBuf::from(p)).filter(|p| p.is_file());
     }
-    let home_install = std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/opt/tosu/tosu"));
+    let home_install =
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/opt/tosu/tosu"));
     if let Some(p) = home_install.filter(|p| p.is_file()) {
         return Some(p);
     }
@@ -254,7 +296,11 @@ pub fn spawn_tosu_supervisor(endpoint: String, log_path: PathBuf) {
 
             match launch_tosu(&bin, &log_path) {
                 Ok(mut child) => {
-                    info!("Launched tosu (pid {:?}) from {}", child.id(), bin.display());
+                    info!(
+                        "Launched tosu (pid {:?}) from {}",
+                        child.id(),
+                        bin.display()
+                    );
                     let started = Instant::now();
                     match child.wait().await {
                         Ok(status) => warn!("tosu exited with {}", status),
@@ -291,7 +337,9 @@ fn launch_tosu(bin: &Path, log_path: &Path) -> std::io::Result<tokio::process::C
 
 /// "ws://127.0.0.1:24050/websocket/v2" -> "127.0.0.1:24050"
 fn endpoint_socket_addr(endpoint: &str) -> String {
-    let without_scheme = endpoint.split_once("://").map_or(endpoint, |(_, rest)| rest);
+    let without_scheme = endpoint
+        .split_once("://")
+        .map_or(endpoint, |(_, rest)| rest);
     let authority = without_scheme.split('/').next().unwrap_or(without_scheme);
     if authority.contains(':') {
         authority.to_string()
@@ -323,7 +371,11 @@ mod tests {
     }"#;
 
     fn value(t: &GameplayTelemetry, source: u8) -> &SourceValue {
-        &t.values.iter().find(|(s, _)| *s == source).expect("source present").1
+        &t.values
+            .iter()
+            .find(|(s, _)| *s == source)
+            .expect("source present")
+            .1
     }
 
     #[test]
@@ -331,15 +383,33 @@ mod tests {
         let parsed = parse_tosu_v2_json(PLAYING_FRAME).expect("valid parse");
         assert!(parsed.is_playing);
         assert_eq!(parsed.title, "Haiboku no Altra Vita");
-        assert_eq!(value(&parsed, src::MAP_ARTIST), &SourceValue::Text("takehirotei".into()));
-        assert_eq!(value(&parsed, src::MAP_DIFFICULTY), &SourceValue::Text("Expert".into()));
+        assert_eq!(
+            value(&parsed, src::MAP_ARTIST),
+            &SourceValue::Text("takehirotei".into())
+        );
+        assert_eq!(
+            value(&parsed, src::MAP_DIFFICULTY),
+            &SourceValue::Text("Expert".into())
+        );
         assert_eq!(value(&parsed, src::MAP_STARS), &SourceValue::Number(5.51));
         assert_eq!(value(&parsed, src::PLAY_PP), &SourceValue::Number(143.7));
-        assert_eq!(value(&parsed, src::PLAY_GRADE), &SourceValue::Text("A".into()));
-        assert_eq!(value(&parsed, src::PLAY_HITS_MISS), &SourceValue::Number(1.0));
+        assert_eq!(
+            value(&parsed, src::PLAY_GRADE),
+            &SourceValue::Text("A".into())
+        );
+        assert_eq!(
+            value(&parsed, src::PLAY_HITS_MISS),
+            &SourceValue::Number(1.0)
+        );
         assert_eq!(value(&parsed, src::PLAY_MODS), &SourceValue::Clear);
-        assert_eq!(value(&parsed, src::PROFILE_NAME), &SourceValue::Text("osu!player".into()));
-        assert_eq!(value(&parsed, src::GAME_STATE), &SourceValue::Text("Playing".into()));
+        assert_eq!(
+            value(&parsed, src::PROFILE_NAME),
+            &SourceValue::Text("osu!player".into())
+        );
+        assert_eq!(
+            value(&parsed, src::GAME_STATE),
+            &SourceValue::Text("Playing".into())
+        );
         match value(&parsed, src::MAP_PROGRESS) {
             SourceValue::Number(p) => assert!((p - 0.5).abs() < 0.01),
             other => panic!("progress: {:?}", other),
@@ -352,7 +422,10 @@ mod tests {
         let parsed = parse_tosu_v2_json(sample).expect("valid parse");
         assert!(!parsed.is_playing);
         assert_eq!(parsed.title, "Song Select");
-        assert_eq!(value(&parsed, src::GAME_STATE), &SourceValue::Text("Song select".into()));
+        assert_eq!(
+            value(&parsed, src::GAME_STATE),
+            &SourceValue::Text("Song select".into())
+        );
         assert_eq!(value(&parsed, src::MAP_PROGRESS), &SourceValue::Clear);
     }
 
@@ -364,8 +437,17 @@ mod tests {
 
     #[test]
     fn test_endpoint_helpers() {
-        assert_eq!(normalize_endpoint("ws://127.0.0.1:24050/ws"), DEFAULT_TOSU_ENDPOINT);
-        assert_eq!(normalize_endpoint(DEFAULT_TOSU_ENDPOINT), DEFAULT_TOSU_ENDPOINT);
-        assert_eq!(endpoint_socket_addr(DEFAULT_TOSU_ENDPOINT), "127.0.0.1:24050");
+        assert_eq!(
+            normalize_endpoint("ws://127.0.0.1:24050/ws"),
+            DEFAULT_TOSU_ENDPOINT
+        );
+        assert_eq!(
+            normalize_endpoint(DEFAULT_TOSU_ENDPOINT),
+            DEFAULT_TOSU_ENDPOINT
+        );
+        assert_eq!(
+            endpoint_socket_addr(DEFAULT_TOSU_ENDPOINT),
+            "127.0.0.1:24050"
+        );
     }
 }

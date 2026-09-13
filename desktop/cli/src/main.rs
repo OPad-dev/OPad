@@ -64,7 +64,10 @@ enum Commands {
     },
     /// Show key-press-to-HID latency measured on the device
     Latency {
-        #[arg(long, help = "Clear the collected samples (e.g. right before playing a map)")]
+        #[arg(
+            long,
+            help = "Clear the collected samples (e.g. right before playing a map)"
+        )]
         reset: bool,
     },
     /// Perform initial system setup (udev permissions & directories)
@@ -105,18 +108,36 @@ async fn main() -> Result<()> {
             {
                 println!("=== osu!pad Status ===");
                 println!("Daemon Mode:      {:?}", mode);
-                println!("ESP32 Device:     {}", if device_connected { "Connected" } else { "Disconnected" });
+                println!(
+                    "ESP32 Device:     {}",
+                    if device_connected {
+                        "Connected"
+                    } else {
+                        "Disconnected"
+                    }
+                );
                 println!("Counters Source:  {:?}", counters_source);
                 if let Some(info) = device_info {
                     println!("Device ID:        {}", info.device_id);
                     println!("Board Profile:    {}", info.board_profile);
                     println!("Firmware Version: {}", info.firmware_version);
                 }
-                println!("Key 1 (K1):       {} (Total: {} presses)", config.key1_char(), counters.lifetime_key1);
-                println!("Key 2 (K2):       {} (Total: {} presses)", config.key2_char(), counters.lifetime_key2);
+                println!(
+                    "Key 1 (K1):       {} (Total: {} presses)",
+                    config.key1_char(),
+                    counters.lifetime_key1
+                );
+                println!(
+                    "Key 2 (K2):       {} (Total: {} presses)",
+                    config.key2_char(),
+                    counters.lifetime_key2
+                );
                 println!("Total Presses:    {}", counters.total_lifetime_presses());
                 println!("Generation:       {}", counters.counter_generation);
-                println!("Last Sync:        {}", last_sync_time.as_deref().unwrap_or("Never"));
+                println!(
+                    "Last Sync:        {}",
+                    last_sync_time.as_deref().unwrap_or("Never")
+                );
                 if let Some(err) = last_sync_error {
                     println!("Last Sync Error:  ⚠ {}", err);
                 }
@@ -129,9 +150,15 @@ async fn main() -> Result<()> {
                 if let Some(incompat) = incompatible {
                     println!("Incompatible:     ⚠ Device protocol {} incompatible with daemon protocol {}. Update firmware or host.", incompat.protocol_version, IPC_PROTOCOL_VERSION);
                 }
-                println!("tosu (osu!lazer): {}", if tosu_connected { "Active" } else { "Offline" });
+                println!(
+                    "tosu (osu!lazer): {}",
+                    if tosu_connected { "Active" } else { "Offline" }
+                );
                 if let Some(l) = latency {
-                    println!("Key Latency:      p50 {}µs, p99.9 {}µs, max {}µs ({} samples)", l.p50_us, l.p999_us, l.max_us, l.samples);
+                    println!(
+                        "Key Latency:      p50 {}µs, p99.9 {}µs, max {}µs ({} samples)",
+                        l.p50_us, l.p999_us, l.max_us, l.samples
+                    );
                 }
                 println!("Debounce Lockout: {} µs", config.debounce_us);
                 println!("Brightness:       {}%", config.brightness);
@@ -143,7 +170,10 @@ async fn main() -> Result<()> {
             println!("Requesting safe counter & clock synchronization...");
             let resp = send_request(&mut stream, &IpcRequest::ForceSync).await?;
             match resp {
-                IpcResponse::SyncCompleted { success: true, counters } => {
+                IpcResponse::SyncCompleted {
+                    success: true,
+                    counters,
+                } => {
                     println!("✓ Sync succeeded!");
                     println!("  K1: {}", counters.lifetime_key1);
                     println!("  K2: {}", counters.lifetime_key2);
@@ -157,12 +187,18 @@ async fn main() -> Result<()> {
 
         Commands::Reset { yes } => {
             if !yes {
-                bail!("Resetting counters is permanent! Pass --yes to confirm: osupadctl reset --yes");
+                bail!(
+                    "Resetting counters is permanent! Pass --yes to confirm: osupadctl reset --yes"
+                );
             }
-            let resp = send_request(&mut stream, &IpcRequest::ResetCounters { confirm: yes }).await?;
+            let resp =
+                send_request(&mut stream, &IpcRequest::ResetCounters { confirm: yes }).await?;
             match resp {
                 IpcResponse::CountersReset { counters } => {
-                    println!("✓ Counters reset successfully (new generation: {})", counters.counter_generation);
+                    println!(
+                        "✓ Counters reset successfully (new generation: {})",
+                        counters.counter_generation
+                    );
                 }
                 IpcResponse::OperationRejected { reason } => {
                     println!("✗ Rejected: {}", reason);
@@ -186,24 +222,47 @@ async fn main() -> Result<()> {
         Commands::Import { file, yes } => {
             let text = std::fs::read_to_string(&file)
                 .with_context(|| format!("Failed to read file {}", file.display()))?;
-            let backup: JsonBackup = serde_json::from_str(&text)
-                .context("Failed to parse JSON backup file")?;
+            let backup: JsonBackup =
+                serde_json::from_str(&text).context("Failed to parse JSON backup file")?;
 
-            backup.validate().map_err(|e| anyhow::anyhow!("Validation error: {}", e))?;
+            backup
+                .validate()
+                .map_err(|e| anyhow::anyhow!("Validation error: {}", e))?;
 
             // Preview via IPC (§P1-5)
-            let preview_resp = send_request(&mut stream, &IpcRequest::PreviewImport(backup.clone())).await?;
+            let preview_resp =
+                send_request(&mut stream, &IpcRequest::PreviewImport(backup.clone())).await?;
             match preview_resp {
-                IpcResponse::ImportPreview { current, incoming, device_id_matches, is_counter_rollback, warnings } => {
+                IpcResponse::ImportPreview {
+                    current,
+                    incoming,
+                    device_id_matches,
+                    is_counter_rollback,
+                    warnings,
+                } => {
                     println!("=== Import Preview ===");
                     if let Some(cur) = current {
                         println!("Current:  Device ID: {}", cur.device_id);
-                        println!("          Key 1: {} ({} presses)", cur.config.key1_char(), cur.lifetime_key1);
-                        println!("          Key 2: {} ({} presses)", cur.config.key2_char(), cur.lifetime_key2);
+                        println!(
+                            "          Key 1: {} ({} presses)",
+                            cur.config.key1_char(),
+                            cur.lifetime_key1
+                        );
+                        println!(
+                            "          Key 2: {} ({} presses)",
+                            cur.config.key2_char(),
+                            cur.lifetime_key2
+                        );
                     }
                     println!("Incoming: Device ID: {}", incoming.device.device_id);
-                    println!("          Key 1: {} ({} presses)", incoming.config.key1, incoming.stats.lifetime_key1);
-                    println!("          Key 2: {} ({} presses)", incoming.config.key2, incoming.stats.lifetime_key2);
+                    println!(
+                        "          Key 1: {} ({} presses)",
+                        incoming.config.key1, incoming.stats.lifetime_key1
+                    );
+                    println!(
+                        "          Key 2: {} ({} presses)",
+                        incoming.config.key2, incoming.stats.lifetime_key2
+                    );
 
                     if !device_id_matches {
                         println!("\n  ⚠ Note: Backup device ID does not match current pad.");
@@ -234,10 +293,24 @@ async fn main() -> Result<()> {
                         }
                     }
 
-                    let resp = send_request(&mut stream, &IpcRequest::ImportBackup { backup, confirm: true }).await?;
+                    let resp = send_request(
+                        &mut stream,
+                        &IpcRequest::ImportBackup {
+                            backup,
+                            confirm: true,
+                        },
+                    )
+                    .await?;
                     match resp {
-                        IpcResponse::BackupImported { success: true, counters, .. } => {
-                            println!("✓ Backup imported and synchronized successfully (generation: {})!", counters.counter_generation);
+                        IpcResponse::BackupImported {
+                            success: true,
+                            counters,
+                            ..
+                        } => {
+                            println!(
+                                "✓ Backup imported and synchronized successfully (generation: {})!",
+                                counters.counter_generation
+                            );
                         }
                         IpcResponse::OperationRejected { reason } => {
                             println!("✗ Rejected: {}", reason);
@@ -260,26 +333,41 @@ async fn main() -> Result<()> {
             }
         }
 
-        Commands::Monitor { limit, follow, level, source } => {
-            let filter_level = level.as_deref().and_then(|l| match l.to_lowercase().as_str() {
-                "debug" => Some(osupad_model::LogLevel::Debug),
-                "info" => Some(osupad_model::LogLevel::Info),
-                "warn" | "warning" => Some(osupad_model::LogLevel::Warn),
-                "error" => Some(osupad_model::LogLevel::Error),
-                _ => None,
-            });
-            let filter_source = source.as_deref().and_then(|s| match s.to_lowercase().as_str() {
-                "host" => Some(osupad_model::LogSource::Host),
-                "esp" | "device" => Some(osupad_model::LogSource::Esp),
-                _ => None,
-            });
+        Commands::Monitor {
+            limit,
+            follow,
+            level,
+            source,
+        } => {
+            let filter_level = level
+                .as_deref()
+                .and_then(|l| match l.to_lowercase().as_str() {
+                    "debug" => Some(osupad_model::LogLevel::Debug),
+                    "info" => Some(osupad_model::LogLevel::Info),
+                    "warn" | "warning" => Some(osupad_model::LogLevel::Warn),
+                    "error" => Some(osupad_model::LogLevel::Error),
+                    _ => None,
+                });
+            let filter_source = source
+                .as_deref()
+                .and_then(|s| match s.to_lowercase().as_str() {
+                    "host" => Some(osupad_model::LogSource::Host),
+                    "esp" | "device" => Some(osupad_model::LogSource::Esp),
+                    _ => None,
+                });
 
             let mut since_seq = None;
             let mut first_batch = true;
 
             loop {
-                let resp = send_request(&mut stream, &IpcRequest::GetLogEntries { since_seq, limit }).await?;
-                if let IpcResponse::LogEntries { entries, latest_seq } = resp {
+                let resp =
+                    send_request(&mut stream, &IpcRequest::GetLogEntries { since_seq, limit })
+                        .await?;
+                if let IpcResponse::LogEntries {
+                    entries,
+                    latest_seq,
+                } = resp
+                {
                     if first_batch && !follow {
                         println!("=== osu!pad Monitor (Last {} entries) ===", entries.len());
                     }
@@ -311,7 +399,10 @@ async fn main() -> Result<()> {
 
         Commands::Flash { firmware, port } => {
             if !firmware.exists() {
-                bail!("Firmware binary file does not exist: {}", firmware.display());
+                bail!(
+                    "Firmware binary file does not exist: {}",
+                    firmware.display()
+                );
             }
 
             println!("Coordinating with osupad-daemon for firmware flashing...");
@@ -323,7 +414,11 @@ async fn main() -> Result<()> {
             result?;
 
             match finish_resp {
-                IpcResponse::FlashFinished { firmware_version, protocol_version, compatible } => {
+                IpcResponse::FlashFinished {
+                    firmware_version,
+                    protocol_version,
+                    compatible,
+                } => {
                     println!("✓ Flash succeeded!");
                     println!("  Firmware Version: {}", firmware_version);
                     println!("  Protocol Version: {}", protocol_version);
@@ -357,14 +452,19 @@ async fn main() -> Result<()> {
                 }
             } else {
                 match send_request(&mut stream, &IpcRequest::GetStatus).await? {
-                    IpcResponse::Status { latency: Some(l), .. } => {
+                    IpcResponse::Status {
+                        latency: Some(l), ..
+                    } => {
                         println!("=== Key edge -> HID submit latency (device-side) ===");
                         println!("Samples:          {}", l.samples);
                         println!("p50:              {} µs", l.p50_us);
                         println!("p99:              {} µs", l.p99_us);
                         println!("p99.9:            {} µs", l.p999_us);
                         println!("max:              {} µs", l.max_us);
-                        println!("Deferred reports: {} (waited for the next USB poll, then sent)", l.deferred_reports);
+                        println!(
+                            "Deferred reports: {} (waited for the next USB poll, then sent)",
+                            l.deferred_reports
+                        );
                     }
                     IpcResponse::Status { latency: None, .. } => {
                         println!("No latency data yet (device not connected, or old firmware)");
@@ -382,9 +482,14 @@ async fn main() -> Result<()> {
 
 /// Ask the daemon to release the serial port. Returns the app port to trigger,
 /// or None if the device is already sitting in the ROM bootloader.
-async fn prepare_flash(stream: &mut UnixStream, explicit_port: Option<String>) -> Result<Option<String>> {
+async fn prepare_flash(
+    stream: &mut UnixStream,
+    explicit_port: Option<String>,
+) -> Result<Option<String>> {
     match send_request(stream, &IpcRequest::PrepareFlash).await? {
-        IpcResponse::ReadyForFlash { port } => Ok(explicit_port.or(port).or_else(osupad_device::find_target_port)),
+        IpcResponse::ReadyForFlash { port } => Ok(explicit_port
+            .or(port)
+            .or_else(osupad_device::find_target_port)),
         IpcResponse::OperationRejected { reason } => bail!("Rejected by daemon: {}", reason),
         other => bail!("Unexpected response from daemon: {:?}", other),
     }
@@ -402,7 +507,8 @@ async fn enter_bootloader(app_port: Option<&str>) -> Result<String> {
     println!("Sending bootloader reboot trigger to {}...", app_port);
     // Firmware reacts to the "BOOTLOADER" command and to a 1200-baud touch; send both
     let mut sp = open_port_with_retry(app_port, 1200, Duration::from_secs(2)).await?;
-    sp.write_all(b"BOOTLOADER\n").context("Failed to send bootloader trigger")?;
+    sp.write_all(b"BOOTLOADER\n")
+        .context("Failed to send bootloader trigger")?;
     let _ = sp.flush();
     drop(sp);
 
@@ -413,13 +519,23 @@ async fn enter_bootloader(app_port: Option<&str>) -> Result<String> {
 
 async fn flash_firmware(firmware: &Path, app_port: Option<&str>) -> Result<()> {
     let boot_port = enter_bootloader(app_port).await?;
-    println!("Writing firmware binary via espflash at 0x10000 on {}...", boot_port);
+    println!(
+        "Writing firmware binary via espflash at 0x10000 on {}...",
+        boot_port
+    );
 
     let status = std::process::Command::new("espflash")
         .args(["write-bin", "--chip", "esp32s3", "-p", &boot_port])
         // Already in download mode. Stay in the stub afterwards: espflash cannot reset an
         // ESP32-S3 out of forced download mode, esp_rom::reset_to_app does that below
-        .args(["--before", "no-reset", "--after", "no-reset-no-stub", "--non-interactive", "0x10000"])
+        .args([
+            "--before",
+            "no-reset",
+            "--after",
+            "no-reset-no-stub",
+            "--non-interactive",
+            "0x10000",
+        ])
         .arg(firmware)
         .status()
         .context("Failed to execute espflash. Ensure espflash is installed.")?;
@@ -428,13 +544,19 @@ async fn flash_firmware(firmware: &Path, app_port: Option<&str>) -> Result<()> {
     }
     println!("✓ Firmware written, rebooting into application...");
     esp_rom::reset_to_app(&boot_port).context("Firmware written, but failed to reboot the device")
-
 }
 
-async fn open_port_with_retry(path: &str, baud: u32, timeout: Duration) -> Result<Box<dyn serialport::SerialPort>> {
+async fn open_port_with_retry(
+    path: &str,
+    baud: u32,
+    timeout: Duration,
+) -> Result<Box<dyn serialport::SerialPort>> {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
-        match serialport::new(path, baud).timeout(Duration::from_millis(300)).open() {
+        match serialport::new(path, baud)
+            .timeout(Duration::from_millis(300))
+            .open()
+        {
             Ok(sp) => return Ok(sp),
             Err(e) if tokio::time::Instant::now() >= deadline => {
                 return Err(e).with_context(|| format!("Failed to open {}", path));
@@ -469,7 +591,10 @@ SUBSYSTEM=="usb", ATTRS{idVendor}=="303a", MODE="0666", GROUP="uucp", TAG+="uacc
 
     if std::path::Path::new("/etc/udev/rules.d").exists() {
         println!("To install this rule, run:");
-        println!("  sudo cp packaging/linux/udev/99-osupad.rules {}", target_path);
+        println!(
+            "  sudo cp packaging/linux/udev/99-osupad.rules {}",
+            target_path
+        );
         println!("  sudo udevadm control --reload-rules && sudo udevadm trigger");
     }
 

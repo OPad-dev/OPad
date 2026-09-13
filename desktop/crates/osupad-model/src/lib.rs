@@ -1,9 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-pub mod ui_source;
 pub mod diag;
 pub mod log;
+pub mod ui_source;
 
 pub use log::{LogEntry, LogLevel, LogSource};
 
@@ -89,15 +89,15 @@ impl CounterState {
 /// Device configuration parameters (§37)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeviceConfig {
-    pub key1_hid_usage: u32,       // Default: 0x1D ('Z')
-    pub key2_hid_usage: u32,       // Default: 0x1B ('X')
-    pub debounce_us: u32,          // Default: 3000 (3ms)
-    pub brightness: u32,           // 0..100, default: 100
-    pub display_sleep_seconds: u32,// Default: 600 (10 min)
-    pub gameplay_display_hz: u32,  // Default: 10
-    pub tosu_endpoint: String,     // Default: "ws://127.0.0.1:24050/websocket/v2"
+    pub key1_hid_usage: u32,        // Default: 0x1D ('Z')
+    pub key2_hid_usage: u32,        // Default: 0x1B ('X')
+    pub debounce_us: u32,           // Default: 3000 (3ms)
+    pub brightness: u32,            // 0..100, default: 100
+    pub display_sleep_seconds: u32, // Default: 600 (10 min)
+    pub gameplay_display_hz: u32,   // Default: 10
+    pub tosu_endpoint: String,      // Default: "ws://127.0.0.1:24050/websocket/v2"
     #[serde(default = "default_press_color_rgb")]
-    pub press_color_rgb: u32,      // Gameplay screen key press highlight 0xRRGGBB, default: red
+    pub press_color_rgb: u32, // Gameplay screen key press highlight 0xRRGGBB, default: red
 }
 
 pub const DEFAULT_PRESS_COLOR_RGB: u32 = 0xFF0000;
@@ -124,22 +124,42 @@ impl Default for DeviceConfig {
 impl DeviceConfig {
     pub fn validate(&self) -> Result<(), String> {
         if self.key1_hid_usage < 0x04 || self.key1_hid_usage > 0xE7 {
-            return Err(format!("Invalid key1 HID usage: 0x{:02X}", self.key1_hid_usage));
+            return Err(format!(
+                "Invalid key1 HID usage: 0x{:02X}",
+                self.key1_hid_usage
+            ));
         }
         if self.key2_hid_usage < 0x04 || self.key2_hid_usage > 0xE7 {
-            return Err(format!("Invalid key2 HID usage: 0x{:02X}", self.key2_hid_usage));
+            return Err(format!(
+                "Invalid key2 HID usage: 0x{:02X}",
+                self.key2_hid_usage
+            ));
         }
         if self.debounce_us < 500 || self.debounce_us > 20000 {
-            return Err(format!("Debounce lockout must be between 500 and 20000 µs (got {})", self.debounce_us));
+            return Err(format!(
+                "Debounce lockout must be between 500 and 20000 µs (got {})",
+                self.debounce_us
+            ));
         }
         if self.brightness > 100 {
-            return Err(format!("Brightness must be between 0 and 100 (got {})", self.brightness));
+            return Err(format!(
+                "Brightness must be between 0 and 100 (got {})",
+                self.brightness
+            ));
         }
-        if self.display_sleep_seconds != 0 && (self.display_sleep_seconds < 10 || self.display_sleep_seconds > 86400) {
-            return Err(format!("Display sleep must be 0 or 10..=86400 seconds (got {})", self.display_sleep_seconds));
+        if self.display_sleep_seconds != 0
+            && (self.display_sleep_seconds < 10 || self.display_sleep_seconds > 86400)
+        {
+            return Err(format!(
+                "Display sleep must be 0 or 10..=86400 seconds (got {})",
+                self.display_sleep_seconds
+            ));
         }
         if self.gameplay_display_hz < 1 || self.gameplay_display_hz > 30 {
-            return Err(format!("Gameplay display Hz must be between 1 and 30 (got {})", self.gameplay_display_hz));
+            return Err(format!(
+                "Gameplay display Hz must be between 1 and 30 (got {})",
+                self.gameplay_display_hz
+            ));
         }
         Ok(())
     }
@@ -183,8 +203,8 @@ pub fn char_to_hid_usage(ch: &str) -> Option<u32> {
             return Some(0x1E + (c as u32 - '1' as u32));
         }
     }
-    if s.starts_with("0X") {
-        return u32::from_str_radix(&s[2..], 16).ok();
+    if let Some(rest) = s.strip_prefix("0X") {
+        return u32::from_str_radix(rest, 16).ok();
     }
     None
 }
@@ -195,7 +215,7 @@ pub struct GameplayTelemetry {
     pub is_playing: bool,
     pub title: String,
     #[serde(default)]
-    pub live_time_ms: f64,   // Song position; jumps back on retry
+    pub live_time_ms: f64, // Song position; jumps back on retry
     /// Every UI data source this frame provides (see `ui_source`)
     #[serde(default)]
     pub values: Vec<(u8, ui_source::SourceValue)>,
@@ -261,10 +281,16 @@ impl JsonBackup {
 
     pub fn validate(&self) -> Result<(), String> {
         if self.format_version != 1 {
-            return Err(format!("Unsupported backup format version: {}", self.format_version));
+            return Err(format!(
+                "Unsupported backup format version: {}",
+                self.format_version
+            ));
         }
         if self.device.board_profile != "waveshare_esp32s3_touch_lcd_2" {
-            return Err(format!("Unsupported board profile: {}", self.device.board_profile));
+            return Err(format!(
+                "Unsupported board profile: {}",
+                self.device.board_profile
+            ));
         }
         if self.stats.lifetime_key1 > i64::MAX as u64 {
             return Err("lifetime_key1 exceeds maximum integer size".to_string());
@@ -276,16 +302,27 @@ impl JsonBackup {
             return Err("Backup timestamp is in the future".to_string());
         }
         if self.config.debounce_us < 500 || self.config.debounce_us > 20000 {
-            return Err(format!("Debounce lockout must be between 500 and 20000 µs (got {})", self.config.debounce_us));
+            return Err(format!(
+                "Debounce lockout must be between 500 and 20000 µs (got {})",
+                self.config.debounce_us
+            ));
         }
         if self.config.brightness > 100 {
             return Err("Brightness must be between 0 and 100".to_string());
         }
-        if self.config.display_sleep_seconds != 0 && (self.config.display_sleep_seconds < 10 || self.config.display_sleep_seconds > 86400) {
-            return Err(format!("Display sleep must be 0 or 10..=86400 seconds (got {})", self.config.display_sleep_seconds));
+        if self.config.display_sleep_seconds != 0
+            && (self.config.display_sleep_seconds < 10 || self.config.display_sleep_seconds > 86400)
+        {
+            return Err(format!(
+                "Display sleep must be 0 or 10..=86400 seconds (got {})",
+                self.config.display_sleep_seconds
+            ));
         }
         if self.config.gameplay_display_hz < 1 || self.config.gameplay_display_hz > 30 {
-            return Err(format!("Gameplay display Hz must be between 1 and 30 (got {})", self.config.gameplay_display_hz));
+            return Err(format!(
+                "Gameplay display Hz must be between 1 and 30 (got {})",
+                self.config.gameplay_display_hz
+            ));
         }
         if char_to_hid_usage(&self.config.key1).is_none() {
             return Err(format!("Invalid key1 mapping: {}", self.config.key1));

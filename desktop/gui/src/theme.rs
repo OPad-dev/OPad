@@ -32,12 +32,22 @@ pub const FONT_MEDIUM_BYTES: &[u8] = include_bytes!("../assets/fonts/Montserrat-
 pub const FONT_BOLD_BYTES: &[u8] = include_bytes!("../assets/fonts/Montserrat-Bold.ttf");
 
 pub const FONT: Font = Font::with_name("Montserrat");
-pub const FONT_BOLD: Font = Font { weight: font::Weight::Bold, ..FONT };
+pub const FONT_BOLD: Font = Font {
+    weight: font::Weight::Bold,
+    ..FONT
+};
 
 pub fn theme() -> Theme {
     Theme::custom(
         "osu!pad".to_string(),
-        iced::theme::Palette { background: BG, text: WHITE, primary: PINK, success: GREEN, warning: YELLOW, danger: RED },
+        iced::theme::Palette {
+            background: BG,
+            text: WHITE,
+            primary: PINK,
+            success: GREEN,
+            warning: YELLOW,
+            danger: RED,
+        },
     )
 }
 
@@ -61,7 +71,11 @@ pub fn muted<'a>(content: impl text::IntoFragment<'a>) -> Text<'a> {
 pub fn card(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(CARD.into()),
-        border: Border { color: BORDER, width: 1.0, radius: 14.0.into() },
+        border: Border {
+            color: BORDER,
+            width: 1.0,
+            radius: 14.0.into(),
+        },
         ..Default::default()
     }
 }
@@ -80,7 +94,11 @@ pub fn pink_card(_theme: &Theme) -> container::Style {
 pub fn outlined_card(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(CARD.into()),
-        border: Border { color: Color { a: 0.5, ..PINK }, width: 1.0, radius: 14.0.into() },
+        border: Border {
+            color: Color { a: 0.5, ..PINK },
+            width: 1.0,
+            radius: 14.0.into(),
+        },
         ..Default::default()
     }
 }
@@ -88,7 +106,11 @@ pub fn outlined_card(_theme: &Theme) -> container::Style {
 pub fn sidebar(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(SURFACE.into()),
-        border: Border { color: BORDER, width: 1.0, radius: 0.0.into() },
+        border: Border {
+            color: BORDER,
+            width: 1.0,
+            radius: 0.0.into(),
+        },
         ..Default::default()
     }
 }
@@ -96,7 +118,11 @@ pub fn sidebar(_theme: &Theme) -> container::Style {
 pub fn banner(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(CARD.into()),
-        border: Border { color: Color { a: 0.6, ..PINK }, width: 1.0, radius: 10.0.into() },
+        border: Border {
+            color: Color { a: 0.6, ..PINK },
+            width: 1.0,
+            radius: 10.0.into(),
+        },
         ..Default::default()
     }
 }
@@ -113,7 +139,13 @@ pub fn dot(on: bool) -> impl Fn(&Theme) -> container::Style {
 // ---- buttons ------------------------------------------------------------------------------
 
 fn base(background: Option<Background>, text_color: Color, border: Border) -> button::Style {
-    button::Style { background, text_color, border, shadow: Shadow::default(), snap: true }
+    button::Style {
+        background,
+        text_color,
+        border,
+        shadow: Shadow::default(),
+        snap: true,
+    }
 }
 
 pub fn primary(_theme: &Theme, status: button::Status) -> button::Style {
@@ -130,8 +162,20 @@ pub fn secondary(_theme: &Theme, status: button::Status) -> button::Style {
         button::Status::Hovered | button::Status::Pressed => CARD_HOVER,
         _ => CARD,
     };
-    let text_color = if status == button::Status::Disabled { MUTED } else { WHITE };
-    base(Some(fill.into()), text_color, Border { color: BORDER, width: 1.0, radius: 10.0.into() })
+    let text_color = if status == button::Status::Disabled {
+        MUTED
+    } else {
+        WHITE
+    };
+    base(
+        Some(fill.into()),
+        text_color,
+        Border {
+            color: BORDER,
+            width: 1.0,
+            radius: 10.0.into(),
+        },
+    )
 }
 
 pub fn danger(_theme: &Theme, status: button::Status) -> button::Style {
@@ -139,7 +183,15 @@ pub fn danger(_theme: &Theme, status: button::Status) -> button::Style {
         button::Status::Hovered | button::Status::Pressed => Some(Color { a: 0.15, ..RED }.into()),
         _ => None,
     };
-    base(fill, RED, Border { color: Color { a: 0.6, ..RED }, width: 1.0, radius: 10.0.into() })
+    base(
+        fill,
+        RED,
+        Border {
+            color: Color { a: 0.6, ..RED },
+            width: 1.0,
+            radius: 10.0.into(),
+        },
+    )
 }
 
 /// Sidebar entry
@@ -154,7 +206,11 @@ pub fn nav(selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
             None
         };
         let border = if selected {
-            Border { color: Color { a: 0.5, ..PINK }, width: 1.0, radius: 10.0.into() }
+            Border {
+                color: Color { a: 0.5, ..PINK },
+                width: 1.0,
+                radius: 10.0.into(),
+            }
         } else {
             border::rounded(10)
         };
@@ -169,7 +225,11 @@ pub fn list_item(selected: bool) -> impl Fn(&Theme, button::Status) -> button::S
             primary(theme, status)
         } else {
             let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
-            base(hovered.then(|| CARD_HOVER.into()), WHITE, border::rounded(8))
+            base(
+                hovered.then(|| CARD_HOVER.into()),
+                WHITE,
+                border::rounded(8),
+            )
         }
     }
 }

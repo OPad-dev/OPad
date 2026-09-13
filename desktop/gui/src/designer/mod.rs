@@ -3,17 +3,17 @@
 
 mod overlay;
 
+use crate::theme;
 use iced::widget::{
-    button, canvas, checkbox, column, container, image, pick_list, row, scrollable, stack,
-    text, text_input, Space,
+    button, canvas, checkbox, column, container, image, pick_list, row, scrollable, stack, text,
+    text_input, Space,
 };
 use iced::{keyboard, Alignment, Color, Element, Length, Subscription, Task};
 use iced_aw::helpers::{color_picker, number_input};
-use crate::theme;
 use osupad_ipc::{IpcRequest, IpcResponse};
 use osupad_layout::{
-    all_sources, source_info, Align, Font, Layout, Screen, SourceInfo, Widget, WidgetKind, DECIMALS_DEFAULT,
-    FLAG_BG_FILL, FLAG_BORDER, FLAG_HIDE_WHEN_EMPTY, MAX_WIDGETS,
+    all_sources, source_info, Align, Font, Layout, Screen, SourceInfo, Widget, WidgetKind,
+    DECIMALS_DEFAULT, FLAG_BG_FILL, FLAG_BORDER, FLAG_HIDE_WHEN_EMPTY, MAX_WIDGETS,
 };
 use osupad_model::ui_source::{self, SourceValue};
 use osupad_ui_preview as preview;
@@ -38,12 +38,22 @@ pub struct Decimals(u8);
 
 impl std::fmt::Display for Decimals {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.0 == DECIMALS_DEFAULT { f.write_str("Source default") } else { write!(f, "{}", self.0) }
+        if self.0 == DECIMALS_DEFAULT {
+            f.write_str("Source default")
+        } else {
+            write!(f, "{}", self.0)
+        }
     }
 }
 
-const DECIMAL_CHOICES: [Decimals; 6] =
-    [Decimals(DECIMALS_DEFAULT), Decimals(0), Decimals(1), Decimals(2), Decimals(3), Decimals(4)];
+const DECIMAL_CHOICES: [Decimals; 6] = [
+    Decimals(DECIMALS_DEFAULT),
+    Decimals(0),
+    Decimals(1),
+    Decimals(2),
+    Decimals(3),
+    Decimals(4),
+];
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -132,12 +142,17 @@ fn hex(rgb: u32) -> String {
 
 fn parse_hex(s: &str) -> Option<u32> {
     let h = s.trim().trim_start_matches('#');
-    (h.len() == 6).then(|| u32::from_str_radix(h, 16).ok()).flatten()
+    (h.len() == 6)
+        .then(|| u32::from_str_radix(h, 16).ok())
+        .flatten()
 }
 
 impl Designer {
     pub fn new() -> (Self, Task<Message>) {
-        let defaults = [preview::default_model(Screen::Idle), preview::default_model(Screen::Playing)];
+        let defaults = [
+            preview::default_model(Screen::Idle),
+            preview::default_model(Screen::Playing),
+        ];
         preview::set_values(preview::sample_values().iter().map(|(s, v)| (*s, v)));
         let mut designer = Designer {
             screen: Screen::Playing,
@@ -179,7 +194,8 @@ impl Designer {
     fn refresh(&mut self) {
         let layout = self.layout().clone();
         if let Some(rgba) = preview::render_model(&layout) {
-            self.preview = image::Handle::from_rgba(preview::SCREEN_W as u32, preview::SCREEN_H as u32, rgba);
+            self.preview =
+                image::Handle::from_rgba(preview::SCREEN_W as u32, preview::SCREEN_H as u32, rgba);
         }
         if let Some(w) = self.selected.and_then(|i| layout.widgets.get(i)) {
             self.hex[0] = hex(w.fg);
@@ -196,13 +212,17 @@ impl Designer {
                 match result {
                     Ok((idle, playing)) => {
                         for (screen, saved) in [(Screen::Idle, idle), (Screen::Playing, playing)] {
-                            let layout = saved.unwrap_or_else(|| self.defaults[idx(screen)].clone());
+                            let layout =
+                                saved.unwrap_or_else(|| self.defaults[idx(screen)].clone());
                             self.applied[idx(screen)] = layout.clone();
                             self.working[idx(screen)] = layout;
                         }
-                        self.status = "Drag widgets to move them, drag the corner handle to resize.".into();
+                        self.status =
+                            "Drag widgets to move them, drag the corner handle to resize.".into();
                     }
-                    Err(e) => self.status = format!("Daemon unavailable ({}); editing the defaults", e),
+                    Err(e) => {
+                        self.status = format!("Daemon unavailable ({}); editing the defaults", e)
+                    }
                 }
                 self.selected = None;
             }
@@ -245,7 +265,10 @@ impl Designer {
                 }
             }
             Message::Raise => {
-                if let Some(i) = self.selected.filter(|i| i + 1 < self.layout().widgets.len()) {
+                if let Some(i) = self
+                    .selected
+                    .filter(|i| i + 1 < self.layout().widgets.len())
+                {
                     self.layout_mut().widgets.swap(i, i + 1);
                     self.selected = Some(i + 1);
                 }
@@ -307,16 +330,22 @@ impl Designer {
                     let converted: Vec<(u8, preview::Value)> = values
                         .into_iter()
                         .map(|(s, v)| {
-                            (s, match v {
-                                SourceValue::Number(n) => preview::Value::Number(n),
-                                SourceValue::Text(t) => preview::Value::Text(t),
-                                SourceValue::Clear => preview::Value::Empty,
-                            })
+                            (
+                                s,
+                                match v {
+                                    SourceValue::Number(n) => preview::Value::Number(n),
+                                    SourceValue::Text(t) => preview::Value::Text(t),
+                                    SourceValue::Clear => preview::Value::Empty,
+                                },
+                            )
                         })
                         .collect();
                     preview::set_values(converted.iter().map(|(s, v)| (*s, v)));
                 }
-                Ok(_) => self.status = "No live data yet (is tosu running?); showing sample values".into(),
+                Ok(_) => {
+                    self.status =
+                        "No live data yet (is tosu running?); showing sample values".into()
+                }
                 Err(e) => self.status = format!("Live data unavailable: {}", e),
             },
             Message::SimulatePress(on) => {
@@ -339,7 +368,11 @@ impl Designer {
                 match result {
                     Ok(note) => {
                         self.applied[idx(self.screen)] = self.layout().clone();
-                        self.status = if note.is_empty() { "Applied to the pad".into() } else { format!("Applied: {}", note) };
+                        self.status = if note.is_empty() {
+                            "Applied to the pad".into()
+                        } else {
+                            format!("Applied: {}", note)
+                        };
                     }
                     Err(e) => self.status = e,
                 }
@@ -352,7 +385,8 @@ impl Designer {
             Message::ResetDefault => {
                 self.working[idx(self.screen)] = self.defaults[idx(self.screen)].clone();
                 self.selected = None;
-                self.status = "Loaded the built-in default; press Apply to use it on the pad".into();
+                self.status =
+                    "Loaded the built-in default; press Apply to use it on the pad".into();
             }
             Message::Export => {
                 let (screen, layout) = (self.screen, self.layout().clone());
@@ -416,7 +450,8 @@ impl Designer {
 
     fn pointer_move(&mut self, x: f32, y: f32) {
         let Some(drag) = self.drag else { return };
-        let clamp = |v: f32, lo: i16, hi: i16| (v.round() as i32).clamp(lo as i32, hi as i32) as i16;
+        let clamp =
+            |v: f32, lo: i16, hi: i16| (v.round() as i32).clamp(lo as i32, hi as i32) as i16;
         match drag {
             Drag::Move { index, dx, dy } => {
                 if let Some(w) = self.layout_mut().widgets.get_mut(index) {
@@ -440,16 +475,27 @@ impl Designer {
             };
             let step = if modifiers.shift() { 10 } else { 1 };
             match key {
-                keyboard::Key::Named(keyboard::key::Named::ArrowLeft) => Some(Message::Nudge(-step, 0)),
-                keyboard::Key::Named(keyboard::key::Named::ArrowRight) => Some(Message::Nudge(step, 0)),
-                keyboard::Key::Named(keyboard::key::Named::ArrowUp) => Some(Message::Nudge(0, -step)),
-                keyboard::Key::Named(keyboard::key::Named::ArrowDown) => Some(Message::Nudge(0, step)),
+                keyboard::Key::Named(keyboard::key::Named::ArrowLeft) => {
+                    Some(Message::Nudge(-step, 0))
+                }
+                keyboard::Key::Named(keyboard::key::Named::ArrowRight) => {
+                    Some(Message::Nudge(step, 0))
+                }
+                keyboard::Key::Named(keyboard::key::Named::ArrowUp) => {
+                    Some(Message::Nudge(0, -step))
+                }
+                keyboard::Key::Named(keyboard::key::Named::ArrowDown) => {
+                    Some(Message::Nudge(0, step))
+                }
                 keyboard::Key::Named(keyboard::key::Named::Delete) => Some(Message::Delete),
                 _ => None,
             }
         });
         if self.live {
-            Subscription::batch([keys, iced::time::every(Duration::from_secs(1)).map(|_| Message::PollLive)])
+            Subscription::batch([
+                keys,
+                iced::time::every(Duration::from_secs(1)).map(|_| Message::PollLive),
+            ])
         } else {
             keys
         }
@@ -460,15 +506,26 @@ impl Designer {
 
         let screens = row(Screen::ALL.iter().map(|s| {
             button(text(format!("{} screen", s)))
-                .style(if *s == self.screen { theme::primary } else { theme::secondary })
+                .style(if *s == self.screen {
+                    theme::primary
+                } else {
+                    theme::secondary
+                })
                 .on_press(Message::SelectScreen(*s))
                 .into()
         }))
         .spacing(8);
 
-        let (w, h) = (preview::SCREEN_W as f32 * SCALE, preview::SCREEN_H as f32 * SCALE);
+        let (w, h) = (
+            preview::SCREEN_W as f32 * SCALE,
+            preview::SCREEN_H as f32 * SCALE,
+        );
         let overlay = overlay::Overlay {
-            boxes: layout.widgets.iter().map(|w| (w.x, w.y, w.w, w.h)).collect(),
+            boxes: layout
+                .widgets
+                .iter()
+                .map(|w| (w.x, w.y, w.w, w.h))
+                .collect(),
             selected: self.selected,
         };
         let canvas_area = stack![
@@ -480,24 +537,42 @@ impl Designer {
         ];
 
         let actions = row![
-            button(text(if self.dirty() { "Apply to pad •" } else { "Apply to pad" }))
-                .style(theme::primary)
-                .on_press_maybe((!self.busy).then_some(Message::Apply)),
-            button("Revert").style(theme::secondary).on_press(Message::Revert),
-            button("Reset to default").style(theme::secondary).on_press(Message::ResetDefault),
-            button("Export").style(theme::secondary).on_press(Message::Export),
-            button("Import").style(theme::secondary).on_press(Message::Import),
+            button(text(if self.dirty() {
+                "Apply to pad •"
+            } else {
+                "Apply to pad"
+            }))
+            .style(theme::primary)
+            .on_press_maybe((!self.busy).then_some(Message::Apply)),
+            button("Revert")
+                .style(theme::secondary)
+                .on_press(Message::Revert),
+            button("Reset to default")
+                .style(theme::secondary)
+                .on_press(Message::ResetDefault),
+            button("Export")
+                .style(theme::secondary)
+                .on_press(Message::Export),
+            button("Import")
+                .style(theme::secondary)
+                .on_press(Message::Import),
         ]
         .spacing(8);
 
         let toggles = row![
-            checkbox(self.live).label("Live data from osu!").on_toggle(Message::LiveData),
-            checkbox(self.press).label("Show keys pressed").on_toggle(Message::SimulatePress),
+            checkbox(self.live)
+                .label("Live data from osu!")
+                .on_toggle(Message::LiveData),
+            checkbox(self.press)
+                .label("Show keys pressed")
+                .on_toggle(Message::SimulatePress),
         ]
         .spacing(20);
 
         let left = column![
-            row![theme::heading("Designer"), Space::new().width(20), screens].spacing(12).align_y(Alignment::Center),
+            row![theme::heading("Designer"), Space::new().width(20), screens]
+                .spacing(12)
+                .align_y(Alignment::Center),
             container(canvas_area).style(theme::card).padding(6),
             theme::muted(&self.status).size(13),
             actions,
@@ -508,22 +583,39 @@ impl Designer {
         .width(Length::Shrink);
 
         let right = column![
-            container(self.palette()).padding(16).width(Length::Fill).style(theme::card),
-            container(self.widget_list()).padding(16).width(Length::Fill).style(theme::card),
-            container(self.properties()).padding(16).width(Length::Fill).style(theme::card),
+            container(self.palette())
+                .padding(16)
+                .width(Length::Fill)
+                .style(theme::card),
+            container(self.widget_list())
+                .padding(16)
+                .width(Length::Fill)
+                .style(theme::card),
+            container(self.properties())
+                .padding(16)
+                .width(Length::Fill)
+                .style(theme::card),
         ]
         .spacing(12)
         .width(Length::Fill);
 
-        row![left, scrollable(right).height(Length::Fill)].spacing(16).into()
+        row![left, scrollable(right).height(Length::Fill)]
+            .spacing(16)
+            .into()
     }
 
     fn palette(&self) -> Element<'_, Message> {
         column![
             text("Add widget").size(16).font(theme::FONT_BOLD),
-            row(WidgetKind::ALL.iter().map(|k| button(text(k.label()).size(12)).padding([5, 10]).style(theme::secondary).on_press(Message::Add(*k)).into()))
-                .spacing(6)
-                .wrap(),
+            row(WidgetKind::ALL
+                .iter()
+                .map(|k| button(text(k.label()).size(12))
+                    .padding([5, 10])
+                    .style(theme::secondary)
+                    .on_press(Message::Add(*k))
+                    .into()))
+            .spacing(6)
+            .wrap(),
         ]
         .spacing(6)
         .into()
@@ -533,7 +625,11 @@ impl Designer {
         let layout = self.layout();
         let items = column(layout.widgets.iter().enumerate().rev().map(|(i, w)| {
             let source = source_info(w.source).map_or("?".to_string(), |s| s.label());
-            let what = if w.source == 0 { format!("\"{}\"", w.label) } else { source };
+            let what = if w.source == 0 {
+                format!("\"{}\"", w.label)
+            } else {
+                source
+            };
             button(text(format!("{}  ·  {}", w.kind.label(), what)).size(12))
                 .width(Length::Fill)
                 .padding([3, 8])
@@ -545,17 +641,31 @@ impl Designer {
 
         column![
             row![
-                text(format!("Widgets ({}/{})", layout.widgets.len(), MAX_WIDGETS)).size(16).font(theme::FONT_BOLD),
+                text(format!(
+                    "Widgets ({}/{})",
+                    layout.widgets.len(),
+                    MAX_WIDGETS
+                ))
+                .size(16)
+                .font(theme::FONT_BOLD),
                 Space::new().width(Length::Fill),
                 theme::caption("top of list = drawn on top").size(11),
             ]
             .align_y(Alignment::Center),
             scrollable(items).height(170),
             row![
-                button(text("Raise").size(12)).style(theme::secondary).on_press_maybe(self.selected.map(|_| Message::Raise)),
-                button(text("Lower").size(12)).style(theme::secondary).on_press_maybe(self.selected.map(|_| Message::Lower)),
-                button(text("Duplicate").size(12)).style(theme::secondary).on_press_maybe(self.selected.map(|_| Message::Duplicate)),
-                button(text("Delete").size(12)).style(theme::danger).on_press_maybe(self.selected.map(|_| Message::Delete)),
+                button(text("Raise").size(12))
+                    .style(theme::secondary)
+                    .on_press_maybe(self.selected.map(|_| Message::Raise)),
+                button(text("Lower").size(12))
+                    .style(theme::secondary)
+                    .on_press_maybe(self.selected.map(|_| Message::Lower)),
+                button(text("Duplicate").size(12))
+                    .style(theme::secondary)
+                    .on_press_maybe(self.selected.map(|_| Message::Duplicate)),
+                button(text("Delete").size(12))
+                    .style(theme::danger)
+                    .on_press_maybe(self.selected.map(|_| Message::Delete)),
             ]
             .spacing(6),
         ]
@@ -563,17 +673,32 @@ impl Designer {
         .into()
     }
 
-    fn color_row(&self, label: &'static str, field: ColorField, value: u32) -> Element<'_, Message> {
+    fn color_row(
+        &self,
+        label: &'static str,
+        field: ColorField,
+        value: u32,
+    ) -> Element<'_, Message> {
         let swatch = button(Space::new().width(28).height(18))
             .style(move |_theme, _status| button::Style {
                 background: Some(color(value).into()),
-                border: iced::Border { color: Color::WHITE, width: 1.0, radius: 3.0.into() },
+                border: iced::Border {
+                    color: Color::WHITE,
+                    width: 1.0,
+                    radius: 3.0.into(),
+                },
                 ..Default::default()
             })
             .on_press(Message::OpenColor(field));
         row![
             theme::muted(label).size(13).width(90),
-            color_picker(self.picker == Some(field), color(value), swatch, Message::CancelColor, Message::SubmitColor),
+            color_picker(
+                self.picker == Some(field),
+                color(value),
+                swatch,
+                Message::CancelColor,
+                Message::SubmitColor
+            ),
             text_input("#RRGGBB", &self.hex[field as usize])
                 .on_input(move |s| Message::Hex(field, s))
                 .width(100),
@@ -588,43 +713,105 @@ impl Designer {
         let background = self.color_row("Screen bg", ColorField::Background, layout.background);
 
         let Some(w) = self.selected.and_then(|i| layout.widgets.get(i)) else {
-            return column![text("Properties").size(16).font(theme::FONT_BOLD), background, theme::muted("Select a widget to edit it.").size(13)]
-                .spacing(8)
-                .into();
+            return column![
+                text("Properties").size(16).font(theme::FONT_BOLD),
+                background,
+                theme::muted("Select a widget to edit it.").size(13)
+            ]
+            .spacing(8)
+            .into();
         };
 
-        let field = |label: &'static str, input: Element<'static, Message>| -> Element<'static, Message> {
-            row![theme::muted(label).size(13).width(90), input].spacing(8).align_y(Alignment::Center).into()
-        };
+        let field =
+            |label: &'static str, input: Element<'static, Message>| -> Element<'static, Message> {
+                row![theme::muted(label).size(13).width(90), input]
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .into()
+            };
         let sources = all_sources();
         let current_source = source_info(w.source);
 
         column![
             text("Properties").size(16).font(theme::FONT_BOLD),
-            field("Type", pick_list(WidgetKind::ALL, Some(w.kind), Message::Kind).into()),
-            field("Data", pick_list(sources, current_source, Message::Source).width(Length::Fill).into()),
-            field("Font", pick_list(Font::ALL, Some(w.font), Message::Font).into()),
-            field("Align", pick_list(Align::ALL, Some(w.align), Message::Align).into()),
+            field(
+                "Type",
+                pick_list(WidgetKind::ALL, Some(w.kind), Message::Kind).into()
+            ),
+            field(
+                "Data",
+                pick_list(sources, current_source, Message::Source)
+                    .width(Length::Fill)
+                    .into()
+            ),
+            field(
+                "Font",
+                pick_list(Font::ALL, Some(w.font), Message::Font).into()
+            ),
+            field(
+                "Align",
+                pick_list(Align::ALL, Some(w.align), Message::Align).into()
+            ),
             row![
-                field("X", number_input(&w.x, -320..=640, Message::X).width(90).into()),
-                field("Y", number_input(&w.y, -240..=480, Message::Y).width(90).into()),
+                field(
+                    "X",
+                    number_input(&w.x, -320..=640, Message::X).width(90).into()
+                ),
+                field(
+                    "Y",
+                    number_input(&w.y, -240..=480, Message::Y).width(90).into()
+                ),
             ]
             .spacing(8),
             row![
-                field("Width", number_input(&w.w, 1..=640, Message::W).width(90).into()),
-                field("Height", number_input(&w.h, 1..=480, Message::H).width(90).into()),
+                field(
+                    "Width",
+                    number_input(&w.w, 1..=640, Message::W).width(90).into()
+                ),
+                field(
+                    "Height",
+                    number_input(&w.h, 1..=480, Message::H).width(90).into()
+                ),
             ]
             .spacing(8),
-            field("Radius", number_input(&w.radius, 0..=120, Message::Radius).width(90).into()),
-            field("Decimals", pick_list(DECIMAL_CHOICES, Some(Decimals(w.decimals)), Message::Decimals).into()),
-            field("Label", text_input("prefix / static text", &w.label).on_input(Message::Label).into()),
-            field("Suffix", text_input("e.g. pp, %, x", &w.suffix).on_input(Message::Suffix).into()),
+            field(
+                "Radius",
+                number_input(&w.radius, 0..=120, Message::Radius)
+                    .width(90)
+                    .into()
+            ),
+            field(
+                "Decimals",
+                pick_list(
+                    DECIMAL_CHOICES,
+                    Some(Decimals(w.decimals)),
+                    Message::Decimals
+                )
+                .into()
+            ),
+            field(
+                "Label",
+                text_input("prefix / static text", &w.label)
+                    .on_input(Message::Label)
+                    .into()
+            ),
+            field(
+                "Suffix",
+                text_input("e.g. pp, %, x", &w.suffix)
+                    .on_input(Message::Suffix)
+                    .into()
+            ),
             self.color_row("Text / fg", ColorField::Fg, w.fg),
             self.color_row("Background", ColorField::Bg, w.bg),
             self.color_row("Accent", ColorField::Accent, w.accent),
-            checkbox(w.has_flag(FLAG_BG_FILL)).label("Fill background (text)").on_toggle(|on| Message::Flag(FLAG_BG_FILL, on)),
-            checkbox(w.has_flag(FLAG_BORDER)).label("Border").on_toggle(|on| Message::Flag(FLAG_BORDER, on)),
-            checkbox(w.has_flag(FLAG_HIDE_WHEN_EMPTY)).label("Hide when there is no data")
+            checkbox(w.has_flag(FLAG_BG_FILL))
+                .label("Fill background (text)")
+                .on_toggle(|on| Message::Flag(FLAG_BG_FILL, on)),
+            checkbox(w.has_flag(FLAG_BORDER))
+                .label("Border")
+                .on_toggle(|on| Message::Flag(FLAG_BORDER, on)),
+            checkbox(w.has_flag(FLAG_HIDE_WHEN_EMPTY))
+                .label("Hide when there is no data")
                 .on_toggle(|on| Message::Flag(FLAG_HIDE_WHEN_EMPTY, on)),
             iced::widget::rule::horizontal(1),
             background,
@@ -638,10 +825,18 @@ impl Designer {
 fn kind_help(kind: WidgetKind) -> &'static str {
     match kind {
         WidgetKind::Text => "Shows Label + value + Suffix. With no data source it is static text.",
-        WidgetKind::Progress => "Background = track, Accent = fill. Use a 0-1 source such as map progress or health.",
-        WidgetKind::KeyCard => "Label is the title. Background at rest, Accent while the key is held (they swap).",
-        WidgetKind::StatusDot => "Accent = connected, Background = disconnected, Text = label color.",
-        WidgetKind::Rect => "Background fill with Radius; Border draws a 1 px outline in Text color.",
+        WidgetKind::Progress => {
+            "Background = track, Accent = fill. Use a 0-1 source such as map progress or health."
+        }
+        WidgetKind::KeyCard => {
+            "Label is the title. Background at rest, Accent while the key is held (they swap)."
+        }
+        WidgetKind::StatusDot => {
+            "Accent = connected, Background = disconnected, Text = label color."
+        }
+        WidgetKind::Rect => {
+            "Background fill with Radius; Border draws a 1 px outline in Text color."
+        }
         WidgetKind::Grade => "Shows the rank letter in osu!'s grade colors.",
     }
 }
@@ -693,11 +888,17 @@ async fn export_layout(screen: Screen, layout: Layout) -> Result<String, String>
 }
 
 async fn import_layout() -> Result<Layout, String> {
-    let Some(file) = rfd::AsyncFileDialog::new().add_filter("Layout", &["json"]).pick_file().await else {
+    let Some(file) = rfd::AsyncFileDialog::new()
+        .add_filter("Layout", &["json"])
+        .pick_file()
+        .await
+    else {
         return Err(String::new());
     };
     let json = std::fs::read_to_string(file.path()).map_err(|e| format!("Import failed: {}", e))?;
     let layout = Layout::from_json(&json).map_err(|e| format!("Not a layout file: {}", e))?;
-    layout.validate().map_err(|e| format!("Invalid layout: {}", e))?;
+    layout
+        .validate()
+        .map_err(|e| format!("Invalid layout: {}", e))?;
     Ok(layout)
 }

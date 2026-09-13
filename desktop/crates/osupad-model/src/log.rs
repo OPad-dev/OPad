@@ -48,7 +48,13 @@ pub struct LogEntry {
 }
 
 impl LogEntry {
-    pub fn new(seq: u64, source: LogSource, level: LogLevel, target: impl Into<String>, message: impl Into<String>) -> Self {
+    pub fn new(
+        seq: u64,
+        source: LogSource,
+        level: LogLevel,
+        target: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
         Self {
             seq,
             ts: Local::now(),

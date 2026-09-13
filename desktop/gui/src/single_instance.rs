@@ -42,26 +42,29 @@ pub fn claim(page: Option<&str>) -> bool {
 
 /// Emits once per "show" request from another launch with optional target page name
 pub fn show_requests() -> impl futures_util::Stream<Item = Option<String>> {
-    iced::stream::channel(4, |mut output: iced::futures::channel::mpsc::Sender<Option<String>>| async move {
-        use futures_util::SinkExt;
-        use tokio::io::AsyncBufReadExt;
-        let Some(listener) = LISTENER.get().and_then(|l| l.try_clone().ok()) else {
-            return std::future::pending().await;
-        };
-        let _ = listener.set_nonblocking(true);
-        let Ok(listener) = tokio::net::UnixListener::from_std(listener) else {
-            return std::future::pending().await;
-        };
-        while let Ok((stream, _)) = listener.accept().await {
-            let mut reader = tokio::io::BufReader::new(stream);
-            let mut line = String::new();
-            let _ = reader.read_line(&mut line).await;
-            let target = line
-                .trim()
-                .strip_prefix("show")
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty());
-            let _ = output.send(target).await;
-        }
-    })
+    iced::stream::channel(
+        4,
+        |mut output: iced::futures::channel::mpsc::Sender<Option<String>>| async move {
+            use futures_util::SinkExt;
+            use tokio::io::AsyncBufReadExt;
+            let Some(listener) = LISTENER.get().and_then(|l| l.try_clone().ok()) else {
+                return std::future::pending().await;
+            };
+            let _ = listener.set_nonblocking(true);
+            let Ok(listener) = tokio::net::UnixListener::from_std(listener) else {
+                return std::future::pending().await;
+            };
+            while let Ok((stream, _)) = listener.accept().await {
+                let mut reader = tokio::io::BufReader::new(stream);
+                let mut line = String::new();
+                let _ = reader.read_line(&mut line).await;
+                let target = line
+                    .trim()
+                    .strip_prefix("show")
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty());
+                let _ = output.send(target).await;
+            }
+        },
+    )
 }

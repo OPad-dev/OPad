@@ -45,28 +45,55 @@ pub fn reset_reason_to_str(reason: u32) -> &'static str {
 
 pub fn format_diag_event(event_id: u32, arg0: u32, arg1: u32) -> String {
     match event_id {
-        DIAG_EVENT_BOOT => format!("Device boot (reset reason: {} [{}])", reset_reason_to_str(arg0), arg0),
+        DIAG_EVENT_BOOT => format!(
+            "Device boot (reset reason: {} [{}])",
+            reset_reason_to_str(arg0),
+            arg0
+        ),
         DIAG_EVENT_HID_MOUNTED => "USB HID mounted".to_string(),
         DIAG_EVENT_HID_UNMOUNTED => "USB HID unmounted".to_string(),
         DIAG_EVENT_HID_SUSPENDED => "USB HID suspended".to_string(),
         DIAG_EVENT_CDC_OPENED => "CDC serial port opened".to_string(),
         DIAG_EVENT_CDC_CLOSED => "CDC serial port closed".to_string(),
-        DIAG_EVENT_NVS_INIT_FAILED => format!("NVS initialization failed (esp_err: 0x{:04x})", arg0),
+        DIAG_EVENT_NVS_INIT_FAILED => {
+            format!("NVS initialization failed (esp_err: 0x{:04x})", arg0)
+        }
         DIAG_EVENT_NVS_ERASED => "NVS flash partition erased/recovered".to_string(),
-        DIAG_EVENT_LCD_INIT_FAILED => format!("LCD initialization failed (esp_err: 0x{:04x})", arg0),
+        DIAG_EVENT_LCD_INIT_FAILED => {
+            format!("LCD initialization failed (esp_err: 0x{:04x})", arg0)
+        }
         DIAG_EVENT_DECODE_FAILED => format!("Protobuf frame decode failed (code: {})", arg0),
-        DIAG_EVENT_FRAME_TOO_LARGE => format!("CDC RX frame exceeds max buffer (size: {} bytes)", arg0),
-        DIAG_EVENT_CONFIG_REJECTED => format!("Device configuration rejected (reason code: {})", arg0),
-        DIAG_EVENT_COUNTER_SYNC_REJECTED => format!("Counter sync rejected (reason code: {})", arg0),
+        DIAG_EVENT_FRAME_TOO_LARGE => {
+            format!("CDC RX frame exceeds max buffer (size: {} bytes)", arg0)
+        }
+        DIAG_EVENT_CONFIG_REJECTED => {
+            format!("Device configuration rejected (reason code: {})", arg0)
+        }
+        DIAG_EVENT_COUNTER_SYNC_REJECTED => {
+            format!("Counter sync rejected (reason code: {})", arg0)
+        }
         DIAG_EVENT_LAYOUT_REJECTED => format!("Screen layout rejected (screen_id: {})", arg0),
-        DIAG_EVENT_DEFERRED_WRITE_FLUSHED => format!("Flushed {} deferred flash writes to NVS", arg0),
+        DIAG_EVENT_DEFERRED_WRITE_FLUSHED => {
+            format!("Flushed {} deferred flash writes to NVS", arg0)
+        }
         DIAG_EVENT_DISPLAY_SLEEP => "Display entered sleep mode".to_string(),
         DIAG_EVENT_DISPLAY_WAKE => "Display woke up".to_string(),
-        DIAG_EVENT_LATENCY_OUTLIER => format!("Key latency outlier detected: {} µs (count: {})", arg0, arg1),
-        DIAG_EVENT_CDC_WRITE_DROPPED => format!("CDC write buffer dropped bytes (tried {}, dropped {})", arg0, arg1),
-        DIAG_EVENT_BUFFER_OVERFLOW => format!("Diagnostic buffer overflow: {} events dropped", arg0),
+        DIAG_EVENT_LATENCY_OUTLIER => format!(
+            "Key latency outlier detected: {} µs (count: {})",
+            arg0, arg1
+        ),
+        DIAG_EVENT_CDC_WRITE_DROPPED => format!(
+            "CDC write buffer dropped bytes (tried {}, dropped {})",
+            arg0, arg1
+        ),
+        DIAG_EVENT_BUFFER_OVERFLOW => {
+            format!("Diagnostic buffer overflow: {} events dropped", arg0)
+        }
         DIAG_EVENT_UNKNOWN_HOST_MSG => format!("Unhandled host message payload tag: {}", arg0),
-        _ => format!("Unknown diagnostic event (id: {}, arg0: {}, arg1: {})", event_id, arg0, arg1),
+        _ => format!(
+            "Unknown diagnostic event (id: {}, arg0: {}, arg1: {})",
+            event_id, arg0, arg1
+        ),
     }
 }
 

@@ -158,9 +158,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             wait_for_layout_ack(&mut events, screen).await
         }
 
-        IpcRequest::GetUiValues => {
-            IpcResponse::UiValues(state.lock().unwrap().ui_values.clone())
-        }
+        IpcRequest::GetUiValues => IpcResponse::UiValues(state.lock().unwrap().ui_values.clone()),
 
         IpcRequest::ResetLatencyStats => {
             if let Err(e) = device.reset_latency_stats().await {
@@ -239,8 +237,9 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
             if storage.lock().unwrap().is_none() {
                 return IpcResponse::OperationRejected {
-                    reason: "Database unavailable: counter sync is rejected without persistent storage"
-                        .to_string(),
+                    reason:
+                        "Database unavailable: counter sync is rejected without persistent storage"
+                            .to_string(),
                 };
             }
             let _ = perform_sync(state, storage, device, pending_ops).await;
@@ -267,15 +266,15 @@ pub async fn handle_ipc_request<D: DeviceLink>(
 
             if storage.lock().unwrap().is_none() {
                 return IpcResponse::OperationRejected {
-                    reason: "Database unavailable: counter reset is rejected without persistent storage"
-                        .to_string(),
+                    reason:
+                        "Database unavailable: counter reset is rejected without persistent storage"
+                            .to_string(),
                 };
             }
 
             let updated = {
                 let mut st = state.lock().unwrap();
-                st.counters.counter_generation =
-                    st.counters.counter_generation.saturating_add(1);
+                st.counters.counter_generation = st.counters.counter_generation.saturating_add(1);
                 st.counters.lifetime_key1 = 0;
                 st.counters.lifetime_key2 = 0;
                 let updated = st.counters.clone();
@@ -308,7 +307,8 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
             if !confirm {
                 return IpcResponse::OperationRejected {
-                    reason: "Confirmation required to force-restore ESP counters from PC".to_string(),
+                    reason: "Confirmation required to force-restore ESP counters from PC"
+                        .to_string(),
                 };
             }
             if storage.lock().unwrap().is_none() {
@@ -384,8 +384,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         IpcRequest::ImportPcFromDevice { confirm } => {
             if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
                 return IpcResponse::OperationRejected {
-                    reason: "Cannot import counters during active gameplay or cooldown"
-                        .to_string(),
+                    reason: "Cannot import counters during active gameplay or cooldown".to_string(),
                 };
             }
             if !confirm {
@@ -534,9 +533,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
 
         IpcRequest::ExportBackup => {
             let st = state.lock().unwrap();
-            if !st.device_connected
-                && st.device_info.is_none()
-                && st.counters.device_id.is_empty()
+            if !st.device_connected && st.device_info.is_none() && st.counters.device_id.is_empty()
             {
                 return IpcResponse::OperationRejected {
                     reason: "No counters known yet: connect the pad once".to_string(),
@@ -603,8 +600,9 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         IpcRequest::ImportBackup { backup, confirm } => {
             if !confirm {
                 return IpcResponse::OperationRejected {
-                    reason: "ImportBackup requires explicit confirmation (--yes or user confirmation)"
-                        .to_string(),
+                    reason:
+                        "ImportBackup requires explicit confirmation (--yes or user confirmation)"
+                            .to_string(),
                 };
             }
 
@@ -616,8 +614,9 @@ pub async fn handle_ipc_request<D: DeviceLink>(
 
             if storage.lock().unwrap().is_none() {
                 return IpcResponse::OperationRejected {
-                    reason: "Database unavailable: backup import is rejected without persistent storage"
-                        .to_string(),
+                    reason:
+                        "Database unavailable: backup import is rejected without persistent storage"
+                            .to_string(),
                 };
             }
 
@@ -650,11 +649,8 @@ pub async fn handle_ipc_request<D: DeviceLink>(
 
             let new_counters = CounterState {
                 device_id: backup.device.device_id.clone(),
-                counter_generation: std::cmp::max(
-                    current_gen,
-                    backup.device.counter_generation,
-                )
-                .saturating_add(1),
+                counter_generation: std::cmp::max(current_gen, backup.device.counter_generation)
+                    .saturating_add(1),
                 lifetime_key1: backup.stats.lifetime_key1,
                 lifetime_key2: backup.stats.lifetime_key2,
                 map_key1: 0,
@@ -691,7 +687,10 @@ pub async fn handle_ipc_request<D: DeviceLink>(
 
         IpcRequest::GetLogEntries { since_seq, limit } => {
             let (entries, latest_seq) = log_hub.get_entries(since_seq, limit);
-            IpcResponse::LogEntries { entries, latest_seq }
+            IpcResponse::LogEntries {
+                entries,
+                latest_seq,
+            }
         }
 
         IpcRequest::PrepareFlash => {

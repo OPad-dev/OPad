@@ -1,6 +1,8 @@
 //! Render the built-in screens with sample data: cargo run -p osupad-ui-preview --example render_defaults -- <out_dir>
 
-use osupad_ui_preview::{default_layout, encode_png, render, set_values, SCREEN_IDLE, SCREEN_PLAYING};
+use osupad_ui_preview::{
+    default_layout, encode_png, render, set_values, SCREEN_IDLE, SCREEN_PLAYING,
+};
 
 fn main() {
     let out_dir = std::env::args().nth(1).unwrap_or_else(|| ".".into());

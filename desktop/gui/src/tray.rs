@@ -33,13 +33,11 @@ pub enum TrayEvent {
 fn format_grouped(n: u64) -> String {
     let s = n.to_string();
     let mut result = String::new();
-    let mut count = 0;
-    for c in s.chars().rev() {
+    for (count, c) in s.chars().rev().enumerate() {
         if count > 0 && count % 3 == 0 {
             result.push(',');
         }
         result.push(c);
-        count += 1;
     }
     result.chars().rev().collect()
 }
@@ -92,8 +90,16 @@ impl ksni::Tray for OsuPadTray {
         } else {
             format!(
                 "Pad: {}\ntosu: {}\n{} presses · {}",
-                if s.device_connected { "connected" } else { "disconnected" },
-                if s.tosu_connected { "connected" } else { "not running" },
+                if s.device_connected {
+                    "connected"
+                } else {
+                    "disconnected"
+                },
+                if s.tosu_connected {
+                    "connected"
+                } else {
+                    "not running"
+                },
                 format_grouped(s.total_presses),
                 s.mode
             )
@@ -122,17 +128,18 @@ impl ksni::Tray for OsuPadTray {
             .into()
         };
 
-        let action_item = |label: &str, action: TrayAction, enabled: bool| -> ksni::MenuItem<Self> {
-            StandardItem {
-                label: label.into(),
-                enabled,
-                activate: Box::new(move |tray: &mut OsuPadTray| {
-                    let _ = tray.tx.send(action);
-                }),
-                ..Default::default()
-            }
-            .into()
-        };
+        let action_item =
+            |label: &str, action: TrayAction, enabled: bool| -> ksni::MenuItem<Self> {
+                StandardItem {
+                    label: label.into(),
+                    enabled,
+                    activate: Box::new(move |tray: &mut OsuPadTray| {
+                        let _ = tray.tx.send(action);
+                    }),
+                    ..Default::default()
+                }
+                .into()
+            };
 
         let s = &self.status;
         let mut items = Vec::new();
@@ -163,8 +170,14 @@ impl ksni::Tray for OsuPadTray {
         }
 
         // 4. Counters
-        items.push(disabled_item(format!("Key 1: {}", format_grouped(s.key1_presses))));
-        items.push(disabled_item(format!("Key 2: {}", format_grouped(s.key2_presses))));
+        items.push(disabled_item(format!(
+            "Key 1: {}",
+            format_grouped(s.key1_presses)
+        )));
+        items.push(disabled_item(format!(
+            "Key 2: {}",
+            format_grouped(s.key2_presses)
+        )));
 
         // 5. Last sync
         let sync_str = if s.last_sync_error.is_some() {
@@ -191,7 +204,11 @@ impl ksni::Tray for OsuPadTray {
             items.push(action_item("Start daemon", TrayAction::StartDaemon, true));
         } else {
             let sync_enabled = s.device_connected && !s.is_playing_or_cooldown;
-            items.push(action_item("Sync pad now", TrayAction::SyncNow, sync_enabled));
+            items.push(action_item(
+                "Sync pad now",
+                TrayAction::SyncNow,
+                sync_enabled,
+            ));
         }
 
         items.push(ksni::MenuItem::Separator);
@@ -204,22 +221,28 @@ impl ksni::Tray for OsuPadTray {
 }
 
 pub fn stream() -> impl futures_util::Stream<Item = TrayEvent> {
-    iced::stream::channel(20, |mut output: iced::futures::channel::mpsc::Sender<TrayEvent>| async move {
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<TrayAction>();
-        let tray = OsuPadTray { tx, status: TrayStatus::default() };
-        match tray.spawn().await {
-            Ok(handle) => {
-                let _ = output.send(TrayEvent::Started(TrayHandle(handle))).await;
-                while let Some(action) = rx.recv().await {
-                    let _ = output.send(TrayEvent::Action(action)).await;
+    iced::stream::channel(
+        20,
+        |mut output: iced::futures::channel::mpsc::Sender<TrayEvent>| async move {
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<TrayAction>();
+            let tray = OsuPadTray {
+                tx,
+                status: TrayStatus::default(),
+            };
+            match tray.spawn().await {
+                Ok(handle) => {
+                    let _ = output.send(TrayEvent::Started(TrayHandle(handle))).await;
+                    while let Some(action) = rx.recv().await {
+                        let _ = output.send(TrayEvent::Action(action)).await;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("System tray unavailable: {e}");
+                    let _ = output.send(TrayEvent::Unavailable).await;
                 }
             }
-            Err(e) => {
-                tracing::warn!("System tray unavailable: {e}");
-                let _ = output.send(TrayEvent::Unavailable).await;
-            }
-        }
-    })
+        },
+    )
 }
 
 pub fn update(handle: &TrayHandle, status: TrayStatus) {

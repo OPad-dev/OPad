@@ -1,6 +1,6 @@
+use osupad_model::{LogEntry, LogLevel, LogSource};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
-use osupad_model::{LogEntry, LogLevel, LogSource};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::Layer;
@@ -34,7 +34,13 @@ impl LogHub {
         }
     }
 
-    pub fn push(&self, source: LogSource, level: LogLevel, target: impl Into<String>, message: impl Into<String>) {
+    pub fn push(
+        &self,
+        source: LogSource,
+        level: LogLevel,
+        target: impl Into<String>,
+        message: impl Into<String>,
+    ) {
         let mut inner = self.inner.lock().unwrap();
         let seq = inner.next_seq;
         inner.next_seq = inner.next_seq.wrapping_add(1);
@@ -96,12 +102,8 @@ where
         let mut visitor = MessageVisitor::default();
         event.record(&mut visitor);
 
-        self.hub.push(
-            LogSource::Host,
-            level,
-            meta.target(),
-            visitor.message,
-        );
+        self.hub
+            .push(LogSource::Host, level, meta.target(), visitor.message);
     }
 }
 
@@ -147,7 +149,12 @@ mod tests {
     fn test_log_hub_ring_buffer_and_since_seq() {
         let hub = LogHub::new();
         for i in 1..=10 {
-            hub.push(LogSource::Host, LogLevel::Info, "test", format!("msg {}", i));
+            hub.push(
+                LogSource::Host,
+                LogLevel::Info,
+                "test",
+                format!("msg {}", i),
+            );
         }
 
         let (all, latest) = hub.get_entries(None, 100);

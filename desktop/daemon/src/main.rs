@@ -42,68 +42,73 @@ async fn main() -> Result<()> {
     info!("Starting osupad-daemon v1.0.0");
 
     let socket_path = get_socket_path();
-    if socket_path.exists() {
-        if tokio::net::UnixStream::connect(&socket_path).await.is_ok() {
-            anyhow::bail!(
-                "Another osupad-daemon instance is already running on socket {}",
-                socket_path.display()
-            );
-        }
+    if socket_path.exists() && tokio::net::UnixStream::connect(&socket_path).await.is_ok() {
+        anyhow::bail!(
+            "Another osupad-daemon instance is already running on socket {}",
+            socket_path.display()
+        );
     }
 
     let db_path = get_database_path();
     info!("Using SQLite database at {}", db_path.display());
-    let (storage, storage_error, initial_config, initial_device, initial_counters, initial_layouts, existing_ids) =
-        match Storage::open(&db_path) {
-            Ok(s) => {
-                let cfg = s.load_config().unwrap_or_default();
-                let latest = s.load_latest_device_state().unwrap_or(None);
-                let mut layouts = HashMap::new();
-                for screen in Screen::ALL {
-                    if let Ok(Some(json)) = s.load_layout(screen.to_wire()) {
-                        if let Ok(layout) = Layout::from_json(&json) {
-                            layouts.insert(*screen, layout);
-                        }
+    let (
+        storage,
+        storage_error,
+        initial_config,
+        initial_device,
+        initial_counters,
+        initial_layouts,
+        existing_ids,
+    ) = match Storage::open(&db_path) {
+        Ok(s) => {
+            let cfg = s.load_config().unwrap_or_default();
+            let latest = s.load_latest_device_state().unwrap_or(None);
+            let mut layouts = HashMap::new();
+            for screen in Screen::ALL {
+                if let Ok(Some(json)) = s.load_layout(screen.to_wire()) {
+                    if let Ok(layout) = Layout::from_json(&json) {
+                        layouts.insert(*screen, layout);
                     }
                 }
-                let (init_dev, init_cnt) = match latest {
-                    Some((info, counters)) => (Some(info), counters),
-                    None => (None, CounterState::default()),
-                };
-                let existing = s
-                    .list_device_states()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|(info, _)| info.device_id)
-                    .collect();
-                info!("osupad-daemon initialized, storage loaded successfully");
-                (
-                    Arc::new(Mutex::new(Some(s))),
-                    None,
-                    cfg,
-                    init_dev,
-                    init_cnt,
-                    layouts,
-                    existing,
-                )
             }
-            Err(e) => {
-                let err_msg = format!("Database error ({}): {}", db_path.display(), e);
-                error!(
-                    "Failed to open/migrate SQLite database: {}. Starting in degraded mode (§P2-12)",
-                    err_msg
-                );
-                (
-                    Arc::new(Mutex::new(None)),
-                    Some(err_msg),
-                    DeviceConfig::default(),
-                    None,
-                    CounterState::default(),
-                    HashMap::new(),
-                    Vec::new(),
-                )
-            }
-        };
+            let (init_dev, init_cnt) = match latest {
+                Some((info, counters)) => (Some(info), counters),
+                None => (None, CounterState::default()),
+            };
+            let existing = s
+                .list_device_states()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(info, _)| info.device_id)
+                .collect();
+            info!("osupad-daemon initialized, storage loaded successfully");
+            (
+                Arc::new(Mutex::new(Some(s))),
+                None,
+                cfg,
+                init_dev,
+                init_cnt,
+                layouts,
+                existing,
+            )
+        }
+        Err(e) => {
+            let err_msg = format!("Database error ({}): {}", db_path.display(), e);
+            error!(
+                "Failed to open/migrate SQLite database: {}. Starting in degraded mode (§P2-12)",
+                err_msg
+            );
+            (
+                Arc::new(Mutex::new(None)),
+                Some(err_msg),
+                DeviceConfig::default(),
+                None,
+                CounterState::default(),
+                HashMap::new(),
+                Vec::new(),
+            )
+        }
+    };
 
     let start_now = Instant::now();
     let mut controller = RuntimeController::new(
@@ -260,14 +265,7 @@ async fn main() -> Result<()> {
                 let now_system = std::time::SystemTime::now();
                 let elapsed_instant = now.saturating_duration_since(last_instant);
                 let clock_jump = match now_system.duration_since(last_system_time) {
-                    Ok(sys_elapsed) => {
-                        let diff = if sys_elapsed > elapsed_instant {
-                            sys_elapsed - elapsed_instant
-                        } else {
-                            elapsed_instant - sys_elapsed
-                        };
-                        diff > Duration::from_secs(2)
-                    }
+                    Ok(sys_elapsed) => sys_elapsed.abs_diff(elapsed_instant) > Duration::from_secs(2),
                     Err(_) => true,
                 };
                 last_instant = now;
@@ -344,7 +342,9 @@ async fn main() -> Result<()> {
                     } => {
                         let dm = device_manager.clone();
                         tokio::spawn(async move {
-                            let _ = dm.send_host_status(tosu_connected, is_playing, play_id).await;
+                            let _ = dm
+                                .send_host_status(tosu_connected, is_playing, play_id)
+                                .await;
                         });
                     }
                     RuntimeAction::SendDataUpdate(changes) => {
@@ -412,7 +412,11 @@ async fn main() -> Result<()> {
                             let _ = s.touch_device_last_seen(&device_id);
                         }
                     }
-                    RuntimeAction::PushEspLog { level, tag, message } => {
+                    RuntimeAction::PushEspLog {
+                        level,
+                        tag,
+                        message,
+                    } => {
                         log_hub.push(LogSource::Esp, level, &tag, message);
                     }
                 }
@@ -450,9 +454,9 @@ pub fn get_database_path() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::DaemonState;
     use osupad_ipc::{IpcRequest, IpcResponse};
     use osupad_model::{CounterSource, DeviceInfo};
-    use crate::runtime::DaemonState;
 
     #[tokio::test]
     async fn test_sqlite_failure_isolation() {
@@ -513,7 +517,10 @@ mod tests {
         .await;
         match resp {
             IpcResponse::Status { storage_error, .. } => {
-                assert_eq!(storage_error, Some("Database permission denied".to_string()));
+                assert_eq!(
+                    storage_error,
+                    Some("Database permission denied".to_string())
+                );
             }
             other => panic!("Expected Status response, got {:?}", other),
         }
@@ -573,7 +580,13 @@ mod tests {
             &pending_ops,
         )
         .await;
-        assert!(matches!(resp, IpcResponse::Layouts { idle: None, playing: None }));
+        assert!(matches!(
+            resp,
+            IpcResponse::Layouts {
+                idle: None,
+                playing: None
+            }
+        ));
 
         // 4. perform_sync does not modify ESP counters when storage is None
         let res = perform_sync(&daemon_state, &storage, &*device_manager, &pending_ops).await;
