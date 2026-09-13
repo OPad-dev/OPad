@@ -7,16 +7,51 @@
 
 static const char *TAG = "board_display";
 
+static esp_lcd_panel_handle_t s_panel_handle = NULL;
+static esp_lcd_panel_io_handle_t s_io_handle = NULL;
+static uint8_t s_display_brightness = 100;
+
+esp_lcd_panel_handle_t board_display_get_panel_handle(void)
+{
+    return s_panel_handle;
+}
+
+esp_lcd_panel_io_handle_t board_display_get_io_handle(void)
+{
+    return s_io_handle;
+}
+
+void board_display_set_brightness(uint8_t percent)
+{
+    if (percent > 100) {
+        percent = 100;
+    }
+    s_display_brightness = percent;
+    board_backlight_set(percent);
+}
+
+void board_display_sleep(void)
+{
+    board_backlight_set(0);
+    if (s_panel_handle) {
+        esp_lcd_panel_disp_on_off(s_panel_handle, false);
+    }
+}
+
+void board_display_wake(void)
+{
+    if (s_panel_handle) {
+        esp_lcd_panel_disp_on_off(s_panel_handle, true);
+    }
+    board_backlight_set(s_display_brightness);
+}
+
 esp_err_t board_display_init(esp_lcd_panel_io_handle_t *out_io, esp_lcd_panel_handle_t *out_panel)
 {
 #if defined(CONFIG_OSUPAD_TEST_FAIL_LCD) || defined(OSUPAD_TEST_FAIL_LCD)
     ESP_LOGW(TAG, "FORCED LCD FAILURE (OSUPAD_TEST_FAIL_LCD active)");
     return ESP_FAIL;
 #endif
-
-    if (!out_panel) {
-        return ESP_ERR_INVALID_ARG;
-    }
 
     ESP_LOGI(TAG, "Initializing ST7789 display (SCLK=%d, MOSI=%d, CS=%d, DC=%d)...",
              BOARD_LCD_SCLK_GPIO, BOARD_LCD_MOSI_GPIO, BOARD_LCD_CS_GPIO, BOARD_LCD_DC_GPIO);
@@ -87,8 +122,15 @@ esp_err_t board_display_init(esp_lcd_panel_io_handle_t *out_io, esp_lcd_panel_ha
     esp_lcd_panel_invert_color(panel_handle, true);
     esp_lcd_panel_disp_on_off(panel_handle, true);
 
-    *out_io = io_handle;
-    *out_panel = panel_handle;
+    s_io_handle = io_handle;
+    s_panel_handle = panel_handle;
+
+    if (out_io) {
+        *out_io = io_handle;
+    }
+    if (out_panel) {
+        *out_panel = panel_handle;
+    }
     ESP_LOGI(TAG, "ST7789 display initialized successfully (%dx%d)", BOARD_LCD_H_RES, BOARD_LCD_V_RES);
     return ESP_OK;
 }

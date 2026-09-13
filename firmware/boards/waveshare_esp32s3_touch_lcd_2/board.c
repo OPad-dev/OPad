@@ -117,3 +117,13 @@ uint8_t board_backlight_get(void)
 {
     return s_backlight_percent;
 }
+
+int board_get_key1_gpio(void)
+{
+    return BOARD_KEY1_GPIO;
+}
+
+int board_get_key2_gpio(void)
+{
+    return BOARD_KEY2_GPIO;
+}

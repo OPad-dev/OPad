@@ -22,7 +22,6 @@ static const char *TAG = "ui";
 #define KPS_WINDOW          (1000 / PAD_TIMER_PERIOD_MS)
 
 static lv_display_t *s_disp;
-static esp_lcd_panel_handle_t s_panel;
 
 static ui_layout_t s_layouts[UI_SCREEN_COUNT];
 static lv_obj_t *s_screens[UI_SCREEN_COUNT];
@@ -109,16 +108,14 @@ static void update_sleep(int64_t now_us)
     if (should_sleep && !s_asleep) {
         s_asleep = true;
         lv_display_enable_invalidation(s_disp, false);
-        board_backlight_set(0);
-        esp_lcd_panel_disp_on_off(s_panel, false);
+        board_display_sleep();
         diag_record(DIAG_EVENT_DISPLAY_SLEEP, 1 /* INFO */, 0, 0);
         ESP_LOGI(TAG, "Display asleep");
     } else if (!should_sleep && s_asleep) {
         s_asleep = false;
-        esp_lcd_panel_disp_on_off(s_panel, true);
+        board_display_wake();
         lv_display_enable_invalidation(s_disp, true);
         lv_obj_invalidate(lv_screen_active());
-        board_backlight_set(s_brightness);
         diag_record(DIAG_EVENT_DISPLAY_WAKE, 1 /* INFO */, 0, 0);
     }
 }
@@ -155,7 +152,8 @@ esp_err_t ui_init(void)
     s_ui_ok = false;
 
     esp_lcd_panel_io_handle_t io = NULL;
-    esp_err_t err = board_display_init(&io, &s_panel);
+    esp_lcd_panel_handle_t panel = NULL;
+    esp_err_t err = board_display_init(&io, &panel);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "board_display_init failed: %s", esp_err_to_name(err));
         return err;
@@ -174,7 +172,7 @@ esp_err_t ui_init(void)
 
     const lvgl_port_display_cfg_t disp_cfg = {
         .io_handle = io,
-        .panel_handle = s_panel,
+        .panel_handle = panel,
         .buffer_size = UI_SCREEN_W * 40,
         .double_buffer = true,
         .hres = UI_SCREEN_W,
@@ -212,7 +210,7 @@ esp_err_t ui_init(void)
     lv_timer_create(pad_timer_cb, PAD_TIMER_PERIOD_MS, NULL);
     lvgl_port_unlock();
 
-    board_backlight_set(s_brightness);
+    board_display_set_brightness(s_brightness);
     s_ui_ok = true;
     ESP_LOGI(TAG, "LVGL UI started on core 1");
     return ESP_OK;
@@ -240,7 +238,7 @@ void ui_set_brightness(uint8_t percent)
     s_brightness = percent > 100 ? 100 : percent;
     if (!s_ui_ok) return;
     if (!s_asleep) {
-        board_backlight_set(s_brightness);
+        board_display_set_brightness(s_brightness);
     }
 }
 

@@ -49,9 +49,45 @@ uint8_t board_backlight_get(void);
 
 /**
  * @brief Initialize ST7789 LCD panel.
- * @param[out] out_panel Handle to the initialized esp_lcd panel.
+ * @param[out] out_io Optional handle to the initialized esp_lcd panel IO.
+ * @param[out] out_panel Optional handle to the initialized esp_lcd panel.
  */
 esp_err_t board_display_init(esp_lcd_panel_io_handle_t *out_io, esp_lcd_panel_handle_t *out_panel);
+
+/**
+ * @brief Get the initialized LCD panel handle.
+ */
+esp_lcd_panel_handle_t board_display_get_panel_handle(void);
+
+/**
+ * @brief Get the initialized LCD panel IO handle.
+ */
+esp_lcd_panel_io_handle_t board_display_get_io_handle(void);
+
+/**
+ * @brief Set display backlight brightness (0-100%).
+ */
+void board_display_set_brightness(uint8_t percent);
+
+/**
+ * @brief Put display to sleep (turns off backlight and panel).
+ */
+void board_display_sleep(void);
+
+/**
+ * @brief Wake display from sleep (turns on panel and restores backlight).
+ */
+void board_display_wake(void);
+
+/**
+ * @brief Get GPIO number for physical Key 1.
+ */
+int board_get_key1_gpio(void);
+
+/**
+ * @brief Get GPIO number for physical Key 2.
+ */
+int board_get_key2_gpio(void);
 
 #ifdef __cplusplus
 }
