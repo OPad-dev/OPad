@@ -1696,12 +1696,16 @@ fn find_daemon_executable() -> std::path::PathBuf {
 
 async fn start_daemon_process() -> Result<(), String> {
     let exe = find_daemon_executable();
-    std::process::Command::new(exe)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn osupad-daemon: {}", e))?;
+    #[cfg(target_os = "linux")]
+    tokio::task::spawn_blocking(move || platform_linux::start_daemon(&exe))
+        .await
+        .map_err(|e| format!("Failed to start osupad-daemon: {}", e))??;
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = exe;
+        return Err("Starting the daemon is only supported on Linux".to_string());
+    }
+    #[allow(unreachable_code)]
     tokio::time::sleep(Duration::from_millis(300)).await;
     Ok(())
 }
