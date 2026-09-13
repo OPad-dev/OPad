@@ -254,12 +254,100 @@ pub fn device(app: &App) -> Element<'_, Message> {
         .spacing(10),
     );
 
+    let playing_or_cooldown = matches!(app.mode, osupad_model::RuntimeMode::Playing | osupad_model::RuntimeMode::Cooldown);
+
+    let pc_k1 = app.pc_counters.as_ref().map(|c| c.lifetime_key1).unwrap_or(0);
+    let pc_k2 = app.pc_counters.as_ref().map(|c| c.lifetime_key2).unwrap_or(0);
+    let pc_total = pc_k1 + pc_k2;
+    let pc_gen = app.pc_counters.as_ref().map(|c| c.counter_generation).unwrap_or(0);
+
+    let esp_k1 = app.esp_counters.as_ref().map(|c| c.lifetime_key1).unwrap_or(app.counters.lifetime_key1);
+    let esp_k2 = app.esp_counters.as_ref().map(|c| c.lifetime_key2).unwrap_or(app.counters.lifetime_key2);
+    let esp_total = esp_k1 + esp_k2;
+    let esp_gen = app.esp_counters.as_ref().map(|c| c.counter_generation).unwrap_or(app.counters.counter_generation);
+
+    let has_mismatch = (pc_k1 != esp_k1 || pc_k2 != esp_k2 || pc_gen != esp_gen) && app.device_connected;
+
+    let k1_color = if app.device_connected && pc_k1 != esp_k1 { theme::YELLOW } else { theme::WHITE };
+    let k2_color = if app.device_connected && pc_k2 != esp_k2 { theme::YELLOW } else { theme::WHITE };
+    let total_color = if app.device_connected && pc_total != esp_total { theme::YELLOW } else { theme::WHITE };
+    let gen_color = if app.device_connected && pc_gen != esp_gen { theme::YELLOW } else { theme::WHITE };
+
+    let mut counter_col = column![
+        row![
+            text("Counter Reconciliation State").size(18).font(theme::FONT_BOLD),
+            Space::new().width(Length::Fill),
+            if has_mismatch {
+                text("⚠ MISMATCH DETECTED").size(12).font(theme::FONT_BOLD).color(theme::YELLOW)
+            } else if app.device_connected {
+                text("✓ SYNCHRONIZED").size(12).font(theme::FONT_BOLD).color(theme::GREEN)
+            } else {
+                text("PAD DISCONNECTED").size(12).color(theme::MUTED)
+            }
+        ].align_y(Alignment::Center),
+        muted("Hardware pad counters compared against host PC SQLite database."),
+        container(
+            column![
+                row![
+                    text("Metric").size(12).color(theme::MUTED).width(Length::FillPortion(2)),
+                    text("PC Database").size(12).color(theme::MUTED).width(Length::FillPortion(3)),
+                    text("PAD Hardware").size(12).color(theme::MUTED).width(Length::FillPortion(3)),
+                ],
+                row![
+                    text("Generation").size(13).width(Length::FillPortion(2)),
+                    text(pc_gen.to_string()).size(13).color(gen_color).width(Length::FillPortion(3)),
+                    text(if app.device_connected { esp_gen.to_string() } else { "-".into() }).size(13).color(gen_color).width(Length::FillPortion(3)),
+                ],
+                row![
+                    text("Key 1 (K1)").size(13).width(Length::FillPortion(2)),
+                    text(format!("{} presses", grouped(pc_k1))).size(13).color(k1_color).width(Length::FillPortion(3)),
+                    text(if app.device_connected { format!("{} presses", grouped(esp_k1)) } else { "-".into() }).size(13).color(k1_color).width(Length::FillPortion(3)),
+                ],
+                row![
+                    text("Key 2 (K2)").size(13).width(Length::FillPortion(2)),
+                    text(format!("{} presses", grouped(pc_k2))).size(13).color(k2_color).width(Length::FillPortion(3)),
+                    text(if app.device_connected { format!("{} presses", grouped(esp_k2)) } else { "-".into() }).size(13).color(k2_color).width(Length::FillPortion(3)),
+                ],
+                row![
+                    text("Total").size(13).font(theme::FONT_BOLD).width(Length::FillPortion(2)),
+                    text(format!("{} presses", grouped(pc_total))).size(13).font(theme::FONT_BOLD).color(total_color).width(Length::FillPortion(3)),
+                    text(if app.device_connected { format!("{} presses", grouped(esp_total)) } else { "-".into() }).size(13).font(theme::FONT_BOLD).color(total_color).width(Length::FillPortion(3)),
+                ],
+            ].spacing(8)
+        )
+        .padding(12)
+        .style(theme::card),
+    ].spacing(12);
+
+    if has_mismatch && !playing_or_cooldown {
+        counter_col = counter_col.push(
+            row![
+                button(text("Restore PAD from PC").size(13))
+                    .padding([8, 14])
+                    .style(theme::secondary)
+                    .on_press(Message::PromptRestoreDeviceFromPc),
+                button(text("Import PC from PAD").size(13))
+                    .padding([8, 14])
+                    .style(theme::secondary)
+                    .on_press(Message::PromptImportPcFromDevice),
+            ].spacing(10)
+        );
+    }
+
+    let counter_table = card(counter_col);
+
     let actions = card(
         column![
             text("Actions").size(18).font(theme::FONT_BOLD),
             row![
                 button(text("Sync now").size(14)).padding([10, 18]).style(theme::secondary).on_press(Message::Sync),
                 muted("Reconcile counters with the database and set the pad's clock.").size(13),
+            ]
+            .spacing(14)
+            .align_y(Alignment::Center),
+            row![
+                button(text("Update firmware").size(14)).padding([10, 18]).style(theme::primary).on_press(Message::PromptUpdateFirmware),
+                muted("Select a .bin file and flash the pad automatically via osupadctl.").size(13),
             ]
             .spacing(14)
             .align_y(Alignment::Center),
@@ -272,8 +360,6 @@ pub fn device(app: &App) -> Element<'_, Message> {
         ]
         .spacing(14),
     );
-
-    let playing_or_cooldown = matches!(app.mode, osupad_model::RuntimeMode::Playing | osupad_model::RuntimeMode::Cooldown);
 
     let export_btn = button(text("Export backup").size(14))
         .padding([10, 18])
@@ -310,7 +396,7 @@ pub fn device(app: &App) -> Element<'_, Message> {
 
     let backup = card(backup_content);
 
-    scrollable(column![heading("Device"), details, actions, backup].spacing(14)).into()
+    scrollable(column![heading("Device"), details, counter_table, actions, backup].spacing(14)).into()
 }
 
 // ---- monitor --------------------------------------------------------------------------------

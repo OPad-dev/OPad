@@ -99,6 +99,7 @@ async fn main() -> Result<()> {
                 latency,
                 pending_replacement,
                 incompatible,
+                ..
             } = resp
             {
                 println!("=== osu!pad Status ===");

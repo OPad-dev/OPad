@@ -59,6 +59,14 @@ pub enum IpcRequest {
     ResolveReplacement {
         restore: bool,
     },
+    RestoreDeviceFromPc {
+        #[serde(default)]
+        confirm: bool,
+    },
+    ImportPcFromDevice {
+        #[serde(default)]
+        confirm: bool,
+    },
     GetLogEntries {
         #[serde(default)]
         since_seq: Option<u64>,
@@ -96,6 +104,10 @@ pub enum IpcResponse {
         counters: CounterState,
         #[serde(default)]
         counters_source: CounterSource,
+        #[serde(default)]
+        pc_counters: Option<CounterState>,
+        #[serde(default)]
+        esp_counters: Option<CounterState>,
         config: DeviceConfig,
         last_sync_time: Option<String>,
         #[serde(default)]
@@ -121,6 +133,9 @@ pub enum IpcResponse {
         counters: CounterState,
     },
     CountersReset {
+        counters: CounterState,
+    },
+    CountersRestored {
         counters: CounterState,
     },
     BackupExported(JsonBackup),

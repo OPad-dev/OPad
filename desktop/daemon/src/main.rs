@@ -41,6 +41,8 @@ pub struct DaemonState {
     pub device_info: Option<DeviceInfo>,
     pub counters: CounterState,
     pub counters_source: CounterSource,
+    pub pc_counters: Option<CounterState>,
+    pub esp_counters: Option<CounterState>,
     pub config: DeviceConfig,
     pub last_sync_time: Option<String>,
     pub last_sync_error: Option<String>,
@@ -108,8 +110,10 @@ async fn main() -> Result<()> {
         mode: RuntimeMode::Idle,
         device_connected: false,
         device_info: initial_device,
-        counters: initial_counters,
+        counters: initial_counters.clone(),
         counters_source: CounterSource::Pc,
+        pc_counters: Some(initial_counters),
+        esp_counters: None,
         config: initial_config.clone(),
         last_sync_time: None,
         last_sync_error: None,
@@ -228,6 +232,8 @@ async fn main() -> Result<()> {
                             let s = storage.lock().unwrap();
                             s.load_device_state(&info.device_id).unwrap_or(None)
                         };
+                        st.pc_counters = stored_row.clone();
+                        st.esp_counters = Some(st.counters.clone());
 
                         if stored_row.is_none() {
                             let existing_states = {
@@ -311,6 +317,7 @@ async fn main() -> Result<()> {
                         let mut st = daemon_state.lock().unwrap();
                         st.device_connected = false;
                         st.counters_source = CounterSource::Pc;
+                        st.esp_counters = None;
                     }
                     DeviceEvent::Counters(c) => {
                         let mut st = daemon_state.lock().unwrap();
@@ -325,6 +332,7 @@ async fn main() -> Result<()> {
                             st.counters.map_key1 = c.map_key1;
                             st.counters.map_key2 = c.map_key2;
                         }
+                        st.esp_counters = Some(st.counters.clone());
                     }
                     DeviceEvent::StatusUpdate(status) => {
                         daemon_state.lock().unwrap().latency = Some(LatencyStats {
@@ -717,7 +725,9 @@ async fn perform_sync(
 
     {
         let mut st = state.lock().unwrap();
-        st.counters = reconciled;
+        st.counters = reconciled.clone();
+        st.pc_counters = Some(reconciled.clone());
+        st.esp_counters = Some(reconciled);
         st.last_sync_time = Some(now_str);
         st.last_sync_error = None;
         st.mode = RuntimeMode::Idle;
@@ -760,12 +770,19 @@ async fn handle_ipc_request(
 
         IpcRequest::GetStatus => {
             let st = state.lock().unwrap();
+            let pc_counters = if let Some(info) = &st.device_info {
+                storage.lock().unwrap().load_device_state(&info.device_id).unwrap_or(None).or_else(|| st.pc_counters.clone())
+            } else {
+                st.pc_counters.clone()
+            };
             IpcResponse::Status {
                 mode: st.mode,
                 device_connected: st.device_connected,
                 device_info: st.device_info.clone(),
                 counters: st.counters.clone(),
                 counters_source: st.counters_source,
+                pc_counters,
+                esp_counters: st.esp_counters.clone(),
                 config: st.config.clone(),
                 last_sync_time: st.last_sync_time.clone(),
                 last_sync_error: st.last_sync_error.clone(),
@@ -956,6 +973,128 @@ async fn handle_ipc_request(
             }
             info!("Lifetime counters reset with incremented generation");
             IpcResponse::CountersReset { counters: updated }
+        }
+
+        IpcRequest::RestoreDeviceFromPc { confirm } => {
+            if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
+                return IpcResponse::OperationRejected {
+                    reason: "Cannot restore counters during active gameplay or cooldown".to_string(),
+                };
+            }
+            if !confirm {
+                return IpcResponse::OperationRejected {
+                    reason: "Confirmation required to force-restore ESP counters from PC".to_string(),
+                };
+            }
+            let (info_opt, in_memory_counters, is_connected) = {
+                let st = state.lock().unwrap();
+                (st.device_info.clone(), st.counters.clone(), st.device_connected)
+            };
+            let Some(info) = info_opt else {
+                return IpcResponse::OperationRejected {
+                    reason: "No device currently connected".to_string(),
+                };
+            };
+            if !is_connected {
+                return IpcResponse::OperationRejected {
+                    reason: "Device is disconnected".to_string(),
+                };
+            }
+
+            let pc_state = {
+                let s = storage.lock().unwrap();
+                s.load_device_state(&info.device_id).unwrap_or(None)
+            };
+            let Some(pc_counters) = pc_state else {
+                return IpcResponse::OperationRejected {
+                    reason: "No PC counter state found in database for this device".to_string(),
+                };
+            };
+
+            let new_gen = std::cmp::max(pc_counters.counter_generation, in_memory_counters.counter_generation).saturating_add(1);
+            let target = CounterState {
+                device_id: info.device_id.clone(),
+                counter_generation: new_gen,
+                lifetime_key1: pc_counters.lifetime_key1,
+                lifetime_key2: pc_counters.lifetime_key2,
+                map_key1: 0,
+                map_key2: 0,
+            };
+
+            {
+                let s = storage.lock().unwrap();
+                let _ = s.save_device_state(&info, &target);
+                let _ = s.touch_device_last_seen(&info.device_id);
+            }
+
+            let _ = device.send_counter_sync(&target, true).await;
+            {
+                let mut st = state.lock().unwrap();
+                st.counters = target.clone();
+                st.pc_counters = Some(target.clone());
+                st.esp_counters = Some(target.clone());
+            }
+            info!("Force-restored ESP counters from PC (generation: {})", new_gen);
+            IpcResponse::CountersRestored { counters: target }
+        }
+
+        IpcRequest::ImportPcFromDevice { confirm } => {
+            if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
+                return IpcResponse::OperationRejected {
+                    reason: "Cannot import counters during active gameplay or cooldown".to_string(),
+                };
+            }
+            if !confirm {
+                return IpcResponse::OperationRejected {
+                    reason: "Confirmation required to overwrite PC counters from ESP".to_string(),
+                };
+            }
+            let (info_opt, in_memory_counters, is_connected) = {
+                let st = state.lock().unwrap();
+                (st.device_info.clone(), st.counters.clone(), st.device_connected)
+            };
+            let Some(info) = info_opt else {
+                return IpcResponse::OperationRejected {
+                    reason: "No device currently connected".to_string(),
+                };
+            };
+            if !is_connected {
+                return IpcResponse::OperationRejected {
+                    reason: "Device is disconnected".to_string(),
+                };
+            }
+
+            let pc_state = {
+                let s = storage.lock().unwrap();
+                s.load_device_state(&info.device_id).unwrap_or(None)
+            };
+            let pc_gen = pc_state.as_ref().map(|c| c.counter_generation).unwrap_or(0);
+
+            let new_gen = std::cmp::max(pc_gen, in_memory_counters.counter_generation).saturating_add(1);
+            let target = CounterState {
+                device_id: info.device_id.clone(),
+                counter_generation: new_gen,
+                lifetime_key1: in_memory_counters.lifetime_key1,
+                lifetime_key2: in_memory_counters.lifetime_key2,
+                map_key1: 0,
+                map_key2: 0,
+            };
+
+            {
+                let s = storage.lock().unwrap();
+                let _ = s.save_device_state(&info, &target);
+                let _ = s.touch_device_last_seen(&info.device_id);
+            }
+
+            let _ = device.send_counter_sync(&target, true).await;
+            {
+                let mut st = state.lock().unwrap();
+                st.counters = target.clone();
+                st.pc_counters = Some(target.clone());
+                st.esp_counters = Some(target.clone());
+            }
+            info!("Overwrote PC database counters from ESP (generation: {})", new_gen);
+            IpcResponse::CountersRestored { counters: target }
         }
 
         IpcRequest::ResolveReplacement { restore } => {

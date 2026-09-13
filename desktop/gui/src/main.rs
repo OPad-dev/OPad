@@ -6,7 +6,7 @@ mod single_instance;
 mod theme;
 mod tray;
 
-use iced::widget::{button, checkbox, column, container, row, stack, text, text_input, Space};
+use iced::widget::{button, checkbox, column, container, row, scrollable, stack, text, text_input, Space};
 use iced::{window, Alignment, Element, Length, Size, Subscription, Task};
 use osupad_ipc::{CurrentBackupState, IpcRequest, IpcResponse};
 use osupad_model::ui_source::SourceValue;
@@ -65,6 +65,19 @@ pub struct ImportModalState {
     pub rollback_confirmed: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecoveryAction {
+    RestoreDeviceFromPc,
+    ImportPcFromDevice,
+}
+
+#[derive(Debug, Clone)]
+pub struct FlashModalState {
+    pub running: bool,
+    pub output: Vec<String>,
+    pub success: Option<bool>,
+}
+
 pub struct App {
     pub page: Page,
     window: Option<window::Id>,
@@ -80,6 +93,8 @@ pub struct App {
     pub device_info: Option<DeviceInfo>,
     pub counters: CounterState,
     pub counters_source: CounterSource,
+    pub pc_counters: Option<CounterState>,
+    pub esp_counters: Option<CounterState>,
     pub config: DeviceConfig,
     pub last_sync_time: Option<String>,
     pub last_sync_error: Option<String>,
@@ -88,6 +103,8 @@ pub struct App {
     pub incompatible: Option<IncompatibleDevice>,
     pub reset_modal: Option<String>,
     pub import_modal: Option<ImportModalState>,
+    pub recovery_modal: Option<RecoveryAction>,
+    pub flash_modal: Option<FlashModalState>,
     pub ui_values: HashMap<u8, SourceValue>,
 
     // Settings form
@@ -133,6 +150,17 @@ pub enum Message {
     CancelImportModal,
     ConfirmApplyImport,
     ImportCompleted(Result<IpcResponse, String>),
+    // Recovery & Flash
+    PromptRestoreDeviceFromPc,
+    ConfirmRestoreDeviceFromPc,
+    PromptImportPcFromDevice,
+    ConfirmImportPcFromDevice,
+    CancelRecoveryModal,
+    RecoveryCompleted(Result<IpcResponse, String>),
+    PromptUpdateFirmware,
+    FirmwarePicked(Option<std::path::PathBuf>),
+    FlashFinished((Vec<String>, bool)),
+    CloseFlashModal,
     // Settings
     Key1(String),
     Key2(String),
@@ -185,6 +213,10 @@ impl App {
             incompatible: None,
             reset_modal: None,
             import_modal: None,
+            recovery_modal: None,
+            flash_modal: None,
+            pc_counters: None,
+            esp_counters: None,
             ui_values: HashMap::new(),
             k1_input: "Z".into(),
             k2_input: "X".into(),
@@ -282,6 +314,8 @@ impl App {
                         device_info,
                         counters,
                         counters_source,
+                        pc_counters,
+                        esp_counters,
                         config,
                         last_sync_time,
                         last_sync_error,
@@ -296,6 +330,8 @@ impl App {
                         self.device_info = device_info;
                         self.counters = counters;
                         self.counters_source = counters_source;
+                        self.pc_counters = pc_counters;
+                        self.esp_counters = esp_counters;
                         self.last_sync_error = last_sync_error;
                         self.pending_replacement = pending_replacement;
                         self.incompatible = incompatible;
@@ -488,6 +524,80 @@ impl App {
                     }
                     _ => {}
                 }
+            }
+            Message::PromptRestoreDeviceFromPc => {
+                self.recovery_modal = Some(RecoveryAction::RestoreDeviceFromPc);
+            }
+            Message::ConfirmRestoreDeviceFromPc => {
+                self.recovery_modal = None;
+                self.banner = Some("Restoring pad counters from PC database...".into());
+                return Task::perform(
+                    ipc::request(IpcRequest::RestoreDeviceFromPc { confirm: true }),
+                    Message::RecoveryCompleted,
+                );
+            }
+            Message::PromptImportPcFromDevice => {
+                self.recovery_modal = Some(RecoveryAction::ImportPcFromDevice);
+            }
+            Message::ConfirmImportPcFromDevice => {
+                self.recovery_modal = None;
+                self.banner = Some("Importing PC database counters from pad...".into());
+                return Task::perform(
+                    ipc::request(IpcRequest::ImportPcFromDevice { confirm: true }),
+                    Message::RecoveryCompleted,
+                );
+            }
+            Message::CancelRecoveryModal => {
+                self.recovery_modal = None;
+            }
+            Message::RecoveryCompleted(result) => {
+                match result {
+                    Ok(IpcResponse::CountersRestored { counters }) => {
+                        self.counters = counters.clone();
+                        self.pc_counters = Some(counters.clone());
+                        self.esp_counters = Some(counters.clone());
+                        self.banner = Some(format!(
+                            "Counters synchronized! New generation: {}",
+                            counters.counter_generation
+                        ));
+                    }
+                    Ok(IpcResponse::OperationRejected { reason }) => {
+                        self.banner = Some(format!("Operation rejected: {}", reason));
+                    }
+                    Ok(IpcResponse::Error(e)) | Err(e) => {
+                        self.banner = Some(format!("Operation failed: {}", e));
+                    }
+                    _ => {}
+                }
+            }
+            Message::PromptUpdateFirmware => {
+                if matches!(self.mode, RuntimeMode::Playing | RuntimeMode::Cooldown) {
+                    self.banner = Some("Cannot update firmware during active gameplay or cooldown".into());
+                    return Task::none();
+                }
+                return Task::perform(pick_firmware_dialog(), Message::FirmwarePicked);
+            }
+            Message::FirmwarePicked(opt_path) => {
+                if let Some(path) = opt_path {
+                    self.flash_modal = Some(FlashModalState {
+                        running: true,
+                        output: vec![format!("Selected firmware: {}", path.display())],
+                        success: None,
+                    });
+                    return Task::perform(run_flash_tool(path), Message::FlashFinished);
+                }
+            }
+            Message::FlashFinished((output_lines, success)) => {
+                if let Some(modal) = &mut self.flash_modal {
+                    modal.running = false;
+                    modal.output.extend(output_lines);
+                    modal.success = Some(success);
+                }
+                return self.poll();
+            }
+            Message::CloseFlashModal => {
+                self.flash_modal = None;
+                return self.poll();
             }
             Message::Key1(s) => self.k1_input = s.chars().take(1).collect::<String>().to_uppercase(),
             Message::Key2(s) => self.k2_input = s.chars().take(1).collect::<String>().to_uppercase(),
@@ -871,6 +981,139 @@ impl App {
             };
         }
 
+        if let Some(action) = self.recovery_modal {
+            let (title, desc, confirm_msg) = match action {
+                RecoveryAction::RestoreDeviceFromPc => (
+                    "Restore PAD from PC",
+                    "This action will force-overwrite your physical pad's counters with the counters stored in this PC database. The pad's generation number will be incremented.",
+                    Message::ConfirmRestoreDeviceFromPc,
+                ),
+                RecoveryAction::ImportPcFromDevice => (
+                    "Import PC from PAD",
+                    "This action will overwrite this PC database with the counters currently reported by your physical pad. The database generation number will be incremented.",
+                    Message::ConfirmImportPcFromDevice,
+                ),
+            };
+
+            let pc_k1 = self.pc_counters.as_ref().map(|c| c.lifetime_key1).unwrap_or(0);
+            let pc_k2 = self.pc_counters.as_ref().map(|c| c.lifetime_key2).unwrap_or(0);
+            let esp_k1 = self.esp_counters.as_ref().map(|c| c.lifetime_key1).unwrap_or(self.counters.lifetime_key1);
+            let esp_k2 = self.esp_counters.as_ref().map(|c| c.lifetime_key2).unwrap_or(self.counters.lifetime_key2);
+
+            let modal_box = container(
+                column![
+                    text(title).size(20).font(theme::FONT_BOLD).color(theme::WHITE),
+                    text(desc).size(13).color(theme::MUTED),
+                    Space::new().height(8),
+                    container(
+                        column![
+                            row![
+                                text("").width(Length::FillPortion(2)),
+                                text("PC Database").size(12).color(theme::MUTED).width(Length::FillPortion(3)),
+                                text("PAD Hardware").size(12).color(theme::MUTED).width(Length::FillPortion(3)),
+                            ],
+                            row![
+                                text("Key 1").size(13).width(Length::FillPortion(2)),
+                                text(format!("{} presses", pc_k1)).size(13).width(Length::FillPortion(3)),
+                                text(format!("{} presses", esp_k1)).size(13).width(Length::FillPortion(3)),
+                            ],
+                            row![
+                                text("Key 2").size(13).width(Length::FillPortion(2)),
+                                text(format!("{} presses", pc_k2)).size(13).width(Length::FillPortion(3)),
+                                text(format!("{} presses", esp_k2)).size(13).width(Length::FillPortion(3)),
+                            ],
+                            row![
+                                text("Total").size(13).width(Length::FillPortion(2)),
+                                text(format!("{} presses", pc_k1 + pc_k2)).size(13).font(theme::FONT_BOLD).width(Length::FillPortion(3)),
+                                text(format!("{} presses", esp_k1 + esp_k2)).size(13).font(theme::FONT_BOLD).width(Length::FillPortion(3)),
+                            ],
+                        ].spacing(6)
+                    )
+                    .padding(12)
+                    .style(theme::card),
+                    Space::new().height(12),
+                    row![
+                        button(text("Cancel").size(14)).padding([10, 20]).style(theme::secondary).on_press(Message::CancelRecoveryModal),
+                        Space::new().width(Length::Fill),
+                        button(text("Confirm").size(14)).padding([10, 20]).style(theme::danger).on_press(confirm_msg),
+                    ]
+                ]
+                .spacing(10)
+                .padding(24)
+                .width(460)
+            )
+            .style(theme::card);
+
+            let modal_overlay = container(modal_box)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(iced::Color { a: 0.75, ..theme::BG }.into()),
+                    ..Default::default()
+                });
+
+            return if self.maximized {
+                stack![framed, modal_overlay].into()
+            } else {
+                stack![framed, chrome::resize_edges(), modal_overlay].into()
+            };
+        }
+
+        if let Some(modal) = &self.flash_modal {
+            let status_text = match modal.success {
+                None => text("Flashing firmware in progress... Please do not disconnect pad.").size(14).color(theme::YELLOW),
+                Some(true) => text("✓ Firmware update completed successfully!").size(14).color(theme::GREEN),
+                Some(false) => text("✗ Firmware update failed. Check the log below.").size(14).color(theme::RED),
+            };
+
+            let log_lines = column(
+                modal.output.iter().map(|line| {
+                    text(line).size(12).into()
+                })
+            ).spacing(4);
+
+            let mut close_btn = button(text("Close").size(14)).padding([10, 20]).style(theme::primary);
+            if !modal.running {
+                close_btn = close_btn.on_press(Message::CloseFlashModal);
+            } else {
+                close_btn = close_btn.style(theme::secondary);
+            }
+
+            let modal_box = container(
+                column![
+                    text("Firmware Flasher").size(20).font(theme::FONT_BOLD).color(theme::WHITE),
+                    status_text,
+                    container(scrollable(log_lines).height(240)).padding(10).style(theme::card).height(240),
+                    row![
+                        Space::new().width(Length::Fill),
+                        close_btn,
+                    ]
+                ]
+                .spacing(12)
+                .padding(24)
+                .width(540)
+            )
+            .style(theme::card);
+
+            let modal_overlay = container(modal_box)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(iced::Color { a: 0.75, ..theme::BG }.into()),
+                    ..Default::default()
+                });
+
+            return if self.maximized {
+                stack![framed, modal_overlay].into()
+            } else {
+                stack![framed, chrome::resize_edges(), modal_overlay].into()
+            };
+        }
+
         if self.maximized {
             framed.into()
         } else {
@@ -923,4 +1166,49 @@ async fn pick_backup_dialog() -> Result<JsonBackup, String> {
     let backup: JsonBackup = serde_json::from_str(&content).map_err(|e| format!("Malformed JSON backup: {}", e))?;
     backup.validate().map_err(|e| format!("Backup validation error: {}", e))?;
     Ok(backup)
+}
+
+async fn pick_firmware_dialog() -> Option<std::path::PathBuf> {
+    let file = rfd::AsyncFileDialog::new()
+        .add_filter("Firmware binary", &["bin"])
+        .pick_file()
+        .await?;
+    Some(file.path().to_path_buf())
+}
+
+async fn run_flash_tool(path: std::path::PathBuf) -> (Vec<String>, bool) {
+    let osupadctl = find_osupadctl();
+    let mut cmd = tokio::process::Command::new(osupadctl);
+    cmd.arg("flash").arg(path);
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+    match cmd.output().await {
+        Ok(output) => {
+            let mut lines = Vec::new();
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for l in stdout.lines() {
+                lines.push(l.to_string());
+            }
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            for l in stderr.lines() {
+                lines.push(format!("stderr: {}", l));
+            }
+            (lines, output.status.success())
+        }
+        Err(e) => {
+            (vec![format!("Failed to execute flash tool: {}", e)], false)
+        }
+    }
+}
+
+fn find_osupadctl() -> std::path::PathBuf {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join("osupadctl");
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+    }
+    std::path::PathBuf::from("osupadctl")
 }

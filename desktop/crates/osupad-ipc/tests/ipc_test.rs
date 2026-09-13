@@ -39,6 +39,8 @@ async fn test_ipc_roundtrip_requests() {
                                     map_key2: 0,
                                 },
                                 counters_source: osupad_model::CounterSource::Device,
+                                pc_counters: None,
+                                esp_counters: None,
                                 config: DeviceConfig::default(),
                                 last_sync_time: Some("2026-09-12T00:00:00Z".to_string()),
                                 last_sync_error: None,
@@ -80,6 +82,18 @@ async fn test_ipc_roundtrip_requests() {
                             };
                             let backup = JsonBackup::new(&info, &counters, &DeviceConfig::default());
                             IpcResponse::BackupExported(backup)
+                        }
+                        IpcRequest::RestoreDeviceFromPc { .. } | IpcRequest::ImportPcFromDevice { .. } => {
+                            IpcResponse::CountersRestored {
+                                counters: CounterState {
+                                    device_id: "OSUPAD-TEST".to_string(),
+                                    counter_generation: 2,
+                                    lifetime_key1: 100,
+                                    lifetime_key2: 200,
+                                    map_key1: 0,
+                                    map_key2: 0,
+                                },
+                            }
                         }
                         _ => IpcResponse::Error("Unhandled".to_string()),
                     };
