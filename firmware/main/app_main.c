@@ -95,6 +95,26 @@ void app_main(void)
 
     // Step ii complete: HID is now fully operational! Everything below is NON-FATAL.
 
+#if defined(CONFIG_OSUPAD_BENCH_HID_ONLY) || defined(OSUPAD_BENCH_HID_ONLY)
+    ESP_LOGW(TAG, "========================================");
+    ESP_LOGW(TAG, "  BENCHMARK STAGE A: HID-ONLY MODE      ");
+    ESP_LOGW(TAG, "  CDC, Runtime, and Display Disabled    ");
+    ESP_LOGW(TAG, "========================================");
+
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(10000));
+        latency_stats_t stats;
+        keypad_get_latency_stats(&stats);
+        ESP_LOGI("bench", "STAGE A STATS: samples=%lu, p50=%lu us, p99=%lu us, p99.9=%lu us, max=%lu us, deferred=%lu",
+                 (unsigned long)stats.sample_count,
+                 (unsigned long)stats.p50_us,
+                 (unsigned long)stats.p99_us,
+                 (unsigned long)stats.p999_us,
+                 (unsigned long)stats.max_us,
+                 (unsigned long)stats.deferred_count);
+    }
+#else
+
     // 4. USB CDC-ACM and protocol task (core 1)
     esp_err_t err = usb_cdc_init();
     if (err != ESP_OK) {
@@ -121,6 +141,7 @@ void app_main(void)
         ESP_LOGE(TAG, "runtime_init failed: %s (continuing)", esp_err_to_name(err));
     }
 
+#if !defined(CONFIG_OSUPAD_BENCH_NO_DISPLAY) && !defined(OSUPAD_BENCH_NO_DISPLAY)
     // 7. Backlight PWM and Display UI (LVGL, core 1, NON-FATAL)
     err = board_backlight_init();
     if (err != ESP_OK) {
@@ -134,6 +155,10 @@ void app_main(void)
 
     // Apply brightness and sleep timeout to display & UI
     device_config_apply(&dev_cfg);
+#else
+    ESP_LOGW(TAG, "BENCHMARK STAGE B: Display UI and Backlight Disabled");
+#endif
 
     ESP_LOGI(TAG, "osu!pad initialized and ready");
+#endif
 }

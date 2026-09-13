@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include <stdatomic.h>
 #include "input/latency_stats.h"
+#include "driver/gpio.h"
 
 static const char *TAG = "keypad";
 
@@ -194,6 +195,9 @@ static void keypad_task(void *pvParameters)
                         latency_stats_record_deferred();
                     }
                 }
+#if defined(CONFIG_OSUPAD_BENCH_DEBUG_GPIO) || defined(OSUPAD_BENCH_DEBUG_GPIO)
+                gpio_set_level(CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM, current ? 1 : 0);
+#endif
                 if (current) {
                     ui_notify_activity();
                 }
@@ -221,6 +225,19 @@ esp_err_t keypad_init(const keypad_config_t *config)
         s_config.keycode2 = 0x1B;
         s_config.debounce_us = DEBOUNCE_DEFAULT_US;
     }
+
+#if defined(CONFIG_OSUPAD_BENCH_DEBUG_GPIO) || defined(OSUPAD_BENCH_DEBUG_GPIO)
+    gpio_config_t dbg_io_conf = {
+        .pin_bit_mask = (1ULL << CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&dbg_io_conf);
+    gpio_set_level(CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM, 0);
+    ESP_LOGI(TAG, "Debug GPIO initialized on pin %d", CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM);
+#endif
 
     // Initial state read
     bool k1_init = board_key1_read();
