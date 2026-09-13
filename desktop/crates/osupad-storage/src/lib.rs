@@ -97,6 +97,9 @@ impl Storage {
         if v < 3 {
             self.apply_v3()?;
         }
+        if v < 4 {
+            self.apply_v4()?;
+        }
         Ok(())
     }
 
@@ -121,6 +124,17 @@ impl Storage {
                 updated_at TEXT NOT NULL
             );
             INSERT INTO schema_migrations (version, applied_at) VALUES (3, datetime('now'));
+            COMMIT;",
+        )?;
+        Ok(())
+    }
+
+    /// v4: update default gameplay_display_hz from 5 to 10 (§P2-7)
+    fn apply_v4(&self) -> Result<(), StorageError> {
+        self.conn.execute_batch(
+            "BEGIN TRANSACTION;
+            UPDATE config SET gameplay_display_hz = 10 WHERE gameplay_display_hz = 5;
+            INSERT INTO schema_migrations (version, applied_at) VALUES (4, datetime('now'));
             COMMIT;",
         )?;
         Ok(())
@@ -540,5 +554,28 @@ mod tests {
 
         let states = storage.list_device_states().unwrap();
         assert_eq!(states.len(), 1);
+    }
+
+    #[test]
+    fn test_migration_v4_updates_gameplay_display_hz() {
+        let storage = Storage::open_in_memory().expect("open");
+        let cfg = storage.load_config().unwrap();
+        assert_eq!(cfg.gameplay_display_hz, 10);
+
+        // Manually update to 5, reset migration version to 3, and run migrate()
+        storage.conn.execute("UPDATE config SET gameplay_display_hz = 5 WHERE id = 1", []).unwrap();
+        storage.conn.execute("DELETE FROM schema_migrations WHERE version = 4", []).unwrap();
+        storage.migrate().unwrap();
+
+        let migrated = storage.load_config().unwrap();
+        assert_eq!(migrated.gameplay_display_hz, 10);
+
+        // A custom value (e.g. 20) should not be altered by v4
+        storage.conn.execute("UPDATE config SET gameplay_display_hz = 20 WHERE id = 1", []).unwrap();
+        storage.conn.execute("DELETE FROM schema_migrations WHERE version = 4", []).unwrap();
+        storage.migrate().unwrap();
+
+        let custom = storage.load_config().unwrap();
+        assert_eq!(custom.gameplay_display_hz, 20);
     }
 }

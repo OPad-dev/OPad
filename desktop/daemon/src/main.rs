@@ -138,8 +138,14 @@ async fn main() -> Result<()> {
 
     // Setup Local IPC Server
     let socket_path = get_socket_path();
-    info!("Starting local IPC listener at {}", socket_path.display());
-    let ipc_listener = create_listener(&socket_path)?;
+    let ipc_listener = match create_listener(&socket_path) {
+        Ok(l) => l,
+        Err(osupad_ipc::IpcError::AlreadyRunning) => {
+            eprintln!("osupad-daemon is already running");
+            std::process::exit(0);
+        }
+        Err(e) => return Err(e.into()),
+    };
 
     // Spawn IPC request handling task
     {
@@ -408,7 +414,8 @@ async fn main() -> Result<()> {
                         // Right away, so the device zeroes its map counters immediately
                         let _ = device_manager.send_host_status(true, true, play_id).await;
                         last_host_status = Instant::now();
-                        let changes = data_sync.take_changes(true, true);
+                        let playing_hz = daemon_state.lock().unwrap().config.gameplay_display_hz;
+                        let changes = data_sync.take_changes(true, playing_hz, true);
                         let _ = device_manager.send_data_update(&changes).await;
                     }
                 } else if current_mode == RuntimeMode::Playing {
@@ -449,16 +456,16 @@ async fn main() -> Result<()> {
                     }
                 }
 
-                let (device_connected, tosu, playing) = {
+                let (device_connected, tosu, playing, playing_hz) = {
                     let st = daemon_state.lock().unwrap();
-                    (st.device_connected, st.tosu_connected, st.mode == RuntimeMode::Playing)
+                    (st.device_connected, st.tosu_connected, st.mode == RuntimeMode::Playing, st.config.gameplay_display_hz)
                 };
                 if device_connected && last_host_status.elapsed() >= HOST_STATUS_INTERVAL {
                     last_host_status = Instant::now();
                     let _ = device_manager.send_host_status(tosu, playing, play_id).await;
                 }
                 if device_connected {
-                    let changes = data_sync.take_changes(playing, false);
+                    let changes = data_sync.take_changes(playing, playing_hz, false);
                     if !changes.is_empty() {
                         let _ = device_manager.send_data_update(&changes).await;
                     }

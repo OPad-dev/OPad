@@ -11,7 +11,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 
 pub const IPC_PROTOCOL_VERSION: u32 = 1;
-pub const MAX_IPC_FRAME_SIZE: usize = 1024 * 1024; // 1 MB cap (§P2-6)
+pub const MAX_REQUEST_FRAME_SIZE: usize = 1024 * 1024; // 1 MiB cap (§P2-6)
+pub const MAX_RESPONSE_FRAME_SIZE: usize = 8 * 1024 * 1024; // 8 MiB cap (§P2-6)
+pub const MAX_IPC_FRAME_SIZE: usize = MAX_REQUEST_FRAME_SIZE;
 
 #[derive(Debug, Error)]
 pub enum IpcError {
@@ -23,6 +25,8 @@ pub enum IpcError {
     NotConnected(String),
     #[error("Protocol error: {0}")]
     Protocol(String),
+    #[error("osupad-daemon is already running")]
+    AlreadyRunning,
 }
 
 /// Snapshot of current PC state for backup comparison/preview (§21, §P1-5)
@@ -184,7 +188,8 @@ pub fn get_socket_path() -> PathBuf {
     if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
         PathBuf::from(runtime_dir).join("osupad").join("daemon.sock")
     } else {
-        PathBuf::from(format!("/tmp/osupad-{}.sock", std::process::id()))
+        let uid = rustix::process::getuid().as_raw();
+        PathBuf::from(format!("/tmp/osupad-{}", uid)).join("daemon.sock")
     }
 }
 
@@ -223,6 +228,13 @@ pub async fn connect_and_handshake_at<P: AsRef<Path>>(path: P) -> Result<(UnixSt
 /// Sends a request over a UnixStream and waits for the typed response
 pub async fn send_request(stream: &mut UnixStream, req: &IpcRequest) -> Result<IpcResponse, IpcError> {
     let payload = serde_json::to_vec(req)?;
+    if payload.len() > MAX_REQUEST_FRAME_SIZE {
+        return Err(IpcError::Protocol(format!(
+            "Request frame size {} exceeds {} byte limit",
+            payload.len(),
+            MAX_REQUEST_FRAME_SIZE
+        )));
+    }
     let header = (payload.len() as u32).to_le_bytes();
 
     stream.write_all(&header).await?;
@@ -232,10 +244,10 @@ pub async fn send_request(stream: &mut UnixStream, req: &IpcRequest) -> Result<I
     let mut resp_header = [0u8; 4];
     stream.read_exact(&mut resp_header).await?;
     let resp_len = u32::from_le_bytes(resp_header) as usize;
-    if resp_len > MAX_IPC_FRAME_SIZE {
+    if resp_len > MAX_RESPONSE_FRAME_SIZE {
         return Err(IpcError::Protocol(format!(
             "Response frame size {} exceeds {} byte limit",
-            resp_len, MAX_IPC_FRAME_SIZE
+            resp_len, MAX_RESPONSE_FRAME_SIZE
         )));
     }
 
@@ -251,10 +263,10 @@ pub async fn read_request(stream: &mut UnixStream) -> Result<IpcRequest, IpcErro
     let mut header = [0u8; 4];
     stream.read_exact(&mut header).await?;
     let len = u32::from_le_bytes(header) as usize;
-    if len > MAX_IPC_FRAME_SIZE {
+    if len > MAX_REQUEST_FRAME_SIZE {
         return Err(IpcError::Protocol(format!(
             "Request frame size {} exceeds {} byte limit",
-            len, MAX_IPC_FRAME_SIZE
+            len, MAX_REQUEST_FRAME_SIZE
         )));
     }
 
@@ -268,6 +280,13 @@ pub async fn read_request(stream: &mut UnixStream) -> Result<IpcRequest, IpcErro
 /// Sends a response to a client stream
 pub async fn send_response(stream: &mut UnixStream, resp: &IpcResponse) -> Result<(), IpcError> {
     let payload = serde_json::to_vec(resp)?;
+    if payload.len() > MAX_RESPONSE_FRAME_SIZE {
+        return Err(IpcError::Protocol(format!(
+            "Response frame size {} exceeds {} byte limit",
+            payload.len(),
+            MAX_RESPONSE_FRAME_SIZE
+        )));
+    }
     let header = (payload.len() as u32).to_le_bytes();
 
     stream.write_all(&header).await?;
@@ -278,16 +297,51 @@ pub async fn send_response(stream: &mut UnixStream, resp: &IpcResponse) -> Resul
 
 /// Creates and binds a UnixListener at the specified socket path with hardened permissions (§P2-6)
 pub fn create_listener<P: AsRef<Path>>(path: P) -> Result<UnixListener, IpcError> {
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
-    if let Some(parent) = path.as_ref().parent() {
-        std::fs::create_dir_all(parent)?;
-        let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+    let p = path.as_ref();
+    if let Some(parent) = p.parent() {
+        let is_system_tmp_or_root = parent == Path::new("/tmp") || parent == Path::new("/");
+        let current_uid = rustix::process::getuid().as_raw();
+        if parent.exists() {
+            if !is_system_tmp_or_root {
+                let meta = std::fs::symlink_metadata(parent)?;
+                if !meta.is_dir() {
+                    return Err(IpcError::Io(std::io::Error::new(
+                        std::io::ErrorKind::AlreadyExists,
+                        format!("Path {} exists and is not a directory", parent.display()),
+                    )));
+                }
+                if meta.uid() != current_uid {
+                    return Err(IpcError::Io(std::io::Error::new(
+                        std::io::ErrorKind::PermissionDenied,
+                        format!(
+                            "Directory {} is owned by UID {}, expected UID {}",
+                            parent.display(),
+                            meta.uid(),
+                            current_uid
+                        ),
+                    )));
+                }
+                let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+            }
+        } else {
+            std::fs::create_dir_all(parent)?;
+            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+        }
     }
-    if path.as_ref().exists() {
-        let _ = std::fs::remove_file(path.as_ref());
+
+    if p.exists() {
+        // Before removing an existing socket, try to connect to it.
+        // If a daemon answers, exit with "osupad-daemon is already running".
+        // Only remove it if the connect fails (stale socket).
+        if std::os::unix::net::UnixStream::connect(p).is_ok() {
+            return Err(IpcError::AlreadyRunning);
+        }
+        let _ = std::fs::remove_file(p);
     }
-    let listener = UnixListener::bind(&path)?;
-    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+
+    let listener = UnixListener::bind(p)?;
+    let _ = std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o600));
     Ok(listener)
 }

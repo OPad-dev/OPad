@@ -255,3 +255,79 @@ async fn test_connect_and_handshake_helper() {
 
     let _ = std::fs::remove_file(&socket_path);
 }
+
+#[tokio::test]
+async fn test_oversized_frame_does_not_allocate() {
+    use tokio::io::AsyncWriteExt;
+
+    let socket_dir = std::env::temp_dir().join(format!("osupad-frame-test-{}", std::process::id()));
+    let socket_path = socket_dir.join("daemon.sock");
+    let listener = create_listener(&socket_path).expect("create_listener");
+
+    let server_task = tokio::spawn(async move {
+        if let Ok((mut stream, _)) = listener.accept().await {
+            // Attempt to read request with 2 GiB header
+            let err = read_request(&mut stream).await.unwrap_err();
+            match err {
+                osupad_ipc::IpcError::Protocol(msg) => {
+                    assert!(msg.contains("exceeds"));
+                }
+                other => panic!("Expected Protocol error, got: {:?}", other),
+            }
+        }
+    });
+
+    let mut client = UnixStream::connect(&socket_path).await.expect("client connect");
+    // Send 2 GiB frame header (2 * 1024 * 1024 * 1024)
+    let fake_len = 2u32 * 1024 * 1024 * 1024;
+    client.write_all(&fake_len.to_le_bytes()).await.expect("write header");
+
+    server_task.await.unwrap();
+    let _ = std::fs::remove_file(&socket_path);
+    let _ = std::fs::remove_dir(&socket_dir);
+}
+
+#[tokio::test]
+async fn test_socket_and_dir_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let socket_dir = std::env::temp_dir().join(format!("osupad-perm-test-{}", std::process::id()));
+    let socket_path = socket_dir.join("daemon.sock");
+    let listener = create_listener(&socket_path).expect("create_listener");
+
+    let dir_meta = std::fs::metadata(&socket_dir).expect("dir metadata");
+    let dir_mode = dir_meta.permissions().mode() & 0o777;
+    assert_eq!(dir_mode, 0o700, "Directory permissions should be 0700");
+
+    let sock_meta = std::fs::metadata(&socket_path).expect("sock metadata");
+    let sock_mode = sock_meta.permissions().mode() & 0o777;
+    assert_eq!(sock_mode, 0o600, "Socket permissions should be 0600");
+
+    drop(listener);
+    let _ = std::fs::remove_file(&socket_path);
+    let _ = std::fs::remove_dir(&socket_dir);
+}
+
+#[tokio::test]
+async fn test_second_listener_refused_and_stale_cleanup() {
+    let socket_dir = std::env::temp_dir().join(format!("osupad-single-test-{}", std::process::id()));
+    let socket_path = socket_dir.join("daemon.sock");
+    let listener_1 = create_listener(&socket_path).expect("first create_listener");
+
+    // Attempting to create second listener while first is live must return AlreadyRunning
+    let second_res = create_listener(&socket_path);
+    match second_res {
+        Err(osupad_ipc::IpcError::AlreadyRunning) => {}
+        other => panic!("Expected AlreadyRunning, got {:?}", other),
+    }
+
+    // Drop listener_1 so socket becomes stale
+    drop(listener_1);
+
+    // Creating listener now should detect stale socket, clean it up, and bind successfully
+    let listener_2 = create_listener(&socket_path).expect("stale socket cleanup create_listener");
+    drop(listener_2);
+
+    let _ = std::fs::remove_file(&socket_path);
+    let _ = std::fs::remove_dir(&socket_dir);
+}

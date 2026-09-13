@@ -223,9 +223,27 @@ pub fn settings(app: &App) -> Element<'_, Message> {
         .spacing(18),
     );
 
+    let advanced = card(
+        column![
+            text("Advanced").size(18).font(theme::FONT_BOLD),
+            column![
+                row![
+                    caption("GAMEPLAY REFRESH RATE"),
+                    Space::new().width(Length::Fill),
+                    text(format!("{} Hz", app.gameplay_display_hz)).size(14)
+                ],
+                slider(1..=30, app.gameplay_display_hz, Message::GameplayDisplayHz),
+                muted("Rate at which real-time map statistics (PP, progress, hit counts) are streamed to the pad display during play (1–30 Hz, default: 10 Hz).").size(12),
+            ]
+            .spacing(8),
+        ]
+        .spacing(18),
+    );
+
     column![
         heading("Settings"),
         row![keys, display].spacing(14),
+        advanced,
         row![button(text("Save settings").size(15)).padding([10, 22]).style(theme::primary).on_press(Message::SaveConfig)],
     ]
     .spacing(14)

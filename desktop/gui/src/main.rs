@@ -115,6 +115,7 @@ pub struct App {
     pub debounce: u32,
     pub brightness: u32,
     pub sleep_seconds: u32,
+    pub gameplay_display_hz: u32,
     config_loaded: bool,
 
     pub logs: Vec<LogEntry>,
@@ -174,6 +175,7 @@ pub enum Message {
     Debounce(u32),
     Brightness(u32),
     SleepSeconds(u32),
+    GameplayDisplayHz(u32),
     SaveConfig,
     // Actions
     Sync,
@@ -230,6 +232,7 @@ impl App {
             debounce: 3000,
             brightness: 100,
             sleep_seconds: 600,
+            gameplay_display_hz: 10,
             config_loaded: false,
             logs: Vec::new(),
             latest_log_seq: 0,
@@ -354,6 +357,7 @@ impl App {
                             self.debounce = config.debounce_us;
                             self.brightness = config.brightness;
                             self.sleep_seconds = config.display_sleep_seconds;
+                            self.gameplay_display_hz = config.gameplay_display_hz;
                         }
                         self.config = config;
                     }
@@ -652,6 +656,7 @@ impl App {
             Message::Debounce(v) => self.debounce = v,
             Message::Brightness(v) => self.brightness = v,
             Message::SleepSeconds(v) => self.sleep_seconds = v,
+            Message::GameplayDisplayHz(v) => self.gameplay_display_hz = v,
             Message::SaveConfig => {
                 let config = DeviceConfig {
                     key1_hid_usage: char_to_hid_usage(&self.k1_input).unwrap_or(self.config.key1_hid_usage),
@@ -659,6 +664,7 @@ impl App {
                     debounce_us: self.debounce,
                     brightness: self.brightness,
                     display_sleep_seconds: self.sleep_seconds,
+                    gameplay_display_hz: self.gameplay_display_hz,
                     ..self.config.clone()
                 };
                 self.banner = Some("Saving settings...".into());
