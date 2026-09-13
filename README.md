@@ -2,15 +2,15 @@
 
 **Low-Latency ESP32-S3 osu! Keypad & Telemetry Display**
 
-A deterministic, ultra-low-latency two-key mechanical keypad and live telemetry HUD designed for competitive osu!lazer gameplay.
+A deterministic, ultra-low-latency two-key mechanical keypad and live telemetry HUD designed for competitive osu!lazer gameplay on Linux *(Windows support planned after Linux v1.0)*.
 
 ---
 
 ## ⚡ Core Principle: Latency Always Wins
 
-> **If a feature measurably worsens keyboard latency or latency jitter, the feature is reduced, deferred, frozen during gameplay, or removed.**
+> **"If a feature measurably worsens keyboard latency or latency jitter, the feature is reduced, deferred, frozen during gameplay, or removed."**
 
-The keypad functions as a standalone 1000 Hz USB HID keyboard out of the box with zero host software running. Auxiliary features (LCD telemetry, SQLite persistence, system tray, and tosu integration) are completely isolated from the keypress critical path.
+The keypad functions as a standalone 1000 Hz USB HID keyboard out of the box with zero host software running. Auxiliary features (LVGL telemetry, SQLite persistence, system tray, and tosu integration) are completely isolated from the keypress critical path.
 
 ---
 
@@ -30,11 +30,11 @@ The keypad functions as a standalone 1000 Hz USB HID keyboard out of the box wit
 +--------------------+   +-------------------------+
 |     osupad-gui     |   |      osupad-daemon      |
 |     (Rust/iced)    |<->|         (Rust)          |
-|  - Configuration   |IPC|  - State Machine        |
-|  - Diagnostics     |   |  - SQLite Storage       |
-|  - Backup Restore  |   |  - System Tray          |
-+--------------------+   |  - tosu & Device Owner  |
-                         +------------+------------+
+|  - System Tray     |IPC|  - State Machine        |
+|  - Layout Designer |   |  - SQLite Storage       |
+|  - Configuration   |   |  - Headless Service     |
+|  - Diagnostics     |   |  - tosu & Device Owner  |
++--------------------+   +------------+------------+
                                       |
                            USB CDC    |    USB HID (1000 Hz)
                                       |
@@ -42,8 +42,8 @@ The keypad functions as a standalone 1000 Hz USB HID keyboard out of the box wit
                          +-------------------------+
                          |  ESP32-S3 Touch LCD 2   |
                          |  - Eager Debounce ISR   |
-                         |  - USB Composite Device |
-                         |  - RAM Lifetime Press   |
+                         |  - Core 0: Input & HID  |
+                         |  - Core 1: LVGL & CDC   |
                          |  - ST7789 Telemetry HUD |
                          +-------------------------+
 ```
@@ -69,25 +69,85 @@ Standard MX mechanical switches have no polarity. Connect each switch between it
 
 ---
 
-## 📦 Host Software Suite
+## 🛠️ Building From Source
 
-The host stack is built with Rust and split into modular crates:
-- `osupad-daemon`: Background daemon owning SQLite, tosu, and the USB CDC device.
-- `osupad-gui`: Modern desktop configuration and live diagnostic monitor written in `iced`.
-- `osupadctl`: Command-line management tool for automation and backups.
+### 1. Prerequisites (Ubuntu / Debian)
+```bash
+sudo apt update
+sudo apt install -y build-essential pkg-config libasound2-dev libudev-dev \
+    libx11-dev libxkbcommon-dev libwayland-dev libfontconfig1-dev libdbus-1-dev
+```
 
-### Building
+### 2. Desktop Software Suite (Rust)
 ```bash
 cd desktop
 cargo build --release
 ```
+The compiled binaries are produced in `desktop/target/release/`:
+- `osupad-daemon`: Background service.
+- `osupad-gui`: Graphical configuration, layout designer, and system tray.
+- `osupadctl`: Command-line management tool.
 
-### CLI Quick Reference
+### 3. Firmware Build (ESP-IDF v5.5.2)
 ```bash
-# Check device and daemon state
+cd firmware
+idf.py set-target esp32s3
+idf.py build
+```
+
+---
+
+## ⚡ Flashing the Firmware
+
+### Option A: Via `osupadctl` (Recommended)
+`osupadctl` integrates native USB flashing via `espflash` and requires no external toolchain:
+```bash
+osupadctl flash firmware/build/osupad-firmware.bin
+```
+
+### Option B: Via ESP-IDF
+```bash
+cd firmware
+idf.py -p /dev/ttyACM0 flash
+```
+
+---
+
+## 🚀 Linux Setup & Installation
+
+### 1. Udev Rules
+Allow non-root user access to USB CDC and ROM bootloader devices:
+```bash
+sudo cp packaging/linux/udev/99-osupad.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules && sudo udevadm trigger
+```
+
+### 2. Systemd User Service (Daemon)
+Run the headless daemon automatically in your user session:
+```bash
+mkdir -p ~/.config/systemd/user/
+cp packaging/linux/systemd-user/osupad-daemon.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now osupad-daemon.service
+```
+
+### 3. Desktop Application & Autostart
+```bash
+mkdir -p ~/.local/share/applications ~/.config/autostart
+cp packaging/linux/desktop/osupad-gui.desktop ~/.local/share/applications/
+# For background tray autostart on login:
+cp packaging/linux/desktop/osupad-gui.desktop ~/.config/autostart/
+```
+
+---
+
+## 💻 CLI Quick Reference (`osupadctl`)
+
+```bash
+# Check device, daemon, and tosu state
 osupadctl status
 
-# Trigger safe synchronization
+# Trigger safe reconciliation
 osupadctl sync
 
 # Export portable JSON backup
@@ -96,35 +156,25 @@ osupadctl export backup.json
 # Import validated backup
 osupadctl import backup.json
 
-# Stream live device & host logs
+# Flash firmware image directly over USB
+osupadctl flash firmware/build/osupad-firmware.bin
+
+# Stream real-time diagnostic logs
 osupadctl monitor
 ```
 
 ---
 
-## 🚀 Linux Setup & Installation
-
-1. **Udev Rules** (allow non-root access to USB CDC / serial):
-   ```bash
-   sudo cp packaging/linux/udev/99-osupad.rules /etc/udev/rules.d/
-   sudo udevadm control --reload-rules && sudo udevadm trigger
-   ```
-
-2. **Systemd User Service**:
-   ```bash
-   mkdir -p ~/.config/systemd/user/
-   cp packaging/linux/systemd-user/osupad-daemon.service ~/.config/systemd/user/
-   systemctl --user enable --now osupad-daemon.service
-   ```
+## 📄 Documentation
+- [System Architecture](docs/architecture.md)
+- [USB Framing & Protocol](docs/protocol.md)
+- [Counter Reconciliation & Disaster Recovery](docs/recovery.md)
+- [Latency Testing Methodology](docs/latency-testing.md)
+- [Testing & Hardware Checklist](docs/testing-checklist.md)
+- [Technical Specification](osupad_technical_spec_v1.md)
 
 ---
 
-## 📄 Documentation
-- [Architecture & State Machine](docs/architecture.md)
-- [USB Framing & Protobuf Protocol](docs/protocol.md)
-- [Disaster Recovery & Counter Reconciliation](docs/recovery.md)
-- [Latency Regression Testing Gate](docs/latency-testing.md)
-- [Formal Technical Specification](osupad_technical_spec_v1.md)
-
 ## 📜 License
 Licensed under the [MIT License](LICENSE).
+
