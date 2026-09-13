@@ -2,7 +2,7 @@ use osupad_layout::{Layout, Screen};
 use osupad_model::ui_source::SourceValue;
 use osupad_model::{
     CounterSource, CounterState, DeviceConfig, DeviceInfo, IncompatibleDevice, JsonBackup,
-    LatencyStats, RuntimeMode,
+    LatencyStats, LogEntry, RuntimeMode,
 };
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -60,6 +60,8 @@ pub enum IpcRequest {
         restore: bool,
     },
     GetLogEntries {
+        #[serde(default)]
+        since_seq: Option<u64>,
         limit: usize,
     },
     PrepareFlash,
@@ -142,7 +144,10 @@ pub enum IpcResponse {
         protocol_version: u32,
         compatible: bool,
     },
-    LogEntries(Vec<String>),
+    LogEntries {
+        entries: Vec<LogEntry>,
+        latest_seq: u64,
+    },
     Layouts {
         idle: Option<Layout>,
         playing: Option<Layout>,

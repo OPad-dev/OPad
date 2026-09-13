@@ -12,7 +12,7 @@ use osupad_ipc::{IpcRequest, IpcResponse};
 use osupad_model::ui_source::SourceValue;
 use osupad_model::{
     char_to_hid_usage, CounterSource, CounterState, DeviceConfig, DeviceInfo, IncompatibleDevice,
-    LatencyStats, RuntimeMode,
+    LatencyStats, LogEntry, LogLevel, LogSource, RuntimeMode,
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -58,11 +58,11 @@ impl Page {
 pub struct App {
     pub page: Page,
     window: Option<window::Id>,
-    maximized: bool,
+    pub maximized: bool,
     tray: Option<tray::TrayHandle>,
-    /// None until the tray reports in; false means closing the window quits
     tray_available: Option<bool>,
 
+    // Daemon state
     pub daemon_online: bool,
     pub device_connected: bool,
     pub tosu_connected: bool,
@@ -87,7 +87,12 @@ pub struct App {
     pub sleep_seconds: u32,
     config_loaded: bool,
 
-    pub logs: Vec<String>,
+    pub logs: Vec<LogEntry>,
+    pub latest_log_seq: u64,
+    pub log_filter_level: Option<LogLevel>,
+    pub log_filter_source: Option<LogSource>,
+    pub log_cleared_seq: u64,
+    pub log_auto_scroll: bool,
     pub banner: Option<String>,
     pub designer: designer::Designer,
 }
@@ -99,6 +104,13 @@ pub enum Message {
     Status(Result<IpcResponse, String>),
     UiValues(Result<IpcResponse, String>),
     Logs(Result<IpcResponse, String>),
+    FilterLogLevel(Option<LogLevel>),
+    FilterLogSource(Option<LogSource>),
+    ClearLogs,
+    CopyLogs,
+    SaveLogs,
+    LogsSaved(Result<String, String>),
+    ToggleAutoScroll,
     // Settings
     Key1(String),
     Key2(String),
@@ -158,6 +170,11 @@ impl App {
             sleep_seconds: 600,
             config_loaded: false,
             logs: Vec::new(),
+            latest_log_seq: 0,
+            log_filter_level: None,
+            log_filter_source: None,
+            log_cleared_seq: 0,
+            log_auto_scroll: true,
             banner: None,
             designer,
         };
@@ -199,7 +216,15 @@ impl App {
             Task::perform(ipc::request(IpcRequest::GetUiValues), Message::UiValues),
         ];
         if self.page == Page::Monitor && self.window.is_some() {
-            tasks.push(Task::perform(ipc::request(IpcRequest::GetLogEntries { limit: 200 }), Message::Logs));
+            let since_seq = if self.latest_log_seq > 0 {
+                Some(self.latest_log_seq)
+            } else {
+                None
+            };
+            tasks.push(Task::perform(
+                ipc::request(IpcRequest::GetLogEntries { since_seq, limit: 200 }),
+                Message::Logs,
+            ));
         }
         Task::batch(tasks)
     }
@@ -280,9 +305,51 @@ impl App {
                 }
             }
             Message::Logs(result) => {
-                if let Ok(IpcResponse::LogEntries(entries)) = result {
-                    self.logs = entries;
+                if let Ok(IpcResponse::LogEntries { entries, latest_seq }) = result {
+                    if self.latest_log_seq == 0 {
+                        self.logs = entries;
+                    } else {
+                        for entry in entries {
+                            if !self.logs.iter().any(|e| e.seq == entry.seq) {
+                                self.logs.push(entry);
+                            }
+                        }
+                        if self.logs.len() > 2000 {
+                            let excess = self.logs.len() - 2000;
+                            self.logs.drain(0..excess);
+                        }
+                    }
+                    if latest_seq > 0 {
+                        self.latest_log_seq = latest_seq;
+                    }
                 }
+            }
+            Message::FilterLogLevel(lvl) => {
+                self.log_filter_level = lvl;
+            }
+            Message::FilterLogSource(src) => {
+                self.log_filter_source = src;
+            }
+            Message::ClearLogs => {
+                self.log_cleared_seq = self.latest_log_seq;
+            }
+            Message::CopyLogs => {
+                let text = self.formatted_visible_logs().join("\n");
+                return iced::clipboard::write(text);
+            }
+            Message::SaveLogs => {
+                let text = self.formatted_visible_logs().join("\n");
+                return Task::perform(save_logs_dialog(text), Message::LogsSaved);
+            }
+            Message::LogsSaved(res) => {
+                match res {
+                    Ok(path) => self.banner = Some(format!("Saved log to {}", path)),
+                    Err(e) if e.is_empty() => {}
+                    Err(e) => self.banner = Some(format!("Failed to save log: {}", e)),
+                }
+            }
+            Message::ToggleAutoScroll => {
+                self.log_auto_scroll = !self.log_auto_scroll;
             }
             Message::Key1(s) => self.k1_input = s.chars().take(1).collect::<String>().to_uppercase(),
             Message::Key2(s) => self.k2_input = s.chars().take(1).collect::<String>().to_uppercase(),
@@ -553,4 +620,25 @@ impl App {
             stack![framed, chrome::resize_edges()].into()
         }
     }
+
+    pub fn formatted_visible_logs(&self) -> Vec<String> {
+        self.logs
+            .iter()
+            .filter(|e| e.seq > self.log_cleared_seq)
+            .filter(|e| self.log_filter_level.map_or(true, |l| e.level >= l))
+            .filter(|e| self.log_filter_source.map_or(true, |s| e.source == s))
+            .map(|e| e.format_line())
+            .collect()
+    }
+}
+
+async fn save_logs_dialog(content: String) -> Result<String, String> {
+    let file = rfd::AsyncFileDialog::new()
+        .set_file_name("osupad.log")
+        .add_filter("Log file", &["log", "txt"])
+        .save_file()
+        .await
+        .ok_or_else(String::new)?;
+    std::fs::write(file.path(), content).map_err(|e| format!("Save failed: {}", e))?;
+    Ok(file.path().display().to_string())
 }

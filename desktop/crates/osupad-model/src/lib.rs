@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 
 pub mod ui_source;
 pub mod diag;
+pub mod log;
+
+pub use log::{LogEntry, LogLevel, LogSource};
 
 /// Key edge to HID report submit latency, measured on the device
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

@@ -288,13 +288,108 @@ pub fn device(app: &App) -> Element<'_, Message> {
 
 // ---- monitor --------------------------------------------------------------------------------
 
+fn filter_btn<'a>(label: &'a str, selected: bool, msg: Message) -> Element<'a, Message> {
+    button(text(label).size(12))
+        .padding([4, 10])
+        .style(if selected { theme::primary } else { theme::secondary })
+        .on_press(msg)
+        .into()
+}
+
 pub fn monitor(app: &App) -> Element<'_, Message> {
-    let lines = column(app.logs.iter().rev().map(|line| text(line).size(13).into())).spacing(4);
+    use osupad_model::{LogLevel, LogSource};
+
+    let severity_filters = row![
+        caption("LEVEL:"),
+        filter_btn("ALL", app.log_filter_level.is_none(), Message::FilterLogLevel(None)),
+        filter_btn("DEBUG", app.log_filter_level == Some(LogLevel::Debug), Message::FilterLogLevel(Some(LogLevel::Debug))),
+        filter_btn("INFO", app.log_filter_level == Some(LogLevel::Info), Message::FilterLogLevel(Some(LogLevel::Info))),
+        filter_btn("WARN", app.log_filter_level == Some(LogLevel::Warn), Message::FilterLogLevel(Some(LogLevel::Warn))),
+        filter_btn("ERROR", app.log_filter_level == Some(LogLevel::Error), Message::FilterLogLevel(Some(LogLevel::Error))),
+    ]
+    .spacing(6)
+    .align_y(Alignment::Center);
+
+    let source_filters = row![
+        caption("SOURCE:"),
+        filter_btn("ALL", app.log_filter_source.is_none(), Message::FilterLogSource(None)),
+        filter_btn("HOST", app.log_filter_source == Some(LogSource::Host), Message::FilterLogSource(Some(LogSource::Host))),
+        filter_btn("ESP", app.log_filter_source == Some(LogSource::Esp), Message::FilterLogSource(Some(LogSource::Esp))),
+    ]
+    .spacing(6)
+    .align_y(Alignment::Center);
+
+    let filter_row = row![severity_filters, Space::new().width(16), source_filters].spacing(10);
+
+    let visible_entries: Vec<_> = app
+        .logs
+        .iter()
+        .filter(|e| e.seq > app.log_cleared_seq)
+        .filter(|e| app.log_filter_level.map_or(true, |l| e.level >= l))
+        .filter(|e| app.log_filter_source.map_or(true, |s| e.source == s))
+        .collect();
+
+    let action_row = row![
+        button(text("Clear").size(12))
+            .padding([4, 12])
+            .style(theme::secondary)
+            .on_press(Message::ClearLogs),
+        button(text("Copy").size(12))
+            .padding([4, 12])
+            .style(theme::secondary)
+            .on_press(Message::CopyLogs),
+        button(text("Save log").size(12))
+            .padding([4, 12])
+            .style(theme::secondary)
+            .on_press(Message::SaveLogs),
+        button(text(if app.log_auto_scroll { "Auto-scroll (Newest First)" } else { "Order (Oldest First)" }).size(12))
+            .padding([4, 12])
+            .style(if app.log_auto_scroll { theme::secondary } else { theme::secondary })
+            .on_press(Message::ToggleAutoScroll),
+        Space::new().width(Length::Fill),
+        caption(format!("{} entries", visible_entries.len())),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center);
+
+    let rendered_items: Vec<Element<'_, Message>> = if app.log_auto_scroll {
+        visible_entries
+            .into_iter()
+            .rev()
+            .map(|e| {
+                let color = match e.level {
+                    LogLevel::Error => theme::RED,
+                    LogLevel::Warn => theme::YELLOW,
+                    LogLevel::Debug => theme::MUTED,
+                    LogLevel::Info => theme::WHITE,
+                };
+                text(e.format_line()).size(13).color(color).into()
+            })
+            .collect()
+    } else {
+        visible_entries
+            .into_iter()
+            .map(|e| {
+                let color = match e.level {
+                    LogLevel::Error => theme::RED,
+                    LogLevel::Warn => theme::YELLOW,
+                    LogLevel::Debug => theme::MUTED,
+                    LogLevel::Info => theme::WHITE,
+                };
+                text(e.format_line()).size(13).color(color).into()
+            })
+            .collect()
+    };
+
+    let lines = column(rendered_items).spacing(4);
+
     column![
         heading("Monitor"),
-        muted("Daemon and pad events, newest first."),
+        muted("Live daemon and pad diagnostic events with real-time filtering."),
+        filter_row,
+        action_row,
         card(scrollable(lines).height(Length::Fill)).height(Length::Fill),
     ]
-    .spacing(14)
+    .spacing(12)
     .into()
 }

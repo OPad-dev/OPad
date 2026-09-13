@@ -43,6 +43,12 @@ enum Commands {
     Monitor {
         #[arg(short, long, default_value_t = 50)]
         limit: usize,
+        #[arg(short, long, help = "Follow log stream in real time")]
+        follow: bool,
+        #[arg(long, help = "Filter by severity level (debug, info, warn, error)")]
+        level: Option<String>,
+        #[arg(long, help = "Filter by source (host, esp)")]
+        source: Option<String>,
     },
     /// Flash new firmware binary onto the ESP32-S3 using espflash
     Flash {
@@ -249,13 +255,52 @@ async fn main() -> Result<()> {
             }
         }
 
-        Commands::Monitor { limit } => {
-            let resp = send_request(&mut stream, &IpcRequest::GetLogEntries { limit }).await?;
-            if let IpcResponse::LogEntries(entries) = resp {
-                println!("=== osu!pad Monitor (Last {} entries) ===", entries.len());
-                for line in entries.iter().rev() {
-                    println!("{}", line);
+        Commands::Monitor { limit, follow, level, source } => {
+            let filter_level = level.as_deref().and_then(|l| match l.to_lowercase().as_str() {
+                "debug" => Some(osupad_model::LogLevel::Debug),
+                "info" => Some(osupad_model::LogLevel::Info),
+                "warn" | "warning" => Some(osupad_model::LogLevel::Warn),
+                "error" => Some(osupad_model::LogLevel::Error),
+                _ => None,
+            });
+            let filter_source = source.as_deref().and_then(|s| match s.to_lowercase().as_str() {
+                "host" => Some(osupad_model::LogSource::Host),
+                "esp" | "device" => Some(osupad_model::LogSource::Esp),
+                _ => None,
+            });
+
+            let mut since_seq = None;
+            let mut first_batch = true;
+
+            loop {
+                let resp = send_request(&mut stream, &IpcRequest::GetLogEntries { since_seq, limit }).await?;
+                if let IpcResponse::LogEntries { entries, latest_seq } = resp {
+                    if first_batch && !follow {
+                        println!("=== osu!pad Monitor (Last {} entries) ===", entries.len());
+                    }
+                    for entry in &entries {
+                        if let Some(fl) = filter_level {
+                            if entry.level < fl {
+                                continue;
+                            }
+                        }
+                        if let Some(fs) = filter_source {
+                            if entry.source != fs {
+                                continue;
+                            }
+                        }
+                        println!("{}", entry.format_line());
+                    }
+                    if latest_seq > 0 {
+                        since_seq = Some(latest_seq);
+                    }
                 }
+                first_batch = false;
+
+                if !follow {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
             }
         }
 

@@ -18,8 +18,6 @@ thiserror.workspace = true
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tray-icon.workspace = true
-winit.workspace = true
 osupad-model = { path = "../crates/osupad-model" }
 osupad-protocol = { path = "../crates/osupad-protocol" }
 osupad-storage = { path = "../crates/osupad-storage" }
