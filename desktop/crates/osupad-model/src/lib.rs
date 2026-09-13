@@ -27,6 +27,22 @@ pub enum RuntimeMode {
     Sync,
 }
 
+/// Source of active counters (§31)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CounterSource {
+    #[default]
+    Device,
+    Pc,
+}
+
+/// Information when a connected device has an incompatible protocol version
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IncompatibleDevice {
+    pub firmware_version: String,
+    pub protocol_version: u32,
+}
+
 /// Device hardware & firmware metadata
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeviceInfo {
@@ -274,5 +290,89 @@ impl JsonBackup {
             return Err(format!("Invalid key2 mapping: {}", self.config.key2));
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn valid_backup() -> JsonBackup {
+        JsonBackup::new(
+            &DeviceInfo {
+                device_id: "OSUPAD-TEST".to_string(),
+                board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+                firmware_version: "1.0.0".to_string(),
+                protocol_version: 1,
+            },
+            &CounterState {
+                device_id: "OSUPAD-TEST".to_string(),
+                counter_generation: 1,
+                lifetime_key1: 500,
+                lifetime_key2: 600,
+                map_key1: 0,
+                map_key2: 0,
+            },
+            &DeviceConfig::default(),
+        )
+    }
+
+    #[test]
+    fn test_valid_backup_passes() {
+        let b = valid_backup();
+        assert!(b.validate().is_ok());
+    }
+
+    #[test]
+    fn test_invalid_board_profile() {
+        let mut b = valid_backup();
+        b.device.board_profile = "custom_board".to_string();
+        assert!(b.validate().is_err());
+    }
+
+    #[test]
+    fn test_debounce_range_validation() {
+        let mut b = valid_backup();
+        b.config.debounce_us = 499;
+        assert!(b.validate().is_err());
+
+        b.config.debounce_us = 20001;
+        assert!(b.validate().is_err());
+
+        b.config.debounce_us = 1000;
+        assert!(b.validate().is_ok());
+    }
+
+    #[test]
+    fn test_sleep_seconds_validation() {
+        let mut b = valid_backup();
+        b.config.display_sleep_seconds = 5;
+        assert!(b.validate().is_err());
+
+        b.config.display_sleep_seconds = 0;
+        assert!(b.validate().is_ok());
+
+        b.config.display_sleep_seconds = 600;
+        assert!(b.validate().is_ok());
+    }
+
+    #[test]
+    fn test_display_hz_validation() {
+        let mut b = valid_backup();
+        b.config.gameplay_display_hz = 0;
+        assert!(b.validate().is_err());
+
+        b.config.gameplay_display_hz = 31;
+        assert!(b.validate().is_err());
+
+        b.config.gameplay_display_hz = 15;
+        assert!(b.validate().is_ok());
+    }
+
+    #[test]
+    fn test_future_timestamp_rejected() {
+        let mut b = valid_backup();
+        b.exported_at = chrono::Utc::now() + chrono::Duration::days(2);
+        assert!(b.validate().is_err());
     }
 }

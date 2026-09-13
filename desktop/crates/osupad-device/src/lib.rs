@@ -3,7 +3,8 @@ use chrono::{Datelike, Local, Timelike};
 use osupad_layout::{Layout, Screen};
 use osupad_model::ui_source::SourceValue;
 use osupad_model::{CounterState, DeviceConfig, DeviceInfo};
-use osupad_protocol::proto::{self, host_to_device, DeviceToHost, HostToDevice};
+pub use osupad_protocol::proto;
+use osupad_protocol::proto::{host_to_device, DeviceToHost, HostToDevice};
 use osupad_protocol::{decode_device_message, encode_host_message};
 use serialport::SerialPortType;
 use std::io::{Read, Write};
@@ -30,6 +31,8 @@ pub enum DeviceError {
     Io(#[from] std::io::Error),
     #[error("Device not connected")]
     NotConnected,
+    #[error("Device command queue busy")]
+    Busy,
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +41,18 @@ pub enum DeviceEvent {
     Disconnected,
     StatusUpdate(proto::DeviceStatus),
     Counters(CounterState),
+    CounterSyncResult {
+        seq: u32,
+        success: bool,
+        message: String,
+        state: Option<CounterState>,
+    },
+    ConfigAck {
+        seq: u32,
+        success: bool,
+        message: String,
+        current_config: Option<DeviceConfig>,
+    },
     LogBatch(proto::LogEventBatch),
     LayoutAck { screen: u8, success: bool, message: String },
 }
@@ -169,6 +184,8 @@ impl DeviceManager {
                 drop(port);
                 is_open_clone.store(false, Ordering::SeqCst);
                 is_conn_clone.store(false, Ordering::SeqCst);
+                // Drain any pending commands on disconnect so they are never replayed to a new connection
+                while cmd_rx.try_recv().is_ok() {}
                 let _ = event_tx_clone.send(DeviceEvent::Disconnected);
                 read_buf.clear();
                 std::thread::sleep(Duration::from_millis(1500));
@@ -224,6 +241,16 @@ impl DeviceManager {
         self.seq_counter.fetch_add(1, Ordering::SeqCst)
     }
 
+    fn send_msg(&self, msg: HostToDevice) -> Result<(), DeviceError> {
+        if !self.is_connected.load(Ordering::SeqCst) {
+            return Err(DeviceError::NotConnected);
+        }
+        self.cmd_tx.try_send(msg).map_err(|e| match e {
+            mpsc::error::TrySendError::Full(_) => DeviceError::Busy,
+            mpsc::error::TrySendError::Closed(_) => DeviceError::NotConnected,
+        })
+    }
+
     pub async fn send_time_sync(&self) -> Result<(), DeviceError> {
         let now = Local::now();
         let msg = HostToDevice {
@@ -237,8 +264,7 @@ impl DeviceManager {
                 second: now.second(),
             })),
         };
-        self.cmd_tx.send(msg).await.map_err(|_| DeviceError::NotConnected)?;
-        Ok(())
+        self.send_msg(msg)
     }
 
     pub async fn send_config(&self, config: &DeviceConfig) -> Result<(), DeviceError> {
@@ -256,8 +282,7 @@ impl DeviceManager {
                 }),
             })),
         };
-        self.cmd_tx.send(msg).await.map_err(|_| DeviceError::NotConnected)?;
-        Ok(())
+        self.send_msg(msg)
     }
 
     /// Send changed UI data source values, split to fit the device's 32-value messages
@@ -281,7 +306,7 @@ impl DeviceManager {
                         .collect(),
                 })),
             };
-            self.cmd_tx.send(msg).await.map_err(|_| DeviceError::NotConnected)?;
+            self.send_msg(msg)?;
         }
         Ok(())
     }
@@ -291,8 +316,7 @@ impl DeviceManager {
             sequence_number: self.next_seq(),
             payload: Some(host_to_device::Payload::ResetLatencyStats(true)),
         };
-        self.cmd_tx.send(msg).await.map_err(|_| DeviceError::NotConnected)?;
-        Ok(())
+        self.send_msg(msg)
     }
 
     /// Apply a screen layout on the device (it also stores it, unless playing)
@@ -326,8 +350,7 @@ impl DeviceManager {
                     .collect(),
             })),
         };
-        self.cmd_tx.send(msg).await.map_err(|_| DeviceError::NotConnected)?;
-        Ok(())
+        self.send_msg(msg)
     }
 
     /// Return a screen to the device's built-in layout
@@ -336,8 +359,7 @@ impl DeviceManager {
             sequence_number: self.next_seq(),
             payload: Some(host_to_device::Payload::ResetLayout(screen.to_wire() as u32)),
         };
-        self.cmd_tx.send(msg).await.map_err(|_| DeviceError::NotConnected)?;
-        Ok(())
+        self.send_msg(msg)
     }
 
     /// Ask the device for a DeviceStatus (lifetime and current-map counters)
@@ -346,8 +368,15 @@ impl DeviceManager {
             sequence_number: self.next_seq(),
             payload: Some(host_to_device::Payload::RequestStatus(true)),
         };
-        self.cmd_tx.send(msg).await.map_err(|_| DeviceError::NotConnected)?;
-        Ok(())
+        self.send_msg(msg)
+    }
+
+    pub async fn request_logs(&self) -> Result<(), DeviceError> {
+        let msg = HostToDevice {
+            sequence_number: self.next_seq(),
+            payload: Some(host_to_device::Payload::RequestLogs(true)),
+        };
+        self.send_msg(msg)
     }
 
     pub async fn send_host_status(&self, tosu_connected: bool, playing: bool, play_id: u32) -> Result<(), DeviceError> {
@@ -359,17 +388,17 @@ impl DeviceManager {
                 play_id,
             })),
         };
-        self.cmd_tx.send(msg).await.map_err(|_| DeviceError::NotConnected)?;
-        Ok(())
+        self.send_msg(msg)
     }
 
     pub async fn send_counter_sync(
         &self,
         counters: &CounterState,
         force_restore: bool,
-    ) -> Result<(), DeviceError> {
+    ) -> Result<u32, DeviceError> {
+        let seq = self.next_seq();
         let msg = HostToDevice {
-            sequence_number: self.next_seq(),
+            sequence_number: seq,
             payload: Some(host_to_device::Payload::CounterSync(
                 proto::CounterSyncRequest {
                     target_state: Some(proto::CounterState {
@@ -382,8 +411,8 @@ impl DeviceManager {
                 },
             )),
         };
-        self.cmd_tx.send(msg).await.map_err(|_| DeviceError::NotConnected)?;
-        Ok(())
+        self.send_msg(msg)?;
+        Ok(seq)
     }
 }
 
@@ -433,16 +462,41 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                 }));
             }
             proto::device_to_host::Payload::CounterSyncResp(resp) => {
-                if let Some(st) = &resp.synchronized_state {
-                    let _ = tx.send(DeviceEvent::Counters(CounterState {
-                        device_id: st.device_id.clone(),
-                        counter_generation: st.counter_generation,
-                        lifetime_key1: st.lifetime_key1,
-                        lifetime_key2: st.lifetime_key2,
-                        map_key1: 0,
-                        map_key2: 0,
-                    }));
+                let st_opt = resp.synchronized_state.as_ref().map(|st| CounterState {
+                    device_id: st.device_id.clone(),
+                    counter_generation: st.counter_generation,
+                    lifetime_key1: st.lifetime_key1,
+                    lifetime_key2: st.lifetime_key2,
+                    map_key1: 0,
+                    map_key2: 0,
+                });
+                let _ = tx.send(DeviceEvent::CounterSyncResult {
+                    seq: msg.sequence_number,
+                    success: resp.success,
+                    message: resp.message.clone(),
+                    state: st_opt.clone(),
+                });
+                if let Some(st) = st_opt {
+                    let _ = tx.send(DeviceEvent::Counters(st));
                 }
+            }
+            proto::device_to_host::Payload::ConfigAck(ack) => {
+                let cfg_opt = ack.current_config.as_ref().map(|c| DeviceConfig {
+                    key1_hid_usage: c.key1_hid_usage,
+                    key2_hid_usage: c.key2_hid_usage,
+                    debounce_us: c.debounce_us,
+                    brightness: c.brightness,
+                    display_sleep_seconds: c.display_sleep_seconds,
+                    gameplay_display_hz: c.gameplay_display_hz,
+                    tosu_endpoint: "".to_string(),
+                    press_color_rgb: c.press_color_rgb,
+                });
+                let _ = tx.send(DeviceEvent::ConfigAck {
+                    seq: msg.sequence_number,
+                    success: ack.success,
+                    message: ack.message.clone(),
+                    current_config: cfg_opt,
+                });
             }
             proto::device_to_host::Payload::LogBatch(batch) => {
                 let _ = tx.send(DeviceEvent::LogBatch(batch.clone()));
@@ -454,7 +508,6 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     message: ack.message.clone(),
                 });
             }
-            _ => {}
         }
     }
 }

@@ -20,6 +20,9 @@ esp_err_t ui_store_save(uint8_t screen, const ui_layout_t *layout);
 /** Forget a stored layout (the built-in default is used again). */
 esp_err_t ui_store_erase(uint8_t screen);
 
+/** Flush any dirty pending layouts/erases to NVS if in IDLE state. */
+esp_err_t ui_store_flush_dirty(void);
+
 #ifdef __cplusplus
 }
 #endif

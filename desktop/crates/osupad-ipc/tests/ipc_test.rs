@@ -38,10 +38,14 @@ async fn test_ipc_roundtrip_requests() {
                                     map_key1: 0,
                                     map_key2: 0,
                                 },
+                                counters_source: osupad_model::CounterSource::Device,
                                 config: DeviceConfig::default(),
                                 last_sync_time: Some("2026-09-12T00:00:00Z".to_string()),
+                                last_sync_error: None,
                                 tosu_connected: false,
                                 latency: None,
+                                pending_replacement: None,
+                                incompatible: None,
                             }
                         }
                         IpcRequest::PrepareFlash => {
@@ -57,7 +61,7 @@ async fn test_ipc_roundtrip_requests() {
                             }
                         }
                         IpcRequest::UpdateConfig(cfg) => {
-                            IpcResponse::ConfigUpdated { config: cfg }
+                            IpcResponse::ConfigUpdated { config: cfg, deferred_persist: false }
                         }
                         IpcRequest::ExportBackup => {
                             let info = DeviceInfo {
@@ -136,7 +140,7 @@ async fn test_ipc_roundtrip_requests() {
     custom_cfg.brightness = 90;
     let cfg_resp = send_request(&mut client, &IpcRequest::UpdateConfig(custom_cfg.clone())).await.expect("update config");
     match cfg_resp {
-        IpcResponse::ConfigUpdated { config } => {
+        IpcResponse::ConfigUpdated { config, .. } => {
             assert_eq!(config.debounce_us, 4500);
             assert_eq!(config.brightness, 90);
         }
@@ -153,6 +157,86 @@ async fn test_ipc_roundtrip_requests() {
             assert!(backup.validate().is_ok());
         }
         other => panic!("Unexpected response: {:?}", other),
+    }
+
+    let _ = std::fs::remove_file(&socket_path);
+}
+
+#[tokio::test]
+async fn test_ipc_handshake_protocol_mismatch() {
+    let socket_path = std::env::temp_dir().join(format!("osupad-hs-test-{}.sock", std::process::id()));
+    let listener = create_listener(&socket_path).expect("create_listener");
+
+    tokio::spawn(async move {
+        if let Ok((mut stream, _)) = listener.accept().await {
+            if let Ok(req) = read_request(&mut stream).await {
+                let resp = match req {
+                    IpcRequest::Handshake { client_protocol, .. } => {
+                        if client_protocol != IPC_PROTOCOL_VERSION {
+                            IpcResponse::HandshakeRejected {
+                                daemon_protocol: IPC_PROTOCOL_VERSION,
+                                reason: "Protocol version mismatch".to_string(),
+                            }
+                        } else {
+                            IpcResponse::HandshakeAck {
+                                daemon_version: "1.0.0".to_string(),
+                                daemon_protocol: IPC_PROTOCOL_VERSION,
+                                device_connected: false,
+                            }
+                        }
+                    }
+                    _ => IpcResponse::Error("Expected handshake".to_string()),
+                };
+                let _ = send_response(&mut stream, &resp).await;
+            }
+        }
+    });
+
+    let mut client = UnixStream::connect(&socket_path).await.expect("client connect");
+    let hs_req = IpcRequest::Handshake {
+        client_version: "1.0.0".to_string(),
+        client_protocol: 999, // Mismatched protocol version
+    };
+    let hs_resp = send_request(&mut client, &hs_req).await.expect("handshake response");
+    match hs_resp {
+        IpcResponse::HandshakeRejected { daemon_protocol, .. } => {
+            assert_eq!(daemon_protocol, IPC_PROTOCOL_VERSION);
+        }
+        other => panic!("Expected HandshakeRejected, got: {:?}", other),
+    }
+
+    let _ = std::fs::remove_file(&socket_path);
+}
+
+#[tokio::test]
+async fn test_connect_and_handshake_helper() {
+    let socket_path = std::env::temp_dir().join(format!("osupad-helper-test-{}.sock", std::process::id()));
+    let listener = create_listener(&socket_path).expect("create_listener");
+
+    tokio::spawn(async move {
+        if let Ok((mut stream, _)) = listener.accept().await {
+            if let Ok(req) = read_request(&mut stream).await {
+                if let IpcRequest::Handshake { client_protocol, .. } = req {
+                    if client_protocol == IPC_PROTOCOL_VERSION {
+                        let _ = send_response(&mut stream, &IpcResponse::HandshakeAck {
+                            daemon_version: "1.0.0".to_string(),
+                            daemon_protocol: IPC_PROTOCOL_VERSION,
+                            device_connected: true,
+                        }).await;
+                    }
+                }
+            }
+        }
+    });
+
+    let res = osupad_ipc::connect_and_handshake_at(&socket_path).await;
+    assert!(res.is_ok());
+    let (_stream, ack) = res.unwrap();
+    match ack {
+        IpcResponse::HandshakeAck { device_connected, .. } => {
+            assert!(device_connected);
+        }
+        other => panic!("Expected HandshakeAck, got: {:?}", other),
     }
 
     let _ = std::fs::remove_file(&socket_path);

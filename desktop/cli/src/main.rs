@@ -2,7 +2,7 @@ mod esp_rom;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use osupad_ipc::{get_socket_path, send_request, IpcRequest, IpcResponse, IPC_PROTOCOL_VERSION};
+use osupad_ipc::{send_request, IpcRequest, IpcResponse, IPC_PROTOCOL_VERSION};
 use osupad_model::JsonBackup;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -36,6 +36,8 @@ enum Commands {
     Import {
         #[arg(help = "Path to JSON backup file")]
         file: PathBuf,
+        #[arg(long, help = "Skip preview and confirmation prompt")]
+        yes: bool,
     },
     /// Stream live device and daemon diagnostic events
     Monitor {
@@ -71,17 +73,9 @@ async fn main() -> Result<()> {
         return run_setup();
     }
 
-    let socket_path = get_socket_path();
-    let mut stream = UnixStream::connect(&socket_path)
+    let (mut stream, _) = osupad_ipc::connect_and_handshake()
         .await
-        .with_context(|| format!("Failed to connect to osupad-daemon at {}. Is the daemon running?", socket_path.display()))?;
-
-    // Handshake
-    let handshake_req = IpcRequest::Handshake {
-        client_version: "1.0.0".to_string(),
-        client_protocol: IPC_PROTOCOL_VERSION,
-    };
-    let _ = send_request(&mut stream, &handshake_req).await?;
+        .with_context(|| "Failed to connect to osupad-daemon. Is the daemon running?")?;
 
     match cli.command {
         Commands::Status => {
@@ -91,15 +85,20 @@ async fn main() -> Result<()> {
                 device_connected,
                 device_info,
                 counters,
+                counters_source,
                 config,
                 last_sync_time,
+                last_sync_error,
                 tosu_connected,
                 latency,
+                pending_replacement,
+                incompatible,
             } = resp
             {
                 println!("=== osu!pad Status ===");
                 println!("Daemon Mode:      {:?}", mode);
                 println!("ESP32 Device:     {}", if device_connected { "Connected" } else { "Disconnected" });
+                println!("Counters Source:  {:?}", counters_source);
                 if let Some(info) = device_info {
                     println!("Device ID:        {}", info.device_id);
                     println!("Board Profile:    {}", info.board_profile);
@@ -110,6 +109,15 @@ async fn main() -> Result<()> {
                 println!("Total Presses:    {}", counters.total_lifetime_presses());
                 println!("Generation:       {}", counters.counter_generation);
                 println!("Last Sync:        {}", last_sync_time.as_deref().unwrap_or("Never"));
+                if let Some(err) = last_sync_error {
+                    println!("Last Sync Error:  ⚠ {}", err);
+                }
+                if let Some(old_id) = pending_replacement {
+                    println!("Replacement:      ⚠ New pad detected (previous: {}). Run GUI to restore or adopt.", old_id);
+                }
+                if let Some(incompat) = incompatible {
+                    println!("Incompatible:     ⚠ Device protocol {} incompatible with daemon protocol {}. Update firmware or host.", incompat.protocol_version, IPC_PROTOCOL_VERSION);
+                }
                 println!("tosu (osu!lazer): {}", if tosu_connected { "Active" } else { "Offline" });
                 if let Some(l) = latency {
                     println!("Key Latency:      p50 {}µs, p99.9 {}µs, max {}µs ({} samples)", l.p50_us, l.p999_us, l.max_us, l.samples);
@@ -140,7 +148,7 @@ async fn main() -> Result<()> {
             if !yes {
                 bail!("Resetting counters is permanent! Pass --yes to confirm: osupadctl reset --yes");
             }
-            let resp = send_request(&mut stream, &IpcRequest::ResetCounters).await?;
+            let resp = send_request(&mut stream, &IpcRequest::ResetCounters { confirm: yes }).await?;
             match resp {
                 IpcResponse::CountersReset { counters } => {
                     println!("✓ Counters reset successfully (new generation: {})", counters.counter_generation);
@@ -164,7 +172,7 @@ async fn main() -> Result<()> {
             }
         }
 
-        Commands::Import { file } => {
+        Commands::Import { file, yes } => {
             let text = std::fs::read_to_string(&file)
                 .with_context(|| format!("Failed to read file {}", file.display()))?;
             let backup: JsonBackup = serde_json::from_str(&text)
@@ -172,23 +180,72 @@ async fn main() -> Result<()> {
 
             backup.validate().map_err(|e| anyhow::anyhow!("Validation error: {}", e))?;
 
-            println!("Backup Summary to Import:");
-            println!("  Device ID: {}", backup.device.device_id);
-            println!("  Key 1:     {} ({} presses)", backup.config.key1, backup.stats.lifetime_key1);
-            println!("  Key 2:     {} ({} presses)", backup.config.key2, backup.stats.lifetime_key2);
+            // Preview via IPC (§P1-5)
+            let preview_resp = send_request(&mut stream, &IpcRequest::PreviewImport(backup.clone())).await?;
+            match preview_resp {
+                IpcResponse::ImportPreview { current, incoming, device_id_matches, is_counter_rollback, warnings } => {
+                    println!("=== Import Preview ===");
+                    if let Some(cur) = current {
+                        println!("Current:  Device ID: {}", cur.device_id);
+                        println!("          Key 1: {} ({} presses)", cur.config.key1_char(), cur.lifetime_key1);
+                        println!("          Key 2: {} ({} presses)", cur.config.key2_char(), cur.lifetime_key2);
+                    }
+                    println!("Incoming: Device ID: {}", incoming.device.device_id);
+                    println!("          Key 1: {} ({} presses)", incoming.config.key1, incoming.stats.lifetime_key1);
+                    println!("          Key 2: {} ({} presses)", incoming.config.key2, incoming.stats.lifetime_key2);
 
-            let resp = send_request(&mut stream, &IpcRequest::ImportBackup(backup)).await?;
-            match resp {
-                IpcResponse::BackupImported { success: true, .. } => {
-                    println!("✓ Backup imported and synchronized with device successfully!");
+                    if !device_id_matches {
+                        println!("\n  ⚠ Note: Backup device ID does not match current pad.");
+                    }
+                    if is_counter_rollback {
+                        println!("  ⚠ Warning: Counter rollback detected.");
+                    }
+                    if !warnings.is_empty() {
+                        println!("\nWarnings:");
+                        for w in &warnings {
+                            println!("  ⚠ {}", w);
+                        }
+                    }
+
+                    if !yes {
+                        use std::io::IsTerminal;
+                        if !std::io::stdin().is_terminal() {
+                            bail!("Confirmation required to import backup. Run with --yes in non-interactive mode.");
+                        }
+                        print!("\nProceed with import? [y/N]: ");
+                        std::io::stdout().flush()?;
+                        let mut input = String::new();
+                        std::io::stdin().read_line(&mut input)?;
+                        let trimmed = input.trim().to_lowercase();
+                        if trimmed != "y" && trimmed != "yes" {
+                            println!("Import cancelled.");
+                            return Ok(());
+                        }
+                    }
+
+                    let resp = send_request(&mut stream, &IpcRequest::ImportBackup { backup, confirm: true }).await?;
+                    match resp {
+                        IpcResponse::BackupImported { success: true, counters, .. } => {
+                            println!("✓ Backup imported and synchronized successfully (generation: {})!", counters.counter_generation);
+                        }
+                        IpcResponse::OperationRejected { reason } => {
+                            println!("✗ Rejected: {}", reason);
+                        }
+                        IpcResponse::Error(e) => {
+                            println!("✗ Error: {}", e);
+                        }
+                        _ => println!("✗ Failed: {:?}", resp),
+                    }
                 }
                 IpcResponse::OperationRejected { reason } => {
-                    println!("✗ Rejected: {}", reason);
+                    println!("✗ Preview rejected: {}", reason);
                 }
                 IpcResponse::Error(e) => {
-                    println!("✗ Error: {}", e);
+                    println!("✗ Preview error: {}", e);
                 }
-                _ => println!("✗ Failed: {:?}", resp),
+                other => {
+                    bail!("Unexpected preview response: {:?}", other);
+                }
             }
         }
 
@@ -211,14 +268,23 @@ async fn main() -> Result<()> {
             let app_port = prepare_flash(&mut stream, port).await?;
             // Always hand the port back to the daemon, even if flashing failed
             let result = flash_firmware(&firmware, app_port.as_deref()).await;
-            println!("Resuming daemon device communication...");
-            let _ = send_request(&mut stream, &IpcRequest::FinishFlash).await;
+            println!("Resuming daemon device communication and verifying new firmware...");
+            let finish_resp = send_request(&mut stream, &IpcRequest::FinishFlash).await?;
             result?;
 
-            println!("Waiting for osu!pad to boot the new firmware...");
-            match wait_for_port(osupad_device::find_target_port, Duration::from_secs(10)).await {
-                Some(p) => println!("✓ Firmware flashed; osu!pad is back on {}", p),
-                None => bail!("Flash succeeded but the osu!pad app (303a:4001) did not come back within 10s"),
+            match finish_resp {
+                IpcResponse::FlashFinished { firmware_version, protocol_version, compatible } => {
+                    println!("✓ Flash succeeded!");
+                    println!("  Firmware Version: {}", firmware_version);
+                    println!("  Protocol Version: {}", protocol_version);
+                    if !compatible {
+                        println!("  ⚠ WARNING: Device reported protocol version {} which is incompatible with host!", protocol_version);
+                    }
+                }
+                IpcResponse::Error(e) => {
+                    println!("⚠ Post-flash verification warning: {}", e);
+                }
+                _ => {}
             }
         }
 

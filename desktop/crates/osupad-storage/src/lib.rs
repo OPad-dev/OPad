@@ -2,6 +2,8 @@ use chrono::Utc;
 use osupad_model::{CounterState, DeviceConfig, DeviceInfo};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -10,10 +12,13 @@ pub enum StorageError {
     Sqlite(#[from] rusqlite::Error),
     #[error("Migration error: {0}")]
     Migration(String),
+    #[error("Storage writes blocked during active gameplay/cooldown")]
+    WritesBlocked,
 }
 
 pub struct Storage {
     conn: Connection,
+    writes_allowed: Arc<AtomicBool>,
 }
 
 impl Storage {
@@ -28,7 +33,10 @@ impl Storage {
         let conn = Connection::open(path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
 
-        let storage = Self { conn };
+        let storage = Self {
+            conn,
+            writes_allowed: Arc::new(AtomicBool::new(true)),
+        };
         storage.migrate()?;
         Ok(storage)
     }
@@ -36,9 +44,28 @@ impl Storage {
     /// Creates an in-memory database instance (primarily for tests)
     pub fn open_in_memory() -> Result<Self, StorageError> {
         let conn = Connection::open_in_memory()?;
-        let storage = Self { conn };
+        let storage = Self {
+            conn,
+            writes_allowed: Arc::new(AtomicBool::new(true)),
+        };
         storage.migrate()?;
         Ok(storage)
+    }
+
+    pub fn set_writes_allowed(&self, allowed: bool) {
+        self.writes_allowed.store(allowed, Ordering::SeqCst);
+    }
+
+    pub fn writes_allowed_handle(&self) -> Arc<AtomicBool> {
+        self.writes_allowed.clone()
+    }
+
+    fn check_writes_allowed(&self) -> Result<(), StorageError> {
+        if !self.writes_allowed.load(Ordering::SeqCst) {
+            tracing::warn!("Blocked storage write while writes_allowed is false");
+            return Err(StorageError::WritesBlocked);
+        }
+        Ok(())
     }
 
     fn migrate(&self) -> Result<(), StorageError> {
@@ -108,6 +135,7 @@ impl Storage {
     }
 
     pub fn save_layout(&self, screen: u8, json: &str) -> Result<(), StorageError> {
+        self.check_writes_allowed()?;
         self.conn.execute(
             "INSERT INTO layouts (screen, json, updated_at) VALUES (?1, ?2, ?3)
              ON CONFLICT(screen) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at",
@@ -117,6 +145,7 @@ impl Storage {
     }
 
     pub fn delete_layout(&self, screen: u8) -> Result<(), StorageError> {
+        self.check_writes_allowed()?;
         self.conn.execute("DELETE FROM layouts WHERE screen = ?1", params![screen])?;
         Ok(())
     }
@@ -183,6 +212,7 @@ impl Storage {
     }
 
     pub fn save_config(&self, config: &DeviceConfig) -> Result<(), StorageError> {
+        self.check_writes_allowed()?;
         self.conn.execute(
             "UPDATE config SET
                 key1_hid_usage = ?1,
@@ -215,11 +245,13 @@ impl Storage {
                  FROM device_state WHERE device_id = ?1",
                 params![device_id],
                 |row| {
+                    let k1: i64 = row.get(2)?;
+                    let k2: i64 = row.get(3)?;
                     Ok(CounterState {
                         device_id: row.get(0)?,
                         counter_generation: row.get(1)?,
-                        lifetime_key1: row.get(2)?,
-                        lifetime_key2: row.get(3)?,
+                        lifetime_key1: k1 as u64,
+                        lifetime_key2: k2 as u64,
                         map_key1: 0,
                         map_key2: 0,
                     })
@@ -229,11 +261,65 @@ impl Storage {
             .map_err(StorageError::from)
     }
 
+    pub fn list_device_states(&self) -> Result<Vec<(DeviceInfo, CounterState)>, StorageError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT device_id, board_profile, firmware_version, counter_generation,
+                    lifetime_key1, lifetime_key2, last_seen_at, last_sync_at
+             FROM device_state ORDER BY last_seen_at DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let device_id: String = row.get(0)?;
+            let board_profile: String = row.get(1)?;
+            let firmware_version: Option<String> = row.get(2)?;
+            let counter_generation: u32 = row.get(3)?;
+            let lifetime_key1: i64 = row.get(4)?;
+            let lifetime_key2: i64 = row.get(5)?;
+
+            let info = DeviceInfo {
+                device_id: device_id.clone(),
+                board_profile,
+                firmware_version: firmware_version.unwrap_or_else(|| "1.0.0".to_string()),
+                protocol_version: 1,
+            };
+            let counters = CounterState {
+                device_id,
+                counter_generation,
+                lifetime_key1: lifetime_key1 as u64,
+                lifetime_key2: lifetime_key2 as u64,
+                map_key1: 0,
+                map_key2: 0,
+            };
+            Ok((info, counters))
+        })?;
+
+        let mut list = Vec::new();
+        for item in rows {
+            list.push(item?);
+        }
+        Ok(list)
+    }
+
+    pub fn load_latest_device_state(&self) -> Result<Option<(DeviceInfo, CounterState)>, StorageError> {
+        let states = self.list_device_states()?;
+        Ok(states.into_iter().next())
+    }
+
+    pub fn touch_device_last_seen(&self, device_id: &str) -> Result<(), StorageError> {
+        self.check_writes_allowed()?;
+        let now = Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE device_state SET last_seen_at = ?1 WHERE device_id = ?2",
+            params![now, device_id],
+        )?;
+        Ok(())
+    }
+
     pub fn save_device_state(
         &self,
         info: &DeviceInfo,
         counters: &CounterState,
     ) -> Result<(), StorageError> {
+        self.check_writes_allowed()?;
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
             "INSERT INTO device_state (
@@ -389,5 +475,70 @@ mod tests {
         let merged2 = reconcile_counters(&pc_newer, &esp);
         assert_eq!(merged2.counter_generation, 3);
         assert_eq!(merged2.lifetime_key1, 10);
+    }
+
+    #[test]
+    fn test_writes_blocked_guard() {
+        let storage = Storage::open_in_memory().expect("open");
+        storage.set_writes_allowed(false);
+
+        let config = storage.load_config().expect("read is allowed");
+        assert!(matches!(
+            storage.save_config(&config),
+            Err(StorageError::WritesBlocked)
+        ));
+        assert!(matches!(
+            storage.save_layout(0, "{}"),
+            Err(StorageError::WritesBlocked)
+        ));
+        assert!(matches!(
+            storage.delete_layout(0),
+            Err(StorageError::WritesBlocked)
+        ));
+
+        let info = DeviceInfo {
+            device_id: "dev-test".to_string(),
+            board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+            firmware_version: "1.0.0".to_string(),
+            protocol_version: 1,
+        };
+        let counters = CounterState::default();
+        assert!(matches!(
+            storage.save_device_state(&info, &counters),
+            Err(StorageError::WritesBlocked)
+        ));
+
+        // Re-enable and verify it works
+        storage.set_writes_allowed(true);
+        storage.save_config(&config).expect("save should succeed");
+    }
+
+    #[test]
+    fn test_list_and_load_latest_device_state() {
+        let storage = Storage::open_in_memory().expect("open");
+        assert!(storage.load_latest_device_state().unwrap().is_none());
+
+        let info1 = DeviceInfo {
+            device_id: "dev-01".to_string(),
+            board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+            firmware_version: "1.0.0".to_string(),
+            protocol_version: 1,
+        };
+        let counters1 = CounterState {
+            device_id: "dev-01".to_string(),
+            counter_generation: 1,
+            lifetime_key1: 100,
+            lifetime_key2: 200,
+            map_key1: 0,
+            map_key2: 0,
+        };
+        storage.save_device_state(&info1, &counters1).unwrap();
+
+        let latest = storage.load_latest_device_state().unwrap().expect("latest");
+        assert_eq!(latest.0.device_id, "dev-01");
+        assert_eq!(latest.1.lifetime_key1, 100);
+
+        let states = storage.list_device_states().unwrap();
+        assert_eq!(states.len(), 1);
     }
 }

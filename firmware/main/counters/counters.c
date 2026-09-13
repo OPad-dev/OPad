@@ -26,6 +26,11 @@ uint32_t counters_get_nvs_writes(void)
     return s_nvs_writes;
 }
 
+void counters_record_nvs_write(void)
+{
+    s_nvs_writes++;
+}
+
 esp_err_t counters_init(void)
 {
 #if defined(CONFIG_OSUPAD_TEST_FAIL_NVS) || defined(OSUPAD_TEST_FAIL_NVS)

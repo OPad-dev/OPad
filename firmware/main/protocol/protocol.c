@@ -317,9 +317,10 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         layout_from_proto(sl, &layout);
         bool ok = ui_set_layout((uint8_t)sl->screen, &layout, err, sizeof(err));
         if (ok) {
-            if (runtime_get_state() == OSUPAD_STATE_PLAYING) {
-                // Flash writes would stall the key core: apply now, the host resends later
-                snprintf(err, sizeof(err), "applied, not saved while playing");
+            if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+                // Flash writes would stall the key core: apply in RAM now, deferred to IDLE
+                ui_store_save((uint8_t)sl->screen, &layout);
+                snprintf(err, sizeof(err), "applied, will be saved after gameplay");
             } else if (ui_store_save((uint8_t)sl->screen, &layout) != ESP_OK) {
                 snprintf(err, sizeof(err), "applied, but saving to flash failed");
             }
@@ -333,8 +334,13 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         const ui_layout_t *def = ui_default_layout(screen <= UINT8_MAX ? (uint8_t)screen : UINT8_MAX);
         char err[64] = "";
         bool ok = def && ui_set_layout((uint8_t)screen, def, err, sizeof(err));
-        if (ok && runtime_get_state() != OSUPAD_STATE_PLAYING) {
-            ui_store_erase((uint8_t)screen);
+        if (ok) {
+            if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+                ui_store_erase((uint8_t)screen);
+                snprintf(err, sizeof(err), "reset applied, will be persisted after gameplay");
+            } else if (ui_store_erase((uint8_t)screen) != ESP_OK) {
+                snprintf(err, sizeof(err), "reset applied, but erasing from flash failed");
+            }
         }
         protocol_send_layout_ack(msg->sequence_number, screen, ok, def ? err : "unknown screen");
         break;

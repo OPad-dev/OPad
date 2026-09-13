@@ -2,12 +2,12 @@ use anyhow::Result;
 use chrono::Utc;
 use osupad_device::{DeviceEvent, DeviceManager};
 use osupad_ipc::{
-    create_listener, get_socket_path, read_request, send_response, IpcRequest, IpcResponse,
-    IPC_PROTOCOL_VERSION,
+    create_listener, get_socket_path, read_request, send_response, CurrentBackupState, IpcRequest,
+    IpcResponse, IPC_PROTOCOL_VERSION,
 };
 use osupad_model::{
-    char_to_hid_usage, CounterState, DeviceConfig, DeviceInfo, JsonBackup, LatencyStats,
-    RuntimeMode,
+    char_to_hid_usage, CounterSource, CounterState, DeviceConfig, DeviceInfo, IncompatibleDevice,
+    JsonBackup, LatencyStats, RuntimeMode,
 };
 use osupad_storage::{reconcile_counters, Storage};
 use osupad_layout::{Layout, Screen};
@@ -37,12 +37,24 @@ pub struct DaemonState {
     pub device_connected: bool,
     pub device_info: Option<DeviceInfo>,
     pub counters: CounterState,
+    pub counters_source: CounterSource,
     pub config: DeviceConfig,
     pub last_sync_time: Option<String>,
+    pub last_sync_error: Option<String>,
     pub tosu_connected: bool,
     pub latency: Option<LatencyStats>,
+    pub pending_replacement: Option<String>,
+    pub incompatible: Option<IncompatibleDevice>,
     /// Latest tosu-derived UI values (for the designer's live preview)
     pub ui_values: Vec<(u8, SourceValue)>,
+}
+
+#[derive(Default)]
+pub struct PendingOperations {
+    pub pending_config: Option<DeviceConfig>,
+    pub pending_layouts: Vec<(Screen, Option<Layout>)>,
+    pub pending_device_push: bool,
+    pub pending_last_seen: Option<String>,
 }
 
 #[tokio::main]
@@ -57,14 +69,30 @@ async fn main() -> Result<()> {
 
     info!("Starting osupad-daemon v1.0.0");
 
+    let socket_path = get_socket_path();
+    // Check if another daemon instance is already running (§P2-6)
+    if socket_path.exists() {
+        if tokio::net::UnixStream::connect(&socket_path).await.is_ok() {
+            anyhow::bail!(
+                "Another osupad-daemon instance is already running on socket {}",
+                socket_path.display()
+            );
+        }
+    }
+
     let db_path = get_database_path();
     info!("Using SQLite database at {}", db_path.display());
     let storage = Arc::new(Mutex::new(Storage::open(&db_path)?));
 
-    // Load initial configuration
-    let initial_config = {
+    // Load initial configuration and latest device state from PC SQLite database (§P1-4)
+    let (initial_config, initial_device, initial_counters) = {
         let s = storage.lock().unwrap();
-        s.load_config().unwrap_or_default()
+        let cfg = s.load_config().unwrap_or_default();
+        let latest = s.load_latest_device_state().unwrap_or(None);
+        match latest {
+            Some((info, counters)) => (cfg, Some(info), counters),
+            None => (cfg, None, CounterState::default()),
+        }
     };
 
     let log_hub = Arc::new(Mutex::new(VecDeque::<String>::with_capacity(MAX_LOG_ENTRIES)));
@@ -76,14 +104,20 @@ async fn main() -> Result<()> {
     let daemon_state = Arc::new(Mutex::new(DaemonState {
         mode: RuntimeMode::Idle,
         device_connected: false,
-        device_info: None,
-        counters: CounterState::default(),
+        device_info: initial_device,
+        counters: initial_counters,
+        counters_source: CounterSource::Pc,
         config: initial_config.clone(),
         last_sync_time: None,
+        last_sync_error: None,
         tosu_connected: false,
         latency: None,
+        pending_replacement: None,
+        incompatible: None,
         ui_values: Vec::new(),
     }));
+
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
     // Launch and supervise tosu, then follow its WebSocket
     spawn_tosu_supervisor(initial_config.tosu_endpoint.clone(), get_tosu_log_path());
@@ -106,6 +140,7 @@ async fn main() -> Result<()> {
         let storage = storage.clone();
         let device_manager = device_manager.clone();
         let log_hub = log_hub.clone();
+        let pending_ops = pending_ops.clone();
 
         tokio::spawn(async move {
             loop {
@@ -115,6 +150,7 @@ async fn main() -> Result<()> {
                         let storage = storage.clone();
                         let device_manager = device_manager.clone();
                         let log_hub = log_hub.clone();
+                        let pending_ops = pending_ops.clone();
 
                         tokio::spawn(async move {
                             while let Ok(req) = read_request(&mut stream).await {
@@ -124,6 +160,7 @@ async fn main() -> Result<()> {
                                     &storage,
                                     &device_manager,
                                     &log_hub,
+                                    &pending_ops,
                                 )
                                 .await;
                                 if send_response(&mut stream, &resp).await.is_err() {
@@ -153,6 +190,12 @@ async fn main() -> Result<()> {
     let mut play_id = Utc::now().timestamp() as u32;
     let mut last_live_ms: Option<f64> = None;
 
+    let mut last_periodic_sync = Instant::now();
+    let mut last_synced_counters: Option<CounterState> = None;
+    let mut last_periodic_time_sync = Instant::now();
+    let mut last_instant = Instant::now();
+    let mut last_system_time = std::time::SystemTime::now();
+
     loop {
         tokio::select! {
             // 1. Device hardware events
@@ -164,10 +207,63 @@ async fn main() -> Result<()> {
 
                         let mut st = daemon_state.lock().unwrap();
                         st.device_connected = true;
+                        st.counters_source = CounterSource::Device;
+
+                        // Protocol version check (§P1-7)
+                        if info.protocol_version != 1 {
+                            warn!("Incompatible ESP32 protocol version: {}", info.protocol_version);
+                            st.incompatible = Some(IncompatibleDevice {
+                                firmware_version: info.firmware_version.clone(),
+                                protocol_version: info.protocol_version,
+                            });
+                            continue;
+                        }
+                        st.incompatible = None;
                         st.device_info = Some(info.clone());
 
+                        // Handle device registration & replacement (§P1-2)
+                        let stored_row = {
+                            let s = storage.lock().unwrap();
+                            s.load_device_state(&info.device_id).unwrap_or(None)
+                        };
+
+                        if stored_row.is_none() {
+                            let existing_states = {
+                                let s = storage.lock().unwrap();
+                                s.list_device_states().unwrap_or_default()
+                            };
+
+                            if existing_states.is_empty() {
+                                // First device ever seen: import into SQLite
+                                if st.mode == RuntimeMode::Idle {
+                                    let s = storage.lock().unwrap();
+                                    let _ = s.save_device_state(&info, &st.counters);
+                                    let _ = s.touch_device_last_seen(&info.device_id);
+                                } else {
+                                    pending_ops.lock().unwrap().pending_last_seen = Some(info.device_id.clone());
+                                }
+                            } else if st.counters.counter_generation <= 1 && st.counters.lifetime_key1 < 1000 && st.counters.lifetime_key2 < 1000 {
+                                // Fresh replacement device
+                                st.pending_replacement = Some(existing_states[0].0.device_id.clone());
+                                warn!("Detected potential ESP replacement with device_id: {}", info.device_id);
+                            } else {
+                                // Distinct device with real counters: register it
+                                if st.mode == RuntimeMode::Idle {
+                                    let s = storage.lock().unwrap();
+                                    let _ = s.save_device_state(&info, &st.counters);
+                                    let _ = s.touch_device_last_seen(&info.device_id);
+                                } else {
+                                    pending_ops.lock().unwrap().pending_last_seen = Some(info.device_id.clone());
+                                }
+                            }
+                        } else if st.mode == RuntimeMode::Idle {
+                            let s = storage.lock().unwrap();
+                            let _ = s.touch_device_last_seen(&info.device_id);
+                        } else {
+                            pending_ops.lock().unwrap().pending_last_seen = Some(info.device_id.clone());
+                        }
+
                         // Send time sync, config and host status immediately (§14.3).
-                        // The device does not persist its config, so push it on every connect.
                         let dm = device_manager.clone();
                         let (tosu, playing) = (st.tosu_connected, st.mode == RuntimeMode::Playing);
                         let config = st.config.clone();
@@ -196,12 +292,25 @@ async fn main() -> Result<()> {
                                 }
                             });
                         }
+
+                        // P1-2: Reconcile on connect if Idle and not pending replacement
+                        if st.pending_replacement.is_none() && st.mode == RuntimeMode::Idle {
+                            let ds = daemon_state.clone();
+                            let stg = storage.clone();
+                            let dm_clone = device_manager.clone();
+                            let lh = log_hub.clone();
+                            let po = pending_ops.clone();
+                            tokio::spawn(async move {
+                                perform_sync(&ds, &stg, &dm_clone, &lh, &po).await;
+                            });
+                        }
                     }
                     DeviceEvent::Disconnected => {
                         warn!("ESP32 Device Disconnected");
                         log_info(&log_hub, "Device disconnected");
                         let mut st = daemon_state.lock().unwrap();
                         st.device_connected = false;
+                        st.counters_source = CounterSource::Pc;
                     }
                     DeviceEvent::Counters(c) => {
                         let mut st = daemon_state.lock().unwrap();
@@ -227,6 +336,8 @@ async fn main() -> Result<()> {
                             deferred_reports: status.hid_deferred_reports,
                         });
                     }
+                    DeviceEvent::CounterSyncResult { .. } => {}
+                    DeviceEvent::ConfigAck { .. } => {}
                     DeviceEvent::LayoutAck { screen, success, message } => {
                         let note = if message.is_empty() { String::new() } else { format!(" ({})", message) };
                         log_info(&log_hub, &format!(
@@ -266,6 +377,7 @@ async fn main() -> Result<()> {
                     if current_mode != RuntimeMode::Playing {
                         info!("State transition -> PLAYING (osu! map active)");
                         log_info(&log_hub, &format!("State -> PLAYING ({})", telemetry.title));
+                        storage.lock().unwrap().set_writes_allowed(false);
                         {
                             let mut st = daemon_state.lock().unwrap();
                             st.mode = RuntimeMode::Playing;
@@ -282,7 +394,7 @@ async fn main() -> Result<()> {
                 } else if current_mode == RuntimeMode::Playing {
                     last_live_ms = None;
                     // Left playing mode -> start COOLDOWN timer (§11.2)
-                    enter_cooldown(&daemon_state, &log_hub, &mut cooldown_deadline);
+                    enter_cooldown(&daemon_state, &storage, &log_hub, &mut cooldown_deadline);
                     let _ = device_manager.send_host_status(true, false, play_id).await;
                 }
             }
@@ -298,7 +410,7 @@ async fn main() -> Result<()> {
                 };
                 // Without tosu there is no way to see the map end; don't stay stuck in PLAYING
                 if !connected && was_playing {
-                    enter_cooldown(&daemon_state, &log_hub, &mut cooldown_deadline);
+                    enter_cooldown(&daemon_state, &storage, &log_hub, &mut cooldown_deadline);
                     last_live_ms = None;
                 }
                 if !connected {
@@ -332,6 +444,43 @@ async fn main() -> Result<()> {
                     }
                 }
 
+                let now_instant = Instant::now();
+                let now_system = std::time::SystemTime::now();
+                let elapsed_instant = now_instant.saturating_duration_since(last_instant);
+                let clock_jump = match now_system.duration_since(last_system_time) {
+                    Ok(system_elapsed) => {
+                        let diff = if system_elapsed > elapsed_instant {
+                            system_elapsed - elapsed_instant
+                        } else {
+                            elapsed_instant - system_elapsed
+                        };
+                        diff > Duration::from_secs(2)
+                    }
+                    Err(_) => true,
+                };
+                last_instant = now_instant;
+                last_system_time = now_system;
+
+                if device_connected && daemon_state.lock().unwrap().mode == RuntimeMode::Idle {
+                    if clock_jump || last_periodic_time_sync.elapsed() >= Duration::from_secs(600) {
+                        last_periodic_time_sync = Instant::now();
+                        let _ = device_manager.send_time_sync().await;
+                    }
+
+                    if last_periodic_sync.elapsed() >= Duration::from_secs(300) {
+                        last_periodic_sync = Instant::now();
+                        let current_counters = daemon_state.lock().unwrap().counters.clone();
+                        let changed = match &last_synced_counters {
+                            Some(prev) => prev.lifetime_key1 != current_counters.lifetime_key1 || prev.lifetime_key2 != current_counters.lifetime_key2,
+                            None => true,
+                        };
+                        if changed {
+                            perform_sync(&daemon_state, &storage, &device_manager, &log_hub, &pending_ops).await;
+                            last_synced_counters = Some(daemon_state.lock().unwrap().counters.clone());
+                        }
+                    }
+                }
+
                 let mut should_sync = false;
                 {
                     let mut st = daemon_state.lock().unwrap();
@@ -349,7 +498,10 @@ async fn main() -> Result<()> {
                 }
 
                 if should_sync {
-                    perform_sync(&daemon_state, &storage, &device_manager, &log_hub).await;
+                    perform_sync(&daemon_state, &storage, &device_manager, &log_hub, &pending_ops).await;
+                    last_synced_counters = Some(daemon_state.lock().unwrap().counters.clone());
+                    last_periodic_sync = Instant::now();
+                    last_periodic_time_sync = Instant::now();
                 }
             }
         }
@@ -358,11 +510,13 @@ async fn main() -> Result<()> {
 
 fn enter_cooldown(
     state: &Arc<Mutex<DaemonState>>,
+    storage: &Arc<Mutex<Storage>>,
     log_hub: &Arc<Mutex<VecDeque<String>>>,
     cooldown_deadline: &mut Option<Instant>,
 ) {
     info!("State transition -> COOLDOWN (5s window started)");
     log_info(log_hub, "State -> COOLDOWN (5s)");
+    storage.lock().unwrap().set_writes_allowed(false);
     state.lock().unwrap().mode = RuntimeMode::Cooldown;
     *cooldown_deadline = Some(Instant::now() + COOLDOWN_DURATION);
 }
@@ -372,58 +526,200 @@ async fn perform_sync(
     storage: &Arc<Mutex<Storage>>,
     device: &Arc<DeviceManager>,
     log_hub: &Arc<Mutex<VecDeque<String>>>,
+    pending_ops: &Arc<Mutex<PendingOperations>>,
 ) {
     info!("Performing atomic state synchronization (§11.3, §13)...");
     log_info(log_hub, "Performing synchronization...");
 
-    let (info_opt, in_memory_counters) = {
+    let (info_opt, in_memory_counters, is_connected) = {
         let st = state.lock().unwrap();
-        (st.device_info.clone(), st.counters.clone())
+        (st.device_info.clone(), st.counters.clone(), st.device_connected)
     };
 
-    if let Some(info) = info_opt {
-        let stored_counters = {
-            let s = storage.lock().unwrap();
-            s.load_device_state(&info.device_id).unwrap_or(None).unwrap_or_else(|| CounterState {
-                device_id: info.device_id.clone(),
-                counter_generation: in_memory_counters.counter_generation,
-                lifetime_key1: 0,
-                lifetime_key2: 0,
-                map_key1: 0,
-                map_key2: 0,
-            })
-        };
-
-        // Reconcile
-        let reconciled = reconcile_counters(&stored_counters, &in_memory_counters);
-
-        // Commit to SQLite
-        {
-            let s = storage.lock().unwrap();
-            if let Err(e) = s.save_device_state(&info, &reconciled) {
-                error!("Failed to save reconciled device state to SQLite: {}", e);
-            }
-        }
-
-        // Send reconciled counters to ESP device
-        let _ = device.send_counter_sync(&reconciled, false).await;
-
-        // Sync Clock
-        let _ = device.send_time_sync().await;
-
-        let now_str = Utc::now().to_rfc3339();
-        {
-            let mut st = state.lock().unwrap();
-            st.counters = reconciled;
-            st.last_sync_time = Some(now_str.clone());
-            st.mode = RuntimeMode::Idle;
-        }
-
-        log_info(log_hub, "Synchronization completed successfully");
-    } else {
+    let Some(info) = info_opt else {
         let mut st = state.lock().unwrap();
         st.mode = RuntimeMode::Idle;
+        storage.lock().unwrap().set_writes_allowed(true);
+        return;
+    };
+
+    if !is_connected {
+        let mut st = state.lock().unwrap();
+        st.mode = RuntimeMode::Idle;
+        storage.lock().unwrap().set_writes_allowed(true);
+        return;
     }
+
+    // Step 1: Wait up to 3s for device to reach IDLE (§P1-1)
+    let mut idle_reached = false;
+    let mut events = device.subscribe();
+    let poll_deadline = Instant::now() + Duration::from_secs(3);
+
+    while Instant::now() < poll_deadline {
+        let _ = device.request_status().await;
+        let wait_res = tokio::time::timeout(Duration::from_millis(100), async {
+            loop {
+                match events.recv().await {
+                    Ok(DeviceEvent::StatusUpdate(s)) => {
+                        return s.state == osupad_device::proto::DeviceState::Idle as i32;
+                    }
+                    Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(_) => return false,
+                }
+            }
+        }).await;
+
+        if let Ok(is_idle) = wait_res {
+            if is_idle {
+                idle_reached = true;
+                break;
+            }
+        }
+    }
+
+    if !idle_reached {
+        warn!("Timed out waiting for device to report IDLE state before counter sync");
+        let mut st = state.lock().unwrap();
+        st.last_sync_error = Some("Device not in IDLE state within 3s timeout".to_string());
+        log_info(log_hub, "Counter sync delayed: device busy (not IDLE)");
+        return;
+    }
+
+    let stored_counters = {
+        let s = storage.lock().unwrap();
+        s.load_device_state(&info.device_id).unwrap_or(None).unwrap_or_else(|| CounterState {
+            device_id: info.device_id.clone(),
+            counter_generation: in_memory_counters.counter_generation,
+            lifetime_key1: 0,
+            lifetime_key2: 0,
+            map_key1: 0,
+            map_key2: 0,
+        })
+    };
+
+    // Reconcile (§13)
+    let reconciled = reconcile_counters(&stored_counters, &in_memory_counters);
+
+    // Save reconciled state to SQLite (writes allowed in sync)
+    {
+        let s = storage.lock().unwrap();
+        s.set_writes_allowed(true);
+        if let Err(e) = s.save_device_state(&info, &reconciled) {
+            error!("Failed to save reconciled device state to SQLite: {}", e);
+        }
+    }
+
+    // Step 2 & 3: Send CounterSync and await matching CounterSyncResult (retry up to 3 times) (§P1-1)
+    let mut sync_success = false;
+    let mut last_error_msg = String::new();
+
+    for attempt in 0..3 {
+        let mut resp_events = device.subscribe();
+        match device.send_counter_sync(&reconciled, false).await {
+            Ok(seq) => {
+                let wait_resp = tokio::time::timeout(Duration::from_secs(2), async {
+                    loop {
+                        match resp_events.recv().await {
+                            Ok(DeviceEvent::CounterSyncResult { seq: r_seq, success, message, state: _ }) if r_seq == seq => {
+                                return Ok((success, message));
+                            }
+                            Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                            Err(_) => return Err("Event channel closed".to_string()),
+                        }
+                    }
+                }).await;
+
+                match wait_resp {
+                    Ok(Ok((true, _))) => {
+                        sync_success = true;
+                        break;
+                    }
+                    Ok(Ok((false, msg))) => {
+                        last_error_msg = msg;
+                        warn!("Device rejected CounterSync (attempt {}): {}", attempt + 1, last_error_msg);
+                    }
+                    Ok(Err(e)) => {
+                        last_error_msg = e;
+                        warn!("Error waiting for CounterSync response (attempt {}): {}", attempt + 1, last_error_msg);
+                    }
+                    Err(_) => {
+                        last_error_msg = "Timeout waiting for CounterSyncResponse (2s)".to_string();
+                        warn!("Timeout waiting for CounterSync response (attempt {})", attempt + 1);
+                    }
+                }
+            }
+            Err(e) => {
+                last_error_msg = format!("Failed to send CounterSync: {}", e);
+                warn!("{}", last_error_msg);
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(200 * (1 << attempt))).await;
+    }
+
+    if !sync_success {
+        error!("State synchronization failed after 3 attempts: {}", last_error_msg);
+        log_info(log_hub, &format!("Sync failed: {}", last_error_msg));
+        let mut st = state.lock().unwrap();
+        st.last_sync_error = Some(format!("Counter sync failed: {}", last_error_msg));
+        st.counters = reconciled; // Keep SQLite as reconciled (§P1-1)
+        return;
+    }
+
+    // Step 4: Success path
+    let _ = device.send_time_sync().await;
+    let now_str = Utc::now().to_rfc3339();
+
+    {
+        let s = storage.lock().unwrap();
+        let _ = s.save_device_state(&info, &reconciled);
+        let _ = s.touch_device_last_seen(&info.device_id);
+    }
+
+    // Drain pending operations (§P1-3)
+    let (pending_cfg, pending_layouts, pending_seen) = {
+        let mut p = pending_ops.lock().unwrap();
+        (p.pending_config.take(), std::mem::take(&mut p.pending_layouts), p.pending_last_seen.take())
+    };
+
+    if let Some(cfg) = pending_cfg {
+        {
+            let s = storage.lock().unwrap();
+            let _ = s.save_config(&cfg);
+        }
+        let _ = device.send_config(&cfg).await;
+    }
+
+    for (screen, layout_opt) in pending_layouts {
+        if let Some(layout) = layout_opt {
+            {
+                let s = storage.lock().unwrap();
+                let _ = s.save_layout(screen.to_wire(), &layout.to_json());
+            }
+            let _ = device.send_layout(screen, &layout).await;
+        } else {
+            {
+                let s = storage.lock().unwrap();
+                let _ = s.delete_layout(screen.to_wire());
+            }
+            let _ = device.reset_layout(screen).await;
+        }
+    }
+
+    if let Some(seen_id) = pending_seen {
+        let s = storage.lock().unwrap();
+        let _ = s.touch_device_last_seen(&seen_id);
+    }
+
+    {
+        let mut st = state.lock().unwrap();
+        st.counters = reconciled;
+        st.last_sync_time = Some(now_str);
+        st.last_sync_error = None;
+        st.mode = RuntimeMode::Idle;
+    }
+
+    storage.lock().unwrap().set_writes_allowed(true);
+    log_info(log_hub, "Synchronization completed successfully");
 }
 
 async fn handle_ipc_request(
@@ -432,16 +728,26 @@ async fn handle_ipc_request(
     storage: &Arc<Mutex<Storage>>,
     device: &Arc<DeviceManager>,
     log_hub: &Arc<Mutex<VecDeque<String>>>,
+    pending_ops: &Arc<Mutex<PendingOperations>>,
 ) -> IpcResponse {
     let mode = { state.lock().unwrap().mode };
 
     match req {
         IpcRequest::Handshake {
-            client_protocol: _, ..
+            client_protocol, ..
         } => {
+            if client_protocol != IPC_PROTOCOL_VERSION {
+                return IpcResponse::HandshakeRejected {
+                    daemon_protocol: IPC_PROTOCOL_VERSION,
+                    reason: format!(
+                        "IPC protocol version mismatch: client is {}, daemon is {}",
+                        client_protocol, IPC_PROTOCOL_VERSION
+                    ),
+                };
+            }
             let st = state.lock().unwrap();
             IpcResponse::HandshakeAck {
-                daemon_version: "1.0.0".to_string(),
+                daemon_version: env!("CARGO_PKG_VERSION").to_string(),
                 daemon_protocol: IPC_PROTOCOL_VERSION,
                 device_connected: st.device_connected,
             }
@@ -454,10 +760,14 @@ async fn handle_ipc_request(
                 device_connected: st.device_connected,
                 device_info: st.device_info.clone(),
                 counters: st.counters.clone(),
+                counters_source: st.counters_source,
                 config: st.config.clone(),
                 last_sync_time: st.last_sync_time.clone(),
+                last_sync_error: st.last_sync_error.clone(),
                 tosu_connected: st.tosu_connected,
                 latency: st.latency,
+                pending_replacement: st.pending_replacement.clone(),
+                incompatible: st.incompatible.clone(),
             }
         }
 
@@ -472,6 +782,14 @@ async fn handle_ipc_request(
         IpcRequest::SetLayout { screen, layout } => {
             if let Err(e) = layout.validate() {
                 return IpcResponse::OperationRejected { reason: format!("Invalid layout: {}", e) };
+            }
+            if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
+                let _ = device.send_layout(screen, &layout).await;
+                pending_ops.lock().unwrap().pending_layouts.push((screen, Some(layout)));
+                return IpcResponse::LayoutApplied {
+                    screen,
+                    message: "Layout applied to pad RAM; will be saved after gameplay".to_string(),
+                };
             }
             if let Err(e) = storage.lock().unwrap().save_layout(screen.to_wire(), &layout.to_json()) {
                 return IpcResponse::Error(format!("Failed to save layout: {}", e));
@@ -491,6 +809,14 @@ async fn handle_ipc_request(
         }
 
         IpcRequest::ResetLayout { screen } => {
+            if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
+                let _ = device.reset_layout(screen).await;
+                pending_ops.lock().unwrap().pending_layouts.push((screen, None));
+                return IpcResponse::LayoutApplied {
+                    screen,
+                    message: "Layout reset in pad RAM; will be saved after gameplay".to_string(),
+                };
+            }
             if let Err(e) = storage.lock().unwrap().delete_layout(screen.to_wire()) {
                 return IpcResponse::Error(format!("Failed to delete layout: {}", e));
             }
@@ -514,7 +840,7 @@ async fn handle_ipc_request(
             state.lock().unwrap().latency = None;
             log_info(log_hub, "Latency statistics reset");
             IpcResponse::HandshakeAck {
-                daemon_version: "1.0.0".to_string(),
+                daemon_version: env!("CARGO_PKG_VERSION").to_string(),
                 daemon_protocol: IPC_PROTOCOL_VERSION,
                 device_connected: state.lock().unwrap().device_connected,
             }
@@ -527,10 +853,31 @@ async fn handle_ipc_request(
                 };
             }
 
-            // Check §30 policy: Defer or reject config updates while playing
-            if mode == RuntimeMode::Playing {
-                return IpcResponse::OperationRejected {
-                    reason: "Cannot change hardware configuration during PLAYING mode".to_string(),
+            let current_cfg = { state.lock().unwrap().config.clone() };
+
+            if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
+                let keys_or_debounce_changed = current_cfg.key1_hid_usage != new_config.key1_hid_usage
+                    || current_cfg.key2_hid_usage != new_config.key2_hid_usage
+                    || current_cfg.debounce_us != new_config.debounce_us;
+
+                if keys_or_debounce_changed {
+                    pending_ops.lock().unwrap().pending_config = Some(new_config);
+                    return IpcResponse::OperationDeferred {
+                        reason: "Key mapping and debounce changes are deferred until IDLE mode".to_string(),
+                    };
+                }
+
+                // Brightness / sleep / hz changes are applied to RAM immediately (§P1-3)
+                let _ = device.send_config(&new_config).await;
+                {
+                    let mut st = state.lock().unwrap();
+                    st.config = new_config.clone();
+                }
+                pending_ops.lock().unwrap().pending_config = Some(new_config.clone());
+                log_info(log_hub, "Configuration applied to RAM (persistence queued for SYNC)");
+                return IpcResponse::ConfigUpdated {
+                    config: new_config,
+                    deferred_persist: true,
                 };
             }
 
@@ -548,7 +895,10 @@ async fn handle_ipc_request(
 
             let _ = device.send_config(&new_config).await;
             log_info(log_hub, "Configuration updated");
-            IpcResponse::ConfigUpdated { config: new_config }
+            IpcResponse::ConfigUpdated {
+                config: new_config,
+                deferred_persist: false,
+            }
         }
 
         IpcRequest::ForceSync => {
@@ -557,7 +907,7 @@ async fn handle_ipc_request(
                     reason: "Cannot force synchronization during gameplay or cooldown".to_string(),
                 };
             }
-            perform_sync(state, storage, device, log_hub).await;
+            perform_sync(state, storage, device, log_hub, pending_ops).await;
             let counters = { state.lock().unwrap().counters.clone() };
             IpcResponse::SyncCompleted {
                 success: true,
@@ -565,10 +915,16 @@ async fn handle_ipc_request(
             }
         }
 
-        IpcRequest::ResetCounters => {
+        IpcRequest::ResetCounters { confirm } => {
+            if !confirm {
+                return IpcResponse::OperationRejected {
+                    reason: "ResetCounters requires explicit confirmation (--yes or modal confirm)".to_string(),
+                };
+            }
+
             if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
                 return IpcResponse::OperationRejected {
-                    reason: "Cannot reset counters during gameplay".to_string(),
+                    reason: "Cannot reset counters during gameplay or cooldown".to_string(),
                 };
             }
 
@@ -582,32 +938,159 @@ async fn handle_ipc_request(
                 if let Some(info) = &st.device_info {
                     let s = storage.lock().unwrap();
                     let _ = s.save_device_state(info, &updated);
+                } else {
+                    pending_ops.lock().unwrap().pending_device_push = true;
                 }
                 updated
             };
 
-            let _ = device.send_counter_sync(&updated, true).await;
+            if state.lock().unwrap().device_connected {
+                let _ = device.send_counter_sync(&updated, true).await;
+            } else {
+                pending_ops.lock().unwrap().pending_device_push = true;
+            }
             log_info(log_hub, "Lifetime counters reset with incremented generation");
             IpcResponse::CountersReset { counters: updated }
         }
 
+        IpcRequest::ResolveReplacement { restore } => {
+            if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
+                return IpcResponse::OperationRejected {
+                    reason: "Cannot resolve replacement during gameplay or cooldown".to_string(),
+                };
+            }
+
+            let (old_device_id_opt, current_info_opt, current_counters) = {
+                let mut st = state.lock().unwrap();
+                (st.pending_replacement.take(), st.device_info.clone(), st.counters.clone())
+            };
+
+            let Some(current_info) = current_info_opt else {
+                return IpcResponse::OperationRejected {
+                    reason: "No device currently connected to resolve replacement for".to_string(),
+                };
+            };
+
+            if restore {
+                if let Some(old_id) = old_device_id_opt {
+                    let old_state = {
+                        let s = storage.lock().unwrap();
+                        s.load_device_state(&old_id).unwrap_or(None)
+                    };
+                    if let Some(old_c) = old_state {
+                        let new_gen = std::cmp::max(old_c.counter_generation, current_counters.counter_generation).saturating_add(1);
+                        let restored = CounterState {
+                            device_id: current_info.device_id.clone(),
+                            counter_generation: new_gen,
+                            lifetime_key1: old_c.lifetime_key1,
+                            lifetime_key2: old_c.lifetime_key2,
+                            map_key1: 0,
+                            map_key2: 0,
+                        };
+                        {
+                            let s = storage.lock().unwrap();
+                            let _ = s.save_device_state(&current_info, &restored);
+                            let _ = s.touch_device_last_seen(&current_info.device_id);
+                        }
+                        let _ = device.send_counter_sync(&restored, true).await;
+                        state.lock().unwrap().counters = restored.clone();
+                        log_info(log_hub, "Restored lifetime counters from previous pad");
+                        return IpcResponse::CountersReset { counters: restored };
+                    }
+                }
+                IpcResponse::OperationRejected {
+                    reason: "No previous device state found to restore from".to_string(),
+                }
+            } else {
+                // Treat as new pad: register it in SQLite
+                {
+                    let s = storage.lock().unwrap();
+                    let _ = s.save_device_state(&current_info, &current_counters);
+                    let _ = s.touch_device_last_seen(&current_info.device_id);
+                }
+                log_info(log_hub, "Adopted new pad as separate device");
+                IpcResponse::CountersReset { counters: current_counters }
+            }
+        }
+
         IpcRequest::ExportBackup => {
             let st = state.lock().unwrap();
-            let info = st.device_info.clone().unwrap_or_default();
+            if !st.device_connected && st.device_info.is_none() && st.counters.device_id.is_empty() {
+                return IpcResponse::OperationRejected {
+                    reason: "No counters known yet: connect the pad once".to_string(),
+                };
+            }
+            let info = st.device_info.clone().unwrap_or_else(|| DeviceInfo {
+                device_id: st.counters.device_id.clone(),
+                board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+                firmware_version: env!("CARGO_PKG_VERSION").to_string(),
+                protocol_version: 1,
+            });
             let backup = JsonBackup::new(&info, &st.counters, &st.config);
             IpcResponse::BackupExported(backup)
         }
 
-        IpcRequest::ImportBackup(backup) => {
+        IpcRequest::PreviewImport(backup) => {
+            if let Err(err) = backup.validate() {
+                return IpcResponse::Error(format!("Invalid backup: {}", err));
+            }
+
+            let st = state.lock().unwrap();
+            let current = Some(CurrentBackupState {
+                device_id: st.counters.device_id.clone(),
+                counter_generation: st.counters.counter_generation,
+                lifetime_key1: st.counters.lifetime_key1,
+                lifetime_key2: st.counters.lifetime_key2,
+                config: st.config.clone(),
+            });
+
+            let device_id_matches = st.counters.device_id.is_empty() || st.counters.device_id == backup.device.device_id;
+            let is_counter_rollback = backup.stats.lifetime_key1 < st.counters.lifetime_key1 || backup.stats.lifetime_key2 < st.counters.lifetime_key2;
+
+            let mut warnings = Vec::new();
+            if !device_id_matches {
+                warnings.push(format!(
+                    "Device ID mismatch: backup is for '{}', current pad is '{}'",
+                    backup.device.device_id, st.counters.device_id
+                ));
+            }
+            if is_counter_rollback {
+                warnings.push("Incoming lifetime counters are lower than current counters (counter rollback)".to_string());
+            }
+            if backup.device.counter_generation <= st.counters.counter_generation {
+                warnings.push("Incoming counter generation is not greater than current generation; generation will be bumped".to_string());
+            }
+
+            IpcResponse::ImportPreview {
+                current,
+                incoming: backup,
+                device_id_matches,
+                is_counter_rollback,
+                warnings,
+            }
+        }
+
+        IpcRequest::ImportBackup { backup, confirm } => {
+            if !confirm {
+                return IpcResponse::OperationRejected {
+                    reason: "ImportBackup requires explicit confirmation (--yes or user confirmation)".to_string(),
+                };
+            }
+
             if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
                 return IpcResponse::OperationRejected {
-                    reason: "Cannot import backup during gameplay".to_string(),
+                    reason: "Cannot import backup during gameplay or cooldown".to_string(),
                 };
             }
 
             if let Err(err) = backup.validate() {
                 return IpcResponse::Error(format!("Invalid backup: {}", err));
             }
+
+            let (current_tosu, current_color, current_gen) = {
+                let st = state.lock().unwrap();
+                (st.config.tosu_endpoint.clone(), st.config.press_color_rgb, st.counters.counter_generation)
+            };
 
             let k1_usage = char_to_hid_usage(&backup.config.key1).unwrap_or(0x1D);
             let k2_usage = char_to_hid_usage(&backup.config.key2).unwrap_or(0x1B);
@@ -619,13 +1102,13 @@ async fn handle_ipc_request(
                 brightness: backup.config.brightness,
                 display_sleep_seconds: backup.config.display_sleep_seconds,
                 gameplay_display_hz: backup.config.gameplay_display_hz,
-                tosu_endpoint: "ws://127.0.0.1:24050/websocket/v2".to_string(),
-                press_color_rgb: state.lock().unwrap().config.press_color_rgb,
+                tosu_endpoint: current_tosu,
+                press_color_rgb: current_color,
             };
 
             let new_counters = CounterState {
                 device_id: backup.device.device_id.clone(),
-                counter_generation: backup.device.counter_generation.saturating_add(1),
+                counter_generation: std::cmp::max(current_gen, backup.device.counter_generation).saturating_add(1),
                 lifetime_key1: backup.stats.lifetime_key1,
                 lifetime_key2: backup.stats.lifetime_key2,
                 map_key1: 0,
@@ -638,7 +1121,7 @@ async fn handle_ipc_request(
                 let info = DeviceInfo {
                     device_id: backup.device.device_id,
                     board_profile: backup.device.board_profile,
-                    firmware_version: "1.0.0".to_string(),
+                    firmware_version: env!("CARGO_PKG_VERSION").to_string(),
                     protocol_version: 1,
                 };
                 let _ = s.save_device_state(&info, &new_counters);
@@ -670,9 +1153,9 @@ async fn handle_ipc_request(
         }
 
         IpcRequest::PrepareFlash => {
-            if mode == RuntimeMode::Playing {
+            if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
                 return IpcResponse::OperationRejected {
-                    reason: "Cannot flash firmware during gameplay".to_string(),
+                    reason: "Cannot flash firmware during gameplay or cooldown".to_string(),
                 };
             }
             log_info(log_hub, "Releasing serial port for firmware flash...");
@@ -691,12 +1174,31 @@ async fn handle_ipc_request(
         }
 
         IpcRequest::FinishFlash => {
-            log_info(log_hub, "Flash finished, resuming device discovery...");
+            log_info(log_hub, "Flash finished, resuming device discovery and waiting for reconnect...");
+            let mut events = device.subscribe();
             device.resume();
-            IpcResponse::HandshakeAck {
-                daemon_version: "1.0.0".to_string(),
-                daemon_protocol: IPC_PROTOCOL_VERSION,
-                device_connected: state.lock().unwrap().device_connected,
+
+            let wait_res = tokio::time::timeout(Duration::from_secs(15), async {
+                loop {
+                    match events.recv().await {
+                        Ok(DeviceEvent::Connected(info)) => return Ok(info),
+                        Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(_) => return Err("Event stream closed".to_string()),
+                    }
+                }
+            }).await;
+
+            match wait_res {
+                Ok(Ok(info)) => {
+                    let compatible = info.protocol_version == 1;
+                    IpcResponse::FlashFinished {
+                        firmware_version: info.firmware_version,
+                        protocol_version: info.protocol_version,
+                        compatible,
+                    }
+                }
+                Ok(Err(e)) => IpcResponse::Error(format!("Flash verification failed: {}", e)),
+                Err(_) => IpcResponse::Error("Device did not reconnect within 15 seconds after flash".to_string()),
             }
         }
     }

@@ -1,4 +1,6 @@
 #include "ui_store.h"
+#include "counters/counters.h"
+#include "runtime/runtime.h"
 #include "nvs.h"
 #include "esp_log.h"
 #include <stdio.h>
@@ -7,6 +9,10 @@
 
 static const char *TAG = "ui_store";
 static const char *NVS_NAMESPACE = "osupad_ui";
+
+static ui_layout_t s_pending_layouts[UI_SCREEN_COUNT];
+static uint8_t s_dirty_save_mask = 0;
+static uint8_t s_dirty_erase_mask = 0;
 
 // Bump when ui_layout_t changes shape; older blobs are then ignored
 #define LAYOUT_BLOB_VERSION 1
@@ -45,6 +51,16 @@ bool ui_store_load(uint8_t screen, ui_layout_t *out)
 
 esp_err_t ui_store_save(uint8_t screen, const ui_layout_t *layout)
 {
+    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+        ESP_LOGW(TAG, "Layout save blocked: state != IDLE (deferred to supervisor)");
+        if (screen < UI_SCREEN_COUNT && layout) {
+            s_pending_layouts[screen] = *layout;
+            s_dirty_save_mask |= (1 << screen);
+            s_dirty_erase_mask &= ~(1 << screen);
+        }
+        return ESP_OK;
+    }
+
     ui_layout_t *stored = malloc(sizeof(ui_layout_t));
     if (stored && ui_store_load(screen, stored) && memcmp(stored, layout, sizeof(ui_layout_t)) == 0) {
         free(stored);
@@ -68,6 +84,9 @@ esp_err_t ui_store_save(uint8_t screen, const ui_layout_t *layout)
         err = nvs_set_blob(h, key, blob, sizeof(layout_blob_t));
         if (err == ESP_OK) {
             err = nvs_commit(h);
+            if (err == ESP_OK) {
+                counters_record_nvs_write();
+            }
         }
         nvs_close(h);
     }
@@ -80,6 +99,15 @@ esp_err_t ui_store_save(uint8_t screen, const ui_layout_t *layout)
 
 esp_err_t ui_store_erase(uint8_t screen)
 {
+    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+        ESP_LOGW(TAG, "Layout erase blocked: state != IDLE (deferred to supervisor)");
+        if (screen < UI_SCREEN_COUNT) {
+            s_dirty_erase_mask |= (1 << screen);
+            s_dirty_save_mask &= ~(1 << screen);
+        }
+        return ESP_OK;
+    }
+
     nvs_handle_t h;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h);
     if (err != ESP_OK) {
@@ -93,7 +121,36 @@ esp_err_t ui_store_erase(uint8_t screen)
     }
     if (err == ESP_OK) {
         err = nvs_commit(h);
+        if (err == ESP_OK) {
+            counters_record_nvs_write();
+        }
     }
     nvs_close(h);
     return err;
+}
+
+esp_err_t ui_store_flush_dirty(void)
+{
+    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+        return ESP_OK;
+    }
+
+    esp_err_t last_err = ESP_OK;
+    for (uint8_t i = 0; i < UI_SCREEN_COUNT; i++) {
+        if (s_dirty_save_mask & (1 << i)) {
+            s_dirty_save_mask &= ~(1 << i);
+            esp_err_t err = ui_store_save(i, &s_pending_layouts[i]);
+            if (err != ESP_OK) {
+                last_err = err;
+            }
+        }
+        if (s_dirty_erase_mask & (1 << i)) {
+            s_dirty_erase_mask &= ~(1 << i);
+            esp_err_t err = ui_store_erase(i);
+            if (err != ESP_OK) {
+                last_err = err;
+            }
+        }
+    }
+    return last_err;
 }

@@ -6,11 +6,14 @@ mod single_instance;
 mod theme;
 mod tray;
 
-use iced::widget::{button, column, container, row, stack, text, Space};
+use iced::widget::{button, column, container, row, stack, text, text_input, Space};
 use iced::{window, Alignment, Element, Length, Size, Subscription, Task};
 use osupad_ipc::{IpcRequest, IpcResponse};
 use osupad_model::ui_source::SourceValue;
-use osupad_model::{char_to_hid_usage, CounterState, DeviceConfig, DeviceInfo, LatencyStats, RuntimeMode};
+use osupad_model::{
+    char_to_hid_usage, CounterSource, CounterState, DeviceConfig, DeviceInfo, IncompatibleDevice,
+    LatencyStats, RuntimeMode,
+};
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -66,9 +69,14 @@ pub struct App {
     pub mode: RuntimeMode,
     pub device_info: Option<DeviceInfo>,
     pub counters: CounterState,
+    pub counters_source: CounterSource,
     pub config: DeviceConfig,
     pub last_sync_time: Option<String>,
+    pub last_sync_error: Option<String>,
     pub latency: Option<LatencyStats>,
+    pub pending_replacement: Option<String>,
+    pub incompatible: Option<IncompatibleDevice>,
+    pub reset_modal: Option<String>,
     pub ui_values: HashMap<u8, SourceValue>,
 
     // Settings form
@@ -100,7 +108,11 @@ pub enum Message {
     SaveConfig,
     // Actions
     Sync,
-    ResetCounters,
+    PromptResetCounters,
+    ResetModalInput(String),
+    CancelResetModal,
+    ConfirmResetCounters,
+    ResolveReplacement(bool),
     ResetLatency,
     ActionDone(Result<IpcResponse, String>),
     DismissBanner,
@@ -130,9 +142,14 @@ impl App {
             mode: RuntimeMode::Idle,
             device_info: None,
             counters: CounterState::default(),
+            counters_source: CounterSource::Pc,
             config: DeviceConfig::default(),
             last_sync_time: None,
+            last_sync_error: None,
             latency: None,
+            pending_replacement: None,
+            incompatible: None,
+            reset_modal: None,
             ui_values: HashMap::new(),
             k1_input: "Z".into(),
             k2_input: "X".into(),
@@ -212,13 +229,28 @@ impl App {
             Message::Status(result) => {
                 match result {
                     Ok(IpcResponse::Status {
-                        mode, device_connected, device_info, counters, config, last_sync_time, tosu_connected, latency,
+                        mode,
+                        device_connected,
+                        device_info,
+                        counters,
+                        counters_source,
+                        config,
+                        last_sync_time,
+                        last_sync_error,
+                        tosu_connected,
+                        latency,
+                        pending_replacement,
+                        incompatible,
                     }) => {
                         self.daemon_online = true;
                         self.mode = mode;
                         self.device_connected = device_connected;
                         self.device_info = device_info;
                         self.counters = counters;
+                        self.counters_source = counters_source;
+                        self.last_sync_error = last_sync_error;
+                        self.pending_replacement = pending_replacement;
+                        self.incompatible = incompatible;
                         self.tosu_connected = tosu_connected;
                         self.latency = latency;
                         self.last_sync_time = last_sync_time;
@@ -273,9 +305,23 @@ impl App {
                 self.banner = Some("Syncing counters and clock with the pad...".into());
                 return Task::perform(ipc::request(IpcRequest::ForceSync), Message::ActionDone);
             }
-            Message::ResetCounters => {
+            Message::PromptResetCounters => {
+                self.reset_modal = Some(String::new());
+            }
+            Message::ResetModalInput(input) => {
+                self.reset_modal = Some(input);
+            }
+            Message::CancelResetModal => {
+                self.reset_modal = None;
+            }
+            Message::ConfirmResetCounters => {
+                self.reset_modal = None;
                 self.banner = Some("Resetting lifetime counters...".into());
-                return Task::perform(ipc::request(IpcRequest::ResetCounters), Message::ActionDone);
+                return Task::perform(ipc::request(IpcRequest::ResetCounters { confirm: true }), Message::ActionDone);
+            }
+            Message::ResolveReplacement(restore) => {
+                self.banner = Some(if restore { "Restoring counters from previous pad...".into() } else { "Adopting new pad...".into() });
+                return Task::perform(ipc::request(IpcRequest::ResolveReplacement { restore }), Message::ActionDone);
             }
             Message::ResetLatency => {
                 return Task::perform(ipc::request(IpcRequest::ResetLatencyStats), Message::ActionDone);
@@ -405,6 +451,34 @@ impl App {
         };
 
         let mut main = column![].spacing(14).padding(24).width(Length::Fill).height(Length::Fill);
+        if let Some(incompat) = &self.incompatible {
+            main = main.push(
+                container(
+                    row![
+                        text(format!("⚠ Incompatible device protocol (device: {}, required: {}). Update firmware.", incompat.protocol_version, osupad_ipc::IPC_PROTOCOL_VERSION)).size(14).color(theme::YELLOW),
+                    ]
+                    .align_y(Alignment::Center),
+                )
+                .padding([8, 14])
+                .style(theme::banner),
+            );
+        }
+        if let Some(old_id) = &self.pending_replacement {
+            main = main.push(
+                container(
+                    row![
+                        text(format!("This looks like a new pad. Restore counters from {}?", old_id)).size(14),
+                        Space::new().width(Length::Fill),
+                        button(text("Restore from previous pad").size(12)).style(theme::primary).on_press(Message::ResolveReplacement(true)),
+                        Space::new().width(8),
+                        button(text("Treat as new pad").size(12)).style(theme::secondary).on_press(Message::ResolveReplacement(false)),
+                    ]
+                    .align_y(Alignment::Center),
+                )
+                .padding([8, 14])
+                .style(theme::banner),
+            );
+        }
         if let Some(banner) = &self.banner {
             main = main.push(
                 container(
@@ -423,6 +497,56 @@ impl App {
 
         let body = column![chrome::title_bar(self.maximized), row![sidebar, main].height(Length::Fill)];
         let framed = container(body).style(chrome::frame);
+
+        if let Some(input_text) = &self.reset_modal {
+            let modal_box = container(
+                column![
+                    text("Reset Lifetime Counters").size(20).font(theme::FONT_BOLD).color(theme::RED),
+                    text("This action will permanently reset hardware and database counters to 0.").size(13).color(theme::MUTED),
+                    Space::new().height(6),
+                    text(format!("Key 1 (K1): {} presses", self.counters.lifetime_key1)).size(14),
+                    text(format!("Key 2 (K2): {} presses", self.counters.lifetime_key2)).size(14),
+                    text(format!("Total: {} presses", self.counters.total_lifetime_presses())).size(14).font(theme::FONT_BOLD),
+                    Space::new().height(10),
+                    text("Type RESET below to confirm:").size(13).color(theme::MUTED),
+                    text_input("RESET", input_text)
+                        .on_input(Message::ResetModalInput)
+                        .padding(10)
+                        .size(14),
+                    Space::new().height(14),
+                    row![
+                        button(text("Cancel").size(14)).padding([10, 20]).style(theme::secondary).on_press(Message::CancelResetModal),
+                        Space::new().width(Length::Fill),
+                        if input_text == "RESET" {
+                            button(text("Confirm Reset").size(14)).padding([10, 20]).style(theme::danger).on_press(Message::ConfirmResetCounters)
+                        } else {
+                            button(text("Confirm Reset").size(14)).padding([10, 20]).style(theme::secondary)
+                        }
+                    ]
+                ]
+                .spacing(8)
+                .padding(24)
+                .width(420)
+            )
+            .style(theme::card);
+
+            let modal_overlay = container(modal_box)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(iced::Color { a: 0.75, ..theme::BG }.into()),
+                    ..Default::default()
+                });
+
+            return if self.maximized {
+                stack![framed, modal_overlay].into()
+            } else {
+                stack![framed, chrome::resize_edges(), modal_overlay].into()
+            };
+        }
+
         if self.maximized {
             framed.into()
         } else {

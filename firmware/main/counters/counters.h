@@ -35,6 +35,11 @@ bool counters_is_nvs_ok(void);
 uint32_t counters_get_nvs_writes(void);
 
 /**
+ * @brief Record an NVS write commit from any subsystem (counters, config, ui).
+ */
+void counters_record_nvs_write(void);
+
+/**
  * @brief Update baseline counters from host synchronization.
  * Only permitted when system is in IDLE state.
  * @param err_msg Optional buffer to receive reason string on rejection.

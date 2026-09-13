@@ -1,6 +1,7 @@
 #include "runtime.h"
 #include "counters/counters.h"
 #include "config/device_config.h"
+#include "ui/ui_store.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_timer.h"
@@ -41,15 +42,17 @@ static void runtime_supervisor_task(void *pvParameters)
                 atomic_store(&s_state, OSUPAD_STATE_IDLE);
                 ESP_LOGI(TAG, "State transition: COOLDOWN -> IDLE");
 
-                // Checkpoint dirty counters and config safely now that gameplay has ended
+                // Checkpoint dirty counters, config, and layouts safely now that gameplay has ended
                 counters_checkpoint(false);
                 device_config_flush();
+                ui_store_flush_dirty();
                 s_last_checkpoint_us = now;
             }
         } else if (current == OSUPAD_STATE_IDLE) {
+            device_config_flush();
+            ui_store_flush_dirty();
             if ((now - s_last_checkpoint_us) >= IDLE_CHECKPOINT_INTERVAL_US) {
                 counters_checkpoint(false);
-                device_config_flush();
                 s_last_checkpoint_us = now;
             }
         }

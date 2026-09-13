@@ -1,6 +1,9 @@
 use osupad_layout::{Layout, Screen};
 use osupad_model::ui_source::SourceValue;
-use osupad_model::{CounterState, DeviceConfig, DeviceInfo, JsonBackup, LatencyStats, RuntimeMode};
+use osupad_model::{
+    CounterSource, CounterState, DeviceConfig, DeviceInfo, IncompatibleDevice, JsonBackup,
+    LatencyStats, RuntimeMode,
+};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -8,6 +11,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 
 pub const IPC_PROTOCOL_VERSION: u32 = 1;
+pub const MAX_IPC_FRAME_SIZE: usize = 1024 * 1024; // 1 MB cap (§P2-6)
 
 #[derive(Debug, Error)]
 pub enum IpcError {
@@ -21,6 +25,16 @@ pub enum IpcError {
     Protocol(String),
 }
 
+/// Snapshot of current PC state for backup comparison/preview (§21, §P1-5)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CurrentBackupState {
+    pub device_id: String,
+    pub counter_generation: u32,
+    pub lifetime_key1: u64,
+    pub lifetime_key2: u64,
+    pub config: DeviceConfig,
+}
+
 /// Requests that GUI or CLI can send to the Daemon
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IpcRequest {
@@ -31,9 +45,20 @@ pub enum IpcRequest {
     GetStatus,
     UpdateConfig(DeviceConfig),
     ForceSync,
-    ResetCounters,
+    ResetCounters {
+        #[serde(default)]
+        confirm: bool,
+    },
     ExportBackup,
-    ImportBackup(JsonBackup),
+    PreviewImport(JsonBackup),
+    ImportBackup {
+        backup: JsonBackup,
+        #[serde(default)]
+        confirm: bool,
+    },
+    ResolveReplacement {
+        restore: bool,
+    },
     GetLogEntries {
         limit: usize,
     },
@@ -58,19 +83,36 @@ pub enum IpcResponse {
         daemon_protocol: u32,
         device_connected: bool,
     },
+    HandshakeRejected {
+        daemon_protocol: u32,
+        reason: String,
+    },
     Status {
         mode: RuntimeMode,
         device_connected: bool,
         device_info: Option<DeviceInfo>,
         counters: CounterState,
+        #[serde(default)]
+        counters_source: CounterSource,
         config: DeviceConfig,
         last_sync_time: Option<String>,
+        #[serde(default)]
+        last_sync_error: Option<String>,
         tosu_connected: bool,
         #[serde(default)]
         latency: Option<LatencyStats>,
+        #[serde(default)]
+        pending_replacement: Option<String>,
+        #[serde(default)]
+        incompatible: Option<IncompatibleDevice>,
     },
     ConfigUpdated {
         config: DeviceConfig,
+        #[serde(default)]
+        deferred_persist: bool,
+    },
+    OperationDeferred {
+        reason: String,
     },
     SyncCompleted {
         success: bool,
@@ -80,6 +122,13 @@ pub enum IpcResponse {
         counters: CounterState,
     },
     BackupExported(JsonBackup),
+    ImportPreview {
+        current: Option<CurrentBackupState>,
+        incoming: JsonBackup,
+        device_id_matches: bool,
+        is_counter_rollback: bool,
+        warnings: Vec<String>,
+    },
     BackupImported {
         success: bool,
         counters: CounterState,
@@ -87,6 +136,11 @@ pub enum IpcResponse {
     },
     ReadyForFlash {
         port: Option<String>,
+    },
+    FlashFinished {
+        firmware_version: String,
+        protocol_version: u32,
+        compatible: bool,
     },
     LogEntries(Vec<String>),
     Layouts {
@@ -114,6 +168,38 @@ pub fn get_socket_path() -> PathBuf {
     }
 }
 
+/// Connects to the daemon socket and performs the mandatory handshake (§P1-7)
+pub async fn connect_and_handshake() -> Result<(UnixStream, IpcResponse), IpcError> {
+    connect_and_handshake_at(get_socket_path()).await
+}
+
+/// Connects to a specific socket path and performs the handshake
+pub async fn connect_and_handshake_at<P: AsRef<Path>>(path: P) -> Result<(UnixStream, IpcResponse), IpcError> {
+    let mut stream = UnixStream::connect(path.as_ref()).await.map_err(|e| {
+        IpcError::NotConnected(format!("Failed to connect to {}: {}", path.as_ref().display(), e))
+    })?;
+
+    let handshake = IpcRequest::Handshake {
+        client_version: env!("CARGO_PKG_VERSION").to_string(),
+        client_protocol: IPC_PROTOCOL_VERSION,
+    };
+    let resp = send_request(&mut stream, &handshake).await?;
+    match &resp {
+        IpcResponse::HandshakeAck { .. } => Ok((stream, resp)),
+        IpcResponse::HandshakeRejected {
+            daemon_protocol,
+            reason,
+        } => Err(IpcError::Protocol(format!(
+            "Handshake rejected (daemon protocol v{}, client v{}): {}",
+            daemon_protocol, IPC_PROTOCOL_VERSION, reason
+        ))),
+        other => Err(IpcError::Protocol(format!(
+            "Unexpected handshake response: {:?}",
+            other
+        ))),
+    }
+}
+
 /// Sends a request over a UnixStream and waits for the typed response
 pub async fn send_request(stream: &mut UnixStream, req: &IpcRequest) -> Result<IpcResponse, IpcError> {
     let payload = serde_json::to_vec(req)?;
@@ -126,6 +212,12 @@ pub async fn send_request(stream: &mut UnixStream, req: &IpcRequest) -> Result<I
     let mut resp_header = [0u8; 4];
     stream.read_exact(&mut resp_header).await?;
     let resp_len = u32::from_le_bytes(resp_header) as usize;
+    if resp_len > MAX_IPC_FRAME_SIZE {
+        return Err(IpcError::Protocol(format!(
+            "Response frame size {} exceeds {} byte limit",
+            resp_len, MAX_IPC_FRAME_SIZE
+        )));
+    }
 
     let mut resp_buf = vec![0u8; resp_len];
     stream.read_exact(&mut resp_buf).await?;
@@ -139,6 +231,12 @@ pub async fn read_request(stream: &mut UnixStream) -> Result<IpcRequest, IpcErro
     let mut header = [0u8; 4];
     stream.read_exact(&mut header).await?;
     let len = u32::from_le_bytes(header) as usize;
+    if len > MAX_IPC_FRAME_SIZE {
+        return Err(IpcError::Protocol(format!(
+            "Request frame size {} exceeds {} byte limit",
+            len, MAX_IPC_FRAME_SIZE
+        )));
+    }
 
     let mut buf = vec![0u8; len];
     stream.read_exact(&mut buf).await?;
@@ -158,14 +256,18 @@ pub async fn send_response(stream: &mut UnixStream, resp: &IpcResponse) -> Resul
     Ok(())
 }
 
-/// Creates and binds a UnixListener at the specified socket path
+/// Creates and binds a UnixListener at the specified socket path with hardened permissions (§P2-6)
 pub fn create_listener<P: AsRef<Path>>(path: P) -> Result<UnixListener, IpcError> {
+    use std::os::unix::fs::PermissionsExt;
+
     if let Some(parent) = path.as_ref().parent() {
         std::fs::create_dir_all(parent)?;
+        let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
     }
     if path.as_ref().exists() {
         let _ = std::fs::remove_file(path.as_ref());
     }
-    let listener = UnixListener::bind(path)?;
+    let listener = UnixListener::bind(&path)?;
+    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
     Ok(listener)
 }

@@ -87,6 +87,7 @@ static esp_err_t write_to_nvs(const device_config_data_t *cfg)
         err = nvs_commit(handle);
         if (err == ESP_OK) {
             s_dirty = false;
+            counters_record_nvs_write();
             ESP_LOGI(TAG, "Device config persisted to NVS: K1=0x%02lx, K2=0x%02lx, debounce=%lu us, brightness=%lu%%, sleep=%lu s",
                      (unsigned long)cfg->key1_usage, (unsigned long)cfg->key2_usage,
                      (unsigned long)cfg->debounce_us, (unsigned long)cfg->brightness,

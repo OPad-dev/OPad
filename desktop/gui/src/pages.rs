@@ -247,6 +247,7 @@ pub fn device(app: &App) -> Element<'_, Message> {
             line("Board", info.map_or("-".into(), |i| i.board_profile.clone())),
             line("Firmware", info.map_or("-".into(), |i| i.firmware_version.clone())),
             line("Mode", format!("{:?}", app.mode)),
+            line("Counters source", format!("{:?}", app.counters_source)),
             line("Counter generation", app.counters.counter_generation.to_string()),
             line("Last sync", app.last_sync_time.clone().unwrap_or_else(|| "Never".into())),
         ]
@@ -263,7 +264,7 @@ pub fn device(app: &App) -> Element<'_, Message> {
             .spacing(14)
             .align_y(Alignment::Center),
             row![
-                button(text("Reset lifetime counters").size(14)).padding([10, 18]).style(theme::danger).on_press(Message::ResetCounters),
+                button(text("Reset lifetime counters").size(14)).padding([10, 18]).style(theme::danger).on_press(Message::PromptResetCounters),
                 muted("Sets K1 and K2 back to zero. This cannot be undone.").size(13),
             ]
             .spacing(14)
