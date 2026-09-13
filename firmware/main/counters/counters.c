@@ -123,6 +123,7 @@ void counters_get(counters_snapshot_t *snapshot)
     snapshot->lifetime_key1 = ram_k1;
     snapshot->lifetime_key2 = ram_k2;
 }
+#include "counter_sync_rules.h"
 
 esp_err_t counters_sync_from_host(uint32_t generation, uint64_t k1, uint64_t k2, bool force, char *err_msg, size_t err_msg_len)
 {
@@ -146,22 +147,10 @@ esp_err_t counters_sync_from_host(uint32_t generation, uint64_t k1, uint64_t k2,
     counters_snapshot_t current;
     counters_get(&current);
 
-    if (!force) {
-        if (generation < current.generation) {
-            ESP_LOGW(TAG, "Rejected sync: generation (%lu) < current (%lu)",
-                     (unsigned long)generation, (unsigned long)current.generation);
-            if (err_msg && err_msg_len > 0) {
-                snprintf(err_msg, err_msg_len, "stale generation");
-            }
-            return ESP_ERR_INVALID_ARG;
-        }
-        if (generation == current.generation && (k1 < current.lifetime_key1 || k2 < current.lifetime_key2)) {
-            ESP_LOGW(TAG, "Rejected sync: non-monotonic counters on same generation");
-            if (err_msg && err_msg_len > 0) {
-                snprintf(err_msg, err_msg_len, "non-monotonic");
-            }
-            return ESP_ERR_INVALID_ARG;
-        }
+    if (!counters_validate_sync_acceptance(current.generation, current.lifetime_key1, current.lifetime_key2,
+                                           generation, k1, k2, force, err_msg, err_msg_len)) {
+        ESP_LOGW(TAG, "Rejected sync: %s", err_msg ? err_msg : "invalid");
+        return ESP_ERR_INVALID_ARG;
     }
 
     s_generation = generation;

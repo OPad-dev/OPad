@@ -3,7 +3,14 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
+
+#ifdef ESP_PLATFORM
 #include "esp_err.h"
+#else
+typedef int esp_err_t;
+#define ESP_OK 0
+#define ESP_FAIL -1
+#endif
 
 #ifdef __cplusplus
 extern "C" {

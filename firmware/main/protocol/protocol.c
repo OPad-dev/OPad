@@ -15,12 +15,12 @@
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "diag/diag.h"
+#include "frame_parser.h"
 #include <string.h>
 
 static const char *TAG = "protocol";
 
-static uint8_t s_rx_frame_buf[PROTOCOL_MAX_FRAME_SIZE];
-static size_t s_rx_frame_len = 0;
+static frame_parser_t s_parser;
 static uint32_t s_out_sequence = 1;
 
 static void get_device_mac_string(char *buf, size_t max_len)
@@ -465,60 +465,32 @@ static void handle_host_message(const osupad_HostToDevice *msg)
     }
 }
 
+static void on_frame_received(const uint8_t *payload, size_t payload_len, void *user_data)
+{
+    (void)user_data;
+    static osupad_HostToDevice msg;
+    msg = (osupad_HostToDevice)osupad_HostToDevice_init_zero;
+    if (protocol_decode_host_message(payload, payload_len, &msg)) {
+        handle_host_message(&msg);
+    }
+}
+
 void protocol_feed_cdc_bytes(const uint8_t *data, size_t len)
 {
-    if (!data || len == 0) return;
-
-    if (s_rx_frame_len + len > sizeof(s_rx_frame_buf)) {
-        ESP_LOGW(TAG, "RX buffer overflow, resetting framing state");
-        s_rx_frame_len = 0;
-        return;
-    }
-
-    memcpy(s_rx_frame_buf + s_rx_frame_len, data, len);
-    s_rx_frame_len += len;
-
-    // Process all complete frames in buffer
-    while (s_rx_frame_len >= 4) {
-        uint32_t expected_len = (uint32_t)s_rx_frame_buf[0] |
-                                ((uint32_t)s_rx_frame_buf[1] << 8) |
-                                ((uint32_t)s_rx_frame_buf[2] << 16) |
-                                ((uint32_t)s_rx_frame_buf[3] << 24);
-
-        if (expected_len > PROTOCOL_MAX_FRAME_SIZE - 4) {
-            diag_record(DIAG_EVENT_FRAME_TOO_LARGE, 3 /* ERROR */, expected_len, 0);
-            ESP_LOGE(TAG, "Frame length exceeds max allowed (%lu bytes), dropping buffer", (unsigned long)expected_len);
-            s_rx_frame_len = 0;
-            return;
-        }
-
-        if (s_rx_frame_len < 4 + expected_len) {
-            // Wait for rest of frame
-            break;
-        }
-
-        // Static: a DataUpdate makes the decoded message several KB (single protocol task)
-        static osupad_HostToDevice msg;
-        msg = (osupad_HostToDevice)osupad_HostToDevice_init_zero;
-        if (protocol_decode_host_message(s_rx_frame_buf + 4, expected_len, &msg)) {
-            handle_host_message(&msg);
-        }
-
-        size_t consumed = 4 + expected_len;
-        size_t remaining = s_rx_frame_len - consumed;
-        if (remaining > 0) {
-            memmove(s_rx_frame_buf, s_rx_frame_buf + consumed, remaining);
-        }
-        s_rx_frame_len = remaining;
+    uint32_t prev_oversized = s_parser.oversized_count;
+    frame_parser_feed(&s_parser, data, len, on_frame_received, NULL);
+    if (s_parser.oversized_count > prev_oversized) {
+        diag_record(DIAG_EVENT_FRAME_TOO_LARGE, 3 /* ERROR */, 0, 0);
+        ESP_LOGE(TAG, "Frame length exceeds max allowed, dropped buffer");
     }
 }
 
 void protocol_reset_rx(void)
 {
-    s_rx_frame_len = 0;
+    frame_parser_reset(&s_parser);
 }
 
 bool protocol_rx_idle(void)
 {
-    return s_rx_frame_len == 0;
+    return frame_parser_is_idle(&s_parser);
 }

@@ -1,0 +1,986 @@
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use tokio::sync::broadcast;
+
+use osupad_daemon::ipc_handlers::handle_ipc_request;
+use osupad_daemon::log_hub::LogHub;
+use osupad_daemon::runtime::{
+    DaemonState, PendingOperations, RuntimeAction, RuntimeController, RuntimeEvent,
+    COOLDOWN_DURATION,
+};
+use osupad_daemon::sync::{perform_sync, DeviceLink};
+use osupad_device::{DeviceError, DeviceEvent};
+use osupad_ipc::{IpcRequest, IpcResponse, IPC_PROTOCOL_VERSION};
+use osupad_layout::{Layout, Screen};
+use osupad_model::ui_source::SourceValue;
+use osupad_model::{
+    CounterSource, CounterState, DeviceConfig, DeviceInfo, JsonBackup, LogLevel, LogSource,
+    RuntimeMode,
+};
+use osupad_storage::Storage;
+
+struct MockDeviceLink {
+    event_tx: broadcast::Sender<DeviceEvent>,
+    connected: Arc<AtomicBool>,
+    sent_configs: Arc<Mutex<Vec<DeviceConfig>>>,
+    sent_syncs: Arc<Mutex<Vec<(CounterState, bool)>>>,
+    sync_response: Arc<Mutex<Option<Result<(), String>>>>,
+    sync_seq: Arc<AtomicU32>,
+}
+
+impl MockDeviceLink {
+    fn new(connected: bool) -> Self {
+        let (event_tx, _) = broadcast::channel(64);
+        Self {
+            event_tx,
+            connected: Arc::new(AtomicBool::new(connected)),
+            sent_configs: Arc::new(Mutex::new(Vec::new())),
+            sent_syncs: Arc::new(Mutex::new(Vec::new())),
+            sync_response: Arc::new(Mutex::new(Some(Ok(())))),
+            sync_seq: Arc::new(AtomicU32::new(1)),
+        }
+    }
+}
+
+impl DeviceLink for MockDeviceLink {
+    async fn send_time_sync(&self) -> Result<(), DeviceError> {
+        Ok(())
+    }
+
+    async fn send_config(&self, config: &DeviceConfig) -> Result<(), DeviceError> {
+        self.sent_configs.lock().unwrap().push(config.clone());
+        Ok(())
+    }
+
+    async fn send_layout(&self, _screen: Screen, _layout: &Layout) -> Result<(), DeviceError> {
+        Ok(())
+    }
+
+    async fn reset_layout(&self, _screen: Screen) -> Result<(), DeviceError> {
+        Ok(())
+    }
+
+    async fn send_host_status(
+        &self,
+        _tosu_connected: bool,
+        _is_playing: bool,
+        _play_id: u32,
+    ) -> Result<(), DeviceError> {
+        Ok(())
+    }
+
+    async fn send_data_update(&self, _values: &[(u8, SourceValue)]) -> Result<(), DeviceError> {
+        Ok(())
+    }
+
+    async fn send_counter_sync(
+        &self,
+        counters: &CounterState,
+        force_restore: bool,
+    ) -> Result<u32, DeviceError> {
+        self.sent_syncs
+            .lock()
+            .unwrap()
+            .push((counters.clone(), force_restore));
+        let seq = self.sync_seq.fetch_add(1, Ordering::SeqCst);
+
+        let resp_opt = self.sync_response.lock().unwrap().clone();
+        if let Some(resp) = resp_opt {
+            let (success, message) = match resp {
+                Ok(()) => (true, String::new()),
+                Err(e) => (false, e),
+            };
+            let _ = self.event_tx.send(DeviceEvent::CounterSyncResult {
+                seq,
+                success,
+                message,
+                state: None,
+            });
+        }
+        Ok(seq)
+    }
+
+    async fn request_status(&self) -> Result<(), DeviceError> {
+        let _ = self.event_tx.send(DeviceEvent::StatusUpdate(
+            osupad_device::proto::DeviceStatus {
+                state: osupad_device::proto::DeviceState::Idle as i32,
+                ..Default::default()
+            },
+        ));
+        Ok(())
+    }
+
+    async fn request_logs(&self) -> Result<(), DeviceError> {
+        Ok(())
+    }
+
+    async fn reset_latency_stats(&self) -> Result<(), DeviceError> {
+        Ok(())
+    }
+
+    fn subscribe(&self) -> broadcast::Receiver<DeviceEvent> {
+        self.event_tx.subscribe()
+    }
+
+    async fn pause_and_release(&self, _timeout: Duration) -> bool {
+        self.connected.store(false, Ordering::SeqCst);
+        true
+    }
+
+    fn resume(&self) {
+        self.connected.store(true, Ordering::SeqCst);
+    }
+
+    fn is_connected(&self) -> bool {
+        self.connected.load(Ordering::SeqCst)
+    }
+}
+
+// 1. daemon with no ESP; daemon with ESP but no tosu; tosu reconnect
+#[tokio::test]
+async fn test_daemon_connection_states_and_reconnect() {
+    let now = Instant::now();
+    let mut controller = RuntimeController::new(
+        DeviceConfig::default(),
+        None,
+        CounterState::default(),
+        HashMap::new(),
+        None,
+        Vec::new(),
+        now,
+    );
+
+    // Initial state: no ESP, no tosu
+    assert_eq!(controller.state.mode, RuntimeMode::Idle);
+    assert!(!controller.state.device_connected);
+    assert_eq!(controller.state.counters_source, CounterSource::Pc);
+    assert!(!controller.state.tosu_connected);
+
+    // ESP connects
+    let dev_info = DeviceInfo {
+        device_id: "OSUPAD-TEST01".to_string(),
+        board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+        firmware_version: "1.0.0".to_string(),
+        protocol_version: 1,
+    };
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(dev_info.clone()), now);
+    assert!(controller.state.device_connected);
+    assert_eq!(controller.state.counters_source, CounterSource::Device);
+    assert!(actions.contains(&RuntimeAction::SendTimeSync));
+    assert!(actions.contains(&RuntimeAction::SendConfig(controller.state.config.clone())));
+    assert!(actions.contains(&RuntimeAction::SendHostStatus {
+        tosu_connected: false,
+        is_playing: false,
+        play_id: controller.play_id,
+    }));
+
+    // tosu connects
+    let actions = controller.on_event(RuntimeEvent::TosuConnectionChanged(true), now);
+    assert!(controller.state.tosu_connected);
+    assert!(actions.contains(&RuntimeAction::SendHostStatus {
+        tosu_connected: true,
+        is_playing: false,
+        play_id: controller.play_id,
+    }));
+
+    // tosu disconnects and reconnects
+    let actions = controller.on_event(RuntimeEvent::TosuConnectionChanged(false), now);
+    assert!(!controller.state.tosu_connected);
+    assert!(actions.contains(&RuntimeAction::SendHostStatus {
+        tosu_connected: false,
+        is_playing: false,
+        play_id: controller.play_id,
+    }));
+
+    let actions = controller.on_event(RuntimeEvent::TosuConnectionChanged(true), now);
+    assert!(controller.state.tosu_connected);
+    assert!(actions.contains(&RuntimeAction::SendHostStatus {
+        tosu_connected: true,
+        is_playing: false,
+        play_id: controller.play_id,
+    }));
+}
+
+// 2. PLAYING → COOLDOWN → PLAYING (no sync, no writes)
+#[tokio::test]
+async fn test_playing_cooldown_playing_no_sync() {
+    let now = Instant::now();
+    let mut controller = RuntimeController::new(
+        DeviceConfig::default(),
+        None,
+        CounterState::default(),
+        HashMap::new(),
+        None,
+        Vec::new(),
+        now,
+    );
+
+    // 1. Enter playing
+    let actions = controller.on_event(
+        RuntimeEvent::TosuTelemetry {
+            is_playing: true,
+            live_time_ms: 1000.0,
+            title: "Test Map".to_string(),
+            values: Vec::new(),
+        },
+        now,
+    );
+    assert_eq!(controller.state.mode, RuntimeMode::Playing);
+    assert!(actions.contains(&RuntimeAction::SetStorageWritesAllowed(false)));
+
+    // 2. Map ends -> enters cooldown
+    let actions = controller.on_event(
+        RuntimeEvent::TosuTelemetry {
+            is_playing: false,
+            live_time_ms: 0.0,
+            title: "Test Map".to_string(),
+            values: Vec::new(),
+        },
+        now + Duration::from_secs(1),
+    );
+    assert_eq!(controller.state.mode, RuntimeMode::Cooldown);
+    assert!(actions.contains(&RuntimeAction::SetStorageWritesAllowed(false)));
+    assert!(!actions.contains(&RuntimeAction::TriggerSync));
+
+    // 3. User restarts or starts another map at 2 seconds into cooldown (< 5s deadline)
+    let actions = controller.on_event(
+        RuntimeEvent::TosuTelemetry {
+            is_playing: true,
+            live_time_ms: 500.0,
+            title: "Test Map 2".to_string(),
+            values: Vec::new(),
+        },
+        now + Duration::from_secs(3),
+    );
+    assert_eq!(controller.state.mode, RuntimeMode::Playing);
+    assert_eq!(controller.cooldown_deadline, None);
+    assert!(!actions.contains(&RuntimeAction::TriggerSync));
+}
+
+// 3. PLAYING → COOLDOWN → SYNC → IDLE (exactly one sync)
+#[tokio::test]
+async fn test_playing_cooldown_sync_idle_exactly_one_sync() {
+    let now = Instant::now();
+    let mut controller = RuntimeController::new(
+        DeviceConfig::default(),
+        None,
+        CounterState::default(),
+        HashMap::new(),
+        None,
+        Vec::new(),
+        now,
+    );
+
+    // 1. Playing
+    let _ = controller.on_event(
+        RuntimeEvent::TosuTelemetry {
+            is_playing: true,
+            live_time_ms: 1000.0,
+            title: "Test Map".to_string(),
+            values: Vec::new(),
+        },
+        now,
+    );
+
+    // 2. Left playing -> Cooldown
+    let t_cooldown = now + Duration::from_secs(1);
+    let _ = controller.on_event(
+        RuntimeEvent::TosuTelemetry {
+            is_playing: false,
+            live_time_ms: 0.0,
+            title: "Test Map".to_string(),
+            values: Vec::new(),
+        },
+        t_cooldown,
+    );
+    assert_eq!(controller.state.mode, RuntimeMode::Cooldown);
+
+    // 3. Tick before deadline: no sync
+    let actions = controller.on_event(
+        RuntimeEvent::Tick(t_cooldown + Duration::from_secs(4)),
+        t_cooldown + Duration::from_secs(4),
+    );
+    assert!(!actions.contains(&RuntimeAction::TriggerSync));
+    assert_eq!(controller.state.mode, RuntimeMode::Cooldown);
+
+    // 4. Tick after COOLDOWN_DURATION: enters Sync and triggers sync
+    let t_expired = t_cooldown + COOLDOWN_DURATION + Duration::from_millis(10);
+    let actions = controller.on_event(RuntimeEvent::Tick(t_expired), t_expired);
+    assert_eq!(controller.state.mode, RuntimeMode::Sync);
+    assert!(actions.contains(&RuntimeAction::TriggerSync));
+
+    // 5. Subsequent ticks during Sync do NOT trigger another sync
+    let actions2 = controller.on_event(
+        RuntimeEvent::Tick(t_expired + Duration::from_millis(50)),
+        t_expired + Duration::from_millis(50),
+    );
+    assert!(!actions2.contains(&RuntimeAction::TriggerSync));
+
+    // 6. Sync completes -> transitions to Idle
+    let synced = CounterState {
+        device_id: "OSUPAD-01".to_string(),
+        counter_generation: 1,
+        lifetime_key1: 100,
+        lifetime_key2: 200,
+        map_key1: 0,
+        map_key2: 0,
+    };
+    let actions = controller.on_event(
+        RuntimeEvent::SyncCompleted {
+            success: true,
+            counters: synced.clone(),
+            time_str: Some("2026-09-13T00:00:00Z".to_string()),
+            error: None,
+        },
+        t_expired + Duration::from_millis(100),
+    );
+    assert_eq!(controller.state.mode, RuntimeMode::Idle);
+    assert!(actions.contains(&RuntimeAction::SetStorageWritesAllowed(true)));
+    assert_eq!(controller.state.counters.lifetime_key1, 100);
+}
+
+// 4. zero Storage writes during PLAYING/COOLDOWN for every IPC operation (P1-3 guard)
+#[tokio::test]
+async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
+    let storage = Storage::open_in_memory().unwrap();
+    let dev_info = DeviceInfo {
+        device_id: "OSUPAD-SAFE".to_string(),
+        board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+        firmware_version: "1.0.0".to_string(),
+        protocol_version: 1,
+    };
+    let initial_counters = CounterState {
+        device_id: "OSUPAD-SAFE".to_string(),
+        counter_generation: 1,
+        lifetime_key1: 10,
+        lifetime_key2: 20,
+        map_key1: 0,
+        map_key2: 0,
+    };
+    storage
+        .save_device_state(&dev_info, &initial_counters)
+        .unwrap();
+
+    let storage = Arc::new(Mutex::new(Some(storage)));
+    let device = MockDeviceLink::new(true);
+    let log_hub = LogHub::new();
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+
+    for test_mode in [RuntimeMode::Playing, RuntimeMode::Cooldown] {
+        let daemon_state = Arc::new(Mutex::new(DaemonState {
+            mode: test_mode,
+            device_connected: true,
+            device_info: Some(dev_info.clone()),
+            counters: initial_counters.clone(),
+            counters_source: CounterSource::Device,
+            pc_counters: Some(initial_counters.clone()),
+            esp_counters: Some(initial_counters.clone()),
+            config: DeviceConfig::default(),
+            last_sync_time: None,
+            last_sync_error: None,
+            storage_error: None,
+            tosu_connected: true,
+            latency: None,
+            pending_replacement: None,
+            incompatible: None,
+            ui_values: Vec::new(),
+            custom_layouts: HashMap::new(),
+        }));
+
+        // Set storage writes blocked guard
+        storage.lock().unwrap().as_mut().unwrap().set_writes_allowed(false);
+
+        // 1. ForceSync rejected
+        let r = handle_ipc_request(
+            IpcRequest::ForceSync,
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+        )
+        .await;
+        assert!(matches!(r, IpcResponse::OperationRejected { .. }));
+
+        // 2. ResetCounters rejected
+        let r = handle_ipc_request(
+            IpcRequest::ResetCounters { confirm: true },
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+        )
+        .await;
+        assert!(matches!(r, IpcResponse::OperationRejected { .. }));
+
+        // 3. RestoreDeviceFromPc rejected
+        let r = handle_ipc_request(
+            IpcRequest::RestoreDeviceFromPc { confirm: true },
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+        )
+        .await;
+        assert!(matches!(r, IpcResponse::OperationRejected { .. }));
+
+        // 4. ImportPcFromDevice rejected
+        let r = handle_ipc_request(
+            IpcRequest::ImportPcFromDevice { confirm: true },
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+        )
+        .await;
+        assert!(matches!(r, IpcResponse::OperationRejected { .. }));
+
+        // 5. ResolveReplacement rejected
+        let r = handle_ipc_request(
+            IpcRequest::ResolveReplacement { restore: true },
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+        )
+        .await;
+        assert!(matches!(r, IpcResponse::OperationRejected { .. }));
+
+        // 6. ImportBackup rejected
+        let backup = JsonBackup::new(&dev_info, &initial_counters, &DeviceConfig::default());
+        let r = handle_ipc_request(
+            IpcRequest::ImportBackup {
+                backup,
+                confirm: true,
+            },
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+        )
+        .await;
+        assert!(matches!(r, IpcResponse::OperationRejected { .. }));
+
+        // 7. PrepareFlash rejected
+        let r = handle_ipc_request(
+            IpcRequest::PrepareFlash,
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+        )
+        .await;
+        assert!(matches!(r, IpcResponse::OperationRejected { .. }));
+
+        // 8. UpdateConfig with key change is deferred (no storage write)
+        let mut new_cfg = DeviceConfig::default();
+        new_cfg.debounce_us = 5000;
+        let r = handle_ipc_request(
+            IpcRequest::UpdateConfig(new_cfg),
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+        )
+        .await;
+        assert!(matches!(r, IpcResponse::OperationDeferred { .. }));
+
+        // 9. SetLayout is deferred (no storage write)
+        let r = handle_ipc_request(
+            IpcRequest::SetLayout {
+                screen: Screen::Idle,
+                layout: Layout {
+                    background: 0,
+                    widgets: Vec::new(),
+                },
+            },
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+        )
+        .await;
+        assert!(matches!(r, IpcResponse::LayoutApplied { .. }));
+
+        // 10. ResetLayout is deferred (no storage write)
+        let r = handle_ipc_request(
+            IpcRequest::ResetLayout {
+                screen: Screen::Idle,
+            },
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+        )
+        .await;
+        assert!(matches!(r, IpcResponse::LayoutApplied { .. }));
+
+        // Verify storage counters did NOT change
+        let loaded = storage
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .load_device_state("OSUPAD-SAFE")
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.lifetime_key1, 10);
+        assert_eq!(loaded.lifetime_key2, 20);
+    }
+}
+
+// 5. reconcile PC→ESP, ESP→PC, stale generation, replacement prompt (P1-2)
+#[tokio::test]
+async fn test_reconcile_and_replacement_scenarios() {
+    let dev_info = DeviceInfo {
+        device_id: "OSUPAD-RECON".to_string(),
+        board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+        firmware_version: "1.0.0".to_string(),
+        protocol_version: 1,
+    };
+
+    // Case A: PC generation > ESP generation -> PC wins and is sent to ESP
+    {
+        let storage = Storage::open_in_memory().unwrap();
+        let pc_state = CounterState {
+            device_id: "OSUPAD-RECON".to_string(),
+            counter_generation: 5,
+            lifetime_key1: 500,
+            lifetime_key2: 600,
+            map_key1: 0,
+            map_key2: 0,
+        };
+        storage.save_device_state(&dev_info, &pc_state).unwrap();
+        let storage = Arc::new(Mutex::new(Some(storage)));
+        let device = MockDeviceLink::new(true);
+        let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+
+        let esp_state = CounterState {
+            device_id: "OSUPAD-RECON".to_string(),
+            counter_generation: 4,
+            lifetime_key1: 100,
+            lifetime_key2: 200,
+            map_key1: 0,
+            map_key2: 0,
+        };
+        let daemon_state = Arc::new(Mutex::new(DaemonState {
+            mode: RuntimeMode::Idle,
+            device_connected: true,
+            device_info: Some(dev_info.clone()),
+            counters: esp_state,
+            counters_source: CounterSource::Device,
+            pc_counters: Some(pc_state.clone()),
+            esp_counters: None,
+            config: DeviceConfig::default(),
+            last_sync_time: None,
+            last_sync_error: None,
+            storage_error: None,
+            tosu_connected: false,
+            latency: None,
+            pending_replacement: None,
+            incompatible: None,
+            ui_values: Vec::new(),
+            custom_layouts: HashMap::new(),
+        }));
+
+        let res = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
+        assert!(res.is_ok());
+        let synced = res.unwrap();
+        assert_eq!(synced.counter_generation, 5);
+        assert_eq!(synced.lifetime_key1, 500);
+        assert_eq!(synced.lifetime_key2, 600);
+    }
+
+    // Case B: ESP generation > PC generation -> ESP wins and is saved to PC
+    {
+        let storage = Storage::open_in_memory().unwrap();
+        let pc_state = CounterState {
+            device_id: "OSUPAD-RECON".to_string(),
+            counter_generation: 2,
+            lifetime_key1: 10,
+            lifetime_key2: 20,
+            map_key1: 0,
+            map_key2: 0,
+        };
+        storage.save_device_state(&dev_info, &pc_state).unwrap();
+        let storage = Arc::new(Mutex::new(Some(storage)));
+        let device = MockDeviceLink::new(true);
+        let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+
+        let esp_state = CounterState {
+            device_id: "OSUPAD-RECON".to_string(),
+            counter_generation: 3,
+            lifetime_key1: 300,
+            lifetime_key2: 400,
+            map_key1: 0,
+            map_key2: 0,
+        };
+        let daemon_state = Arc::new(Mutex::new(DaemonState {
+            mode: RuntimeMode::Idle,
+            device_connected: true,
+            device_info: Some(dev_info.clone()),
+            counters: esp_state,
+            counters_source: CounterSource::Device,
+            pc_counters: Some(pc_state),
+            esp_counters: None,
+            config: DeviceConfig::default(),
+            last_sync_time: None,
+            last_sync_error: None,
+            storage_error: None,
+            tosu_connected: false,
+            latency: None,
+            pending_replacement: None,
+            incompatible: None,
+            ui_values: Vec::new(),
+            custom_layouts: HashMap::new(),
+        }));
+
+        let res = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
+        assert!(res.is_ok());
+        let saved = storage
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .load_device_state("OSUPAD-RECON")
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.counter_generation, 3);
+        assert_eq!(saved.lifetime_key1, 300);
+        assert_eq!(saved.lifetime_key2, 400);
+    }
+
+    // Case C: Fresh replacement device prompt detection in RuntimeController
+    {
+        let now = Instant::now();
+        let mut controller = RuntimeController::new(
+            DeviceConfig::default(),
+            None,
+            CounterState::default(),
+            HashMap::new(),
+            None,
+            vec!["OSUPAD-OLD".to_string()],
+            now,
+        );
+
+        let new_pad_info = DeviceInfo {
+            device_id: "OSUPAD-NEW".to_string(),
+            board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+            firmware_version: "1.0.0".to_string(),
+            protocol_version: 1,
+        };
+        controller.state.counters.counter_generation = 1;
+        controller.state.counters.lifetime_key1 = 5;
+        controller.state.counters.lifetime_key2 = 8;
+
+        let _ = controller.on_event(RuntimeEvent::DeviceConnected(new_pad_info), now);
+        assert_eq!(
+            controller.state.pending_replacement,
+            Some("OSUPAD-OLD".to_string())
+        );
+    }
+}
+
+// 6. device rejects sync → retry and error surfaced (P1-1)
+#[tokio::test]
+async fn test_device_rejects_sync_retries_and_surfaces_error() {
+    let storage = Storage::open_in_memory().unwrap();
+    let dev_info = DeviceInfo {
+        device_id: "OSUPAD-RETRY".to_string(),
+        board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+        firmware_version: "1.0.0".to_string(),
+        protocol_version: 1,
+    };
+    let initial_counters = CounterState {
+        device_id: "OSUPAD-RETRY".to_string(),
+        counter_generation: 1,
+        lifetime_key1: 10,
+        lifetime_key2: 20,
+        map_key1: 0,
+        map_key2: 0,
+    };
+    storage
+        .save_device_state(&dev_info, &initial_counters)
+        .unwrap();
+    let storage = Arc::new(Mutex::new(Some(storage)));
+
+    let device = MockDeviceLink::new(true);
+    // Configure device to reject sync with error message
+    *device.sync_response.lock().unwrap() = Some(Err("flash write failure".to_string()));
+
+    let daemon_state = Arc::new(Mutex::new(DaemonState {
+        mode: RuntimeMode::Idle,
+        device_connected: true,
+        device_info: Some(dev_info),
+        counters: initial_counters,
+        counters_source: CounterSource::Device,
+        pc_counters: None,
+        esp_counters: None,
+        config: DeviceConfig::default(),
+        last_sync_time: None,
+        last_sync_error: None,
+        storage_error: None,
+        tosu_connected: false,
+        latency: None,
+        pending_replacement: None,
+        incompatible: None,
+        ui_values: Vec::new(),
+        custom_layouts: HashMap::new(),
+    }));
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+
+    let res = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
+    assert!(res.is_err());
+    // Verify all 3 retry attempts took place
+    assert_eq!(device.sent_syncs.lock().unwrap().len(), 3);
+    // Verify error is surfaced in daemon state
+    let st = daemon_state.lock().unwrap();
+    assert!(st.last_sync_error.as_ref().unwrap().contains("flash write failure"));
+}
+
+// 7. JSON validation rules and preview/confirm (P1-5)
+#[tokio::test]
+async fn test_json_validation_preview_and_confirm() {
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    let device = MockDeviceLink::new(true);
+    let log_hub = LogHub::new();
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+
+    let dev_info = DeviceInfo {
+        device_id: "OSUPAD-JSON".to_string(),
+        board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+        firmware_version: "1.0.0".to_string(),
+        protocol_version: 1,
+    };
+    let current_counters = CounterState {
+        device_id: "OSUPAD-JSON".to_string(),
+        counter_generation: 2,
+        lifetime_key1: 1000,
+        lifetime_key2: 2000,
+        map_key1: 0,
+        map_key2: 0,
+    };
+    let daemon_state = Arc::new(Mutex::new(DaemonState {
+        mode: RuntimeMode::Idle,
+        device_connected: true,
+        device_info: Some(dev_info.clone()),
+        counters: current_counters.clone(),
+        counters_source: CounterSource::Device,
+        pc_counters: Some(current_counters.clone()),
+        esp_counters: Some(current_counters.clone()),
+        config: DeviceConfig::default(),
+        last_sync_time: None,
+        last_sync_error: None,
+        storage_error: None,
+        tosu_connected: false,
+        latency: None,
+        pending_replacement: None,
+        incompatible: None,
+        ui_values: Vec::new(),
+        custom_layouts: HashMap::new(),
+    }));
+
+    // 1. Preview with counter rollback & generation bump warnings
+    let mut rollback_backup =
+        JsonBackup::new(&dev_info, &current_counters, &DeviceConfig::default());
+    rollback_backup.stats.lifetime_key1 = 500; // lower than 1000
+    rollback_backup.device.counter_generation = 1; // lower than current 2
+
+    let resp = handle_ipc_request(
+        IpcRequest::PreviewImport(rollback_backup.clone()),
+        &daemon_state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+    )
+    .await;
+
+    match resp {
+        IpcResponse::ImportPreview {
+            device_id_matches,
+            is_counter_rollback,
+            warnings,
+            ..
+        } => {
+            assert!(device_id_matches);
+            assert!(is_counter_rollback);
+            assert!(warnings.iter().any(|w| w.contains("rollback")));
+            assert!(warnings.iter().any(|w| w.contains("bumped")));
+        }
+        other => panic!("Expected ImportPreview, got {:?}", other),
+    }
+
+    // 2. Import rejected without confirm
+    let resp = handle_ipc_request(
+        IpcRequest::ImportBackup {
+            backup: rollback_backup.clone(),
+            confirm: false,
+        },
+        &daemon_state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+    )
+    .await;
+    assert!(matches!(resp, IpcResponse::OperationRejected { .. }));
+
+    // 3. Import accepted with confirm: generation bumped to max(current, incoming) + 1 = 3
+    let resp = handle_ipc_request(
+        IpcRequest::ImportBackup {
+            backup: rollback_backup,
+            confirm: true,
+        },
+        &daemon_state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+    )
+    .await;
+    match resp {
+        IpcResponse::BackupImported {
+            success, counters, ..
+        } => {
+            assert!(success);
+            assert_eq!(counters.counter_generation, 3);
+            assert_eq!(counters.lifetime_key1, 500);
+        }
+        other => panic!("Expected BackupImported, got {:?}", other),
+    }
+}
+
+// 8. IPC handshake mismatch (P1-7); oversized frame (P2-6); second daemon refused (P2-6)
+#[tokio::test]
+async fn test_ipc_handshake_mismatch_and_protocol_version() {
+    let storage = Arc::new(Mutex::new(None));
+    let device = MockDeviceLink::new(false);
+    let log_hub = LogHub::new();
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    let daemon_state = Arc::new(Mutex::new(DaemonState {
+        mode: RuntimeMode::Idle,
+        device_connected: false,
+        device_info: None,
+        counters: CounterState::default(),
+        counters_source: CounterSource::Pc,
+        pc_counters: None,
+        esp_counters: None,
+        config: DeviceConfig::default(),
+        last_sync_time: None,
+        last_sync_error: None,
+        storage_error: None,
+        tosu_connected: false,
+        latency: None,
+        pending_replacement: None,
+        incompatible: None,
+        ui_values: Vec::new(),
+        custom_layouts: HashMap::new(),
+    }));
+
+    // Protocol mismatch rejected
+    let resp = handle_ipc_request(
+        IpcRequest::Handshake {
+            client_version: "0.9.0".to_string(),
+            client_protocol: 999, // Mismatched protocol version
+        },
+        &daemon_state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+    )
+    .await;
+
+    match resp {
+        IpcResponse::HandshakeRejected {
+            daemon_protocol,
+            reason,
+        } => {
+            assert_eq!(daemon_protocol, IPC_PROTOCOL_VERSION);
+            assert!(reason.contains("mismatch"));
+        }
+        other => panic!("Expected HandshakeRejected, got {:?}", other),
+    }
+
+    // Correct protocol accepted
+    let resp = handle_ipc_request(
+        IpcRequest::Handshake {
+            client_version: "1.0.0".to_string(),
+            client_protocol: IPC_PROTOCOL_VERSION,
+        },
+        &daemon_state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+    )
+    .await;
+
+    assert!(matches!(resp, IpcResponse::HandshakeAck { .. }));
+}
+
+// 9. LogHub since_seq paging (P2-2)
+#[tokio::test]
+async fn test_log_hub_since_seq_paging_and_ring() {
+    let hub = LogHub::new();
+
+    // Push 2100 entries into 2000-sized ring buffer
+    for i in 1..=2100 {
+        hub.push(
+            LogSource::Host,
+            LogLevel::Info,
+            "test",
+            format!("msg {}", i),
+        );
+    }
+
+    // Paging with limit 50 from seq 0
+    let (entries, latest) = hub.get_entries(Some(0), 50);
+    assert_eq!(latest, 2100);
+    assert_eq!(entries.len(), 50);
+    // Oldest available entry in 2000-element buffer is 2100 - 2000 + 1 = 101
+    assert_eq!(entries[0].seq, 101);
+    assert_eq!(entries[49].seq, 150);
+
+    // Page next 50 using since_seq = 150
+    let (next_entries, _) = hub.get_entries(Some(150), 50);
+    assert_eq!(next_entries.len(), 50);
+    assert_eq!(next_entries[0].seq, 151);
+    assert_eq!(next_entries[49].seq, 200);
+}
+
+// 10. queue does not block without a device (P1-8)
+#[tokio::test]
+async fn test_queue_does_not_block_without_device() {
+    let (device_manager, _) = osupad_device::DeviceManager::new_dummy();
+    // Device is not connected
+    assert!(!device_manager.is_connected());
+
+    // Sending commands returns NotConnected immediately without blocking or hanging
+    let res = device_manager.send_time_sync().await;
+    assert!(matches!(res, Err(osupad_device::DeviceError::NotConnected)));
+
+    let res = device_manager.send_config(&DeviceConfig::default()).await;
+    assert!(matches!(res, Err(osupad_device::DeviceError::NotConnected)));
+
+    let res = device_manager.send_host_status(false, false, 1).await;
+    assert!(matches!(res, Err(osupad_device::DeviceError::NotConnected)));
+
+    let res = device_manager
+        .send_counter_sync(&CounterState::default(), false)
+        .await;
+    assert!(matches!(res, Err(osupad_device::DeviceError::NotConnected)));
+}

@@ -40,6 +40,15 @@ uint32_t counters_get_nvs_writes(void);
 void counters_record_nvs_write(void);
 
 /**
+ * @brief Pure function to validate counter synchronization acceptance rules (§13, P1-1).
+ * Safe to call on host.
+ */
+bool counters_validate_sync_acceptance(
+    uint32_t current_gen, uint64_t current_k1, uint64_t current_k2,
+    uint32_t host_gen, uint64_t host_k1, uint64_t host_k2,
+    bool force, char *err_msg, size_t err_msg_len);
+
+/**
  * @brief Update baseline counters from host synchronization.
  * Only permitted when system is in IDLE state.
  * @param err_msg Optional buffer to receive reason string on rejection.
