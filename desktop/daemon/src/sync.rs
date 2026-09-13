@@ -1,5 +1,5 @@
 use chrono::Utc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use tracing::{error, info, warn};
@@ -7,7 +7,7 @@ use tracing::{error, info, warn};
 use osupad_device::{DeviceError, DeviceEvent, DeviceManager};
 use osupad_layout::{Layout, Screen};
 use osupad_model::ui_source::SourceValue;
-use osupad_model::{CounterState, DeviceConfig, RuntimeMode};
+use osupad_model::{CounterState, DeviceConfig};
 use osupad_storage::{reconcile_counters, Storage};
 
 use crate::runtime::{DaemonState, PendingOperations};
@@ -113,6 +113,15 @@ pub async fn perform_sync<D: DeviceLink>(
     device: &D,
     pending_ops: &Arc<Mutex<PendingOperations>>,
 ) -> Result<CounterState, String> {
+    // The runtime (post-cooldown, connect, periodic) and ForceSync can overlap; run one at a time
+    static SYNC_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    let _sync_guard = SYNC_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await;
+
+    // Mode and the storage write guard belong to the RuntimeController: a map can start
+    // while this runs, and storage writes must then stay blocked
     info!("Performing atomic state synchronization (§11.3, §13)...");
 
     let is_storage_available = storage.lock().unwrap().is_some();
@@ -120,7 +129,6 @@ pub async fn perform_sync<D: DeviceLink>(
         let err_msg = "Sync skipped: persistent storage unavailable".to_string();
         warn!("perform_sync skipped: SQLite storage unavailable (P2-12). ESP counters will not be modified.");
         let mut st = state.lock().unwrap();
-        st.mode = RuntimeMode::Idle;
         st.last_sync_error = Some(err_msg.clone());
         return Err(err_msg);
     }
@@ -135,20 +143,10 @@ pub async fn perform_sync<D: DeviceLink>(
     };
 
     let Some(info) = info_opt else {
-        let mut st = state.lock().unwrap();
-        st.mode = RuntimeMode::Idle;
-        if let Some(s) = storage.lock().unwrap().as_mut() {
-            s.set_writes_allowed(true);
-        }
         return Ok(in_memory_counters);
     };
 
     if !is_connected {
-        let mut st = state.lock().unwrap();
-        st.mode = RuntimeMode::Idle;
-        if let Some(s) = storage.lock().unwrap().as_mut() {
-            s.set_writes_allowed(true);
-        }
         return Ok(in_memory_counters);
     }
 
@@ -206,10 +204,9 @@ pub async fn perform_sync<D: DeviceLink>(
     // Reconcile (§13)
     let reconciled = reconcile_counters(&stored_counters, &in_memory_counters);
 
-    // Save reconciled state to SQLite (writes allowed in sync)
+    // Save reconciled state to SQLite (blocked by the write guard if a map started)
     {
-        if let Some(s) = storage.lock().unwrap().as_mut() {
-            s.set_writes_allowed(true);
+        if let Some(s) = storage.lock().unwrap().as_ref() {
             if let Err(e) = s.save_device_state(&info, &reconciled) {
                 error!("Failed to save reconciled device state to SQLite: {}", e);
             }
@@ -321,6 +318,8 @@ pub async fn perform_sync<D: DeviceLink>(
             }
         }
         let _ = device.send_config(&cfg).await;
+        // Otherwise the next connect would push the old config back to the pad
+        state.lock().unwrap().config = cfg;
     }
 
     for (screen, layout_opt) in pending_layouts {
@@ -354,12 +353,8 @@ pub async fn perform_sync<D: DeviceLink>(
         st.esp_counters = Some(reconciled.clone());
         st.last_sync_time = Some(now_str);
         st.last_sync_error = None;
-        st.mode = RuntimeMode::Idle;
     }
 
-    if let Some(s) = storage.lock().unwrap().as_mut() {
-        s.set_writes_allowed(true);
-    }
     info!("Synchronization completed successfully");
     Ok(reconciled)
 }

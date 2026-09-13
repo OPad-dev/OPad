@@ -242,11 +242,12 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                             .to_string(),
                 };
             }
-            let _ = perform_sync(state, storage, device, pending_ops).await;
-            let counters = { state.lock().unwrap().counters.clone() };
-            IpcResponse::SyncCompleted {
-                success: true,
-                counters,
+            match perform_sync(state, storage, device, pending_ops).await {
+                Ok(counters) => IpcResponse::SyncCompleted {
+                    success: true,
+                    counters,
+                },
+                Err(e) => IpcResponse::Error(format!("Sync failed: {}", e)),
             }
         }
 

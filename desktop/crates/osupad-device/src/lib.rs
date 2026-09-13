@@ -475,7 +475,8 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     firmware_version: ack.firmware_version.clone(),
                     protocol_version: ack.protocol_version,
                 };
-                let _ = tx.send(DeviceEvent::Connected(info));
+                // Counters first: the connect handler decides between known pad, new pad and
+                // replacement from them, so they must already be the pad's, not the last pad's
                 let _ = tx.send(DeviceEvent::Counters(CounterState {
                     device_id: ack.device_id.clone(),
                     counter_generation: ack.counter_generation,
@@ -484,6 +485,7 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     map_key1: 0,
                     map_key2: 0,
                 }));
+                let _ = tx.send(DeviceEvent::Connected(info));
             }
             proto::device_to_host::Payload::Status(st) => {
                 let _ = tx.send(DeviceEvent::StatusUpdate(*st));
@@ -569,7 +571,28 @@ fn find_usb_port(vid: u16, pid: u16) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::fit_nanopb_string;
+    use super::{fit_nanopb_string, handle_device_message, proto, DeviceEvent};
+
+    #[test]
+    fn hello_ack_emits_counters_before_connected() {
+        let (tx, mut rx) = tokio::sync::broadcast::channel(8);
+        let msg = proto::DeviceToHost {
+            sequence_number: 1,
+            payload: Some(proto::device_to_host::Payload::HelloAck(proto::HelloAck {
+                protocol_version: 1,
+                device_id: "OSUPAD-NEW".to_string(),
+                counter_generation: 1,
+                lifetime_key1: 3,
+                lifetime_key2: 4,
+                ..Default::default()
+            })),
+        };
+        handle_device_message(&msg, &tx);
+        assert!(
+            matches!(rx.try_recv(), Ok(DeviceEvent::Counters(c)) if c.device_id == "OSUPAD-NEW")
+        );
+        assert!(matches!(rx.try_recv(), Ok(DeviceEvent::Connected(_))));
+    }
 
     #[test]
     fn test_fit_nanopb_string() {

@@ -995,3 +995,227 @@ async fn test_queue_does_not_block_without_device() {
         .await;
     assert!(matches!(res, Err(osupad_device::DeviceError::NotConnected)));
 }
+
+fn pad_info(id: &str) -> DeviceInfo {
+    DeviceInfo {
+        device_id: id.to_string(),
+        board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+        firmware_version: "1.0.0".to_string(),
+        protocol_version: 1,
+    }
+}
+
+fn counters(id: &str, generation: u32, k1: u64, k2: u64) -> CounterState {
+    CounterState {
+        device_id: id.to_string(),
+        counter_generation: generation,
+        lifetime_key1: k1,
+        lifetime_key2: k2,
+        map_key1: 0,
+        map_key2: 0,
+    }
+}
+
+// R3: the device layer emits the pad's counters before Connected. A fresh pad connecting to a
+// daemon that started with an older pad's counters must trigger the replacement prompt, and
+// must not save the old pad's counters under the new id.
+#[tokio::test]
+async fn test_replacement_detected_with_real_event_order() {
+    let now = Instant::now();
+    let mut controller = RuntimeController::new(
+        DeviceConfig::default(),
+        Some(pad_info("OSUPAD-OLD")),
+        counters("OSUPAD-OLD", 3, 50_000, 40_000),
+        HashMap::new(),
+        None,
+        vec!["OSUPAD-OLD".to_string()],
+        now,
+    );
+
+    let _ = controller.on_event(
+        RuntimeEvent::DeviceCounters(counters("OSUPAD-NEW", 1, 3, 4)),
+        now,
+    );
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(pad_info("OSUPAD-NEW")), now);
+
+    assert_eq!(
+        controller.state.pending_replacement,
+        Some("OSUPAD-OLD".to_string())
+    );
+    assert!(!actions
+        .iter()
+        .any(|a| matches!(a, RuntimeAction::SaveInitialDeviceState(..))));
+    assert!(!actions.contains(&RuntimeAction::TriggerSync));
+}
+
+// R4/R6: syncs finish in the background. A result arriving after a map started must not pull
+// the mode out of PLAYING or re-enable storage writes.
+#[tokio::test]
+async fn test_late_sync_result_does_not_leave_playing() {
+    let now = Instant::now();
+    let mut controller = RuntimeController::new(
+        DeviceConfig::default(),
+        None,
+        CounterState::default(),
+        HashMap::new(),
+        None,
+        Vec::new(),
+        now,
+    );
+    let _ = controller.on_event(
+        RuntimeEvent::TosuTelemetry {
+            is_playing: true,
+            live_time_ms: 1000.0,
+            title: "Map".to_string(),
+            values: Vec::new(),
+        },
+        now,
+    );
+
+    for success in [true, false] {
+        let actions = controller.on_event(
+            RuntimeEvent::SyncCompleted {
+                success,
+                counters: controller.state.counters.clone(),
+                time_str: None,
+                error: if success {
+                    None
+                } else {
+                    Some("not idle".to_string())
+                },
+            },
+            now,
+        );
+        assert_eq!(controller.state.mode, RuntimeMode::Playing);
+        assert!(!actions.contains(&RuntimeAction::SetStorageWritesAllowed(true)));
+    }
+}
+
+// A failed post-cooldown sync must return to IDLE with writes allowed (no stuck SYNC mode).
+#[tokio::test]
+async fn test_failed_sync_returns_to_idle() {
+    let now = Instant::now();
+    let mut controller = RuntimeController::new(
+        DeviceConfig::default(),
+        None,
+        CounterState::default(),
+        HashMap::new(),
+        None,
+        Vec::new(),
+        now,
+    );
+    controller.state.mode = RuntimeMode::Sync;
+    let actions = controller.on_event(
+        RuntimeEvent::SyncCompleted {
+            success: false,
+            counters: CounterState::default(),
+            time_str: None,
+            error: Some("Device not in IDLE state within 3s timeout".to_string()),
+        },
+        now,
+    );
+    assert_eq!(controller.state.mode, RuntimeMode::Idle);
+    assert!(actions.contains(&RuntimeAction::SetStorageWritesAllowed(true)));
+    assert!(controller.state.last_sync_error.is_some());
+}
+
+// R10: IPC handlers write the shared state. The main loop must not overwrite those writes with
+// the controller's older copy, or the next connect pushes the old config/layouts to the pad.
+#[tokio::test]
+async fn test_apply_event_keeps_ipc_changes() {
+    let now = Instant::now();
+    let mut controller = RuntimeController::new(
+        DeviceConfig::default(),
+        None,
+        CounterState::default(),
+        HashMap::new(),
+        None,
+        vec!["OSUPAD-OLD".to_string()],
+        now,
+    );
+    let shared = Arc::new(Mutex::new(controller.state.clone()));
+    let pending = Arc::new(Mutex::new(PendingOperations::default()));
+
+    // UpdateConfig over IPC
+    shared.lock().unwrap().config.brightness = 42;
+    let _ = osupad_daemon::runtime::apply_event(
+        &mut controller,
+        &shared,
+        &pending,
+        RuntimeEvent::Tick(now),
+        now,
+    );
+    assert_eq!(shared.lock().unwrap().config.brightness, 42);
+
+    let actions = osupad_daemon::runtime::apply_event(
+        &mut controller,
+        &shared,
+        &pending,
+        RuntimeEvent::DeviceConnected(pad_info("OSUPAD-OLD")),
+        now,
+    );
+    assert!(actions
+        .iter()
+        .any(|a| matches!(a, RuntimeAction::SendConfig(c) if c.brightness == 42)));
+
+    // Replacement prompt answered over IPC: the pad is remembered and not asked about again
+    let _ = osupad_daemon::runtime::apply_event(
+        &mut controller,
+        &shared,
+        &pending,
+        RuntimeEvent::DeviceCounters(counters("OSUPAD-NEW", 1, 0, 0)),
+        now,
+    );
+    let _ = osupad_daemon::runtime::apply_event(
+        &mut controller,
+        &shared,
+        &pending,
+        RuntimeEvent::DeviceConnected(pad_info("OSUPAD-NEW")),
+        now,
+    );
+    assert!(shared.lock().unwrap().pending_replacement.is_some());
+    shared.lock().unwrap().pending_replacement = None;
+    let _ = osupad_daemon::runtime::apply_event(
+        &mut controller,
+        &shared,
+        &pending,
+        RuntimeEvent::Tick(now),
+        now,
+    );
+    assert!(controller.known_devices.contains("OSUPAD-NEW"));
+}
+
+// perform_sync must not lift the storage write guard: if a map started while it ran, writes
+// stay blocked until the runtime allows them again.
+#[tokio::test]
+async fn test_perform_sync_leaves_write_guard_to_runtime() {
+    let dev = pad_info("OSUPAD-GUARD");
+    let storage = Storage::open_in_memory().unwrap();
+    storage
+        .save_device_state(&dev, &counters("OSUPAD-GUARD", 1, 10, 10))
+        .unwrap();
+    let guard = storage.writes_allowed_handle();
+    storage.set_writes_allowed(false);
+    let storage = Arc::new(Mutex::new(Some(storage)));
+
+    let mut state = RuntimeController::new(
+        DeviceConfig::default(),
+        Some(dev),
+        counters("OSUPAD-GUARD", 1, 20, 20),
+        HashMap::new(),
+        None,
+        vec!["OSUPAD-GUARD".to_string()],
+        Instant::now(),
+    )
+    .state;
+    state.device_connected = true;
+    state.mode = RuntimeMode::Playing;
+    let daemon_state = Arc::new(Mutex::new(state));
+    let device = MockDeviceLink::new(true);
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+
+    let _ = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
+
+    assert!(!guard.load(Ordering::SeqCst));
+    assert_eq!(daemon_state.lock().unwrap().mode, RuntimeMode::Playing);
+}

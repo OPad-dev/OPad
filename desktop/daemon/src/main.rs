@@ -22,7 +22,7 @@ pub mod telemetry;
 
 use ipc_handlers::handle_ipc_request;
 use log_hub::{LogHub, LogHubLayer};
-use runtime::{PendingOperations, RuntimeAction, RuntimeController, RuntimeEvent};
+use runtime::{apply_event, PendingOperations, RuntimeAction, RuntimeController, RuntimeEvent};
 use sync::perform_sync;
 
 #[tokio::main]
@@ -193,6 +193,9 @@ async fn main() -> Result<()> {
     let mut last_db_retry = Instant::now();
     let mut last_instant = Instant::now();
     let mut last_system_time = std::time::SystemTime::now();
+    // Syncs run in their own task (they can take ~10 s) and report back here
+    let (sync_done_tx, mut sync_done_rx) =
+        tokio::sync::mpsc::unbounded_channel::<Result<CounterState, String>>();
 
     loop {
         let mut event_opt = None;
@@ -257,7 +260,25 @@ async fn main() -> Result<()> {
                 event_opt = Some(RuntimeEvent::TosuConnectionChanged(connected));
             }
 
-            // 4. Periodic tick
+            // 4. A background sync finished
+            Some(res) = sync_done_rx.recv() => {
+                event_opt = Some(match res {
+                    Ok(counters) => RuntimeEvent::SyncCompleted {
+                        success: true,
+                        counters,
+                        time_str: Some(chrono::Utc::now().to_rfc3339()),
+                        error: None,
+                    },
+                    Err(e) => RuntimeEvent::SyncCompleted {
+                        success: false,
+                        counters: controller.state.counters.clone(),
+                        time_str: None,
+                        error: Some(e),
+                    },
+                });
+            }
+
+            // 5. Periodic tick
             _ = tick.tick() => {
                 let now = Instant::now();
 
@@ -300,7 +321,7 @@ async fn main() -> Result<()> {
                                 None
                             };
                             *storage.lock().unwrap() = Some(s);
-                            let _ = controller.on_event(RuntimeEvent::SqliteReconnected {
+                            let _ = apply_event(&mut controller, &daemon_state, &pending_ops, RuntimeEvent::SqliteReconnected {
                                 config: cfg,
                                 layouts,
                                 stored_device: stored_dev,
@@ -308,7 +329,7 @@ async fn main() -> Result<()> {
                         }
                         Err(e) => {
                             warn!("SQLite database reconnection attempt failed: {}", e);
-                            let _ = controller.on_event(RuntimeEvent::SqliteError(format!("Database error ({}): {}", db_path.display(), e)), now);
+                            let _ = apply_event(&mut controller, &daemon_state, &pending_ops, RuntimeEvent::SqliteError(format!("Database error ({}): {}", db_path.display(), e)), now);
                         }
                     }
                 }
@@ -319,7 +340,7 @@ async fn main() -> Result<()> {
 
         if let Some(event) = event_opt {
             let now = Instant::now();
-            let actions = controller.on_event(event, now);
+            let actions = apply_event(&mut controller, &daemon_state, &pending_ops, event, now);
 
             for action in actions {
                 match action {
@@ -364,32 +385,11 @@ async fn main() -> Result<()> {
                         let stg = storage.clone();
                         let dm = device_manager.clone();
                         let po = pending_ops.clone();
-                        let res = perform_sync(&ds, &stg, &*dm, &po).await;
-                        let now_sync = Instant::now();
-                        match res {
-                            Ok(synced_counters) => {
-                                let _ = controller.on_event(
-                                    RuntimeEvent::SyncCompleted {
-                                        success: true,
-                                        counters: synced_counters,
-                                        time_str: Some(chrono::Utc::now().to_rfc3339()),
-                                        error: None,
-                                    },
-                                    now_sync,
-                                );
-                            }
-                            Err(e) => {
-                                let _ = controller.on_event(
-                                    RuntimeEvent::SyncCompleted {
-                                        success: false,
-                                        counters: controller.state.counters.clone(),
-                                        time_str: None,
-                                        error: Some(e),
-                                    },
-                                    now_sync,
-                                );
-                            }
-                        }
+                        let done = sync_done_tx.clone();
+                        tokio::spawn(async move {
+                            let res = perform_sync(&ds, &stg, &*dm, &po).await;
+                            let _ = done.send(res);
+                        });
                     }
                     RuntimeAction::RequestDeviceStatus => {
                         let dm = device_manager.clone();
@@ -421,10 +421,6 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-
-            // Keep daemon_state synchronized for IPC readers
-            let mut ds = daemon_state.lock().unwrap();
-            *ds = controller.state.clone();
         }
     }
 }

@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use osupad_layout::{Layout, Screen};
@@ -396,6 +397,8 @@ impl RuntimeController {
                         if now >= deadline {
                             self.state.mode = RuntimeMode::Sync;
                             self.cooldown_deadline = None;
+                            // SYNC is the phase where persistence is allowed again (§11.3)
+                            actions.push(RuntimeAction::SetStorageWritesAllowed(true));
                             actions.push(RuntimeAction::TriggerSync);
                         }
                     }
@@ -462,21 +465,29 @@ impl RuntimeController {
                 time_str,
                 error,
             } => {
+                // Syncs run in the background, so a map may have started meanwhile:
+                // never pull the mode out of PLAYING/COOLDOWN or re-enable writes there
                 if success {
                     self.state.counters = counters.clone();
                     self.state.pc_counters = Some(counters.clone());
                     self.state.esp_counters = Some(counters.clone());
                     self.state.last_sync_time = time_str;
                     self.state.last_sync_error = None;
-                    self.state.mode = RuntimeMode::Idle;
                     self.last_synced_counters = Some(counters);
                     self.last_periodic_sync = now;
                     self.last_periodic_time_sync = now;
+                    if let Some(info) = &self.state.device_info {
+                        self.known_devices.insert(info.device_id.clone());
+                    }
                 } else {
                     self.state.last_sync_error = error;
+                }
+                if self.state.mode == RuntimeMode::Sync {
                     self.state.mode = RuntimeMode::Idle;
                 }
-                actions.push(RuntimeAction::SetStorageWritesAllowed(true));
+                if self.state.mode == RuntimeMode::Idle {
+                    actions.push(RuntimeAction::SetStorageWritesAllowed(true));
+                }
             }
 
             RuntimeEvent::SqliteReconnected {
@@ -503,4 +514,36 @@ impl RuntimeController {
 
         actions
     }
+}
+
+/// Runs one event through the controller against the shared state.
+///
+/// IPC handlers and `perform_sync` write to the shared `DaemonState` directly (config, layouts,
+/// counters, replacement choice). Pulling it in before the event and publishing the result under
+/// the same lock keeps those writes instead of overwriting them with a stale controller copy.
+pub fn apply_event(
+    controller: &mut RuntimeController,
+    shared: &Arc<Mutex<DaemonState>>,
+    pending_ops: &Arc<Mutex<PendingOperations>>,
+    event: RuntimeEvent,
+    now: Instant,
+) -> Vec<RuntimeAction> {
+    let actions = {
+        let mut ds = shared.lock().unwrap();
+        // A replacement prompt resolved over IPC: remember the pad so it is not asked again
+        if controller.state.pending_replacement.is_some() && ds.pending_replacement.is_none() {
+            if let Some(info) = &ds.device_info {
+                controller.known_devices.insert(info.device_id.clone());
+            }
+        }
+        controller.state = ds.clone();
+        let actions = controller.on_event(event, now);
+        *ds = controller.state.clone();
+        actions
+    };
+    // perform_sync drains the shared queue, so hand over what the controller deferred
+    if let Some(id) = controller.pending_ops.pending_last_seen.take() {
+        pending_ops.lock().unwrap().pending_last_seen = Some(id);
+    }
+    actions
 }
