@@ -8,6 +8,7 @@
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
 #include "config/device_config.h"
 #include "input/keypad.h"
+#include "input/latency_stats.h"
 #include "usb/usb_descriptors.h"
 #include "usb/usb_hid.h"
 #include "usb/usb_cdc.h"
@@ -102,17 +103,18 @@ void app_main(void)
     ESP_LOGW(TAG, "  CDC, Runtime, and Display Disabled    ");
     ESP_LOGW(TAG, "========================================");
 
+    // No CDC in this build and TinyUSB owns the USB PHY, so these lines only reach UART0
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(10000));
         latency_stats_t stats;
-        keypad_get_latency_stats(&stats);
+        latency_stats_get(&stats);
         ESP_LOGI("bench", "STAGE A STATS: samples=%lu, p50=%lu us, p99=%lu us, p99.9=%lu us, max=%lu us, deferred=%lu",
-                 (unsigned long)stats.sample_count,
+                 (unsigned long)stats.samples,
                  (unsigned long)stats.p50_us,
                  (unsigned long)stats.p99_us,
                  (unsigned long)stats.p999_us,
                  (unsigned long)stats.max_us,
-                 (unsigned long)stats.deferred_count);
+                 (unsigned long)stats.deferred_reports);
     }
 #else
 
