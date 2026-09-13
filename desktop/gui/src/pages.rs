@@ -343,15 +343,24 @@ pub fn device(app: &App) -> Element<'_, Message> {
             text("Pad").size(18).font(theme::FONT_BOLD),
             line(
                 "Device ID",
-                info.map_or("-".into(), |i| i.device_id.clone())
+                info.map(|i| i.device_id.as_str())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("—")
+                    .to_string(),
             ),
             line(
                 "Board",
-                info.map_or("-".into(), |i| i.board_profile.clone())
+                info.map(|i| i.board_profile.as_str())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("—")
+                    .to_string(),
             ),
             line(
                 "Firmware",
-                info.map_or("-".into(), |i| i.firmware_version.clone())
+                info.map(|i| i.firmware_version.as_str())
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("—")
+                    .to_string(),
             ),
             line("Mode", format!("{:?}", app.mode)),
             line("Counters source", format!("{:?}", app.counters_source)),

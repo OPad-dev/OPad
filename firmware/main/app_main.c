@@ -76,6 +76,7 @@ void app_main(void)
     usb_hid_set_keycodes(k_cfg.keycode1, k_cfg.keycode2);
 
     ESP_LOGI(TAG, "Configuring TinyUSB Composite Stack (HID 1000Hz + CDC-ACM)...");
+    usb_descriptors_init();
     tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
     tusb_cfg.descriptor.device = &osupad_usb_device_desc;
     tusb_cfg.descriptor.full_speed_config = osupad_usb_config_desc;

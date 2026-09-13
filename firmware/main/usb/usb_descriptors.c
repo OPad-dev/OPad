@@ -1,6 +1,18 @@
 #include "usb_descriptors.h"
 #include "esp_log.h"
+#include "esp_mac.h"
+#include <stdio.h>
 #include <string.h>
+
+static char s_serial_str[32] = "OSUPAD-000000000000";
+
+void usb_descriptors_init(void)
+{
+    uint8_t mac[6] = {0};
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    snprintf(s_serial_str, sizeof(s_serial_str), "OSUPAD-%02X%02X%02X%02X%02X%02X",
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
 
 #define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_CDC_DESC_LEN)
 
@@ -41,7 +53,7 @@ const char *osupad_usb_string_desc[] = {
     (const char[]) { 0x09, 0x04 },  // 0: Supported language (English 0x0409)
     "GFerreiroS",                   // 1: Manufacturer
     "osu!pad ESP32-S3",             // 2: Product
-    "OSUPAD-S3-0001",               // 3: Serial
+    s_serial_str,                   // 3: Serial (runtime MAC-derived)
     "osu!pad HID Keyboard",         // 4: HID Interface
     "osu!pad CDC Telemetry",        // 5: CDC Interface
 };

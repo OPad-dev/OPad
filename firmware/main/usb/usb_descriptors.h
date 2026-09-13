@@ -30,6 +30,8 @@ extern const uint8_t osupad_usb_config_desc[];
 extern const uint8_t osupad_hid_report_desc[];
 extern const char *osupad_usb_string_desc[];
 
+void usb_descriptors_init(void);
+
 #ifdef __cplusplus
 }
 #endif

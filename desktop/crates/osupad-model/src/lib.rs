@@ -48,23 +48,12 @@ pub struct IncompatibleDevice {
 }
 
 /// Device hardware & firmware metadata
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct DeviceInfo {
     pub device_id: String,
     pub board_profile: String,
     pub firmware_version: String,
     pub protocol_version: u32,
-}
-
-impl Default for DeviceInfo {
-    fn default() -> Self {
-        Self {
-            device_id: "unknown".to_string(),
-            board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
-            firmware_version: "1.0.0".to_string(),
-            protocol_version: 1,
-        }
-    }
 }
 
 /// Press counters maintained on both device and host (§12, §13)

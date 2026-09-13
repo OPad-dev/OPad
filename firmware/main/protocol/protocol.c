@@ -14,6 +14,7 @@
 #include "esp_mac.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+#include "esp_app_desc.h"
 #include "diag/diag.h"
 #include "frame_parser.h"
 #include <string.h>
@@ -99,16 +100,17 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
 
     osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
     msg.sequence_number = seq ? seq : s_out_sequence++;
+    const esp_app_desc_t *app_desc = esp_app_get_description();
     msg.which_payload = osupad_DeviceToHost_hello_ack_tag;
     msg.payload.hello_ack.protocol_version = osupad_ProtocolVersion_PROTOCOL_VERSION_V1;
-    strncpy(msg.payload.hello_ack.firmware_version, "1.0.0", sizeof(msg.payload.hello_ack.firmware_version) - 1);
+    strncpy(msg.payload.hello_ack.firmware_version, app_desc->version, sizeof(msg.payload.hello_ack.firmware_version) - 1);
     strncpy(msg.payload.hello_ack.board_profile, "waveshare_esp32s3_touch_lcd_2", sizeof(msg.payload.hello_ack.board_profile) - 1);
     strncpy(msg.payload.hello_ack.device_id, dev_id, sizeof(msg.payload.hello_ack.device_id) - 1);
     msg.payload.hello_ack.counter_generation = snap.generation;
     msg.payload.hello_ack.lifetime_key1 = snap.lifetime_key1;
     msg.payload.hello_ack.lifetime_key2 = snap.lifetime_key2;
 
-    ESP_LOGI(TAG, "Sending HelloAck to host (Firmware: 1.0.0, Gen: %lu)", (unsigned long)snap.generation);
+    ESP_LOGI(TAG, "Sending HelloAck to host (Firmware: %s, Gen: %lu)", app_desc->version, (unsigned long)snap.generation);
     return send_envelope(&msg);
 }
 

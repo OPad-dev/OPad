@@ -539,12 +539,24 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     reason: "No counters known yet: connect the pad once".to_string(),
                 };
             }
-            let info = st.device_info.clone().unwrap_or_else(|| DeviceInfo {
-                device_id: st.counters.device_id.clone(),
-                board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
-                firmware_version: env!("CARGO_PKG_VERSION").to_string(),
-                protocol_version: 1,
-            });
+            let info = st
+                .device_info
+                .clone()
+                .or_else(|| {
+                    storage.lock().unwrap().as_ref().and_then(|s| {
+                        s.list_device_states()
+                            .ok()?
+                            .into_iter()
+                            .find(|(i, _)| i.device_id == st.counters.device_id)
+                            .map(|(i, _)| i)
+                    })
+                })
+                .unwrap_or_else(|| DeviceInfo {
+                    device_id: st.counters.device_id.clone(),
+                    board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+                    firmware_version: String::new(),
+                    protocol_version: 1,
+                });
             let backup = JsonBackup::new(&info, &st.counters, &st.config);
             IpcResponse::BackupExported(backup)
         }
@@ -659,10 +671,24 @@ pub async fn handle_ipc_request<D: DeviceLink>(
 
             if let Some(s) = storage.lock().unwrap().as_ref() {
                 let _ = s.save_config(&new_config);
+                let last_firmware_version = state
+                    .lock()
+                    .unwrap()
+                    .device_info
+                    .as_ref()
+                    .map(|i| i.firmware_version.clone())
+                    .or_else(|| {
+                        s.list_device_states()
+                            .ok()?
+                            .into_iter()
+                            .find(|(i, _)| i.device_id == backup.device.device_id)
+                            .map(|(i, _)| i.firmware_version)
+                    })
+                    .unwrap_or_default();
                 let info = DeviceInfo {
                     device_id: backup.device.device_id,
                     board_profile: backup.device.board_profile,
-                    firmware_version: env!("CARGO_PKG_VERSION").to_string(),
+                    firmware_version: last_firmware_version,
                     protocol_version: 1,
                 };
                 let _ = s.save_device_state(&info, &new_counters);

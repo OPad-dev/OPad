@@ -360,7 +360,8 @@ impl App {
                     firmware_version: self
                         .device_info
                         .as_ref()
-                        .map(|i| i.firmware_version.clone()),
+                        .map(|i| i.firmware_version.clone())
+                        .filter(|v| !v.is_empty()),
                     key1_presses: k1,
                     key2_presses: k2,
                     last_sync_time: self.last_sync_time.clone(),

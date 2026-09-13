@@ -297,7 +297,7 @@ impl Storage {
             let info = DeviceInfo {
                 device_id: device_id.clone(),
                 board_profile,
-                firmware_version: firmware_version.unwrap_or_else(|| "1.0.0".to_string()),
+                firmware_version: firmware_version.unwrap_or_default(),
                 protocol_version: 1,
             };
             let counters = CounterState {
