@@ -404,6 +404,7 @@ async fn main() -> Result<()> {
                     firmware.display()
                 );
             }
+            validate_esp32s3_image(&firmware)?;
 
             println!("Coordinating with osupad-daemon for firmware flashing...");
             let app_port = prepare_flash(&mut stream, port).await?;
@@ -600,4 +601,103 @@ SUBSYSTEM=="usb", ATTRS{idVendor}=="303a", MODE="0666", GROUP="uucp", TAG+="uacc
 
     println!("Setup check completed.");
     Ok(())
+}
+
+/// Validates that a file is an ESP32-S3 app image (§32)
+/// Magic byte must be 0xE9, and chip ID at offset 12..13 must be 0x0009 (ESP32-S3).
+fn validate_esp32s3_image(path: &Path) -> Result<()> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(path)
+        .with_context(|| format!("Failed to open firmware image: {}", path.display()))?;
+    let mut header = [0u8; 16];
+    let n = f
+        .read(&mut header)
+        .context("Failed to read firmware image header")?;
+    if n < 16 {
+        bail!("Firmware file is too small to be a valid ESP32 image (less than 16 bytes)");
+    }
+    if header[0] != 0xE9 {
+        bail!(
+            "Invalid image magic byte: 0x{:02X} (expected 0xE9 for ESP image)",
+            header[0]
+        );
+    }
+    let chip_id = u16::from_le_bytes([header[12], header[13]]);
+    const ESP32S3_CHIP_ID: u16 = 0x0009;
+    if chip_id != ESP32S3_CHIP_ID {
+        bail!(
+            "Firmware binary is built for chip ID 0x{:04X}, but osu!pad requires ESP32-S3 (chip ID 0x{:04X})",
+            chip_id,
+            ESP32S3_CHIP_ID
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn make_test_file(name: &str, content: &[u8]) -> PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("osupadctl-test-{}-{}", std::process::id(), name));
+        let mut f = std::fs::File::create(&path).unwrap();
+        f.write_all(content).unwrap();
+        path
+    }
+
+    #[test]
+    fn test_validate_valid_esp32s3_image() {
+        let mut header = [0u8; 32];
+        header[0] = 0xE9; // Magic byte
+        header[12] = 0x09; // ESP32-S3 chip ID low byte
+        header[13] = 0x00; // ESP32-S3 chip ID high byte
+        let path = make_test_file("valid.bin", &header);
+
+        let res = validate_esp32s3_image(&path);
+        let _ = std::fs::remove_file(&path);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_validate_wrong_magic_rejected() {
+        let mut header = [0u8; 32];
+        header[0] = 0xAA; // Wrong magic
+        header[12] = 0x09;
+        let path = make_test_file("wrong_magic.bin", &header);
+
+        let err = validate_esp32s3_image(&path).unwrap_err();
+        let _ = std::fs::remove_file(&path);
+        assert!(err.to_string().contains("Invalid image magic byte"));
+    }
+
+    #[test]
+    fn test_validate_wrong_chip_rejected() {
+        let mut header = [0u8; 32];
+        header[0] = 0xE9;
+        header[12] = 0x05; // ESP32-C3 chip ID
+        let path = make_test_file("esp32c3.bin", &header);
+
+        let err = validate_esp32s3_image(&path).unwrap_err();
+        let _ = std::fs::remove_file(&path);
+        assert!(err.to_string().contains("chip ID 0x0005"));
+    }
+
+    #[test]
+    fn test_validate_short_file_rejected() {
+        let path = make_test_file("short.bin", &[0xE9, 0x01, 0x02]);
+
+        let err = validate_esp32s3_image(&path).unwrap_err();
+        let _ = std::fs::remove_file(&path);
+        assert!(err.to_string().contains("too small"));
+    }
+
+    #[test]
+    fn test_validate_real_build_if_present() {
+        let path = std::path::Path::new("../../firmware/build/osupad-firmware.bin");
+        if path.exists() {
+            assert!(validate_esp32s3_image(path).is_ok());
+        }
+    }
 }

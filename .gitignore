@@ -25,3 +25,6 @@ firmware/test/host/bin/
 firmware/test/host/test_*
 !firmware/test/host/test_*.c
 !firmware/test/host/test_*.h
+
+# Release distribution directory
+dist/
