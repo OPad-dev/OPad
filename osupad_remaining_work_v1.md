@@ -696,6 +696,8 @@ Legend: ✅ done · 🟡 partial · ❌ missing. Task IDs show what closes each 
 
 A review of `v1.0-work` up to `c04fef0` found the issues below. Two agents are now working in parallel. **Stay inside your own column to avoid merge conflicts.**
 
+**Status (2026-09-13):** R1–R9 and P3-5–P3-7 are done and merged on `v1.0-work` (R1–R7 in `3ecf6ca`, `2a44e3c`, `f306a3a`). While fixing R4–R6, one more bug turned up and was fixed in `2a44e3c`: the daemon main loop overwrote the shared state after every event, dropping IPC changes (config, layouts, replacement choice). `fmt`, `clippy -D warnings`, 65 Rust tests, the firmware host tests, the normal firmware build and the Stage A build all pass. Still open: hardware-only work (latency table in `docs/latency-testing.md`, `docs/testing-checklist.md` run).
+
 ### Claude (branch `v1.0-claude`, separate worktree; merged into `v1.0-work` when done)
 
 | ID | Problem | Files |
