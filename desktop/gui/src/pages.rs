@@ -273,15 +273,42 @@ pub fn device(app: &App) -> Element<'_, Message> {
         .spacing(14),
     );
 
-    let backup = card(
-        column![
-            text("Backup").size(18).font(theme::FONT_BOLD),
-            muted("Export or restore settings and counters from a terminal:"),
-            text("osupadctl export backup.json").size(14).color(theme::CYAN),
-            text("osupadctl import backup.json").size(14).color(theme::CYAN),
-        ]
-        .spacing(8),
-    );
+    let playing_or_cooldown = matches!(app.mode, osupad_model::RuntimeMode::Playing | osupad_model::RuntimeMode::Cooldown);
+
+    let export_btn = button(text("Export backup").size(14))
+        .padding([10, 18])
+        .style(if playing_or_cooldown { theme::secondary } else { theme::primary });
+    let export_btn = if !playing_or_cooldown {
+        export_btn.on_press(Message::ExportBackup)
+    } else {
+        export_btn
+    };
+
+    let import_btn = button(text("Import backup").size(14))
+        .padding([10, 18])
+        .style(theme::secondary);
+    let import_btn = if !playing_or_cooldown {
+        import_btn.on_press(Message::StartImportBackup)
+    } else {
+        import_btn
+    };
+
+    let mut backup_content = column![
+        text("Backup & Restore").size(18).font(theme::FONT_BOLD),
+        muted("Save your lifetime counters and device configuration to a file, or restore from a previous backup."),
+        row![export_btn, import_btn].spacing(12),
+    ]
+    .spacing(10);
+
+    if playing_or_cooldown {
+        backup_content = backup_content.push(
+            text("⚠ Backup operations are disabled during active gameplay and cooldown.")
+                .size(13)
+                .color(theme::YELLOW),
+        );
+    }
+
+    let backup = card(backup_content);
 
     scrollable(column![heading("Device"), details, actions, backup].spacing(14)).into()
 }

@@ -6,13 +6,13 @@ mod single_instance;
 mod theme;
 mod tray;
 
-use iced::widget::{button, column, container, row, stack, text, text_input, Space};
+use iced::widget::{button, checkbox, column, container, row, stack, text, text_input, Space};
 use iced::{window, Alignment, Element, Length, Size, Subscription, Task};
-use osupad_ipc::{IpcRequest, IpcResponse};
+use osupad_ipc::{CurrentBackupState, IpcRequest, IpcResponse};
 use osupad_model::ui_source::SourceValue;
 use osupad_model::{
     char_to_hid_usage, CounterSource, CounterState, DeviceConfig, DeviceInfo, IncompatibleDevice,
-    LatencyStats, LogEntry, LogLevel, LogSource, RuntimeMode,
+    JsonBackup, LatencyStats, LogEntry, LogLevel, LogSource, RuntimeMode,
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -55,6 +55,16 @@ impl Page {
     ];
 }
 
+#[derive(Debug, Clone)]
+pub struct ImportModalState {
+    pub current: Option<CurrentBackupState>,
+    pub incoming: JsonBackup,
+    pub device_id_matches: bool,
+    pub is_counter_rollback: bool,
+    pub warnings: Vec<String>,
+    pub rollback_confirmed: bool,
+}
+
 pub struct App {
     pub page: Page,
     window: Option<window::Id>,
@@ -77,6 +87,7 @@ pub struct App {
     pub pending_replacement: Option<String>,
     pub incompatible: Option<IncompatibleDevice>,
     pub reset_modal: Option<String>,
+    pub import_modal: Option<ImportModalState>,
     pub ui_values: HashMap<u8, SourceValue>,
 
     // Settings form
@@ -111,6 +122,17 @@ pub enum Message {
     SaveLogs,
     LogsSaved(Result<String, String>),
     ToggleAutoScroll,
+    // Backup
+    ExportBackup,
+    ExportBackupReceived(Result<IpcResponse, String>),
+    ExportBackupDone(Result<String, String>),
+    StartImportBackup,
+    FilePickedForImport(Result<JsonBackup, String>),
+    ImportPreviewReady(Result<IpcResponse, String>),
+    ToggleImportRollbackConfirm(bool),
+    CancelImportModal,
+    ConfirmApplyImport,
+    ImportCompleted(Result<IpcResponse, String>),
     // Settings
     Key1(String),
     Key2(String),
@@ -162,6 +184,7 @@ impl App {
             pending_replacement: None,
             incompatible: None,
             reset_modal: None,
+            import_modal: None,
             ui_values: HashMap::new(),
             k1_input: "Z".into(),
             k2_input: "X".into(),
@@ -350,6 +373,121 @@ impl App {
             }
             Message::ToggleAutoScroll => {
                 self.log_auto_scroll = !self.log_auto_scroll;
+            }
+            Message::ExportBackup => {
+                if matches!(self.mode, RuntimeMode::Playing | RuntimeMode::Cooldown) {
+                    self.banner = Some("Cannot export backup during gameplay or cooldown.".into());
+                    return Task::none();
+                }
+                return Task::perform(ipc::request(IpcRequest::ExportBackup), Message::ExportBackupReceived);
+            }
+            Message::ExportBackupReceived(result) => {
+                match result {
+                    Ok(IpcResponse::BackupExported(backup)) => {
+                        return Task::perform(export_backup_dialog(backup), Message::ExportBackupDone);
+                    }
+                    Ok(IpcResponse::OperationRejected { reason }) => {
+                        self.banner = Some(format!("Export rejected: {}", reason));
+                    }
+                    Ok(IpcResponse::Error(e)) | Err(e) => {
+                        self.banner = Some(format!("Export error: {}", e));
+                    }
+                    _ => {}
+                }
+            }
+            Message::ExportBackupDone(result) => {
+                match result {
+                    Ok(path) => self.banner = Some(format!("Backup exported to {}", path)),
+                    Err(e) if e.is_empty() => {}
+                    Err(e) => self.banner = Some(format!("Export failed: {}", e)),
+                }
+            }
+            Message::StartImportBackup => {
+                if matches!(self.mode, RuntimeMode::Playing | RuntimeMode::Cooldown) {
+                    self.banner = Some("Cannot import backup during gameplay or cooldown.".into());
+                    return Task::none();
+                }
+                return Task::perform(pick_backup_dialog(), Message::FilePickedForImport);
+            }
+            Message::FilePickedForImport(result) => {
+                match result {
+                    Ok(backup) => {
+                        return Task::perform(ipc::request(IpcRequest::PreviewImport(backup)), Message::ImportPreviewReady);
+                    }
+                    Err(e) if e.is_empty() => {}
+                    Err(e) => self.banner = Some(e),
+                }
+            }
+            Message::ImportPreviewReady(result) => {
+                match result {
+                    Ok(IpcResponse::ImportPreview {
+                        current,
+                        incoming,
+                        device_id_matches,
+                        is_counter_rollback,
+                        warnings,
+                    }) => {
+                        self.import_modal = Some(ImportModalState {
+                            current,
+                            incoming,
+                            device_id_matches,
+                            is_counter_rollback,
+                            warnings,
+                            rollback_confirmed: false,
+                        });
+                    }
+                    Ok(IpcResponse::OperationRejected { reason }) => {
+                        self.banner = Some(format!("Import rejected: {}", reason));
+                    }
+                    Ok(IpcResponse::Error(e)) | Err(e) => {
+                        self.banner = Some(format!("Preview failed: {}", e));
+                    }
+                    _ => {}
+                }
+            }
+            Message::ToggleImportRollbackConfirm(confirmed) => {
+                if let Some(modal) = &mut self.import_modal {
+                    modal.rollback_confirmed = confirmed;
+                }
+            }
+            Message::CancelImportModal => {
+                self.import_modal = None;
+            }
+            Message::ConfirmApplyImport => {
+                if let Some(modal) = self.import_modal.take() {
+                    let backup = modal.incoming;
+                    return Task::perform(
+                        ipc::request(IpcRequest::ImportBackup {
+                            backup,
+                            confirm: true,
+                        }),
+                        Message::ImportCompleted,
+                    );
+                }
+            }
+            Message::ImportCompleted(result) => {
+                match result {
+                    Ok(IpcResponse::BackupImported { success: true, counters, config }) => {
+                        self.counters = counters.clone();
+                        self.config = config.clone();
+                        self.k1_input = config.key1_char();
+                        self.k2_input = config.key2_char();
+                        self.debounce = config.debounce_us;
+                        self.brightness = config.brightness;
+                        self.sleep_seconds = config.display_sleep_seconds;
+                        self.banner = Some(format!(
+                            "Backup successfully imported and synced! (generation: {})",
+                            counters.counter_generation
+                        ));
+                    }
+                    Ok(IpcResponse::OperationRejected { reason }) => {
+                        self.banner = Some(format!("Import rejected: {}", reason));
+                    }
+                    Ok(IpcResponse::Error(e)) | Err(e) => {
+                        self.banner = Some(format!("Import failed: {}", e));
+                    }
+                    _ => {}
+                }
             }
             Message::Key1(s) => self.k1_input = s.chars().take(1).collect::<String>().to_uppercase(),
             Message::Key2(s) => self.k2_input = s.chars().take(1).collect::<String>().to_uppercase(),
@@ -614,6 +752,125 @@ impl App {
             };
         }
 
+        if let Some(modal) = &self.import_modal {
+            let cur_dev = modal.current.as_ref().map(|c| c.device_id.as_str()).unwrap_or("None");
+            let inc_dev = modal.incoming.device.device_id.as_str();
+
+            let mut modal_col = column![
+                text("Import Backup Preview").size(20).font(theme::FONT_BOLD).color(theme::WHITE),
+                text("Review the changes before applying this backup to your pad and host.").size(13).color(theme::MUTED),
+                Space::new().height(6),
+            ].spacing(8);
+
+            if !modal.device_id_matches {
+                modal_col = modal_col.push(
+                    container(
+                        text(format!("⚠ Device ID mismatch: backup was created for pad '{}', but current pad is '{}'.", inc_dev, cur_dev))
+                            .size(13)
+                            .color(theme::YELLOW)
+                    )
+                    .padding(8)
+                    .style(theme::card)
+                );
+            }
+
+            let cur_k1 = modal.current.as_ref().map(|c| c.lifetime_key1).unwrap_or(0);
+            let inc_k1 = modal.incoming.stats.lifetime_key1;
+            let cur_k2 = modal.current.as_ref().map(|c| c.lifetime_key2).unwrap_or(0);
+            let inc_k2 = modal.incoming.stats.lifetime_key2;
+            let cur_gen = modal.current.as_ref().map(|c| c.counter_generation).unwrap_or(0);
+            let next_gen = cur_gen + 1;
+
+            let k1_color = if inc_k1 < cur_k1 { theme::RED } else { theme::WHITE };
+            let k2_color = if inc_k2 < cur_k2 { theme::RED } else { theme::WHITE };
+
+            let cur_k1_str = modal.current.as_ref().map(|c| c.config.key1_char()).unwrap_or_else(|| "Z".to_string());
+            let cur_k2_str = modal.current.as_ref().map(|c| c.config.key2_char()).unwrap_or_else(|| "X".to_string());
+
+            let table = column![
+                row![
+                    text("Field").size(12).color(theme::MUTED).width(Length::FillPortion(2)),
+                    text("Current").size(12).color(theme::MUTED).width(Length::FillPortion(3)),
+                    text("Incoming").size(12).color(theme::MUTED).width(Length::FillPortion(3)),
+                ],
+                row![
+                    text("Generation").size(13).width(Length::FillPortion(2)),
+                    text(format!("{}", cur_gen)).size(13).width(Length::FillPortion(3)),
+                    text(format!("{} (+1)", next_gen)).size(13).color(theme::CYAN).width(Length::FillPortion(3)),
+                ],
+                row![
+                    text("Key 1").size(13).width(Length::FillPortion(2)),
+                    text(format!("{} ({} presses)", cur_k1_str, cur_k1)).size(13).width(Length::FillPortion(3)),
+                    text(format!("{} ({} presses)", modal.incoming.config.key1, inc_k1)).size(13).color(k1_color).width(Length::FillPortion(3)),
+                ],
+                row![
+                    text("Key 2").size(13).width(Length::FillPortion(2)),
+                    text(format!("{} ({} presses)", cur_k2_str, cur_k2)).size(13).width(Length::FillPortion(3)),
+                    text(format!("{} ({} presses)", modal.incoming.config.key2, inc_k2)).size(13).color(k2_color).width(Length::FillPortion(3)),
+                ],
+                row![
+                    text("Debounce").size(13).width(Length::FillPortion(2)),
+                    text(format!("{} µs", modal.current.as_ref().map(|c| c.config.debounce_us).unwrap_or(0))).size(13).width(Length::FillPortion(3)),
+                    text(format!("{} µs", modal.incoming.config.debounce_us)).size(13).width(Length::FillPortion(3)),
+                ],
+            ].spacing(6);
+
+            modal_col = modal_col.push(table);
+
+            if !modal.warnings.is_empty() {
+                let mut warn_col = column![theme::caption("WARNINGS:")].spacing(4);
+                for w in &modal.warnings {
+                    warn_col = warn_col.push(text(format!("• {}", w)).size(12).color(theme::YELLOW));
+                }
+                modal_col = modal_col.push(warn_col);
+            }
+
+            if modal.is_counter_rollback {
+                modal_col = modal_col.push(
+                    checkbox(modal.rollback_confirmed)
+                        .label("I understand this replaces my counters with lower values")
+                        .on_toggle(Message::ToggleImportRollbackConfirm)
+                        .size(14),
+                );
+            }
+
+            let can_apply = !modal.is_counter_rollback || modal.rollback_confirmed;
+            let mut apply_btn = button(text("Apply Backup").size(14))
+                .padding([10, 20])
+                .style(if can_apply { theme::primary } else { theme::secondary });
+            if can_apply {
+                apply_btn = apply_btn.on_press(Message::ConfirmApplyImport);
+            }
+
+            let actions_row = row![
+                button(text("Cancel").size(14)).padding([10, 20]).style(theme::secondary).on_press(Message::CancelImportModal),
+                Space::new().width(Length::Fill),
+                apply_btn,
+            ];
+            modal_col = modal_col.push(actions_row);
+
+            let modal_box = container(modal_col)
+                .padding(24)
+                .width(480)
+                .style(theme::card);
+
+            let modal_overlay = container(modal_box)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .style(|_| container::Style {
+                    background: Some(iced::Color { a: 0.75, ..theme::BG }.into()),
+                    ..Default::default()
+                });
+
+            return if self.maximized {
+                stack![framed, modal_overlay].into()
+            } else {
+                stack![framed, chrome::resize_edges(), modal_overlay].into()
+            };
+        }
+
         if self.maximized {
             framed.into()
         } else {
@@ -641,4 +898,29 @@ async fn save_logs_dialog(content: String) -> Result<String, String> {
         .ok_or_else(String::new)?;
     std::fs::write(file.path(), content).map_err(|e| format!("Save failed: {}", e))?;
     Ok(file.path().display().to_string())
+}
+
+async fn export_backup_dialog(backup: JsonBackup) -> Result<String, String> {
+    let filename = format!("osupad-backup-{}.json", chrono::Local::now().format("%Y%m%d"));
+    let file = rfd::AsyncFileDialog::new()
+        .set_file_name(filename)
+        .add_filter("JSON Backup", &["json"])
+        .save_file()
+        .await
+        .ok_or_else(String::new)?;
+    let pretty = serde_json::to_string_pretty(&backup).map_err(|e| e.to_string())?;
+    std::fs::write(file.path(), pretty).map_err(|e| format!("Export failed: {}", e))?;
+    Ok(file.path().display().to_string())
+}
+
+async fn pick_backup_dialog() -> Result<JsonBackup, String> {
+    let file = rfd::AsyncFileDialog::new()
+        .add_filter("JSON Backup", &["json"])
+        .pick_file()
+        .await
+        .ok_or_else(String::new)?;
+    let content = std::fs::read_to_string(file.path()).map_err(|e| format!("Failed to read file: {}", e))?;
+    let backup: JsonBackup = serde_json::from_str(&content).map_err(|e| format!("Malformed JSON backup: {}", e))?;
+    backup.validate().map_err(|e| format!("Backup validation error: {}", e))?;
+    Ok(backup)
 }
