@@ -76,7 +76,7 @@ message ConfigPayload {
     uint32 brightness = 4;           // 0 to 100%, default: 100
     uint32 display_sleep_seconds = 5;// Inactivity timeout, default: 600 (10 min)
     uint32 gameplay_display_hz = 6;  // Gameplay refresh rate cap, default: 10
-    uint32 press_color_rgb = 7;      // Key press highlight 0xRRGGBB on the gameplay screen, 0 = unchanged
+    uint32 press_color_rgb = 7 [deprecated = true]; // Deprecated: key highlight colors now come from layouts
 }
 
 message SetConfig {

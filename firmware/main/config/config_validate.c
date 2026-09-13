@@ -30,5 +30,9 @@ bool device_config_validate(const device_config_data_t *cfg, char *err_msg, size
         if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "sleep %lu s out of range (0 or 10-86400)", (unsigned long)cfg->sleep_s);
         return false;
     }
+    if (cfg->gameplay_display_hz != 0 && (cfg->gameplay_display_hz < 1 || cfg->gameplay_display_hz > 60)) {
+        if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "gameplay display hz %lu out of range [1, 60]", (unsigned long)cfg->gameplay_display_hz);
+        return false;
+    }
     return true;
 }

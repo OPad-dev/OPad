@@ -19,13 +19,6 @@ esp_err_t usb_hid_init(void);
 bool usb_hid_is_ready(void);
 
 /**
- * @brief Submit an 8-byte HID keyboard report directly to the USB endpoint.
- * @param modifier Bitmask of modifier keys (Ctrl, Shift, etc.)
- * @param keycodes Up to 6 active HID keycodes (0 for empty)
- */
-bool usb_hid_send_keyboard_report(uint8_t modifier, const uint8_t keycodes[6]);
-
-/**
  * @brief Update configured HID keycodes for Key 1 and Key 2.
  */
 void usb_hid_set_keycodes(uint8_t key1_code, uint8_t key2_code);

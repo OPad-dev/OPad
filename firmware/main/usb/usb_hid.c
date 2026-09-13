@@ -45,14 +45,6 @@ bool usb_hid_is_ready(void)
     return tud_hid_ready();
 }
 
-bool usb_hid_send_keyboard_report(uint8_t modifier, const uint8_t keycodes[6])
-{
-    if (!tud_hid_ready()) {
-        return false;
-    }
-    return tud_hid_keyboard_report(0, modifier, (uint8_t *)keycodes);
-}
-
 void usb_hid_set_keycodes(uint8_t key1_code, uint8_t key2_code)
 {
     s_key1_code = key1_code;

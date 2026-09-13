@@ -85,14 +85,6 @@ pub struct DeviceConfig {
     pub display_sleep_seconds: u32, // Default: 600 (10 min)
     pub gameplay_display_hz: u32,   // Default: 10
     pub tosu_endpoint: String,      // Default: "ws://127.0.0.1:24050/websocket/v2"
-    #[serde(default = "default_press_color_rgb")]
-    pub press_color_rgb: u32, // Gameplay screen key press highlight 0xRRGGBB, default: red
-}
-
-pub const DEFAULT_PRESS_COLOR_RGB: u32 = 0xFF0000;
-
-fn default_press_color_rgb() -> u32 {
-    DEFAULT_PRESS_COLOR_RGB
 }
 
 impl Default for DeviceConfig {
@@ -105,7 +97,6 @@ impl Default for DeviceConfig {
             display_sleep_seconds: 600,
             gameplay_display_hz: 10,
             tosu_endpoint: "ws://127.0.0.1:24050/websocket/v2".to_string(),
-            press_color_rgb: DEFAULT_PRESS_COLOR_RGB,
         }
     }
 }

@@ -636,11 +636,10 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 return IpcResponse::Error(format!("Invalid backup: {}", err));
             }
 
-            let (current_tosu, current_color, current_gen) = {
+            let (current_tosu, current_gen) = {
                 let st = state.lock().unwrap();
                 (
                     st.config.tosu_endpoint.clone(),
-                    st.config.press_color_rgb,
                     st.counters.counter_generation,
                 )
             };
@@ -656,7 +655,6 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 display_sleep_seconds: backup.config.display_sleep_seconds,
                 gameplay_display_hz: backup.config.gameplay_display_hz,
                 tosu_endpoint: current_tosu,
-                press_color_rgb: current_color,
             };
 
             let new_counters = CounterState {

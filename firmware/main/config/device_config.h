@@ -22,6 +22,7 @@ extern "C" {
 #define DEVICE_CONFIG_DEFAULT_DEBOUNCE_US   3000
 #define DEVICE_CONFIG_DEFAULT_BRIGHTNESS    100
 #define DEVICE_CONFIG_DEFAULT_SLEEP_S       600
+#define DEVICE_CONFIG_DEFAULT_GAMEPLAY_DISPLAY_HZ 10
 
 typedef struct __attribute__((packed)) {
     uint32_t version;
@@ -30,6 +31,7 @@ typedef struct __attribute__((packed)) {
     uint32_t debounce_us;
     uint32_t brightness;
     uint32_t sleep_s;
+    uint32_t gameplay_display_hz;
 } device_config_data_t;
 
 /**

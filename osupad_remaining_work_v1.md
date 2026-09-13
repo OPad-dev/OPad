@@ -689,3 +689,30 @@ Legend: ✅ done · 🟡 partial · ❌ missing. Task IDs show what closes each 
 - ESP-NOW wireless dongle, battery, and heavy-ballast case V2 (`docs/roadmap.md`): post-v1.0.
 - Touch UI, Wi-Fi, Bluetooth, NTP, macros, RGB, more than two keys (spec §2.2).
 - A custom OTA subsystem (spec §26; flashing stays espflash over USB).
+
+---
+
+## Appendix C: review fixes and work split (added 2026-09-13)
+
+A review of `v1.0-work` up to `c04fef0` found the issues below. Two agents are now working in parallel. **Stay inside your own column to avoid merge conflicts.**
+
+### Claude (branch `v1.0-claude`, separate worktree; merged into `v1.0-work` when done)
+
+| ID | Problem | Files |
+|---|---|---|
+| R1 | `docs/latency-testing.md` results table is not real data (Stage A cannot compile; firmware percentiles are 10 µs bucket edges, table shows 34/48/58; debounce description is wrong). Replace it with an empty table to be filled from real hardware runs. | `docs/latency-testing.md` (results section only) |
+| R2 | Stage A benchmark build does not compile (`keypad_get_latency_stats`, `sample_count`, `deferred_count` do not exist). | `firmware/main/app_main.c` (bench block only) |
+| R3 | HelloAck emits `Connected` **before** `Counters`, so the connect handler sees the previous pad's counters: replacement prompt never fires and old counters get saved under the new device_id. | `osupad-device` `handle_device_message` (HelloAck arm only), `daemon/src/runtime.rs` connect handling, daemon tests |
+| R4 | A failed sync (device not IDLE in 3 s, or 3 rejected attempts) leaves the daemon in `Sync` and may leave storage writes blocked; no retry. | `daemon/src/sync.rs`, `daemon/src/runtime.rs` |
+| R5 | Possible self-deadlock on SQLite recovery (`if let Some(..) = &state.lock()` then re-locking inside). | `daemon/src/main.rs` |
+| R6 | `perform_sync` is awaited inside the main select loop (stalls tosu/status/display for up to ~10 s); `ForceSync` returns `success: true` even when the sync failed. | `daemon/src/main.rs`, `daemon/src/ipc_handlers.rs` (ForceSync arm only) |
+| R7 | GUI "Install service" writes a second unit `osupad.service` (network.target/default.target) instead of the packaged `osupad-daemon.service`; "Start daemon" spawns the binary with output to /dev/null instead of `systemctl --user start`. | `gui/src/platform_linux.rs`, `gui/src/main.rs` (`start_daemon_process` only) |
+
+### Antigravity (branch `v1.0-work`)
+
+- Finish **P3-5, P3-6, P3-7** as planned.
+- **R8** (fits P3-5): `device_config_init` can `nvs_flash_erase()` without a `DIAG_EVENT_NVS_ERASED` record (it also wipes counters); `protocol_send_config_ack` hard-codes `gameplay_display_hz = 10`. Files: `firmware/main/config/device_config.c`, `firmware/main/protocol/protocol.c`.
+- **R9**: `firmware/test/host/test_frame_parser` binary must not be committed (add `firmware/test/host/test_*` binaries to `.gitignore`); make sure `run_tests.sh` passes, including the overflow test.
+- In **P3-6**, do **not** write latency numbers into `docs/latency-testing.md`. Only the owner fills them from real hardware runs.
+- Avoid editing the files listed in Claude's column. If you must, keep the hunk small and mention it in the commit message.
+- Commit often (small commits). Claude rebases onto your latest commit before merging.

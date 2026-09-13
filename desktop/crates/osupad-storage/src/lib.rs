@@ -98,6 +98,9 @@ impl Storage {
         if v < 4 {
             self.apply_v4()?;
         }
+        if v < 5 {
+            self.apply_v5()?;
+        }
         Ok(())
     }
 
@@ -133,6 +136,17 @@ impl Storage {
             "BEGIN TRANSACTION;
             UPDATE config SET gameplay_display_hz = 10 WHERE gameplay_display_hz = 5;
             INSERT INTO schema_migrations (version, applied_at) VALUES (4, datetime('now'));
+            COMMIT;",
+        )?;
+        Ok(())
+    }
+
+    /// v5: normalise legacy tosu_endpoint '/ws' to '/websocket/v2' (§P3-5)
+    fn apply_v5(&self) -> Result<(), StorageError> {
+        self.conn.execute_batch(
+            "BEGIN TRANSACTION;
+            UPDATE config SET tosu_endpoint = 'ws://127.0.0.1:24050/websocket/v2' WHERE tosu_endpoint = 'ws://127.0.0.1:24050/ws';
+            INSERT INTO schema_migrations (version, applied_at) VALUES (5, datetime('now'));
             COMMIT;",
         )?;
         Ok(())
@@ -197,7 +211,7 @@ impl Storage {
                 id, key1_hid_usage, key2_hid_usage, debounce_us,
                 brightness, display_sleep_seconds, gameplay_display_hz, tosu_endpoint
             ) VALUES (
-                1, 29, 27, 3000, 100, 600, 5, 'ws://127.0.0.1:24050/ws'
+                1, 29, 27, 3000, 100, 600, 10, 'ws://127.0.0.1:24050/websocket/v2'
             );
 
             INSERT INTO schema_migrations (version, applied_at) VALUES (1, datetime('now'));
@@ -211,7 +225,7 @@ impl Storage {
         self.conn
             .query_row(
                 "SELECT key1_hid_usage, key2_hid_usage, debounce_us, brightness,
-                    display_sleep_seconds, gameplay_display_hz, tosu_endpoint, press_color_rgb
+                    display_sleep_seconds, gameplay_display_hz, tosu_endpoint
              FROM config WHERE id = 1",
                 [],
                 |row| {
@@ -223,7 +237,6 @@ impl Storage {
                         display_sleep_seconds: row.get(4)?,
                         gameplay_display_hz: row.get(5)?,
                         tosu_endpoint: row.get(6)?,
-                        press_color_rgb: row.get(7)?,
                     })
                 },
             )
@@ -240,8 +253,7 @@ impl Storage {
                 brightness = ?4,
                 display_sleep_seconds = ?5,
                 gameplay_display_hz = ?6,
-                tosu_endpoint = ?7,
-                press_color_rgb = ?8
+                tosu_endpoint = ?7
              WHERE id = 1",
             params![
                 config.key1_hid_usage,
@@ -251,7 +263,6 @@ impl Storage {
                 config.display_sleep_seconds,
                 config.gameplay_display_hz,
                 config.tosu_endpoint,
-                config.press_color_rgb,
             ],
         )?;
         Ok(())
@@ -581,7 +592,7 @@ mod tests {
             .unwrap();
         storage
             .conn
-            .execute("DELETE FROM schema_migrations WHERE version = 4", [])
+            .execute("DELETE FROM schema_migrations WHERE version >= 4", [])
             .unwrap();
         storage.migrate().unwrap();
 
@@ -598,11 +609,35 @@ mod tests {
             .unwrap();
         storage
             .conn
-            .execute("DELETE FROM schema_migrations WHERE version = 4", [])
+            .execute("DELETE FROM schema_migrations WHERE version >= 4", [])
             .unwrap();
         storage.migrate().unwrap();
 
         let custom = storage.load_config().unwrap();
         assert_eq!(custom.gameplay_display_hz, 20);
+    }
+
+    #[test]
+    fn test_migration_v5_normalizes_tosu_endpoint() {
+        let storage = Storage::open_in_memory().expect("open");
+        let cfg = storage.load_config().unwrap();
+        assert_eq!(cfg.tosu_endpoint, "ws://127.0.0.1:24050/websocket/v2");
+
+        // Manually update to legacy '/ws', delete migration 5, and run migrate()
+        storage
+            .conn
+            .execute(
+                "UPDATE config SET tosu_endpoint = 'ws://127.0.0.1:24050/ws' WHERE id = 1",
+                [],
+            )
+            .unwrap();
+        storage
+            .conn
+            .execute("DELETE FROM schema_migrations WHERE version = 5", [])
+            .unwrap();
+        storage.migrate().unwrap();
+
+        let migrated = storage.load_config().unwrap();
+        assert_eq!(migrated.tosu_endpoint, "ws://127.0.0.1:24050/websocket/v2");
     }
 }

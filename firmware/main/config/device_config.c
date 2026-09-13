@@ -9,6 +9,7 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
+#include "diag/diag.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -23,6 +24,7 @@ static device_config_data_t s_current_config = {
     .debounce_us = DEVICE_CONFIG_DEFAULT_DEBOUNCE_US,
     .brightness = DEVICE_CONFIG_DEFAULT_BRIGHTNESS,
     .sleep_s = DEVICE_CONFIG_DEFAULT_SLEEP_S,
+    .gameplay_display_hz = DEVICE_CONFIG_DEFAULT_GAMEPLAY_DISPLAY_HZ,
 };
 
 static bool s_dirty = false;
@@ -35,6 +37,7 @@ static void set_defaults(device_config_data_t *cfg)
     cfg->debounce_us = DEVICE_CONFIG_DEFAULT_DEBOUNCE_US;
     cfg->brightness = DEVICE_CONFIG_DEFAULT_BRIGHTNESS;
     cfg->sleep_s = DEVICE_CONFIG_DEFAULT_SLEEP_S;
+    cfg->gameplay_display_hz = DEVICE_CONFIG_DEFAULT_GAMEPLAY_DISPLAY_HZ;
 }
 
 
@@ -94,6 +97,8 @@ esp_err_t device_config_init(void)
     // Initialize NVS if needed
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_LOGW(TAG, "Erasing corrupted/outdated NVS flash in config init...");
+        diag_record(DIAG_EVENT_NVS_ERASED, 2 /* WARN */, 0, 0);
         nvs_flash_erase();
         err = nvs_flash_init();
     }

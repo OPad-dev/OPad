@@ -305,7 +305,8 @@ impl DeviceManager {
                     brightness: config.brightness,
                     display_sleep_seconds: config.display_sleep_seconds,
                     gameplay_display_hz: config.gameplay_display_hz,
-                    press_color_rgb: config.press_color_rgb,
+                    #[allow(deprecated)]
+                    press_color_rgb: 0,
                 }),
             })),
         };
@@ -523,7 +524,6 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     display_sleep_seconds: c.display_sleep_seconds,
                     gameplay_display_hz: c.gameplay_display_hz,
                     tosu_endpoint: "".to_string(),
-                    press_color_rgb: c.press_color_rgb,
                 });
                 let _ = tx.send(DeviceEvent::ConfigAck {
                     seq: msg.sequence_number,

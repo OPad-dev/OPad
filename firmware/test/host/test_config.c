@@ -118,6 +118,36 @@ static void test_brightness_and_sleep_bounds(void)
     printf("✓ test_brightness_and_sleep_bounds passed\n");
 }
 
+static void test_gameplay_display_hz_bounds(void)
+{
+    device_config_data_t cfg = {
+        .version = DEVICE_CONFIG_VERSION,
+        .key1_usage = 0x1D,
+        .key2_usage = 0x1B,
+        .debounce_us = 3000,
+        .brightness = 100,
+        .sleep_s = 600,
+        .gameplay_display_hz = 61, // Above 60
+    };
+    char err[64] = {0};
+    bool ok = device_config_validate(&cfg, err, sizeof(err));
+    assert(!ok);
+    assert(strstr(err, "gameplay display hz") != NULL);
+
+    cfg.gameplay_display_hz = 60; // Max allowed
+    ok = device_config_validate(&cfg, err, sizeof(err));
+    assert(ok);
+
+    cfg.gameplay_display_hz = 1; // Min allowed
+    ok = device_config_validate(&cfg, err, sizeof(err));
+    assert(ok);
+
+    cfg.gameplay_display_hz = 0; // 0 = default (allowed)
+    ok = device_config_validate(&cfg, err, sizeof(err));
+    assert(ok);
+    printf("✓ test_gameplay_display_hz_bounds passed\n");
+}
+
 int main(void)
 {
     test_null_config_rejected();
@@ -125,6 +155,7 @@ int main(void)
     test_invalid_key_usages_rejected();
     test_debounce_bounds();
     test_brightness_and_sleep_bounds();
+    test_gameplay_display_hz_bounds();
     printf("All config validation unit tests passed successfully!\n");
     return 0;
 }

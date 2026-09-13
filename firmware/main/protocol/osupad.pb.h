@@ -77,7 +77,7 @@ typedef struct _osupad_ConfigPayload {
     uint32_t brightness; /* 0 to 100%, default: 100 */
     uint32_t display_sleep_seconds; /* Inactivity timeout, default: 600 (10 min) */
     uint32_t gameplay_display_hz; /* Gameplay refresh rate cap, default: 10 */
-    uint32_t press_color_rgb; /* Key press highlight 0xRRGGBB on the gameplay screen, 0 = unchanged */
+    uint32_t press_color_rgb; /* Deprecated: key highlight colors now come from layouts */
 } osupad_ConfigPayload;
 
 typedef struct _osupad_SetConfig {

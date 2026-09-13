@@ -19,3 +19,9 @@ managed_components/
 # Editor / OS noise
 .DS_Store
 *.swp
+
+# Firmware host test binaries
+firmware/test/host/bin/
+firmware/test/host/test_*
+!firmware/test/host/test_*.c
+!firmware/test/host/test_*.h
