@@ -53,8 +53,6 @@ While standard Bluetooth LE (BLE) introduces 7.5–15 ms latency and Wi-Fi intro
 
 ## 🪨 Milestone: Heavy Ballast & Deskmat Anti-Slip Grip (Case V2)
 
-> **Status:** implemented in the V2 bottom plate (`hardware/3d/custom_case/V2/`): internal ballast trays and a diamond knurl tread with flush pad recesses. See `hardware/3d/README.md` §5.
-
 ### 1. Increased Weight & Mass
 - **Requirement**: Add heavy ballast/weight to the enclosure so high-BPM streaming (240+ BPM) doesn't cause the keypad to budge or lift.
 - **Design Approaches**:

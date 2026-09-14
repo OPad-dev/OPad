@@ -24,7 +24,7 @@ Fingers barely have to lift between taps. That needs analog key travel, which me
 | Keys | Still exactly two keys, still standard HID keyboard keys (Z/X by default) |
 | Polling | Stays **1000 Hz**. The ESP32-S3 has Full-Speed USB only; 8 kHz would need High-Speed USB and is not a goal |
 | v1 hardware | Keeps working. Firmware supports both input backends: **digital** (today's MX switches on GPIO) and **Hall** (new) |
-| Case | The current case V2 already reserves a 40 × 21 mm space under the keys for a key PCB. The Hall sensor PCB uses that space. Mounting bosses are added once the PCB exists (that version becomes case V3) |
+| Case | The current case (V1) has no space reserved under the keys for a key PCB. A new case revision adds that space and the mounting bosses once the Hall sensor PCB exists |
 
 ### Explicitly out of scope for v2
 
@@ -107,7 +107,7 @@ Constraints confirmed from ESP-IDF documentation:
 | A | 3V3, GND, 2× analog |
 | B / C | 3V3, GND, SCK, MOSI, MISO, 1–2× CS |
 
-Use a keyed connector on the sensor PCB (JST-SH or JST-PH). On the board end, solder to the header pins or use a low-profile right-angle housing; a straight Dupont housing does not fit under the V2 screen.
+Use a keyed connector on the sensor PCB (JST-SH or JST-PH). On the board end, solder to the header pins or use a low-profile right-angle housing; a straight Dupont housing does not fit under the screen.
 
 ---
 
@@ -295,22 +295,22 @@ Each phase ends with its acceptance checks. Don't start V2-6 (PCB) before V2-0 h
 - 2 switch positions at 19.05 mm pitch, centred on the case plate cutouts.
 - One sensor centred under each switch's magnet, at the distance chosen in V2-0.
 - Decoupling per the sensor datasheet, plus the ADC (option B) and connector.
-- Board outline within the case keepout (x 18–58, y 6–27 in case coordinates), 1.6 mm FR4.
+- Compact board outline under the two keys (about 38 × 19 mm), 1.6 mm FR4.
 - 2–4 M2 mounting holes placed clear of the switch footprints.
 - Keep ground pours and magnetic or ferrous parts away from the sensor area.
 
 **Acceptance:**
 - DRC clean.
-- The 3D model (with switches) fits the V2 case keepout in the OpenSCAD fit check.
+- The 3D model (with switches) fits under the key deck of the new case (V2-7) in the OpenSCAD fit check.
 - Prototype boards read within the V2-0 noise budget.
 
-### V2-7. Case V3
+### V2-7. Case revision
 
-**Do:** copy `hardware/3d/custom_case/V2` to `V3` and:
+**Do:** copy `hardware/3d/custom_case/V1` to a new version folder and:
+- Reserve space under the key deck for the PCB, the sockets and the cable.
 - Add M2 heat-set insert bosses under the key deck, matching the PCB holes.
 - Set the plate thickness for the chosen switches.
 - Route the cable to the Waveshare header.
-- Keep the ballast trays clear of the PCB and cable.
 - Rerun the fit check with the PCB, switches and board.
 
 **Acceptance:** fit check clean; switches can be pulled and reinserted without the PCB moving.
@@ -329,7 +329,7 @@ Each phase ends with its acceptance checks. Don't start V2-6 (PCB) before V2-0 h
 
 ### V2-9. Documentation
 
-- Update `docs/architecture.md` (input backends, sampling), `docs/protocol.md` (new fields), `docs/latency-testing.md` (Hall stages) and the hardware README (PCB, V3 case).
+- Update `docs/architecture.md` (input backends, sampling), `docs/protocol.md` (new fields), `docs/latency-testing.md` (Hall stages) and the hardware README (PCB, new case).
 - Record the spec amendments from §0 in `osupad_technical_spec_v1.md` as a "v2 amendments" appendix.
 
 ---
