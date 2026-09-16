@@ -95,12 +95,13 @@ jobs:
         run: cargo test --workspace --exclude osupad-gui
 
   rust-windows-gui:
-    # EXPECTED TO FAIL until W0-5 lands. osupad-gui depends on ksni
-    # unconditionally, and ksni is a Linux D-Bus StatusNotifierItem crate; the
-    # cross-platform tray splits it behind cfg(target_os) and adds tray-icon
-    # for Windows. The job exists now so that work has a target to turn green,
-    # and it is separate so it fails on its own rather than reddening the rest.
-    name: Windows GUI (red until W0-5)
+    # EXPECTED TO FAIL on v1.0-claude, where osupad-gui still depends on ksni
+    # unconditionally and ksni is a Linux D-Bus StatusNotifierItem crate.
+    # W0-5 has landed on v1.0-agy (fc7cf7f), which splits the tray behind
+    # cfg(target_os) and adds tray-icon for Windows, so this job should go green
+    # on the integration merge. It is a separate job so the one unported crate
+    # cannot hide regressions in the other eleven.
+    name: Windows GUI (red until W0-5 is merged)
     runs-on: windows-latest
     steps:
       - name: Checkout repository
