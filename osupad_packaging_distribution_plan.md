@@ -887,6 +887,7 @@ Keep it to one line per task. This is how the other agent learns what landed.
 | 2026-09-17 | B | W2-1, W2-3 | `f834de7` | Inno Setup installer (`packaging/windows/installer.iss`): per-user install, install-origin = "windows", Run autostart keys, and strong uninstall with confirmation prompt for `%APPDATA%\osupad`. |
 | 2026-09-17 | B | T-2, T-3 | `f348018` | Bundle tosu VERSION, NOTICE, and LICENSE alongside tosu binary across Makefile, PKGBUILD, and Inno Setup package paths. |
 | 2026-09-17 | B | T-4, T-5 | `cf29e3f` | Add tosu source/status display, custom executable file picker override with persistence, and full LGPL-3.0 attribution in GUI Settings and README. |
+| 2026-09-17 | B | L-4 | `9b21604` | Add AppImage packaging script (`packaging/linux/appimage/build_appimage.sh`), AppRun entrypoint, install-origin = "appimage", and Makefile target. |
 
 ### A.8. Open owner decisions
 
