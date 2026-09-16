@@ -883,6 +883,7 @@ Keep it to one line per task. This is how the other agent learns what landed.
 | 2026-09-16 | B | L-3 | `64d5c56` | Add PKGBUILD (source build wrapping Makefile), `cargo-deb` metadata with maintainer scripts and `debian/copyright`, and `cargo-generate-rpm` metadata with udev scriptlets. |
 | 2026-09-17 | B | W0-3 | `8596568` | Single-instance guard on Windows using `Local\osupad-gui` named mutex, plus handoff via per-user named pipe `\\.\pipe\osupad-gui-{sid}`. |
 | 2026-09-17 | B | W0-5 | `fc7cf7f` | Cross-platform tray: ksni scoped to Linux, tray-icon on Windows with dedicated thread and Win32 pump, shared TrayViewModel and unified status formatting via `pages::grouped`. |
+| 2026-09-17 | B | W0-6 | `a485a5e` | Audit and complete `cfg(target_os = "linux")` sites in main.rs: autostart toggle, login autostart registration, and platform fallbacks without silent no-ops. |
 
 ### A.8. Open owner decisions
 
