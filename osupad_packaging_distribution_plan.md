@@ -23,7 +23,7 @@ Ship osu!pad on Windows 10/11 and on the major Linux distros as real, installabl
 | Unbind path | **Documented full reflash only.** No GUI unpair button, no on-device factory reset. |
 | Version | Stays **v1.0.0**. The release is not finished until these details are done. |
 | Code signing | **Ship unsigned initially.** Apply to SignPath Foundation (free for OSS) once the repo is public. |
-| Linux distribution | Native **`.deb` / `.rpm` / AUR** packages built in CI. Not targeting official distro repositories. |
+| Linux distribution | Native **`.deb` / `.rpm`** published as **GitHub release artifacts only**; **AUR** for Arch. No official distro repositories, ever. |
 | tosu | **Bundled everywhere.** Prebuilt from upstream releases on Windows/deb/rpm; **built from source** on AUR. |
 | Build system | A top-level **`Makefile`** with `PREFIX`/`DESTDIR`, used by the AUR package and every from-source install. |
 | Updates | Auto-update for **tosu** and the **app**; **explicitly consented** update for the **firmware**. All new work. |
@@ -408,11 +408,27 @@ Verified against tosu's manifests:
 
 The current `packaging/linux/install.sh` is a per-user script (`~/.local/bin`). That stays as the from-source path, but it is not a distributable package.
 
-### L-0. Scope: your own packages, not the official repositories
+### L-0. Distribution channel: GitHub releases (owner decision)
 
-**Be clear about the target.** Getting into Debian's or Fedora's official archives is not realistic here and should not be attempted: both require every Rust dependency to be packaged separately as a distro package, which is impractical for a workspace this size, and both forbid vendored pre-built binaries.
+**Decided:** `.deb` and `.rpm` are built in CI and published as **GitHub release artifacts**. They are never submitted to Debian, Ubuntu, Fedora or openSUSE. This is not a deferral to revisit later — it is the distribution model.
 
-**What is realistic, and what this section means by "support for major distros":** build `.deb`, `.rpm` and an AUR `PKGBUILD` in CI and publish them as release artifacts, so users install with `apt install ./osupad.deb`, `dnf install ./osupad.rpm` or `yay -S osupad-bin`. That covers Debian/Ubuntu/Mint/Pop, Fedora/RHEL/openSUSE and Arch/Manjaro respectively.
+It is also the only workable one. Both archives require every Rust dependency to be packaged separately as a distro package, which is impractical for a workspace this size, and both forbid vendored prebuilt binaries — which the Windows and deb/rpm artifacts deliberately contain (bundled tosu, T-2).
+
+**The AUR is a separate matter and is still the plan for Arch.** The AUR is not an official Arch repository — it is a recipe index, and publishing a `PKGBUILD` there is the ordinary way to distribute Arch software. Nothing about the GitHub-only decision affects it. (What *is* out of scope for Arch is `extra`/`core`.)
+
+**So users install with:**
+
+| Distro | Command |
+|---|---|
+| Debian / Ubuntu / Mint / Pop | `apt install ./osupad_<ver>_amd64.deb` |
+| Fedora / RHEL / openSUSE | `dnf install ./osupad-<ver>.x86_64.rpm` |
+| Arch / Manjaro | `yay -S osupad` |
+
+**Three consequences that follow directly, and must be handled rather than discovered:**
+
+1. **Dependency declarations matter more, not less.** `apt install ./file.deb` and `dnf install ./file.rpm` both still resolve declared dependencies against the user's configured repositories. Getting the per-distro package names right in L-3 is what makes a local install work at all — a missing dependency here is a hard failure with no repo to fall back on.
+2. **No repository signature.** Packages installed from a file are not verified against repo metadata; `dnf` will warn about an unsigned package. GPG-sign the `.rpm` with `rpmsign` and publish the public key in the README. The minisign-signed release manifest (**U-0.3**) is the primary integrity mechanism for every artifact on every platform, and it covers this case too.
+3. **Discovery is entirely on you.** There is no `apt search osupad`. The README, the releases page and the project site are the only ways anyone finds this, so the install instructions above need to be prominent and copy-pasteable.
 
 ### L-1. System-wide vs per-user layout
 
@@ -560,7 +576,11 @@ Three separate updaters with three different risk profiles. **None of them exist
 | **AUR** | Nothing to do. `yay`/`paru` handle updates; the app must not attempt them. |
 | **AppImage** (if L-4 happens) | Self-update is possible and appropriate. |
 
-**Optional, and the only way Linux gets true auto-update:** host signed APT and DNF repositories, so `apt upgrade` picks up osu!pad normally. That is real infrastructure — GPG-signed repo metadata, hosting, retention — and is **out of scope for v1.0**. Notify-only is the v1.0 answer for Linux.
+**Notify-only is the decision for Linux, not a placeholder.** It follows directly from L-0: with no repository, there is no `apt upgrade` path for osu!pad to hook into.
+
+**If you ever want real `apt`/`dnf` auto-update without leaving GitHub**, it is achievable and worth knowing about: an APT or DNF repository is just a static file tree, and **GitHub Pages can host one**. APT needs `dists/` + `pool/` with a GPG-signed `Release`/`InRelease`; DNF needs `repodata/` generated by `createrepo_c`. Users add the repo once and then get updates through their normal package manager. The cost is a signing key you must keep, plus repo metadata regenerated on every release.
+
+**Out of scope for v1.0** either way. Recorded here so the option is not rediscovered from scratch later.
 
 **Do:**
 - Daemon checks the signed manifest daily; GUI shows "update available" with release notes and an explicit "Install now".
@@ -732,10 +752,10 @@ Then **W0-1**, which gates every remaining Windows task, and **U-0**, which gate
 - MSIX packaging and Store-style "plug in the pad → Windows offers the app". That needs a Store-signed MSIX; the Inno decision rules it out. The daemon-at-login plus hotplug detection (W1-2) delivers nearly the same feel.
 - Any cryptographic enforcement of the pairing model (§0).
 - Windows Service hosting for the daemon (W1-1).
-- Inclusion in official Debian/Fedora/Arch repositories (L-0). Own-built packages only.
+- Submission to Debian/Ubuntu/Fedora/openSUSE archives, or to Arch `extra`/`core` (L-0). GitHub releases only — **the AUR is still in scope**.
 - Flatpak (L-4).
 - Using `@yao-pkg/pkg` in the source build (B-4) — the system `nodejs` plus a wrapper script replaces it.
-- Hosted APT/DNF repositories, and therefore true auto-update on `.deb`/`.rpm` (U-2). Notify-only in v1.0.
+- Hosted APT/DNF repositories (including the GitHub Pages route in U-2), and therefore true auto-update on `.deb`/`.rpm`. Notify-only in v1.0.
 - OTA firmware transfer code (U-3c). The **partition layout** for it is in scope (U-3a).
 - EV code signing (W2-2).
 - v2 rapid trigger — see `osupad_v2_rapid_trigger_plan.md`.
