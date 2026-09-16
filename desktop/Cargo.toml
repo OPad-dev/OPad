@@ -6,6 +6,7 @@ members = [
     "crates/osupad-storage",
     "crates/osupad-ipc",
     "crates/osupad-tosu",
+    "crates/osupad-update",
     "crates/osupad-device",
     "crates/osupad-ui-preview",
     "crates/osupad-layout",
