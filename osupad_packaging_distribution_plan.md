@@ -24,7 +24,9 @@ Ship osu!pad on Windows 10/11 and on the major Linux distros as real, installabl
 | Version | Stays **v1.0.0**. The release is not finished until these details are done. |
 | Code signing | **Ship unsigned initially.** Apply to SignPath Foundation (free for OSS) once the repo is public. |
 | Linux distribution | Native **`.deb` / `.rpm` / AUR** packages built in CI. Not targeting official distro repositories. |
-| tosu | **Never bundled.** Optional runtime dependency, fetched on request by the app. |
+| tosu | **Bundled**, tracked to its stable GitHub release. Not bundled in the AUR package. |
+| Updates | Auto-update for **tosu** and the **app**; **explicitly consented** update for the **firmware**. All new work. |
+| Firmware layout | Switch to a **two-slot OTA partition table in v1.0**, even though OTA code lands later. |
 
 ### Version
 
@@ -402,42 +404,153 @@ An AppImage covers every other distro with one artifact and is cheap to add once
 
 **Redistribution is the only thing that creates obligations.** If an installer or package *ships the tosu binary*, that is conveying an LGPL-3.0 work, which requires shipping the license text and copyright notice, and providing the corresponding source (or a valid written offer / access from the same place the binary is offered). All of this is satisfiable — it is permitted, not forbidden — but it is an ongoing maintenance burden: every tosu version bump means re-checking the source offer.
 
-### T-2. Decision: never bundle tosu
+### T-2. Decision: bundle tosu, pinned to its stable release
 
-Not because of licensing, but because bundling is worse on every axis that matters:
+**Owner decision (2026-09-16), overriding the earlier "never bundle" recommendation.** tosu ships inside the installer and the Linux packages, and the app keeps it current by tracking tosu's **stable** (non-prerelease) GitHub release — see **U-1**.
 
-- It puts you on the hook for redistributing someone else's project and keeping its source offer current.
-- It pins a tosu version that will go stale, while tosu tracks osu! client changes and needs to stay current to keep working.
-- Distro packaging rejects vendored third-party binaries outright, so `.deb`/`.rpm` could not carry it anyway.
-- The pad is **fully useful without it** — it is a 1000 Hz keyboard, and only the gameplay telemetry view depends on tosu.
+The auto-update requirement resolves the main practical objection to bundling. A bundled-and-pinned tosu goes stale as osu! changes and silently stops working; a bundled tosu that updates itself does not. What remains true is that bundling means **conveying an LGPL-3.0 work**, which carries the obligations in T-3. Those are satisfiable and routine, but they must actually be in the artifacts, not just intended.
 
-**The code is already designed for this.** `find_tosu_binary` (`:256`) resolves `$OSUPAD_TOSU_PATH` → `~/.local/opt/tosu/tosu` → `tosu` on `$PATH`, warns once if absent, and retries. The supervisor also skips launching when something already listens on port 24050, so a hand-started tosu is respected. Nothing about that needs to change.
+**What ships:**
+- Windows: `tosu.exe` inside the Inno package, installed to `%LOCALAPPDATA%\Programs\osupad\tosu\`.
+- Linux `.deb`/`.rpm`: the tosu binary under `/usr/lib/osupad/tosu/`, **not** `/usr/bin` — it is a private, auto-updating component, not a system command, and it must not collide with a tosu the user installed themselves.
+- **AUR: do not bundle.** Arch policy rejects vendored prebuilt binaries, and AUR packages that ship them get flagged. Use `optdepends=('tosu')` and let `find_tosu_binary` resolve `$PATH`, exactly as it does today.
 
-### T-3. Required change: an "Install tosu" helper in the GUI
+**The existing resolution order stays and gains one step at the end.** `find_tosu_binary` (`desktop/crates/osupad-tosu/src/lib.rs:256`) resolves `$OSUPAD_TOSU_PATH` → `~/.local/opt/tosu/tosu` → `$PATH`. Append the bundled location **last**, so a tosu the user installed deliberately always wins over the bundled copy. Never overwrite or auto-update a tosu found outside the bundled directory — that binary is not yours to manage.
 
-Make the existing design explicit to the user instead of leaving it to an environment variable.
+### T-3. LGPL-3.0 compliance for the bundled binary
+
+Conveying tosu requires three things per artifact. None are difficult; all must be verifiable at release time.
 
 **Do:**
-- GUI Device (or Settings) page shows tosu status: *not installed* / *installed, not running* / *connected*.
-- When not installed, offer **"Download tosu"**: fetch the current release from tosu's official GitHub releases, verify the checksum, and install to `~/.local/opt/tosu/tosu` — **the path `find_tosu_binary` already looks for**. On Windows, the equivalent per-user location.
-- The download must be clearly attributed: name the upstream project, show its LGPL-3.0 license, and link to its repository. The user is obtaining tosu from its authors; osu!pad is only automating the fetch.
-- Always allow pointing at an existing install instead (`$OSUPAD_TOSU_PATH`, or a file picker).
-- Never download anything without the user asking. No silent fetch on first run.
+1. **License text and notice.** Ship `licenses/tosu/LICENSE` (the full LGPL-3.0 text) and a `NOTICE` recording the upstream project, author (Mikhail Babynichev), copyright, the exact bundled version, and the release URL it came from. Installed alongside the binary on every platform.
+2. **Corresponding source.** LGPL-3.0 conveying obligations are satisfied by offering source from the same place the binary is offered. Publish, next to each osu!pad release artifact, the matching tosu source tarball or an explicit written offer naming the exact upstream tag. **Generate this automatically from the version the build pulled**, so it cannot drift from the binary actually shipped.
+3. **Distro metadata.** `.deb` needs `debian/copyright` listing LGPL-3.0 for the bundled component; `.rpm` needs the composite `License:` field. A package whose metadata claims MIT while shipping an LGPL binary is simply incorrect.
 
-**Do not:** include the tosu binary in `osupad.iss`, the `.deb`, the `.rpm` or the `PKGBUILD`. For the AUR package, an `optdepends=('tosu')` entry is the correct expression of the relationship.
+**Also required, and easy to forget:** LGPL-3.0 grants the user the right to **replace** the bundled component with their own version. The `$OSUPAD_TOSU_PATH` override and the "use my own tosu install" setting satisfy this in practice, so keep both working and mention them in the NOTICE.
+
+**Acceptance.** A release script check fails the build if the bundled tosu version does not match the shipped NOTICE and source offer. Verify on all artifacts, including the Windows installer.
+
+### T-4. tosu status and manual override in the GUI
+
+**Do:**
+- Device or Settings page shows tosu status: *bundled (version)* / *using your install at PATH* / *running* / *connected*.
+- A setting to use an external tosu instead of the bundled one, with a file picker, writing the same value `$OSUPAD_TOSU_PATH` provides.
+- A setting to pin the bundled tosu to its current version and disable U-1 updates.
+- The supervisor already skips launching when something is listening on port 24050 (`spawn_tosu_supervisor`, `:275`), so a hand-started tosu keeps working untouched. Do not change this.
 
 **Acceptance.**
-- Fresh install with no tosu: pad works as a keyboard, display shows the idle clock, GUI states plainly that gameplay telemetry needs tosu and offers to fetch it.
-- After the helper runs, the daemon connects with no restart and no manual configuration.
+- Fresh install: telemetry works with no user action, because tosu is bundled.
+- A user with their own tosu on `$PATH` keeps using it; the bundled copy is never launched and never updated.
 - `COM-05` in `docs/testing-checklist.md` (tosu killed mid-play) still passes: PLAYING → COOLDOWN → IDLE with no stuck UI.
 
-### T-4. Attribution
+### T-5. Attribution
 
-Add a **Third-party software** section to the README and an About entry in the GUI naming tosu, its author, its LGPL-3.0 license and its repository — regardless of the fact that it is never bundled. Correct attribution is cheap and this project depends on their work for its headline feature.
+Add a **Third-party software** section to the README and an About entry in the GUI naming tosu, its author, its LGPL-3.0 license and its repository. Required by the license now that it is bundled, and correct regardless — this project depends on their work for its headline feature.
 
 ---
 
-## 8. W4: Verification and release
+## 8. U: Updates
+
+Three separate updaters with three different risk profiles. **None of them existed before this section; all three are new work.**
+
+### U-0. Rules that apply to all three
+
+1. **Never during PLAYING or COOLDOWN.** This is P1-3 extended to updates. Replacing a binary, restarting a process, or writing flash mid-map is exactly the class of thing P1-3 exists to prevent. All three updaters check state and defer.
+2. **An updater is a remote code execution channel into the user's machine.** It is the highest-risk component in this plan — higher than the installer, because it runs unattended and repeatedly. Every downloaded artifact is verified before execution (U-0.3). Treat a shortcut here as a security bug, not a convenience.
+3. **Signed manifests, independent of code signing.** Publish a release manifest (versions, URLs, SHA-256 per artifact) signed with **minisign/ed25519**, with the public key compiled into the app. This is free, takes an afternoon, and does not depend on SignPath or W2-2. Verify the manifest signature, then verify each artifact's hash against it. HTTPS and "it came from GitHub" are **not** sufficient on their own.
+4. **Always user-disablable**, per updater, with the current version and last-check time visible in the GUI.
+5. **No update may leave the pad unable to act as a keyboard.** If an update fails at any point, the previous working state must survive.
+6. **Check on a schedule, not aggressively.** Once per day, with ETag caching. The unauthenticated GitHub API allows 60 requests/hour per IP; a naive poll across many users looks like abuse and gets rate-limited.
+
+### U-1. tosu auto-update (tracks stable)
+
+**Do:**
+- Query GitHub Releases for tosu, selecting the newest release with `prerelease == false` and `draft == false`. That is the definition of "stable" here; write it down so it is not reinterpreted later.
+- Compare against the installed bundled version. If newer: download the platform asset, verify its SHA-256, and replace atomically (download to a temp file, fsync, rename).
+- **Only when the daemon is IDLE.** Stop the supervised tosu, swap, restart. A pending update waits rather than interrupting.
+- Never touch a tosu outside the bundled directory (T-2).
+- Regenerate the NOTICE and source-offer reference on update (T-3), so a self-updated install stays compliant.
+- On failure: keep the current binary, log it, surface it in the GUI, retry next cycle. Never leave the directory without a working binary.
+
+**Acceptance.** A stale bundled tosu updates itself within a day of a new stable release. Killing the app mid-download leaves the previous version intact and working. An update never happens during a map.
+
+### U-2. osu!pad app auto-update
+
+**The platforms differ fundamentally here, and the plan must not pretend otherwise.**
+
+| Platform | Mechanism |
+|---|---|
+| **Windows** | Full self-update. Download the new signed installer, verify against the manifest, run it silently (`/SILENT /NORESTART`), restart daemon and GUI. Inno's `CloseApplications` handles the running processes. |
+| **`.deb` / `.rpm`** | **Notify only.** These are system-wide, root-owned and managed by the distro package manager. Self-updating would need root and would fight `apt`/`dnf`. The app detects a new version and links to it. |
+| **AUR** | Nothing to do. `yay`/`paru` handle updates; the app must not attempt them. |
+| **AppImage** (if L-4 happens) | Self-update is possible and appropriate. |
+
+**Optional, and the only way Linux gets true auto-update:** host signed APT and DNF repositories, so `apt upgrade` picks up osu!pad normally. That is real infrastructure — GPG-signed repo metadata, hosting, retention — and is **out of scope for v1.0**. Notify-only is the v1.0 answer for Linux.
+
+**Do:**
+- Daemon checks the signed manifest daily; GUI shows "update available" with release notes and an explicit "Install now".
+- **Prompt; never auto-install by default.** The user may opt in to automatic install on Windows.
+- Defer while PLAYING or COOLDOWN.
+- Coordinate daemon and GUI restart; do not leave a stale daemon talking to a new GUI. The IPC handshake (P1-7) must reject a version mismatch loudly rather than misbehave.
+- An app update **must not** trigger a firmware update. They are separate decisions (U-3).
+
+**Acceptance.** Windows updates in place, keeps counters, and the pad stays a working keyboard throughout. `.deb`/`.rpm` notify and never attempt self-modification. A corrupted or wrongly-signed download is rejected and the running version is untouched.
+
+### U-3. ESP32-S3 firmware update
+
+This reverses **Appendix B** of `osupad_remaining_work_v1.md` ("a custom OTA subsystem is out of scope; flashing stays espflash over USB"). Note the reversal explicitly when updating that document.
+
+**The device is a keyboard. A firmware update is the only operation in this entire project that can stop it being one.** Everything below follows from that.
+
+#### U-3a. Change the partition table now — do this even though OTA comes later
+
+**Problem.** `firmware/sdkconfig.defaults` sets `CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y`: one 1.5 MB factory app, no OTA slots. The board has **16 MB of flash**, so roughly 14 MB is currently unallocated. There is no space problem — only a layout problem.
+
+**Why now.** Adding OTA slots later rewrites the partition table at `0x8000`, which cannot be done by an OTA update — it needs a full serial reflash of **every device in the field**. Right now the field is approximately zero devices. This is the cheapest this change will ever be, and it gets strictly more expensive with every pad shipped.
+
+**Required change.** Custom `firmware/partitions.csv` with two OTA slots, **keeping `nvs` at offset `0x9000` at its current size** so existing lifetime counters survive (the existing comment in `sdkconfig.defaults` already relies on this property):
+
+```
+nvs,      data, nvs,     0x9000,  0x6000
+otadata,  data, ota,     0xf000,  0x2000
+phy_init, data, phy,     0x11000, 0x1000
+ota_0,    app,  ota_0,   0x20000, 0x200000
+ota_1,    app,  ota_1,   0x220000,0x200000
+```
+
+Ship v1.0 on this layout and flash `ota_0` with espflash as today. The OTA *code* can come later; the *layout* cannot.
+
+**Acceptance.** A pad flashed with the new table keeps its lifetime counters across the change. `idf.py flash` and the recovery path both still work. Firmware reports its running partition in `HelloAck`.
+
+#### U-3b. v1.0 mechanism: host-driven flash over USB
+
+Use the path that already exists rather than adding firmware attack surface for v1.0.
+
+**Do:**
+- Daemon downloads the firmware image, verifies it against the signed manifest (U-0.3), and checks the target chip and `firmware_version` before doing anything.
+- Reboot the pad into the ROM bootloader, flash the app partition **only** (never `erase-flash` — that wipes NVS and the lifetime counters), and return to the app using the existing `reset_to_app` in `desktop/cli/src/esp_rom.rs`, which already handles the ESP32-S3 USB-Serial-JTAG reboot quirk.
+- **Explicit consent every time. Never automatic, never silent, not even opt-in.** Show exactly what will happen: *"Your pad will be unusable as a keyboard for about N seconds. Do not unplug it."*
+- Refuse to start unless the daemon is IDLE, the pad is connected directly (not through a hub the user is about to disturb), and counters have been synced to the host first.
+- On Windows, release the COM port before flashing (W1-3) — Windows serial handles are exclusive.
+- Post-flash validation already exists as part of P1-7; reuse it. If the pad does not come back with the expected version, say so loudly and link to `docs/recovery.md`.
+
+**The failure mode to document honestly:** if flashing is interrupted, the app partition is incomplete and the pad will not run as a keyboard until re-flashed. It is **not bricked** — the ESP32-S3 ROM bootloader is in mask ROM and cannot be erased — but it does need manual recovery. This is the strongest argument for U-3c.
+
+#### U-3c. OTA A/B with rollback — the target design
+
+Once U-3a has shipped and the layout is in place, move to real OTA:
+
+- The daemon streams the image over the existing CDC protocol into the inactive slot; the app keeps running, so **the keyboard stays alive during the transfer**.
+- Switch slots on a single reboot; mark the new image valid only after it boots and enumerates successfully, otherwise the bootloader rolls back automatically (`esp_ota_mark_app_valid_cancel_rollback`).
+- That rollback is the whole point: **a failed firmware update can no longer leave the user without a working keyboard.**
+
+**The latency constraint that governs the implementation.** Writing to SPI flash disables the instruction cache, stalling any code executing from flash — potentially for milliseconds during an erase. This is precisely why P1-3 blocks NVS writes during play, and it applies to OTA writes with far more force given the volume. Therefore: OTA writes are **IDLE-only**, chunked, and yield between blocks. Re-run the `docs/latency-testing.md` stages with an OTA transfer in progress and treat any regression as a release blocker.
+
+**Not in v1.0.** U-3a is in v1.0; U-3b is v1.0's mechanism; U-3c follows. Sequencing it this way means the OTA code can be written without stranding anyone.
+
+---
+
+## 9. W4: Verification and release
 
 ### W4-1. CI
 
@@ -448,6 +561,16 @@ Add `x86_64-pc-windows-msvc` to the CI matrix: `cargo build`, `cargo test`, `car
 Extend `docs/testing-checklist.md` with a Windows column. Re-run at minimum: HW-01..HW-05, COM-01, COM-02, STR-01, STR-02. **HW-05 (HID-first on display wake) and STR-02 (zero storage writes) are the invariant-critical ones** and must be re-verified on Windows rather than assumed from the Linux run.
 
 Add a new section for W2-3's install/uninstall filesystem+registry diff.
+
+### W4-2b. Update verification
+
+Each updater needs its own checklist entries, because these are the paths that can break a working install:
+
+- Tampered/wrongly-signed manifest is **rejected**; the running version is untouched (U-0.3).
+- Download interrupted mid-transfer for each of the three updaters: previous working state survives in all cases.
+- No updater fires during PLAYING or COOLDOWN; a pending update defers and applies afterwards (U-0.1).
+- Firmware update preserves lifetime counters (U-3b flashes the app partition only, never `erase-flash`).
+- Post-update, the pad still enumerates as a keyboard on a machine with no osu!pad software installed.
 
 ### W4-3. Latency on Windows
 
@@ -463,7 +586,7 @@ Re-run the `docs/latency-testing.md` stages on Windows and add rows to the resul
 
 ---
 
-## 9. Order of work
+## 10. Order of work
 
 Three tracks that only converge at W4. They can be worked in parallel.
 
@@ -479,8 +602,11 @@ Windows        W0-1 ─┬─ W0-2          (IPC abstraction: all Windows work b
 Linux          L-2 ─ L-1 ─ L-3        (udev fix first: it is a correctness bug today)
                             └─ L-4    (optional)
 
-Cross-platform T-3                    (tosu helper; independent of everything)
+Firmware       U-3a                   (OTA partition table — do this early, see below)
+
+Cross-platform T-2 … T-5               (bundle tosu + LGPL compliance)
                W3-1 → W3-2 → W3-3 → W3-4   (pairing; ships on Linux too)
+               U-0 → U-1, U-2, U-3b    (updaters; U-0 signing gates all three)
 
                   ↓ all tracks
                W4-1 … W4-4 → re-cut v1.0.0
@@ -489,15 +615,16 @@ Cross-platform T-3                    (tosu helper; independent of everything)
 **Start here.** Two items are worth doing before anything else because they are live defects rather than new features:
 
 1. **L-2** — the udev rule names a group that does not exist on Debian or Fedora, and grants `0666` to every process on the machine. That is wrong on the platform you already shipped.
-2. **P3-1** — the latency table in `docs/latency-testing.md` is still empty. It is the last open v1 item and it is the baseline every other platform gets compared against.
+2. **U-3a** — the OTA partition table. It costs almost nothing today and costs a manual reflash of every pad in the field once you have users. It is the one item here whose price only goes up.
+3. **P3-1** — the latency table in `docs/latency-testing.md` is still empty. It is the last open v1 item and it is the baseline every other platform gets compared against.
 
-Then **W0-1**, which gates every remaining Windows task.
+Then **W0-1**, which gates every remaining Windows task, and **U-0**, which gates all three updaters.
 
 **Deferred until needed:** W2-2 (signing) cannot start until the repository is public, so it trails the rest.
 
 ---
 
-## 10. Risks
+## 11. Risks
 
 | Risk | Mitigation |
 |---|---|
@@ -511,16 +638,24 @@ Then **W0-1**, which gates every remaining Windows task.
 | Packaged systemd unit keeps the `%h/.local/bin` path and the daemon never starts | L-1 templates one source unit into both variants (the R7 lesson) |
 | A tosu update breaks telemetry and users blame osu!pad | tosu is never pinned or bundled (T-2); the GUI reports tosu status explicitly (T-3) |
 | SmartScreen suppresses Windows adoption while unsigned | W2-2: publish SHA-256 checksums and document the prompt honestly; pursue SignPath once public |
+| **An updater becomes a remote code execution channel** | U-0.3: minisign-signed manifest, hash-verified artifacts, public key in the binary. The single highest-risk item in this plan |
+| A firmware update is interrupted and the pad stops being a keyboard | U-3a ships the OTA layout in v1.0 so U-3c's automatic rollback becomes possible; until then U-3b requires explicit consent and documents recovery |
+| OTA flash writes stall the CPU and break the latency gate | U-3c: IDLE-only, chunked writes; re-run the latency stages with a transfer in flight |
+| Bundled tosu ships without its license or source offer | T-3: release script fails the build on a version/NOTICE mismatch |
+| tosu auto-update overwrites a tosu the user installed themselves | T-2: bundled directory only; user installs always win resolution order |
+| Shipping an OTA partition table later strands every pad in the field | U-3a: do it now, while the field is ~zero devices |
 
 ---
 
-## 11. Out of scope
+## 12. Out of scope
 
 - macOS.
 - MSIX packaging and Store-style "plug in the pad → Windows offers the app". That needs a Store-signed MSIX; the Inno decision rules it out. The daemon-at-login plus hotplug detection (W1-2) delivers nearly the same feel.
 - Any cryptographic enforcement of the pairing model (§0).
 - Windows Service hosting for the daemon (W1-1).
 - Inclusion in official Debian/Fedora/Arch repositories (L-0). Own-built packages only.
-- Flatpak (L-4), and bundling tosu in any artifact (T-2).
+- Flatpak (L-4). Bundling tosu in the **AUR** package specifically (T-2).
+- Hosted APT/DNF repositories, and therefore true auto-update on `.deb`/`.rpm` (U-2). Notify-only in v1.0.
+- OTA firmware transfer code (U-3c). The **partition layout** for it is in scope (U-3a).
 - EV code signing (W2-2).
 - v2 rapid trigger — see `osupad_v2_rapid_trigger_plan.md`.
