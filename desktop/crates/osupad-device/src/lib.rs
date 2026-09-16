@@ -61,6 +61,28 @@ pub enum DeviceEvent {
     },
 }
 
+/// How often the worker looks for a pad while none is connected (§W1-2).
+///
+/// Windows has no udev, and `RegisterDeviceNotification` needs an HWND and a
+/// message pump — machinery a headless daemon has no other use for, and a
+/// Windows-only failure surface next to the serial port. §W1-2 explicitly
+/// allows the reconnect poll instead, so this is that poll, fast enough that
+/// the "connects within 2 s" acceptance holds on both platforms with margin.
+/// Enumeration is a `/sys` read on Linux and a SetupAPI class query on Windows;
+/// neither is expensive at this rate, and neither writes storage, so P1-3 is
+/// unaffected however often it runs.
+const PORT_SCAN_INTERVAL: Duration = Duration::from_millis(400);
+
+/// Backoff after a port exists but will not open. Usually another process is
+/// holding it — on Windows serial handles are exclusive — and retrying fast
+/// helps nobody.
+const PORT_OPEN_RETRY_INTERVAL: Duration = Duration::from_millis(1500);
+
+/// Settle time after a disconnect, before looking again. Long enough for the
+/// device node to go away on unplug, short enough that a replug reconnects
+/// inside the same acceptance window.
+const RECONNECT_SETTLE_INTERVAL: Duration = Duration::from_millis(300);
+
 pub struct DeviceManager {
     cmd_tx: mpsc::Sender<HostToDevice>,
     event_tx: broadcast::Sender<DeviceEvent>,
@@ -120,7 +142,7 @@ impl DeviceManager {
                     Some(p) => p,
                     None => {
                         debug!("Searching for osu!pad ESP32-S3 USB port...");
-                        std::thread::sleep(Duration::from_millis(1500));
+                        std::thread::sleep(PORT_SCAN_INTERVAL);
                         continue;
                     }
                 };
@@ -137,7 +159,7 @@ impl DeviceManager {
                     }
                     Err(e) => {
                         debug!("Failed to open port {}: {}", port_path, e);
-                        std::thread::sleep(Duration::from_millis(1500));
+                        std::thread::sleep(PORT_OPEN_RETRY_INTERVAL);
                         continue;
                     }
                 };
@@ -215,7 +237,7 @@ impl DeviceManager {
                 while cmd_rx.try_recv().is_ok() {}
                 let _ = event_tx_clone.send(DeviceEvent::Disconnected);
                 read_buf.clear();
-                std::thread::sleep(Duration::from_millis(1500));
+                std::thread::sleep(RECONNECT_SETTLE_INTERVAL);
             }
         });
 
@@ -584,7 +606,24 @@ fn find_usb_port(vid: u16, pid: u16) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{fit_nanopb_string, handle_device_message, proto, DeviceEvent};
+    use super::{
+        fit_nanopb_string, handle_device_message, proto, DeviceEvent, PORT_SCAN_INTERVAL,
+        RECONNECT_SETTLE_INTERVAL,
+    };
+    use std::time::Duration;
+
+    /// §W1-2 acceptance: with the daemon already running, plugging the pad in
+    /// connects within 2 s. The worst case is a plug landing just after a scan
+    /// while the loop is still serving the settle delay from the unplug, so
+    /// these two intervals are the whole budget — pinned here so a future edit
+    /// cannot quietly spend it.
+    #[test]
+    fn hotplug_detection_fits_its_two_second_budget() {
+        assert!(
+            PORT_SCAN_INTERVAL + RECONNECT_SETTLE_INTERVAL < Duration::from_secs(2),
+            "hotplug detection must stay under the 2 s acceptance"
+        );
+    }
 
     #[test]
     fn hello_ack_emits_counters_before_connected() {

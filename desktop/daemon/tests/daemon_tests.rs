@@ -1219,3 +1219,89 @@ async fn test_perform_sync_leaves_write_guard_to_runtime() {
     assert!(!guard.load(Ordering::SeqCst));
     assert_eq!(daemon_state.lock().unwrap().mode, RuntimeMode::Playing);
 }
+
+/// §W1-2 / P1-8: a cable that drops and comes back mid-map must not wedge the
+/// state machine or open a storage-write window. Windows detects hotplug by
+/// the reconnect poll rather than udev, so a flaky cable produces *more* of
+/// these cycles there, not fewer.
+#[tokio::test]
+async fn test_replug_during_play_keeps_the_state_machine_and_write_guard() {
+    let now = Instant::now();
+    let dev_info = DeviceInfo {
+        device_id: "OSUPAD-HOTPLUG".to_string(),
+        board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+        firmware_version: "1.0.0".to_string(),
+        protocol_version: 1,
+    };
+    let mut controller = RuntimeController::new(
+        DeviceConfig::default(),
+        Some(dev_info.clone()),
+        CounterState::default(),
+        HashMap::new(),
+        None,
+        vec![dev_info.device_id.clone()],
+        now,
+    );
+
+    controller.on_event(RuntimeEvent::DeviceConnected(dev_info.clone()), now);
+    let actions = controller.on_event(
+        RuntimeEvent::TosuTelemetry {
+            is_playing: true,
+            live_time_ms: 1000.0,
+            title: "Hotplug Map".to_string(),
+            values: Vec::new(),
+        },
+        now,
+    );
+    assert_eq!(controller.state.mode, RuntimeMode::Playing);
+    assert!(actions.contains(&RuntimeAction::SetStorageWritesAllowed(false)));
+
+    // Three unplug/replug cycles inside the same map
+    for cycle in 0..3 {
+        let actions = controller.on_event(RuntimeEvent::DeviceDisconnected, now);
+        assert!(!controller.state.device_connected, "cycle {cycle}");
+        assert_eq!(
+            controller.state.mode,
+            RuntimeMode::Playing,
+            "an unplug must not move the mode (cycle {cycle})"
+        );
+        assert!(
+            !actions.contains(&RuntimeAction::SetStorageWritesAllowed(true)),
+            "an unplug must not reopen the write guard mid-map (cycle {cycle})"
+        );
+
+        let actions = controller.on_event(RuntimeEvent::DeviceConnected(dev_info.clone()), now);
+        assert!(controller.state.device_connected, "cycle {cycle}");
+        assert_eq!(
+            controller.state.mode,
+            RuntimeMode::Playing,
+            "a replug must not move the mode (cycle {cycle})"
+        );
+        assert!(
+            !actions.contains(&RuntimeAction::SetStorageWritesAllowed(true)),
+            "a replug must not reopen the write guard mid-map (cycle {cycle})"
+        );
+        assert!(
+            !actions.contains(&RuntimeAction::TriggerSync),
+            "a replug must not sync mid-map (cycle {cycle})"
+        );
+        // The same pad coming back is not a replacement
+        assert!(
+            controller.state.pending_replacement.is_none(),
+            "cycle {cycle}"
+        );
+    }
+
+    // The map ends normally afterwards: cooldown, then sync, then idle
+    let actions = controller.on_event(
+        RuntimeEvent::TosuTelemetry {
+            is_playing: false,
+            live_time_ms: 0.0,
+            title: String::new(),
+            values: Vec::new(),
+        },
+        now,
+    );
+    assert_eq!(controller.state.mode, RuntimeMode::Cooldown);
+    assert!(!actions.contains(&RuntimeAction::SetStorageWritesAllowed(true)));
+}
