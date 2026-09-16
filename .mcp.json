@@ -23,6 +23,17 @@
         "mcp-remote",
         "https://components.espressif.com/mcp"
       ]
+    },
+    "kicad": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        ".tools/KiCAD-MCP-Server/dist/index.js"
+      ],
+      "env": {
+        "LOG_LEVEL": "info",
+        "KICAD_AUTO_LAUNCH": "false"
+      }
     }
   }
 }

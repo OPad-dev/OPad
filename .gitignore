@@ -1,6 +1,7 @@
 # Locally built tooling
 .tools/bin/
 .tools/src/
+.tools/KiCAD-MCP-Server/
 
 # Rust build artifacts
 target/
@@ -28,3 +29,10 @@ firmware/test/host/test_*
 
 # Release distribution directory
 dist/
+
+# KiCad local state and backups
+*.kicad_prl
+*-backups/
+fp-info-cache
+\#auto_saved_files\#
+~*.lck
