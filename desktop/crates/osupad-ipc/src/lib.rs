@@ -134,6 +134,40 @@ pub enum IpcRequest {
     InstallUpdate {
         component: UpdateComponent,
     },
+    /// What a firmware update would do, and everything currently stopping it
+    /// (§U-3b). Reads state and writes nothing, so it is safe to poll.
+    GetFirmwareUpdate,
+    /// Flash the pad (§U-3b).
+    ///
+    /// Deliberately not `InstallUpdate { Firmware }`: this is the one
+    /// operation that can stop the pad being a keyboard, so it carries its own
+    /// consent flag, is unreachable from any updater setting, and is refused
+    /// outright with `confirm: false`. The daemon syncs the counters to this PC
+    /// before it writes anything.
+    InstallFirmwareUpdate {
+        #[serde(default)]
+        confirm: bool,
+    },
+}
+
+/// The firmware update offer, and what is in the way (§U-3b)
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FirmwareOffer {
+    /// What the pad reports. `None` means no pad, or firmware too old to say.
+    pub installed: Option<String>,
+    /// `None` when there is nothing newer, or no verified manifest yet.
+    pub available: Option<String>,
+    pub notes: Option<String>,
+    /// Which OTA slot the pad is running from (§U-3a)
+    pub running_partition: Option<String>,
+    /// Empty when the flash would start as soon as someone consents. Each
+    /// entry is a whole sentence, ready to show.
+    pub blockers: Vec<String>,
+    /// The exact wording a person has to agree to. `None` when there is
+    /// nothing to offer.
+    pub consent_text: Option<String>,
+    /// Roughly how long the pad stops being a keyboard
+    pub outage_seconds: u32,
 }
 
 /// The three independently-updatable things (§U). The firmware is listed here
@@ -244,6 +278,16 @@ pub enum IpcResponse {
     },
     FlashFinished {
         firmware_version: String,
+        protocol_version: u32,
+        compatible: bool,
+    },
+    FirmwareUpdateOffer(FirmwareOffer),
+    /// The pad came back, and this is what it came back as (§U-3b)
+    FirmwareUpdateFinished {
+        from: String,
+        to: String,
+        firmware_version: String,
+        running_partition: Option<String>,
         protocol_version: u32,
         compatible: bool,
     },

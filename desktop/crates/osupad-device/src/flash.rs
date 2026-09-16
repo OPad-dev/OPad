@@ -148,7 +148,7 @@ pub async fn enter_bootloader(app_port: Option<&str>) -> Result<String, FlashErr
 pub fn write_images(
     images: &[(u32, PathBuf)],
     boot_port: &str,
-    progress: &dyn Fn(&str),
+    progress: &(dyn Fn(&str) + Sync),
 ) -> Result<(), FlashError> {
     for (offset, path) in images {
         progress(&format!(
@@ -188,7 +188,7 @@ pub fn write_images(
 pub async fn flash(
     images: &[(u32, PathBuf)],
     app_port: Option<&str>,
-    progress: &dyn Fn(&str),
+    progress: &(dyn Fn(&str) + Sync),
 ) -> Result<(), FlashError> {
     let boot_port = enter_bootloader(app_port).await?;
     write_images(images, &boot_port, progress)?;

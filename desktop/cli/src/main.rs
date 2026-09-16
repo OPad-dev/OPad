@@ -65,6 +65,15 @@ enum Commands {
         #[arg(long, help = "Explicit serial port (default: auto-detect)")]
         port: Option<String>,
     },
+    /// Update the pad's firmware from the signed release manifest (§U-3b)
+    FirmwareUpdate {
+        #[arg(
+            long,
+            help = "Consent without the interactive prompt. The firmware is still only flashed \
+                    because you said so."
+        )]
+        yes: bool,
+    },
     /// Show key-press-to-HID latency measured on the device
     Latency {
         #[arg(
@@ -508,6 +517,97 @@ async fn main() -> Result<()> {
             let _ = finish_flash(stream.as_mut()).await;
             let boot_port = result?;
             println!("✓ Device is in ROM download mode on {}", boot_port);
+        }
+
+        Commands::FirmwareUpdate { yes } => {
+            let offer =
+                match send_request(daemon(&mut stream)?, &IpcRequest::GetFirmwareUpdate).await? {
+                    IpcResponse::FirmwareUpdateOffer(o) => o,
+                    IpcResponse::Error(e) => bail!("{}", e),
+                    other => bail!("Unexpected response from daemon: {:?}", other),
+                };
+
+            println!("=== osu!pad Firmware ===");
+            println!(
+                "Installed:        {}",
+                offer.installed.as_deref().unwrap_or("unknown (no pad?)")
+            );
+            println!(
+                "Running Slot:     {}",
+                offer
+                    .running_partition
+                    .as_deref()
+                    .unwrap_or("unknown (firmware predates the OTA layout)")
+            );
+
+            for blocker in &offer.blockers {
+                println!("  ⚠ {}", blocker);
+            }
+
+            let Some(available) = offer.available.as_deref() else {
+                println!("Available:        nothing newer");
+                return Ok(());
+            };
+            println!("Available:        {}", available);
+            if let Some(notes) = &offer.notes {
+                println!("Notes:            {}", notes);
+            }
+            if !offer.blockers.is_empty() {
+                bail!("The pad cannot be flashed right now; see the warnings above.");
+            }
+
+            // §U-3b: explicit consent every time. --yes is the person saying so
+            // in a script; it is not a way of skipping the decision.
+            if let Some(text) = &offer.consent_text {
+                println!();
+                println!("{}", text);
+            }
+            if !yes {
+                use std::io::IsTerminal;
+                if !std::io::stdin().is_terminal() {
+                    bail!("A firmware update needs confirmation. Re-run with --yes.");
+                }
+                print!("\nFlash the pad now? [y/N]: ");
+                std::io::stdout().flush()?;
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input)?;
+                let answer = input.trim().to_lowercase();
+                if answer != "y" && answer != "yes" {
+                    println!("Cancelled. Nothing was written to the pad.");
+                    return Ok(());
+                }
+            }
+
+            println!("Flashing. Do not unplug the pad.");
+            match send_request(
+                daemon(&mut stream)?,
+                &IpcRequest::InstallFirmwareUpdate { confirm: true },
+            )
+            .await?
+            {
+                IpcResponse::FirmwareUpdateFinished {
+                    from,
+                    to,
+                    running_partition,
+                    protocol_version,
+                    compatible,
+                    ..
+                } => {
+                    println!("✓ Firmware updated from {} to {}", from, to);
+                    println!(
+                        "  Running Slot:     {}",
+                        running_partition.as_deref().unwrap_or("unknown")
+                    );
+                    if !compatible {
+                        println!("  ⚠ WARNING: the pad reports protocol version {} which this host does not speak!", protocol_version);
+                    }
+                }
+                IpcResponse::OperationRejected { reason } => {
+                    bail!("Rejected: {}", reason);
+                }
+                IpcResponse::Error(e) => bail!("{}", e),
+                other => bail!("Unexpected response from daemon: {:?}", other),
+            }
         }
 
         Commands::Latency { reset } => {

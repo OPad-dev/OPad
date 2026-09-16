@@ -948,6 +948,49 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
         }
 
+        IpcRequest::GetFirmwareUpdate => {
+            let storage_available = storage.lock().unwrap().is_some();
+            IpcResponse::FirmwareUpdateOffer(crate::firmware_update::offer(
+                updates.and_then(|u| u.manifest()).as_ref(),
+                state,
+                storage_available,
+            ))
+        }
+
+        IpcRequest::InstallFirmwareUpdate { confirm } => {
+            let manifest = updates.and_then(|u| u.manifest());
+            match crate::firmware_update::install(
+                manifest.as_ref(),
+                confirm,
+                state,
+                storage,
+                device,
+                pending_ops,
+            )
+            .await
+            {
+                Ok(crate::firmware_update::FirmwareUpdateOutcome::Installed { from, to, info }) => {
+                    IpcResponse::FirmwareUpdateFinished {
+                        from,
+                        to,
+                        firmware_version: info.firmware_version.clone(),
+                        running_partition: info.running_partition.clone(),
+                        protocol_version: info.protocol_version,
+                        compatible: info.protocol_version == 1,
+                    }
+                }
+                Ok(crate::firmware_update::FirmwareUpdateOutcome::Refused { reasons }) => {
+                    IpcResponse::OperationRejected {
+                        reason: reasons.join(" "),
+                    }
+                }
+                // Everything that reaches here has either written nothing or
+                // says plainly that it wrote something and the pad did not come
+                // back. Neither is ever reported as a success.
+                Err(e) => IpcResponse::Error(e.to_string()),
+            }
+        }
+
         IpcRequest::PrepareFlash => {
             if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
                 return IpcResponse::OperationRejected {

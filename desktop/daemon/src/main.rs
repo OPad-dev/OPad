@@ -13,6 +13,7 @@ use osupad_model::{CounterState, DeviceConfig, LogSource, RuntimeMode};
 use osupad_storage::Storage;
 use osupad_tosu::{spawn_tosu_supervisor, TosuManager};
 
+pub mod firmware_update;
 pub mod identity;
 pub mod ipc_handlers;
 pub mod log_hub;
