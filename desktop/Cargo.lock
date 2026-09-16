@@ -3406,7 +3406,7 @@ dependencies = [
 
 [[package]]
 name = "osupad-daemon"
-version = "1.0.0"
+version = "1.0.0-rc"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3429,7 +3429,7 @@ dependencies = [
 
 [[package]]
 name = "osupad-device"
-version = "1.0.0"
+version = "1.0.0-rc"
 dependencies = [
  "bytes",
  "chrono",
@@ -3444,7 +3444,7 @@ dependencies = [
 
 [[package]]
 name = "osupad-gui"
-version = "1.0.0"
+version = "1.0.0-rc"
 dependencies = [
  "chrono",
  "futures-util",
@@ -3465,7 +3465,7 @@ dependencies = [
 
 [[package]]
 name = "osupad-ipc"
-version = "1.0.0"
+version = "1.0.0-rc"
 dependencies = [
  "byteorder",
  "bytes",
@@ -3482,7 +3482,7 @@ dependencies = [
 
 [[package]]
 name = "osupad-layout"
-version = "1.0.0"
+version = "1.0.0-rc"
 dependencies = [
  "osupad-model",
  "serde",
@@ -3492,7 +3492,7 @@ dependencies = [
 
 [[package]]
 name = "osupad-model"
-version = "1.0.0"
+version = "1.0.0-rc"
 dependencies = [
  "chrono",
  "dirs",
@@ -3503,7 +3503,7 @@ dependencies = [
 
 [[package]]
 name = "osupad-protocol"
-version = "1.0.0"
+version = "1.0.0-rc"
 dependencies = [
  "byteorder",
  "bytes",
@@ -3515,7 +3515,7 @@ dependencies = [
 
 [[package]]
 name = "osupad-storage"
-version = "1.0.0"
+version = "1.0.0-rc"
 dependencies = [
  "chrono",
  "osupad-model",
@@ -3527,7 +3527,7 @@ dependencies = [
 
 [[package]]
 name = "osupad-tosu"
-version = "1.0.0"
+version = "1.0.0-rc"
 dependencies = [
  "dirs",
  "futures-util",
@@ -3542,7 +3542,7 @@ dependencies = [
 
 [[package]]
 name = "osupad-ui-preview"
-version = "1.0.0"
+version = "1.0.0-rc"
 dependencies = [
  "cc",
  "osupad-layout",
@@ -3553,7 +3553,7 @@ dependencies = [
 
 [[package]]
 name = "osupad-update"
-version = "1.0.0"
+version = "1.0.0-rc"
 dependencies = [
  "chrono",
  "futures-util",
@@ -3571,7 +3571,7 @@ dependencies = [
 
 [[package]]
 name = "osupadctl"
-version = "1.0.0"
+version = "1.0.0-rc"
 dependencies = [
  "anyhow",
  "clap",
