@@ -114,6 +114,16 @@ pub struct FlashModalState {
     pub success: Option<bool>,
 }
 
+/// The updater state the Settings page and the update banner render (§U-0.4)
+#[derive(Debug, Clone, Default)]
+pub struct UpdateView {
+    pub app: osupad_ipc::ComponentUpdate,
+    pub tosu: osupad_ipc::ComponentUpdate,
+    pub last_check: Option<String>,
+    pub last_error: Option<String>,
+    pub restart_required: bool,
+}
+
 pub struct App {
     pub page: Page,
     window: Option<window::Id>,
@@ -137,6 +147,10 @@ pub struct App {
     pub storage_error: Option<String>,
     pub latency: Option<LatencyStats>,
     pub pending_replacement: Option<String>,
+    /// A pad paired with another installation (§W3-3)
+    pub pending_takeover: Option<osupad_ipc::TakeoverPrompt>,
+    /// What each updater knows (§U-0.4)
+    pub updates: Option<UpdateView>,
     pub incompatible: Option<IncompatibleDevice>,
     pub reset_modal: Option<String>,
     pub import_modal: Option<ImportModalState>,
@@ -225,6 +239,11 @@ pub enum Message {
     CancelResetModal,
     ConfirmResetCounters,
     ResolveReplacement(bool),
+    /// (take over, keep the pad's counters rather than this PC's)
+    ResolveTakeover(bool, bool),
+    UpdateStatus(Result<IpcResponse, String>),
+    ToggleUpdater(osupad_ipc::UpdateComponent, bool),
+    InstallUpdate(osupad_ipc::UpdateComponent),
     ResetLatency,
     ActionDone(Result<IpcResponse, String>),
     DismissBanner,
@@ -261,6 +280,8 @@ impl App {
             storage_error: None,
             latency: None,
             pending_replacement: None,
+            pending_takeover: None,
+            updates: None,
             incompatible: None,
             reset_modal: None,
             import_modal: None,
@@ -329,6 +350,10 @@ impl App {
         let mut tasks = vec![
             Task::perform(ipc::request(IpcRequest::GetStatus), Message::Status),
             Task::perform(ipc::request(IpcRequest::GetUiValues), Message::UiValues),
+            Task::perform(
+                ipc::request(IpcRequest::GetUpdateStatus),
+                Message::UpdateStatus,
+            ),
         ];
         if self.page == Page::Monitor && self.window.is_some() {
             let since_seq = if self.latest_log_seq > 0 {
@@ -410,9 +435,7 @@ impl App {
                         latency,
                         pending_replacement,
                         incompatible,
-                        // §W3-3: B still has to build the takeover prompt; the
-                        // daemon already blocks sync while this is set.
-                        pending_takeover: _,
+                        pending_takeover,
                     }) => {
                         self.daemon_online = true;
                         self.mode = mode;
@@ -425,6 +448,7 @@ impl App {
                         self.last_sync_error = last_sync_error;
                         self.storage_error = storage_error;
                         self.pending_replacement = pending_replacement;
+                        self.pending_takeover = pending_takeover.map(|t| *t);
                         self.incompatible = incompatible;
                         self.tosu_connected = tosu_connected;
                         self.latency = latency;
@@ -821,6 +845,63 @@ impl App {
                     Message::ActionDone,
                 );
             }
+            Message::ResolveTakeover(take_over, keep_device_counters) => {
+                self.banner = Some(if !take_over {
+                    "Leaving the pad paired with its other installation...".into()
+                } else if keep_device_counters {
+                    "Taking over the pad, keeping its counters...".into()
+                } else {
+                    "Taking over the pad, using this PC's counters...".into()
+                });
+                return Task::perform(
+                    ipc::request(IpcRequest::ResolveTakeover {
+                        take_over,
+                        keep_device_counters,
+                    }),
+                    Message::ActionDone,
+                );
+            }
+            Message::UpdateStatus(res) => {
+                // A daemon too old to answer simply leaves the panel empty;
+                // that is not worth a banner.
+                if let Ok(IpcResponse::UpdateStatus {
+                    app,
+                    tosu,
+                    last_check,
+                    last_error,
+                    restart_required,
+                }) = res
+                {
+                    self.updates = Some(UpdateView {
+                        app,
+                        tosu,
+                        last_check,
+                        last_error,
+                        restart_required,
+                    });
+                }
+            }
+            Message::ToggleUpdater(component, enabled) => {
+                // Reflect it now; the next poll confirms what the daemon saved
+                if let Some(u) = &mut self.updates {
+                    match component {
+                        osupad_ipc::UpdateComponent::App => u.app.enabled = enabled,
+                        osupad_ipc::UpdateComponent::Tosu => u.tosu.enabled = enabled,
+                        osupad_ipc::UpdateComponent::Firmware => {}
+                    }
+                }
+                return Task::perform(
+                    ipc::request(IpcRequest::SetUpdateEnabled { component, enabled }),
+                    Message::ActionDone,
+                );
+            }
+            Message::InstallUpdate(component) => {
+                self.banner = Some("Installing the update...".into());
+                return Task::perform(
+                    ipc::request(IpcRequest::InstallUpdate { component }),
+                    Message::ActionDone,
+                );
+            }
             Message::ResetLatency => {
                 return Task::perform(
                     ipc::request(IpcRequest::ResetLatencyStats),
@@ -1108,6 +1189,71 @@ impl App {
                             .on_press(Message::ResolveReplacement(false)),
                     ]
                     .align_y(Alignment::Center),
+                )
+                .padding([8, 14])
+                .style(theme::banner),
+            );
+        }
+        if self.updates.as_ref().is_some_and(|u| u.restart_required) {
+            // §U-2: the files on disk are the new version but these processes
+            // are still the old ones. The daemon's handshake already refuses a
+            // mismatched client, so say plainly what is needed rather than
+            // letting the app look broken.
+            main = main.push(
+                container(
+                    row![text(
+                        "osu!pad was updated. Restart the app and the daemon to \
+                             finish — the pad keeps working as a keyboard meanwhile."
+                    )
+                    .size(14),]
+                    .align_y(Alignment::Center),
+                )
+                .padding([8, 14])
+                .style(theme::banner),
+            );
+        }
+        if let Some(t) = &self.pending_takeover {
+            // §W3-3: friction-light on purpose. The only other way out of this
+            // is a full reflash, so the wording points at that too rather than
+            // leaving anyone stuck.
+            main = main.push(
+                container(
+                    column![
+                        text("This osu!pad is paired with another installation.").size(14),
+                        text(format!(
+                            "Its counters: {} / {}   ·   this PC's: {} / {}",
+                            pages::grouped(t.device_key1),
+                            pages::grouped(t.device_key2),
+                            pages::grouped(t.pc_key1),
+                            pages::grouped(t.pc_key2),
+                        ))
+                        .size(12)
+                        .color(theme::MUTED),
+                        Space::new().height(6),
+                        row![
+                            button(text("Take over, keep the pad's counters").size(12))
+                                .style(theme::primary)
+                                .on_press(Message::ResolveTakeover(true, true)),
+                            Space::new().width(8),
+                            button(text("Take over, use this PC's counters").size(12))
+                                .style(theme::secondary)
+                                .on_press(Message::ResolveTakeover(true, false)),
+                            Space::new().width(8),
+                            button(text("Leave it alone").size(12))
+                                .style(theme::secondary)
+                                .on_press(Message::ResolveTakeover(false, false)),
+                        ]
+                        .align_y(Alignment::Center),
+                        Space::new().height(4),
+                        text(
+                            "Leaving it alone keeps the pad working as a keyboard; \
+                             osu!pad just will not configure or count for it. \
+                             To unpair a pad completely, see docs/recovery.md."
+                        )
+                        .size(11)
+                        .color(theme::MUTED),
+                    ]
+                    .spacing(2),
                 )
                 .padding([8, 14])
                 .style(theme::banner),

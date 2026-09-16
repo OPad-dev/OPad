@@ -10,7 +10,7 @@ use iced::{Alignment, Color, Element, Length};
 use osupad_model::ui_source::{self as src, SourceValue};
 use osupad_model::{key_pin, KeyPin, KEY_PINS};
 
-fn grouped(n: u64) -> String {
+pub(crate) fn grouped(n: u64) -> String {
     let digits = n.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
     for (i, c) in digits.chars().enumerate() {
@@ -350,6 +350,7 @@ pub fn settings(app: &App) -> Element<'_, Message> {
         heading("Settings"),
         row![keys, display].spacing(14),
         advanced,
+        updates(app),
         row![button(text("Save settings").size(15))
             .padding([10, 22])
             .style(theme::primary)
@@ -357,6 +358,80 @@ pub fn settings(app: &App) -> Element<'_, Message> {
     ]
     .spacing(14)
     .into()
+}
+
+/// §U-0.4: every updater is switchable on its own, and shows what is
+/// installed, what is available and when it last managed to check.
+fn updates(app: &App) -> Element<'_, Message> {
+    use osupad_ipc::UpdateComponent;
+
+    let Some(u) = &app.updates else {
+        return card(
+            column![
+                caption("UPDATES"),
+                muted("Waiting for the daemon.").size(12),
+            ]
+            .spacing(8),
+        )
+        .into();
+    };
+
+    let line = |name: &'static str, c: &osupad_ipc::ComponentUpdate, component: UpdateComponent| {
+        let installed = c.installed.clone().unwrap_or_else(|| "unknown".into());
+        let state = match (&c.available, c.notify_only) {
+            // §U-2a: a package manager owns these files, so we report only
+            (Some(v), true) => format!("{} available — update through your package manager", v),
+            (Some(v), false) => format!("{} available", v),
+            (None, _) => "up to date".to_string(),
+        };
+        let mut r = row![
+            column![
+                text(format!("{} {}", name, installed)).size(13),
+                muted(state).size(11),
+            ]
+            .spacing(2),
+            Space::new().width(Length::Fill),
+        ]
+        .align_y(Alignment::Center);
+
+        // §U-2: never automatic. A person presses this.
+        if c.ready_to_install {
+            r = r.push(
+                button(text("Install now").size(12))
+                    .style(theme::primary)
+                    .on_press(Message::InstallUpdate(component)),
+            );
+            r = r.push(Space::new().width(8));
+        }
+        r.push(
+            checkbox(c.enabled)
+                .label("Check automatically")
+                .on_toggle(move |v| Message::ToggleUpdater(component, v)),
+        )
+    };
+
+    let checked = u
+        .last_check
+        .as_deref()
+        .map(|t| format!("Last checked {}", t))
+        .unwrap_or_else(|| "Not checked yet".to_string());
+
+    let mut content = column![
+        caption("UPDATES"),
+        line("osu!pad", &u.app, UpdateComponent::App),
+        line("tosu", &u.tosu, UpdateComponent::Tosu),
+        muted(checked).size(11),
+    ]
+    .spacing(10);
+
+    if let Some(e) = &u.last_error {
+        content = content.push(muted(format!("Last check failed: {}", e)).size(11));
+    }
+    // §U-3: firmware is never updated by an updater setting, so it is not a
+    // row here. Saying so is better than leaving someone hunting for it.
+    content = content.push(muted("Firmware updates are separate and always ask first.").size(11));
+
+    card(content).into()
 }
 
 // ---- device ---------------------------------------------------------------------------------
