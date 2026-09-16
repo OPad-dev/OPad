@@ -351,7 +351,7 @@ pub fn settings(app: &App) -> Element<'_, Message> {
         row![keys, display].spacing(14),
         advanced,
         tosu_settings(app),
-        updates(app),
+        row![updates(app), firmware_updates(app)].spacing(14),
         about_section(),
         row![button(text("Save settings").size(15))
             .padding([10, 22])
@@ -370,11 +370,12 @@ fn updates(app: &App) -> Element<'_, Message> {
     let Some(u) = &app.updates else {
         return card(
             column![
-                caption("UPDATES"),
+                caption("SOFTWARE UPDATES"),
                 muted("Waiting for the daemon.").size(12),
             ]
             .spacing(8),
         )
+        .width(Length::Fill)
         .into();
     };
 
@@ -419,7 +420,7 @@ fn updates(app: &App) -> Element<'_, Message> {
         .unwrap_or_else(|| "Not checked yet".to_string());
 
     let mut content = column![
-        caption("UPDATES"),
+        caption("SOFTWARE UPDATES"),
         line("osu!pad", &u.app, UpdateComponent::App),
         line("tosu", &u.tosu, UpdateComponent::Tosu),
         muted(checked).size(11),
@@ -429,11 +430,96 @@ fn updates(app: &App) -> Element<'_, Message> {
     if let Some(e) = &u.last_error {
         content = content.push(muted(format!("Last check failed: {}", e)).size(11));
     }
-    // §U-3: firmware is never updated by an updater setting, so it is not a
-    // row here. Saying so is better than leaving someone hunting for it.
-    content = content.push(muted("Firmware updates are separate and always ask first.").size(11));
 
-    card(content).into()
+    card(content).width(Length::Fill).into()
+}
+
+/// §U-3b: Host-driven firmware updates.
+///
+/// Visually separate from app and tosu updaters because it is not the same kind of
+/// thing: it flashes hardware over USB and temporarily stops the pad being a keyboard.
+/// Non-negotiable rules:
+/// - Explicit consent every time. Never automatic, never silent, not even opt-in.
+///   There is NO "always update firmware" switch.
+/// - Blockers are rendered verbatim as whole sentences when non-empty, and disable the button.
+fn firmware_updates(app: &App) -> Element<'_, Message> {
+    let Some(offer) = &app.firmware_offer else {
+        return card(
+            column![
+                caption("FIRMWARE UPDATE"),
+                muted("Waiting for the daemon.").size(12),
+            ]
+            .spacing(8),
+        )
+        .width(Length::Fill)
+        .into();
+    };
+
+    let installed_str = offer.installed.as_deref().unwrap_or("unknown (no pad?)");
+    let slot_str = offer
+        .running_partition
+        .as_deref()
+        .unwrap_or("unknown (predates OTA layout)");
+
+    let state_str = match &offer.available {
+        Some(v) => format!("{} available", v),
+        None => "up to date".to_string(),
+    };
+
+    let mut content = column![
+        caption("FIRMWARE UPDATE"),
+        row![
+            column![
+                text(format!("Firmware {}", installed_str)).size(13),
+                muted(format!("Running slot: {}", slot_str)).size(11),
+                muted(state_str).size(11),
+            ]
+            .spacing(2),
+            Space::new().width(Length::Fill),
+        ]
+        .align_y(Alignment::Center),
+    ]
+    .spacing(10);
+
+    if let Some(notes) = &offer.notes {
+        content = content.push(muted(format!("Release notes: {}", notes)).size(11));
+    }
+
+    if !offer.blockers.is_empty() {
+        for blocker in &offer.blockers {
+            content = content.push(text(format!("⚠ {}", blocker)).size(12).color(theme::YELLOW));
+        }
+    }
+
+    let can_update = offer.available.is_some() && offer.blockers.is_empty();
+    let mut update_btn = button(text("Update firmware").size(12)).padding([6, 14]);
+
+    if can_update {
+        update_btn = update_btn
+            .style(theme::primary)
+            .on_press(Message::PromptFirmwareConsent);
+    } else {
+        update_btn = update_btn.style(theme::secondary);
+    }
+
+    content = content.push(
+        row![
+            update_btn,
+            Space::new().width(8),
+            muted("Takes explicit consent every time").size(11),
+        ]
+        .align_y(Alignment::Center),
+    );
+
+    content = content.push(
+        muted(
+            "Firmware updates flash the app partition over USB. \
+             The pad stops being a keyboard for ~30 seconds during the update.",
+        )
+        .size(11),
+    );
+
+    card(content).width(Length::Fill).into()
 }
 
 fn tosu_settings(app: &App) -> Element<'_, Message> {
@@ -537,6 +623,17 @@ pub fn device(app: &App) -> Element<'_, Message> {
                 "Firmware",
                 info.map(|i| i.firmware_version.as_str())
                     .filter(|s| !s.is_empty())
+                    .unwrap_or("—")
+                    .to_string(),
+            ),
+            line(
+                "Running slot",
+                info.and_then(|i| i.running_partition.as_deref())
+                    .or_else(|| {
+                        app.firmware_offer
+                            .as_ref()
+                            .and_then(|o| o.running_partition.as_deref())
+                    })
                     .unwrap_or("—")
                     .to_string(),
             ),
@@ -773,9 +870,9 @@ pub fn device(app: &App) -> Element<'_, Message> {
             row![
                 button(text("Update firmware").size(14))
                     .padding([10, 18])
-                    .style(theme::primary)
-                    .on_press(Message::PromptUpdateFirmware),
-                muted("Select a .bin file and flash the pad automatically via osupadctl.").size(13),
+                    .style(theme::secondary)
+                    .on_press(Message::Navigate(crate::Page::Settings)),
+                muted("Firmware updates are verified and installed on the Settings page.").size(13),
             ]
             .spacing(14)
             .align_y(Alignment::Center),
