@@ -13,6 +13,7 @@ use osupad_model::{CounterState, DeviceConfig, LogSource, RuntimeMode};
 use osupad_storage::Storage;
 use osupad_tosu::{spawn_tosu_supervisor, TosuManager};
 
+pub mod identity;
 pub mod ipc_handlers;
 pub mod log_hub;
 pub mod runtime;
@@ -110,6 +111,13 @@ async fn main() -> Result<()> {
             )
         }
     };
+
+    // This install's identity (§W3-1), needed before the first pad connects
+    // so an unclaimed pad can be claimed silently on that first HelloAck.
+    let install_id = identity::load_or_create(&storage);
+    if install_id.is_none() {
+        warn!("Running with no install identity; pad ownership will not be recorded (§W3-1)");
+    }
 
     let start_now = Instant::now();
     let mut controller = RuntimeController::new(
