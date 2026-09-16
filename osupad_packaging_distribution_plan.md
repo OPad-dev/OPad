@@ -329,32 +329,6 @@ Per the owner's decision this is the **only** unbind mechanism: no GUI unpair bu
 
 ---
 
-## 6. W4: Verification and release
-
-### W4-1. CI
-
-Add `x86_64-pc-windows-msvc` to the CI matrix: `cargo build`, `cargo test`, `cargo clippy -D warnings`, `cargo fmt --check`. **`cargo check` alone is not sufficient** — the `ksni`/`tray-icon` split and the IPC transport aliases fail at link time, not check time.
-
-### W4-2. Windows hardware checklist
-
-Extend `docs/testing-checklist.md` with a Windows column. Re-run at minimum: HW-01..HW-05, COM-01, COM-02, STR-01, STR-02. **HW-05 (HID-first on display wake) and STR-02 (zero storage writes) are the invariant-critical ones** and must be re-verified on Windows rather than assumed from the Linux run.
-
-Add a new section for W2-3's install/uninstall filesystem+registry diff.
-
-### W4-3. Latency on Windows
-
-Re-run the `docs/latency-testing.md` stages on Windows and add rows to the results table. Note that the Linux v1.0 table is **still empty** (P3-1 is the last open v1 item) — that should be filled first, so there is a baseline to compare Windows against. `scripts/bench_latency.py` uses evdev and is Linux-only; the Windows host-side equivalent needs a raw-input or ETW-based approach, or the firmware-side percentiles alone for stages A-C.
-
-### W4-4. Docs
-
-- Rewrite `docs/windows-portability.md` from aspirational architecture notes into the actual as-built description.
-- README: Windows install instructions, SmartScreen note if unsigned, and the reflash/unbind section.
-- `docs/architecture.md`: the IPC transport abstraction and the pairing model.
-- `docs/protocol.md`: `owner_id` in `HelloAck`, the `ClaimOwnership` command.
-- Record the pairing model as an amendment appendix in `osupad_technical_spec_v1.md`, and mark **A3 superseded** in `osupad_remaining_work_v1.md`.
-
----
-
 ## 6. L: Linux distribution packages
 
 The current `packaging/linux/install.sh` is a per-user script (`~/.local/bin`). That stays as the from-source path, but it is not a distributable package.
@@ -463,7 +437,33 @@ Add a **Third-party software** section to the README and an About entry in the G
 
 ---
 
-## 8. Order of work
+## 8. W4: Verification and release
+
+### W4-1. CI
+
+Add `x86_64-pc-windows-msvc` to the CI matrix: `cargo build`, `cargo test`, `cargo clippy -D warnings`, `cargo fmt --check`. **`cargo check` alone is not sufficient** — the `ksni`/`tray-icon` split and the IPC transport aliases fail at link time, not check time.
+
+### W4-2. Windows hardware checklist
+
+Extend `docs/testing-checklist.md` with a Windows column. Re-run at minimum: HW-01..HW-05, COM-01, COM-02, STR-01, STR-02. **HW-05 (HID-first on display wake) and STR-02 (zero storage writes) are the invariant-critical ones** and must be re-verified on Windows rather than assumed from the Linux run.
+
+Add a new section for W2-3's install/uninstall filesystem+registry diff.
+
+### W4-3. Latency on Windows
+
+Re-run the `docs/latency-testing.md` stages on Windows and add rows to the results table. Note that the Linux v1.0 table is **still empty** (P3-1 is the last open v1 item) — that should be filled first, so there is a baseline to compare Windows against. `scripts/bench_latency.py` uses evdev and is Linux-only; the Windows host-side equivalent needs a raw-input or ETW-based approach, or the firmware-side percentiles alone for stages A-C.
+
+### W4-4. Docs
+
+- Rewrite `docs/windows-portability.md` from aspirational architecture notes into the actual as-built description.
+- README: Windows install instructions, SmartScreen note if unsigned, and the reflash/unbind section.
+- `docs/architecture.md`: the IPC transport abstraction and the pairing model.
+- `docs/protocol.md`: `owner_id` in `HelloAck`, the `ClaimOwnership` command.
+- Record the pairing model as an amendment appendix in `osupad_technical_spec_v1.md`, and mark **A3 superseded** in `osupad_remaining_work_v1.md`.
+
+---
+
+## 9. Order of work
 
 Three tracks that only converge at W4. They can be worked in parallel.
 
@@ -497,7 +497,7 @@ Then **W0-1**, which gates every remaining Windows task.
 
 ---
 
-## 9. Risks
+## 10. Risks
 
 | Risk | Mitigation |
 |---|---|
@@ -514,7 +514,7 @@ Then **W0-1**, which gates every remaining Windows task.
 
 ---
 
-## 10. Out of scope
+## 11. Out of scope
 
 - macOS.
 - MSIX packaging and Store-style "plug in the pad → Windows offers the app". That needs a Store-signed MSIX; the Inno decision rules it out. The daemon-at-login plus hotplug detection (W1-2) delivers nearly the same feel.
