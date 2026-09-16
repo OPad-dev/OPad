@@ -40,7 +40,11 @@ TOSU_BUILD_DIR ?= build/tosu
 TARGET_DIR ?= desktop/target/release
 BINS := osupad-daemon osupad-gui osupadctl
 
-.PHONY: all tosu firmware install install-user uninstall uninstall-user check clean
+.PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage
+
+# L-4: Build AppDir / AppImage
+appimage: all
+	packaging/linux/appimage/build_appimage.sh
 
 # B-2: Default target - release-build desktop binaries
 all:
