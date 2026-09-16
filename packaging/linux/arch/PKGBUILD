@@ -1,0 +1,54 @@
+# Maintainer: GFerreiroS <info@gferreiro.com>
+pkgname=osupad
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Low-latency ESP32-S3 keypad manager, telemetry HUD, and tray applet for osu!"
+arch=('x86_64')
+url="https://github.com/GFerreiroS/osupad"
+license=('MIT' 'LGPL-3.0-only')
+
+# Runtime dependencies:
+# - iced/wgpu needs Vulkan loader and client libraries (Wayland + X11)
+# - ksni needs dbus
+# - tosu wrapper needs nodejs
+# Node version risk: tosu upstream specifies Node 24.x engine. If current arch
+# nodejs introduces incompatibilities, depend on nodejs-lts-iron (or latest active LTS).
+depends=(
+    'vulkan-loader'
+    'wayland'
+    'libx11'
+    'libxcursor'
+    'libxkbcommon'
+    'libxi'
+    'libxrandr'
+    'dbus'
+    'nodejs'
+)
+optdepends=(
+    'vulkan-driver: Hardware Vulkan acceleration for iced/wgpu GUI renderer'
+)
+makedepends=(
+    'cargo'
+    'git'
+    'pnpm'
+    'nodejs'
+)
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "$srcdir/$pkgname-$pkgver"
+    make all
+    make tosu
+}
+
+check() {
+    cd "$srcdir/$pkgname-$pkgver"
+    make check
+}
+
+package() {
+    cd "$srcdir/$pkgname-$pkgver"
+    make DESTDIR="$pkgdir" PREFIX=/usr INSTALL_ORIGIN=aur install
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

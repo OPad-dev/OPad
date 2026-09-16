@@ -1,0 +1,55 @@
+# Maintainer: GFerreiroS <info@gferreiro.com>
+pkgname=osupad-git
+pkgver=1.0.0.r0.g6456f3d
+pkgrel=1
+pkgdesc="Low-latency ESP32-S3 keypad manager, telemetry HUD, and tray applet for osu! (git master)"
+arch=('x86_64')
+url="https://github.com/GFerreiroS/osupad"
+license=('MIT' 'LGPL-3.0-only')
+provides=('osupad')
+conflicts=('osupad')
+
+depends=(
+    'vulkan-loader'
+    'wayland'
+    'libx11'
+    'libxcursor'
+    'libxkbcommon'
+    'libxi'
+    'libxrandr'
+    'dbus'
+    'nodejs'
+)
+optdepends=(
+    'vulkan-driver: Hardware Vulkan acceleration for iced/wgpu GUI renderer'
+)
+makedepends=(
+    'cargo'
+    'git'
+    'pnpm'
+    'nodejs'
+)
+source=("$pkgname::git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+    cd "$pkgname"
+    git describe --long --tags --always 2>/dev/null | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g' || echo "1.0.0"
+}
+
+build() {
+    cd "$pkgname"
+    make all
+    make tosu
+}
+
+check() {
+    cd "$pkgname"
+    make check
+}
+
+package() {
+    cd "$pkgname"
+    make DESTDIR="$pkgdir" PREFIX=/usr INSTALL_ORIGIN=aur install
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
