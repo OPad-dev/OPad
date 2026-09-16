@@ -2,6 +2,8 @@ osupad.Hello.client_version max_size:32
 osupad.HelloAck.firmware_version max_size:32
 osupad.HelloAck.board_profile max_size:32
 osupad.HelloAck.device_id max_size:32
+osupad.HelloAck.owner_id max_size:16
+osupad.ClaimOwnership.owner_id max_size:16
 osupad.ConfigAck.message max_size:64
 osupad.GameplayDisplayState.title max_size:64
 osupad.GameplayDisplayState.artist max_size:64
