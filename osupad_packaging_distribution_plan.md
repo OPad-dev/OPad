@@ -885,6 +885,7 @@ Keep it to one line per task. This is how the other agent learns what landed.
 | 2026-09-17 | B | W0-5 | `fc7cf7f` | Cross-platform tray: ksni scoped to Linux, tray-icon on Windows with dedicated thread and Win32 pump, shared TrayViewModel and unified status formatting via `pages::grouped`. |
 | 2026-09-17 | B | W0-6 | `a485a5e` | Audit and complete `cfg(target_os = "linux")` sites in main.rs: autostart toggle, login autostart registration, and platform fallbacks without silent no-ops. |
 | 2026-09-17 | B | W2-1, W2-3 | `f834de7` | Inno Setup installer (`packaging/windows/installer.iss`): per-user install, install-origin = "windows", Run autostart keys, and strong uninstall with confirmation prompt for `%APPDATA%\osupad`. |
+| 2026-09-17 | B | T-2, T-3 | `f348018` | Bundle tosu VERSION, NOTICE, and LICENSE alongside tosu binary across Makefile, PKGBUILD, and Inno Setup package paths. |
 
 ### A.8. Open owner decisions
 
