@@ -615,23 +615,32 @@ fn resolve_flash_set(path: &Path, full: bool) -> Result<Vec<(u32, PathBuf)>> {
     // Offsets come from firmware/partitions.csv and the ESP-IDF defaults; a
     // full flash that skips the partition table would leave the pad reading the
     // app at the old single-app offset (§U-3a).
-    let bootloader = build_dir.join("bootloader").join("bootloader.bin");
-    let table = build_dir
-        .join("partition_table")
-        .join("partition-table.bin");
-    let ota_data = build_dir.join("ota_data_initial.bin");
-    for required in [&bootloader, &table] {
-        if !required.exists() {
-            bail!(
-                "--full needs a complete ESP-IDF build directory; {} is missing. \
-                 Build the firmware with `idf.py build` first.",
-                required.display()
-            );
-        }
-    }
+    // Two layouts have to work: an ESP-IDF build directory, and the flat set of
+    // .bin files a release tarball ships (scripts/release/build_release.sh).
+    // A recovery flash is usually done from a release, not from a build tree.
+    let bootloader = first_existing(&[
+        build_dir.join("bootloader").join("bootloader.bin"),
+        build_dir.join("bootloader.bin"),
+    ]);
+    let table = first_existing(&[
+        build_dir
+            .join("partition_table")
+            .join("partition-table.bin"),
+        build_dir.join("partition-table.bin"),
+    ]);
+    let ota_data = first_existing(&[build_dir.join("ota_data_initial.bin")]);
+
+    let (Some(bootloader), Some(table)) = (bootloader, table) else {
+        bail!(
+            "--full needs bootloader.bin and partition-table.bin next to the app image, \
+             and {} has neither an ESP-IDF build layout nor a flat one. Build the \
+             firmware with `idf.py build`, or point this at an unpacked release.",
+            build_dir.display()
+        );
+    };
 
     let mut images = vec![(0x0, bootloader), (0x8000, table)];
-    if ota_data.exists() {
+    if let Some(ota_data) = ota_data {
         // Only present on the two-slot layout. Writing it points the bootloader
         // back at ota_0, which is where the app image below is going.
         images.push((0xf000, ota_data));
@@ -792,6 +801,10 @@ async fn flash_images(images: &[(u32, PathBuf)], app_port: Option<&str>) -> Resu
 
     println!("✓ Firmware written, rebooting into application...");
     esp_rom::reset_to_app(&boot_port).context("Firmware written, but failed to reboot the device")
+}
+
+fn first_existing(candidates: &[PathBuf]) -> Option<PathBuf> {
+    candidates.iter().find(|p| p.exists()).cloned()
 }
 
 /// Wait until the port can actually be opened. On Windows the handle is
@@ -990,15 +1003,39 @@ mod tests {
     }
 
     #[test]
-    fn full_flash_without_a_build_directory_is_refused() {
-        let path = make_test_file("lonely.bin", &[0xE9; 32]);
-        let err = resolve_flash_set(&path, true).unwrap_err();
-        let _ = std::fs::remove_file(&path);
-        assert!(
-            err.to_string().contains("complete ESP-IDF build directory"),
-            "got: {}",
-            err
+    fn full_flash_accepts_the_flat_layout_a_release_ships() {
+        // dist/ from scripts/release/build_release.sh: no bootloader/ or
+        // partition_table/ subdirectories, everything side by side.
+        let dir = std::env::temp_dir().join(format!("osupadctl-flat-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for f in [
+            "bootloader.bin",
+            "partition-table.bin",
+            "ota_data_initial.bin",
+            "osupad-firmware.bin",
+        ] {
+            std::fs::write(dir.join(f), [0xE9; 32]).unwrap();
+        }
+
+        let set = resolve_flash_set(&dir, true).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(
+            set.iter().map(|(o, _)| *o).collect::<Vec<_>>(),
+            vec![0x0, 0x8000, 0xf000, 0x20000]
         );
+    }
+
+    #[test]
+    fn full_flash_without_a_build_directory_is_refused() {
+        // A lone app image in a directory of its own: no bootloader, no table.
+        let dir = std::env::temp_dir().join(format!("osupadctl-lonely-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("osupad-firmware.bin");
+        std::fs::write(&path, [0xE9; 32]).unwrap();
+
+        let err = resolve_flash_set(&path, true).unwrap_err();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(err.to_string().contains("bootloader.bin"), "got: {}", err);
     }
 
     #[test]

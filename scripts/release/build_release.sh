@@ -37,6 +37,10 @@ idf.py build
 FW_BIN="${REPO_ROOT}/firmware/build/osupad-firmware.bin"
 BOOT_BIN="${REPO_ROOT}/firmware/build/bootloader/bootloader.bin"
 PART_BIN="${REPO_ROOT}/firmware/build/partition_table/partition-table.bin"
+# Points the bootloader back at ota_0 (§U-3a). Without it a recovery flash onto
+# an erased chip leaves otadata blank, which happens to boot ota_0 anyway, but
+# only by falling back rather than by being told.
+OTA_BIN="${REPO_ROOT}/firmware/build/ota_data_initial.bin"
 
 if [ ! -f "${FW_BIN}" ]; then
     echo "ERROR: Firmware binary not found at ${FW_BIN}!" >&2
@@ -46,6 +50,7 @@ fi
 cp "${FW_BIN}" "${DIST_DIR}/osupad-firmware.bin"
 [ -f "${BOOT_BIN}" ] && cp "${BOOT_BIN}" "${DIST_DIR}/bootloader.bin"
 [ -f "${PART_BIN}" ] && cp "${PART_BIN}" "${DIST_DIR}/partition-table.bin"
+[ -f "${OTA_BIN}" ] && cp "${OTA_BIN}" "${DIST_DIR}/ota_data_initial.bin"
 echo "✓ Firmware artifacts copied to dist/"
 
 # 2. Build Desktop Host Binaries
