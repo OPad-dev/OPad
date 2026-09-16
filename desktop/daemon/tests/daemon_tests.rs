@@ -172,6 +172,7 @@ async fn test_daemon_connection_states_and_reconnect() {
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
+        running_partition: None,
     };
     let actions = controller.on_event(RuntimeEvent::DeviceConnected(dev_info.clone()), now);
     assert!(controller.state.device_connected);
@@ -358,6 +359,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
+        running_partition: None,
     };
     let initial_counters = CounterState {
         device_id: "OSUPAD-SAFE".to_string(),
@@ -576,6 +578,7 @@ async fn test_reconcile_and_replacement_scenarios() {
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
+        running_partition: None,
     };
 
     // Case A: PC generation > ESP generation -> PC wins and is sent to ESP
@@ -713,6 +716,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),
             protocol_version: 1,
+            running_partition: None,
         };
         controller.state.counters.counter_generation = 1;
         controller.state.counters.lifetime_key1 = 5;
@@ -735,6 +739,7 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
+        running_partition: None,
     };
     let initial_counters = CounterState {
         device_id: "OSUPAD-RETRY".to_string(),
@@ -803,6 +808,7 @@ async fn test_json_validation_preview_and_confirm() {
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
+        running_partition: None,
     };
     let current_counters = CounterState {
         device_id: "OSUPAD-JSON".to_string(),
@@ -1213,6 +1219,7 @@ fn pad_info(id: &str) -> DeviceInfo {
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
+        running_partition: None,
     }
 }
 
@@ -1443,6 +1450,7 @@ async fn test_replug_during_play_keeps_the_state_machine_and_write_guard() {
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
+        running_partition: None,
     };
     let mut controller = RuntimeController::new(
         DeviceConfig::default(),
@@ -1547,6 +1555,7 @@ fn pad(device_id: &str) -> DeviceInfo {
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
+        running_partition: None,
     }
 }
 

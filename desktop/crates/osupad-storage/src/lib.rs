@@ -380,6 +380,7 @@ impl Storage {
                 board_profile,
                 firmware_version: firmware_version.unwrap_or_default(),
                 protocol_version: 1,
+                running_partition: None,
             };
             let counters = CounterState {
                 device_id,
@@ -529,6 +530,7 @@ mod tests {
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),
             protocol_version: 1,
+            running_partition: None,
         };
         let counters = CounterState {
             device_id: "test-dev-01".to_string(),
@@ -612,6 +614,7 @@ mod tests {
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),
             protocol_version: 1,
+            running_partition: None,
         };
         let counters = CounterState::default();
         assert!(matches!(
@@ -634,6 +637,7 @@ mod tests {
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),
             protocol_version: 1,
+            running_partition: None,
         };
         let counters1 = CounterState {
             device_id: "dev-01".to_string(),

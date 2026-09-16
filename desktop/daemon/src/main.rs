@@ -227,7 +227,13 @@ async fn main() -> Result<()> {
             Ok(dev_event) = device_rx.recv() => {
                 match dev_event {
                     DeviceEvent::Connected(info) => {
-                        info!("ESP32 Device Connected: ID={}, Board={}", info.device_id, info.board_profile);
+                        info!(
+                            "ESP32 Device Connected: ID={}, Board={}, Firmware={}, Slot={}",
+                            info.device_id,
+                            info.board_profile,
+                            info.firmware_version,
+                            info.running_partition.as_deref().unwrap_or("unknown"),
+                        );
                         event_opt = Some(RuntimeEvent::DeviceConnected(info));
                     }
                     DeviceEvent::Ownership { owner_id } => {
@@ -487,6 +493,7 @@ mod tests {
                 board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                 firmware_version: "1.0.0".to_string(),
                 protocol_version: 1,
+                running_partition: None,
             }),
             counters: CounterState {
                 device_id: "OSUPAD-TEST".to_string(),

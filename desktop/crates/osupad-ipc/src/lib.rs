@@ -162,6 +162,11 @@ pub struct ComponentUpdate {
 }
 
 /// Daemon responses to clients
+// `Status` is far larger than the other variants and clippy would rather it
+// were boxed. It is built at most a few times a second, immediately serialised
+// to JSON and dropped, so the stack size buys nothing, while boxing it would
+// churn every `IpcResponse::Status { .. }` pattern in the daemon, GUI and CLI.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IpcResponse {
     HandshakeAck {

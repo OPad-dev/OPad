@@ -73,6 +73,11 @@ enum Commands {
     Setup,
 }
 
+/// Where the app image lives, i.e. `ota_0` in `firmware/partitions.csv`
+/// (§U-3a). It was `0x10000` under the old single-app table; a pad flashed at
+/// the old offset with the new table will not boot.
+const APP_PARTITION_OFFSET: u32 = 0x20000;
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -120,6 +125,15 @@ async fn main() -> Result<()> {
                     println!("Device ID:        {}", info.device_id);
                     println!("Board Profile:    {}", info.board_profile);
                     println!("Firmware Version: {}", info.firmware_version);
+                    // §U-3a. Old firmware does not report it at all, and that
+                    // is worth seeing: it means the pad is still on the
+                    // single-app table and needs a serial reflash.
+                    println!(
+                        "Running Slot:     {}",
+                        info.running_partition
+                            .as_deref()
+                            .unwrap_or("unknown (firmware predates the OTA layout)")
+                    );
                 }
                 println!(
                     "Key 1 (K1):       {} (Total: {} presses)",
@@ -524,8 +538,8 @@ async fn enter_bootloader(app_port: Option<&str>) -> Result<String> {
 async fn flash_firmware(firmware: &Path, app_port: Option<&str>) -> Result<()> {
     let boot_port = enter_bootloader(app_port).await?;
     println!(
-        "Writing firmware binary via espflash at 0x10000 on {}...",
-        boot_port
+        "Writing firmware binary via espflash at {:#x} on {}...",
+        APP_PARTITION_OFFSET, boot_port
     );
 
     let status = std::process::Command::new("espflash")
@@ -538,8 +552,8 @@ async fn flash_firmware(firmware: &Path, app_port: Option<&str>) -> Result<()> {
             "--after",
             "no-reset-no-stub",
             "--non-interactive",
-            "0x10000",
         ])
+        .arg(format!("{:#x}", APP_PARTITION_OFFSET))
         .arg(firmware)
         .status()
         .context("Failed to execute espflash. Ensure espflash is installed.")?;

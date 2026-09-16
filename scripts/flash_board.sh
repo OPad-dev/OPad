@@ -160,7 +160,7 @@ echo "Writing flash with esptool (watchdog_reset)..."
 if $ESPTOOL --chip esp32s3 -p "${BOOT_PORT}" -b 460800 --before=no_reset --after=watchdog_reset write_flash \
     --flash_mode dio --flash_freq 80m --flash_size 16MB \
     0x0 "${BUILD_DIR}/bootloader/bootloader.bin" \
-    0x10000 "${BUILD_DIR}/osupad-firmware.bin" \
+    0x20000 "${BUILD_DIR}/osupad-firmware.bin" \
     0x8000 "${BUILD_DIR}/partition_table/partition-table.bin"; then
     FLASH_SUCCESS=true
 fi
@@ -172,7 +172,7 @@ if [ "$FLASH_SUCCESS" = false ]; then
     if $ESPTOOL --chip esp32s3 -p "${BOOT_PORT}" -b 460800 --before=usb_reset --after=watchdog_reset write_flash \
         --flash_mode dio --flash_freq 80m --flash_size 16MB \
         0x0 "${BUILD_DIR}/bootloader/bootloader.bin" \
-        0x10000 "${BUILD_DIR}/osupad-firmware.bin" \
+        0x20000 "${BUILD_DIR}/osupad-firmware.bin" \
         0x8000 "${BUILD_DIR}/partition_table/partition-table.bin"; then
         FLASH_SUCCESS=true
     fi
@@ -184,7 +184,7 @@ fi
 if [ "$FLASH_SUCCESS" = false ]; then
     echo "Retrying with espflash..."
     sleep 0.5
-    espflash write-bin --chip esp32s3 -p "${BOOT_PORT}" --before no-reset --after no-reset-no-stub --non-interactive 0x10000 "${BUILD_DIR}/osupad-firmware.bin"
+    espflash write-bin --chip esp32s3 -p "${BOOT_PORT}" --before no-reset --after no-reset-no-stub --non-interactive 0x20000 "${BUILD_DIR}/osupad-firmware.bin"
     $ESPTOOL --chip esp32s3 -p "${BOOT_PORT}" --before=no_reset --after=watchdog_reset chip_id >/dev/null
 fi
 

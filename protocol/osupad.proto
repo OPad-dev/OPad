@@ -45,6 +45,10 @@ message HelloAck {
     // Which host install owns this pad (§W3-1, §W3-2). 16 bytes; empty or all
     // zero means unclaimed, which is also what firmware predating W3-2 sends.
     bytes owner_id = 8;
+    // Which app partition the running image booted from (§U-3a): "ota_0",
+    // "ota_1", or "factory" for a pad still on the pre-OTA single-app layout.
+    // Empty means firmware predating the two-slot table.
+    string running_partition = 9;
 }
 
 // Record a new owner in NVS (§W3-2). An NVS write, so the firmware must honour

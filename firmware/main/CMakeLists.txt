@@ -44,6 +44,7 @@ idf_component_register(
         esp_lcd
         esp_timer
         nvs_flash
+        app_update
         freertos
         esp_tinyusb
         esp_app_format

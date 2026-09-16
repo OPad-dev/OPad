@@ -783,6 +783,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                     firmware_version: String::new(),
                     protocol_version: 1,
+                    running_partition: None,
                 });
             let backup = JsonBackup::new(&info, &st.counters, &st.config);
             IpcResponse::BackupExported(backup)
@@ -917,6 +918,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     board_profile: backup.device.board_profile,
                     firmware_version: last_firmware_version,
                     protocol_version: 1,
+                    running_partition: None,
                 };
                 let _ = s.save_device_state(&info, &new_counters);
             }
