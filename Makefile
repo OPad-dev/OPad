@@ -52,7 +52,7 @@ deb: all tosu
 
 # L-3: Build RPM package (.rpm)
 rpm: all tosu
-	cd desktop/gui && cargo generate-rpm -o ../../dist/
+	cd desktop/gui && cargo generate-rpm --auto-req disabled -o ../../dist/
 
 # Build all packages
 packages:

@@ -55,7 +55,7 @@ fi
 echo ""
 echo "--- [3/5] Building RPM package (.rpm) ---"
 if command -v cargo-generate-rpm >/dev/null 2>&1; then
-    (cd "${REPO_ROOT}/desktop/gui" && cargo generate-rpm -o "${DIST_DIR}/")
+    (cd "${REPO_ROOT}/desktop/gui" && cargo generate-rpm --auto-req disabled -o "${DIST_DIR}/")
     echo "✓ RPM package built in dist/"
 else
     echo "ERROR: 'cargo-generate-rpm' not found in PATH!" >&2

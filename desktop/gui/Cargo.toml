@@ -97,12 +97,15 @@ if [ $1 -eq 0 ]; then
     if command -v udevadm >/dev/null 2>&1; then
         udevadm control --reload-rules || true
     fi
+    rm -rf /usr/lib/osupad /etc/osupad
 fi
 """
 
+auto-req = "disabled"
+
 [package.metadata.generate-rpm.requires]
 vulkan-loader = "*"
-wayland-libs = "*"
+libwayland-client = "*"
 libX11 = "*"
 libXcursor = "*"
 libxkbcommon = "*"
