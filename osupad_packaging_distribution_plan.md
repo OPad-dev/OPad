@@ -206,7 +206,7 @@ Note the R7 lesson: the Linux version was broken precisely by writing a *second*
 
 ### W2-1. Inno Setup script
 
-**Where.** New `packaging/windows/osupad.iss`, plus a build script alongside `scripts/release`.
+**Where.** `packaging/windows/installer.iss`, plus a build script alongside `scripts/release`.
 
 **Installs:**
 - `osupad-gui.exe`, `osupad-daemon.exe`, `osupad-cli.exe` → `%LOCALAPPDATA%\Programs\osupad\`
