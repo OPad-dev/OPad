@@ -392,6 +392,41 @@ async fn test_second_listener_refused() {
     cleanup_addr(&socket_path);
 }
 
+/// The pipe DACL must name the current user and SYSTEM and nobody else — the
+/// Windows half of the 0700/0600 guarantee the Unix socket has (§W0-2). The
+/// cross-account half ("another user cannot open the pipe") needs two logged-in
+/// accounts and stays a W4-2 manual check.
+#[cfg(windows)]
+#[test]
+fn test_pipe_dacl_is_restricted_to_the_current_user() {
+    let sddl = osupad_ipc::pipe_security_sddl().expect("pipe_security_sddl");
+
+    assert!(
+        sddl.starts_with("D:P"),
+        "the DACL must be protected against inheritance: {sddl}"
+    );
+    assert!(
+        sddl.contains("(A;;GA;;;SY)"),
+        "SYSTEM must keep full access: {sddl}"
+    );
+    assert!(
+        sddl.contains("(A;;GA;;;S-1-"),
+        "the current user's SID must be granted access: {sddl}"
+    );
+    assert_eq!(
+        sddl.matches("(A;").count(),
+        2,
+        "only SYSTEM and the current user may appear: {sddl}"
+    );
+    // Well-known groups that would put the pipe back within everyone's reach
+    for trustee in ["WD", "AU", "BU", "AN", "BA", "IU"] {
+        assert!(
+            !sddl.contains(&format!(";{})", trustee)),
+            "{trustee} must not be granted access: {sddl}"
+        );
+    }
+}
+
 /// A socket file left behind by a dead daemon must be cleaned up and rebound.
 /// Windows has no equivalent: the pipe name disappears with its last instance.
 #[cfg(unix)]

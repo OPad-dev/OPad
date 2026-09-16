@@ -10,6 +10,8 @@ use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 mod transport;
+#[cfg(windows)]
+pub use transport::pipe_security_sddl;
 pub use transport::{
     connect, create_listener, get_socket_path, IpcListener, IpcServerStream, IpcStream,
 };

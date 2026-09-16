@@ -5,6 +5,11 @@
 //! replaced by a freshly created instance (§W0-1.4). [`IpcListener`] keeps one
 //! unconnected instance ready at all times, which also keeps the pipe name
 //! alive between clients.
+//!
+//! A pipe created with default security is reachable by every process on the
+//! machine, across sessions. Every instance is therefore created with a DACL
+//! granting the creating user and `SYSTEM` and nobody else, so the 0700/0600
+//! guarantee the Unix socket has (§P2-6) is not silently weakened (§W0-2).
 
 use crate::IpcError;
 use std::ffi::{OsStr, OsString};
@@ -17,8 +22,13 @@ use tokio::net::windows::named_pipe::{
 use windows_sys::Win32::Foundation::{
     CloseHandle, LocalFree, ERROR_ACCESS_DENIED, ERROR_PIPE_BUSY, HANDLE,
 };
-use windows_sys::Win32::Security::Authorization::ConvertSidToStringSidW;
-use windows_sys::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER};
+use windows_sys::Win32::Security::Authorization::{
+    ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
+};
+use windows_sys::Win32::Security::{
+    GetTokenInformation, TokenUser, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, TOKEN_QUERY,
+    TOKEN_USER,
+};
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
 /// Client end of an IPC connection.
@@ -76,6 +86,8 @@ pub async fn connect<P: AsRef<Path>>(path: P) -> Result<IpcStream, IpcError> {
 #[derive(Debug)]
 pub struct IpcListener {
     addr: OsString,
+    /// The pipe DACL in SDDL form, converted afresh for every instance
+    security: Vec<u16>,
     /// The instance the next client will land on, created ahead of time
     next: Mutex<Option<NamedPipeServer>>,
 }
@@ -85,42 +97,105 @@ impl IpcListener {
     pub async fn accept(&self) -> Result<IpcServerStream, IpcError> {
         let server = match self.next.lock().expect("pipe instance mutex").take() {
             Some(s) => s,
-            None => create_instance(&self.addr, false)?,
+            None => create_instance(&self.addr, &self.security, false)?,
         };
         server.connect().await?;
 
         // This instance now belongs to the client; the name needs another one.
-        let next = create_instance(&self.addr, false)?;
+        let next = create_instance(&self.addr, &self.security, false)?;
         *self.next.lock().expect("pipe instance mutex") = Some(next);
 
         Ok(server)
     }
 }
 
-/// Creates the listener and claims the pipe name (§W0-2)
+/// Creates the listener with a hardened DACL and claims the pipe name (§W0-2)
 pub fn create_listener<P: AsRef<Path>>(path: P) -> Result<IpcListener, IpcError> {
     let addr = path.as_ref().as_os_str().to_os_string();
+    let security = wide(&pipe_security_sddl()?);
     // `first_pipe_instance(true)` makes a second daemon fail loudly rather than
     // squatting the name: the Windows half of the single-daemon guarantee.
-    let first = create_instance(&addr, true)?;
+    let first = create_instance(&addr, &security, true)?;
     Ok(IpcListener {
         addr,
+        security,
         next: Mutex::new(Some(first)),
     })
 }
 
-fn create_instance(addr: &OsStr, first: bool) -> Result<NamedPipeServer, IpcError> {
-    ServerOptions::new()
-        .first_pipe_instance(first)
-        .create(addr)
-        .map_err(|e| match e.raw_os_error() {
-            // Another process already owns the name, matching the Unix path's
-            // "a daemon answered on the socket".
-            Some(code) if code == ERROR_ACCESS_DENIED as i32 || code == ERROR_PIPE_BUSY as i32 => {
-                IpcError::AlreadyRunning
-            }
-            _ => IpcError::Io(e),
-        })
+/// The DACL applied to every pipe instance, in SDDL form.
+///
+/// `D:P` is a protected DACL (it inherits nothing), followed by one full-access
+/// ACE for `SYSTEM` and one for the calling user. No other trustee is named, so
+/// no other account — including an administrator on another session — can open
+/// the pipe without first taking ownership.
+pub fn pipe_security_sddl() -> Result<String, IpcError> {
+    let sid = current_user_sid().ok_or_else(|| {
+        IpcError::Io(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "Could not resolve the current user SID, refusing to create an unrestricted pipe",
+        ))
+    })?;
+    Ok(format!("D:P(A;;GA;;;SY)(A;;GA;;;{})", sid))
+}
+
+fn create_instance(
+    addr: &OsStr,
+    security: &[u16],
+    first: bool,
+) -> Result<NamedPipeServer, IpcError> {
+    let descriptor = security_descriptor(security)?;
+    let mut attributes = SECURITY_ATTRIBUTES {
+        nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: descriptor,
+        bInheritHandle: 0,
+    };
+
+    // SAFETY: `attributes` is a fully initialised SECURITY_ATTRIBUTES that
+    // outlives the call, and its descriptor is valid until the LocalFree below.
+    let server = unsafe {
+        ServerOptions::new()
+            .first_pipe_instance(first)
+            .create_with_security_attributes_raw(
+                addr,
+                &mut attributes as *mut SECURITY_ATTRIBUTES as *mut std::ffi::c_void,
+            )
+    };
+    unsafe { LocalFree(descriptor.cast()) };
+
+    server.map_err(|e| match e.raw_os_error() {
+        // Only the first instance can lose the name to another process; a
+        // failure on a replacement instance is a genuine IO error. This is the
+        // Unix path's "a daemon answered on the socket".
+        Some(code)
+            if first && (code == ERROR_ACCESS_DENIED as i32 || code == ERROR_PIPE_BUSY as i32) =>
+        {
+            IpcError::AlreadyRunning
+        }
+        _ => IpcError::Io(e),
+    })
+}
+
+/// Converts an SDDL string into a security descriptor the caller must LocalFree
+fn security_descriptor(sddl: &[u16]) -> Result<PSECURITY_DESCRIPTOR, IpcError> {
+    let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+    // SAFETY: `sddl` is NUL-terminated by `wide`, and the out-pointer is valid.
+    let ok = unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl.as_ptr(),
+            SDDL_REVISION_1,
+            &mut descriptor,
+            std::ptr::null_mut(),
+        )
+    };
+    if ok == 0 {
+        return Err(IpcError::Io(std::io::Error::last_os_error()));
+    }
+    Ok(descriptor)
+}
+
+fn wide(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 /// Returns the calling process's user SID in string form (`S-1-5-21-...`)
