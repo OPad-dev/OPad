@@ -385,6 +385,8 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             tosu_connected: true,
             latency: None,
             pending_replacement: None,
+            pending_takeover: None,
+            foreign_pad: false,
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
@@ -607,6 +609,8 @@ async fn test_reconcile_and_replacement_scenarios() {
             tosu_connected: false,
             latency: None,
             pending_replacement: None,
+            pending_takeover: None,
+            foreign_pad: false,
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
@@ -659,6 +663,8 @@ async fn test_reconcile_and_replacement_scenarios() {
             tosu_connected: false,
             latency: None,
             pending_replacement: None,
+            pending_takeover: None,
+            foreign_pad: false,
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
@@ -752,6 +758,8 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
         tosu_connected: false,
         latency: None,
         pending_replacement: None,
+        pending_takeover: None,
+        foreign_pad: false,
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
@@ -808,6 +816,8 @@ async fn test_json_validation_preview_and_confirm() {
         tosu_connected: false,
         latency: None,
         pending_replacement: None,
+        pending_takeover: None,
+        foreign_pad: false,
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
@@ -909,6 +919,8 @@ async fn test_ipc_handshake_mismatch_and_protocol_version() {
         tosu_connected: false,
         latency: None,
         pending_replacement: None,
+        pending_takeover: None,
+        foreign_pad: false,
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
@@ -1015,6 +1027,8 @@ async fn test_install_update_is_refused_outside_idle() {
             tosu_connected: false,
             latency: None,
             pending_replacement: None,
+            pending_takeover: None,
+            foreign_pad: false,
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
@@ -1063,6 +1077,8 @@ async fn test_firmware_is_not_an_enableable_updater() {
         tosu_connected: false,
         latency: None,
         pending_replacement: None,
+        pending_takeover: None,
+        foreign_pad: false,
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
@@ -1484,4 +1500,223 @@ async fn test_replug_during_play_keeps_the_state_machine_and_write_guard() {
     );
     assert_eq!(controller.state.mode, RuntimeMode::Cooldown);
     assert!(!actions.contains(&RuntimeAction::SetStorageWritesAllowed(true)));
+}
+
+// ---------------------------------------------------------------------------
+// §W3-3: pad ownership. All four rows of the table, plus the R3 ordering trap.
+// ---------------------------------------------------------------------------
+
+fn owner_bytes(install_id: &str) -> Vec<u8> {
+    osupad_daemon::identity::parse_owner_id(install_id)
+        .expect("a valid install id")
+        .to_vec()
+}
+
+fn ownership_controller(install_id: Option<&str>, known: Vec<String>) -> RuntimeController {
+    let mut controller = RuntimeController::new(
+        DeviceConfig::default(),
+        None,
+        CounterState::default(),
+        HashMap::new(),
+        None,
+        known,
+        Instant::now(),
+    );
+    controller.set_install_id(install_id.map(|s| s.to_string()));
+    controller
+}
+
+fn pad(device_id: &str) -> DeviceInfo {
+    DeviceInfo {
+        device_id: device_id.to_string(),
+        board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+        firmware_version: "1.0.0".to_string(),
+        protocol_version: 1,
+    }
+}
+
+/// Row 2: an unclaimed pad is claimed silently. No prompt for the common case.
+#[tokio::test]
+async fn test_unclaimed_pad_is_claimed_without_a_prompt() {
+    let id = uuid::Uuid::new_v4().to_string();
+    let info = pad("OSUPAD-FRESH");
+    let mut controller = ownership_controller(Some(&id), vec![info.device_id.clone()]);
+    let now = Instant::now();
+
+    controller.on_event(RuntimeEvent::DeviceOwnership(Vec::new()), now);
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(info), now);
+
+    assert!(controller.state.pending_takeover.is_none());
+    assert!(!controller.state.foreign_pad);
+    assert!(actions.contains(&RuntimeAction::ClaimOwnership));
+    assert!(actions.contains(&RuntimeAction::TriggerSync));
+}
+
+/// Row 1: our own pad. Silent, and nothing is rewritten.
+#[tokio::test]
+async fn test_our_own_pad_connects_silently() {
+    let id = uuid::Uuid::new_v4().to_string();
+    let info = pad("OSUPAD-MINE");
+    let mut controller = ownership_controller(Some(&id), vec![info.device_id.clone()]);
+    let now = Instant::now();
+
+    controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&id)), now);
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(info), now);
+
+    assert!(controller.state.pending_takeover.is_none());
+    assert!(!controller.state.foreign_pad);
+    assert!(
+        !actions.contains(&RuntimeAction::ClaimOwnership),
+        "a pad we already own must not be rewritten on every connect"
+    );
+    assert!(actions.contains(&RuntimeAction::TriggerSync));
+}
+
+/// Row 3: another install's pad. Prompt, and block counter sync until answered.
+#[tokio::test]
+async fn test_a_pad_owned_elsewhere_prompts_and_blocks_sync() {
+    let id = uuid::Uuid::new_v4().to_string();
+    let other = uuid::Uuid::new_v4().to_string();
+    let info = pad("OSUPAD-THEIRS");
+    let mut controller = ownership_controller(Some(&id), vec![info.device_id.clone()]);
+    let now = Instant::now();
+
+    controller.on_event(
+        RuntimeEvent::DeviceCounters(CounterState {
+            device_id: info.device_id.clone(),
+            counter_generation: 4,
+            lifetime_key1: 1_234_567,
+            lifetime_key2: 7_654_321,
+            map_key1: 0,
+            map_key2: 0,
+        }),
+        now,
+    );
+    controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&other)), now);
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(info.clone()), now);
+
+    let pending = controller
+        .state
+        .pending_takeover
+        .clone()
+        .expect("a takeover prompt");
+    assert_eq!(pending.device_id, info.device_id);
+    // The prompt quotes the pad's counters, so the choice is an informed one
+    assert_eq!(pending.device_key1, 1_234_567);
+    assert_eq!(pending.device_key2, 7_654_321);
+
+    assert!(controller.state.foreign_pad);
+    assert!(
+        !actions.contains(&RuntimeAction::TriggerSync),
+        "no counter may be written while ownership is unresolved"
+    );
+    assert!(!actions.contains(&RuntimeAction::ClaimOwnership));
+    assert!(
+        !actions
+            .iter()
+            .any(|a| matches!(a, RuntimeAction::SendConfig(_))),
+        "someone else's pad must not be reconfigured"
+    );
+}
+
+/// "Leave it alone": still a keyboard, but nothing is pushed or synced.
+#[tokio::test]
+async fn test_leaving_a_foreign_pad_alone_writes_nothing() {
+    let id = uuid::Uuid::new_v4().to_string();
+    let other = uuid::Uuid::new_v4().to_string();
+    let info = pad("OSUPAD-THEIRS");
+    let mut controller = ownership_controller(Some(&id), vec![info.device_id.clone()]);
+    let now = Instant::now();
+
+    controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&other)), now);
+    controller.on_event(RuntimeEvent::DeviceConnected(info), now);
+
+    let actions = controller.resolve_takeover(false);
+    assert!(actions.is_empty(), "declining writes nothing: {actions:?}");
+    assert!(controller.state.pending_takeover.is_none());
+    assert!(
+        controller.state.foreign_pad,
+        "the pad still belongs to someone else"
+    );
+
+    // A later tick must not sneak telemetry or a sync onto it
+    let actions = controller.on_event(RuntimeEvent::Tick(now + Duration::from_secs(120)), now);
+    assert!(!actions.contains(&RuntimeAction::TriggerSync));
+    assert!(!actions
+        .iter()
+        .any(|a| matches!(a, RuntimeAction::SendDataUpdate(_))));
+}
+
+/// Taking over claims the pad, restores config and resumes syncing.
+#[tokio::test]
+async fn test_taking_over_claims_the_pad_and_resumes() {
+    let id = uuid::Uuid::new_v4().to_string();
+    let other = uuid::Uuid::new_v4().to_string();
+    let info = pad("OSUPAD-THEIRS");
+    let mut controller = ownership_controller(Some(&id), vec![info.device_id.clone()]);
+    let now = Instant::now();
+
+    controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&other)), now);
+    controller.on_event(RuntimeEvent::DeviceConnected(info), now);
+
+    let actions = controller.resolve_takeover(true);
+    assert!(actions.contains(&RuntimeAction::ClaimOwnership));
+    assert!(actions.contains(&RuntimeAction::TriggerSync));
+    assert!(!controller.state.foreign_pad);
+    assert!(controller.state.pending_takeover.is_none());
+
+    // "prompts exactly once per takeover, and never again on that PC"
+    controller.on_event(RuntimeEvent::DeviceDisconnected, now);
+    controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&id)), now);
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(pad("OSUPAD-THEIRS")), now);
+    assert!(controller.state.pending_takeover.is_none());
+    assert!(!actions.contains(&RuntimeAction::ClaimOwnership));
+}
+
+/// R3 applies directly here: a second pad's connect must never be judged
+/// against the first pad's owner. This is the test §W3-3 asks for by name.
+#[tokio::test]
+async fn test_a_second_pad_is_never_judged_by_the_first_pads_owner() {
+    let id = uuid::Uuid::new_v4().to_string();
+    let other = uuid::Uuid::new_v4().to_string();
+    let mut controller = ownership_controller(
+        Some(&id),
+        vec!["OSUPAD-ONE".to_string(), "OSUPAD-TWO".to_string()],
+    );
+    let now = Instant::now();
+
+    // A pad owned by someone else connects and is left alone
+    controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&other)), now);
+    controller.on_event(RuntimeEvent::DeviceConnected(pad("OSUPAD-ONE")), now);
+    assert!(controller.state.pending_takeover.is_some());
+    controller.on_event(RuntimeEvent::DeviceDisconnected, now);
+
+    // A different, unclaimed pad connects. If the first pad's owner were still
+    // standing, this one would be wrongly prompted about — and worse, a pad we
+    // do own could be wrongly claimed under someone else's id.
+    controller.on_event(RuntimeEvent::DeviceOwnership(Vec::new()), now);
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(pad("OSUPAD-TWO")), now);
+    assert!(
+        controller.state.pending_takeover.is_none(),
+        "the previous pad's owner leaked into this connect"
+    );
+    assert!(actions.contains(&RuntimeAction::ClaimOwnership));
+}
+
+/// No install identity (degraded storage, §P2-12): claim nothing, prompt about
+/// nothing, and behave exactly as before this feature existed.
+#[tokio::test]
+async fn test_an_install_with_no_identity_neither_claims_nor_prompts() {
+    let other = uuid::Uuid::new_v4().to_string();
+    let info = pad("OSUPAD-THEIRS");
+    let mut controller = ownership_controller(None, vec![info.device_id.clone()]);
+    let now = Instant::now();
+
+    controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&other)), now);
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(info), now);
+
+    assert!(controller.state.pending_takeover.is_none());
+    assert!(!controller.state.foreign_pad);
+    assert!(!actions.contains(&RuntimeAction::ClaimOwnership));
+    assert!(actions.contains(&RuntimeAction::TriggerSync));
 }

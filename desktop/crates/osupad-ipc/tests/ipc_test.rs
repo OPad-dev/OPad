@@ -85,6 +85,7 @@ async fn test_ipc_roundtrip_requests() {
                             tosu_connected: false,
                             latency: None,
                             pending_replacement: None,
+                            pending_takeover: None,
                             incompatible: None,
                         },
                         IpcRequest::PrepareFlash => IpcResponse::ReadyForFlash {

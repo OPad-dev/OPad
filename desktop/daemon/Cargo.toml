@@ -27,3 +27,6 @@ osupad-update = { path = "../crates/osupad-update" }
 uuid = { version = "1", features = ["v4"] }
 osupad-device = { path = "../crates/osupad-device" }
 osupad-layout = { path = "../crates/osupad-layout" }
+
+[dev-dependencies]
+uuid = { version = "1", features = ["v4"] }

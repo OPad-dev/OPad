@@ -37,6 +37,15 @@ pub enum DeviceError {
 
 #[derive(Debug, Clone)]
 pub enum DeviceEvent {
+    /// Which host install the pad says owns it (§W3-2).
+    ///
+    /// Emitted from the HelloAck arm *before* `Counters` and `Connected`, and
+    /// emitted on every HelloAck even when the pad reports nothing, so a pad
+    /// that sends no owner can never be judged against the previous pad's.
+    /// That is the R3 failure mode exactly, and it is what §W3-3 warns about.
+    Ownership {
+        owner_id: Vec<u8>,
+    },
     Connected(DeviceInfo),
     Disconnected,
     StatusUpdate(proto::DeviceStatus),
@@ -316,6 +325,22 @@ impl DeviceManager {
         self.send_msg(msg)
     }
 
+    /// Records this install as the pad's owner (§W3-2).
+    ///
+    /// An NVS write on the device, so the firmware honours it only in IDLE.
+    /// The host only ever sends it at connect time, which is already one.
+    pub async fn claim_ownership(&self, owner_id: &[u8]) -> Result<(), DeviceError> {
+        let msg = HostToDevice {
+            sequence_number: self.next_seq(),
+            payload: Some(host_to_device::Payload::ClaimOwnership(
+                proto::ClaimOwnership {
+                    owner_id: owner_id.to_vec(),
+                },
+            )),
+        };
+        self.send_msg(msg)
+    }
+
     pub async fn send_config(&self, config: &DeviceConfig) -> Result<(), DeviceError> {
         let msg = HostToDevice {
             sequence_number: self.next_seq(),
@@ -499,8 +524,13 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     firmware_version: ack.firmware_version.clone(),
                     protocol_version: ack.protocol_version,
                 };
-                // Counters first: the connect handler decides between known pad, new pad and
-                // replacement from them, so they must already be the pad's, not the last pad's
+                // Ownership first, then counters: the connect handler decides
+                // between known pad, new pad, replacement and takeover from
+                // all three, so every one must already be this pad's rather
+                // than the last pad's (R3, §W3-3).
+                let _ = tx.send(DeviceEvent::Ownership {
+                    owner_id: ack.owner_id.clone(),
+                });
                 let _ = tx.send(DeviceEvent::Counters(CounterState {
                     device_id: ack.device_id.clone(),
                     counter_generation: ack.counter_generation,
@@ -625,8 +655,11 @@ mod tests {
         );
     }
 
+    /// R3, and §W3-3 which inherits it: the connect handler decides known pad
+    /// vs new pad vs replacement vs takeover, so the owner and the counters
+    /// must both already be *this* pad's when `Connected` arrives.
     #[test]
-    fn hello_ack_emits_counters_before_connected() {
+    fn hello_ack_emits_ownership_and_counters_before_connected() {
         let (tx, mut rx) = tokio::sync::broadcast::channel(8);
         let msg = proto::DeviceToHost {
             sequence_number: 1,
@@ -636,14 +669,38 @@ mod tests {
                 counter_generation: 1,
                 lifetime_key1: 3,
                 lifetime_key2: 4,
+                owner_id: vec![7u8; 16],
                 ..Default::default()
             })),
         };
         handle_device_message(&msg, &tx);
         assert!(
+            matches!(rx.try_recv(), Ok(DeviceEvent::Ownership { owner_id }) if owner_id == vec![7u8; 16])
+        );
+        assert!(
             matches!(rx.try_recv(), Ok(DeviceEvent::Counters(c)) if c.device_id == "OSUPAD-NEW")
         );
         assert!(matches!(rx.try_recv(), Ok(DeviceEvent::Connected(_))));
+    }
+
+    /// Firmware that predates §W3-2 sends no owner at all. The event must still
+    /// be emitted, carrying nothing, so the previous pad's owner can never be
+    /// left standing for this one to be judged against.
+    #[test]
+    fn a_hello_ack_with_no_owner_still_reports_ownership() {
+        let (tx, mut rx) = tokio::sync::broadcast::channel(8);
+        let msg = proto::DeviceToHost {
+            sequence_number: 1,
+            payload: Some(proto::device_to_host::Payload::HelloAck(proto::HelloAck {
+                protocol_version: 1,
+                device_id: "OSUPAD-OLD".to_string(),
+                ..Default::default()
+            })),
+        };
+        handle_device_message(&msg, &tx);
+        assert!(
+            matches!(rx.try_recv(), Ok(DeviceEvent::Ownership { owner_id }) if owner_id.is_empty())
+        );
     }
 
     #[test]

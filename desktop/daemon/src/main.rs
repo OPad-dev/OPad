@@ -130,6 +130,8 @@ async fn main() -> Result<()> {
         start_now,
     );
 
+    controller.set_install_id(install_id.clone());
+
     let daemon_state = Arc::new(Mutex::new(controller.state.clone()));
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
@@ -227,6 +229,9 @@ async fn main() -> Result<()> {
                     DeviceEvent::Connected(info) => {
                         info!("ESP32 Device Connected: ID={}, Board={}", info.device_id, info.board_profile);
                         event_opt = Some(RuntimeEvent::DeviceConnected(info));
+                    }
+                    DeviceEvent::Ownership { owner_id } => {
+                        event_opt = Some(RuntimeEvent::DeviceOwnership(owner_id));
                     }
                     DeviceEvent::Disconnected => {
                         warn!("ESP32 Device Disconnected");
@@ -370,6 +375,20 @@ async fn main() -> Result<()> {
                             let _ = dm.send_time_sync().await;
                         });
                     }
+                    RuntimeAction::ClaimOwnership => {
+                        // §W3-2: an NVS write, which the firmware honours only
+                        // in IDLE. Connect time already is one.
+                        if let Some(owner) =
+                            install_id.as_deref().and_then(identity::parse_owner_id)
+                        {
+                            let dm = device_manager.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = dm.claim_ownership(&owner).await {
+                                    warn!("Could not record ownership on the pad: {}", e);
+                                }
+                            });
+                        }
+                    }
                     RuntimeAction::SendConfig(cfg) => {
                         let dm = device_manager.clone();
                         tokio::spawn(async move {
@@ -494,6 +513,8 @@ mod tests {
             tosu_connected: false,
             latency: None,
             pending_replacement: None,
+            pending_takeover: None,
+            foreign_pad: false,
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),

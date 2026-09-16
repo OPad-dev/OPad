@@ -33,9 +33,40 @@ pub struct DaemonState {
     pub tosu_connected: bool,
     pub latency: Option<LatencyStats>,
     pub pending_replacement: Option<String>,
+    /// Set when the connected pad says a different install owns it (§W3-3).
+    /// Counter sync is blocked until the user answers.
+    pub pending_takeover: Option<PendingTakeover>,
+    /// This pad belongs to another installation and we are leaving it alone —
+    /// while the prompt is open, and afterwards if the user said so. Nothing
+    /// is pushed to it and nothing is synced from it. It keeps working as a
+    /// keyboard throughout, which was never in question (§A.6.1).
+    pub foreign_pad: bool,
     pub incompatible: Option<IncompatibleDevice>,
     pub ui_values: Vec<(u8, SourceValue)>,
     pub custom_layouts: HashMap<Screen, Layout>,
+}
+
+/// The four cases in the §W3-3 table
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Ownership {
+    /// This install has no identity, so it claims nothing and prompts about
+    /// nothing (§W3-1, degraded storage)
+    NoIdentity,
+    /// All-zero or absent: claim it silently
+    Unclaimed,
+    Ours,
+    /// A different install: prompt, and block counter sync until answered
+    Someone,
+}
+
+/// A pad that belongs to another installation, waiting on the user (§W3-3)
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingTakeover {
+    pub device_id: String,
+    /// The pad's lifetime counters, which the prompt shows so the choice
+    /// between keeping them and keeping this PC's is an informed one
+    pub device_key1: u64,
+    pub device_key2: u64,
 }
 
 #[derive(Default, Clone, Debug)]
@@ -49,6 +80,8 @@ pub struct PendingOperations {
 #[derive(Debug, Clone)]
 pub enum RuntimeEvent {
     DeviceConnected(DeviceInfo),
+    /// The pad's recorded owner, from the same HelloAck as the connect (§W3-3)
+    DeviceOwnership(Vec<u8>),
     DeviceDisconnected,
     DeviceCounters(CounterState),
     DeviceLatency(LatencyStats),
@@ -92,6 +125,9 @@ pub enum RuntimeAction {
     SendDataUpdate(Vec<(u8, SourceValue)>),
     SendLayout(Screen, Layout),
     TriggerSync,
+    /// Write this install's id into the pad's NVS (§W3-2). Only ever emitted
+    /// for an unclaimed pad, or after the user chose to take one over.
+    ClaimOwnership,
     RequestDeviceStatus,
     SetStorageWritesAllowed(bool),
     SaveInitialDeviceState(DeviceInfo, CounterState),
@@ -117,6 +153,12 @@ pub struct RuntimeController {
     pub data_sync: DataSync,
     pub known_devices: HashSet<String>,
     pub has_initial_db_entry: bool,
+    /// This install's identity (§W3-1). `None` when storage is unavailable, in
+    /// which case ownership is neither claimed nor checked.
+    pub install_id: Option<String>,
+    /// The owner the *currently connecting* pad reported. Overwritten by every
+    /// HelloAck and cleared on disconnect, so it can never be the last pad's.
+    reported_owner: Option<Vec<u8>>,
 }
 
 impl RuntimeController {
@@ -157,6 +199,8 @@ impl RuntimeController {
             tosu_connected: false,
             latency: None,
             pending_replacement: None,
+            pending_takeover: None,
+            foreign_pad: false,
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: initial_layouts,
@@ -176,7 +220,53 @@ impl RuntimeController {
             data_sync: DataSync::default(),
             known_devices: known,
             has_initial_db_entry,
+            install_id: None,
+            reported_owner: None,
         }
+    }
+
+    /// Supplies this install's identity (§W3-1). Set once at startup, before
+    /// any pad can connect.
+    pub fn set_install_id(&mut self, install_id: Option<String>) {
+        self.install_id = install_id;
+    }
+
+    fn ownership_of(&self, owner_id: &[u8]) -> Ownership {
+        if self.install_id.is_none() {
+            // No identity to compare against and none to write. Behave exactly
+            // as before this feature existed rather than prompting about
+            // something the user cannot resolve.
+            return Ownership::NoIdentity;
+        }
+        if crate::identity::is_unclaimed(owner_id) {
+            return Ownership::Unclaimed;
+        }
+        if crate::identity::owns(self.install_id.as_deref(), owner_id) {
+            return Ownership::Ours;
+        }
+        Ownership::Someone
+    }
+
+    /// Resolves a pending takeover (§W3-3). Returns the actions to run.
+    ///
+    /// `keep_device_counters` is only meaningful when taking over; the caller
+    /// applies it to the counters themselves.
+    pub fn resolve_takeover(&mut self, take_over: bool) -> Vec<RuntimeAction> {
+        let mut actions = Vec::new();
+        if self.state.pending_takeover.take().is_none() {
+            return actions;
+        }
+        if take_over {
+            self.state.foreign_pad = false;
+            actions.push(RuntimeAction::ClaimOwnership);
+            actions.push(RuntimeAction::SendConfig(self.state.config.clone()));
+            if self.state.storage_error.is_none() && self.state.mode == RuntimeMode::Idle {
+                actions.push(RuntimeAction::TriggerSync);
+            }
+        }
+        // "Leave it alone" writes nothing and claims nothing. The pad keeps
+        // working as a keyboard, which was never in question (§A.6.1).
+        actions
     }
 
     pub fn on_event(&mut self, event: RuntimeEvent, now: Instant) -> Vec<RuntimeAction> {
@@ -197,6 +287,34 @@ impl RuntimeController {
                 self.state.incompatible = None;
                 self.state.device_info = Some(info.clone());
                 self.state.esp_counters = Some(self.state.counters.clone());
+
+                // Ownership is decided here, in the same HelloAck that brought
+                // the counters, and *before* anything reconciles them. R3 was
+                // exactly this bug in its replacement form: the connect handler
+                // saw the previous pad's counters, the prompt never fired, and
+                // old counters were saved under the new device_id (§W3-3).
+                let owner = self.reported_owner.take().unwrap_or_default();
+                match self.ownership_of(&owner) {
+                    Ownership::NoIdentity | Ownership::Ours => {
+                        self.state.pending_takeover = None;
+                        self.state.foreign_pad = false;
+                    }
+                    Ownership::Unclaimed => {
+                        // The common case, and it is silent: a pad nobody owns
+                        // is claimed on first connect with no prompt.
+                        self.state.pending_takeover = None;
+                        self.state.foreign_pad = false;
+                        actions.push(RuntimeAction::ClaimOwnership);
+                    }
+                    Ownership::Someone => {
+                        self.state.pending_takeover = Some(PendingTakeover {
+                            device_id: info.device_id.clone(),
+                            device_key1: self.state.counters.lifetime_key1,
+                            device_key2: self.state.counters.lifetime_key2,
+                        });
+                        self.state.foreign_pad = true;
+                    }
+                }
 
                 let is_known = self.known_devices.contains(&info.device_id);
                 if !is_known {
@@ -244,7 +362,9 @@ impl RuntimeController {
                 }
 
                 actions.push(RuntimeAction::SendTimeSync);
-                actions.push(RuntimeAction::SendConfig(self.state.config.clone()));
+                if !self.state.foreign_pad {
+                    actions.push(RuntimeAction::SendConfig(self.state.config.clone()));
+                }
                 actions.push(RuntimeAction::SendHostStatus {
                     tosu_connected: self.state.tosu_connected,
                     is_playing: self.state.mode == RuntimeMode::Playing,
@@ -252,12 +372,18 @@ impl RuntimeController {
                 });
                 self.data_sync.reset_sent();
 
-                for (screen, layout) in &self.state.custom_layouts {
-                    actions.push(RuntimeAction::SendLayout(*screen, layout.clone()));
+                if !self.state.foreign_pad {
+                    for (screen, layout) in &self.state.custom_layouts {
+                        actions.push(RuntimeAction::SendLayout(*screen, layout.clone()));
+                    }
                 }
 
                 if self.state.storage_error.is_none()
                     && self.state.pending_replacement.is_none()
+                    // A pad owned by another install syncs nothing until the
+                    // user answers: no counter may ever be written under the
+                    // wrong owner (§W3-3).
+                    && self.state.pending_takeover.is_none()
                     && self.state.mode == RuntimeMode::Idle
                 {
                     actions.push(RuntimeAction::TriggerSync);
@@ -268,10 +394,20 @@ impl RuntimeController {
                 self.last_synced_counters = Some(self.state.counters.clone());
             }
 
+            RuntimeEvent::DeviceOwnership(owner_id) => {
+                // Recorded, not judged. The decision belongs in the connect
+                // arm, where the pad's identity and counters are also known.
+                self.reported_owner = Some(owner_id);
+            }
+
             RuntimeEvent::DeviceDisconnected => {
                 self.state.device_connected = false;
                 self.state.counters_source = CounterSource::Pc;
                 self.state.esp_counters = None;
+                // Never carry one pad's owner into the next pad's connect
+                self.reported_owner = None;
+                self.state.pending_takeover = None;
+                self.state.foreign_pad = false;
             }
 
             RuntimeEvent::DeviceCounters(c) => {
@@ -352,7 +488,7 @@ impl RuntimeController {
                         self.last_host_status = now;
                         let playing_hz = self.state.config.gameplay_display_hz;
                         let changes = self.data_sync.take_changes(true, playing_hz, true);
-                        if !changes.is_empty() {
+                        if !changes.is_empty() && !self.state.foreign_pad {
                             actions.push(RuntimeAction::SendDataUpdate(changes));
                         }
                     }
@@ -426,7 +562,7 @@ impl RuntimeController {
                 }
 
                 // 4. UI data updates
-                if self.state.device_connected {
+                if self.state.device_connected && !self.state.foreign_pad {
                     let playing_hz = self.state.config.gameplay_display_hz;
                     let changes = self.data_sync.take_changes(is_playing, playing_hz, false);
                     if !changes.is_empty() {
@@ -435,7 +571,10 @@ impl RuntimeController {
                 }
 
                 // 5. Periodic idle sync and time sync
-                if self.state.device_connected && self.state.mode == RuntimeMode::Idle {
+                if self.state.device_connected
+                    && !self.state.foreign_pad
+                    && self.state.mode == RuntimeMode::Idle
+                {
                     if now.duration_since(self.last_periodic_time_sync) >= Duration::from_secs(600)
                     {
                         self.last_periodic_time_sync = now;

@@ -35,6 +35,19 @@ pub enum IpcError {
     AlreadyRunning,
 }
 
+/// What the §W3-3 takeover prompt shows.
+///
+/// The counters are in here because the choice between keeping the pad's and
+/// keeping this PC's is meaningless without both numbers in front of the user.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TakeoverPrompt {
+    pub device_id: String,
+    pub device_key1: u64,
+    pub device_key2: u64,
+    pub pc_key1: u64,
+    pub pc_key2: u64,
+}
+
 /// Snapshot of current PC state for backup comparison/preview (§21, §P1-5)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CurrentBackupState {
@@ -68,6 +81,17 @@ pub enum IpcRequest {
     },
     ResolveReplacement {
         restore: bool,
+    },
+    /// Answers the §W3-3 takeover prompt.
+    ///
+    /// `take_over: false` is "leave it alone": nothing is written to the pad
+    /// and nothing is synced from it. It keeps working as a keyboard.
+    /// `keep_device_counters` only matters when taking over — true adopts the
+    /// pad's lifetime counters, false pushes this PC's onto it.
+    ResolveTakeover {
+        take_over: bool,
+        #[serde(default)]
+        keep_device_counters: bool,
     },
     RestoreDeviceFromPc {
         #[serde(default)]
@@ -171,6 +195,11 @@ pub enum IpcResponse {
         latency: Option<LatencyStats>,
         #[serde(default)]
         pending_replacement: Option<String>,
+        /// A pad owned by another installation, waiting on the user (§W3-3).
+        /// Boxed because it is rarely set and `Status` is already the largest
+        /// variant of this enum by a wide margin.
+        #[serde(default)]
+        pending_takeover: Option<Box<TakeoverPrompt>>,
         #[serde(default)]
         incompatible: Option<IncompatibleDevice>,
     },

@@ -42,6 +42,16 @@ message HelloAck {
     uint32 counter_generation = 5;
     uint64 lifetime_key1 = 6;
     uint64 lifetime_key2 = 7;
+    // Which host install owns this pad (§W3-1, §W3-2). 16 bytes; empty or all
+    // zero means unclaimed, which is also what firmware predating W3-2 sends.
+    bytes owner_id = 8;
+}
+
+// Record a new owner in NVS (§W3-2). An NVS write, so the firmware must honour
+// it only in IDLE, never during PLAYING or COOLDOWN (P1-3). The host only ever
+// sends it at connect time, which is already an IDLE-only moment.
+message ClaimOwnership {
+    bytes owner_id = 1;  // 16 bytes
 }
 
 message DeviceStatus {
@@ -236,6 +246,7 @@ message HostToDevice {
         SetLayout set_layout = 11;
         uint32 reset_layout = 12;    // screen id: back to the built-in default
         bool request_logs = 13;
+        ClaimOwnership claim_ownership = 14;
     }
 }
 

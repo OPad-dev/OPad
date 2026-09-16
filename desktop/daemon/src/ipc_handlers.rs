@@ -76,6 +76,16 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             } else {
                 st.pc_counters.clone()
             };
+            let takeover_prompt = st.pending_takeover.as_ref().map(|t| {
+                let pc = pc_counters.clone().unwrap_or_default();
+                Box::new(osupad_ipc::TakeoverPrompt {
+                    device_id: t.device_id.clone(),
+                    device_key1: t.device_key1,
+                    device_key2: t.device_key2,
+                    pc_key1: pc.lifetime_key1,
+                    pc_key2: pc.lifetime_key2,
+                })
+            });
             IpcResponse::Status {
                 mode: st.mode,
                 device_connected: st.device_connected,
@@ -91,6 +101,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 tosu_connected: st.tosu_connected,
                 latency: st.latency,
                 pending_replacement: st.pending_replacement.clone(),
+                pending_takeover: takeover_prompt,
                 incompatible: st.incompatible.clone(),
             }
         }
@@ -537,6 +548,113 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
             info!(
                 "Overwrote PC database counters from ESP (generation: {})",
+                new_gen
+            );
+            IpcResponse::CountersRestored { counters: target }
+        }
+
+        IpcRequest::ResolveTakeover {
+            take_over,
+            keep_device_counters,
+        } => {
+            // P1-3: taking over writes NVS on the pad and SQLite here.
+            if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
+                return IpcResponse::OperationDeferred {
+                    reason: "Cannot resolve pad ownership during gameplay or cooldown".to_string(),
+                };
+            }
+
+            let (pending, info_opt, device_counters) = {
+                let mut st = state.lock().unwrap();
+                (
+                    st.pending_takeover.take(),
+                    st.device_info.clone(),
+                    st.counters.clone(),
+                )
+            };
+            let Some(pending) = pending else {
+                return IpcResponse::OperationRejected {
+                    reason: "No pad is waiting on an ownership decision".to_string(),
+                };
+            };
+            let Some(info) = info_opt else {
+                return IpcResponse::OperationRejected {
+                    reason: "No device currently connected".to_string(),
+                };
+            };
+
+            if !take_over {
+                // "Leave it alone": nothing is written to the pad and nothing
+                // is synced from it. It stays a working keyboard (§A.6.1).
+                info!(
+                    "Leaving pad {} with its current owner; telemetry and config stay off",
+                    pending.device_id
+                );
+                return IpcResponse::OperationRejected {
+                    reason: "Left the pad paired with its other installation".to_string(),
+                };
+            }
+
+            if storage.lock().unwrap().is_none() {
+                // Put the prompt back: an unanswerable takeover must not be
+                // silently forgotten.
+                state.lock().unwrap().pending_takeover = Some(pending);
+                return IpcResponse::OperationRejected {
+                    reason: "Database unavailable: taking over a pad needs persistent storage"
+                        .to_string(),
+                };
+            }
+
+            // The pad is ours from here. Which counters survive is the user's
+            // choice, and is applied before anything is saved, so no counter is
+            // ever written under the wrong owner (§W3-3).
+            let pc_state = {
+                let s_guard = storage.lock().unwrap();
+                s_guard
+                    .as_ref()
+                    .and_then(|s| s.load_device_state(&info.device_id).unwrap_or(None))
+            };
+            let pc_gen = pc_state.as_ref().map(|c| c.counter_generation).unwrap_or(0);
+            let new_gen =
+                std::cmp::max(pc_gen, device_counters.counter_generation).saturating_add(1);
+
+            let (key1, key2) = if keep_device_counters {
+                (device_counters.lifetime_key1, device_counters.lifetime_key2)
+            } else {
+                pc_state
+                    .as_ref()
+                    .map(|c| (c.lifetime_key1, c.lifetime_key2))
+                    .unwrap_or((0, 0))
+            };
+            let target = CounterState {
+                device_id: info.device_id.clone(),
+                counter_generation: new_gen,
+                lifetime_key1: key1,
+                lifetime_key2: key2,
+                map_key1: 0,
+                map_key2: 0,
+            };
+
+            if let Some(s) = storage.lock().unwrap().as_ref() {
+                let _ = s.save_device_state(&info, &target);
+                let _ = s.touch_device_last_seen(&info.device_id);
+            }
+            let _ = device.send_counter_sync(&target, true).await;
+            {
+                let mut st = state.lock().unwrap();
+                st.foreign_pad = false;
+                st.counters = target.clone();
+                st.pc_counters = Some(target.clone());
+                st.esp_counters = Some(target.clone());
+            }
+            info!(
+                "Took over pad {} (keeping {} counters, generation {})",
+                info.device_id,
+                if keep_device_counters {
+                    "the pad's"
+                } else {
+                    "this PC's"
+                },
                 new_gen
             );
             IpcResponse::CountersRestored { counters: target }

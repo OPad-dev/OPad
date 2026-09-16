@@ -410,6 +410,9 @@ impl App {
                         latency,
                         pending_replacement,
                         incompatible,
+                        // §W3-3: B still has to build the takeover prompt; the
+                        // daemon already blocks sync while this is set.
+                        pending_takeover: _,
                     }) => {
                         self.daemon_online = true;
                         self.mode = mode;
