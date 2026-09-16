@@ -863,7 +863,7 @@ Keep it to one line per task. This is how the other agent learns what landed.
 
 | Date | Column | Task | Commit | Notes |
 |---|---|---|---|---|
-| | | | | *(nothing started yet)* |
+| 2026-09-16 | A | W0-1 | `3bfbbc7` | **B is unblocked for W0-3.** `osupad-ipc` public types are now `IpcStream` (client), `IpcServerStream` (accepted server end) and `IpcListener`; `create_listener` returns `IpcListener` and `accept()` yields one stream, not a tuple. The framing helpers are generic over `IpcTransport`, so `&mut IpcStream` call sites are unchanged. `gui/src/ipc.rs` needed no edit. |
 
 ### A.8. Open owner decisions
 
