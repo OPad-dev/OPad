@@ -1,6 +1,5 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
@@ -49,7 +48,8 @@ async fn main() -> Result<()> {
         );
     }
 
-    let db_path = get_database_path();
+    let db_path = osupad_model::paths::database_path()
+        .context("Cannot resolve where to keep the osu!pad database")?;
     info!("Using SQLite database at {}", db_path.display());
     let (
         storage,
@@ -125,7 +125,9 @@ async fn main() -> Result<()> {
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
     // Launch and supervise tosu, then follow its WebSocket
-    spawn_tosu_supervisor(initial_config.tosu_endpoint.clone(), get_tosu_log_path());
+    let tosu_log_path = osupad_model::paths::tosu_log_path()
+        .context("Cannot resolve where to keep the tosu log")?;
+    spawn_tosu_supervisor(initial_config.tosu_endpoint.clone(), tosu_log_path);
     let (tosu_manager, mut tosu_rx) = TosuManager::new(initial_config.tosu_endpoint.clone());
     let mut tosu_connected_rx = tosu_manager.subscribe_connected();
     tosu_manager.start();
@@ -422,28 +424,6 @@ async fn main() -> Result<()> {
                 }
             }
         }
-    }
-}
-
-pub fn get_tosu_log_path() -> PathBuf {
-    let state_dir = std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local").join("state")))
-        .unwrap_or_else(|| PathBuf::from("."));
-    state_dir.join("osupad").join("tosu.log")
-}
-
-pub fn get_database_path() -> PathBuf {
-    if let Ok(data_dir) = std::env::var("XDG_DATA_HOME") {
-        PathBuf::from(data_dir).join("osupad").join("osupad.db")
-    } else if let Ok(home) = std::env::var("HOME") {
-        PathBuf::from(home)
-            .join(".local")
-            .join("share")
-            .join("osupad")
-            .join("osupad.db")
-    } else {
-        PathBuf::from("osupad.db")
     }
 }
 

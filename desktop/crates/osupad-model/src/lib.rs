@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod diag;
 pub mod log;
+pub mod paths;
 pub mod ui_source;
 
 pub use log::{LogEntry, LogLevel, LogSource};

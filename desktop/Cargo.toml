@@ -38,6 +38,7 @@ thiserror = "1.0"
 anyhow = "1.0"
 interprocess = { version = "2.2", features = ["tokio"] }
 chrono = { version = "0.4", features = ["serde"] }
+dirs = "5.0"
 bytes = "1.7"
 byteorder = "1.5"
 iced = { version = "0.14", features = ["tokio", "advanced"] }

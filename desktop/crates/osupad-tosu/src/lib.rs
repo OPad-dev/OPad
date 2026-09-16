@@ -1,4 +1,5 @@
 use futures_util::StreamExt;
+use osupad_model::paths;
 use osupad_model::ui_source::{self as src, SourceValue};
 use osupad_model::GameplayTelemetry;
 use std::path::{Path, PathBuf};
@@ -252,19 +253,29 @@ fn friendly_state(name: &str) -> String {
 // tosu process supervisor
 // -----------------------------------------------------------------------------
 
-/// Resolve the tosu binary: `$OSUPAD_TOSU_PATH`, `~/.local/opt/tosu/tosu`, then `tosu` on `$PATH`.
+/// Resolve the tosu binary: `$OSUPAD_TOSU_PATH`, `~/.local/opt/tosu/tosu`,
+/// `tosu` on `$PATH`, then the bundled copy (§T-2).
+///
+/// The bundled copy is deliberately last: a tosu the user installed themselves
+/// always wins, and §T-2 forbids us from updating or overwriting one we did
+/// not install.
 pub fn find_tosu_binary() -> Option<PathBuf> {
     if let Some(p) = std::env::var_os("OSUPAD_TOSU_PATH") {
         return Some(PathBuf::from(p)).filter(|p| p.is_file());
     }
-    let home_install =
-        std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local/opt/tosu/tosu"));
+    let home_install = dirs::home_dir().map(|h| h.join(".local/opt/tosu").join(paths::TOSU_BINARY));
     if let Some(p) = home_install.filter(|p| p.is_file()) {
         return Some(p);
     }
-    std::env::split_paths(&std::env::var_os("PATH")?)
-        .map(|dir| dir.join("tosu"))
-        .find(|p| p.is_file())
+    let on_path = std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path)
+            .map(|dir| dir.join(paths::TOSU_BINARY))
+            .find(|p| p.is_file())
+    });
+    if let Some(p) = on_path {
+        return Some(p);
+    }
+    paths::bundled_tosu_binary().ok().filter(|p| p.is_file())
 }
 
 /// Keeps a tosu process running for as long as the daemon runs.
@@ -286,7 +297,9 @@ pub fn spawn_tosu_supervisor(endpoint: String, log_path: PathBuf) {
 
             let Some(bin) = find_tosu_binary() else {
                 if !warned_missing {
-                    warn!("tosu binary not found (set OSUPAD_TOSU_PATH or install to ~/.local/opt/tosu/tosu)");
+                    warn!(
+                        "tosu binary not found: no $OSUPAD_TOSU_PATH, none on $PATH, and no bundled copy"
+                    );
                     warned_missing = true;
                 }
                 tokio::time::sleep(Duration::from_secs(30)).await;
