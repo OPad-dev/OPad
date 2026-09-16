@@ -872,4 +872,5 @@ These are not for an agent to settle:
 
 - **Publish the repository?** Required before SignPath free code signing (W2-2).
 - **`v1.0.0` tag.** It is local-only and should be deleted and re-cut when W4 passes; workspace version becomes `1.0.0-rc` until then.
+- **Update signing key.** §U-0.3 requires a minisign/ed25519 keypair whose public half is compiled into the app (`osupad_update::verify::MANIFEST_PUBLIC_KEY`, currently empty). Generate with `minisign -G`, decide where the secret key lives, and keep it off the build machines. Until it is set, all three updaters fail closed and nothing can be downloaded and applied.
 - **Latency table** (`docs/latency-testing.md`, P3-1) — hardware runs, owner only. Still the last open v1 item.
