@@ -40,11 +40,23 @@ TOSU_BUILD_DIR ?= build/tosu
 TARGET_DIR ?= desktop/target/release
 BINS := osupad-daemon osupad-gui osupadctl
 
-.PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage
+.PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage deb rpm packages
 
 # L-4: Build AppDir / AppImage
 appimage: all
 	packaging/linux/appimage/build_appimage.sh
+
+# L-3: Build Debian package (.deb)
+deb: all tosu
+	cd desktop && cargo deb -p osupad-gui --no-build -o ../dist/
+
+# L-3: Build RPM package (.rpm)
+rpm: all tosu
+	cd desktop/gui && cargo generate-rpm -o ../../dist/
+
+# Build all packages
+packages:
+	./scripts/release/build_packages.sh
 
 # B-2: Default target - release-build desktop binaries
 all:
@@ -59,9 +71,9 @@ tosu:
 	fi
 	@echo "Building tosu from source..."
 	cd $(TOSU_SRC_DIR) && $(PNPM) install --frozen-lockfile
-	cd $(TOSU_SRC_DIR) && $(PNPM) run genver && $(PNPM) run ts:compile
+	cd $(TOSU_SRC_DIR) && $(PNPM) --filter tosu run genver && $(PNPM) --filter tosu run ts:compile
 	mkdir -p $(TOSU_BUILD_DIR)/dist
-	cp -r $(TOSU_SRC_DIR)/dist/* $(TOSU_BUILD_DIR)/dist/
+	cp -r $(TOSU_SRC_DIR)/packages/tosu/dist/* $(TOSU_BUILD_DIR)/dist/
 	@printf '#!/bin/sh\nDIR="$$(cd "$$(dirname "$$0")" && pwd)"\nif [ -f "$$DIR/index.js" ]; then\n  exec node "$$DIR/index.js" "$$@"\nelif [ -f "$$DIR/dist/index.js" ]; then\n  exec node "$$DIR/dist/index.js" "$$@"\nelse\n  echo "tosu: index.js not found in $$DIR" >&2\n  exit 1\nfi\n' > $(TOSU_BUILD_DIR)/tosu
 	@chmod +x $(TOSU_BUILD_DIR)/tosu
 	install -m 644 licenses/tosu/VERSION $(TOSU_BUILD_DIR)/VERSION

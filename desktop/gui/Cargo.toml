@@ -51,14 +51,21 @@ assets = [
     ["../target/release/osupad-daemon", "usr/bin/osupad-daemon", "755"],
     ["../target/release/osupad-gui", "usr/bin/osupad-gui", "755"],
     ["../target/release/osupadctl", "usr/bin/osupadctl", "755"],
-    ["../../packaging/linux/systemd-user/osupad-daemon.service", "usr/lib/systemd/user/osupad-daemon.service", "644"],
+    ["../../packaging/linux/deb/osupad-daemon.service", "usr/lib/systemd/user/osupad-daemon.service", "644"],
     ["../../packaging/linux/deb/osupad.desktop", "usr/share/applications/osupad.desktop", "644"],
     ["../../packaging/linux/udev/99-osupad.rules", "usr/lib/udev/rules.d/99-osupad.rules", "644"],
     ["../../packaging/linux/deb/install-origin", "usr/lib/osupad/install-origin", "644"],
+    ["../../packaging/linux/deb/install-origin", "etc/osupad/install-origin", "644"],
+    ["../../build/tosu/tosu", "usr/lib/osupad/tosu/tosu", "755"],
+    ["../../build/tosu/VERSION", "usr/lib/osupad/tosu/VERSION", "644"],
+    ["../../build/tosu/NOTICE", "usr/lib/osupad/tosu/NOTICE", "644"],
+    ["../../build/tosu/LICENSE", "usr/lib/osupad/tosu/LICENSE", "644"],
+    ["../../build/tosu/dist/*", "usr/lib/osupad/tosu/dist/", "644"],
 ]
 
 [package.metadata.generate-rpm]
 name = "osupad"
+version = "1.0.0~rc"
 summary = "Low-latency ESP32-S3 keypad manager, telemetry HUD, and tray applet for osu!"
 description = "osu!pad desktop daemon, configuration GUI, and CLI utility."
 license = "MIT AND LGPL-3.0-only"
@@ -66,10 +73,16 @@ assets = [
     { source = "../target/release/osupad-daemon", dest = "/usr/bin/osupad-daemon", mode = "755" },
     { source = "../target/release/osupad-gui", dest = "/usr/bin/osupad-gui", mode = "755" },
     { source = "../target/release/osupadctl", dest = "/usr/bin/osupadctl", mode = "755" },
-    { source = "../../packaging/linux/systemd-user/osupad-daemon.service", dest = "/usr/lib/systemd/user/osupad-daemon.service", mode = "644" },
+    { source = "../../packaging/linux/rpm/osupad-daemon.service", dest = "/usr/lib/systemd/user/osupad-daemon.service", mode = "644" },
     { source = "../../packaging/linux/rpm/osupad.desktop", dest = "/usr/share/applications/osupad.desktop", mode = "644" },
     { source = "../../packaging/linux/udev/99-osupad.rules", dest = "/usr/lib/udev/rules.d/99-osupad.rules", mode = "644" },
     { source = "../../packaging/linux/rpm/install-origin", dest = "/usr/lib/osupad/install-origin", mode = "644" },
+    { source = "../../packaging/linux/rpm/install-origin", dest = "/etc/osupad/install-origin", mode = "644" },
+    { source = "../../build/tosu/tosu", dest = "/usr/lib/osupad/tosu/tosu", mode = "755" },
+    { source = "../../build/tosu/VERSION", dest = "/usr/lib/osupad/tosu/VERSION", mode = "644" },
+    { source = "../../build/tosu/NOTICE", dest = "/usr/lib/osupad/tosu/NOTICE", mode = "644" },
+    { source = "../../build/tosu/LICENSE", dest = "/usr/lib/osupad/tosu/LICENSE", mode = "644" },
+    { source = "../../build/tosu/dist/*", dest = "/usr/lib/osupad/tosu/dist/", mode = "644" },
 ]
 post_install_script = """
 if [ $1 -ge 1 ]; then
