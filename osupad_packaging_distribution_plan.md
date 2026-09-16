@@ -881,6 +881,7 @@ Keep it to one line per task. This is how the other agent learns what landed.
 | 2026-09-16 | B | B-1…B-4 | `21bbab3` | Top-level Makefile with GNU PREFIX/DESTDIR, all/tosu/firmware/install/install-user/check targets, install-origin marker, and `@BINDIR@` templating for unit and desktop entries. |
 | 2026-09-16 | B | L-1 | `f5e7860` | Template user unit and desktop launcher with `@BINDIR@`, install to `/usr/bin`, `/usr/lib/systemd/user`, `/usr/share/applications`, `/usr/lib/udev/rules.d`. |
 | 2026-09-16 | B | L-3 | `64d5c56` | Add PKGBUILD (source build wrapping Makefile), `cargo-deb` metadata with maintainer scripts and `debian/copyright`, and `cargo-generate-rpm` metadata with udev scriptlets. |
+| 2026-09-17 | B | W0-3 | `8596568` | Single-instance guard on Windows using `Local\osupad-gui` named mutex, plus handoff via per-user named pipe `\\.\pipe\osupad-gui-{sid}`. |
 
 ### A.8. Open owner decisions
 
