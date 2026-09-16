@@ -2,7 +2,7 @@
 Type=Application
 Name=osu!pad Daemon
 Comment=osu!pad background service daemon
-Exec=osupad-daemon
+Exec=@BINDIR@/osupad-daemon
 Icon=input-keyboard
 Terminal=false
 Categories=Utility;

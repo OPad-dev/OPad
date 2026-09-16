@@ -2,7 +2,7 @@
 Type=Application
 Name=osu!pad Tray
 Comment=osu!pad configuration and system tray applet
-Exec=osupad-gui --tray
+Exec=@BINDIR@/osupad-gui --tray
 Icon=input-keyboard
 Terminal=false
 Categories=Utility;HardwareSettings;
