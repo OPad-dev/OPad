@@ -197,7 +197,7 @@ osupadctl monitor
 ## 📄 Documentation
 - [System Architecture](docs/architecture.md)
 - [USB Framing & Protocol](docs/protocol.md)
-- [Counter Reconciliation & Disaster Recovery](docs/recovery.md)
+- [Counter Reconciliation, Recovery & Unbinding](docs/recovery.md) — including the reflash / unbind path
 - [Latency Testing Methodology](docs/latency-testing.md)
 - [Testing & Hardware Checklist](docs/testing-checklist.md)
 - [Technical Specification](osupad_technical_spec_v1.md)
