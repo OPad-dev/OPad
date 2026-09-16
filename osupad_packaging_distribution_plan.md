@@ -24,7 +24,8 @@ Ship osu!pad on Windows 10/11 and on the major Linux distros as real, installabl
 | Version | Stays **v1.0.0**. The release is not finished until these details are done. |
 | Code signing | **Ship unsigned initially.** Apply to SignPath Foundation (free for OSS) once the repo is public. |
 | Linux distribution | Native **`.deb` / `.rpm` / AUR** packages built in CI. Not targeting official distro repositories. |
-| tosu | **Bundled**, tracked to its stable GitHub release. Not bundled in the AUR package. |
+| tosu | **Bundled everywhere.** Prebuilt from upstream releases on Windows/deb/rpm; **built from source** on AUR. |
+| Build system | A top-level **`Makefile`** with `PREFIX`/`DESTDIR`, used by the AUR package and every from-source install. |
 | Updates | Auto-update for **tosu** and the **app**; **explicitly consented** update for the **firmware**. All new work. |
 | Firmware layout | Switch to a **two-slot OTA partition table in v1.0**, even though OTA code lands later. |
 
@@ -331,7 +332,79 @@ Per the owner's decision this is the **only** unbind mechanism: no GUI unpair bu
 
 ---
 
-## 6. L: Linux distribution packages
+## 6. B: Build from source — the Makefile
+
+**Owner decision (2026-09-16):** a top-level `Makefile` builds osu!pad and, on request, tosu, for the machine it runs on. The AUR package is a thin wrapper around it, and so is every other from-source install.
+
+This supersedes `packaging/linux/install.sh`, which is a per-user copy script with the install layout hardcoded.
+
+### B-1. Requirements that make it usable by packagers
+
+The Makefile is only useful to packaging if it behaves like a normal autotools-style build. Two variables are non-negotiable:
+
+- **`PREFIX`** (default `/usr/local`) — where things are installed
+- **`DESTDIR`** (default empty) — a staging root prepended to every install path
+
+`DESTDIR` is what lets a package build install into a fake root and capture the result. Without it the `PKGBUILD`, `cargo-deb` and `cargo-generate-rpm` all have to reimplement the layout by hand, which is how the layout drifts.
+
+```make
+make                                    # build desktop binaries
+make DESTDIR=/tmp/pkg PREFIX=/usr install   # staged system install (packagers)
+make install-user                       # ~/.local layout (replaces install.sh)
+```
+
+### B-2. Targets
+
+| Target | Does |
+|---|---|
+| `all` | Release-build `osupad-daemon`, `osupad-gui`, `osupadctl` |
+| `tosu` | Build tosu from source into `build/tosu/` (B-3) |
+| `firmware` | `idf.py build`; skipped with a clear message if ESP-IDF is absent |
+| `install` | Install into `$(DESTDIR)$(PREFIX)` using the L-1 system layout |
+| `install-user` | Install into `~/.local`, the current `install.sh` behaviour |
+| `uninstall` | Remove everything `install` placed |
+| `check` | `cargo fmt --check`, `clippy -D warnings`, Rust tests, firmware host tests |
+| `clean` | Drop build artifacts |
+
+**`install` must not do anything that requires root beyond writing to `$(DESTDIR)`.** No `udevadm control --reload`, no `systemctl --user enable`, no group changes. Those belong in package post-install scriptlets and in the GUI, never in `make install` — a staged package build runs unprivileged and must not attempt them.
+
+### B-3. Solves L-1's templating problem
+
+L-1 needs one systemd unit source producing both `%h/.local/bin/osupad-daemon` and `/usr/bin/osupad-daemon`. The Makefile is where that happens: keep a single `osupad-daemon.service.in` with an `@BINDIR@` placeholder and substitute `$(PREFIX)/bin` (or `~/.local/bin` for `install-user`) at install time. One source file, no divergent copies — the R7 failure mode closed structurally rather than by discipline.
+
+Apply the same treatment to the `.desktop` files and the udev rule.
+
+### B-4. Building tosu from source
+
+Verified against tosu's manifests:
+
+- **Toolchain:** `pnpm` (`packageManager: pnpm@10.10.0`), **Node.js `>=24.14.0 <25.0.0`**, TypeScript, `rolldown` for bundling.
+- **Release binaries are produced with `@yao-pkg/pkg`** (`compile:linux` → `pkg --output dist/tosu --compress brotli dist/index.js`), a maintained fork of `vercel/pkg`.
+- **`tsprocess`**, the workspace package that does the actual process memory reading, is a **native addon** — building it needs a C/C++ toolchain and Python (`base-devel` on Arch).
+
+**Do not use `pkg` for the source build.** `@yao-pkg/pkg` works by downloading a prebuilt Node base binary from GitHub at build time, which means network access during `build()` — against Arch packaging guidelines, which require every source to be declared in `source=()`, and fragile in any sandboxed or offline build.
+
+**It is also unnecessary.** `pkg` exists to produce a self-contained binary for users who have no Node. Arch has `nodejs` packaged. So:
+
+1. `pnpm install --frozen-lockfile`
+2. `pnpm run genver && pnpm run ts:compile` → `dist/index.js` (plus the built `tsprocess` addon)
+3. Install `dist/` to `$(DESTDIR)$(PREFIX)/lib/osupad/tosu/`
+4. Install a small wrapper script named **`tosu`** next to it that `exec`s `node index.js "$@"`
+
+`find_tosu_binary` (`desktop/crates/osupad-tosu/src/lib.rs:256`) only checks that the path is a file and then spawns it as a process, so a wrapper script works with **no code change**.
+
+**Node version risk, flag it in the PKGBUILD.** tosu pins `engines.node` to the 24.x series. Arch's `nodejs` tracks current and will move past 24, so the package may need to depend on a specific `nodejs-lts-*` rather than `nodejs`. Test this before publishing, and pick the dependency that actually satisfies the engine constraint on the day you ship.
+
+**LGPL note, in your favour:** distributing a build recipe is not distributing the work. For the AUR package you convey no tosu binary at all — the user's machine builds it from upstream source — so the T-3 conveying obligations do not apply there. They still apply in full to the Windows installer and the `.deb`/`.rpm`, which do ship a binary.
+
+**Acceptance.**
+- `make tosu` produces a working tosu on a clean Arch container with only `base-devel`, `nodejs`, `pnpm` and `git` installed.
+- No network access during `build()` beyond the declared sources.
+- The daemon connects to the resulting tosu with no configuration.
+
+---
+
+## 7. L: Linux distribution packages
 
 The current `packaging/linux/install.sh` is a per-user script (`~/.local/bin`). That stays as the from-source path, but it is not a distributable package.
 
@@ -382,7 +455,7 @@ Narrow `ATTRS{idVendor}=="303a"` to also match the specific PIDs the code alread
 |---|---|---|
 | `.deb` | `cargo-deb` | Per-crate metadata in `Cargo.toml`; `maintainer-scripts` for `udevadm control --reload` and `systemctl --user daemon-reload` |
 | `.rpm` | `cargo-generate-rpm` | `%post`/`%postun` scriptlets for the same |
-| Arch | hand-written `PKGBUILD` | Publish as `osupad-bin` (prebuilt) and optionally `osupad-git` |
+| Arch | hand-written `PKGBUILD` | Wraps the **B** Makefile: `make DESTDIR="$pkgdir" PREFIX=/usr install tosu`. Builds tosu from source (B-4), so no vendored binary. Publish `osupad` (source) and optionally `osupad-git` |
 
 **Runtime dependencies differ per distro and must be declared explicitly.** `iced`/wgpu needs Vulkan plus X11/Wayland client libraries, and `ksni` needs D-Bus. Get the per-distro package names right (`libvulkan1` vs `vulkan-loader`, `libwayland-client0` vs `wayland`, and so on) — a missing dependency here surfaces as a GUI that fails to start with an opaque wgpu error.
 
@@ -394,7 +467,7 @@ An AppImage covers every other distro with one artifact and is cheap to add once
 
 ---
 
-## 7. T: tosu integration and redistribution
+## 8. T: tosu integration and redistribution
 
 ### T-1. The licensing position
 
@@ -413,7 +486,9 @@ The auto-update requirement resolves the main practical objection to bundling. A
 **What ships:**
 - Windows: `tosu.exe` inside the Inno package, installed to `%LOCALAPPDATA%\Programs\osupad\tosu\`.
 - Linux `.deb`/`.rpm`: the tosu binary under `/usr/lib/osupad/tosu/`, **not** `/usr/bin` — it is a private, auto-updating component, not a system command, and it must not collide with a tosu the user installed themselves.
-- **AUR: do not bundle.** Arch policy rejects vendored prebuilt binaries, and AUR packages that ship them get flagged. Use `optdepends=('tosu')` and let `find_tosu_binary` resolve `$PATH`, exactly as it does today.
+- **AUR: bundled too, but built from source** (see **B-3**). Arch policy rejects vendored *prebuilt* binaries, but building from source is the normal AUR path, so the package compiles tosu on the user's machine and installs it to `/usr/lib/osupad/tosu/`. Same end result as the other platforms, arrived at the Arch-correct way.
+
+**Auto-update is disabled for package-manager-owned builds.** On AUR (and on any `.deb`/`.rpm` installed system-wide), the package manager owns the tosu binary, so U-1 must not replace it — `pacman`/`apt`/`dnf` would be overwritten behind their back and the file would be reported as modified. The rule generalises cleanly: **osu!pad only ever auto-updates a tosu it owns and installed into a user-writable location.** Everything else is reported, not touched.
 
 **The existing resolution order stays and gains one step at the end.** `find_tosu_binary` (`desktop/crates/osupad-tosu/src/lib.rs:256`) resolves `$OSUPAD_TOSU_PATH` → `~/.local/opt/tosu/tosu` → `$PATH`. Append the bundled location **last**, so a tosu the user installed deliberately always wins over the bundled copy. Never overwrite or auto-update a tosu found outside the bundled directory — that binary is not yours to manage.
 
@@ -449,7 +524,7 @@ Add a **Third-party software** section to the README and an About entry in the G
 
 ---
 
-## 8. U: Updates
+## 9. U: Updates
 
 Three separate updaters with three different risk profiles. **None of them existed before this section; all three are new work.**
 
@@ -550,7 +625,7 @@ Once U-3a has shipped and the layout is in place, move to real OTA:
 
 ---
 
-## 9. W4: Verification and release
+## 10. W4: Verification and release
 
 ### W4-1. CI
 
@@ -586,7 +661,7 @@ Re-run the `docs/latency-testing.md` stages on Windows and add rows to the resul
 
 ---
 
-## 10. Order of work
+## 11. Order of work
 
 Three tracks that only converge at W4. They can be worked in parallel.
 
@@ -599,8 +674,9 @@ Windows        W0-1 ─┬─ W0-2          (IPC abstraction: all Windows work b
                   ↓
                W2-1 ─ W2-3            (installer + strong uninstall)
 
-Linux          L-2 ─ L-1 ─ L-3        (udev fix first: it is a correctness bug today)
-                            └─ L-4    (optional)
+Linux          L-2 ─ B-1 … B-4 ─ L-1 ─ L-3   (udev fix first: it is a correctness bug today;
+                                  │            the Makefile then carries the install layout)
+                                  └─ L-4       (optional)
 
 Firmware       U-3a                   (OTA partition table — do this early, see below)
 
@@ -624,7 +700,7 @@ Then **W0-1**, which gates every remaining Windows task, and **U-0**, which gate
 
 ---
 
-## 11. Risks
+## 12. Risks
 
 | Risk | Mitigation |
 |---|---|
@@ -644,17 +720,21 @@ Then **W0-1**, which gates every remaining Windows task, and **U-0**, which gate
 | Bundled tosu ships without its license or source offer | T-3: release script fails the build on a version/NOTICE mismatch |
 | tosu auto-update overwrites a tosu the user installed themselves | T-2: bundled directory only; user installs always win resolution order |
 | Shipping an OTA partition table later strands every pad in the field | U-3a: do it now, while the field is ~zero devices |
+| Arch's `nodejs` moves past the 24.x that tosu's `engines` pins | B-4: depend on the `nodejs-lts-*` that actually satisfies it, and verify before publishing |
+| `make install` tries a privileged action and breaks staged package builds | B-2: `install` writes only under `$(DESTDIR)`; reloads and enables live in scriptlets |
+| U-1 overwrites a tosu owned by `pacman`/`apt`/`dnf` | T-2: only auto-update a tosu osu!pad installed into a user-writable location |
 
 ---
 
-## 12. Out of scope
+## 13. Out of scope
 
 - macOS.
 - MSIX packaging and Store-style "plug in the pad → Windows offers the app". That needs a Store-signed MSIX; the Inno decision rules it out. The daemon-at-login plus hotplug detection (W1-2) delivers nearly the same feel.
 - Any cryptographic enforcement of the pairing model (§0).
 - Windows Service hosting for the daemon (W1-1).
 - Inclusion in official Debian/Fedora/Arch repositories (L-0). Own-built packages only.
-- Flatpak (L-4). Bundling tosu in the **AUR** package specifically (T-2).
+- Flatpak (L-4).
+- Using `@yao-pkg/pkg` in the source build (B-4) — the system `nodejs` plus a wrapper script replaces it.
 - Hosted APT/DNF repositories, and therefore true auto-update on `.deb`/`.rpm` (U-2). Notify-only in v1.0.
 - OTA firmware transfer code (U-3c). The **partition layout** for it is in scope (U-3a).
 - EV code signing (W2-2).
