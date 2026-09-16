@@ -901,6 +901,7 @@ Keep it to one line per task. This is how the other agent learns what landed.
 | 2026-09-17 | B | U-3b GUI | `0a9ac57` | Firmware update panel on Settings beside software updates with explicit consent every time, verbatim `consent_text` modal, blocker rendering, running slot on Device page, and prominent flashing status with recovery.md reference. |
 | 2026-09-17 | B | W2-1 version | `b66ca82` | Derive Inno Setup `MyAppVersion` dynamically from `desktop/Cargo.toml` via ISPP, failing loudly with `#error` on open/parse error instead of defaulting to literal `1.0.0`. |
 | 2026-09-17 | B | W2-1 symlink | `3ef5b3f` | Remove Windows-breaking `osupad.iss` git symlink, retain `installer.iss` as real file, and update §W2-1 reference. |
+| 2026-09-17 | B | L-3, T-2 | `98e0f98` | Unified package build script (`scripts/release/build_packages.sh`) producing .deb, .rpm, AppImage, and Windows .exe (when iscc available); bundled tosu v4.26.2, /usr/bin systemd unit templating, and newline-stripped install-origin markers. |
 
 ### A.8. Open owner decisions
 
