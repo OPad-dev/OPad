@@ -1,3 +1,5 @@
+pub mod flash;
+
 use bytes::BytesMut;
 use chrono::{Datelike, Local, Timelike};
 use osupad_layout::{Layout, Screen};

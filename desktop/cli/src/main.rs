@@ -1,7 +1,6 @@
-mod esp_rom;
-
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
+use osupad_device::flash::{self, APP_PARTITION_OFFSET};
 use osupad_ipc::{send_request, IpcRequest, IpcResponse, IpcStream, IPC_PROTOCOL_VERSION};
 use osupad_model::JsonBackup;
 use std::io::Write;
@@ -77,11 +76,6 @@ enum Commands {
     /// Perform initial system setup (udev permissions & directories)
     Setup,
 }
-
-/// Where the app image lives, i.e. `ota_0` in `firmware/partitions.csv`
-/// (§U-3a). It was `0x10000` under the old single-app table; a pad flashed at
-/// the old offset with the new table will not boot.
-const APP_PARTITION_OFFSET: u32 = 0x20000;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -457,7 +451,8 @@ async fn main() -> Result<()> {
             // The app image is always written last, and it is the one whose
             // header has to match this board
             let (_, app_image) = images.last().expect("flash set is never empty");
-            validate_esp32s3_image(app_image)?;
+            flash::check_esp32s3_image_file(app_image)
+                .map_err(|e| anyhow::anyhow!("{}: {}", app_image.display(), e))?;
 
             for (offset, path) in &images {
                 println!("  {:#08x}  {}", offset, path.display());
@@ -465,7 +460,7 @@ async fn main() -> Result<()> {
 
             let app_port = prepare_flash(stream.as_mut(), port).await?;
             // Always hand the port back to the daemon, even if flashing failed
-            let result = flash_images(&images, app_port.as_deref()).await;
+            let result = flash::flash(&images, app_port.as_deref(), &|m| println!("{m}")).await;
             let finish_resp = finish_flash(stream.as_mut()).await;
             result?;
 
@@ -488,8 +483,11 @@ async fn main() -> Result<()> {
                 // No daemon to verify through, so watch the pad re-enumerate
                 // as the app ourselves — the last step flash_board.sh did
                 None => {
-                    match wait_for_port(osupad_device::find_target_port, Duration::from_secs(15))
-                        .await
+                    match flash::wait_for_port(
+                        osupad_device::find_target_port,
+                        Duration::from_secs(15),
+                    )
+                    .await
                     {
                         Some(p) => println!("✓ Flash succeeded! The pad came back on {}", p),
                         None => bail!(
@@ -504,7 +502,7 @@ async fn main() -> Result<()> {
 
         Commands::Bootloader { port } => {
             let app_port = prepare_flash(stream.as_mut(), port).await?;
-            let result = enter_bootloader(app_port.as_deref()).await;
+            let result = flash::enter_bootloader(app_port.as_deref()).await;
             // The daemon only opens the app port (303a:4001), so resuming now cannot
             // interfere with the bootloader; it reconnects once the app is flashed
             let _ = finish_flash(stream.as_mut()).await;
@@ -649,201 +647,8 @@ fn resolve_flash_set(path: &Path, full: bool) -> Result<Vec<(u32, PathBuf)>> {
     Ok(images)
 }
 
-/// How to ask the running app to reboot into the ROM download bootloader.
-///
-/// The firmware accepts all three (`firmware/main/usb/usb_cdc.c`) and they are
-/// tried in this order. More than one exists because which of them lands
-/// depends on how the host's CDC driver orders `SET_LINE_CODING` against
-/// `SET_CONTROL_LINE_STATE`, and Linux and Windows disagree: Linux asserts DTR
-/// when the tty is opened, while on Windows serialport's DCB sets
-/// `fDtrControl = Disable` and leaves DTR low unless it is set explicitly
-/// (§W1-3). So every line state below is set by hand rather than inherited
-/// from the open, which makes the sequence mean the same thing on both.
-#[derive(Clone, Copy, Debug)]
-enum BootTrigger {
-    /// The plain-text command, honoured between protocol frames. Baud-rate and
-    /// line-state independent, so it is the one that behaves identically
-    /// everywhere and is tried first.
-    Command,
-    /// 1200-baud touch: the firmware arms download mode on the line-coding
-    /// change and fires when DTR drops, i.e. when the port is closed.
-    BaudTouch,
-    /// The classic esptool pattern: RTS falls while DTR stays high.
-    DtrRts,
-}
-
-fn pulse_trigger(path: &str, trigger: BootTrigger) -> Result<()> {
-    let baud = match trigger {
-        BootTrigger::BaudTouch => 1200,
-        _ => 115_200,
-    };
-    let mut sp = serialport::new(path, baud)
-        .timeout(Duration::from_millis(300))
-        .open()
-        .with_context(|| format!("Failed to open {}", path))?;
-
-    match trigger {
-        BootTrigger::Command => {
-            let _ = sp.write_data_terminal_ready(true);
-            let _ = sp.write_request_to_send(true);
-            sp.write_all(b"BOOTLOADER\n")
-                .context("Failed to send the bootloader command")?;
-            let _ = sp.flush();
-        }
-        BootTrigger::BaudTouch => {
-            // Opening at 1200 baud is the whole trigger; dropping the handle
-            // below clears DTR and fires it.
-            let _ = sp.write_data_terminal_ready(true);
-        }
-        BootTrigger::DtrRts => {
-            let _ = sp.write_data_terminal_ready(true);
-            let _ = sp.write_request_to_send(true);
-            std::thread::sleep(Duration::from_millis(50));
-            let _ = sp.write_request_to_send(false);
-            std::thread::sleep(Duration::from_millis(50));
-        }
-    }
-    drop(sp);
-    Ok(())
-}
-
-/// Reboot the running app into the ROM download bootloader and return the bootloader port.
-async fn enter_bootloader(app_port: Option<&str>) -> Result<String> {
-    if let Some(p) = osupad_device::find_bootloader_port() {
-        return Ok(p);
-    }
-    let Some(app_port) = app_port else {
-        bail!("osu!pad not found: neither the app (303a:4001) nor the ROM bootloader (303a:1001) is connected");
-    };
-
-    println!("Rebooting {} into the ROM download bootloader...", app_port);
-    let mut last_err = None;
-    for trigger in [
-        BootTrigger::Command,
-        BootTrigger::BaudTouch,
-        BootTrigger::DtrRts,
-    ] {
-        // The pad may still be re-enumerating from the previous attempt
-        match open_port_with_retry(app_port, Duration::from_secs(2)).await {
-            Ok(()) => {}
-            Err(e) => {
-                last_err = Some(e);
-                continue;
-            }
-        }
-        if let Err(e) = pulse_trigger(app_port, trigger) {
-            last_err = Some(e);
-            continue;
-        }
-        if let Some(p) =
-            wait_for_port(osupad_device::find_bootloader_port, Duration::from_secs(3)).await
-        {
-            return Ok(p);
-        }
-        println!(
-            "  {:?} trigger did not take, trying the next one...",
-            trigger
-        );
-    }
-
-    match last_err {
-        Some(e) => Err(e).context(
-            "Device did not re-enumerate as the ROM bootloader (303a:1001). See docs/recovery.md",
-        ),
-        None => bail!(
-            "Device did not re-enumerate as the ROM bootloader (303a:1001) after all three \
-             triggers. See docs/recovery.md for the manual BOOT+RESET sequence."
-        ),
-    }
-}
-
-/// Write every image in the set, then reboot into the app.
-///
-/// This replaces `scripts/flash_board.sh` (§W1-3): same sequence, no shell, and
-/// the daemon is coordinated over IPC instead of by stopping a systemd unit,
-/// which is the half that never existed on Windows.
-async fn flash_images(images: &[(u32, PathBuf)], app_port: Option<&str>) -> Result<()> {
-    let boot_port = enter_bootloader(app_port).await?;
-
-    for (offset, path) in images {
-        println!(
-            "Writing {} at {:#x} on {}...",
-            path.display(),
-            offset,
-            boot_port
-        );
-        let status = std::process::Command::new("espflash")
-            .args(["write-bin", "--chip", "esp32s3", "-p", &boot_port])
-            // Already in download mode, and every image after the first needs
-            // the stub still there. espflash cannot reset an ESP32-S3 out of
-            // forced download mode; esp_rom::reset_to_app does that at the end.
-            .args([
-                "--before",
-                "no-reset",
-                "--after",
-                "no-reset-no-stub",
-                "--non-interactive",
-            ])
-            .arg(format!("{:#x}", offset))
-            .arg(path)
-            .status()
-            .context("Failed to execute espflash. Ensure espflash is installed.")?;
-        if !status.success() {
-            bail!(
-                "espflash failed writing {} at {:#x} (exit {:?}). The pad is still in download \
-                 mode; see docs/recovery.md.",
-                path.display(),
-                offset,
-                status.code()
-            );
-        }
-    }
-
-    println!("✓ Firmware written, rebooting into application...");
-    esp_rom::reset_to_app(&boot_port).context("Firmware written, but failed to reboot the device")
-}
-
 fn first_existing(candidates: &[PathBuf]) -> Option<PathBuf> {
     candidates.iter().find(|p| p.exists()).cloned()
-}
-
-/// Wait until the port can actually be opened. On Windows the handle is
-/// exclusive, so this is where a daemon that has not let go yet shows up as a
-/// clear wait rather than as a mysterious flash failure (§W1-3).
-async fn open_port_with_retry(path: &str, timeout: Duration) -> Result<()> {
-    let deadline = tokio::time::Instant::now() + timeout;
-    loop {
-        match serialport::new(path, 115_200)
-            .timeout(Duration::from_millis(300))
-            .open()
-        {
-            Ok(sp) => {
-                drop(sp);
-                return Ok(());
-            }
-            Err(e) if tokio::time::Instant::now() >= deadline => {
-                return Err(e).with_context(|| {
-                    format!(
-                        "Failed to open {}. On Windows the port is exclusive: close anything \
-                         else using it (a serial monitor, another osupad-daemon) first.",
-                        path
-                    )
-                });
-            }
-            Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
-        }
-    }
-}
-
-async fn wait_for_port(find: fn() -> Option<String>, timeout: Duration) -> Option<String> {
-    let deadline = tokio::time::Instant::now() + timeout;
-    while tokio::time::Instant::now() < deadline {
-        if let Some(p) = find() {
-            return Some(p);
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    None
 }
 
 fn run_setup() -> Result<()> {
@@ -880,37 +685,6 @@ SUBSYSTEM=="usb", ATTRS{idVendor}=="303a", MODE="0666", GROUP="uucp", TAG+="uacc
     Ok(())
 }
 
-/// Validates that a file is an ESP32-S3 app image (§32)
-/// Magic byte must be 0xE9, and chip ID at offset 12..13 must be 0x0009 (ESP32-S3).
-fn validate_esp32s3_image(path: &Path) -> Result<()> {
-    use std::io::Read;
-    let mut f = std::fs::File::open(path)
-        .with_context(|| format!("Failed to open firmware image: {}", path.display()))?;
-    let mut header = [0u8; 16];
-    let n = f
-        .read(&mut header)
-        .context("Failed to read firmware image header")?;
-    if n < 16 {
-        bail!("Firmware file is too small to be a valid ESP32 image (less than 16 bytes)");
-    }
-    if header[0] != 0xE9 {
-        bail!(
-            "Invalid image magic byte: 0x{:02X} (expected 0xE9 for ESP image)",
-            header[0]
-        );
-    }
-    let chip_id = u16::from_le_bytes([header[12], header[13]]);
-    const ESP32S3_CHIP_ID: u16 = 0x0009;
-    if chip_id != ESP32S3_CHIP_ID {
-        bail!(
-            "Firmware binary is built for chip ID 0x{:04X}, but osu!pad requires ESP32-S3 (chip ID 0x{:04X})",
-            chip_id,
-            ESP32S3_CHIP_ID
-        );
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -922,52 +696,6 @@ mod tests {
         let mut f = std::fs::File::create(&path).unwrap();
         f.write_all(content).unwrap();
         path
-    }
-
-    #[test]
-    fn test_validate_valid_esp32s3_image() {
-        let mut header = [0u8; 32];
-        header[0] = 0xE9; // Magic byte
-        header[12] = 0x09; // ESP32-S3 chip ID low byte
-        header[13] = 0x00; // ESP32-S3 chip ID high byte
-        let path = make_test_file("valid.bin", &header);
-
-        let res = validate_esp32s3_image(&path);
-        let _ = std::fs::remove_file(&path);
-        assert!(res.is_ok());
-    }
-
-    #[test]
-    fn test_validate_wrong_magic_rejected() {
-        let mut header = [0u8; 32];
-        header[0] = 0xAA; // Wrong magic
-        header[12] = 0x09;
-        let path = make_test_file("wrong_magic.bin", &header);
-
-        let err = validate_esp32s3_image(&path).unwrap_err();
-        let _ = std::fs::remove_file(&path);
-        assert!(err.to_string().contains("Invalid image magic byte"));
-    }
-
-    #[test]
-    fn test_validate_wrong_chip_rejected() {
-        let mut header = [0u8; 32];
-        header[0] = 0xE9;
-        header[12] = 0x05; // ESP32-C3 chip ID
-        let path = make_test_file("esp32c3.bin", &header);
-
-        let err = validate_esp32s3_image(&path).unwrap_err();
-        let _ = std::fs::remove_file(&path);
-        assert!(err.to_string().contains("chip ID 0x0005"));
-    }
-
-    #[test]
-    fn test_validate_short_file_rejected() {
-        let path = make_test_file("short.bin", &[0xE9, 0x01, 0x02]);
-
-        let err = validate_esp32s3_image(&path).unwrap_err();
-        let _ = std::fs::remove_file(&path);
-        assert!(err.to_string().contains("too small"));
     }
 
     #[test]
@@ -1059,13 +787,5 @@ mod tests {
             set.iter().map(|(o, _)| *o).collect::<Vec<_>>(),
             vec![0x0, 0x8000, 0x20000]
         );
-    }
-
-    #[test]
-    fn test_validate_real_build_if_present() {
-        let path = std::path::Path::new("../../firmware/build/osupad-firmware.bin");
-        if path.exists() {
-            assert!(validate_esp32s3_image(path).is_ok());
-        }
     }
 }
