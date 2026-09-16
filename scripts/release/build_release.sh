@@ -72,8 +72,16 @@ for bin in osupad-daemon osupadctl osupad-gui; do
 done
 echo "✓ Host binaries copied and stripped in dist/"
 
-# Create tarball archive for Linux distribution
-ARCHIVE_NAME="osupad-linux-x86_64-1.0.0.tar.gz"
+# Create tarball archive for Linux distribution. The version comes from the
+# workspace rather than a literal: it reads 1.0.0-rc until W4 passes (§0), and a
+# tarball claiming 1.0.0 while the binaries inside report 1.0.0-rc is the kind of
+# mismatch nobody notices until a bug report cites the wrong version.
+VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' "${REPO_ROOT}/desktop/Cargo.toml" | head -n 1)"
+if [ -z "${VERSION}" ]; then
+    echo "ERROR: could not read the workspace version from desktop/Cargo.toml!" >&2
+    exit 1
+fi
+ARCHIVE_NAME="osupad-linux-x86_64-${VERSION}.tar.gz"
 TAR_TMP="${DIST_DIR}/tar_staging"
 mkdir -p "${TAR_TMP}/bin"
 cp "${DIST_DIR}/osupad-daemon" "${DIST_DIR}/osupad-gui" "${DIST_DIR}/osupadctl" "${TAR_TMP}/bin/"
