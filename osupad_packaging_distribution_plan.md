@@ -864,6 +864,7 @@ Keep it to one line per task. This is how the other agent learns what landed.
 | Date | Column | Task | Commit | Notes |
 |---|---|---|---|---|
 | 2026-09-16 | A | W0-1 | `3bfbbc7` | **B is unblocked for W0-3.** `osupad-ipc` public types are now `IpcStream` (client), `IpcServerStream` (accepted server end) and `IpcListener`; `create_listener` returns `IpcListener` and `accept()` yields one stream, not a tuple. The framing helpers are generic over `IpcTransport`, so `&mut IpcStream` call sites are unchanged. `gui/src/ipc.rs` needed no edit. |
+| 2026-09-16 | A | W0-2 | `84ff5d8` | Windows pipe instances get a protected DACL (SYSTEM + the calling user only); `create_listener` fails rather than creating an unrestricted pipe if the SID is unknown. The two-account "another user cannot open the pipe" check is a W4-2 manual item. |
 
 ### A.8. Open owner decisions
 
