@@ -54,6 +54,78 @@ jobs:
         working-directory: desktop
         run: cargo test --workspace
 
+  rust-windows:
+    # §W4-1. cargo check alone is not enough: the ksni/tray-icon split and the
+    # IPC transport aliases fail at link time, not at check time, so this job
+    # builds and runs the tests on a real windows-msvc host.
+    name: Rust on Windows (Format, Clippy, Tests)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+          key: windows
+
+      - name: Check code formatting
+        working-directory: desktop
+        run: cargo fmt --check
+
+      # osupad-gui is excluded here and built by the job below, so that one
+      # crate's Windows port does not hide regressions in the other eleven.
+      - name: Clippy
+        working-directory: desktop
+        run: cargo clippy --workspace --exclude osupad-gui --all-targets -- -D warnings
+
+      - name: Build
+        working-directory: desktop
+        run: cargo build --workspace --exclude osupad-gui
+
+      - name: Workspace Unit & Integration Tests
+        working-directory: desktop
+        run: cargo test --workspace --exclude osupad-gui
+
+  rust-windows-gui:
+    # EXPECTED TO FAIL until W0-5 lands. osupad-gui depends on ksni
+    # unconditionally, and ksni is a Linux D-Bus StatusNotifierItem crate; the
+    # cross-platform tray splits it behind cfg(target_os) and adds tray-icon
+    # for Windows. The job exists now so that work has a target to turn green,
+    # and it is separate so it fails on its own rather than reddening the rest.
+    name: Windows GUI (red until W0-5)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+          key: windows-gui
+
+      - name: Clippy
+        working-directory: desktop
+        run: cargo clippy -p osupad-gui --all-targets -- -D warnings
+
+      - name: Build
+        working-directory: desktop
+        run: cargo build -p osupad-gui
+
   firmware-host-tests:
     name: Firmware Host Unit Tests
     runs-on: ubuntu-latest
