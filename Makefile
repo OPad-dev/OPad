@@ -60,6 +60,9 @@ tosu:
 	cp -r $(TOSU_SRC_DIR)/dist/* $(TOSU_BUILD_DIR)/dist/
 	@printf '#!/bin/sh\nDIR="$$(cd "$$(dirname "$$0")" && pwd)"\nif [ -f "$$DIR/index.js" ]; then\n  exec node "$$DIR/index.js" "$$@"\nelif [ -f "$$DIR/dist/index.js" ]; then\n  exec node "$$DIR/dist/index.js" "$$@"\nelse\n  echo "tosu: index.js not found in $$DIR" >&2\n  exit 1\nfi\n' > $(TOSU_BUILD_DIR)/tosu
 	@chmod +x $(TOSU_BUILD_DIR)/tosu
+	install -m 644 licenses/tosu/VERSION $(TOSU_BUILD_DIR)/VERSION
+	install -m 644 licenses/tosu/NOTICE $(TOSU_BUILD_DIR)/NOTICE
+	install -m 644 licenses/tosu/LICENSE $(TOSU_BUILD_DIR)/LICENSE
 	@echo "✓ tosu built successfully in $(TOSU_BUILD_DIR)"
 
 # B-2: Build firmware with ESP-IDF, cleanly skipped if absent
@@ -97,6 +100,9 @@ install: all
 		install -d "$(DESTDIR)$(LIBDIR)/osupad/tosu"; \
 		cp -r $(TOSU_BUILD_DIR)/dist/* "$(DESTDIR)$(LIBDIR)/osupad/tosu/"; \
 		install -m 755 "$(TOSU_BUILD_DIR)/tosu" "$(DESTDIR)$(LIBDIR)/osupad/tosu/tosu"; \
+		install -m 644 licenses/tosu/VERSION "$(DESTDIR)$(LIBDIR)/osupad/tosu/VERSION"; \
+		install -m 644 licenses/tosu/NOTICE "$(DESTDIR)$(LIBDIR)/osupad/tosu/NOTICE"; \
+		install -m 644 licenses/tosu/LICENSE "$(DESTDIR)$(LIBDIR)/osupad/tosu/LICENSE"; \
 	fi
 
 # B-2: Install into ~/.local layout (replaces install.sh)
@@ -122,6 +128,9 @@ install-user: all
 		install -d "$(LIBDIR_USER)/osupad/tosu"; \
 		cp -r $(TOSU_BUILD_DIR)/dist/* "$(LIBDIR_USER)/osupad/tosu/"; \
 		install -m 755 "$(TOSU_BUILD_DIR)/tosu" "$(LIBDIR_USER)/osupad/tosu/tosu"; \
+		install -m 644 licenses/tosu/VERSION "$(LIBDIR_USER)/osupad/tosu/VERSION"; \
+		install -m 644 licenses/tosu/NOTICE "$(LIBDIR_USER)/osupad/tosu/NOTICE"; \
+		install -m 644 licenses/tosu/LICENSE "$(LIBDIR_USER)/osupad/tosu/LICENSE"; \
 	fi
 	@echo ""
 	@echo "=== User installation finished ==="
