@@ -1,18 +1,53 @@
 use osupad_ipc::{
-    create_listener, read_request, send_request, send_response, IpcRequest, IpcResponse,
+    connect, create_listener, read_request, send_request, send_response, IpcRequest, IpcResponse,
     IPC_PROTOCOL_VERSION,
 };
 use osupad_model::{CounterState, DeviceConfig, DeviceInfo, JsonBackup, RuntimeMode};
-use tokio::net::UnixStream;
+use std::path::PathBuf;
+
+/// A per-test transport address: a socket under a private directory on Unix,
+/// a named pipe on Windows.
+fn test_addr(name: &str) -> PathBuf {
+    #[cfg(unix)]
+    {
+        std::env::temp_dir()
+            .join(format!("osupad-test-{}-{}", std::process::id(), name))
+            .join("daemon.sock")
+    }
+    #[cfg(windows)]
+    {
+        PathBuf::from(format!(
+            r"\\.\pipe\osupad-test-{}-{}",
+            std::process::id(),
+            name
+        ))
+    }
+}
+
+/// Removes whatever `test_addr` created. A named pipe disappears with its
+/// last instance, so this is a no-op on Windows.
+fn cleanup_addr(addr: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        let _ = std::fs::remove_file(addr);
+        if let Some(parent) = addr.parent() {
+            let _ = std::fs::remove_dir(parent);
+        }
+    }
+    #[cfg(windows)]
+    {
+        let _ = addr;
+    }
+}
 
 #[tokio::test]
 async fn test_ipc_roundtrip_requests() {
-    let socket_path = std::env::temp_dir().join(format!("osupad-test-{}.sock", std::process::id()));
+    let socket_path = test_addr("roundtrip");
     let listener = create_listener(&socket_path).expect("create_listener");
 
     // Spawn mock server task
     tokio::spawn(async move {
-        while let Ok((mut stream, _)) = listener.accept().await {
+        while let Ok(mut stream) = listener.accept().await {
             tokio::spawn(async move {
                 while let Ok(req) = read_request(&mut stream).await {
                     let resp = match req {
@@ -103,9 +138,7 @@ async fn test_ipc_roundtrip_requests() {
     });
 
     // Client connection
-    let mut client = UnixStream::connect(&socket_path)
-        .await
-        .expect("client connect");
+    let mut client = connect(&socket_path).await.expect("client connect");
 
     // 1. Handshake
     let hs_req = IpcRequest::Handshake {
@@ -194,17 +227,16 @@ async fn test_ipc_roundtrip_requests() {
         other => panic!("Unexpected response: {:?}", other),
     }
 
-    let _ = std::fs::remove_file(&socket_path);
+    cleanup_addr(&socket_path);
 }
 
 #[tokio::test]
 async fn test_ipc_handshake_protocol_mismatch() {
-    let socket_path =
-        std::env::temp_dir().join(format!("osupad-hs-test-{}.sock", std::process::id()));
+    let socket_path = test_addr("handshake");
     let listener = create_listener(&socket_path).expect("create_listener");
 
     tokio::spawn(async move {
-        if let Ok((mut stream, _)) = listener.accept().await {
+        if let Ok(mut stream) = listener.accept().await {
             if let Ok(req) = read_request(&mut stream).await {
                 let resp = match req {
                     IpcRequest::Handshake {
@@ -230,9 +262,7 @@ async fn test_ipc_handshake_protocol_mismatch() {
         }
     });
 
-    let mut client = UnixStream::connect(&socket_path)
-        .await
-        .expect("client connect");
+    let mut client = connect(&socket_path).await.expect("client connect");
     let hs_req = IpcRequest::Handshake {
         client_version: "1.0.0".to_string(),
         client_protocol: 999, // Mismatched protocol version
@@ -249,17 +279,16 @@ async fn test_ipc_handshake_protocol_mismatch() {
         other => panic!("Expected HandshakeRejected, got: {:?}", other),
     }
 
-    let _ = std::fs::remove_file(&socket_path);
+    cleanup_addr(&socket_path);
 }
 
 #[tokio::test]
 async fn test_connect_and_handshake_helper() {
-    let socket_path =
-        std::env::temp_dir().join(format!("osupad-helper-test-{}.sock", std::process::id()));
+    let socket_path = test_addr("helper");
     let listener = create_listener(&socket_path).expect("create_listener");
 
     tokio::spawn(async move {
-        if let Ok((mut stream, _)) = listener.accept().await {
+        if let Ok(mut stream) = listener.accept().await {
             if let Ok(IpcRequest::Handshake {
                 client_protocol, ..
             }) = read_request(&mut stream).await
@@ -291,19 +320,18 @@ async fn test_connect_and_handshake_helper() {
         other => panic!("Expected HandshakeAck, got: {:?}", other),
     }
 
-    let _ = std::fs::remove_file(&socket_path);
+    cleanup_addr(&socket_path);
 }
 
 #[tokio::test]
 async fn test_oversized_frame_does_not_allocate() {
     use tokio::io::AsyncWriteExt;
 
-    let socket_dir = std::env::temp_dir().join(format!("osupad-frame-test-{}", std::process::id()));
-    let socket_path = socket_dir.join("daemon.sock");
+    let socket_path = test_addr("frame");
     let listener = create_listener(&socket_path).expect("create_listener");
 
     let server_task = tokio::spawn(async move {
-        if let Ok((mut stream, _)) = listener.accept().await {
+        if let Ok(mut stream) = listener.accept().await {
             // Attempt to read request with 2 GiB header
             let err = read_request(&mut stream).await.unwrap_err();
             match err {
@@ -315,9 +343,7 @@ async fn test_oversized_frame_does_not_allocate() {
         }
     });
 
-    let mut client = UnixStream::connect(&socket_path)
-        .await
-        .expect("client connect");
+    let mut client = connect(&socket_path).await.expect("client connect");
     // Send 2 GiB frame header (2 * 1024 * 1024 * 1024)
     let fake_len = 2u32 * 1024 * 1024 * 1024;
     client
@@ -326,16 +352,16 @@ async fn test_oversized_frame_does_not_allocate() {
         .expect("write header");
 
     server_task.await.unwrap();
-    let _ = std::fs::remove_file(&socket_path);
-    let _ = std::fs::remove_dir(&socket_dir);
+    cleanup_addr(&socket_path);
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn test_socket_and_dir_permissions() {
     use std::os::unix::fs::PermissionsExt;
 
-    let socket_dir = std::env::temp_dir().join(format!("osupad-perm-test-{}", std::process::id()));
-    let socket_path = socket_dir.join("daemon.sock");
+    let socket_path = test_addr("perm");
+    let socket_dir = socket_path.parent().unwrap().to_path_buf();
     let listener = create_listener(&socket_path).expect("create_listener");
 
     let dir_meta = std::fs::metadata(&socket_dir).expect("dir metadata");
@@ -347,31 +373,38 @@ async fn test_socket_and_dir_permissions() {
     assert_eq!(sock_mode, 0o600, "Socket permissions should be 0600");
 
     drop(listener);
-    let _ = std::fs::remove_file(&socket_path);
-    let _ = std::fs::remove_dir(&socket_dir);
+    cleanup_addr(&socket_path);
 }
 
+/// A live listener must refuse a second one on both transports: a daemon
+/// answering on the socket on Unix, `first_pipe_instance` on Windows.
 #[tokio::test]
-async fn test_second_listener_refused_and_stale_cleanup() {
-    let socket_dir =
-        std::env::temp_dir().join(format!("osupad-single-test-{}", std::process::id()));
-    let socket_path = socket_dir.join("daemon.sock");
+async fn test_second_listener_refused() {
+    let socket_path = test_addr("single");
     let listener_1 = create_listener(&socket_path).expect("first create_listener");
 
-    // Attempting to create second listener while first is live must return AlreadyRunning
-    let second_res = create_listener(&socket_path);
-    match second_res {
+    match create_listener(&socket_path) {
         Err(osupad_ipc::IpcError::AlreadyRunning) => {}
         other => panic!("Expected AlreadyRunning, got {:?}", other),
     }
 
-    // Drop listener_1 so socket becomes stale
+    drop(listener_1);
+    cleanup_addr(&socket_path);
+}
+
+/// A socket file left behind by a dead daemon must be cleaned up and rebound.
+/// Windows has no equivalent: the pipe name disappears with its last instance.
+#[cfg(unix)]
+#[tokio::test]
+async fn test_stale_socket_cleanup() {
+    let socket_path = test_addr("stale");
+    let listener_1 = create_listener(&socket_path).expect("first create_listener");
+
+    // Drop listener_1 so the socket file becomes stale
     drop(listener_1);
 
-    // Creating listener now should detect stale socket, clean it up, and bind successfully
     let listener_2 = create_listener(&socket_path).expect("stale socket cleanup create_listener");
     drop(listener_2);
 
-    let _ = std::fs::remove_file(&socket_path);
-    let _ = std::fs::remove_dir(&socket_dir);
+    cleanup_addr(&socket_path);
 }

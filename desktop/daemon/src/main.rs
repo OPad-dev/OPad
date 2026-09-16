@@ -42,9 +42,9 @@ async fn main() -> Result<()> {
     info!("Starting osupad-daemon v1.0.0");
 
     let socket_path = get_socket_path();
-    if socket_path.exists() && tokio::net::UnixStream::connect(&socket_path).await.is_ok() {
+    if osupad_ipc::connect(&socket_path).await.is_ok() {
         anyhow::bail!(
-            "Another osupad-daemon instance is already running on socket {}",
+            "Another osupad-daemon instance is already running at {}",
             socket_path.display()
         );
     }
@@ -156,7 +156,7 @@ async fn main() -> Result<()> {
         tokio::spawn(async move {
             loop {
                 match ipc_listener.accept().await {
-                    Ok((mut stream, _)) => {
+                    Ok(mut stream) => {
                         let daemon_state = daemon_state.clone();
                         let storage = storage.clone();
                         let device_manager = device_manager.clone();

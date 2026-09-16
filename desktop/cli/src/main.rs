@@ -2,12 +2,11 @@ mod esp_rom;
 
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use osupad_ipc::{send_request, IpcRequest, IpcResponse, IPC_PROTOCOL_VERSION};
+use osupad_ipc::{send_request, IpcRequest, IpcResponse, IpcStream, IPC_PROTOCOL_VERSION};
 use osupad_model::JsonBackup;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use tokio::net::UnixStream;
 
 #[derive(Parser)]
 #[command(name = "osupadctl", about = "osu!pad CLI management tool")]
@@ -488,7 +487,7 @@ async fn main() -> Result<()> {
 /// Ask the daemon to release the serial port. Returns the app port to trigger,
 /// or None if the device is already sitting in the ROM bootloader.
 async fn prepare_flash(
-    stream: &mut UnixStream,
+    stream: &mut IpcStream,
     explicit_port: Option<String>,
 ) -> Result<Option<String>> {
     match send_request(stream, &IpcRequest::PrepareFlash).await? {

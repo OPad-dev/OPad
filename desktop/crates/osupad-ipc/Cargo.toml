@@ -15,4 +15,14 @@ osupad-model = { path = "../osupad-model" }
 osupad-layout = { path = "../osupad-layout" }
 bytes.workspace = true
 byteorder.workspace = true
+
+[target.'cfg(unix)'.dependencies]
 rustix = { version = "0.38", features = ["process", "fs"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_Threading",
+] }
