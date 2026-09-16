@@ -759,7 +759,15 @@ impl App {
             }
             Message::SystemdServiceInstalled(res) => match res {
                 Ok(()) => {
-                    self.banner = Some("systemd service installed and started!".into());
+                    #[cfg(windows)]
+                    {
+                        self.banner =
+                            Some("Daemon registered to start at login and started!".into());
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        self.banner = Some("systemd service installed and started!".into());
+                    }
                     return self.poll();
                 }
                 Err(e) => {
@@ -791,6 +799,10 @@ impl App {
                     if let Err(e) = platform_windows::set_gui_autostart_enabled(enabled) {
                         self.banner = Some(format!("Failed to update autostart: {}", e));
                     }
+                }
+                #[cfg(not(any(target_os = "linux", windows)))]
+                {
+                    let _ = enabled;
                 }
             }
             Message::SaveConfig => {
