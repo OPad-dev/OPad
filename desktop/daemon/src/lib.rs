@@ -1,3 +1,4 @@
+pub mod firmware_update;
 pub mod identity;
 pub mod ipc_handlers;
 pub mod log_hub;

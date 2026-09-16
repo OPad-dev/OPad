@@ -52,6 +52,7 @@ message DeviceToHost {
 | 10 | `RequestStatus` | Requests instantaneous device status and hardware statistics. |
 | 11 | `ResetLatencyStats` | Clears cumulative latency statistics (min, max, average, and histogram buckets). |
 | 12 | `EnterBootloader` | Instructs device to restart immediately into native USB ROM DFU bootloader for flashing. |
+| 14 | `ClaimOwnership` | Records which host install owns this pad (§W3-1, §W3-2). Carries a 16-byte `owner_id`. It is an NVS write, so the firmware honours it **only in IDLE**, never during `PLAYING` or `COOLDOWN` (P1-3); the host only ever sends it at connect time, which is already an IDLE-only moment. An all-zero `owner_id` is **refused**, so there is no wire path to unpairing — that is a documented reflash (§W3-4, `docs/recovery.md` §7). Re-claiming by the current owner writes nothing. |
 
 ---
 
@@ -59,12 +60,42 @@ message DeviceToHost {
 
 | Tag | Message | Description |
 |---|---|---|
-| 1 | `HelloAck` | Handshake response. Returns `protocol_version`, `firmware_version`, `board_profile`, runtime MAC-derived `device_id`, `counter_generation`, and current lifetime presses. |
+| 1 | `HelloAck` | Handshake response. Returns `protocol_version`, `firmware_version`, `board_profile`, runtime MAC-derived `device_id`, `counter_generation`, current lifetime presses, `owner_id` (field 8) and `running_partition` (field 9). |
 | 2 | `ConfigAck` | Acknowledges `SetConfig` with `success` boolean, descriptive status message, and current applied `ConfigPayload`. |
 | 3 | `CounterSyncResp` | Acknowledges `CounterSync` with `success` boolean, error message, and confirmed synchronized `CounterState`. |
 | 4 | `LayoutAck` | Acknowledges `SetLayout` or `ResetLayout` with `screen` ID, `success` boolean, and status message. |
 | 5 | `Status` | Periodic or requested device health: `uptime_ms`, `runtime_state`, lifetime counters, and latency statistics (min, max, avg, samples, buckets). |
 | 6 | `LogBatch` | Batch of diagnostic entries from the in-RAM ring buffer: `timestamp_ms`, severity `level`, `event_id`, and optional `arg0`/`arg1`. |
+
+### `HelloAck.owner_id` (field 8, §W3-1 / §W3-2)
+
+16 bytes. Empty or all zero means **unclaimed**, which is also what firmware
+predating W3-2 sends — the two are deliberately indistinguishable, so an older
+pad is treated as unclaimed rather than as belonging to nobody in particular.
+
+The host decides from this and its own install identity:
+
+| `owner_id` | Host action |
+|---|---|
+| Absent / all zero | Claim it silently with `ClaimOwnership`. The common case, and it is not worth a prompt. |
+| This install's | Nothing. Proceed normally. |
+| A different install's | **Prompt** (§W3-3). Counter sync is blocked until the user answers. The pad keeps working as a keyboard throughout — that was never in question. |
+| Any of the above, but this install has no identity | Claim nothing, prompt about nothing. A daemon with no storage has no identity (§W3-1). |
+
+The prompt offers three answers: take the pad over keeping its counters, take it
+over keeping this PC's, or leave it alone. "Leave it alone" suppresses config,
+layouts, telemetry and all syncing, and the pad is still a keyboard.
+
+This is an **ownership model, not DRM**. Nothing here is cryptographic and
+nothing is enforced; it protects counter integrity from a pad silently changing
+hands, and that is all it is for.
+
+### `HelloAck.running_partition` (field 9, §U-3a)
+
+The label of the app partition the running image booted from: `ota_0`, `ota_1`,
+or `factory` for a pad still on the pre-OTA single-app table. An **empty string**
+means firmware older than the field, which the host reads as unknown rather than
+guessing a slot. Surfaced by `osupadctl status` as `Running Slot`.
 
 ---
 
@@ -88,5 +119,22 @@ The device supports two non-contact methods to enter the ESP32-S3 ROM bootloader
    - `osupadctl flash <firmware.bin>` sends `EnterBootloader` over CDC.
    - The firmware calls `esp_restart()` with ROM download mode flags set, immediately re-enumerating as an Espressif USB JTAG/serial DFU device (`VID: 0x303A, PID: 0x1001`).
 2. **1200-Baud Touch (Fallback)**:
-   - Setting serial line baud rate to 1200 baud and toggling DTR/RTS triggers ROM bootloader entry even if the application firmware is unresponsive or in an unexpected state.
+   - Setting serial line baud rate to 1200 baud arms download mode; the firmware reboots when DTR drops, i.e. when the host closes the port.
+3. **DTR/RTS (the esptool pattern)**:
+   - RTS falling while DTR stays high. The classic Espressif CDC-ACM trigger, and the last of the three `osupadctl` tries.
+
+`osupadctl` tries all three in that order, setting DTR and RTS explicitly rather
+than relying on what the platform does at open — Linux asserts DTR when a tty is
+opened and Windows does not, so an implicit sequence means different things on
+the two platforms (§W1-3).
+
+### Partition layout (§U-3a)
+
+Since the two-slot table, the **app image is written at `0x20000`** (`ota_0`),
+not at `0x10000`. `nvs` stays at `0x9000` at its original `0x6000` size, which
+is why the lifetime counters and `owner_id` survive a firmware update.
+
+A host-driven update writes the **app partition only** and never `erase-flash`
+(§U-3b); `erase-flash` takes NVS with it and is the documented unbind path, not
+an update mechanism (`docs/recovery.md` §7).
 

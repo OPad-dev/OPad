@@ -37,6 +37,10 @@ idf.py build
 FW_BIN="${REPO_ROOT}/firmware/build/osupad-firmware.bin"
 BOOT_BIN="${REPO_ROOT}/firmware/build/bootloader/bootloader.bin"
 PART_BIN="${REPO_ROOT}/firmware/build/partition_table/partition-table.bin"
+# Points the bootloader back at ota_0 (§U-3a). Without it a recovery flash onto
+# an erased chip leaves otadata blank, which happens to boot ota_0 anyway, but
+# only by falling back rather than by being told.
+OTA_BIN="${REPO_ROOT}/firmware/build/ota_data_initial.bin"
 
 if [ ! -f "${FW_BIN}" ]; then
     echo "ERROR: Firmware binary not found at ${FW_BIN}!" >&2
@@ -46,6 +50,7 @@ fi
 cp "${FW_BIN}" "${DIST_DIR}/osupad-firmware.bin"
 [ -f "${BOOT_BIN}" ] && cp "${BOOT_BIN}" "${DIST_DIR}/bootloader.bin"
 [ -f "${PART_BIN}" ] && cp "${PART_BIN}" "${DIST_DIR}/partition-table.bin"
+[ -f "${OTA_BIN}" ] && cp "${OTA_BIN}" "${DIST_DIR}/ota_data_initial.bin"
 echo "✓ Firmware artifacts copied to dist/"
 
 # 2. Build Desktop Host Binaries
@@ -67,8 +72,16 @@ for bin in osupad-daemon osupadctl osupad-gui; do
 done
 echo "✓ Host binaries copied and stripped in dist/"
 
-# Create tarball archive for Linux distribution
-ARCHIVE_NAME="osupad-linux-x86_64-1.0.0.tar.gz"
+# Create tarball archive for Linux distribution. The version comes from the
+# workspace rather than a literal: it reads 1.0.0-rc until W4 passes (§0), and a
+# tarball claiming 1.0.0 while the binaries inside report 1.0.0-rc is the kind of
+# mismatch nobody notices until a bug report cites the wrong version.
+VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' "${REPO_ROOT}/desktop/Cargo.toml" | head -n 1)"
+if [ -z "${VERSION}" ]; then
+    echo "ERROR: could not read the workspace version from desktop/Cargo.toml!" >&2
+    exit 1
+fi
+ARCHIVE_NAME="osupad-linux-x86_64-${VERSION}.tar.gz"
 TAR_TMP="${DIST_DIR}/tar_staging"
 mkdir -p "${TAR_TMP}/bin"
 cp "${DIST_DIR}/osupad-daemon" "${DIST_DIR}/osupad-gui" "${DIST_DIR}/osupadctl" "${TAR_TMP}/bin/"

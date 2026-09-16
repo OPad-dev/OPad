@@ -54,16 +54,30 @@ pub enum UpdateCommand {
     Install(UpdateComponent),
 }
 
+/// The last manifest that passed signature verification.
+///
+/// Shared rather than kept inside the worker because §U-3b's firmware flash is
+/// driven from an IPC handler, and it must use a manifest this daemon actually
+/// verified — never re-fetch one at the moment of flashing, where a failure
+/// would land between the consent and the write.
+pub type SharedManifest = Arc<Mutex<Option<ReleaseManifest>>>;
+
 /// The handle IPC handlers use to read status and ask for an install
 #[derive(Clone)]
 pub struct UpdateService {
     status: SharedUpdateStatus,
+    manifest: SharedManifest,
     commands: tokio::sync::mpsc::UnboundedSender<UpdateCommand>,
 }
 
 impl UpdateService {
     pub fn status(&self) -> UpdateStatus {
         self.status.lock().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    /// The verified manifest, or `None` if no check has succeeded yet.
+    pub fn manifest(&self) -> Option<ReleaseManifest> {
+        self.manifest.lock().ok().and_then(|m| m.clone())
     }
 
     pub fn request_install(&self, component: UpdateComponent) -> Result<(), String> {
@@ -79,9 +93,11 @@ pub fn spawn_update_worker(
     tosu_supervisor: TosuSupervisor,
 ) -> UpdateService {
     let status: SharedUpdateStatus = Arc::new(Mutex::new(UpdateStatus::default()));
+    let shared_manifest: SharedManifest = Arc::new(Mutex::new(None));
     let (commands, mut command_rx) = tokio::sync::mpsc::unbounded_channel();
     let service = UpdateService {
         status: status.clone(),
+        manifest: shared_manifest.clone(),
         commands,
     };
 
@@ -98,6 +114,9 @@ pub fn spawn_update_worker(
                     match tick(&daemon_state, &storage, &tosu_supervisor, &status).await {
                         Ok(m) => {
                             if m.is_some() {
+                                if let Ok(mut shared) = shared_manifest.lock() {
+                                    shared.clone_from(&m);
+                                }
                                 manifest = m;
                             }
                         }
@@ -116,8 +135,9 @@ pub fn spawn_update_worker(
                         }
                         UpdateComponent::Tosu => Ok(()),
                         // §U-3: an app update must never trigger a firmware
-                        // update, and a firmware update takes explicit consent
-                        // through its own path every single time.
+                        // update. A flash is unreachable from here by design;
+                        // it goes through InstallFirmwareUpdate, which takes
+                        // consent and syncs the counters first.
                         UpdateComponent::Firmware => Err(UpdateError::Http(
                             "Firmware updates are not applied by the updater (§U-3)".to_string(),
                         )),

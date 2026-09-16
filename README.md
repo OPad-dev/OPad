@@ -2,7 +2,7 @@
 
 **Low-Latency ESP32-S3 osu! Keypad & Telemetry Display**
 
-A deterministic, ultra-low-latency two-key mechanical keypad and live telemetry HUD designed for competitive osu!lazer gameplay on Linux *(Windows support planned after Linux v1.0)*.
+A deterministic, ultra-low-latency two-key mechanical keypad and live telemetry HUD designed for competitive osu!lazer gameplay on **Linux and Windows 10/11**.
 
 ---
 
@@ -109,16 +109,60 @@ idf.py build
 ## ⚡ Flashing the Firmware
 
 ### Option A: Via `osupadctl` (Recommended)
-`osupadctl` integrates native USB flashing via `espflash` and requires no external toolchain:
+`osupadctl` drives `espflash` directly and needs no shell script and no ESP-IDF
+toolchain. It asks the daemon to release the serial port first, reboots the pad
+into the ROM download bootloader hands-free, writes the image and reboots back
+into the app — on Linux and on Windows, with the app running:
+
 ```bash
+# Update the app image only (ota_0 at 0x20000)
 osupadctl flash firmware/build/osupad-firmware.bin
+
+# Recovery flash: bootloader + partition table + OTA data + app
+osupadctl flash --full firmware/build
 ```
+
+It also works with no daemon running at all, which is the state a recovery
+flash usually happens in.
 
 ### Option B: Via ESP-IDF
 ```bash
 cd firmware
 idf.py -p /dev/ttyACM0 flash
 ```
+
+If the pad will not enter download mode or has to be returned to stock, see
+[Recovery, Reflashing & Unbinding](docs/recovery.md).
+
+---
+
+## 🪟 Windows Setup & Installation
+
+**The pad needs none of this to work as a keyboard.** Plug it into any Windows
+10 or 11 machine and it types immediately: HID binds to the inbox
+`hidclass.sys` and the CDC port to the inbox `usbser.sys`. No `.inf`, no
+WinUSB, no Zadig, no install. The software below is for configuring it, the
+telemetry HUD and the lifetime counters.
+
+1. Download `osupad-setup-<version>.exe` from the releases page and run it.
+2. It installs the daemon, the GUI and `osupadctl`, bundles tosu, and sets both
+   to start at login. There is nothing else to do.
+
+> **SmartScreen will warn you.** The installer is **not code-signed** yet:
+> osu!pad is applying to SignPath Foundation for free OSS signing, which
+> requires the repository to be public first. Until then, Windows shows
+> "Windows protected your PC" — choose **More info → Run anyway**. Check the
+> download against `SHA256SUMS` on the release page if you would rather verify
+> it than trust the dialog.
+
+Uninstall from Settings → Apps. It removes everything it installed, including
+the two `Run` registry values, and asks before it touches your `osupad.db` —
+so a reinstall keeps your lifetime counters unless you say otherwise.
+
+**To reset a pad completely, or hand it to someone else**, see
+[Recovery, Reflashing & Unbinding](docs/recovery.md). There is no unpair button
+in the app, deliberately: the only unbind is a documented reflash, and it erases
+the pad's lifetime counters along with the owner record.
 
 ---
 
@@ -168,6 +212,12 @@ osupadctl import backup.json
 # Flash firmware image directly over USB
 osupadctl flash firmware/build/osupad-firmware.bin
 
+# Recovery flash (bootloader, partition table, OTA data and app)
+osupadctl flash --full firmware/build
+
+# Reboot the pad into the ROM download bootloader and leave it there
+osupadctl bootloader
+
 # Stream real-time diagnostic logs
 osupadctl monitor
 ```
@@ -176,8 +226,9 @@ osupadctl monitor
 
 ## 📄 Documentation
 - [System Architecture](docs/architecture.md)
+- [osu!pad on Windows — as built](docs/windows-portability.md)
 - [USB Framing & Protocol](docs/protocol.md)
-- [Counter Reconciliation & Disaster Recovery](docs/recovery.md)
+- [Counter Reconciliation, Recovery & Unbinding](docs/recovery.md) — including the reflash / unbind path
 - [Latency Testing Methodology](docs/latency-testing.md)
 - [Testing & Hardware Checklist](docs/testing-checklist.md)
 - [Technical Specification](osupad_technical_spec_v1.md)

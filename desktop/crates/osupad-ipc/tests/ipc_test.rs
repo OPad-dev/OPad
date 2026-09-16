@@ -66,6 +66,7 @@ async fn test_ipc_roundtrip_requests() {
                                 board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                                 firmware_version: "1.0.0".to_string(),
                                 protocol_version: 1,
+                                running_partition: None,
                             }),
                             counters: CounterState {
                                 device_id: "OSUPAD-TEST".to_string(),
@@ -106,6 +107,7 @@ async fn test_ipc_roundtrip_requests() {
                                 board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                                 firmware_version: "1.0.0".to_string(),
                                 protocol_version: 1,
+                                running_partition: None,
                             };
                             let counters = CounterState {
                                 device_id: "OSUPAD-TEST".to_string(),

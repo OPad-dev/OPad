@@ -1,7 +1,6 @@
-mod esp_rom;
-
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
+use osupad_device::flash::{self, APP_PARTITION_OFFSET};
 use osupad_ipc::{send_request, IpcRequest, IpcResponse, IpcStream, IPC_PROTOCOL_VERSION};
 use osupad_model::JsonBackup;
 use std::io::Write;
@@ -51,15 +50,29 @@ enum Commands {
     },
     /// Flash new firmware binary onto the ESP32-S3 using espflash
     Flash {
-        #[arg(help = "Path to firmware binary (.bin)")]
+        #[arg(help = "Path to the app image (.bin), or an ESP-IDF build directory with --full")]
         firmware: PathBuf,
         #[arg(long, help = "Explicit serial port (default: auto-detect)")]
         port: Option<String>,
+        #[arg(
+            long,
+            help = "Recovery flash: also write the bootloader, partition table and OTA data"
+        )]
+        full: bool,
     },
     /// Reboot device into ROM download bootloader mode hands-free over USB
     Bootloader {
         #[arg(long, help = "Explicit serial port (default: auto-detect)")]
         port: Option<String>,
+    },
+    /// Update the pad's firmware from the signed release manifest (§U-3b)
+    FirmwareUpdate {
+        #[arg(
+            long,
+            help = "Consent without the interactive prompt. The firmware is still only flashed \
+                    because you said so."
+        )]
+        yes: bool,
     },
     /// Show key-press-to-HID latency measured on the device
     Latency {
@@ -81,13 +94,34 @@ async fn main() -> Result<()> {
         return run_setup();
     }
 
-    let (mut stream, _) = osupad_ipc::connect_and_handshake()
-        .await
-        .with_context(|| "Failed to connect to osupad-daemon. Is the daemon running?")?;
+    // Flashing has to work on a machine where the daemon will not start: that is
+    // the exact situation docs/recovery.md is written for, and it is what
+    // scripts/flash_board.sh used to handle by stopping the systemd unit. Every
+    // other command is meaningless without the daemon and still fails loudly.
+    let flashing = matches!(
+        cli.command,
+        Commands::Flash { .. } | Commands::Bootloader { .. }
+    );
+    let mut stream = match osupad_ipc::connect_and_handshake().await {
+        Ok((s, _)) => Some(s),
+        Err(e) => {
+            if !flashing {
+                return Err(e)
+                    .context("Failed to connect to osupad-daemon. Is the daemon running?");
+            }
+            // Not necessarily "not running": a version-mismatched handshake
+            // fails here too, and that daemon still holds the port. Say what
+            // actually happened so a Windows sharing-violation later reads as
+            // a consequence rather than a mystery.
+            println!("Could not reach osupad-daemon ({e:#}); flashing without it.");
+            println!("If a daemon is in fact running, stop it before flashing on Windows.");
+            None
+        }
+    };
 
     match cli.command {
         Commands::Status => {
-            let resp = send_request(&mut stream, &IpcRequest::GetStatus).await?;
+            let resp = send_request(daemon(&mut stream)?, &IpcRequest::GetStatus).await?;
             if let IpcResponse::Status {
                 mode,
                 device_connected,
@@ -120,6 +154,15 @@ async fn main() -> Result<()> {
                     println!("Device ID:        {}", info.device_id);
                     println!("Board Profile:    {}", info.board_profile);
                     println!("Firmware Version: {}", info.firmware_version);
+                    // §U-3a. Old firmware does not report it at all, and that
+                    // is worth seeing: it means the pad is still on the
+                    // single-app table and needs a serial reflash.
+                    println!(
+                        "Running Slot:     {}",
+                        info.running_partition
+                            .as_deref()
+                            .unwrap_or("unknown (firmware predates the OTA layout)")
+                    );
                 }
                 println!(
                     "Key 1 (K1):       {} (Total: {} presses)",
@@ -171,7 +214,7 @@ async fn main() -> Result<()> {
 
         Commands::Sync => {
             println!("Requesting safe counter & clock synchronization...");
-            let resp = send_request(&mut stream, &IpcRequest::ForceSync).await?;
+            let resp = send_request(daemon(&mut stream)?, &IpcRequest::ForceSync).await?;
             match resp {
                 IpcResponse::SyncCompleted {
                     success: true,
@@ -194,8 +237,11 @@ async fn main() -> Result<()> {
                     "Resetting counters is permanent! Pass --yes to confirm: osupadctl reset --yes"
                 );
             }
-            let resp =
-                send_request(&mut stream, &IpcRequest::ResetCounters { confirm: yes }).await?;
+            let resp = send_request(
+                daemon(&mut stream)?,
+                &IpcRequest::ResetCounters { confirm: yes },
+            )
+            .await?;
             match resp {
                 IpcResponse::CountersReset { counters } => {
                     println!(
@@ -211,7 +257,7 @@ async fn main() -> Result<()> {
         }
 
         Commands::Export { file } => {
-            let resp = send_request(&mut stream, &IpcRequest::ExportBackup).await?;
+            let resp = send_request(daemon(&mut stream)?, &IpcRequest::ExportBackup).await?;
             if let IpcResponse::BackupExported(backup) = resp {
                 let json_data = serde_json::to_string_pretty(&backup)?;
                 std::fs::write(&file, json_data)
@@ -233,8 +279,11 @@ async fn main() -> Result<()> {
                 .map_err(|e| anyhow::anyhow!("Validation error: {}", e))?;
 
             // Preview via IPC (§P1-5)
-            let preview_resp =
-                send_request(&mut stream, &IpcRequest::PreviewImport(backup.clone())).await?;
+            let preview_resp = send_request(
+                daemon(&mut stream)?,
+                &IpcRequest::PreviewImport(backup.clone()),
+            )
+            .await?;
             match preview_resp {
                 IpcResponse::ImportPreview {
                     current,
@@ -297,7 +346,7 @@ async fn main() -> Result<()> {
                     }
 
                     let resp = send_request(
-                        &mut stream,
+                        daemon(&mut stream)?,
                         &IpcRequest::ImportBackup {
                             backup,
                             confirm: true,
@@ -363,9 +412,11 @@ async fn main() -> Result<()> {
             let mut first_batch = true;
 
             loop {
-                let resp =
-                    send_request(&mut stream, &IpcRequest::GetLogEntries { since_seq, limit })
-                        .await?;
+                let resp = send_request(
+                    daemon(&mut stream)?,
+                    &IpcRequest::GetLogEntries { since_seq, limit },
+                )
+                .await?;
                 if let IpcResponse::LogEntries {
                     entries,
                     latest_seq,
@@ -400,29 +451,34 @@ async fn main() -> Result<()> {
             }
         }
 
-        Commands::Flash { firmware, port } => {
-            if !firmware.exists() {
-                bail!(
-                    "Firmware binary file does not exist: {}",
-                    firmware.display()
-                );
-            }
-            validate_esp32s3_image(&firmware)?;
+        Commands::Flash {
+            firmware,
+            port,
+            full,
+        } => {
+            let images = resolve_flash_set(&firmware, full)?;
+            // The app image is always written last, and it is the one whose
+            // header has to match this board
+            let (_, app_image) = images.last().expect("flash set is never empty");
+            flash::check_esp32s3_image_file(app_image)
+                .map_err(|e| anyhow::anyhow!("{}: {}", app_image.display(), e))?;
 
-            println!("Coordinating with osupad-daemon for firmware flashing...");
-            let app_port = prepare_flash(&mut stream, port).await?;
+            for (offset, path) in &images {
+                println!("  {:#08x}  {}", offset, path.display());
+            }
+
+            let app_port = prepare_flash(stream.as_mut(), port).await?;
             // Always hand the port back to the daemon, even if flashing failed
-            let result = flash_firmware(&firmware, app_port.as_deref()).await;
-            println!("Resuming daemon device communication and verifying new firmware...");
-            let finish_resp = send_request(&mut stream, &IpcRequest::FinishFlash).await?;
+            let result = flash::flash(&images, app_port.as_deref(), &|m| println!("{m}")).await;
+            let finish_resp = finish_flash(stream.as_mut()).await;
             result?;
 
             match finish_resp {
-                IpcResponse::FlashFinished {
+                Some(IpcResponse::FlashFinished {
                     firmware_version,
                     protocol_version,
                     compatible,
-                } => {
+                }) => {
                     println!("✓ Flash succeeded!");
                     println!("  Firmware Version: {}", firmware_version);
                     println!("  Protocol Version: {}", protocol_version);
@@ -430,32 +486,138 @@ async fn main() -> Result<()> {
                         println!("  ⚠ WARNING: Device reported protocol version {} which is incompatible with host!", protocol_version);
                     }
                 }
-                IpcResponse::Error(e) => {
+                Some(IpcResponse::Error(e)) => {
                     println!("⚠ Post-flash verification warning: {}", e);
                 }
-                _ => {}
+                // No daemon to verify through, so watch the pad re-enumerate
+                // as the app ourselves — the last step flash_board.sh did
+                None => {
+                    match flash::wait_for_port(
+                        osupad_device::find_target_port,
+                        Duration::from_secs(15),
+                    )
+                    .await
+                    {
+                        Some(p) => println!("✓ Flash succeeded! The pad came back on {}", p),
+                        None => bail!(
+                        "Firmware was written, but the pad did not come back as the osu!pad app \
+                         within 15s. See docs/recovery.md."
+                    ),
+                    }
+                }
+                Some(_) => {}
             }
         }
 
         Commands::Bootloader { port } => {
-            println!("Coordinating with osupad-daemon...");
-            let app_port = prepare_flash(&mut stream, port).await?;
-            let result = enter_bootloader(app_port.as_deref()).await;
+            let app_port = prepare_flash(stream.as_mut(), port).await?;
+            let result = flash::enter_bootloader(app_port.as_deref()).await;
             // The daemon only opens the app port (303a:4001), so resuming now cannot
             // interfere with the bootloader; it reconnects once the app is flashed
-            let _ = send_request(&mut stream, &IpcRequest::FinishFlash).await;
+            let _ = finish_flash(stream.as_mut()).await;
             let boot_port = result?;
             println!("✓ Device is in ROM download mode on {}", boot_port);
         }
 
+        Commands::FirmwareUpdate { yes } => {
+            let offer =
+                match send_request(daemon(&mut stream)?, &IpcRequest::GetFirmwareUpdate).await? {
+                    IpcResponse::FirmwareUpdateOffer(o) => o,
+                    IpcResponse::Error(e) => bail!("{}", e),
+                    other => bail!("Unexpected response from daemon: {:?}", other),
+                };
+
+            println!("=== osu!pad Firmware ===");
+            println!(
+                "Installed:        {}",
+                offer.installed.as_deref().unwrap_or("unknown (no pad?)")
+            );
+            println!(
+                "Running Slot:     {}",
+                offer
+                    .running_partition
+                    .as_deref()
+                    .unwrap_or("unknown (firmware predates the OTA layout)")
+            );
+
+            for blocker in &offer.blockers {
+                println!("  ⚠ {}", blocker);
+            }
+
+            let Some(available) = offer.available.as_deref() else {
+                println!("Available:        nothing newer");
+                return Ok(());
+            };
+            println!("Available:        {}", available);
+            if let Some(notes) = &offer.notes {
+                println!("Notes:            {}", notes);
+            }
+            if !offer.blockers.is_empty() {
+                bail!("The pad cannot be flashed right now; see the warnings above.");
+            }
+
+            // §U-3b: explicit consent every time. --yes is the person saying so
+            // in a script; it is not a way of skipping the decision.
+            if let Some(text) = &offer.consent_text {
+                println!();
+                println!("{}", text);
+            }
+            if !yes {
+                use std::io::IsTerminal;
+                if !std::io::stdin().is_terminal() {
+                    bail!("A firmware update needs confirmation. Re-run with --yes.");
+                }
+                print!("\nFlash the pad now? [y/N]: ");
+                std::io::stdout().flush()?;
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input)?;
+                let answer = input.trim().to_lowercase();
+                if answer != "y" && answer != "yes" {
+                    println!("Cancelled. Nothing was written to the pad.");
+                    return Ok(());
+                }
+            }
+
+            println!("Flashing. Do not unplug the pad.");
+            match send_request(
+                daemon(&mut stream)?,
+                &IpcRequest::InstallFirmwareUpdate { confirm: true },
+            )
+            .await?
+            {
+                IpcResponse::FirmwareUpdateFinished {
+                    from,
+                    to,
+                    running_partition,
+                    protocol_version,
+                    compatible,
+                    ..
+                } => {
+                    println!("✓ Firmware updated from {} to {}", from, to);
+                    println!(
+                        "  Running Slot:     {}",
+                        running_partition.as_deref().unwrap_or("unknown")
+                    );
+                    if !compatible {
+                        println!("  ⚠ WARNING: the pad reports protocol version {} which this host does not speak!", protocol_version);
+                    }
+                }
+                IpcResponse::OperationRejected { reason } => {
+                    bail!("Rejected: {}", reason);
+                }
+                IpcResponse::Error(e) => bail!("{}", e),
+                other => bail!("Unexpected response from daemon: {:?}", other),
+            }
+        }
+
         Commands::Latency { reset } => {
             if reset {
-                match send_request(&mut stream, &IpcRequest::ResetLatencyStats).await? {
+                match send_request(daemon(&mut stream)?, &IpcRequest::ResetLatencyStats).await? {
                     IpcResponse::Error(e) => bail!("{}", e),
                     _ => println!("✓ Latency statistics reset"),
                 }
             } else {
-                match send_request(&mut stream, &IpcRequest::GetStatus).await? {
+                match send_request(daemon(&mut stream)?, &IpcRequest::GetStatus).await? {
                     IpcResponse::Status {
                         latency: Some(l), ..
                     } => {
@@ -484,12 +646,29 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+/// The daemon connection, for the commands that cannot work without one.
+fn daemon(stream: &mut Option<IpcStream>) -> Result<&mut IpcStream> {
+    stream
+        .as_mut()
+        .context("Failed to connect to osupad-daemon. Is the daemon running?")
+}
+
 /// Ask the daemon to release the serial port. Returns the app port to trigger,
 /// or None if the device is already sitting in the ROM bootloader.
+///
+/// This is the whole of §W1-3's "the daemon must release the COM port": a
+/// Windows serial handle is exclusive (serialport opens with `share_mode = 0`),
+/// so a daemon still holding it does not merely slow the flash down, it fails
+/// it. The daemon drops the handle before it clears `is_port_open`, so once
+/// `ReadyForFlash` comes back the port really is free.
 async fn prepare_flash(
-    stream: &mut IpcStream,
+    stream: Option<&mut IpcStream>,
     explicit_port: Option<String>,
 ) -> Result<Option<String>> {
+    let Some(stream) = stream else {
+        return Ok(explicit_port.or_else(osupad_device::find_target_port));
+    };
+    println!("Asking osupad-daemon to release the serial port...");
     match send_request(stream, &IpcRequest::PrepareFlash).await? {
         IpcResponse::ReadyForFlash { port } => Ok(explicit_port
             .or(port)
@@ -499,86 +678,77 @@ async fn prepare_flash(
     }
 }
 
-/// Reboot the running app into the ROM download bootloader and return the bootloader port.
-async fn enter_bootloader(app_port: Option<&str>) -> Result<String> {
-    if let Some(p) = osupad_device::find_bootloader_port() {
-        return Ok(p);
+/// Hand the port back to the daemon and let it verify what is now running.
+/// `None` means there was no daemon to hand it back to.
+async fn finish_flash(stream: Option<&mut IpcStream>) -> Option<IpcResponse> {
+    let stream = stream?;
+    println!("Resuming daemon device communication and verifying new firmware...");
+    send_request(stream, &IpcRequest::FinishFlash).await.ok()
+}
+
+/// Which images to write, and where. `full` is the recovery flash that
+/// `scripts/flash_board.sh` used to perform: bootloader, partition table and a
+/// fresh `otadata` as well as the app.
+///
+/// `path` is the app image, or — with `--full` — an ESP-IDF build directory.
+fn resolve_flash_set(path: &Path, full: bool) -> Result<Vec<(u32, PathBuf)>> {
+    if !path.exists() {
+        bail!("No such file or directory: {}", path.display());
     }
-    let Some(app_port) = app_port else {
-        bail!("osu!pad not found: neither the app (303a:4001) nor the ROM bootloader (303a:1001) is connected");
+
+    let (build_dir, app_image) = if path.is_dir() {
+        (path.to_path_buf(), path.join("osupad-firmware.bin"))
+    } else {
+        let parent = path.parent().unwrap_or(Path::new("."));
+        (parent.to_path_buf(), path.to_path_buf())
     };
 
-    println!("Sending bootloader reboot trigger to {}...", app_port);
-    // Firmware reacts to the "BOOTLOADER" command and to a 1200-baud touch; send both
-    let mut sp = open_port_with_retry(app_port, 1200, Duration::from_secs(2)).await?;
-    sp.write_all(b"BOOTLOADER\n")
-        .context("Failed to send bootloader trigger")?;
-    let _ = sp.flush();
-    drop(sp);
+    if !app_image.exists() {
+        bail!("App image not found: {}", app_image.display());
+    }
+    if !full {
+        return Ok(vec![(APP_PARTITION_OFFSET, app_image)]);
+    }
 
-    wait_for_port(osupad_device::find_bootloader_port, Duration::from_secs(6))
-        .await
-        .context("Device did not re-enumerate as the ROM bootloader (303a:1001) within 6s")
+    // Offsets come from firmware/partitions.csv and the ESP-IDF defaults; a
+    // full flash that skips the partition table would leave the pad reading the
+    // app at the old single-app offset (§U-3a).
+    // Two layouts have to work: an ESP-IDF build directory, and the flat set of
+    // .bin files a release tarball ships (scripts/release/build_release.sh).
+    // A recovery flash is usually done from a release, not from a build tree.
+    let bootloader = first_existing(&[
+        build_dir.join("bootloader").join("bootloader.bin"),
+        build_dir.join("bootloader.bin"),
+    ]);
+    let table = first_existing(&[
+        build_dir
+            .join("partition_table")
+            .join("partition-table.bin"),
+        build_dir.join("partition-table.bin"),
+    ]);
+    let ota_data = first_existing(&[build_dir.join("ota_data_initial.bin")]);
+
+    let (Some(bootloader), Some(table)) = (bootloader, table) else {
+        bail!(
+            "--full needs bootloader.bin and partition-table.bin next to the app image, \
+             and {} has neither an ESP-IDF build layout nor a flat one. Build the \
+             firmware with `idf.py build`, or point this at an unpacked release.",
+            build_dir.display()
+        );
+    };
+
+    let mut images = vec![(0x0, bootloader), (0x8000, table)];
+    if let Some(ota_data) = ota_data {
+        // Only present on the two-slot layout. Writing it points the bootloader
+        // back at ota_0, which is where the app image below is going.
+        images.push((0xf000, ota_data));
+    }
+    images.push((APP_PARTITION_OFFSET, app_image));
+    Ok(images)
 }
 
-async fn flash_firmware(firmware: &Path, app_port: Option<&str>) -> Result<()> {
-    let boot_port = enter_bootloader(app_port).await?;
-    println!(
-        "Writing firmware binary via espflash at 0x10000 on {}...",
-        boot_port
-    );
-
-    let status = std::process::Command::new("espflash")
-        .args(["write-bin", "--chip", "esp32s3", "-p", &boot_port])
-        // Already in download mode. Stay in the stub afterwards: espflash cannot reset an
-        // ESP32-S3 out of forced download mode, esp_rom::reset_to_app does that below
-        .args([
-            "--before",
-            "no-reset",
-            "--after",
-            "no-reset-no-stub",
-            "--non-interactive",
-            "0x10000",
-        ])
-        .arg(firmware)
-        .status()
-        .context("Failed to execute espflash. Ensure espflash is installed.")?;
-    if !status.success() {
-        bail!("espflash exited with error code: {:?}", status.code());
-    }
-    println!("✓ Firmware written, rebooting into application...");
-    esp_rom::reset_to_app(&boot_port).context("Firmware written, but failed to reboot the device")
-}
-
-async fn open_port_with_retry(
-    path: &str,
-    baud: u32,
-    timeout: Duration,
-) -> Result<Box<dyn serialport::SerialPort>> {
-    let deadline = tokio::time::Instant::now() + timeout;
-    loop {
-        match serialport::new(path, baud)
-            .timeout(Duration::from_millis(300))
-            .open()
-        {
-            Ok(sp) => return Ok(sp),
-            Err(e) if tokio::time::Instant::now() >= deadline => {
-                return Err(e).with_context(|| format!("Failed to open {}", path));
-            }
-            Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
-        }
-    }
-}
-
-async fn wait_for_port(find: fn() -> Option<String>, timeout: Duration) -> Option<String> {
-    let deadline = tokio::time::Instant::now() + timeout;
-    while tokio::time::Instant::now() < deadline {
-        if let Some(p) = find() {
-            return Some(p);
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    None
+fn first_existing(candidates: &[PathBuf]) -> Option<PathBuf> {
+    candidates.iter().find(|p| p.exists()).cloned()
 }
 
 fn run_setup() -> Result<()> {
@@ -615,37 +785,6 @@ SUBSYSTEM=="usb", ATTRS{idVendor}=="303a", MODE="0666", GROUP="uucp", TAG+="uacc
     Ok(())
 }
 
-/// Validates that a file is an ESP32-S3 app image (§32)
-/// Magic byte must be 0xE9, and chip ID at offset 12..13 must be 0x0009 (ESP32-S3).
-fn validate_esp32s3_image(path: &Path) -> Result<()> {
-    use std::io::Read;
-    let mut f = std::fs::File::open(path)
-        .with_context(|| format!("Failed to open firmware image: {}", path.display()))?;
-    let mut header = [0u8; 16];
-    let n = f
-        .read(&mut header)
-        .context("Failed to read firmware image header")?;
-    if n < 16 {
-        bail!("Firmware file is too small to be a valid ESP32 image (less than 16 bytes)");
-    }
-    if header[0] != 0xE9 {
-        bail!(
-            "Invalid image magic byte: 0x{:02X} (expected 0xE9 for ESP image)",
-            header[0]
-        );
-    }
-    let chip_id = u16::from_le_bytes([header[12], header[13]]);
-    const ESP32S3_CHIP_ID: u16 = 0x0009;
-    if chip_id != ESP32S3_CHIP_ID {
-        bail!(
-            "Firmware binary is built for chip ID 0x{:04X}, but osu!pad requires ESP32-S3 (chip ID 0x{:04X})",
-            chip_id,
-            ESP32S3_CHIP_ID
-        );
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -660,56 +799,93 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_valid_esp32s3_image() {
-        let mut header = [0u8; 32];
-        header[0] = 0xE9; // Magic byte
-        header[12] = 0x09; // ESP32-S3 chip ID low byte
-        header[13] = 0x00; // ESP32-S3 chip ID high byte
-        let path = make_test_file("valid.bin", &header);
-
-        let res = validate_esp32s3_image(&path);
+    fn app_only_flash_writes_one_image_at_the_ota_0_offset() {
+        let path = make_test_file("app-only.bin", &[0xE9; 32]);
+        let set = resolve_flash_set(&path, false).unwrap();
         let _ = std::fs::remove_file(&path);
-        assert!(res.is_ok());
+        assert_eq!(set.len(), 1);
+        assert_eq!(set[0].0, 0x20000, "the app lives in ota_0 now (§U-3a)");
     }
 
     #[test]
-    fn test_validate_wrong_magic_rejected() {
-        let mut header = [0u8; 32];
-        header[0] = 0xAA; // Wrong magic
-        header[12] = 0x09;
-        let path = make_test_file("wrong_magic.bin", &header);
-
-        let err = validate_esp32s3_image(&path).unwrap_err();
-        let _ = std::fs::remove_file(&path);
-        assert!(err.to_string().contains("Invalid image magic byte"));
-    }
-
-    #[test]
-    fn test_validate_wrong_chip_rejected() {
-        let mut header = [0u8; 32];
-        header[0] = 0xE9;
-        header[12] = 0x05; // ESP32-C3 chip ID
-        let path = make_test_file("esp32c3.bin", &header);
-
-        let err = validate_esp32s3_image(&path).unwrap_err();
-        let _ = std::fs::remove_file(&path);
-        assert!(err.to_string().contains("chip ID 0x0005"));
-    }
-
-    #[test]
-    fn test_validate_short_file_rejected() {
-        let path = make_test_file("short.bin", &[0xE9, 0x01, 0x02]);
-
-        let err = validate_esp32s3_image(&path).unwrap_err();
-        let _ = std::fs::remove_file(&path);
-        assert!(err.to_string().contains("too small"));
-    }
-
-    #[test]
-    fn test_validate_real_build_if_present() {
-        let path = std::path::Path::new("../../firmware/build/osupad-firmware.bin");
-        if path.exists() {
-            assert!(validate_esp32s3_image(path).is_ok());
+    fn full_flash_covers_the_bootloader_table_otadata_and_app_in_order() {
+        let dir = std::env::temp_dir().join(format!("osupadctl-full-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("bootloader")).unwrap();
+        std::fs::create_dir_all(dir.join("partition_table")).unwrap();
+        for f in [
+            dir.join("bootloader/bootloader.bin"),
+            dir.join("partition_table/partition-table.bin"),
+            dir.join("ota_data_initial.bin"),
+            dir.join("osupad-firmware.bin"),
+        ] {
+            std::fs::write(&f, [0xE9; 32]).unwrap();
         }
+
+        let set = resolve_flash_set(&dir, true).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let offsets: Vec<u32> = set.iter().map(|(o, _)| *o).collect();
+        // Ascending, and the app last: reset_to_app only runs once every image
+        // is down, so a failure part-way leaves the pad in download mode
+        assert_eq!(offsets, vec![0x0, 0x8000, 0xf000, 0x20000]);
+    }
+
+    #[test]
+    fn full_flash_accepts_the_flat_layout_a_release_ships() {
+        // dist/ from scripts/release/build_release.sh: no bootloader/ or
+        // partition_table/ subdirectories, everything side by side.
+        let dir = std::env::temp_dir().join(format!("osupadctl-flat-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for f in [
+            "bootloader.bin",
+            "partition-table.bin",
+            "ota_data_initial.bin",
+            "osupad-firmware.bin",
+        ] {
+            std::fs::write(dir.join(f), [0xE9; 32]).unwrap();
+        }
+
+        let set = resolve_flash_set(&dir, true).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(
+            set.iter().map(|(o, _)| *o).collect::<Vec<_>>(),
+            vec![0x0, 0x8000, 0xf000, 0x20000]
+        );
+    }
+
+    #[test]
+    fn full_flash_without_a_build_directory_is_refused() {
+        // A lone app image in a directory of its own: no bootloader, no table.
+        let dir = std::env::temp_dir().join(format!("osupadctl-lonely-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("osupad-firmware.bin");
+        std::fs::write(&path, [0xE9; 32]).unwrap();
+
+        let err = resolve_flash_set(&path, true).unwrap_err();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(err.to_string().contains("bootloader.bin"), "got: {}", err);
+    }
+
+    #[test]
+    fn full_flash_tolerates_a_build_without_ota_data() {
+        // A build of the old single-app layout has no ota_data_initial.bin.
+        // Writing the other three is still the right recovery flash.
+        let dir = std::env::temp_dir().join(format!("osupadctl-noota-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("bootloader")).unwrap();
+        std::fs::create_dir_all(dir.join("partition_table")).unwrap();
+        for f in [
+            dir.join("bootloader/bootloader.bin"),
+            dir.join("partition_table/partition-table.bin"),
+            dir.join("osupad-firmware.bin"),
+        ] {
+            std::fs::write(&f, [0xE9; 32]).unwrap();
+        }
+
+        let set = resolve_flash_set(&dir, true).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(
+            set.iter().map(|(o, _)| *o).collect::<Vec<_>>(),
+            vec![0x0, 0x8000, 0x20000]
+        );
     }
 }

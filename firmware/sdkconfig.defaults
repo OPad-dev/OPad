@@ -69,7 +69,9 @@ CONFIG_LV_MEM_SIZE_KILOBYTES=128
 # CONFIG_LV_USE_FLEX is not set
 # CONFIG_LV_USE_GRID is not set
 
-# 1.5 MB factory app (NVS stays at 0x9000, so counters survive the change)
-CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+# Two 2 MB OTA slots (§U-3a). See firmware/partitions.csv: nvs stays at 0x9000
+# at its original size, so lifetime counters and owner_id survive the change.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 # CONFIG_LV_BUILD_EXAMPLES is not set
 # CONFIG_LV_BUILD_DEMOS is not set

@@ -74,6 +74,10 @@ pub enum ArtifactKind {
 }
 
 /// What this build is, in the manifest's `target` vocabulary.
+///
+/// Host targets only. A firmware artifact is for a chip rather than for the
+/// machine that flashes it, so it uses `firmware::FIRMWARE_TARGET` instead —
+/// the same `.bin` is written from Windows and from Linux.
 pub fn current_target() -> &'static str {
     match (std::env::consts::OS, std::env::consts::ARCH) {
         ("windows", "x86_64") => "windows-x86_64",

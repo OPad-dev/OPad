@@ -172,6 +172,7 @@ async fn test_daemon_connection_states_and_reconnect() {
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
+        running_partition: None,
     };
     let actions = controller.on_event(RuntimeEvent::DeviceConnected(dev_info.clone()), now);
     assert!(controller.state.device_connected);
@@ -358,6 +359,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
+        running_partition: None,
     };
     let initial_counters = CounterState {
         device_id: "OSUPAD-SAFE".to_string(),
@@ -576,6 +578,7 @@ async fn test_reconcile_and_replacement_scenarios() {
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
+        running_partition: None,
     };
 
     // Case A: PC generation > ESP generation -> PC wins and is sent to ESP
@@ -713,6 +716,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),
             protocol_version: 1,
+            running_partition: None,
         };
         controller.state.counters.counter_generation = 1;
         controller.state.counters.lifetime_key1 = 5;
@@ -735,6 +739,7 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
+        running_partition: None,
     };
     let initial_counters = CounterState {
         device_id: "OSUPAD-RETRY".to_string(),
@@ -803,6 +808,7 @@ async fn test_json_validation_preview_and_confirm() {
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
+        running_partition: None,
     };
     let current_counters = CounterState {
         device_id: "OSUPAD-JSON".to_string(),
@@ -1213,6 +1219,7 @@ fn pad_info(id: &str) -> DeviceInfo {
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
+        running_partition: None,
     }
 }
 
@@ -1443,6 +1450,7 @@ async fn test_replug_during_play_keeps_the_state_machine_and_write_guard() {
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
+        running_partition: None,
     };
     let mut controller = RuntimeController::new(
         DeviceConfig::default(),
@@ -1547,6 +1555,7 @@ fn pad(device_id: &str) -> DeviceInfo {
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
+        running_partition: None,
     }
 }
 
@@ -1860,4 +1869,231 @@ async fn test_an_install_with_no_identity_neither_claims_nor_prompts() {
     assert!(!controller.state.foreign_pad);
     assert!(!actions.contains(&RuntimeAction::ClaimOwnership));
     assert!(actions.contains(&RuntimeAction::TriggerSync));
+}
+
+// ---------------------------------------------------------------------------
+// §U-3b: host-driven firmware flash
+// ---------------------------------------------------------------------------
+
+/// State, storage, a mock pad, a log hub and the pending-operations queue:
+/// everything `handle_ipc_request` takes.
+type IpcFixture = (
+    Arc<Mutex<DaemonState>>,
+    Arc<Mutex<Option<Storage>>>,
+    MockDeviceLink,
+    LogHub,
+    Arc<Mutex<PendingOperations>>,
+);
+
+fn firmware_update_fixture(mode: RuntimeMode, connected: bool) -> IpcFixture {
+    let dev_info = DeviceInfo {
+        device_id: "OSUPAD-FW".to_string(),
+        board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+        firmware_version: "1.0.0".to_string(),
+        protocol_version: 1,
+        running_partition: Some("ota_0".to_string()),
+    };
+    let counters = CounterState {
+        device_id: "OSUPAD-FW".to_string(),
+        counter_generation: 3,
+        lifetime_key1: 100,
+        lifetime_key2: 200,
+        map_key1: 0,
+        map_key2: 0,
+    };
+    let storage = Storage::open_in_memory().unwrap();
+    storage.save_device_state(&dev_info, &counters).unwrap();
+
+    let state = Arc::new(Mutex::new(DaemonState {
+        mode,
+        device_connected: connected,
+        device_info: Some(dev_info),
+        counters: counters.clone(),
+        counters_source: CounterSource::Device,
+        pc_counters: Some(counters.clone()),
+        esp_counters: Some(counters),
+        config: DeviceConfig::default(),
+        last_sync_time: None,
+        last_sync_error: None,
+        storage_error: None,
+        tosu_connected: false,
+        latency: None,
+        pending_replacement: None,
+        install_id: None,
+        pending_takeover: None,
+        foreign_pad: false,
+        incompatible: None,
+        ui_values: Vec::new(),
+        custom_layouts: HashMap::new(),
+    }));
+
+    (
+        state,
+        Arc::new(Mutex::new(Some(storage))),
+        MockDeviceLink::new(connected),
+        LogHub::new(),
+        Arc::new(Mutex::new(PendingOperations::default())),
+    )
+}
+
+#[tokio::test]
+async fn test_firmware_offer_reports_the_pad_without_writing_anything() {
+    let (state, storage, device, log_hub, pending_ops) =
+        firmware_update_fixture(RuntimeMode::Idle, true);
+
+    let r = handle_ipc_request(
+        IpcRequest::GetFirmwareUpdate,
+        &state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+        None,
+    )
+    .await;
+
+    let IpcResponse::FirmwareUpdateOffer(offer) = r else {
+        panic!("expected an offer, got {r:?}");
+    };
+    assert_eq!(offer.installed.as_deref(), Some("1.0.0"));
+    assert_eq!(offer.running_partition.as_deref(), Some("ota_0"));
+    // No update worker in this test, so no verified manifest and nothing to
+    // offer — but the question is still answerable and still writes nothing.
+    assert!(offer.available.is_none());
+    assert!(offer.consent_text.is_none());
+    assert!(offer.blockers.is_empty(), "{:?}", offer.blockers);
+    assert_eq!(device.sent_syncs.lock().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn test_firmware_flash_without_consent_is_refused_before_anything_happens() {
+    // §U-3b: "Explicit consent every time. Never automatic, never silent, not
+    // even opt-in." confirm: false must not merely fail late — it must refuse.
+    let (state, storage, device, log_hub, pending_ops) =
+        firmware_update_fixture(RuntimeMode::Idle, true);
+
+    let r = handle_ipc_request(
+        IpcRequest::InstallFirmwareUpdate { confirm: false },
+        &state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+        None,
+    )
+    .await;
+
+    match r {
+        IpcResponse::OperationRejected { reason } => {
+            assert!(reason.contains("confirmation"), "{reason}");
+        }
+        other => panic!("a flash without consent must be rejected, got {other:?}"),
+    }
+    // Nothing was synced, nothing was released, nothing was written
+    assert_eq!(device.sent_syncs.lock().unwrap().len(), 0);
+    assert!(state.lock().unwrap().device_connected);
+}
+
+#[tokio::test]
+async fn test_firmware_flash_is_refused_during_gameplay_and_cooldown() {
+    for mode in [RuntimeMode::Playing, RuntimeMode::Cooldown] {
+        let (state, storage, device, log_hub, pending_ops) = firmware_update_fixture(mode, true);
+
+        let r = handle_ipc_request(
+            IpcRequest::InstallFirmwareUpdate { confirm: true },
+            &state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+            None,
+        )
+        .await;
+
+        match r {
+            IpcResponse::OperationRejected { reason } => {
+                assert!(reason.contains("busy"), "{mode:?}: {reason}");
+            }
+            other => panic!("{mode:?} must refuse a flash, got {other:?}"),
+        }
+        assert_eq!(device.sent_syncs.lock().unwrap().len(), 0);
+        assert!(state.lock().unwrap().device_connected);
+    }
+}
+
+#[tokio::test]
+async fn test_firmware_flash_is_refused_with_no_pad_connected() {
+    let (state, storage, device, log_hub, pending_ops) =
+        firmware_update_fixture(RuntimeMode::Idle, false);
+
+    let r = handle_ipc_request(
+        IpcRequest::InstallFirmwareUpdate { confirm: true },
+        &state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+        None,
+    )
+    .await;
+
+    match r {
+        IpcResponse::OperationRejected { reason } => {
+            assert!(reason.contains("not connected"), "{reason}");
+        }
+        other => panic!("expected a rejection, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn test_firmware_flash_is_refused_without_a_verified_manifest() {
+    // Consent, IDLE and a connected pad are not enough: an image is only ever
+    // taken from a manifest this daemon verified (§U-0.3).
+    let (state, storage, device, log_hub, pending_ops) =
+        firmware_update_fixture(RuntimeMode::Idle, true);
+
+    let r = handle_ipc_request(
+        IpcRequest::InstallFirmwareUpdate { confirm: true },
+        &state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+        None,
+    )
+    .await;
+
+    match r {
+        IpcResponse::Error(e) => assert!(e.contains("manifest"), "{e}"),
+        other => panic!("expected a manifest error, got {other:?}"),
+    }
+    assert_eq!(device.sent_syncs.lock().unwrap().len(), 0);
+    assert!(state.lock().unwrap().device_connected);
+}
+
+#[tokio::test]
+async fn test_firmware_flash_is_refused_when_the_database_is_unavailable() {
+    // Without storage the counters cannot be saved, so flashing could lose
+    // them for good (§U-3b).
+    let (state, _storage, device, log_hub, pending_ops) =
+        firmware_update_fixture(RuntimeMode::Idle, true);
+    let no_storage: Arc<Mutex<Option<Storage>>> = Arc::new(Mutex::new(None));
+
+    let r = handle_ipc_request(
+        IpcRequest::InstallFirmwareUpdate { confirm: true },
+        &state,
+        &no_storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+        None,
+    )
+    .await;
+
+    match r {
+        IpcResponse::OperationRejected { reason } => {
+            assert!(reason.contains("database"), "{reason}");
+        }
+        other => panic!("expected a rejection, got {other:?}"),
+    }
 }

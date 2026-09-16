@@ -15,6 +15,7 @@
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "esp_app_desc.h"
+#include "esp_ota_ops.h"
 #include "diag/diag.h"
 #include "frame_parser.h"
 #include <string.h>
@@ -114,7 +115,18 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     msg.payload.hello_ack.owner_id.size = OWNER_ID_LEN;
     device_config_get_owner(msg.payload.hello_ack.owner_id.bytes);
 
-    ESP_LOGI(TAG, "Sending HelloAck to host (Firmware: %s, Gen: %lu)", app_desc->version, (unsigned long)snap.generation);
+    // §U-3a: which of the two OTA slots this image booted from. A pad still on
+    // the old single-app layout answers "factory"; the host uses this to tell
+    // an OTA-capable pad from one that needs a serial reflash first.
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    if (running) {
+        strncpy(msg.payload.hello_ack.running_partition, running->label,
+                sizeof(msg.payload.hello_ack.running_partition) - 1);
+    }
+
+    ESP_LOGI(TAG, "Sending HelloAck to host (Firmware: %s, Gen: %lu, Partition: %s)",
+             app_desc->version, (unsigned long)snap.generation,
+             msg.payload.hello_ack.running_partition);
     return send_envelope(&msg);
 }
 

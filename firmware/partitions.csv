@@ -1,0 +1,19 @@
+# osu!pad partition table (§U-3a).
+#
+# Two OTA slots so the layout is in place before the OTA code lands (§U-3c).
+# Rewriting the table at 0x8000 needs a full serial reflash of every pad in the
+# field, which an OTA update cannot do, so it has to happen while the field is
+# still approximately empty.
+#
+# nvs stays at 0x9000 at its original 0x6000 size: the lifetime counters and the
+# owner_id blob (§W3-2) live there, and moving or resizing it would lose them.
+#
+# v1.0 ships flashed into ota_0 by espflash exactly as before; only the app's
+# offset moves, from 0x10000 to 0x20000.
+#
+# Name,     Type, SubType, Offset,   Size,     Flags
+nvs,        data, nvs,     0x9000,   0x6000,
+otadata,    data, ota,     0xf000,   0x2000,
+phy_init,   data, phy,     0x11000,  0x1000,
+ota_0,      app,  ota_0,   0x20000,  0x200000,
+ota_1,      app,  ota_1,   0x220000, 0x200000,

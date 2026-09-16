@@ -1,3 +1,5 @@
+pub mod flash;
+
 use bytes::BytesMut;
 use chrono::{Datelike, Local, Timelike};
 use osupad_layout::{Layout, Screen};
@@ -523,6 +525,10 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     board_profile: ack.board_profile.clone(),
                     firmware_version: ack.firmware_version.clone(),
                     protocol_version: ack.protocol_version,
+                    // Empty on firmware predating §U-3a; `None` says "unknown"
+                    // rather than inventing a slot name for it
+                    running_partition: (!ack.running_partition.is_empty())
+                        .then(|| ack.running_partition.clone()),
                 };
                 // Ownership first, then counters: the connect handler decides
                 // between known pad, new pad, replacement and takeover from

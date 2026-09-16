@@ -783,6 +783,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                     firmware_version: String::new(),
                     protocol_version: 1,
+                    running_partition: None,
                 });
             let backup = JsonBackup::new(&info, &st.counters, &st.config);
             IpcResponse::BackupExported(backup)
@@ -917,6 +918,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     board_profile: backup.device.board_profile,
                     firmware_version: last_firmware_version,
                     protocol_version: 1,
+                    running_partition: None,
                 };
                 let _ = s.save_device_state(&info, &new_counters);
             }
@@ -943,6 +945,49 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             IpcResponse::LogEntries {
                 entries,
                 latest_seq,
+            }
+        }
+
+        IpcRequest::GetFirmwareUpdate => {
+            let storage_available = storage.lock().unwrap().is_some();
+            IpcResponse::FirmwareUpdateOffer(crate::firmware_update::offer(
+                updates.and_then(|u| u.manifest()).as_ref(),
+                state,
+                storage_available,
+            ))
+        }
+
+        IpcRequest::InstallFirmwareUpdate { confirm } => {
+            let manifest = updates.and_then(|u| u.manifest());
+            match crate::firmware_update::install(
+                manifest.as_ref(),
+                confirm,
+                state,
+                storage,
+                device,
+                pending_ops,
+            )
+            .await
+            {
+                Ok(crate::firmware_update::FirmwareUpdateOutcome::Installed { from, to, info }) => {
+                    IpcResponse::FirmwareUpdateFinished {
+                        from,
+                        to,
+                        firmware_version: info.firmware_version.clone(),
+                        running_partition: info.running_partition.clone(),
+                        protocol_version: info.protocol_version,
+                        compatible: info.protocol_version == 1,
+                    }
+                }
+                Ok(crate::firmware_update::FirmwareUpdateOutcome::Refused { reasons }) => {
+                    IpcResponse::OperationRejected {
+                        reason: reasons.join(" "),
+                    }
+                }
+                // Everything that reaches here has either written nothing or
+                // says plainly that it wrote something and the pad did not come
+                // back. Neither is ever reported as a success.
+                Err(e) => IpcResponse::Error(e.to_string()),
             }
         }
 

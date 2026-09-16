@@ -55,6 +55,12 @@ pub struct DeviceInfo {
     pub board_profile: String,
     pub firmware_version: String,
     pub protocol_version: u32,
+    /// Which app partition the running image booted from (§U-3a): `ota_0`,
+    /// `ota_1`, or `factory` on a pad still using the pre-OTA single-app
+    /// table. `None` for firmware that predates the field, which is the same
+    /// thing as "this pad needs a serial reflash before OTA is possible".
+    #[serde(default)]
+    pub running_partition: Option<String>,
 }
 
 /// Press counters maintained on both device and host (§12, §13)
@@ -463,6 +469,7 @@ mod tests {
                 board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                 firmware_version: "1.0.0".to_string(),
                 protocol_version: 1,
+                running_partition: None,
             },
             &CounterState {
                 device_id: "OSUPAD-TEST".to_string(),

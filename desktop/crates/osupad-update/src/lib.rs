@@ -24,6 +24,7 @@ pub mod app;
 #[cfg(feature = "net")]
 pub mod client;
 pub mod download;
+pub mod firmware;
 pub mod gate;
 #[cfg(feature = "net")]
 pub mod http;
