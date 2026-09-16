@@ -879,6 +879,7 @@ Keep it to one line per task. This is how the other agent learns what landed.
 | 2026-09-16 | C | W3-2 | `22f00ca` | **Touches `firmware/` (C's), done at the owner's request.** `owner_id[16]` in the NVS config blob as v3; v1/v2 blobs migrate and read as unclaimed. Decision logic is in `config/owner.c` with no IDF dependencies, covered by 7 host tests: claim, re-claim (no write), takeover, IDLE-only, and an all-zero claim refused so there is no wire path to unpairing (§W3-4). `osupad.pb.c/.h` regenerated with nanopb 0.4.9.1. **Not compiled** — no ESP-IDF on the machine it was written on — and the hardware acceptance is still open. **Still unstarted in column C: U-3a (partition table) and U-3b.** |
 | 2026-09-16 | B | L-2 | `f1ccbfd` | Drop Arch-specific `GROUP="uucp"` and insecure `MODE="0666"`, keep `TAG+="uaccess"`, narrow `ATTRS{idProduct}` to `4001|1001` (app and bootloader). |
 | 2026-09-16 | B | B-1…B-4 | `21bbab3` | Top-level Makefile with GNU PREFIX/DESTDIR, all/tosu/firmware/install/install-user/check targets, install-origin marker, and `@BINDIR@` templating for unit and desktop entries. |
+| 2026-09-16 | B | L-1 | `f5e7860` | Template user unit and desktop launcher with `@BINDIR@`, install to `/usr/bin`, `/usr/lib/systemd/user`, `/usr/share/applications`, `/usr/lib/udev/rules.d`. |
 
 ### A.8. Open owner decisions
 
