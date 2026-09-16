@@ -19,12 +19,19 @@ use std::path::Path;
 
 /// The minisign public key the release manifest is signed with.
 ///
-/// Empty in a development build. It is deliberately *not* optional at runtime:
-/// with no key there is nothing to verify against, so every update path fails
-/// closed rather than falling back to trusting the transport. Generate the
-/// keypair with `minisign -G`, paste the base64 public key here, and keep the
-/// secret key off the build machines.
-pub const MANIFEST_PUBLIC_KEY: &str = "";
+/// The matching secret key is **not in this repository and must never be**. It
+/// lives at `~/.config/osupad/osupad-manifest.key` on the release machine, and
+/// `osupad-manifest` (the signing tool beside this crate) is the only thing
+/// that reads it.
+///
+/// An empty value here is not a soft failure: with no key there is nothing to
+/// verify against, so every update path fails closed rather than falling back
+/// to trusting the transport.
+///
+/// **This key is currently stored unencrypted** (`minisign -G -W`). See the
+/// warning in `bin/osupad-manifest.rs` — it must be re-cut with a passphrase
+/// before the repository is published.
+pub const MANIFEST_PUBLIC_KEY: &str = "RWRsyn4Jum62+G0lLWDLbT9yjEO35ZEsWJ30iUmclHEc27zVZRer8qtG";
 
 /// True when this build can verify anything at all
 pub fn signing_configured() -> bool {
@@ -110,6 +117,20 @@ mod tests {
     /// shape to prove verification accepts and rejects the right things.
     const TEST_PUBLIC_KEY: &str = "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3";
 
+    /// A throwaway keypair that is **not** ours, with a genuine minisign
+    /// signature it really did produce over `WRONG_KEY_MANIFEST`. Its secret
+    /// half was discarded; it exists so the rejection below is provably about
+    /// *which key signed*, not about a malformed signature.
+    const WRONG_PUBLIC_KEY: &str = "RWRwm1Yg1liKWycfEdoSZapd0XhecKK8/9rao/6nG/PkEZSGJaHTslb1";
+    const WRONG_KEY_MANIFEST: &[u8] =
+        br#"{"schema":1,"generated":"2026-09-17T00:00:00Z","components":{}}"#;
+    const WRONG_KEY_SIGNATURE: &str = concat!(
+        "untrusted comment: signature from minisign secret key\n",
+        "RURwm1Yg1liKW2Hjtz4hRdi1ZJBsx/hhU8YIx4+Z9RnAbE3GVpSMlb40aTG5PJ83evWawBCGvrt2k/9ee7aoLRgQwFfNaQ5A+gY=\n",
+        "trusted comment: osupad test vector\n",
+        "y2t+5fkSFjzY7ObWMq4Mci4kwEsgFHWtGHUb9c4MqP99u5DuOGapzDRiF8IIwvh3ugpxMtBMO3T+mwH0uYQ7AA==\n",
+    );
+
     #[test]
     fn hashing_matches_a_known_vector() {
         assert_eq!(
@@ -173,6 +194,42 @@ mod tests {
     fn a_garbage_signature_is_rejected_rather_than_panicking() {
         assert!(matches!(
             verify_with_key(TEST_PUBLIC_KEY, b"manifest", "not a signature at all"),
+            Err(UpdateError::BadSignature(_))
+        ));
+    }
+
+    #[test]
+    fn this_build_has_a_usable_signing_key() {
+        // A release that ships with no key, or with a key that does not parse,
+        // has silently disabled all three updaters.
+        assert!(signing_configured(), "MANIFEST_PUBLIC_KEY is empty");
+        PublicKey::from_base64(MANIFEST_PUBLIC_KEY.trim())
+            .expect("MANIFEST_PUBLIC_KEY is not a valid minisign public key");
+    }
+
+    #[test]
+    fn a_manifest_signed_with_a_different_key_is_rejected() {
+        // The control: the signature really is well formed and really does
+        // verify — against the key that made it.
+        verify_with_key(WRONG_PUBLIC_KEY, WRONG_KEY_MANIFEST, WRONG_KEY_SIGNATURE)
+            .expect("the test vector should verify under its own key");
+
+        // The actual assertion, through the production entry point that the
+        // client uses, against the key compiled into this build.
+        match verify_manifest_signature(WRONG_KEY_MANIFEST, WRONG_KEY_SIGNATURE) {
+            Err(UpdateError::BadSignature(_)) => {}
+            other => panic!("a foreign signature must be rejected, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_manifest_altered_after_signing_is_rejected() {
+        let mut tampered = WRONG_KEY_MANIFEST.to_vec();
+        let last = tampered.len() - 1;
+        tampered[last] = b' ';
+        // Even under the key that signed the original, one changed byte fails.
+        assert!(matches!(
+            verify_with_key(WRONG_PUBLIC_KEY, &tampered, WRONG_KEY_SIGNATURE),
             Err(UpdateError::BadSignature(_))
         ));
     }

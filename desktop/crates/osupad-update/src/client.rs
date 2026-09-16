@@ -183,12 +183,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_build_without_a_key_never_reaches_the_network() {
-        // Fail closed, and fail before the request: there is nothing a
-        // response could be verified against.
+    async fn an_unreachable_manifest_backs_off_instead_of_hanging() {
+        // This build has a signing key compiled in (§U-0.3), so the fail-closed
+        // branch above no longer short-circuits and the request is really made.
+        // That "no key ⇒ no network" branch is now unreachable from a test
+        // without injecting the key; `verify::tests` covers the gate itself,
+        // and the branch here is two lines above the network call.
+        assert!(signing_configured());
+
         let client = UpdateClient {
             http: Http::new().unwrap(),
-            // Would hang or error if it were ever actually requested
+            // Refused immediately; nothing leaves the machine
             manifest_url: "https://127.0.0.1:1/never".to_string(),
         };
         let mut schedule = CheckSchedule::default();
@@ -196,7 +201,7 @@ mod tests {
             .fetch_manifest(&mut schedule, SystemTime::UNIX_EPOCH)
             .await
             .unwrap_err();
-        assert!(matches!(err, UpdateError::NoPublicKey));
+        assert!(matches!(err, UpdateError::Http(_)), "got {err:?}");
         assert_eq!(schedule.consecutive_failures, 1);
     }
 }

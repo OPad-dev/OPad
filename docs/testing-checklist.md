@@ -119,10 +119,29 @@ and `HKLM\Software` before and after is enough; a VM checkpoint is better.
 These are the paths that can break a working install, so each is run
 deliberately rather than assumed from a successful update.
 
-Prerequisite: **§U-0.3's signing keypair must exist** and
-`osupad_update::verify::MANIFEST_PUBLIC_KEY` must be set. Until it is, every
-updater fails closed and UPD-01 is the only row that can pass — for the wrong
-reason.
+Prerequisite, **settled 2026-09-17**: §U-0.3's signing keypair exists and
+`osupad_update::verify::MANIFEST_PUBLIC_KEY` holds its public half. The secret
+key lives at `~/.config/osupad/osupad-manifest.key`, outside the repository.
+
+Build the manifest and its detached signature with the signing tool, which
+re-verifies its own output against the key compiled into the build:
+
+```bash
+cargo run -p osupad-update --bin osupad-manifest -- \
+    --dist dist --base-url https://example.invalid/download \
+    --firmware-version 1.0.0
+```
+
+Serve `dist/` over HTTP and point the daemon at it with
+`OSUPAD_MANIFEST_URL=http://…/osupad-manifest.json`. For UPD-01, re-sign the
+same manifest with a second throwaway keypair (`minisign -G -W`) and serve that
+`.minisig` instead.
+
+> **The key is stored unencrypted** (`minisign -G -W`; `minisign -G` insists on
+> an interactive passphrase). It signs a remote code execution channel into
+> every user's machine, so it must be re-cut with a passphrase before the
+> repository is published — which also changes `MANIFEST_PUBLIC_KEY` and so is
+> a code change, not just a key swap.
 
 | ID | Test Item | Procedure | Acceptance Criteria | Status |
 |---|---|---|---|---|
@@ -145,7 +164,8 @@ reason.
 - **Linux v1.0.0, 2026-09-13:** sections 1–4 verified and passing.
 - **Windows:** not started. Sections 1–4's Windows column, and sections 5–7
   entirely, are open.
-- **Updates (section 7):** blocked on the §U-0.3 signing key (A.8).
+- **Updates (section 7):** unblocked — the §U-0.3 signing key exists as of
+  2026-09-17 (A.8 settled). No row in section 7 has been run yet.
 - **Latency:** see `docs/latency-testing.md`. The Linux table is still empty
   (P3-1), so there is no baseline for Windows to be compared against yet.
 
