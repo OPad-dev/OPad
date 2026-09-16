@@ -1,4 +1,4 @@
-# osu!pad — Windows Support, Installer and Device Pairing
+# osu!pad — Packaging, Distribution and Device Pairing
 
 **Companion to:** `osupad_technical_spec_v1.md`, `osupad_remaining_work_v1.md`, `docs/windows-portability.md`
 **Audience:** the project owner, Antigravity and other coding agents
@@ -11,7 +11,7 @@
 
 ### Goal
 
-Ship osu!pad on Windows 10/11 with a real installer, and make the pad and the app feel like **one product** without ever locking the user out of their own hardware.
+Ship osu!pad on Windows 10/11 and on the major Linux distros as real, installable packages, and make the pad and the app feel like **one product** without ever locking the user out of their own hardware.
 
 ### Decided (owner, 2026-09-16)
 
@@ -21,10 +21,16 @@ Ship osu!pad on Windows 10/11 with a real installer, and make the pad and the ap
 | Windows transport | **Keep CDC-ACM.** Already cross-platform in the existing code; zero firmware change. |
 | Installer | **Inno Setup `.exe`**, with a *strong* uninstall that leaves nothing behind. |
 | Unbind path | **Documented full reflash only.** No GUI unpair button, no on-device factory reset. |
+| Version | Stays **v1.0.0**. The release is not finished until these details are done. |
+| Code signing | **Ship unsigned initially.** Apply to SignPath Foundation (free for OSS) once the repo is public. |
+| Linux distribution | Native **`.deb` / `.rpm` / AUR** packages built in CI. Not targeting official distro repositories. |
+| tosu | **Never bundled.** Optional runtime dependency, fetched on request by the app. |
 
-### Open decision
+### Version
 
-- **Version number.** `v1.0.0` is already tagged and published. This plan assumes Windows ships as **`v1.1.0`**; re-cutting a published tag is not recommended. Owner to confirm.
+Everything in this document is part of **v1.0.0**, not a follow-up release. The repository has **no git remote and nothing has ever been pushed** — the existing `v1.0.0` tag is local-only, so it carries no compatibility promise to anyone and costs nothing to move.
+
+**Action:** delete the local tag (`git tag -d v1.0.0`) and re-cut it when W4 passes. Until then the version in `Cargo.toml` should read `1.0.0-rc`.
 
 ### The one invariant that overrides everything
 
@@ -213,15 +219,24 @@ Note the R7 lesson: the Linux version was broken precisely by writing a *second*
 
 ---
 
-### W2-2. Code signing
+### W2-2. Code signing — ship unsigned, then apply to SignPath
 
-Unsigned installers trigger SmartScreen ("Windows protected your PC"), which for a keyboard-adjacent download is a real adoption problem — users are right to be suspicious of unsigned software that installs a keyboard tool at login.
+**Decision:** ship unsigned for the first release, and pursue free signing afterwards.
 
-**Options, owner's call:**
-- Sign with an OV/EV certificate (~$200-400/yr; EV clears SmartScreen immediately, OV builds reputation over time).
-- Ship unsigned and document the SmartScreen bypass in the README.
+**Free signing is genuinely available for this project.** [SignPath Foundation](https://signpath.org/) provides free OV code signing to open-source projects; osu!pad is MIT, so it qualifies. The private key lives on SignPath's HSM and signing runs as a step in the release pipeline, which also certifies that the signed binary was built from the public source tree.
 
-Not a blocker for a first release; it is a blocker for a comfortable one. Flagging it now so it is a decision, not a surprise.
+**Prerequisites, in order — note that the first one does not exist yet:**
+1. **A public repository.** `git remote -v` is currently empty; nothing has ever been pushed. SignPath requires a publicly available codebase, so publishing the repo is a hard prerequisite, not a nice-to-have.
+2. **CI-based releases.** SignPath signs from the pipeline, not from a developer machine. This pairs with W4-1.
+3. Application and review by the Foundation.
+
+**What signing does and does not fix.** An OV certificate does **not** instantly clear SmartScreen — reputation accrues as downloads accumulate. Only EV certificates get immediate SmartScreen trust, and those are not free. So expect the warning to fade rather than vanish.
+
+**Not worth doing:** a self-signed certificate. It is free and it does nothing for SmartScreen; the user must manually install the certificate into their trust store, which is worse UX than shipping unsigned.
+
+**Paid fallbacks** if SignPath does not work out: Certum's open-source code signing certificate (roughly €25-30/yr) or Microsoft Trusted Signing (about $10/month, subject to identity-validation requirements). Note that since June 2023 all code signing keys must live on hardware or an HSM, which is why cheap file-based certificates no longer exist.
+
+**Interim requirement.** While unsigned, the README and download page must explain the SmartScreen prompt honestly and tell the user how to proceed ("More info" → "Run anyway"), and publish **SHA-256 checksums** for every artifact so a careful user can verify what they downloaded.
 
 ---
 
@@ -340,27 +355,149 @@ Re-run the `docs/latency-testing.md` stages on Windows and add rows to the resul
 
 ---
 
-## 7. Order of work
+## 6. L: Linux distribution packages
+
+The current `packaging/linux/install.sh` is a per-user script (`~/.local/bin`). That stays as the from-source path, but it is not a distributable package.
+
+### L-0. Scope: your own packages, not the official repositories
+
+**Be clear about the target.** Getting into Debian's or Fedora's official archives is not realistic here and should not be attempted: both require every Rust dependency to be packaged separately as a distro package, which is impractical for a workspace this size, and both forbid vendored pre-built binaries.
+
+**What is realistic, and what this section means by "support for major distros":** build `.deb`, `.rpm` and an AUR `PKGBUILD` in CI and publish them as release artifacts, so users install with `apt install ./osupad.deb`, `dnf install ./osupad.rpm` or `yay -S osupad-bin`. That covers Debian/Ubuntu/Mint/Pop, Fedora/RHEL/openSUSE and Arch/Manjaro respectively.
+
+### L-1. System-wide vs per-user layout
+
+**Problem.** The current assets are per-user and **hardcode a per-user path**: `packaging/linux/systemd-user/osupad-daemon.service` has `ExecStart=%h/.local/bin/osupad-daemon`. A distro package installs binaries to `/usr/bin`, so that unit is wrong inside a package and the daemon will fail to start.
+
+**Required change.**
+- Binaries → `/usr/bin/{osupad-daemon,osupad-gui,osupadctl}`
+- systemd **user** unit → `/usr/lib/systemd/user/osupad-daemon.service`, with `ExecStart=/usr/bin/osupad-daemon`
+- `.desktop` files → `/usr/share/applications/`
+- udev rules → `/usr/lib/udev/rules.d/99-osupad.rules` (**not** `/etc/udev/rules.d/`, which is reserved for local administrator overrides)
+- Icons → `/usr/share/icons/hicolor/...`
+
+Keep the unit a **user** unit, not a system one: the daemon is per-user, needs the session bus for the tray, and owns a per-user IPC socket. Template the `ExecStart` path so the same source file produces both the `~/.local/bin` and `/usr/bin` variants rather than maintaining two divergent copies — this is exactly the R7 failure mode (a second, divergent unit file) and it must not be repeated.
+
+### L-2. Fix the udev rule before shipping it
+
+**Problem.** `packaging/linux/udev/99-osupad.rules` is Arch-centric and looser than it needs to be:
 
 ```
-W0-1 ─┬─ W0-2                     (IPC: everything blocks on this)
-      └─ W0-3
-W0-4, W0-5, W0-6                  (parallel, independent)
-   ↓
-W1-1, W1-2, W1-3                  (platform integration)
-   ↓
-W2-1 ─ W2-3                       (installer; W2-2 signing is a side decision)
-   ↓
-W3-1 → W3-2 → W3-3 → W3-4         (pairing; cross-platform, ships on Linux too)
-   ↓
-W4-1 … W4-4
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", MODE="0666", GROUP="uucp", TAG+="uaccess"
 ```
 
-W3 (pairing) is independent of W0-W2 and could be done first on Linux if Windows stalls. W0-1 blocks every other Windows task and should be the first commit.
+- `GROUP="uucp"` is the Arch convention. Debian, Ubuntu and Fedora use `dialout`. A group that does not exist on the target distro makes the rule silently ineffective.
+- `MODE="0666"` grants **every user and every process on the machine** read/write access to the pad's serial interface. Combined with `TAG+="uaccess"` it is also redundant: `uaccess` already grants the physically-logged-in user access via systemd-logind, which is the modern, correct mechanism and is distro-independent.
+
+**Required change.** Drop `MODE` and `GROUP`, keep `uaccess`:
+
+```
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="303a", TAG+="uaccess"
+```
+
+Narrow `ATTRS{idVendor}=="303a"` to also match the specific PIDs the code already knows (`OSUPAD_APP_PID` and `ESP_ROM_BOOTLOADER_PID` in `desktop/crates/osupad-device/src/lib.rs`) so the rule does not claim every Espressif device the user owns.
+
+**Acceptance.** A normal desktop user can open the pad on Debian, Fedora and Arch with no group membership change and no logout, and no other user on the machine can. Verify on all three.
+
+### L-3. Build the packages
+
+| Target | Tool | Notes |
+|---|---|---|
+| `.deb` | `cargo-deb` | Per-crate metadata in `Cargo.toml`; `maintainer-scripts` for `udevadm control --reload` and `systemctl --user daemon-reload` |
+| `.rpm` | `cargo-generate-rpm` | `%post`/`%postun` scriptlets for the same |
+| Arch | hand-written `PKGBUILD` | Publish as `osupad-bin` (prebuilt) and optionally `osupad-git` |
+
+**Runtime dependencies differ per distro and must be declared explicitly.** `iced`/wgpu needs Vulkan plus X11/Wayland client libraries, and `ksni` needs D-Bus. Get the per-distro package names right (`libvulkan1` vs `vulkan-loader`, `libwayland-client0` vs `wayland`, and so on) — a missing dependency here surfaces as a GUI that fails to start with an opaque wgpu error.
+
+**Acceptance.** Install, launch, use and remove cleanly in a fresh container or VM for **Debian stable, Ubuntu LTS, Fedora and Arch**. Removal leaves no files behind, matching the W2-3 standard applied to Windows. Package installation must **not** enable the user service automatically without consent — `systemctl --user enable` is the user's decision, prompted by the GUI as it is today.
+
+### L-4. AppImage (optional)
+
+An AppImage covers every other distro with one artifact and is cheap to add once the binaries build. Flatpak is **not** recommended: the sandbox complicates raw serial access, the per-user IPC socket, and spawning tosu as a subprocess, for little benefit to this particular application.
 
 ---
 
-## 8. Risks
+## 7. T: tosu integration and redistribution
+
+### T-1. The licensing position
+
+**tosu is LGPL-3.0** (Mikhail Babynichev). osu!pad is MIT. These interact cleanly here, for a specific reason worth writing down so it is not re-litigated later:
+
+**osu!pad does not link tosu in any way.** `desktop/crates/osupad-tosu/src/lib.rs` talks to it over a WebSocket at `ws://127.0.0.1:24050/websocket/v2` (`DEFAULT_TOSU_ENDPOINT`), and `spawn_tosu_supervisor` (`:275`) launches it as a **separate process**. Separate programs communicating over a socket are not a derivative work, and executing a program is not linking. **No copyleft obligation reaches osu!pad's own MIT-licensed code.** This is true whether or not tosu is bundled.
+
+**Redistribution is the only thing that creates obligations.** If an installer or package *ships the tosu binary*, that is conveying an LGPL-3.0 work, which requires shipping the license text and copyright notice, and providing the corresponding source (or a valid written offer / access from the same place the binary is offered). All of this is satisfiable — it is permitted, not forbidden — but it is an ongoing maintenance burden: every tosu version bump means re-checking the source offer.
+
+### T-2. Decision: never bundle tosu
+
+Not because of licensing, but because bundling is worse on every axis that matters:
+
+- It puts you on the hook for redistributing someone else's project and keeping its source offer current.
+- It pins a tosu version that will go stale, while tosu tracks osu! client changes and needs to stay current to keep working.
+- Distro packaging rejects vendored third-party binaries outright, so `.deb`/`.rpm` could not carry it anyway.
+- The pad is **fully useful without it** — it is a 1000 Hz keyboard, and only the gameplay telemetry view depends on tosu.
+
+**The code is already designed for this.** `find_tosu_binary` (`:256`) resolves `$OSUPAD_TOSU_PATH` → `~/.local/opt/tosu/tosu` → `tosu` on `$PATH`, warns once if absent, and retries. The supervisor also skips launching when something already listens on port 24050, so a hand-started tosu is respected. Nothing about that needs to change.
+
+### T-3. Required change: an "Install tosu" helper in the GUI
+
+Make the existing design explicit to the user instead of leaving it to an environment variable.
+
+**Do:**
+- GUI Device (or Settings) page shows tosu status: *not installed* / *installed, not running* / *connected*.
+- When not installed, offer **"Download tosu"**: fetch the current release from tosu's official GitHub releases, verify the checksum, and install to `~/.local/opt/tosu/tosu` — **the path `find_tosu_binary` already looks for**. On Windows, the equivalent per-user location.
+- The download must be clearly attributed: name the upstream project, show its LGPL-3.0 license, and link to its repository. The user is obtaining tosu from its authors; osu!pad is only automating the fetch.
+- Always allow pointing at an existing install instead (`$OSUPAD_TOSU_PATH`, or a file picker).
+- Never download anything without the user asking. No silent fetch on first run.
+
+**Do not:** include the tosu binary in `osupad.iss`, the `.deb`, the `.rpm` or the `PKGBUILD`. For the AUR package, an `optdepends=('tosu')` entry is the correct expression of the relationship.
+
+**Acceptance.**
+- Fresh install with no tosu: pad works as a keyboard, display shows the idle clock, GUI states plainly that gameplay telemetry needs tosu and offers to fetch it.
+- After the helper runs, the daemon connects with no restart and no manual configuration.
+- `COM-05` in `docs/testing-checklist.md` (tosu killed mid-play) still passes: PLAYING → COOLDOWN → IDLE with no stuck UI.
+
+### T-4. Attribution
+
+Add a **Third-party software** section to the README and an About entry in the GUI naming tosu, its author, its LGPL-3.0 license and its repository — regardless of the fact that it is never bundled. Correct attribution is cheap and this project depends on their work for its headline feature.
+
+---
+
+## 8. Order of work
+
+Three tracks that only converge at W4. They can be worked in parallel.
+
+```
+Windows        W0-1 ─┬─ W0-2          (IPC abstraction: all Windows work blocks on this)
+                     └─ W0-3
+               W0-4, W0-5, W0-6       (parallel, independent)
+                  ↓
+               W1-1, W1-2, W1-3
+                  ↓
+               W2-1 ─ W2-3            (installer + strong uninstall)
+
+Linux          L-2 ─ L-1 ─ L-3        (udev fix first: it is a correctness bug today)
+                            └─ L-4    (optional)
+
+Cross-platform T-3                    (tosu helper; independent of everything)
+               W3-1 → W3-2 → W3-3 → W3-4   (pairing; ships on Linux too)
+
+                  ↓ all tracks
+               W4-1 … W4-4 → re-cut v1.0.0
+```
+
+**Start here.** Two items are worth doing before anything else because they are live defects rather than new features:
+
+1. **L-2** — the udev rule names a group that does not exist on Debian or Fedora, and grants `0666` to every process on the machine. That is wrong on the platform you already shipped.
+2. **P3-1** — the latency table in `docs/latency-testing.md` is still empty. It is the last open v1 item and it is the baseline every other platform gets compared against.
+
+Then **W0-1**, which gates every remaining Windows task.
+
+**Deferred until needed:** W2-2 (signing) cannot start until the repository is public, so it trails the rest.
+
+---
+
+## 9. Risks
 
 | Risk | Mitigation |
 |---|---|
@@ -370,13 +507,20 @@ W3 (pairing) is independent of W0-W2 and could be done first on Linux if Windows
 | SmartScreen suppresses adoption | W2-2 signing decision |
 | Pairing reintroduces an R3-class ordering bug | W3-3 requires the owner check in the `HelloAck` arm with dedicated daemon tests |
 | Windows storage writes violate P1-3 during play | W4-2 re-runs STR-02 on Windows rather than assuming it |
+| Distro package misses a runtime library; GUI dies with an opaque wgpu error | L-3 requires a clean-container install test on all four distros |
+| Packaged systemd unit keeps the `%h/.local/bin` path and the daemon never starts | L-1 templates one source unit into both variants (the R7 lesson) |
+| A tosu update breaks telemetry and users blame osu!pad | tosu is never pinned or bundled (T-2); the GUI reports tosu status explicitly (T-3) |
+| SmartScreen suppresses Windows adoption while unsigned | W2-2: publish SHA-256 checksums and document the prompt honestly; pursue SignPath once public |
 
 ---
 
-## 9. Out of scope
+## 10. Out of scope
 
 - macOS.
 - MSIX packaging and Store-style "plug in the pad → Windows offers the app". That needs a Store-signed MSIX; the Inno decision rules it out. The daemon-at-login plus hotplug detection (W1-2) delivers nearly the same feel.
 - Any cryptographic enforcement of the pairing model (§0).
 - Windows Service hosting for the daemon (W1-1).
+- Inclusion in official Debian/Fedora/Arch repositories (L-0). Own-built packages only.
+- Flatpak (L-4), and bundling tosu in any artifact (T-2).
+- EV code signing (W2-2).
 - v2 rapid trigger — see `osupad_v2_rapid_trigger_plan.md`.
