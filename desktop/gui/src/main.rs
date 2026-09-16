@@ -177,6 +177,7 @@ pub struct App {
     pub log_cleared_seq: u64,
     pub log_auto_scroll: bool,
     pub banner: Option<String>,
+    pub tosu_override_path: Option<std::path::PathBuf>,
     pub designer: designer::Designer,
 }
 
@@ -247,6 +248,10 @@ pub enum Message {
     ResetLatency,
     ActionDone(Result<IpcResponse, String>),
     DismissBanner,
+    // tosu configuration (§T-4)
+    PickTosuPath,
+    TosuPathPicked(Option<std::path::PathBuf>),
+    ResetTosuPath,
     Designer(designer::Message),
     // Window & tray
     WindowOpened(window::Id),
@@ -261,6 +266,18 @@ pub enum Message {
 impl App {
     fn new(start_hidden: bool, initial_page: Option<Page>) -> (Self, Task<Message>) {
         let (designer, designer_task) = designer::Designer::new();
+        let tosu_override_path = osupad_model::paths::data_dir()
+            .ok()
+            .and_then(|d| std::fs::read_to_string(d.join("tosu_path")).ok())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .map(std::path::PathBuf::from)
+            .or_else(|| std::env::var_os("OSUPAD_TOSU_PATH").map(std::path::PathBuf::from));
+
+        if let Some(ref p) = tosu_override_path {
+            std::env::set_var("OSUPAD_TOSU_PATH", p);
+        }
+
         let mut app = App {
             page: initial_page.unwrap_or(Page::Dashboard),
             window: None,
@@ -312,6 +329,7 @@ impl App {
             log_cleared_seq: 0,
             log_auto_scroll: true,
             banner: None,
+            tosu_override_path,
             designer,
         };
         let mut tasks = vec![designer_task.map(Message::Designer), app.poll()];
@@ -919,6 +937,37 @@ impl App {
                     ipc::request(IpcRequest::ResetLatencyStats),
                     Message::ActionDone,
                 );
+            }
+            Message::PickTosuPath => {
+                return Task::perform(
+                    async {
+                        let file = rfd::AsyncFileDialog::new()
+                            .set_title("Select tosu Executable")
+                            .pick_file()
+                            .await;
+                        file.map(|f| f.path().to_path_buf())
+                    },
+                    Message::TosuPathPicked,
+                );
+            }
+            Message::TosuPathPicked(path) => {
+                if let Some(p) = path {
+                    if let Ok(d) = osupad_model::paths::data_dir() {
+                        let _ = std::fs::create_dir_all(&d);
+                        let _ = std::fs::write(d.join("tosu_path"), p.to_string_lossy().as_bytes());
+                    }
+                    std::env::set_var("OSUPAD_TOSU_PATH", &p);
+                    self.banner = Some(format!("Using external tosu: {}", p.display()));
+                    self.tosu_override_path = Some(p);
+                }
+            }
+            Message::ResetTosuPath => {
+                if let Ok(d) = osupad_model::paths::data_dir() {
+                    let _ = std::fs::remove_file(d.join("tosu_path"));
+                }
+                std::env::remove_var("OSUPAD_TOSU_PATH");
+                self.tosu_override_path = None;
+                self.banner = Some("Reset to bundled tosu".into());
             }
             Message::ActionDone(result) => {
                 self.banner = Some(match result {
@@ -1936,4 +1985,40 @@ async fn start_daemon_process() -> Result<(), String> {
     #[allow(unreachable_code)]
     tokio::time::sleep(Duration::from_millis(300)).await;
     Ok(())
+}
+
+pub fn tosu_source_status(override_path: Option<&std::path::Path>) -> String {
+    if let Some(p) = override_path {
+        return format!("Custom ({})", p.display());
+    }
+    if let Some(p) = std::env::var_os("OSUPAD_TOSU_PATH") {
+        return format!("Custom ({})", std::path::Path::new(&p).display());
+    }
+    let home_install = dirs::home_dir().map(|h| {
+        h.join(".local/opt/tosu")
+            .join(osupad_model::paths::TOSU_BINARY)
+    });
+    if let Some(p) = home_install.filter(|p| p.is_file()) {
+        return format!("Installed at {}", p.display());
+    }
+    let on_path = std::env::var_os("PATH").and_then(|path| {
+        std::env::split_paths(&path)
+            .map(|dir| dir.join(osupad_model::paths::TOSU_BINARY))
+            .find(|p| p.is_file())
+    });
+    if let Some(p) = on_path {
+        return format!("Installed at PATH ({})", p.display());
+    }
+    if let Ok(bundled_dir) = osupad_model::paths::bundled_tosu_dir() {
+        if let Ok(v) = std::fs::read_to_string(bundled_dir.join("VERSION")) {
+            let v = v.trim();
+            if !v.is_empty() {
+                return format!("Bundled (v{})", v);
+            }
+        }
+        if bundled_dir.join(osupad_model::paths::TOSU_BINARY).is_file() {
+            return "Bundled".to_string();
+        }
+    }
+    "Bundled (default)".to_string()
 }

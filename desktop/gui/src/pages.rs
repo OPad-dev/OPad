@@ -350,7 +350,9 @@ pub fn settings(app: &App) -> Element<'_, Message> {
         heading("Settings"),
         row![keys, display].spacing(14),
         advanced,
+        tosu_settings(app),
         updates(app),
+        about_section(),
         row![button(text("Save settings").size(15))
             .padding([10, 22])
             .style(theme::primary)
@@ -434,6 +436,78 @@ fn updates(app: &App) -> Element<'_, Message> {
     card(content).into()
 }
 
+fn tosu_settings(app: &App) -> Element<'_, Message> {
+    let source_str = crate::tosu_source_status(app.tosu_override_path.as_deref());
+    let conn_str = if app.tosu_connected {
+        "Connected (streaming telemetry)"
+    } else {
+        "Not running / Disconnected"
+    };
+
+    let override_text = app
+        .tosu_override_path
+        .as_ref()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| "Using default / bundled tosu".to_string());
+
+    let mut actions = row![button(text("Browse external tosu...").size(12))
+        .padding([6, 12])
+        .style(theme::secondary)
+        .on_press(Message::PickTosuPath),]
+    .spacing(8);
+
+    if app.tosu_override_path.is_some() {
+        actions = actions.push(
+            button(text("Use bundled").size(12))
+                .padding([6, 12])
+                .style(theme::secondary)
+                .on_press(Message::ResetTosuPath),
+        );
+    }
+
+    card(
+        column![
+            caption("TOSU INTEGRATION"),
+            row![muted("Binary source:").width(140), text(source_str).size(13)].spacing(8),
+            row![muted("Status:").width(140), text(conn_str).size(13)].spacing(8),
+            row![muted("Custom path:").width(140), text(override_text).size(13)].spacing(8),
+            actions,
+            muted("tosu reads game memory and feeds live map telemetry (PP, accuracy, hit counts) to the pad display.").size(12),
+        ]
+        .spacing(10),
+    )
+    .into()
+}
+
+fn about_section() -> Element<'static, Message> {
+    card(
+        column![
+            caption("ABOUT & THIRD-PARTY SOFTWARE"),
+            row![
+                muted("Application:").width(140),
+                text(format!("osu!pad v{}", env!("CARGO_PKG_VERSION"))).size(13)
+            ]
+            .spacing(8),
+            row![
+                muted("License:").width(140),
+                text("MIT License (GFerreiroS)").size(13)
+            ]
+            .spacing(8),
+            Space::new().height(4),
+            column![
+                text("Bundled Component: tosu").size(13).font(theme::FONT_BOLD),
+                muted("Author: Mikhail Babynichev and the tosu contributors").size(12),
+                muted("License: GNU Lesser General Public License v3.0 (LGPL-3.0)").size(12),
+                muted("Repository: https://github.com/KotRikD/tosu").size(12),
+                muted("Under LGPL-3.0, you may replace this bundled component with your own version via the setting above or $OSUPAD_TOSU_PATH.").size(11),
+            ]
+            .spacing(4),
+        ]
+        .spacing(8),
+    )
+    .into()
+}
+
 // ---- device ---------------------------------------------------------------------------------
 
 pub fn device(app: &App) -> Element<'_, Message> {
@@ -468,6 +542,18 @@ pub fn device(app: &App) -> Element<'_, Message> {
             ),
             line("Mode", format!("{:?}", app.mode)),
             line("Counters source", format!("{:?}", app.counters_source)),
+            line(
+                "tosu",
+                format!(
+                    "{} ({})",
+                    if app.tosu_connected {
+                        "Connected"
+                    } else {
+                        "Disconnected"
+                    },
+                    crate::tosu_source_status(app.tosu_override_path.as_deref())
+                ),
+            ),
             line(
                 "Counter generation",
                 app.counters.counter_generation.to_string()

@@ -3818,6 +3818,7 @@ name = "osupad-gui"
 version = "1.0.0"
 dependencies = [
  "chrono",
+ "dirs 5.0.1",
  "futures-util",
  "iced",
  "iced_aw",

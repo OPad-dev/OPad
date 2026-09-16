@@ -184,6 +184,19 @@ osupadctl monitor
 
 ---
 
+## 📦 Third-Party Software
+
+osu!pad bundles or interacts with the following third-party software:
+
+### tosu
+- **Project**: [tosu](https://github.com/KotRikD/tosu)
+- **Author**: Mikhail Babynichev and the tosu contributors
+- **License**: [GNU Lesser General Public License v3.0 (LGPL-3.0)](licenses/tosu/LICENSE)
+- **Redistribution Notice**: See [licenses/tosu/NOTICE](licenses/tosu/NOTICE)
+- **User Replacement Rights**: Under the terms of LGPL-3.0, users are entitled to replace the bundled tosu binary with their own version. You can point the `OSUPAD_TOSU_PATH` environment variable to a custom tosu executable, or configure an external path in the osu!pad desktop GUI (**Settings → tosu**).
+
+---
+
 ## 📜 License
 Licensed under the [MIT License](LICENSE).
 
