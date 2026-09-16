@@ -88,6 +88,10 @@ install: all
 	install -d "$(DESTDIR)$(LIBDIR)/osupad"
 	printf '%s\n' "$(INSTALL_ORIGIN)" > "$(DESTDIR)$(LIBDIR)/osupad/install-origin"
 	chmod 644 "$(DESTDIR)$(LIBDIR)/osupad/install-origin"
+	@if [ -d "packaging/linux/icons" ]; then \
+		install -d "$(DESTDIR)$(DATADIR)/icons"; \
+		cp -r packaging/linux/icons/* "$(DESTDIR)$(DATADIR)/icons/"; \
+	fi
 	@if [ -d "$(TOSU_BUILD_DIR)" ]; then \
 		echo "Installing bundled tosu to $(DESTDIR)$(LIBDIR)/osupad/tosu..."; \
 		install -d "$(DESTDIR)$(LIBDIR)/osupad/tosu"; \
