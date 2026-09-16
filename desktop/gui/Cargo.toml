@@ -27,6 +27,10 @@ futures-util = { workspace = true, features = ["sink"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+] }
 
 [package.metadata.deb]
 name = "osupad"
@@ -86,4 +90,3 @@ libXcursor = "*"
 libxkbcommon = "*"
 libXi = "*"
 dbus-libs = "*"
->>>>>>> 64d5c56 (feat(packaging): add PKGBUILD, deb, and rpm packaging metadata and scripts (L-3))
