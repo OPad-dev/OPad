@@ -109,16 +109,30 @@ idf.py build
 ## ⚡ Flashing the Firmware
 
 ### Option A: Via `osupadctl` (Recommended)
-`osupadctl` integrates native USB flashing via `espflash` and requires no external toolchain:
+`osupadctl` drives `espflash` directly and needs no shell script and no ESP-IDF
+toolchain. It asks the daemon to release the serial port first, reboots the pad
+into the ROM download bootloader hands-free, writes the image and reboots back
+into the app — on Linux and on Windows, with the app running:
+
 ```bash
+# Update the app image only (ota_0 at 0x20000)
 osupadctl flash firmware/build/osupad-firmware.bin
+
+# Recovery flash: bootloader + partition table + OTA data + app
+osupadctl flash --full firmware/build
 ```
+
+It also works with no daemon running at all, which is the state a recovery
+flash usually happens in.
 
 ### Option B: Via ESP-IDF
 ```bash
 cd firmware
 idf.py -p /dev/ttyACM0 flash
 ```
+
+If the pad will not enter download mode or has to be returned to stock, see
+[Recovery, Reflashing & Unbinding](docs/recovery.md).
 
 ---
 
@@ -167,6 +181,12 @@ osupadctl import backup.json
 
 # Flash firmware image directly over USB
 osupadctl flash firmware/build/osupad-firmware.bin
+
+# Recovery flash (bootloader, partition table, OTA data and app)
+osupadctl flash --full firmware/build
+
+# Reboot the pad into the ROM download bootloader and leave it there
+osupadctl bootloader
 
 # Stream real-time diagnostic logs
 osupadctl monitor

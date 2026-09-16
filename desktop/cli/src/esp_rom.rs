@@ -21,10 +21,7 @@ const RTC_WDT_CONFIG0_RESET_RTC: u32 = (1 << 31) | (5 << 28) | (1 << 8) | 2;
 
 /// Reboot an ESP32-S3 sitting in the ROM bootloader / flasher stub into its flashed app.
 pub fn reset_to_app(port_path: &str) -> Result<()> {
-    let mut port = serialport::new(port_path, 115_200)
-        .timeout(Duration::from_millis(50))
-        .open()
-        .with_context(|| format!("Failed to open {}", port_path))?;
+    let mut port = open_with_retry(port_path, Duration::from_secs(3))?;
 
     write_reg(&mut *port, RTC_CNTL_OPTION1_REG, 0, true)
         .context("Failed to clear FORCE_DOWNLOAD_BOOT")?;
@@ -44,6 +41,26 @@ pub fn reset_to_app(port_path: &str) -> Result<()> {
     // The chip may reset before it answers the final write
     write_reg(&mut *port, RTC_CNTL_WDTWPROTECT_REG, 0, false)?;
     Ok(())
+}
+
+/// Windows serial handles are exclusive (§W1-3) and the OS can take a moment to
+/// release one after espflash exits, so a flash that succeeded must not fail at
+/// the last step on a port that is about to become free. Linux is forgiving
+/// here; retrying costs nothing on either.
+fn open_with_retry(port_path: &str, timeout: Duration) -> Result<Box<dyn serialport::SerialPort>> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match serialport::new(port_path, 115_200)
+            .timeout(Duration::from_millis(50))
+            .open()
+        {
+            Ok(port) => return Ok(port),
+            Err(e) if Instant::now() >= deadline => {
+                return Err(e).with_context(|| format!("Failed to open {}", port_path));
+            }
+            Err(_) => std::thread::sleep(Duration::from_millis(100)),
+        }
+    }
 }
 
 fn write_reg(
