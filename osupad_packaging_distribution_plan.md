@@ -902,7 +902,7 @@ Keep it to one line per task. This is how the other agent learns what landed.
 | 2026-09-17 | B | W2-1 version | `b66ca82` | Derive Inno Setup `MyAppVersion` dynamically from `desktop/Cargo.toml` via ISPP, failing loudly with `#error` on open/parse error instead of defaulting to literal `1.0.0`. |
 | 2026-09-17 | B | W2-1 symlink | `3ef5b3f` | Remove Windows-breaking `osupad.iss` git symlink, retain `installer.iss` as real file, and update §W2-1 reference. |
 | 2026-09-17 | B | L-3, T-2 | `98e0f98` | Unified package build script (`scripts/release/build_packages.sh`) producing .deb, .rpm, AppImage, and Windows .exe (when iscc available); bundled tosu v4.26.2, /usr/bin systemd unit templating, and newline-stripped install-origin markers. |
-| 2026-09-17 | B | L-3 verify | `9cfd2b8` | Verify .deb and .rpm in clean `debian:latest` and `fedora:latest` Docker containers; fill PKG-01..06 Linux column with container evidence. |
+| 2026-09-17 | B | L-3 verify | `9cfd2b8`, `8c52b08` | Verify .deb and .rpm in clean `debian:latest` and `fedora:latest` Docker containers; fill PKG-01..06 Linux column with container evidence. |
 
 ### A.8. Open owner decisions
 
