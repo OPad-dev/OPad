@@ -1734,3 +1734,75 @@ The product should feel boring in the best possible way:
 - Replace/reflash the ESP: the PC/JSON backup can restore lifetime counters.
 
 The project is successful when the input path is extremely small, every nonessential subsystem can fail independently, and v1.0 can be left alone for years except for compatibility fixes.
+
+---
+
+# Appendix A1. Device pairing / ownership claim (amendment, 2026-09-16)
+
+**Source:** `osupad_packaging_distribution_plan.md` §W3, owner decision of
+2026-09-16. This amends §12–§14 (counter reconciliation) and §26 (flashing); it
+does not change §2, §3 or anything on the input path.
+
+## A1.1 What was added
+
+The pad records which host install owns it. A different install must take it
+over explicitly instead of silently adopting its counters.
+
+| Piece | Where | Rule |
+|---|---|---|
+| Install identity | Host, UUIDv4 in `app_state`, generated on first run | No storage ⇒ no identity ⇒ claims nothing, prompts about nothing |
+| `owner_id` | Pad, 16 bytes in the NVS config blob (v3) | Absent or all zero = unclaimed. v1/v2 blobs migrate and read as unclaimed |
+| `HelloAck.owner_id` | Protocol field 8 | Empty from firmware predating the change, which reads as unclaimed |
+| `ClaimOwnership` | `HostToDevice` tag 14 | An NVS write, therefore **IDLE only** (§12.1, P1-3). An all-zero claim is refused |
+
+At connect, and **before anything reconciles the counters**, the daemon
+compares the pad's `owner_id` with its own identity: unclaimed is claimed
+silently, its own proceeds, another install's raises a prompt and blocks counter
+sync until answered. The prompt offers three answers — take over keeping the
+pad's counters, take over keeping this PC's, or leave it alone.
+
+"Leave it alone" suppresses config, layouts, telemetry and all syncing. **The
+pad keeps working as a keyboard throughout**, which §3 never permitted to be in
+question.
+
+## A1.2 What this is not
+
+It is an **ownership model, not a DRM scheme**, and the distinction is
+deliberate rather than an admission:
+
+- Nothing is cryptographic. No attestation, no signed handshake, no anti-tamper.
+- The firmware stays flashable over USB **by design**. Anything baked into
+  firmware plus app is extractable from either, so a lock would cost the user
+  their own hardware and buy nothing.
+- Third-party software talking to the CDC interface is not prevented. It is
+  simply not supported.
+
+It exists for one reason: a pad that changes hands silently takes tens of
+thousands of lifetime presses somewhere unexpected, and those counters are the
+one piece of state in this project that cannot be regenerated.
+
+No later task may "harden" this into enforcement. That is stated here so there
+is nothing to rediscover.
+
+## A1.3 Unbinding
+
+The **only** unbind is a documented full reflash: `espflash erase-flash`
+followed by a normal flash (`docs/recovery.md` §7). There is no unpair button in
+the app and no factory-reset gesture on the pad.
+
+That is not an oversight. `owner_id` lives in NVS beside the lifetime counters,
+so anything that clears one clears the other — and an unbind that could be
+performed over the wire would make the claim worthless for the only thing it is
+for. Requiring physical access and an erase that visibly costs the counters
+keeps the two facts aligned: **you always own your hardware, and you cannot
+quietly take someone else's presses.**
+
+## A1.4 Consequences for §12–§14
+
+The reconciliation matrix is unchanged. What changed is that it now runs *after*
+the ownership decision rather than unconditionally, and a pad awaiting a
+takeover answer is not reconciled at all. A reflashed pad is unclaimed, so the
+first host it meets claims it — including the host that erased it, which will
+also restore the counters it remembers because its generation outranks the
+pad's blank one. That is correct for repairing an install and wrong for giving
+the pad away; `docs/recovery.md` §7.2 says so where a user will see it.

@@ -2,7 +2,7 @@
 
 **Low-Latency ESP32-S3 osu! Keypad & Telemetry Display**
 
-A deterministic, ultra-low-latency two-key mechanical keypad and live telemetry HUD designed for competitive osu!lazer gameplay on Linux *(Windows support planned after Linux v1.0)*.
+A deterministic, ultra-low-latency two-key mechanical keypad and live telemetry HUD designed for competitive osu!lazer gameplay on **Linux and Windows 10/11**.
 
 ---
 
@@ -136,6 +136,36 @@ If the pad will not enter download mode or has to be returned to stock, see
 
 ---
 
+## 🪟 Windows Setup & Installation
+
+**The pad needs none of this to work as a keyboard.** Plug it into any Windows
+10 or 11 machine and it types immediately: HID binds to the inbox
+`hidclass.sys` and the CDC port to the inbox `usbser.sys`. No `.inf`, no
+WinUSB, no Zadig, no install. The software below is for configuring it, the
+telemetry HUD and the lifetime counters.
+
+1. Download `osupad-setup-<version>.exe` from the releases page and run it.
+2. It installs the daemon, the GUI and `osupadctl`, bundles tosu, and sets both
+   to start at login. There is nothing else to do.
+
+> **SmartScreen will warn you.** The installer is **not code-signed** yet:
+> osu!pad is applying to SignPath Foundation for free OSS signing, which
+> requires the repository to be public first. Until then, Windows shows
+> "Windows protected your PC" — choose **More info → Run anyway**. Check the
+> download against `SHA256SUMS` on the release page if you would rather verify
+> it than trust the dialog.
+
+Uninstall from Settings → Apps. It removes everything it installed, including
+the two `Run` registry values, and asks before it touches your `osupad.db` —
+so a reinstall keeps your lifetime counters unless you say otherwise.
+
+**To reset a pad completely, or hand it to someone else**, see
+[Recovery, Reflashing & Unbinding](docs/recovery.md). There is no unpair button
+in the app, deliberately: the only unbind is a documented reflash, and it erases
+the pad's lifetime counters along with the owner record.
+
+---
+
 ## 🚀 Linux Setup & Installation
 
 ### 1. Udev Rules
@@ -196,6 +226,7 @@ osupadctl monitor
 
 ## 📄 Documentation
 - [System Architecture](docs/architecture.md)
+- [osu!pad on Windows — as built](docs/windows-portability.md)
 - [USB Framing & Protocol](docs/protocol.md)
 - [Counter Reconciliation, Recovery & Unbinding](docs/recovery.md) — including the reflash / unbind path
 - [Latency Testing Methodology](docs/latency-testing.md)

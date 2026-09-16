@@ -36,7 +36,17 @@ The owner tested the LVGL UI on hardware and noticed no latency regression. LVGL
 
 The PC layout designer (`osupad-layout`, `osupad-ui-preview`, GUI Designer page) and the protocol messages `DataUpdate`, `SetLayout`, `LayoutAck`, `reset_layout`, `HostStatus` are accepted v1.0 features. They must follow the same persistence rules as everything else (no NVS/SQLite writes during PLAYING/COOLDOWN, see P1-3).
 
-### A3. Windows support is deferred (Phase 10 postponed)
+### A3. Windows support is deferred (Phase 10 postponed) — **SUPERSEDED 2026-09-16**
+
+> **SUPERSEDED by `osupad_packaging_distribution_plan.md`.** Windows support is
+> in v1.0, not after it: named pipes (§W0-1, §W0-2), COM port discovery (§W1-3),
+> login startup (§W1-1) and an Inno Setup installer (§W2-1) are all done. The
+> paragraph below is kept for the record and no longer describes the plan.
+>
+> What survives of it is the *reason* it was written: platform-specific code
+> still lives in `osupad-ipc`, `osupad-device` and `packaging/`, and nothing
+> outside those places opens a `UnixStream` or a `/dev/...` path directly. That
+> discipline is why the port was a `#[cfg]` alias rather than a rewrite.
 
 Do **not** implement Windows support now: no named pipes, COM port discovery, or login-startup work. Linux must be fully working and released first.
 
@@ -685,10 +695,24 @@ Legend: ✅ done · 🟡 partial · ❌ missing. Task IDs show what closes each 
 
 ## Appendix B: explicitly out of scope for this round
 
-- Windows support (named pipes, COM discovery, login startup): **after** Linux v1.0 (A3).
+- ~~Windows support (named pipes, COM discovery, login startup): **after** Linux v1.0 (A3).~~
+  **Reversed 2026-09-16** by `osupad_packaging_distribution_plan.md` — it is in
+  v1.0. See the note on A3 above.
 - ESP-NOW wireless dongle, battery, and heavy-ballast case V2 (`docs/roadmap.md`): post-v1.0.
 - Touch UI, Wi-Fi, Bluetooth, NTP, macros, RGB, more than two keys (spec §2.2).
-- A custom OTA subsystem (spec §26; flashing stays espflash over USB).
+- ~~A custom OTA subsystem (spec §26; flashing stays espflash over USB).~~
+  **Partially reversed 2026-09-16** by §U-3 of the packaging plan, and the
+  reversal is deliberate rather than scope creep:
+  - **In v1.0 (§U-3a):** the *partition layout* changes to two OTA slots now.
+    Rewriting the table at `0x8000` cannot be done by an OTA update — it needs a
+    serial reflash of every pad in the field. The field is currently about one
+    pad, and that will never be truer than it is today.
+  - **In v1.0 (§U-3b):** firmware updates are host-driven flashes over USB,
+    which is still espflash, just driven by the daemon with a verified image and
+    explicit consent. No new firmware attack surface.
+  - **Still out of scope (§U-3c):** the OTA subsystem itself — streaming into
+    the inactive slot over CDC, slot switching, and bootloader rollback. That is
+    what the layout is being put in place for, and it is post-v1.0.
 
 ---
 
