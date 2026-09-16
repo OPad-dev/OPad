@@ -785,3 +785,90 @@ Then **W0-1**, which gates every remaining Windows task, and **U-0**, which gate
 - OTA firmware transfer code (U-3c). The **partition layout** for it is in scope (U-3a).
 - EV code signing (W2-2).
 - v2 rapid trigger — see `osupad_v2_rapid_trigger_plan.md`.
+
+---
+
+## Appendix A: parallel work split (added 2026-09-16)
+
+Two agents work this plan at the same time: **Claude** and **Antigravity**. They cannot message each other. **The repository is the only channel** — commits, and the status block in A.7.
+
+### A.1. Branches and worktrees
+
+```bash
+git worktree add -b v1.0-agy ../osupad-agy main   # Antigravity opens this folder
+git checkout -b v1.0-claude                        # Claude works in the main checkout
+```
+
+`main` is the integration target. Worktrees share one `.git`, so each side sees the other's commits immediately with no fetch: `git log v1.0-agy` works from either directory.
+
+**There is no git remote.** Nothing has ever been pushed. Do not add a remote, do not push, do not open a PR.
+
+### A.2. Columns
+
+| Column | Owner | Tasks, in order | Needs the pad? |
+|---|---|---|---|
+| **A** | **Claude** | W0-1 → W0-2 → W0-4 → W1-1 → W1-2 → U-0 → U-1 → U-2 → U-2a → W3-1, W3-3 | no |
+| **B** | **Antigravity** | L-2 → B-1…B-4 → L-1 → L-3 → W0-3 → W0-5 → W0-6 → W2-1 → W2-3 → T-2…T-5 | no |
+| **C** | whoever the owner is supervising | U-3a → W3-2 → U-3b | **yes** |
+
+Column C is hardware-gated (A.5) and is scheduled by the owner, not claimed by an agent.
+
+### A.3. File ownership — do not edit outside your column
+
+| Path | Owner |
+|---|---|
+| `desktop/crates/osupad-ipc/**` | A |
+| `desktop/daemon/**` | A |
+| `desktop/cli/**` | A |
+| `desktop/crates/osupad-tosu/**` | A |
+| `desktop/gui/**` | B |
+| `packaging/**`, `Makefile`, `*.iss`, `PKGBUILD` | B |
+| `firmware/**`, `protocol/*.proto` | C |
+| `docs/**`, `*.md` | whoever owns the task; keep the hunk small |
+
+`desktop/crates/osupad-model`, `-protocol`, `-storage`, `-layout` are shared. Touch them only when your task requires it, keep the change minimal, and say so in the commit subject.
+
+**The one cross-column dependency.** W0-1 changes public signatures in `osupad-ipc` (`connect_and_handshake`, `send_request`, `read_request`, `send_response` move from `UnixStream` to an `IpcStream` alias). `desktop/gui/src/ipc.rs` and `desktop/gui/src/single_instance.rs` are **B's files** and must adapt afterwards.
+
+Protocol: **A lands W0-1 first** and writes `BREAKING: osupad-ipc signatures` in the commit subject. B rebases and adapts. B does not start W0-3 before that commit exists. Until then B has L-2, B-1…B-4, L-1 and L-3, none of which touch Rust.
+
+### A.4. Read before starting
+
+1. `osupad_technical_spec_v1.md` — the contract
+2. `osupad_packaging_distribution_plan.md` — this document, especially §0
+3. `osupad_remaining_work_v1.md` §0 and Appendix A — conventions and v1 status
+4. `docs/architecture.md`
+
+### A.5. Hardware is exclusive — one agent at a time
+
+There is **one pad**. `/dev/ttyACM0` takes one process, `osupad-daemon` has a single-instance guard, and flashing obviously cannot overlap.
+
+- Never run `osupad-daemon` or open the serial port unless the owner has handed you the pad.
+- Never flash without being told to.
+- If a task needs the device, **stop and say so** rather than taking it. The owner serialises column C.
+- Everything in columns A and B is pure code and needs no device.
+
+### A.6. Rules that override everything
+
+1. **The pad is a keyboard first.** Spec §3 and P0-1: it must work as a 1000 Hz HID keyboard with no software, no install, no pairing, on any machine. Nothing may add work to the key ISR, the keypad task, or the TinyUSB task on core 0.
+2. **No storage writes during PLAYING or COOLDOWN** (P1-3). This now covers updates too (U-0.1).
+3. **Commits are authored `GFerreiroS <info@gferreiro.com>`.** No `Co-Authored-By`, no session trailers, no agent attribution. Conventional-commit subjects, committed on your own branch.
+4. **Small commits, one task each.** The other agent reads your commits to know what changed.
+5. **Do not edit the other column's files.** If you genuinely must, keep the hunk minimal and name it in the commit subject.
+6. Before merging to `main`: rebase onto the other column's latest, then confirm `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` and the firmware host tests all pass.
+
+### A.7. Status — each side updates its own row when a task closes
+
+Keep it to one line per task. This is how the other agent learns what landed.
+
+| Date | Column | Task | Commit | Notes |
+|---|---|---|---|---|
+| | | | | *(nothing started yet)* |
+
+### A.8. Open owner decisions
+
+These are not for an agent to settle:
+
+- **Publish the repository?** Required before SignPath free code signing (W2-2).
+- **`v1.0.0` tag.** It is local-only and should be deleted and re-cut when W4 passes; workspace version becomes `1.0.0-rc` until then.
+- **Latency table** (`docs/latency-testing.md`, P3-1) — hardware runs, owner only. Still the last open v1 item.
