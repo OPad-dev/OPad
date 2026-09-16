@@ -4,6 +4,8 @@ mod ipc;
 mod pages;
 #[cfg(target_os = "linux")]
 mod platform_linux;
+#[cfg(windows)]
+mod platform_windows;
 mod single_instance;
 mod theme;
 mod tray;
@@ -277,7 +279,9 @@ impl App {
             gameplay_display_hz: 10,
             #[cfg(target_os = "linux")]
             autostart_tray: platform_linux::is_gui_autostart_enabled(),
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(windows)]
+            autostart_tray: platform_windows::is_gui_autostart_enabled(),
+            #[cfg(not(any(target_os = "linux", windows)))]
             autostart_tray: false,
             config_loaded: false,
             logs: Vec::new(),
@@ -712,9 +716,18 @@ impl App {
                         Message::SystemdServiceInstalled,
                     );
                 }
-                #[cfg(not(target_os = "linux"))]
+                #[cfg(windows)]
                 {
-                    self.banner = Some("Systemd services are only supported on Linux".into());
+                    let bin = find_daemon_executable();
+                    self.banner = Some("Registering the daemon to start at login...".into());
+                    return Task::perform(
+                        async move { platform_windows::install_daemon_autostart(&bin) },
+                        Message::SystemdServiceInstalled,
+                    );
+                }
+                #[cfg(not(any(target_os = "linux", windows)))]
+                {
+                    self.banner = Some("Daemon autostart is not supported on this platform".into());
                 }
             }
             Message::SystemdServiceInstalled(res) => match res {
@@ -743,6 +756,12 @@ impl App {
                 #[cfg(target_os = "linux")]
                 {
                     if let Err(e) = platform_linux::set_gui_autostart_enabled(enabled) {
+                        self.banner = Some(format!("Failed to update autostart: {}", e));
+                    }
+                }
+                #[cfg(windows)]
+                {
+                    if let Err(e) = platform_windows::set_gui_autostart_enabled(enabled) {
                         self.banner = Some(format!("Failed to update autostart: {}", e));
                     }
                 }
@@ -1009,6 +1028,16 @@ impl App {
             {
                 offline_actions = offline_actions.push(
                     button(text("Install user service").size(12))
+                        .padding([6, 12])
+                        .style(theme::secondary)
+                        .on_press(Message::InstallSystemdService),
+                );
+            }
+            // Same button, same message; on Windows it writes the Run value
+            #[cfg(windows)]
+            if !platform_windows::daemon_autostart_installed() {
+                offline_actions = offline_actions.push(
+                    button(text("Start daemon at login").size(12))
                         .padding([6, 12])
                         .style(theme::secondary)
                         .on_press(Message::InstallSystemdService),
@@ -1705,28 +1734,27 @@ async fn run_flash_tool(path: std::path::PathBuf) -> (Vec<String>, bool) {
     }
 }
 
-fn find_osupadctl() -> std::path::PathBuf {
+/// A binary installed next to this one. `EXE_SUFFIX` matters: the sibling is
+/// `osupadctl.exe` on Windows, and without it the lookup always misses.
+fn find_sibling_executable(stem: &str) -> std::path::PathBuf {
+    let name = format!("{}{}", stem, std::env::consts::EXE_SUFFIX);
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let candidate = dir.join("osupadctl");
+            let candidate = dir.join(&name);
             if candidate.exists() {
                 return candidate;
             }
         }
     }
-    std::path::PathBuf::from("osupadctl")
+    std::path::PathBuf::from(name)
+}
+
+fn find_osupadctl() -> std::path::PathBuf {
+    find_sibling_executable("osupadctl")
 }
 
 fn find_daemon_executable() -> std::path::PathBuf {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let candidate = dir.join("osupad-daemon");
-            if candidate.exists() {
-                return candidate;
-            }
-        }
-    }
-    std::path::PathBuf::from("osupad-daemon")
+    find_sibling_executable("osupad-daemon")
 }
 
 async fn start_daemon_process() -> Result<(), String> {
@@ -1735,10 +1763,14 @@ async fn start_daemon_process() -> Result<(), String> {
     tokio::task::spawn_blocking(move || platform_linux::start_daemon(&exe))
         .await
         .map_err(|e| format!("Failed to start osupad-daemon: {}", e))??;
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    tokio::task::spawn_blocking(move || platform_windows::start_daemon(&exe))
+        .await
+        .map_err(|e| format!("Failed to start osupad-daemon: {}", e))??;
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         let _ = exe;
-        return Err("Starting the daemon is only supported on Linux".to_string());
+        return Err("Starting the daemon is not supported on this platform".to_string());
     }
     #[allow(unreachable_code)]
     tokio::time::sleep(Duration::from_millis(300)).await;
