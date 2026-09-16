@@ -582,6 +582,15 @@ async fn wait_for_port(find: fn() -> Option<String>, timeout: Duration) -> Optio
 }
 
 fn run_setup() -> Result<()> {
+    // udev is Linux's; on Windows the pad binds to inbox drivers with no setup
+    // step at all, so saying nothing would read as "something is missing".
+    if !cfg!(target_os = "linux") {
+        println!("=== osu!pad Setup ===");
+        println!("Nothing to do on this platform: the pad uses the inbox USB");
+        println!("drivers, so HID and the CDC port work with no setup step.");
+        return Ok(());
+    }
+
     println!("=== osu!pad Linux Setup ===");
     let udev_rule = r#"# /etc/udev/rules.d/99-osupad.rules
 # Espressif ESP32-S3 USB JTAG / Serial / CDC

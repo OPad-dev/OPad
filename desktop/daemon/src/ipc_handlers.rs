@@ -12,6 +12,7 @@ use osupad_model::{
 };
 use osupad_storage::Storage;
 
+use crate::identity;
 use crate::log_hub::LogHub;
 use crate::runtime::{DaemonState, PendingOperations};
 use crate::sync::{perform_sync, DeviceLink};
@@ -564,12 +565,13 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 };
             }
 
-            let (pending, info_opt, device_counters) = {
+            let (pending, info_opt, device_counters, install_id) = {
                 let mut st = state.lock().unwrap();
                 (
                     st.pending_takeover.take(),
                     st.device_info.clone(),
                     st.counters.clone(),
+                    st.install_id.clone(),
                 )
             };
             let Some(pending) = pending else {
@@ -635,11 +637,31 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 map_key2: 0,
             };
 
+            // Record the new owner on the pad itself *before* anything else,
+            // and refuse the takeover if it does not stick. Without this the
+            // pad still names the other install and would prompt again on the
+            // next connect, which §W3-3 says must not happen.
+            let Some(owner) = install_id.as_deref().and_then(identity::parse_owner_id) else {
+                state.lock().unwrap().pending_takeover = Some(pending);
+                return IpcResponse::OperationRejected {
+                    reason: "This install has no identity, so it cannot take a pad over"
+                        .to_string(),
+                };
+            };
+            if let Err(e) = device.claim_ownership(&owner).await {
+                state.lock().unwrap().pending_takeover = Some(pending);
+                return IpcResponse::Error(format!("Could not record ownership on the pad: {}", e));
+            }
+
             if let Some(s) = storage.lock().unwrap().as_ref() {
                 let _ = s.save_device_state(&info, &target);
                 let _ = s.touch_device_last_seen(&info.device_id);
             }
             let _ = device.send_counter_sync(&target, true).await;
+            // The pad is ours now, so the config we suppressed while it was
+            // foreign goes out (§W3-3)
+            let config = { state.lock().unwrap().config.clone() };
+            let _ = device.send_config(&config).await;
             {
                 let mut st = state.lock().unwrap();
                 st.foreign_pad = false;

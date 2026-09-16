@@ -33,6 +33,11 @@ pub struct DaemonState {
     pub tosu_connected: bool,
     pub latency: Option<LatencyStats>,
     pub pending_replacement: Option<String>,
+    /// This install's identity (§W3-1). `None` when storage is unavailable, in
+    /// which case ownership is neither claimed nor checked. Lives here rather
+    /// than on the controller so the IPC handler resolving a takeover can
+    /// reach it without a second copy to keep in step.
+    pub install_id: Option<String>,
     /// Set when the connected pad says a different install owns it (§W3-3).
     /// Counter sync is blocked until the user answers.
     pub pending_takeover: Option<PendingTakeover>,
@@ -153,9 +158,6 @@ pub struct RuntimeController {
     pub data_sync: DataSync,
     pub known_devices: HashSet<String>,
     pub has_initial_db_entry: bool,
-    /// This install's identity (§W3-1). `None` when storage is unavailable, in
-    /// which case ownership is neither claimed nor checked.
-    pub install_id: Option<String>,
     /// The owner the *currently connecting* pad reported. Overwritten by every
     /// HelloAck and cleared on disconnect, so it can never be the last pad's.
     reported_owner: Option<Vec<u8>>,
@@ -199,6 +201,7 @@ impl RuntimeController {
             tosu_connected: false,
             latency: None,
             pending_replacement: None,
+            install_id: None,
             pending_takeover: None,
             foreign_pad: false,
             incompatible: None,
@@ -220,7 +223,6 @@ impl RuntimeController {
             data_sync: DataSync::default(),
             known_devices: known,
             has_initial_db_entry,
-            install_id: None,
             reported_owner: None,
         }
     }
@@ -228,11 +230,11 @@ impl RuntimeController {
     /// Supplies this install's identity (§W3-1). Set once at startup, before
     /// any pad can connect.
     pub fn set_install_id(&mut self, install_id: Option<String>) {
-        self.install_id = install_id;
+        self.state.install_id = install_id;
     }
 
     fn ownership_of(&self, owner_id: &[u8]) -> Ownership {
-        if self.install_id.is_none() {
+        if self.state.install_id.is_none() {
             // No identity to compare against and none to write. Behave exactly
             // as before this feature existed rather than prompting about
             // something the user cannot resolve.
@@ -241,32 +243,10 @@ impl RuntimeController {
         if crate::identity::is_unclaimed(owner_id) {
             return Ownership::Unclaimed;
         }
-        if crate::identity::owns(self.install_id.as_deref(), owner_id) {
+        if crate::identity::owns(self.state.install_id.as_deref(), owner_id) {
             return Ownership::Ours;
         }
         Ownership::Someone
-    }
-
-    /// Resolves a pending takeover (§W3-3). Returns the actions to run.
-    ///
-    /// `keep_device_counters` is only meaningful when taking over; the caller
-    /// applies it to the counters themselves.
-    pub fn resolve_takeover(&mut self, take_over: bool) -> Vec<RuntimeAction> {
-        let mut actions = Vec::new();
-        if self.state.pending_takeover.take().is_none() {
-            return actions;
-        }
-        if take_over {
-            self.state.foreign_pad = false;
-            actions.push(RuntimeAction::ClaimOwnership);
-            actions.push(RuntimeAction::SendConfig(self.state.config.clone()));
-            if self.state.storage_error.is_none() && self.state.mode == RuntimeMode::Idle {
-                actions.push(RuntimeAction::TriggerSync);
-            }
-        }
-        // "Leave it alone" writes nothing and claims nothing. The pad keeps
-        // working as a keyboard, which was never in question (§A.6.1).
-        actions
     }
 
     pub fn on_event(&mut self, event: RuntimeEvent, now: Instant) -> Vec<RuntimeAction> {

@@ -313,7 +313,14 @@ async fn install_app(
     osupad_update::download::stage_bytes(&target, &bytes, &artifact.sha256, &artifact.url)?
         .install_to(&target)?;
 
-    apply_downloaded(policy, origin, &target)?;
+    let applied = apply_downloaded(policy, origin, &target);
+
+    // A .deb or an installer is worth tens of megabytes and has done its job.
+    // Leaving it behind would put it on §W2-3's list of things to clean up for
+    // no reason. Direct replacement consumes the file itself, so a missing one
+    // is not an error.
+    let _ = std::fs::remove_file(&target);
+    applied?;
 
     if let Ok(mut s) = status.lock() {
         s.restart_required = true;

@@ -29,6 +29,7 @@ struct MockDeviceLink {
     sent_syncs: Arc<Mutex<Vec<(CounterState, bool)>>>,
     sync_response: Arc<Mutex<Option<Result<(), String>>>>,
     sync_seq: Arc<AtomicU32>,
+    claimed_owners: Arc<Mutex<Vec<Vec<u8>>>>,
 }
 
 impl MockDeviceLink {
@@ -41,6 +42,7 @@ impl MockDeviceLink {
             sent_syncs: Arc::new(Mutex::new(Vec::new())),
             sync_response: Arc::new(Mutex::new(Some(Ok(())))),
             sync_seq: Arc::new(AtomicU32::new(1)),
+            claimed_owners: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -101,6 +103,11 @@ impl DeviceLink for MockDeviceLink {
             });
         }
         Ok(seq)
+    }
+
+    async fn claim_ownership(&self, owner_id: &[u8]) -> Result<(), DeviceError> {
+        self.claimed_owners.lock().unwrap().push(owner_id.to_vec());
+        Ok(())
     }
 
     async fn request_status(&self) -> Result<(), DeviceError> {
@@ -385,6 +392,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             tosu_connected: true,
             latency: None,
             pending_replacement: None,
+            install_id: None,
             pending_takeover: None,
             foreign_pad: false,
             incompatible: None,
@@ -609,6 +617,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             tosu_connected: false,
             latency: None,
             pending_replacement: None,
+            install_id: None,
             pending_takeover: None,
             foreign_pad: false,
             incompatible: None,
@@ -663,6 +672,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             tosu_connected: false,
             latency: None,
             pending_replacement: None,
+            install_id: None,
             pending_takeover: None,
             foreign_pad: false,
             incompatible: None,
@@ -758,6 +768,7 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
         tosu_connected: false,
         latency: None,
         pending_replacement: None,
+        install_id: None,
         pending_takeover: None,
         foreign_pad: false,
         incompatible: None,
@@ -816,6 +827,7 @@ async fn test_json_validation_preview_and_confirm() {
         tosu_connected: false,
         latency: None,
         pending_replacement: None,
+        install_id: None,
         pending_takeover: None,
         foreign_pad: false,
         incompatible: None,
@@ -919,6 +931,7 @@ async fn test_ipc_handshake_mismatch_and_protocol_version() {
         tosu_connected: false,
         latency: None,
         pending_replacement: None,
+        install_id: None,
         pending_takeover: None,
         foreign_pad: false,
         incompatible: None,
@@ -1027,6 +1040,7 @@ async fn test_install_update_is_refused_outside_idle() {
             tosu_connected: false,
             latency: None,
             pending_replacement: None,
+            install_id: None,
             pending_takeover: None,
             foreign_pad: false,
             incompatible: None,
@@ -1077,6 +1091,7 @@ async fn test_firmware_is_not_an_enableable_updater() {
         tosu_connected: false,
         latency: None,
         pending_replacement: None,
+        install_id: None,
         pending_takeover: None,
         foreign_pad: false,
         incompatible: None,
@@ -1629,17 +1644,45 @@ async fn test_leaving_a_foreign_pad_alone_writes_nothing() {
     let now = Instant::now();
 
     controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&other)), now);
-    controller.on_event(RuntimeEvent::DeviceConnected(info), now);
+    controller.on_event(RuntimeEvent::DeviceConnected(info.clone()), now);
 
-    let actions = controller.resolve_takeover(false);
-    assert!(actions.is_empty(), "declining writes nothing: {actions:?}");
-    assert!(controller.state.pending_takeover.is_none());
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    let device = MockDeviceLink::new(true);
+    let log_hub = LogHub::new();
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    let daemon_state = Arc::new(Mutex::new(controller.state.clone()));
+
+    let resp = handle_ipc_request(
+        IpcRequest::ResolveTakeover {
+            take_over: false,
+            keep_device_counters: false,
+        },
+        &daemon_state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+        None,
+    )
+    .await;
     assert!(
-        controller.state.foreign_pad,
-        "the pad still belongs to someone else"
+        matches!(resp, IpcResponse::OperationRejected { .. }),
+        "{resp:?}"
     );
 
+    assert!(
+        device.claimed_owners.lock().unwrap().is_empty(),
+        "declining must not write an owner onto someone else's pad"
+    );
+    assert!(device.sent_syncs.lock().unwrap().is_empty());
+    assert!(device.sent_configs.lock().unwrap().is_empty());
+
+    let st = daemon_state.lock().unwrap().clone();
+    assert!(st.pending_takeover.is_none(), "the prompt is answered");
+    assert!(st.foreign_pad, "the pad still belongs to someone else");
+
     // A later tick must not sneak telemetry or a sync onto it
+    controller.state = st;
     let actions = controller.on_event(RuntimeEvent::Tick(now + Duration::from_secs(120)), now);
     assert!(!actions.contains(&RuntimeAction::TriggerSync));
     assert!(!actions
@@ -1647,7 +1690,9 @@ async fn test_leaving_a_foreign_pad_alone_writes_nothing() {
         .any(|a| matches!(a, RuntimeAction::SendDataUpdate(_))));
 }
 
-/// Taking over claims the pad, restores config and resumes syncing.
+/// Taking over must write the new owner onto the pad. Without that write the
+/// pad still names the other install and prompts again on the next connect,
+/// which §W3-3 says must not happen.
 #[tokio::test]
 async fn test_taking_over_claims_the_pad_and_resumes() {
     let id = uuid::Uuid::new_v4().to_string();
@@ -1656,21 +1701,117 @@ async fn test_taking_over_claims_the_pad_and_resumes() {
     let mut controller = ownership_controller(Some(&id), vec![info.device_id.clone()]);
     let now = Instant::now();
 
+    controller.on_event(
+        RuntimeEvent::DeviceCounters(CounterState {
+            device_id: info.device_id.clone(),
+            counter_generation: 3,
+            lifetime_key1: 999,
+            lifetime_key2: 888,
+            map_key1: 0,
+            map_key2: 0,
+        }),
+        now,
+    );
+    controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&other)), now);
+    controller.on_event(RuntimeEvent::DeviceConnected(info.clone()), now);
+
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    let device = MockDeviceLink::new(true);
+    let log_hub = LogHub::new();
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    let daemon_state = Arc::new(Mutex::new(controller.state.clone()));
+
+    let resp = handle_ipc_request(
+        IpcRequest::ResolveTakeover {
+            take_over: true,
+            keep_device_counters: true,
+        },
+        &daemon_state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+        None,
+    )
+    .await;
+    match resp {
+        IpcResponse::CountersRestored { counters } => {
+            assert_eq!(counters.lifetime_key1, 999, "the pad's counters were kept");
+            assert_eq!(counters.lifetime_key2, 888);
+        }
+        other => panic!("expected CountersRestored, got {other:?}"),
+    }
+
+    assert_eq!(
+        device.claimed_owners.lock().unwrap().as_slice(),
+        &[owner_bytes(&id)],
+        "the pad must be told who owns it now"
+    );
+    assert!(
+        !device.sent_configs.lock().unwrap().is_empty(),
+        "config resumes"
+    );
+
+    let st = daemon_state.lock().unwrap().clone();
+    assert!(!st.foreign_pad);
+    assert!(st.pending_takeover.is_none());
+
+    // "prompts exactly once per takeover, and never again on that PC": the pad
+    // now reports us as its owner, so the next connect is silent.
+    controller.state = st;
+    controller.on_event(RuntimeEvent::DeviceDisconnected, now);
+    controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&id)), now);
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(info), now);
+    assert!(controller.state.pending_takeover.is_none());
+    assert!(!actions.contains(&RuntimeAction::ClaimOwnership));
+}
+
+/// An install with no identity cannot take a pad over, and says so rather than
+/// half-doing it: the pad would keep naming the other install.
+#[tokio::test]
+async fn test_takeover_without_an_identity_is_refused_and_stays_pending() {
+    let other = uuid::Uuid::new_v4().to_string();
+    let info = pad("OSUPAD-THEIRS");
+    let mut controller = ownership_controller(
+        Some(&uuid::Uuid::new_v4().to_string()),
+        vec![info.device_id.clone()],
+    );
+    let now = Instant::now();
     controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&other)), now);
     controller.on_event(RuntimeEvent::DeviceConnected(info), now);
 
-    let actions = controller.resolve_takeover(true);
-    assert!(actions.contains(&RuntimeAction::ClaimOwnership));
-    assert!(actions.contains(&RuntimeAction::TriggerSync));
-    assert!(!controller.state.foreign_pad);
-    assert!(controller.state.pending_takeover.is_none());
+    // Storage went away after the prompt appeared
+    let mut state_without_identity = controller.state.clone();
+    state_without_identity.install_id = None;
 
-    // "prompts exactly once per takeover, and never again on that PC"
-    controller.on_event(RuntimeEvent::DeviceDisconnected, now);
-    controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&id)), now);
-    let actions = controller.on_event(RuntimeEvent::DeviceConnected(pad("OSUPAD-THEIRS")), now);
-    assert!(controller.state.pending_takeover.is_none());
-    assert!(!actions.contains(&RuntimeAction::ClaimOwnership));
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    let device = MockDeviceLink::new(true);
+    let log_hub = LogHub::new();
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    let daemon_state = Arc::new(Mutex::new(state_without_identity));
+
+    let resp = handle_ipc_request(
+        IpcRequest::ResolveTakeover {
+            take_over: true,
+            keep_device_counters: true,
+        },
+        &daemon_state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+        None,
+    )
+    .await;
+    assert!(
+        matches!(resp, IpcResponse::OperationRejected { .. }),
+        "{resp:?}"
+    );
+    assert!(device.claimed_owners.lock().unwrap().is_empty());
+    assert!(
+        daemon_state.lock().unwrap().pending_takeover.is_some(),
+        "an unanswerable takeover must stay pending, not vanish"
+    );
 }
 
 /// R3 applies directly here: a second pad's connect must never be judged

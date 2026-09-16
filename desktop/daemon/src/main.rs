@@ -513,6 +513,7 @@ mod tests {
             tosu_connected: false,
             latency: None,
             pending_replacement: None,
+            install_id: None,
             pending_takeover: None,
             foreign_pad: false,
             incompatible: None,

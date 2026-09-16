@@ -30,6 +30,8 @@ pub trait DeviceLink: Send + Sync {
         counters: &CounterState,
         force_restore: bool,
     ) -> Result<u32, DeviceError>;
+    /// Records this install as the pad's owner (§W3-2)
+    async fn claim_ownership(&self, owner_id: &[u8]) -> Result<(), DeviceError>;
     async fn request_status(&self) -> Result<(), DeviceError>;
     async fn request_logs(&self) -> Result<(), DeviceError>;
     async fn reset_latency_stats(&self) -> Result<(), DeviceError>;
@@ -42,6 +44,10 @@ pub trait DeviceLink: Send + Sync {
 impl DeviceLink for DeviceManager {
     async fn send_time_sync(&self) -> Result<(), DeviceError> {
         self.send_time_sync().await
+    }
+
+    async fn claim_ownership(&self, owner_id: &[u8]) -> Result<(), DeviceError> {
+        self.claim_ownership(owner_id).await
     }
 
     async fn send_config(&self, config: &DeviceConfig) -> Result<(), DeviceError> {
