@@ -39,6 +39,7 @@ typedef struct _osupad_Hello {
     char client_version[32];
 } osupad_Hello;
 
+typedef PB_BYTES_ARRAY_T(16) osupad_HelloAck_owner_id_t;
 typedef struct _osupad_HelloAck {
     uint32_t protocol_version;
     char firmware_version[32];
@@ -47,7 +48,18 @@ typedef struct _osupad_HelloAck {
     uint32_t counter_generation;
     uint64_t lifetime_key1;
     uint64_t lifetime_key2;
+    /* Which host install owns this pad (§W3-1, §W3-2). 16 bytes; empty or all
+ zero means unclaimed, which is also what firmware predating W3-2 sends. */
+    osupad_HelloAck_owner_id_t owner_id;
 } osupad_HelloAck;
+
+typedef PB_BYTES_ARRAY_T(16) osupad_ClaimOwnership_owner_id_t;
+/* Record a new owner in NVS (§W3-2). An NVS write, so the firmware must honour
+ it only in IDLE, never during PLAYING or COOLDOWN (P1-3). The host only ever
+ sends it at connect time, which is already an IDLE-only moment. */
+typedef struct _osupad_ClaimOwnership {
+    osupad_ClaimOwnership_owner_id_t owner_id; /* 16 bytes */
+} osupad_ClaimOwnership;
 
 typedef struct _osupad_DeviceStatus {
     uint32_t uptime_seconds;
@@ -222,6 +234,7 @@ typedef struct _osupad_HostToDevice {
         osupad_SetLayout set_layout;
         uint32_t reset_layout; /* screen id: back to the built-in default */
         bool request_logs;
+        osupad_ClaimOwnership claim_ownership;
     } payload;
 } osupad_HostToDevice;
 
@@ -258,6 +271,7 @@ extern "C" {
 
 
 
+
 #define osupad_DeviceStatus_state_ENUMTYPE osupad_DeviceState
 
 
@@ -282,7 +296,8 @@ extern "C" {
 
 /* Initializer values for message structs */
 #define osupad_Hello_init_default                {0, ""}
-#define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0}
+#define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0, {0, {0}}}
+#define osupad_ClaimOwnership_init_default       {{0, {0}}}
 #define osupad_DeviceStatus_init_default         {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_ConfigPayload_init_default        {0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_SetConfig_init_default            {false, osupad_ConfigPayload_init_default}
@@ -303,7 +318,8 @@ extern "C" {
 #define osupad_HostToDevice_init_default         {0, 0, {osupad_Hello_init_default}}
 #define osupad_DeviceToHost_init_default         {0, 0, {osupad_HelloAck_init_default}}
 #define osupad_Hello_init_zero                   {0, ""}
-#define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0}
+#define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0, {0, {0}}}
+#define osupad_ClaimOwnership_init_zero          {{0, {0}}}
 #define osupad_DeviceStatus_init_zero            {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_ConfigPayload_init_zero           {0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_SetConfig_init_zero               {false, osupad_ConfigPayload_init_zero}
@@ -334,6 +350,8 @@ extern "C" {
 #define osupad_HelloAck_counter_generation_tag   5
 #define osupad_HelloAck_lifetime_key1_tag        6
 #define osupad_HelloAck_lifetime_key2_tag        7
+#define osupad_HelloAck_owner_id_tag             8
+#define osupad_ClaimOwnership_owner_id_tag       1
 #define osupad_DeviceStatus_uptime_seconds_tag   1
 #define osupad_DeviceStatus_state_tag            2
 #define osupad_DeviceStatus_brightness_tag       3
@@ -439,6 +457,7 @@ extern "C" {
 #define osupad_HostToDevice_set_layout_tag       11
 #define osupad_HostToDevice_reset_layout_tag     12
 #define osupad_HostToDevice_request_logs_tag     13
+#define osupad_HostToDevice_claim_ownership_tag  14
 #define osupad_DeviceToHost_sequence_number_tag  1
 #define osupad_DeviceToHost_hello_ack_tag        2
 #define osupad_DeviceToHost_status_tag           3
@@ -461,9 +480,15 @@ X(a, STATIC,   SINGULAR, STRING,   board_profile,     3) \
 X(a, STATIC,   SINGULAR, STRING,   device_id,         4) \
 X(a, STATIC,   SINGULAR, UINT32,   counter_generation,   5) \
 X(a, STATIC,   SINGULAR, UINT64,   lifetime_key1,     6) \
-X(a, STATIC,   SINGULAR, UINT64,   lifetime_key2,     7)
+X(a, STATIC,   SINGULAR, UINT64,   lifetime_key2,     7) \
+X(a, STATIC,   SINGULAR, BYTES,    owner_id,          8)
 #define osupad_HelloAck_CALLBACK NULL
 #define osupad_HelloAck_DEFAULT NULL
+
+#define osupad_ClaimOwnership_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BYTES,    owner_id,          1)
+#define osupad_ClaimOwnership_CALLBACK NULL
+#define osupad_ClaimOwnership_DEFAULT NULL
 
 #define osupad_DeviceStatus_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   uptime_seconds,    1) \
@@ -645,7 +670,8 @@ X(a, STATIC,   ONEOF,    BOOL,     (payload,reset_latency_stats,payload.reset_la
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,data_update,payload.data_update),  10) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,set_layout,payload.set_layout),  11) \
 X(a, STATIC,   ONEOF,    UINT32,   (payload,reset_layout,payload.reset_layout),  12) \
-X(a, STATIC,   ONEOF,    BOOL,     (payload,request_logs,payload.request_logs),  13)
+X(a, STATIC,   ONEOF,    BOOL,     (payload,request_logs,payload.request_logs),  13) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,claim_ownership,payload.claim_ownership),  14)
 #define osupad_HostToDevice_CALLBACK NULL
 #define osupad_HostToDevice_DEFAULT NULL
 #define osupad_HostToDevice_payload_hello_MSGTYPE osupad_Hello
@@ -656,6 +682,7 @@ X(a, STATIC,   ONEOF,    BOOL,     (payload,request_logs,payload.request_logs), 
 #define osupad_HostToDevice_payload_host_status_MSGTYPE osupad_HostStatus
 #define osupad_HostToDevice_payload_data_update_MSGTYPE osupad_DataUpdate
 #define osupad_HostToDevice_payload_set_layout_MSGTYPE osupad_SetLayout
+#define osupad_HostToDevice_payload_claim_ownership_MSGTYPE osupad_ClaimOwnership
 
 #define osupad_DeviceToHost_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   sequence_number,   1) \
@@ -676,6 +703,7 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,layout_ack,payload.layout_ack),   7)
 
 extern const pb_msgdesc_t osupad_Hello_msg;
 extern const pb_msgdesc_t osupad_HelloAck_msg;
+extern const pb_msgdesc_t osupad_ClaimOwnership_msg;
 extern const pb_msgdesc_t osupad_DeviceStatus_msg;
 extern const pb_msgdesc_t osupad_ConfigPayload_msg;
 extern const pb_msgdesc_t osupad_SetConfig_msg;
@@ -699,6 +727,7 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 /* Defines for backwards compatibility with code written before nanopb-0.4.0 */
 #define osupad_Hello_fields &osupad_Hello_msg
 #define osupad_HelloAck_fields &osupad_HelloAck_msg
+#define osupad_ClaimOwnership_fields &osupad_ClaimOwnership_msg
 #define osupad_DeviceStatus_fields &osupad_DeviceStatus_msg
 #define osupad_ConfigPayload_fields &osupad_ConfigPayload_msg
 #define osupad_SetConfig_fields &osupad_SetConfig_msg
@@ -721,6 +750,7 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 
 /* Maximum encoded size of messages (where known) */
 #define OSUPAD_OSUPAD_PB_H_MAX_SIZE              osupad_HostToDevice_size
+#define osupad_ClaimOwnership_size               18
 #define osupad_ConfigAck_size                    123
 #define osupad_ConfigPayload_size                54
 #define osupad_CounterState_size                 61
@@ -731,7 +761,7 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_DeviceStatus_size                 98
 #define osupad_DeviceToHost_size                 889
 #define osupad_GameplayDisplayState_size         196
-#define osupad_HelloAck_size                     133
+#define osupad_HelloAck_size                     151
 #define osupad_Hello_size                        39
 #define osupad_HostStatus_size                   10
 #define osupad_HostToDevice_size                 4309

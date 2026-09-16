@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
+#include "config/owner.h"
 
 #ifdef ESP_PLATFORM
 #include "esp_err.h"
@@ -16,7 +17,7 @@ typedef int esp_err_t;
 extern "C" {
 #endif
 
-#define DEVICE_CONFIG_VERSION               2
+#define DEVICE_CONFIG_VERSION               3
 #define DEVICE_CONFIG_DEFAULT_KEY1          0x1D // 'Z'
 #define DEVICE_CONFIG_DEFAULT_KEY2          0x1B // 'X'
 #define DEVICE_CONFIG_DEFAULT_DEBOUNCE_US   3000
@@ -37,6 +38,9 @@ typedef struct __attribute__((packed)) {
     // v2
     uint32_t key1_gpio;
     uint32_t key2_gpio;
+    // v3: which host install owns this pad (§W3-1, §W3-2). All zero =
+    // unclaimed, which is what every pad flashed before v3 reads as.
+    uint8_t owner_id[OWNER_ID_LEN];
 } device_config_data_t;
 
 /**
@@ -76,6 +80,21 @@ esp_err_t device_config_set(const device_config_data_t *cfg);
  * @brief Flush dirty configuration to NVS if in IDLE state.
  */
 esp_err_t device_config_flush(void);
+
+/**
+ * @brief Copies the current owner id out. All zero when unclaimed.
+ */
+void device_config_get_owner(uint8_t out_owner[OWNER_ID_LEN]);
+
+/**
+ * @brief Records a new owner (§W3-2).
+ *
+ * An NVS write, so it is honoured only in IDLE (P1-3). Re-claiming by the
+ * current owner is a no-op rather than a write. Returns ESP_OK when the pad
+ * ends up owned by @p owner, ESP_ERR_INVALID_STATE while a map is running, and
+ * ESP_ERR_INVALID_ARG for a missing or all-zero id.
+ */
+esp_err_t device_config_claim_owner(const uint8_t owner[OWNER_ID_LEN]);
 
 #ifdef __cplusplus
 }

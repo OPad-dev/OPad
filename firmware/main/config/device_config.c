@@ -32,6 +32,9 @@ static device_config_data_t s_current_config = {
 
 // v1 blobs end before key1_gpio; they load with the default pins
 #define DEVICE_CONFIG_V1_SIZE offsetof(device_config_data_t, key1_gpio)
+// v2 blobs end before owner_id; they load unclaimed, which is correct — a pad
+// that predates §W3-2 has never been claimed by anyone
+#define DEVICE_CONFIG_V2_SIZE offsetof(device_config_data_t, owner_id)
 
 static bool s_dirty = false;
 
@@ -46,6 +49,7 @@ static void set_defaults(device_config_data_t *cfg)
     cfg->gameplay_display_hz = DEVICE_CONFIG_DEFAULT_GAMEPLAY_DISPLAY_HZ;
     cfg->key1_gpio = DEVICE_CONFIG_DEFAULT_KEY1_GPIO;
     cfg->key2_gpio = DEVICE_CONFIG_DEFAULT_KEY2_GPIO;
+    memset(cfg->owner_id, 0, sizeof(cfg->owner_id));
 }
 
 
@@ -130,11 +134,14 @@ esp_err_t device_config_init(void)
         nvs_close(handle);
 
         bool layout_ok = (len == sizeof(loaded) && loaded.version == DEVICE_CONFIG_VERSION) ||
+                         (len == DEVICE_CONFIG_V2_SIZE && loaded.version == 2) ||
                          (len == DEVICE_CONFIG_V1_SIZE && loaded.version == 1);
         if (err == ESP_OK && layout_ok && device_config_validate(&loaded, NULL, 0)) {
             if (loaded.version != DEVICE_CONFIG_VERSION) {
-                ESP_LOGI(TAG, "Migrating NVS config v%lu -> v%d (default key GPIOs)",
+                ESP_LOGI(TAG, "Migrating NVS config v%lu -> v%d",
                          (unsigned long)loaded.version, DEVICE_CONFIG_VERSION);
+                // An older blob stops short of owner_id, so the bytes beyond it
+                // are whatever set_defaults left: zero, i.e. unclaimed.
                 loaded.version = DEVICE_CONFIG_VERSION;
             }
             s_current_config = loaded;
@@ -177,6 +184,45 @@ esp_err_t device_config_set(const device_config_data_t *cfg)
         ESP_LOGI(TAG, "Config applied in RAM; NVS write deferred until IDLE");
         return ESP_OK;
     }
+}
+
+void device_config_get_owner(uint8_t out_owner[OWNER_ID_LEN])
+{
+    if (out_owner) {
+        memcpy(out_owner, s_current_config.owner_id, OWNER_ID_LEN);
+    }
+}
+
+esp_err_t device_config_claim_owner(const uint8_t owner[OWNER_ID_LEN])
+{
+    owner_runtime_state_t state = (runtime_get_state() == OSUPAD_STATE_IDLE)
+                                      ? OWNER_STATE_IDLE
+                                      : OWNER_STATE_ACTIVE;
+
+    switch (owner_claim_decide(s_current_config.owner_id, owner, state)) {
+    case OWNER_CLAIM_ALREADY_OWNED:
+        // Every connect would otherwise cost a flash write for no change
+        return ESP_OK;
+
+    case OWNER_CLAIM_REJECT_ACTIVE:
+        ESP_LOGW(TAG, "Ownership claim refused: a map is running (P1-3)");
+        return ESP_ERR_INVALID_STATE;
+
+    case OWNER_CLAIM_REJECT_INVALID:
+        ESP_LOGW(TAG, "Ownership claim refused: missing or all-zero owner id");
+        return ESP_ERR_INVALID_ARG;
+
+    case OWNER_CLAIM_APPLY:
+        break;
+    }
+
+    device_config_data_t next = s_current_config;
+    memcpy(next.owner_id, owner, OWNER_ID_LEN);
+    s_current_config = next;
+    ESP_LOGI(TAG, "Pad claimed by a new host install");
+    // IDLE is guaranteed by the decision above, so this writes rather than
+    // deferring — the host claims at connect time and expects it to stick.
+    return write_to_nvs(&s_current_config);
 }
 
 esp_err_t device_config_flush(void)

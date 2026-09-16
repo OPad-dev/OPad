@@ -12,6 +12,9 @@ PB_BIND(osupad_Hello, osupad_Hello, AUTO)
 PB_BIND(osupad_HelloAck, osupad_HelloAck, AUTO)
 
 
+PB_BIND(osupad_ClaimOwnership, osupad_ClaimOwnership, AUTO)
+
+
 PB_BIND(osupad_DeviceStatus, osupad_DeviceStatus, AUTO)
 
 

@@ -13,6 +13,7 @@ idf_component_register(
         "counters/counter_sync_rules.c"
         "config/device_config.c"
         "config/config_validate.c"
+        "config/owner.c"
         "ui/ui_port.c"
         "ui/ui_store.c"
         "ui/core/ui_data.c"

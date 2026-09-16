@@ -109,6 +109,10 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     msg.payload.hello_ack.counter_generation = snap.generation;
     msg.payload.hello_ack.lifetime_key1 = snap.lifetime_key1;
     msg.payload.hello_ack.lifetime_key2 = snap.lifetime_key2;
+    // §W3-2: all zero until a host claims the pad, which is what the host
+    // reads as "unclaimed" and claims silently on first connect (§W3-3)
+    msg.payload.hello_ack.owner_id.size = OWNER_ID_LEN;
+    device_config_get_owner(msg.payload.hello_ack.owner_id.bytes);
 
     ESP_LOGI(TAG, "Sending HelloAck to host (Firmware: %s, Gen: %lu)", app_desc->version, (unsigned long)snap.generation);
     return send_envelope(&msg);
@@ -316,6 +320,25 @@ static void handle_host_message(const osupad_HostToDevice *msg)
     case osupad_HostToDevice_hello_tag:
         protocol_send_hello_ack(msg->sequence_number);
         break;
+
+    case osupad_HostToDevice_claim_ownership_tag: {
+        // §W3-2. The host prompts the user before sending this, so the
+        // firmware records it rather than arbitrating between hosts. It is an
+        // NVS write, so it is refused outright while a map is running (P1-3)
+        // instead of being deferred: the host claims at connect time, which is
+        // already IDLE, and a deferred claim would be a silent one.
+        const osupad_ClaimOwnership_owner_id_t *req = &msg->payload.claim_ownership.owner_id;
+        if (req->size != OWNER_ID_LEN) {
+            ESP_LOGW(TAG, "Ownership claim refused: %u bytes, expected %d",
+                     (unsigned)req->size, OWNER_ID_LEN);
+            break;
+        }
+        esp_err_t err = device_config_claim_owner(req->bytes);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Ownership claim not applied: %s", esp_err_to_name(err));
+        }
+        break;
+    }
 
     case osupad_HostToDevice_set_config_tag:
         if (msg->payload.set_config.has_config) {
