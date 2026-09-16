@@ -3,7 +3,9 @@ use std::time::Duration;
 use tracing::{info, warn};
 
 use osupad_device::DeviceEvent;
-use osupad_ipc::{CurrentBackupState, IpcRequest, IpcResponse, IPC_PROTOCOL_VERSION};
+use osupad_ipc::{
+    CurrentBackupState, IpcRequest, IpcResponse, UpdateComponent, IPC_PROTOCOL_VERSION,
+};
 use osupad_layout::Screen;
 use osupad_model::{
     char_to_hid_usage, CounterState, DeviceConfig, DeviceInfo, JsonBackup, RuntimeMode,
@@ -13,6 +15,7 @@ use osupad_storage::Storage;
 use crate::log_hub::LogHub;
 use crate::runtime::{DaemonState, PendingOperations};
 use crate::sync::{perform_sync, DeviceLink};
+use crate::updater::{self, UpdateService};
 
 pub async fn handle_ipc_request<D: DeviceLink>(
     req: IpcRequest,
@@ -21,12 +24,14 @@ pub async fn handle_ipc_request<D: DeviceLink>(
     device: &D,
     log_hub: &LogHub,
     pending_ops: &Arc<Mutex<PendingOperations>>,
+    updates: Option<&UpdateService>,
 ) -> IpcResponse {
     let mode = { state.lock().unwrap().mode };
 
     match req {
         IpcRequest::Handshake {
-            client_protocol, ..
+            client_protocol,
+            client_version,
         } => {
             if client_protocol != IPC_PROTOCOL_VERSION {
                 return IpcResponse::HandshakeRejected {
@@ -34,6 +39,21 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     reason: format!(
                         "IPC protocol version mismatch: client is {}, daemon is {}",
                         client_protocol, IPC_PROTOCOL_VERSION
+                    ),
+                };
+            }
+            // §U-2: after an in-place app update the files on disk are new
+            // while this process is still the old binary. A new GUI talking to
+            // an old daemon must fail loudly, not misbehave subtly — the two
+            // always ship together, so differing versions mean exactly this.
+            let daemon_version = env!("CARGO_PKG_VERSION");
+            if client_version != daemon_version {
+                return IpcResponse::HandshakeRejected {
+                    daemon_protocol: IPC_PROTOCOL_VERSION,
+                    reason: format!(
+                        "Version mismatch: this client is {} but the running daemon is {}. \
+                         The app was updated; restart osupad-daemon to finish.",
+                        client_version, daemon_version
                     ),
                 };
             }
@@ -159,6 +179,69 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::GetUiValues => IpcResponse::UiValues(state.lock().unwrap().ui_values.clone()),
+
+        IpcRequest::GetUpdateStatus => {
+            let Some(updates) = updates else {
+                return IpcResponse::Error("The update worker is not running".to_string());
+            };
+            let status = updates.status();
+            IpcResponse::UpdateStatus {
+                app: status.app,
+                tosu: status.tosu,
+                last_check: status.last_check.map(|t| {
+                    chrono::DateTime::<chrono::Utc>::from(t)
+                        .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+                }),
+                last_error: status.last_error,
+                restart_required: status.restart_required,
+            }
+        }
+
+        IpcRequest::SetUpdateEnabled { component, enabled } => {
+            let key = match component {
+                UpdateComponent::App => updater::APP_ENABLED_KEY,
+                UpdateComponent::Tosu => updater::TOSU_ENABLED_KEY,
+                // §U-3: firmware updates take explicit consent each time, so
+                // there is no "leave it on" setting to write.
+                UpdateComponent::Firmware => {
+                    return IpcResponse::OperationRejected {
+                        reason: "Firmware updates are consented to individually, not enabled"
+                            .to_string(),
+                    }
+                }
+            };
+            let guard = storage.lock().unwrap();
+            match guard.as_ref() {
+                Some(s) => match s.set_app_state(key, if enabled { "1" } else { "0" }) {
+                    Ok(()) => IpcResponse::ConfigUpdated {
+                        config: state.lock().unwrap().config.clone(),
+                        deferred_persist: false,
+                    },
+                    // Mid-map this is a blocked storage write, not a failure
+                    Err(e) => IpcResponse::OperationDeferred {
+                        reason: format!("Cannot save the update setting right now: {}", e),
+                    },
+                },
+                None => IpcResponse::Error("Storage is unavailable".to_string()),
+            }
+        }
+
+        IpcRequest::InstallUpdate { component } => {
+            // The play-state gate comes first, before any question about
+            // plumbing: §U-0.1 holds whether or not an updater is running.
+            if mode != RuntimeMode::Idle {
+                return IpcResponse::OperationDeferred {
+                    reason: format!("Cannot install an update while the daemon is {:?}", mode),
+                };
+            }
+            let Some(updates) = updates else {
+                return IpcResponse::Error("The update worker is not running".to_string());
+            };
+            match updates.request_install(component) {
+                Ok(()) => IpcResponse::UpdateStarted { component },
+                Err(e) => IpcResponse::Error(e),
+            }
+        }
 
         IpcRequest::ResetLatencyStats => {
             if let Err(e) = device.reset_latency_stats().await {

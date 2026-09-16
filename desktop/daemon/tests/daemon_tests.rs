@@ -406,6 +406,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             &device,
             &log_hub,
             &pending_ops,
+            None,
         )
         .await;
         assert!(matches!(r, IpcResponse::OperationRejected { .. }));
@@ -418,6 +419,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             &device,
             &log_hub,
             &pending_ops,
+            None,
         )
         .await;
         assert!(matches!(r, IpcResponse::OperationRejected { .. }));
@@ -430,6 +432,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             &device,
             &log_hub,
             &pending_ops,
+            None,
         )
         .await;
         assert!(matches!(r, IpcResponse::OperationRejected { .. }));
@@ -442,6 +445,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             &device,
             &log_hub,
             &pending_ops,
+            None,
         )
         .await;
         assert!(matches!(r, IpcResponse::OperationRejected { .. }));
@@ -454,6 +458,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             &device,
             &log_hub,
             &pending_ops,
+            None,
         )
         .await;
         assert!(matches!(r, IpcResponse::OperationRejected { .. }));
@@ -470,6 +475,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             &device,
             &log_hub,
             &pending_ops,
+            None,
         )
         .await;
         assert!(matches!(r, IpcResponse::OperationRejected { .. }));
@@ -482,6 +488,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             &device,
             &log_hub,
             &pending_ops,
+            None,
         )
         .await;
         assert!(matches!(r, IpcResponse::OperationRejected { .. }));
@@ -498,6 +505,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             &device,
             &log_hub,
             &pending_ops,
+            None,
         )
         .await;
         assert!(matches!(r, IpcResponse::OperationDeferred { .. }));
@@ -516,6 +524,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             &device,
             &log_hub,
             &pending_ops,
+            None,
         )
         .await;
         assert!(matches!(r, IpcResponse::LayoutApplied { .. }));
@@ -530,6 +539,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             &device,
             &log_hub,
             &pending_ops,
+            None,
         )
         .await;
         assert!(matches!(r, IpcResponse::LayoutApplied { .. }));
@@ -816,6 +826,7 @@ async fn test_json_validation_preview_and_confirm() {
         &device,
         &log_hub,
         &pending_ops,
+        None,
     )
     .await;
 
@@ -845,6 +856,7 @@ async fn test_json_validation_preview_and_confirm() {
         &device,
         &log_hub,
         &pending_ops,
+        None,
     )
     .await;
     assert!(matches!(resp, IpcResponse::OperationRejected { .. }));
@@ -860,6 +872,7 @@ async fn test_json_validation_preview_and_confirm() {
         &device,
         &log_hub,
         &pending_ops,
+        None,
     )
     .await;
     match resp {
@@ -912,6 +925,7 @@ async fn test_ipc_handshake_mismatch_and_protocol_version() {
         &device,
         &log_hub,
         &pending_ops,
+        None,
     )
     .await;
 
@@ -926,10 +940,12 @@ async fn test_ipc_handshake_mismatch_and_protocol_version() {
         other => panic!("Expected HandshakeRejected, got {:?}", other),
     }
 
-    // Correct protocol accepted
+    // §U-2: a client from a different app version is rejected loudly. After an
+    // in-place update the files on disk are new while this process is still
+    // the old binary, and a new GUI must not talk to it.
     let resp = handle_ipc_request(
         IpcRequest::Handshake {
-            client_version: "1.0.0".to_string(),
+            client_version: "9.9.9".to_string(),
             client_protocol: IPC_PROTOCOL_VERSION,
         },
         &daemon_state,
@@ -937,10 +953,174 @@ async fn test_ipc_handshake_mismatch_and_protocol_version() {
         &device,
         &log_hub,
         &pending_ops,
+        None,
+    )
+    .await;
+
+    match resp {
+        IpcResponse::HandshakeRejected { reason, .. } => {
+            assert!(reason.contains("9.9.9"), "{reason}");
+            assert!(
+                reason.contains("restart"),
+                "the message must say what to do: {reason}"
+            );
+        }
+        other => panic!("Expected HandshakeRejected, got {:?}", other),
+    }
+
+    // Matching protocol and version accepted
+    let resp = handle_ipc_request(
+        IpcRequest::Handshake {
+            client_version: env!("CARGO_PKG_VERSION").to_string(),
+            client_protocol: IPC_PROTOCOL_VERSION,
+        },
+        &daemon_state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+        None,
     )
     .await;
 
     assert!(matches!(resp, IpcResponse::HandshakeAck { .. }));
+}
+
+/// §U-2: an update must never be applied while a map is running, and asking
+/// for one then must defer rather than fail.
+#[tokio::test]
+async fn test_install_update_is_refused_outside_idle() {
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    let device = MockDeviceLink::new(false);
+    let log_hub = LogHub::new();
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+
+    for mode in [
+        RuntimeMode::Playing,
+        RuntimeMode::Cooldown,
+        RuntimeMode::Sync,
+    ] {
+        let daemon_state = Arc::new(Mutex::new(DaemonState {
+            mode,
+            device_connected: false,
+            device_info: None,
+            counters: CounterState::default(),
+            counters_source: CounterSource::Pc,
+            pc_counters: None,
+            esp_counters: None,
+            config: DeviceConfig::default(),
+            last_sync_time: None,
+            last_sync_error: None,
+            storage_error: None,
+            tosu_connected: false,
+            latency: None,
+            pending_replacement: None,
+            incompatible: None,
+            ui_values: Vec::new(),
+            custom_layouts: HashMap::new(),
+        }));
+
+        let resp = handle_ipc_request(
+            IpcRequest::InstallUpdate {
+                component: osupad_ipc::UpdateComponent::App,
+            },
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+            None,
+        )
+        .await;
+
+        assert!(
+            matches!(resp, IpcResponse::OperationDeferred { .. }),
+            "{mode:?} must defer an install, got {resp:?}"
+        );
+    }
+}
+
+/// §U-3: the updater never applies firmware. That path takes explicit consent
+/// every time, so there is not even a setting to leave switched on.
+#[tokio::test]
+async fn test_firmware_is_not_an_enableable_updater() {
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    let device = MockDeviceLink::new(false);
+    let log_hub = LogHub::new();
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    let daemon_state = Arc::new(Mutex::new(DaemonState {
+        mode: RuntimeMode::Idle,
+        device_connected: false,
+        device_info: None,
+        counters: CounterState::default(),
+        counters_source: CounterSource::Pc,
+        pc_counters: None,
+        esp_counters: None,
+        config: DeviceConfig::default(),
+        last_sync_time: None,
+        last_sync_error: None,
+        storage_error: None,
+        tosu_connected: false,
+        latency: None,
+        pending_replacement: None,
+        incompatible: None,
+        ui_values: Vec::new(),
+        custom_layouts: HashMap::new(),
+    }));
+
+    let resp = handle_ipc_request(
+        IpcRequest::SetUpdateEnabled {
+            component: osupad_ipc::UpdateComponent::Firmware,
+            enabled: true,
+        },
+        &daemon_state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+        None,
+    )
+    .await;
+    assert!(
+        matches!(resp, IpcResponse::OperationRejected { .. }),
+        "{resp:?}"
+    );
+
+    // The other two are ordinary settings and persist
+    for component in [
+        osupad_ipc::UpdateComponent::App,
+        osupad_ipc::UpdateComponent::Tosu,
+    ] {
+        let resp = handle_ipc_request(
+            IpcRequest::SetUpdateEnabled {
+                component,
+                enabled: false,
+            },
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+            None,
+        )
+        .await;
+        assert!(
+            matches!(resp, IpcResponse::ConfigUpdated { .. }),
+            "{resp:?}"
+        );
+    }
+    let key = osupad_daemon::updater::APP_ENABLED_KEY;
+    assert_eq!(
+        storage
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .get_app_state(key)
+            .unwrap()
+            .as_deref(),
+        Some("0")
+    );
 }
 
 // 9. LogHub since_seq paging (P2-2)

@@ -151,13 +151,8 @@ async fn main() -> Result<()> {
 
     // Updates: tosu (§U-1) and the app (§U-2). Idle-only, daily, and inert
     // until a signing key is compiled in (§U-0.3).
-    let update_status: updater::SharedUpdateStatus = Arc::new(Mutex::new(Default::default()));
-    updater::spawn_update_worker(
-        daemon_state.clone(),
-        storage.clone(),
-        tosu_supervisor,
-        update_status.clone(),
-    );
+    let update_service =
+        updater::spawn_update_worker(daemon_state.clone(), storage.clone(), tosu_supervisor);
 
     // Spawn IPC request handling task
     {
@@ -166,6 +161,7 @@ async fn main() -> Result<()> {
         let device_manager = device_manager.clone();
         let log_hub = log_hub.clone();
         let pending_ops = pending_ops.clone();
+        let update_service = update_service.clone();
 
         tokio::spawn(async move {
             loop {
@@ -176,6 +172,7 @@ async fn main() -> Result<()> {
                         let device_manager = device_manager.clone();
                         let log_hub = log_hub.clone();
                         let pending_ops = pending_ops.clone();
+                        let update_service = update_service.clone();
 
                         tokio::spawn(async move {
                             while let Ok(req) = read_request(&mut stream).await {
@@ -186,6 +183,7 @@ async fn main() -> Result<()> {
                                     &*device_manager,
                                     &log_hub,
                                     &pending_ops,
+                                    Some(&update_service),
                                 )
                                 .await;
                                 if send_response(&mut stream, &resp).await.is_err() {
@@ -501,6 +499,7 @@ mod tests {
             &*device_manager,
             &log_hub,
             &pending_ops,
+            None,
         )
         .await;
         match resp {
@@ -521,6 +520,7 @@ mod tests {
             &*device_manager,
             &log_hub,
             &pending_ops,
+            None,
         )
         .await;
         assert!(matches!(resp, IpcResponse::OperationRejected { .. }));
@@ -532,6 +532,7 @@ mod tests {
             &*device_manager,
             &log_hub,
             &pending_ops,
+            None,
         )
         .await;
         assert!(matches!(resp, IpcResponse::OperationRejected { .. }));
@@ -543,6 +544,7 @@ mod tests {
             &*device_manager,
             &log_hub,
             &pending_ops,
+            None,
         )
         .await;
         assert!(matches!(resp, IpcResponse::OperationRejected { .. }));
@@ -554,6 +556,7 @@ mod tests {
             &*device_manager,
             &log_hub,
             &pending_ops,
+            None,
         )
         .await;
         assert!(matches!(resp, IpcResponse::OperationRejected { .. }));
@@ -566,6 +569,7 @@ mod tests {
             &*device_manager,
             &log_hub,
             &pending_ops,
+            None,
         )
         .await;
         assert!(matches!(

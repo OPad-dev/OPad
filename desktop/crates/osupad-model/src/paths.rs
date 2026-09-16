@@ -83,6 +83,21 @@ pub fn install_lib_dir() -> Result<PathBuf, PathError> {
     }
 }
 
+/// The prefix this install lives under: `/usr` or `~/.local` on Unix, the
+/// install directory on Windows. An archive update is extracted over it (§U-2).
+pub fn install_prefix() -> Result<PathBuf, PathError> {
+    let exe = std::env::current_exe()?;
+    let bin_dir = exe.parent().ok_or(PathError::NoInstallDirectory)?;
+    if cfg!(windows) {
+        Ok(bin_dir.to_path_buf())
+    } else {
+        bin_dir
+            .parent()
+            .map(|p| p.to_path_buf())
+            .ok_or(PathError::NoInstallDirectory)
+    }
+}
+
 /// Where the bundled tosu lives (§T-2)
 pub fn bundled_tosu_dir() -> Result<PathBuf, PathError> {
     Ok(install_lib_dir()?.join("tosu"))
@@ -137,6 +152,13 @@ mod tests {
                 assert!(data_dir().unwrap().starts_with(PathBuf::from(xdg)));
             }
         }
+    }
+
+    #[test]
+    fn the_install_lib_dir_sits_under_the_prefix() {
+        let prefix = install_prefix().unwrap();
+        assert!(install_lib_dir().unwrap().starts_with(&prefix));
+        assert!(prefix.is_absolute());
     }
 
     #[test]

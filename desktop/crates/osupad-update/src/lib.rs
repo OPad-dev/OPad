@@ -17,6 +17,7 @@
 //!   API allows 60 requests an hour per IP, and a naive poll across many users
 //!   looks like abuse.
 
+pub mod app;
 /// Off without the `net` feature, which is how the platform-independent half
 /// of this crate is type-checked for Windows from a Linux host: reqwest's TLS
 /// stack needs an MSVC toolchain to *build*, though not to work.
@@ -31,6 +32,7 @@ pub mod origin;
 pub mod schedule;
 pub mod tosu;
 pub mod verify;
+pub mod version;
 
 pub use gate::{may_update_now, DeferReason};
 pub use manifest::{Artifact, ArtifactKind, Component, ReleaseManifest, APP, FIRMWARE, TOSU};

@@ -98,6 +98,43 @@ pub enum IpcRequest {
     },
     /// Latest UI data values the daemon knows (tosu data), for a live designer preview
     GetUiValues,
+    /// What each updater knows: versions, last check, whether one is pending (§U-0.4)
+    GetUpdateStatus,
+    /// Turn one updater on or off. Per updater, never global (§U-0.4).
+    SetUpdateEnabled {
+        component: UpdateComponent,
+        enabled: bool,
+    },
+    /// Apply a pending update. Only ever sent because a person pressed
+    /// Install: the daemon never applies an app update on its own (§U-2).
+    InstallUpdate {
+        component: UpdateComponent,
+    },
+}
+
+/// The three independently-updatable things (§U). The firmware is listed here
+/// because the GUI shows all three together, but §U-3 firmware updates take
+/// explicit consent every time and are never started by an updater setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateComponent {
+    App,
+    Tosu,
+    Firmware,
+}
+
+/// One updater's state, as the GUI shows it (§U-0.4)
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ComponentUpdate {
+    pub installed: Option<String>,
+    pub available: Option<String>,
+    pub notes: Option<String>,
+    pub enabled: bool,
+    /// A newer version exists but this install's files belong to a package
+    /// manager, so osu!pad reports it and changes nothing (§U-2a)
+    pub notify_only: bool,
+    /// An update is downloaded and waiting for the user to press Install
+    pub ready_to_install: bool,
 }
 
 /// Daemon responses to clients
@@ -190,6 +227,22 @@ pub enum IpcResponse {
         message: String,
     },
     UiValues(Vec<(u8, SourceValue)>),
+    UpdateStatus {
+        app: ComponentUpdate,
+        tosu: ComponentUpdate,
+        /// RFC 3339, or None if no check has ever completed
+        last_check: Option<String>,
+        #[serde(default)]
+        last_error: Option<String>,
+        /// The app was replaced on disk; the running processes are the old
+        /// ones and must be restarted (§U-2)
+        #[serde(default)]
+        restart_required: bool,
+    },
+    /// An update is being applied; the GUI should expect the daemon to go away
+    UpdateStarted {
+        component: UpdateComponent,
+    },
     OperationRejected {
         reason: String,
     },

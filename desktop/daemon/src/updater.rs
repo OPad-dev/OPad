@@ -10,13 +10,17 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 use tracing::{debug, info, warn};
 
+use osupad_ipc::{ComponentUpdate, UpdateComponent};
 use osupad_model::RuntimeMode;
 use osupad_storage::Storage;
 use osupad_tosu::TosuSupervisor;
+use osupad_update::app::{self, AppAction};
 use osupad_update::client::UpdateClient;
 use osupad_update::manifest::current_target;
 use osupad_update::tosu::{self, TosuAction};
-use osupad_update::{may_update_now, CheckSchedule, InstallOrigin, ReleaseManifest, UpdateError};
+use osupad_update::{
+    may_update_now, ApplyPolicy, CheckSchedule, InstallOrigin, ReleaseManifest, UpdateError,
+};
 
 use crate::runtime::DaemonState;
 
@@ -32,48 +36,114 @@ pub const APP_ENABLED_KEY: &str = "update.app.enabled";
 /// What the GUI shows for each updater (§U-0.4)
 #[derive(Debug, Clone, Default)]
 pub struct UpdateStatus {
-    pub tosu_installed: Option<String>,
-    pub tosu_available: Option<String>,
-    pub app_available: Option<String>,
+    pub tosu: ComponentUpdate,
+    pub app: ComponentUpdate,
     pub last_check: Option<SystemTime>,
     pub last_error: Option<String>,
-    /// Set when a newer version exists but this install must not touch its own
-    /// files — an AUR install, or one with no origin marker (§U-2a)
-    pub notify_only: bool,
+    /// The app was replaced on disk, so the running daemon and GUI are the old
+    /// binaries and must be restarted (§U-2)
+    pub restart_required: bool,
 }
 
 pub type SharedUpdateStatus = Arc<Mutex<UpdateStatus>>;
+
+/// A person pressed Install. The daemon never applies an app update on its own
+/// (§U-2), so this is the only way one is applied.
+#[derive(Debug, Clone, Copy)]
+pub enum UpdateCommand {
+    Install(UpdateComponent),
+}
+
+/// The handle IPC handlers use to read status and ask for an install
+#[derive(Clone)]
+pub struct UpdateService {
+    status: SharedUpdateStatus,
+    commands: tokio::sync::mpsc::UnboundedSender<UpdateCommand>,
+}
+
+impl UpdateService {
+    pub fn status(&self) -> UpdateStatus {
+        self.status.lock().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    pub fn request_install(&self, component: UpdateComponent) -> Result<(), String> {
+        self.commands
+            .send(UpdateCommand::Install(component))
+            .map_err(|_| "The update worker is not running".to_string())
+    }
+}
 
 pub fn spawn_update_worker(
     daemon_state: Arc<Mutex<DaemonState>>,
     storage: Arc<Mutex<Option<Storage>>>,
     tosu_supervisor: TosuSupervisor,
-    status: SharedUpdateStatus,
-) {
+) -> UpdateService {
+    let status: SharedUpdateStatus = Arc::new(Mutex::new(UpdateStatus::default()));
+    let (commands, mut command_rx) = tokio::sync::mpsc::unbounded_channel();
+    let service = UpdateService {
+        status: status.clone(),
+        commands,
+    };
+
     tokio::spawn(async move {
         // Spread the first check out a little: a machine that just booted is
         // busy, and every install checking at login is the pattern §U-0.6
         // warns about.
         tokio::time::sleep(Duration::from_secs(90)).await;
+        let mut manifest: Option<ReleaseManifest> = None;
 
         loop {
-            if let Err(e) = tick(&daemon_state, &storage, &tosu_supervisor, &status).await {
-                warn!("Update check failed: {}", e);
-                if let Ok(mut s) = status.lock() {
-                    s.last_error = Some(e.to_string());
+            tokio::select! {
+                _ = tokio::time::sleep(TICK) => {
+                    match tick(&daemon_state, &storage, &tosu_supervisor, &status).await {
+                        Ok(m) => {
+                            if m.is_some() {
+                                manifest = m;
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Update check failed: {}", e);
+                            if let Ok(mut s) = status.lock() {
+                                s.last_error = Some(e.to_string());
+                            }
+                        }
+                    }
+                }
+                Some(UpdateCommand::Install(component)) = command_rx.recv() => {
+                    let result = match component {
+                        UpdateComponent::App => {
+                            install_app(manifest.as_ref(), &daemon_state, &storage, &status).await
+                        }
+                        UpdateComponent::Tosu => Ok(()),
+                        // §U-3: an app update must never trigger a firmware
+                        // update, and a firmware update takes explicit consent
+                        // through its own path every single time.
+                        UpdateComponent::Firmware => Err(UpdateError::Http(
+                            "Firmware updates are not applied by the updater (§U-3)".to_string(),
+                        )),
+                    };
+                    if let Err(e) = result {
+                        warn!("Applying the update failed: {}", e);
+                        if let Ok(mut s) = status.lock() {
+                            s.last_error = Some(e.to_string());
+                        }
+                    }
                 }
             }
-            tokio::time::sleep(TICK).await;
         }
     });
+
+    service
 }
 
+/// Returns the manifest when a fresh one was fetched, so the worker can keep
+/// it for a later Install command without re-fetching and re-verifying.
 async fn tick(
     daemon_state: &Arc<Mutex<DaemonState>>,
     storage: &Arc<Mutex<Option<Storage>>>,
     tosu_supervisor: &TosuSupervisor,
     status: &SharedUpdateStatus,
-) -> Result<(), UpdateError> {
+) -> Result<Option<ReleaseManifest>, UpdateError> {
     let mode = daemon_state
         .lock()
         .map(|s| s.mode)
@@ -82,13 +152,13 @@ async fn tick(
     // Not idle: change nothing, write nothing, do not even look.
     if let Err(reason) = may_update_now(mode, true) {
         debug!("Skipping the update check: {}", reason);
-        return Ok(());
+        return Ok(None);
     }
 
     let mut schedule: CheckSchedule = read_json(storage, SCHEDULE_KEY).unwrap_or_default();
     let now = SystemTime::now();
     if !schedule.due_at(now) {
-        return Ok(());
+        return Ok(None);
     }
 
     let client = UpdateClient::new()?;
@@ -103,10 +173,11 @@ async fn tick(
 
     let Some(manifest) = fetched? else {
         debug!("Release manifest unchanged since the last check");
-        return Ok(());
+        return Ok(None);
     };
 
-    update_tosu(
+    // tosu updates itself; the app only reports, and waits to be told (§U-2).
+    if let Err(e) = update_tosu(
         &client,
         &manifest,
         daemon_state,
@@ -115,6 +186,203 @@ async fn tick(
         status,
     )
     .await
+    {
+        warn!("tosu update failed: {}", e);
+        if let Ok(mut s) = status.lock() {
+            s.last_error = Some(e.to_string());
+        }
+    }
+
+    check_app(&manifest, daemon_state, storage, status)?;
+    Ok(Some(manifest))
+}
+
+/// Records whether an app update is available. Applies nothing: §U-2 is
+/// explicit that the app never auto-installs by default, so the daemon's job
+/// is to have the answer ready when the user asks.
+fn check_app(
+    manifest: &ReleaseManifest,
+    daemon_state: &Arc<Mutex<DaemonState>>,
+    storage: &Arc<Mutex<Option<Storage>>>,
+    status: &SharedUpdateStatus,
+) -> Result<(), UpdateError> {
+    let enabled = read_flag(storage, APP_ENABLED_KEY);
+    let installed = env!("CARGO_PKG_VERSION");
+    let origin = InstallOrigin::detect();
+    let mode = daemon_state
+        .lock()
+        .map(|s| s.mode)
+        .unwrap_or(RuntimeMode::Playing);
+
+    let action = app::plan(
+        manifest,
+        installed,
+        origin,
+        current_target(),
+        may_update_now(mode, enabled),
+    )?;
+
+    if let Ok(mut s) = status.lock() {
+        s.app.installed = Some(installed.to_string());
+        s.app.enabled = enabled;
+        match &action {
+            AppAction::UpToDate { .. } | AppAction::Defer { .. } => {
+                s.app.available = None;
+                s.app.ready_to_install = false;
+                s.app.notify_only = false;
+            }
+            AppAction::NotifyOnly { available, notes } => {
+                s.app.available = Some(available.clone());
+                s.app.notes = notes.clone();
+                s.app.notify_only = true;
+                s.app.ready_to_install = false;
+            }
+            AppAction::Available {
+                available, notes, ..
+            } => {
+                s.app.available = Some(available.clone());
+                s.app.notes = notes.clone();
+                s.app.notify_only = false;
+                s.app.ready_to_install = true;
+            }
+        }
+    }
+
+    if let AppAction::Available { available, .. } = &action {
+        info!("osu!pad {} is available to install", available);
+    }
+    Ok(())
+}
+
+/// Applies the app update the user asked for.
+///
+/// Order matters (§U-2): apply first, and only then report that a restart is
+/// needed. The daemon is not stopped before the package manager has actually
+/// succeeded — a failed or cancelled update must leave a running app behind.
+async fn install_app(
+    manifest: Option<&ReleaseManifest>,
+    daemon_state: &Arc<Mutex<DaemonState>>,
+    storage: &Arc<Mutex<Option<Storage>>>,
+    status: &SharedUpdateStatus,
+) -> Result<(), UpdateError> {
+    let manifest = manifest.ok_or_else(|| {
+        UpdateError::Http("No verified release manifest yet; check for updates first".to_string())
+    })?;
+
+    let mode = daemon_state
+        .lock()
+        .map(|s| s.mode)
+        .unwrap_or(RuntimeMode::Playing);
+    let origin = InstallOrigin::detect();
+    let action = app::plan(
+        manifest,
+        env!("CARGO_PKG_VERSION"),
+        origin,
+        current_target(),
+        may_update_now(mode, read_flag(storage, APP_ENABLED_KEY)),
+    )?;
+
+    let AppAction::Available {
+        available,
+        artifact,
+        policy,
+        ..
+    } = action
+    else {
+        return Err(UpdateError::Http(format!(
+            "There is nothing to install right now ({action:?})"
+        )));
+    };
+
+    let client = UpdateClient::new()?;
+    let bytes = client.fetch_artifact(&artifact).await?;
+
+    // The verified bytes go to a file the apply step can hand to a package
+    // manager or run. It lives in the state directory, not /tmp, so a
+    // hardened /tmp mounted noexec cannot break the Windows installer path.
+    let staging = osupad_model::paths::state_dir()
+        .map_err(|e| UpdateError::Io(std::io::Error::other(e.to_string())))?
+        .join("updates");
+    let file_name = artifact
+        .url
+        .rsplit('/')
+        .next()
+        .filter(|n| !n.is_empty())
+        .unwrap_or("osupad-update");
+    let target = staging.join(file_name);
+    osupad_update::download::stage_bytes(&target, &bytes, &artifact.sha256, &artifact.url)?
+        .install_to(&target)?;
+
+    apply_downloaded(policy, origin, &target)?;
+
+    if let Ok(mut s) = status.lock() {
+        s.restart_required = true;
+        s.app.ready_to_install = false;
+        s.app.installed = Some(available.clone());
+    }
+    info!(
+        "osu!pad {} applied; a restart is needed to run it",
+        available
+    );
+    Ok(())
+}
+
+fn apply_downloaded(
+    policy: ApplyPolicy,
+    origin: InstallOrigin,
+    file: &std::path::Path,
+) -> Result<(), UpdateError> {
+    use std::process::Command;
+
+    if let Some(cmd) = app::apply_command(policy, file) {
+        let status = Command::new(&cmd[0])
+            .args(&cmd[1..])
+            .status()
+            .map_err(|e| UpdateError::Io(std::io::Error::other(format!("{}: {e}", cmd[0]))))?;
+        if !status.success() {
+            // A cancelled polkit prompt lands here. The running version is
+            // untouched and the update stays pending (§U-2 acceptance).
+            return Err(UpdateError::Http(format!(
+                "{} exited with {:?}; the running version is unchanged",
+                cmd[0],
+                status.code()
+            )));
+        }
+        return Ok(());
+    }
+
+    // Direct replacement: the user owns every one of these files.
+    match origin {
+        InstallOrigin::AppImage => {
+            let current = std::env::var_os("APPIMAGE")
+                .map(std::path::PathBuf::from)
+                .ok_or_else(|| {
+                    UpdateError::Io(std::io::Error::other(
+                        "$APPIMAGE is not set, so there is no AppImage to replace",
+                    ))
+                })?;
+            std::fs::rename(file, &current)?;
+            Ok(())
+        }
+        _ => {
+            let prefix = osupad_model::paths::install_prefix()
+                .map_err(|e| UpdateError::Io(std::io::Error::other(e.to_string())))?;
+            let status = Command::new("tar")
+                .arg("-xzf")
+                .arg(file)
+                .arg("-C")
+                .arg(&prefix)
+                .status()
+                .map_err(|e| UpdateError::Io(std::io::Error::other(format!("tar: {e}"))))?;
+            if !status.success() {
+                return Err(UpdateError::Http(format!(
+                    "tar exited with {:?}; the running version is unchanged",
+                    status.code()
+                )));
+            }
+            Ok(())
+        }
+    }
 }
 
 async fn update_tosu(
@@ -146,11 +414,12 @@ async fn update_tosu(
     )?;
 
     if let Ok(mut s) = status.lock() {
-        s.tosu_installed = installed.clone();
-        s.tosu_available = manifest
+        s.tosu.installed = installed.clone();
+        s.tosu.available = manifest
             .component(osupad_update::TOSU)
             .map(|c| c.version.clone());
-        s.notify_only = matches!(action, TosuAction::NotifyOnly { .. });
+        s.tosu.enabled = enabled;
+        s.tosu.notify_only = matches!(action, TosuAction::NotifyOnly { .. });
     }
 
     match action {
