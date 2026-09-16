@@ -1,0 +1,4 @@
+(fp_lib_table
+	(version 7)
+	(lib (name "osupad") (type "KiCad") (uri "${KIPRJMOD}/../lib/osupad.pretty") (options "") (descr "osuPad project footprints"))
+)

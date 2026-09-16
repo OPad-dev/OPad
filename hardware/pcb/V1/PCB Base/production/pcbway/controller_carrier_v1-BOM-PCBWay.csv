@@ -1,0 +1,4 @@
+Item #,Designator,Qty,Manufacturer,Mfg Part #,Description / Value,Package/Footprint,Type,Your Instructions / Notes
+1,J_MOD,1,JST,SM08B-SRSS-TB(LF)(SN),MODULE,JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal,SMD,BOTTOM side. Cable opening faces the nearest board edge
+2,J_P1,1,HCTL,PM254-1-14-Z-8.5,WAVESHARE_P1,PinSocket_1x14_P2.54mm_Vertical,THT,"TOP side (side marked WAVESHARE ON THIS SIDE), solder on bottom. Keep perpendicular to the board"
+3,J_P2,1,HCTL,PM254-1-14-Z-8.5,WAVESHARE_P2,PinSocket_1x14_P2.54mm_Vertical,THT,"TOP side (side marked WAVESHARE ON THIS SIDE), solder on bottom. Keep perpendicular to the board"

@@ -1,0 +1,223 @@
+(footprint "Kailh_CPG151101S11_MX_Hotswap_Bottom"
+	(version 20260206)
+	(generator "pcbnew")
+	(generator_version "10.0")
+	(layer "F.Cu")
+	(descr "Cherry MX 1u switch + Kailh CPG151101S11 hot-swap socket. Drawn from the SOCKET side: place it on B.Cu (flipped) so the switch sits on the top side with its pins north of centre. Pad and hole positions per the Kailh land pattern (holes 3.05 mm NPTH, pads 2.55 x 2.5 mm).")
+	(tags "MX hotswap Kailh CPG151101S11 keyswitch")
+	(property "Reference" "REF**"
+		(at 0 -8.9 0)
+		(layer "F.SilkS")
+		(uuid "7f4d1dba-7e61-4a03-b59f-937d3aa8ce9a")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "Kailh_CPG151101S11"
+		(at 0 8.9 0)
+		(layer "F.Fab")
+		(uuid "055129f2-c45d-45c9-96f8-7b8ed0defe7e")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "66323a3c-0257-47dd-8ad8-6b594cfa1a30")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "236e4aa6-b54e-4122-aff3-0e129a14868b")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
+	(fp_line
+		(start -4.9 -6.9)
+		(end 1 -6.9)
+		(stroke
+			(width 0.12)
+			(type default)
+		)
+		(layer "F.SilkS")
+		(uuid "8210e020-4bb5-4935-b3ca-e566c458b76a")
+	)
+	(fp_line
+		(start 0.2 -2.7)
+		(end -4.9 -2.7)
+		(stroke
+			(width 0.12)
+			(type default)
+		)
+		(layer "F.SilkS")
+		(uuid "4dbb1973-1e19-4a21-8314-8768d035b638")
+	)
+	(fp_line
+		(start 3.9 -0.7)
+		(end 2.3 -0.7)
+		(stroke
+			(width 0.12)
+			(type default)
+		)
+		(layer "F.SilkS")
+		(uuid "0de5749a-6b7d-421c-af60-1afa088703d0")
+	)
+	(fp_rect
+		(start -7 -7)
+		(end 7 7)
+		(stroke
+			(width 0.12)
+			(type default)
+		)
+		(fill no)
+		(layer "B.SilkS")
+		(uuid "5eb7d437-9560-41f4-817a-abe57b163b25")
+	)
+	(fp_rect
+		(start -7 -7)
+		(end 7 7)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(fill no)
+		(layer "Dwgs.User")
+		(uuid "ac4295e7-e3e1-497a-9740-aa7b4a953423")
+	)
+	(fp_rect
+		(start -9 -9)
+		(end 9 9)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(fill no)
+		(layer "Cmts.User")
+		(uuid "90313fa4-dddd-4326-841a-733786fcb656")
+	)
+	(fp_rect
+		(start -7.5 -7.5)
+		(end 7.5 7.5)
+		(stroke
+			(width 0.05)
+			(type default)
+		)
+		(fill no)
+		(layer "B.CrtYd")
+		(uuid "30e4294d-d4a7-4def-a93c-0d4a5d4363b2")
+	)
+	(fp_rect
+		(start -7.4 -7.2)
+		(end 8.65 -0.55)
+		(stroke
+			(width 0.05)
+			(type default)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "674e1bcb-be41-492b-a80c-2db561e36ea2")
+	)
+	(fp_poly
+		(pts
+			(xy -4.8 -6.8) (xy 4 -6.8) (xy 4 -4.8) (xy 6 -4.8) (xy 6 -0.8) (xy 2.3 -0.8) (xy 0.3 -2.8) (xy -4.8 -2.8)
+		)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "54e57852-c445-44fd-9f11-5f1699565b29")
+	)
+	(fp_text user "14 mm plate cutout (top side)"
+		(at 0 6.2 0)
+		(layer "Dwgs.User")
+		(uuid "eebe9b7d-9af8-48e2-8b2b-987abb2520ed")
+		(effects
+			(font
+				(size 0.6 0.6)
+				(thickness 0.1)
+			)
+		)
+	)
+	(fp_text user "${REFERENCE}"
+		(at 0.6 -3.8 0)
+		(layer "F.Fab")
+		(uuid "5728d14e-1528-4f23-8e99-762843c6956e")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(pad "" np_thru_hole circle
+		(at -5.08 0)
+		(size 1.75 1.75)
+		(drill 1.75)
+		(layers "*.Cu" "*.Mask")
+		(uuid "644559ce-8f4c-490a-a6a6-707ab53483e9")
+	)
+	(pad "" np_thru_hole circle
+		(at -2.54 -5.08)
+		(size 3.05 3.05)
+		(drill 3.05)
+		(layers "*.Cu" "*.Mask")
+		(uuid "98e3ee73-4e32-48bd-833f-4a617f3bad4d")
+	)
+	(pad "" np_thru_hole circle
+		(at 0 0)
+		(size 4 4)
+		(drill 4)
+		(layers "*.Cu" "*.Mask")
+		(uuid "8e320720-867b-4911-98f2-21ee04499ae6")
+	)
+	(pad "" np_thru_hole circle
+		(at 3.81 -2.54)
+		(size 3.05 3.05)
+		(drill 3.05)
+		(layers "*.Cu" "*.Mask")
+		(uuid "22adbdaf-535a-4dcd-9be6-d2e84fd0f868")
+	)
+	(pad "" np_thru_hole circle
+		(at 5.08 0)
+		(size 1.75 1.75)
+		(drill 1.75)
+		(layers "*.Cu" "*.Mask")
+		(uuid "143934c8-fe01-49ce-8afe-ec17910256b3")
+	)
+	(pad "1" smd roundrect
+		(at 7.085 -2.54)
+		(size 2.55 2.5)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.1)
+		(uuid "2871918f-c431-4e07-9161-1b81822d54dd")
+	)
+	(pad "2" smd roundrect
+		(at -5.842 -5.08)
+		(size 2.55 2.5)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.1)
+		(uuid "c49b9e03-a6fe-4a9a-9626-5dfe95c27db5")
+	)
+	(embedded_fonts no)
+)

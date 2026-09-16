@@ -1,0 +1,4 @@
+(sym_lib_table
+	(version 7)
+	(lib (name "osupad") (type "KiCad") (uri "${KIPRJMOD}/../lib/osupad.kicad_sym") (options "") (descr "osuPad project symbols"))
+)

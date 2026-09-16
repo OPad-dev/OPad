@@ -1,0 +1,7 @@
+Item #,Designator,Qty,Manufacturer,Mfg Part #,Description / Value,Package/Footprint,Type,Your Instructions / Notes
+1,C1,1,YAGEO,CC0603KRX7R9BB104,100nF,C_0603_1608Metric,SMD,Bottom side
+2,J1,1,JST,SM08B-SRSS-TB(LF)(SN),MODULE,JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal,SMD,BOTTOM side. Cable opening faces the nearest board edge
+3,"R1,R2,R4",3,UNI-ROYAL,0603WAF1002T5E,10k,R_0603_1608Metric,SMD,Bottom side
+4,R3,1,UNI-ROYAL,0603WAF1003T5E,100k,R_0603_1608Metric,SMD,Bottom side
+5,SW1,1,Kailh,CPG151101S11,KEY1,Kailh_CPG151101S11_MX_Hotswap_Bottom,SMD,Hot-swap socket on BOTTOM side. Two metal tabs on the two pads; plastic body over the 3.05 mm holes
+6,SW2,1,Kailh,CPG151101S11,KEY2,Kailh_CPG151101S11_MX_Hotswap_Bottom,SMD,Hot-swap socket on BOTTOM side. Two metal tabs on the two pads; plastic body over the 3.05 mm holes

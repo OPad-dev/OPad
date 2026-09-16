@@ -1,0 +1,930 @@
+(kicad_sch
+	(version 20250114)
+	(generator "eeschema")
+	(generator_version "9.0")
+	(uuid "5a671330-cedf-477e-a8c5-11a24db8fd6a")
+	(paper "A4")
+	(title_block (title "osuPad MX Input Module V1") (date "2026-09-14") (rev "V1.0") (company "osuPad"))
+	(lib_symbols
+		(symbol "osupad:C"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0.254)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(duplicate_pin_numbers_are_jumpers no)
+		(property "Reference" "C"
+			(at 0.635 2.54 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "C"
+			(at 0.635 -2.54 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" ""
+			(at 0.9652 -3.81 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Unpolarized capacitor"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "cap capacitor"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_fp_filters" "C_*"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(symbol "C_0_1"
+			(polyline
+				(pts
+					(xy -2.032 0.762) (xy 2.032 0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -2.032 -0.762) (xy 2.032 -0.762)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "C_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 2.794)
+				(name ""
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 2.794)
+				(name ""
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+		(symbol "osupad:Conn_01x08"
+		(pin_names
+			(offset 1.016)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(duplicate_pin_numbers_are_jumpers no)
+		(property "Reference" "J"
+			(at 0 10.16 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "Conn_01x08"
+			(at 0 -12.7 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Generic connector, single row, 01x08, script generated (kicad-library-utils/schlib/autogen/connector/)"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "connector"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_fp_filters" "Connector*:*_1x??_*"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(symbol "Conn_01x08_1_1"
+			(rectangle
+				(start -1.27 8.89)
+				(end 1.27 -11.43)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type background)
+				)
+			)
+			(rectangle
+				(start -1.27 7.747)
+				(end 0 7.493)
+				(stroke
+					(width 0.1524)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(rectangle
+				(start -1.27 5.207)
+				(end 0 4.953)
+				(stroke
+					(width 0.1524)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(rectangle
+				(start -1.27 2.667)
+				(end 0 2.413)
+				(stroke
+					(width 0.1524)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(rectangle
+				(start -1.27 0.127)
+				(end 0 -0.127)
+				(stroke
+					(width 0.1524)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(rectangle
+				(start -1.27 -2.413)
+				(end 0 -2.667)
+				(stroke
+					(width 0.1524)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(rectangle
+				(start -1.27 -4.953)
+				(end 0 -5.207)
+				(stroke
+					(width 0.1524)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(rectangle
+				(start -1.27 -7.493)
+				(end 0 -7.747)
+				(stroke
+					(width 0.1524)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(rectangle
+				(start -1.27 -10.033)
+				(end 0 -10.287)
+				(stroke
+					(width 0.1524)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(pin passive line
+				(at -5.08 7.62 0)
+				(length 3.81)
+				(name "Pin_1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at -5.08 5.08 0)
+				(length 3.81)
+				(name "Pin_2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at -5.08 2.54 0)
+				(length 3.81)
+				(name "Pin_3"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "3"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at -5.08 0 0)
+				(length 3.81)
+				(name "Pin_4"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "4"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at -5.08 -2.54 0)
+				(length 3.81)
+				(name "Pin_5"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "5"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at -5.08 -5.08 0)
+				(length 3.81)
+				(name "Pin_6"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "6"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at -5.08 -7.62 0)
+				(length 3.81)
+				(name "Pin_7"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "7"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at -5.08 -10.16 0)
+				(length 3.81)
+				(name "Pin_8"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "8"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+		(symbol "osupad:R"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(duplicate_pin_numbers_are_jumpers no)
+		(property "Reference" "R"
+			(at 2.032 0 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "R"
+			(at 0 0 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at -1.778 0 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Resistor"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "R res resistor"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_fp_filters" "R_*"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(symbol "R_0_1"
+			(rectangle
+				(start -1.016 -2.54)
+				(end 1.016 2.54)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "R_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 1.27)
+				(name ""
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 1.27)
+				(name ""
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+		(symbol "osupad:SW_Push"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 1.016)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(duplicate_pin_numbers_are_jumpers no)
+		(property "Reference" "SW"
+			(at 1.27 2.54 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "SW_Push"
+			(at 0 -1.524 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 0 5.08 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 0 5.08 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Push button switch, generic, two pins"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "switch normally-open pushbutton push-button"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(symbol "SW_Push_0_1"
+			(circle
+				(center -2.032 0)
+				(radius 0.508)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 0 1.27) (xy 0 3.048)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(circle
+				(center 2.032 0)
+				(radius 0.508)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 2.54 1.27) (xy -2.54 1.27)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(pin passive line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 5.08 0 180)
+				(length 2.54)
+				(name "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	)
+	(text "Module connector pinout (same on every input module):" (exclude_from_sim no) (at 20.32 160.02 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "712a3d39-018f-4d09-b15d-d8a1c9a80860"))
+	(text "1 3V3 | 2 GND | 3 IN1 = GPIO10 | 4 IN2 = GPIO7 | 5 ID = GPIO8 | 6 GPIO6 | 7 GPIO4 | 8 GPIO2" (exclude_from_sim no) (at 20.32 163.83 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "0b27ed8b-02e7-4c29-ab35-6af8480e86f8"))
+	(text "MX V1: keys switch IN1/IN2 to GND (10k pull-ups). ID = 3V3 x 10k/(100k+10k) = 0.30 V." (exclude_from_sim no) (at 20.32 167.64 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "77c7dd58-1f25-4e01-841b-382231ca0405"))
+	(text "Sockets, J1 and all passives are on the bottom side; the switches sit on top under the plate." (exclude_from_sim no) (at 20.32 171.45 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "cb309899-f388-4e7c-9b10-5b73f407a89c"))
+	(symbol (lib_id "osupad:Conn_01x08") (at 60.96 60.96 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "626866bc-014d-4fdf-829d-3a348412f707")
+		(property "Reference" "J1" (at 60.96 49.53 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "MODULE" (at 60.96 74.93 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal" (at 60.96 60.96 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 60.96 60.96 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Module connector to controller carrier (JST SH 8-pin)" (at 60.96 60.96 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C160407" (at 60.96 60.96 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "JST SM08B-SRSS-TB(LF)(SN)" (at 60.96 60.96 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "0c35b738-5d9d-4768-a61a-7fa9ed9572d9"))
+		(pin "2" (uuid "f4c2bc8e-ecc2-4d0f-aae2-32b5f5361417"))
+		(pin "3" (uuid "dc03f052-53cb-4d54-81e7-58313d97b051"))
+		(pin "4" (uuid "bf1273ce-4140-4b6c-b6bd-28a782d5d6d3"))
+		(pin "5" (uuid "bbe93167-eeae-43ca-8dbb-d6aeaef5f096"))
+		(pin "6" (uuid "c8425fb2-27b3-4e9c-83df-700656f1caf0"))
+		(pin "7" (uuid "cf07415e-8e1d-4b08-a357-cff42cd88198"))
+		(pin "8" (uuid "14a17c65-ff0a-494e-b0fc-e74f5ad73cf9"))
+		(instances (project "mx_input_v1" (path "/5a671330-cedf-477e-a8c5-11a24db8fd6a" (reference "J1") (unit 1))))
+	)
+	(label "3V3" (at 55.88 53.34 180) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "3317137b-60fa-44a9-b05e-4c6f5f075e32"))
+	(label "GND" (at 55.88 55.88 180) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "b65bcd2f-bc08-4f34-b662-007135d609cf"))
+	(label "IN1" (at 55.88 58.42 180) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "c9aef9c7-06b0-413a-b882-024f9f1f1f6a"))
+	(label "IN2" (at 55.88 60.96 180) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "865e10fe-cdf8-430a-a8a4-3fbfd434a429"))
+	(label "ID" (at 55.88 63.50 180) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "caf147ed-43a1-4e69-b857-b3d9d12f54cb"))
+	(no_connect (at 55.88 66.04) (uuid "b66cf902-5d8e-4e58-a289-10b1f9591049"))
+	(no_connect (at 55.88 68.58) (uuid "9d826ca8-bf8c-491a-8342-bbb81600f92e"))
+	(no_connect (at 55.88 71.12) (uuid "3b9a27db-4e81-4cf9-8295-29fb62f75329"))
+	(symbol (lib_id "osupad:SW_Push") (at 132.08 50.80 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "7e962c98-f3e2-49b3-a19d-83f6877d81c8")
+		(property "Reference" "SW1" (at 132.08 45.72 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "KEY1" (at 132.08 54.61 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:Kailh_CPG151101S11_MX_Hotswap_Bottom" (at 132.08 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 132.08 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "MX hot-swap socket, left key" (at 132.08 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C41430893" (at 132.08 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "Kailh CPG151101S11" (at 132.08 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "df404522-94c5-4950-aa1c-6a98a7f218a5"))
+		(pin "2" (uuid "e5fdeef2-2770-4e4c-a022-1f4737d68c76"))
+		(instances (project "mx_input_v1" (path "/5a671330-cedf-477e-a8c5-11a24db8fd6a" (reference "SW1") (unit 1))))
+	)
+	(label "GND" (at 127.00 50.80 180) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "fad0ea6c-48b5-4d9a-b75e-81c5d11a4ab3"))
+	(label "IN1" (at 137.16 50.80 0) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "b5c7003a-5f11-4edc-b0bb-084e63a1719e"))
+	(symbol (lib_id "osupad:SW_Push") (at 132.08 76.20 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "e9891d3e-5d4b-4a37-a7f0-ba140e9c67b8")
+		(property "Reference" "SW2" (at 132.08 71.12 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "KEY2" (at 132.08 80.01 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:Kailh_CPG151101S11_MX_Hotswap_Bottom" (at 132.08 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 132.08 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "MX hot-swap socket, right key" (at 132.08 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C41430893" (at 132.08 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "Kailh CPG151101S11" (at 132.08 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "4267ebc8-6466-43ea-abf3-01825bc0681e"))
+		(pin "2" (uuid "d043a4aa-cfda-435b-9f74-a4603dab9afb"))
+		(instances (project "mx_input_v1" (path "/5a671330-cedf-477e-a8c5-11a24db8fd6a" (reference "SW2") (unit 1))))
+	)
+	(label "IN2" (at 127.00 76.20 180) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "4ea426bf-1411-43c8-bc68-5d49621267ce"))
+	(label "GND" (at 137.16 76.20 0) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "27c18128-9475-49df-970c-089c5fda4bf2"))
+	(symbol (lib_id "osupad:R") (at 106.68 50.80 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "47c25be4-f450-45b6-b3cf-2cd258441d12")
+		(property "Reference" "R1" (at 109.22 49.53 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "10k" (at 109.22 52.07 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:R_0603_1608Metric" (at 106.68 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 106.68 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "KEY1 pull-up" (at 106.68 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C25804" (at 106.68 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "UNI-ROYAL 0603WAF1002T5E" (at 106.68 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "e7079e33-3675-4836-91f0-ce6eeaec8240"))
+		(pin "2" (uuid "20fd8bbe-adf7-4b20-9de9-ca55ae93b7de"))
+		(instances (project "mx_input_v1" (path "/5a671330-cedf-477e-a8c5-11a24db8fd6a" (reference "R1") (unit 1))))
+	)
+	(label "3V3" (at 106.68 46.99 90) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "54d0e796-73bf-44d3-8d5e-96969b7f52f7"))
+	(label "IN1" (at 106.68 54.61 270) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "7218ba18-1052-4083-8e49-c07825a68e3e"))
+	(symbol (lib_id "osupad:R") (at 106.68 76.20 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "943a3246-daa4-4d1c-a109-42271c6076d7")
+		(property "Reference" "R2" (at 109.22 74.93 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "10k" (at 109.22 77.47 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:R_0603_1608Metric" (at 106.68 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 106.68 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "KEY2 pull-up" (at 106.68 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C25804" (at 106.68 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "UNI-ROYAL 0603WAF1002T5E" (at 106.68 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "8abe4672-2e59-416e-8099-fa1c32621397"))
+		(pin "2" (uuid "ecb764da-fa4b-4316-940c-a6e5d07a4d78"))
+		(instances (project "mx_input_v1" (path "/5a671330-cedf-477e-a8c5-11a24db8fd6a" (reference "R2") (unit 1))))
+	)
+	(label "IN2" (at 106.68 72.39 90) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "ef69ff95-4ac0-45b0-a191-70aa139fa625"))
+	(label "3V3" (at 106.68 80.01 270) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "67ce2b62-268c-4722-9895-2210e612ef33"))
+	(symbol (lib_id "osupad:R") (at 157.48 50.80 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "d0e853e7-b050-43cd-b7a4-968f9ac8a29c")
+		(property "Reference" "R3" (at 160.02 49.53 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "100k" (at 160.02 52.07 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:R_0603_1608Metric" (at 157.48 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 157.48 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Module ID divider, top (MX V1 = 100k/10k = 0.30 V)" (at 157.48 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C25803" (at 157.48 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "UNI-ROYAL 0603WAF1003T5E" (at 157.48 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "503728d2-9e38-4679-a66e-f7554e1dddb4"))
+		(pin "2" (uuid "b49f2346-f627-4bd4-a0bc-00f82dd2caf6"))
+		(instances (project "mx_input_v1" (path "/5a671330-cedf-477e-a8c5-11a24db8fd6a" (reference "R3") (unit 1))))
+	)
+	(label "ID" (at 157.48 46.99 90) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "9681153b-1323-4712-a8c2-da807165e7aa"))
+	(label "3V3" (at 157.48 54.61 270) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "a7a9c76a-c01b-4dcf-95ba-0d5f053edb62"))
+	(symbol (lib_id "osupad:R") (at 157.48 76.20 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "53156a1c-59c4-457e-aa12-fcf455073e82")
+		(property "Reference" "R4" (at 160.02 74.93 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "10k" (at 160.02 77.47 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:R_0603_1608Metric" (at 157.48 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 157.48 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Module ID divider, bottom" (at 157.48 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C25804" (at 157.48 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "UNI-ROYAL 0603WAF1002T5E" (at 157.48 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "f4075875-dff6-496d-a78b-075cc4c17d6b"))
+		(pin "2" (uuid "fda9f10d-503a-41ad-837c-699a196649a3"))
+		(instances (project "mx_input_v1" (path "/5a671330-cedf-477e-a8c5-11a24db8fd6a" (reference "R4") (unit 1))))
+	)
+	(label "ID" (at 157.48 72.39 90) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "34c53322-92d0-4e67-ab95-74e6840dc3b8"))
+	(label "GND" (at 157.48 80.01 270) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "be139ec7-b805-4907-96d6-6b4047763506"))
+	(symbol (lib_id "osupad:C") (at 182.88 63.50 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "31c6b08e-40ea-42ad-9ea6-dcb3fa96385a")
+		(property "Reference" "C1" (at 185.42 62.23 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "100nF" (at 185.42 64.77 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:C_0603_1608Metric" (at 182.88 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 182.88 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "3V3 decoupling at the module connector" (at 182.88 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C14663" (at 182.88 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "YAGEO CC0603KRX7R9BB104" (at 182.88 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "4a9f52cf-27ef-47cc-8328-bc89ce387a12"))
+		(pin "2" (uuid "dfbcd329-223d-46ae-a25c-5487f5f6cd51"))
+		(instances (project "mx_input_v1" (path "/5a671330-cedf-477e-a8c5-11a24db8fd6a" (reference "C1") (unit 1))))
+	)
+	(label "GND" (at 182.88 59.69 90) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "3cb3e99e-804b-4bb1-ab33-6a0652fc74d4"))
+	(label "3V3" (at 182.88 67.31 270) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "bd7540c3-2f6a-4a47-9af9-8d2d2a549a6c"))
+	(sheet_instances (path "/" (page "1")))
+)
