@@ -4,6 +4,8 @@ use osupad_model::ui_source::{self as src, SourceValue};
 use osupad_model::GameplayTelemetry;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::net::TcpStream;
@@ -278,18 +280,59 @@ pub fn find_tosu_binary() -> Option<PathBuf> {
     paths::bundled_tosu_binary().ok().filter(|p| p.is_file())
 }
 
+/// Stops and restarts the supervised tosu.
+///
+/// Swapping the binary needs it held down: on Windows the file cannot be
+/// replaced while it is running, and on every platform a tosu started from the
+/// old inode would keep running after the swap and hide the update (§U-1).
+#[derive(Clone, Debug, Default)]
+pub struct TosuSupervisor {
+    paused: Arc<AtomicBool>,
+}
+
+impl TosuSupervisor {
+    /// Kills the running tosu and stops the supervisor relaunching it.
+    ///
+    /// Returns once the child is actually gone, so the caller may replace the
+    /// binary immediately afterwards.
+    pub async fn pause(&self) {
+        self.paused.store(true, Ordering::SeqCst);
+        // The supervisor drops its child on the next poll of the pause flag;
+        // kill_on_drop makes that a real kill. One poll interval covers it.
+        tokio::time::sleep(PAUSE_POLL_INTERVAL * 2).await;
+    }
+
+    pub fn resume(&self) {
+        self.paused.store(false, Ordering::SeqCst);
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::SeqCst)
+    }
+}
+
+const PAUSE_POLL_INTERVAL: Duration = Duration::from_millis(250);
+
 /// Keeps a tosu process running for as long as the daemon runs.
 ///
 /// Does nothing while something already listens on tosu's port (e.g. a tosu the
 /// user started by hand). Otherwise launches tosu and restarts it with backoff
 /// if it exits. The child is killed when the daemon exits.
-pub fn spawn_tosu_supervisor(endpoint: String, log_path: PathBuf) {
+pub fn spawn_tosu_supervisor(endpoint: String, log_path: PathBuf) -> TosuSupervisor {
+    let supervisor = TosuSupervisor::default();
+    let paused = supervisor.paused.clone();
+
     tokio::spawn(async move {
         let addr = endpoint_socket_addr(&normalize_endpoint(&endpoint));
         let mut backoff = Duration::from_secs(5);
         let mut warned_missing = false;
 
         loop {
+            if paused.load(Ordering::SeqCst) {
+                tokio::time::sleep(PAUSE_POLL_INTERVAL).await;
+                continue;
+            }
+
             if TcpStream::connect(&addr).await.is_ok() {
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 continue;
@@ -315,9 +358,25 @@ pub fn spawn_tosu_supervisor(endpoint: String, log_path: PathBuf) {
                         bin.display()
                     );
                     let started = Instant::now();
-                    match child.wait().await {
-                        Ok(status) => warn!("tosu exited with {}", status),
-                        Err(e) => warn!("Failed waiting for tosu: {}", e),
+                    loop {
+                        tokio::select! {
+                            result = child.wait() => {
+                                match result {
+                                    Ok(status) => warn!("tosu exited with {}", status),
+                                    Err(e) => warn!("Failed waiting for tosu: {}", e),
+                                }
+                                break;
+                            }
+                            _ = tokio::time::sleep(PAUSE_POLL_INTERVAL) => {
+                                if paused.load(Ordering::SeqCst) {
+                                    // kill_on_drop turns this into a real kill,
+                                    // freeing the binary for a swap (§U-1)
+                                    info!("Stopping tosu for an update");
+                                    drop(child);
+                                    break;
+                                }
+                            }
+                        }
                     }
                     backoff = if started.elapsed() > Duration::from_secs(60) {
                         Duration::from_secs(5)
@@ -330,6 +389,8 @@ pub fn spawn_tosu_supervisor(endpoint: String, log_path: PathBuf) {
             tokio::time::sleep(backoff).await;
         }
     });
+
+    supervisor
 }
 
 fn launch_tosu(bin: &Path, log_path: &Path) -> std::io::Result<tokio::process::Child> {

@@ -18,6 +18,7 @@ pub mod log_hub;
 pub mod runtime;
 pub mod sync;
 pub mod telemetry;
+pub mod updater;
 
 use ipc_handlers::handle_ipc_request;
 use log_hub::{LogHub, LogHubLayer};
@@ -127,7 +128,8 @@ async fn main() -> Result<()> {
     // Launch and supervise tosu, then follow its WebSocket
     let tosu_log_path = osupad_model::paths::tosu_log_path()
         .context("Cannot resolve where to keep the tosu log")?;
-    spawn_tosu_supervisor(initial_config.tosu_endpoint.clone(), tosu_log_path);
+    let tosu_supervisor =
+        spawn_tosu_supervisor(initial_config.tosu_endpoint.clone(), tosu_log_path);
     let (tosu_manager, mut tosu_rx) = TosuManager::new(initial_config.tosu_endpoint.clone());
     let mut tosu_connected_rx = tosu_manager.subscribe_connected();
     tosu_manager.start();
@@ -146,6 +148,16 @@ async fn main() -> Result<()> {
         }
         Err(e) => return Err(e.into()),
     };
+
+    // Updates: tosu (§U-1) and the app (§U-2). Idle-only, daily, and inert
+    // until a signing key is compiled in (§U-0.3).
+    let update_status: updater::SharedUpdateStatus = Arc::new(Mutex::new(Default::default()));
+    updater::spawn_update_worker(
+        daemon_state.clone(),
+        storage.clone(),
+        tosu_supervisor,
+        update_status.clone(),
+    );
 
     // Spawn IPC request handling task
     {

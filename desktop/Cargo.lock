@@ -3417,6 +3417,7 @@ dependencies = [
  "osupad-protocol",
  "osupad-storage",
  "osupad-tosu",
+ "osupad-update",
  "serde",
  "serde_json",
  "thiserror 1.0.69",

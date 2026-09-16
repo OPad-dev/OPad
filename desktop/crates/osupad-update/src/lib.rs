@@ -17,16 +17,19 @@
 //!   API allows 60 requests an hour per IP, and a naive poll across many users
 //!   looks like abuse.
 
-pub mod download;
-pub mod gate;
 /// Off without the `net` feature, which is how the platform-independent half
 /// of this crate is type-checked for Windows from a Linux host: reqwest's TLS
 /// stack needs an MSVC toolchain to *build*, though not to work.
+#[cfg(feature = "net")]
+pub mod client;
+pub mod download;
+pub mod gate;
 #[cfg(feature = "net")]
 pub mod http;
 pub mod manifest;
 pub mod origin;
 pub mod schedule;
+pub mod tosu;
 pub mod verify;
 
 pub use gate::{may_update_now, DeferReason};

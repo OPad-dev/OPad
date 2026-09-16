@@ -104,6 +104,9 @@ impl Storage {
         if v < 6 {
             self.apply_v6()?;
         }
+        if v < 7 {
+            self.apply_v7()?;
+        }
         Ok(())
     }
 
@@ -163,6 +166,51 @@ impl Storage {
             ALTER TABLE config ADD COLUMN key2_gpio INTEGER NOT NULL DEFAULT 9;
             INSERT INTO schema_migrations (version, applied_at) VALUES (6, datetime('now'));
             COMMIT;",
+        )?;
+        Ok(())
+    }
+
+    /// v7: host-side state that is neither device config nor counters — the
+    /// install identity (§W3-1) and the updaters' settings and check schedules
+    /// (§U-0.4, §U-0.6). One key/value table rather than a column per setting,
+    /// so adding an updater is not a migration.
+    fn apply_v7(&self) -> Result<(), StorageError> {
+        self.conn.execute_batch(
+            "BEGIN TRANSACTION;
+            CREATE TABLE IF NOT EXISTS app_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            INSERT INTO schema_migrations (version, applied_at) VALUES (7, datetime('now'));
+            COMMIT;",
+        )?;
+        Ok(())
+    }
+
+    /// Reads a host-side value written by [`Self::set_app_state`]
+    pub fn get_app_state(&self, key: &str) -> Result<Option<String>, StorageError> {
+        self.conn
+            .query_row(
+                "SELECT value FROM app_state WHERE key = ?1",
+                params![key],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
+    /// Writes a host-side value.
+    ///
+    /// Goes through the same P1-3 write guard as everything else: an updater
+    /// recording a check time mid-map is still a storage write.
+    pub fn set_app_state(&self, key: &str, value: &str) -> Result<(), StorageError> {
+        self.check_writes_allowed()?;
+        self.conn.execute(
+            "INSERT INTO app_state (key, value, updated_at)
+             VALUES (?1, ?2, datetime('now'))
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            params![key, value],
         )?;
         Ok(())
     }
@@ -676,7 +724,7 @@ mod tests {
                 "UPDATE config SET debounce_us = 4000 WHERE id = 1;
                  ALTER TABLE config DROP COLUMN key1_gpio;
                  ALTER TABLE config DROP COLUMN key2_gpio;
-                 DELETE FROM schema_migrations WHERE version = 6;",
+                 DELETE FROM schema_migrations WHERE version >= 6;",
             )
             .unwrap();
         storage.migrate().unwrap();
@@ -684,5 +732,33 @@ mod tests {
         let migrated = storage.load_config().unwrap();
         assert_eq!((migrated.key1_gpio, migrated.key2_gpio), (14, 9));
         assert_eq!(migrated.debounce_us, 4000);
+    }
+
+    #[test]
+    fn test_app_state_round_trip_and_write_guard() {
+        let storage = Storage::open_in_memory().expect("open");
+        assert_eq!(storage.get_app_state("update.schedule").unwrap(), None);
+
+        storage.set_app_state("update.schedule", "{}").unwrap();
+        storage
+            .set_app_state("update.schedule", "{\"etag\":\"v1\"}")
+            .unwrap();
+        assert_eq!(
+            storage.get_app_state("update.schedule").unwrap().as_deref(),
+            Some("{\"etag\":\"v1\"}"),
+            "a second write must replace, not duplicate"
+        );
+
+        // P1-3 covers host-side state too: recording an update check is still
+        // a storage write.
+        storage.set_writes_allowed(false);
+        assert!(matches!(
+            storage.set_app_state("update.schedule", "{}"),
+            Err(StorageError::WritesBlocked)
+        ));
+        assert!(
+            storage.get_app_state("update.schedule").is_ok(),
+            "reads stay allowed"
+        );
     }
 }
