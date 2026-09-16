@@ -25,11 +25,13 @@ pub mod gate;
 #[cfg(feature = "net")]
 pub mod http;
 pub mod manifest;
+pub mod origin;
 pub mod schedule;
 pub mod verify;
 
 pub use gate::{may_update_now, DeferReason};
 pub use manifest::{Artifact, ArtifactKind, Component, ReleaseManifest, APP, FIRMWARE, TOSU};
+pub use origin::{ApplyPolicy, InstallOrigin, PackageManager};
 pub use schedule::CheckSchedule;
 
 use thiserror::Error;
