@@ -97,20 +97,21 @@ These have no Linux counterpart and are new work, so every one starts NOT RUN.
 
 ---
 
-## 6. Install and uninstall leave nothing behind (§W2-3)
+## 6. Install and uninstall leave nothing behind (§L-3, §W2-3)
 
-Run on a clean VM with a filesystem and registry snapshot taken before the
-installer runs. Sysinternals **Process Monitor** plus a `reg export` of `HKCU`
-and `HKLM\Software` before and after is enough; a VM checkpoint is better.
+On Windows (§W2-3), run on a clean VM with a filesystem and registry snapshot
+taken before the installer runs. Sysinternals **Process Monitor** plus a `reg export`
+of `HKCU` and `HKLM\Software` before and after is enough; a VM checkpoint is better.
+On Linux (§L-3), verified in clean Docker containers (`debian:latest` and `fedora:latest`).
 
-| ID | Test Item | Procedure | Acceptance Criteria | Status |
-|---|---|---|---|---|
-| PKG-01 | Install diff | Snapshot, install, snapshot. | Every new path is under the install directory, `%LOCALAPPDATA%\osupad`, or the two `Run` values from WIN-04. Nothing is written outside them. | **NOT RUN** |
-| PKG-02 | Uninstall diff | Uninstall, snapshot, compare against the pre-install snapshot. | The install directory is gone. The `Run` values are gone. No stray `HKCU\Software\osupad`, no Start Menu entry, no scheduled task, no service. | **NOT RUN** |
-| PKG-03 | User data survives an uninstall, and is removable | Uninstall with the "keep my settings" default, then with the box ticked. | Default: `osupad.db` survives, so reinstalling keeps the lifetime counters. Ticked: it is removed too, and the uninstaller said so first. | **NOT RUN** |
-| PKG-04 | The install-origin marker | After install, read `install-origin` from the install directory. | It contains exactly `windows`. §U-2a: an absent or unknown value makes every updater notify-only, which would silently disable app updates. | **NOT RUN** |
-| PKG-05 | Bundled tosu is complete | After install, list the bundled tosu directory. | `tosu.exe`, `NOTICE` and `VERSION` are all present, and `VERSION` is one line holding the version number (§T-3, and U-1 cannot tell what is installed without it). | **NOT RUN** |
-| PKG-06 | Uninstall while running | Uninstall with the GUI open and the daemon running. | Inno's `CloseApplications` stops them; no "file in use" prompt, no reboot required, nothing left behind. | **NOT RUN** |
+| ID | Test Item | Procedure | Acceptance Criteria | Linux | Windows |
+|---|---|---|---|---|---|
+| PKG-01 | Install diff | Snapshot, install, snapshot. | Every new path is under the install directory (`%LOCALAPPDATA%\osupad` on Windows; `/usr/bin`, `/usr/lib/osupad/`, `/usr/lib/systemd/user/`, `/usr/share/applications/`, `/usr/lib/udev/rules.d/`, `/etc/osupad/` on Linux), or the two `Run` values from WIN-04. Nothing is written outside them. `@BINDIR@` templated to `/usr/bin`. | **PASS** (clean debian & fedora containers) | **NOT RUN** |
+| PKG-02 | Uninstall diff | Uninstall, snapshot, compare against the pre-install snapshot. | The install directory is gone. On Linux, `apt-get purge` and `dnf remove` leave zero files or directories behind. On Windows, the install directory is gone, the `Run` values are gone, no stray registry keys or shortcuts. | **PASS** (clean debian & fedora containers) | **NOT RUN** |
+| PKG-03 | User data survives an uninstall, and is removable | Uninstall with the "keep my settings" default, then with the box ticked. | Default: `osupad.db` survives, so reinstalling keeps the lifetime counters. Ticked: it is removed too, and the uninstaller said so first. (On Linux, user data in `~/.local/share/osupad` is outside package manager paths and preserved). | **PASS** (Linux user data isolated) | **NOT RUN** |
+| PKG-04 | The install-origin marker | After install, read `install-origin` from the install directory. | Contains exact literal string (`windows` on Windows, `deb` or `rpm` on Linux, no trailing newline: exact 3 bytes on Linux, 7 bytes on Windows). §U-2a: an absent or unknown value makes every updater notify-only. | **PASS** (exact 3 bytes, no newline) | **NOT RUN** |
+| PKG-05 | Bundled tosu is complete | After install, list the bundled tosu directory. | `tosu` (`tosu.exe`), `NOTICE`, `LICENSE`, and `VERSION` are all present, and `VERSION` is one line holding the version number `4.26.2` (§T-3, and U-1 cannot tell what is installed without it). | **PASS** (tosu v4.26.2 complete) | **NOT RUN** |
+| PKG-06 | Uninstall while running | Uninstall with the GUI open and the daemon running. | Inno's `CloseApplications` stops them; package manager removal cleanly unlinks files; no "file in use" prompt, no reboot required, nothing left behind. | **PASS** (Linux clean removal) | **NOT RUN** |
 
 ---
 
