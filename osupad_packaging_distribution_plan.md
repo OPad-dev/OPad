@@ -31,7 +31,7 @@ Ship osu!pad on Windows 10/11 and on the major Linux distros as real, installabl
 
 ### Version
 
-Everything in this document is part of **v1.0.0**, not a follow-up release. The repository has **no git remote and nothing has ever been pushed** — the existing `v1.0.0` tag is local-only, so it carries no compatibility promise to anyone and costs nothing to move.
+Everything in this document is part of **v1.0.0**, not a follow-up release. The repository had **no git remote** when this was written, and the existing `v1.0.0` tag was local-only, so it carried no compatibility promise and cost nothing to move. **As of 2026-09-18 there is a remote** — a private Gitea instance (A.1) — but nothing has been released from it and the reasoning is unchanged: the tag is still ours to move until W4 passes.
 
 **Action:** delete the local tag (`git tag -d v1.0.0`) and re-cut it when W4 passes. Until then the version in `Cargo.toml` should read `1.0.0-rc`.
 
@@ -794,14 +794,26 @@ Two agents work this plan at the same time: **Claude** and **Antigravity**. They
 
 ### A.1. Branches and worktrees
 
-```bash
-git worktree add -b v1.0-agy ../osupad-agy main   # Antigravity opens this folder
-git checkout -b v1.0-claude                        # Claude works in the main checkout
-```
+**Superseded 2026-09-18 by the owner. There is now one branch and one remote.**
 
-`main` is the integration target. Worktrees share one `.git`, so each side sees the other's commits immediately with no fetch: `git log v1.0-agy` works from either directory.
+The parallel split below ran its course: `v1.0-agy` and `v1.0-claude` were merged
+into `main` at `482a51b`, both branches deleted, and the `../osupad-agy` worktree
+removed. `main` is the only branch, and the only checkout is this one. **Do not
+recreate the per-agent branches.** If two agents genuinely need to work at once,
+cut a short-lived branch for the task and merge it when it closes.
 
-**There is no git remote.** Nothing has ever been pushed. Do not add a remote, do not push, do not open a PR.
+> *Historical, for reading the A.7 table:* Antigravity worked on `v1.0-agy` in a
+> `../osupad-agy` worktree, Claude on `v1.0-claude` in the main checkout, and
+> `main` was the integration target. Rows before `482a51b` refer to that layout.
+
+**There is now a remote.** `origin` is
+`https://git.gferreiro.com/GFerreiroS/osu-pad.git` — a **private** Gitea instance
+with Actions, reached over the owner's tailnet. It is not public, so **§W2-2 code
+signing stays deferred**: SignPath Foundation requires a publicly published
+repository. The §U-0.3 signing key's secret half has never been in the repo and
+still is not, so nothing about pushing changes its exposure — but it is still
+unencrypted and still must be re-cut with a passphrase before anything is
+published publicly.
 
 ### A.2. Columns
 
@@ -912,6 +924,7 @@ Keep it to one line per task. This is how the other agent learns what landed.
 | 2026-09-17 | A→B | `osupad-gui` is red on Windows | — | **B: four real compile errors, your files, not touched by me (A.3).** `single_instance.rs:111` `E0425` `CreateMutexW` missing from `windows_sys::Win32::System::Threading` (feature flag or moved path); `single_instance.rs:86` `E0308` `if self.0 != 0` — it is a `*mut c_void`, not a `usize`, so compare with `std::ptr::null_mut()`; `tray.rs:341` unused import `TrayIcon`, fatal under `-D warnings`; `main.rs:358` `E0560` `iced::window::settings::PlatformSpecific` has no `application_id` on Windows — that field is Linux-only and needs a `cfg`. **Also blocking you and everyone else:** `osupad-ui-preview` (which `osupad-gui` depends on) cannot build from a clean checkout, because `firmware/sdkconfig` and `firmware/managed_components/lvgl__lvgl` are both **gitignored** — §10.3, owner decision. |
 | 2026-09-17 | A | W4-2 Windows run | `f1433a5` | **Windows is no longer theoretical.** Built a Win 11 Pro 25H2 VM (UEFI+SecureBoot+TPM 2.0, unattended, two local accounts for WIN-03) and passed the pad through with the two `<hostdev>` entries. **PASS: WIN-01** (HID + inbox `usbser.sys`, no prompt, on a machine that never saw the installer — the §0 invariant), **WIN-02**, **WIN-03** (`tester2` gets access-denied on the pipe, the W0-2 deferral closed), **WIN-05** (0.75 s reconnect), **WIN-08** (COM15). **WIN-06 FAILS for an environmental reason**: `startupPolicy='optional'` covers VM start, *not* hot-attach, so when the pad flipped to `303a:1001` libvirt handed it back to the host mid-flash — needs bare metal or a PCI-passed USB controller, and the controller here also carries the webcam/Bluetooth so it was not taken. **WIN-04/WIN-07 blocked on B's GUI.** Also verified: **W0-4 paths on Windows**, and **W3-3 ownership across two machines on real hardware** — the Windows install saw a Linux-owned pad, paused sync and wrote nothing. **W32-01's replug half is now done** too: handing the pad to the VM and back is a real re-enumeration. `docs/testing-checklist.md` §§9–11. |
 | 2026-09-17 | A | full integration | `482a51b` | **`main`, `v1.0-claude` and `v1.0-agy` are all at this commit** — both columns merged, both worktrees clean, one starting point for whatever comes next. Only three files overlapped; `gui/src/main.rs` and `testing-checklist.md` auto-merged (B's rewrite kept the `last_backup: _,` line the auto-backup needs, and the checklist now carries B's Linux PKG column beside A's §§9–11), and the A.7 conflict was two sets of appended rows, both kept. Green on the result: `cargo fmt --check`, `clippy --workspace --all-targets -D warnings`, `cargo test --workspace` (226), firmware host tests, full ESP-IDF build. **Unchanged by the merge: `osupad-gui` still does not compile for windows-msvc** (§10.2) — B's four errors, and they block WIN-04, WIN-07 and PKG-Windows. |
+| 2026-09-18 | — | one branch, one remote | `39f9965` | **Owner decision.** `v1.0-agy` and `v1.0-claude` are deleted and the `../osupad-agy` worktree removed — they were three labels on one commit after `482a51b`, nothing was unmerged, and nothing was lost (that worktree held only 18 GB of regenerable build artifacts). **`main` is now the only branch and this is the only checkout**; A.1 says not to recreate the per-agent branches. `origin` added: `https://git.gferreiro.com/GFerreiroS/osu-pad.git`, a **private** Gitea with Actions on a Proxmox CT runner. **W2-2 stays deferred** — SignPath needs a *public* repo. Expect the first CI run to be red for the reason in §10.3 (`osupad-ui-preview` cannot build from a clean checkout), and the two `windows-latest` jobs to queue against a Linux-only runner until they are gated. |
 
 ### A.8. Open owner decisions
 
