@@ -30,9 +30,19 @@ fn main() {
         .include(&lvgl)
         .include(lvgl.join("src"))
         .include(&ui_core)
+        // The generated header is reached by name from OUT_DIR, and the
+        // macro carries angle brackets rather than a quoted absolute path.
+        // `#include LV_CONF_KCONFIG_EXTERNAL_INCLUDE` needs the delimiters to
+        // survive the compiler's command line, and the quotes in a
+        // `-DX="C:\path"` do not on MSVC: they are stripped before the
+        // preprocessor sees them, so the macro expanded bare and every LVGL
+        // file died with `error C2006: '#include': expected "FILENAME"`.
+        // Angle brackets need no quoting on any toolchain, and dropping the
+        // absolute path sidesteps backslash-escape trouble as well.
+        .include(&out)
         .define(
             "LV_CONF_KCONFIG_EXTERNAL_INCLUDE",
-            Some(format!("\"{}\"", kconfig_header.display()).as_str()),
+            Some("<lv_kconfig_host.h>"),
         )
         .flag_if_supported("-std=gnu11")
         .flag_if_supported("-w")
