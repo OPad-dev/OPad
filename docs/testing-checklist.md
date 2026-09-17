@@ -226,7 +226,27 @@ real HTTPS release host. Nothing was added to production to make this testable.
 | HW-01, HW-02 | Need 20 deliberate physical taps each, watched in `evtest`. |
 | FAIL-03 | Needs ~500 presses, then the power physically removed. |
 | STR-02 | Needs a real map played while disk I/O is watched. |
-| Automatic backup (§5.1 of `docs/recovery.md`) | Fires 20 s after a **play session**, so it has never run on this machine — `<data>/backups/` does not exist yet and `Last Backup` reads `Never`. The logic is covered by tests; the write itself is **unverified on hardware**. |
+| ~~Automatic backup~~ | **Done — see §9.5.** |
+
+### 9.5 Automatic counter backup, end to end on a running daemon
+
+`docs/recovery.md` §5.1. Driven with a stub tosu v2 server (state 2 for 25 s,
+then state 5) on a second port, so a real play session ran through the real
+daemon with the real pad attached. Nothing in the daemon knew it was a test.
+
+| Observation | Result |
+|---|---|
+| During PLAYING (t = 5, 10, 15 s) | No backup, `<data>/backups/` empty — **P1-3 held** |
+| During COOLDOWN (t = 20 s) | No backup |
+| IDLE reached | t = 25 s; post-play sync settled 06:54:25Z |
+| Backup written | 06:54:45Z — **exactly 20 s after IDLE**, seen between the t = 40 s and t = 45 s polls |
+| File | `osupad-backup-20260917T065445Z.json`, a valid `format_version: 1` document with `3745 / 20594` and generation 15 |
+| `osupadctl status` | `Last Backup: 2026-09-17T06:54:45Z` |
+| Daemon log | `Automatic counter backup written: …/osupad-backup-20260917T065445Z.json (3745 / 20594)` |
+
+Rotation to ten and cancellation by a new map inside the window are covered by
+unit tests only — reproducing them live needs eleven sessions and a second
+map, and the state machine exercised above is the same code.
 
 ---
 
