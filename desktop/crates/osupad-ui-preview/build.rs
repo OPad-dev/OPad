@@ -6,10 +6,12 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    let firmware = manifest
-        .join("../../../firmware")
-        .canonicalize()
-        .expect("firmware directory");
+    let firmware = strip_verbatim(
+        manifest
+            .join("../../../firmware")
+            .canonicalize()
+            .expect("firmware directory"),
+    );
     let lvgl = firmware.join("managed_components/lvgl__lvgl");
     let ui_core = firmware.join("main/ui/core");
     let sdkconfig = firmware.join("sdkconfig");
@@ -90,4 +92,22 @@ fn c_files(dir: &Path) -> Vec<PathBuf> {
         }
     }
     files
+}
+
+/// Drops Windows' `\\?\` extended-length prefix from a canonicalised path.
+///
+/// `Path::canonicalize` always returns the verbatim form on Windows, and it
+/// poisons everything downstream: `cc` shortens long command lines by making
+/// source paths relative, and relative-ising a `\\?\C:\...` path produced
+/// bare names like `\\lv_group.c`, so MSVC could not open a single LVGL
+/// source file. Every path here is far short of MAX_PATH, so the prefix buys
+/// nothing. No-op on Unix.
+fn strip_verbatim(path: PathBuf) -> PathBuf {
+    let s = path.to_string_lossy();
+    match s.strip_prefix(r"\\?\") {
+        // UNC shares canonicalise to `\\?\UNC\server\share`; turning that
+        // into `UNC\server\share` would be wrong, so leave it alone.
+        Some(rest) if !rest.starts_with("UNC\\") => PathBuf::from(rest.to_string()),
+        _ => path,
+    }
 }
