@@ -373,10 +373,13 @@ impl App {
             exit_on_close_request: false,
             // Our own title bar and resize edges (chrome.rs)
             decorations: false,
+            #[cfg(target_os = "linux")]
             platform_specific: window::settings::PlatformSpecific {
                 application_id: "osupad".to_string(),
                 ..Default::default()
             },
+            #[cfg(not(target_os = "linux"))]
+            platform_specific: Default::default(),
             ..Default::default()
         });
         self.window = Some(id);

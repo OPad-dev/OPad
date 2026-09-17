@@ -337,9 +337,7 @@ mod windows {
     use std::collections::HashMap;
     use std::sync::mpsc::{channel, Sender};
     use tray_icon::menu::{ContextMenu, Menu, MenuItem, PredefinedMenuItem};
-    use tray_icon::{
-        Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
-    };
+    use tray_icon::{Icon, MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
     use windows_sys::Win32::System::Threading::GetCurrentThreadId;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         DispatchMessageW, GetMessageW, PostThreadMessageW, TranslateMessage, MSG, WM_USER,

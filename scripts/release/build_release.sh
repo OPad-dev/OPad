@@ -95,11 +95,27 @@ echo "✓ Release archive created: dist/${ARCHIVE_NAME}"
 
 # 3. Generate SHA256SUMS
 echo ""
-echo "--- [3/3] Generating SHA256SUMS ---"
+echo "--- [3/4] Generating SHA256SUMS ---"
 cd "${DIST_DIR}"
 sha256sum * > SHA256SUMS
 echo "✓ Checksums generated:"
 cat SHA256SUMS
+
+# 4. Generate and sign release manifest (§U-0.3)
+KEY_FILE="${HOME}/.config/osupad/osupad-manifest.key"
+BASE_URL="${BASE_URL:-https://github.com/GFerreiroS/osu-pad/releases/latest/download}"
+FW_VER="${FIRMWARE_VERSION:-1.0.0}"
+if [ -f "${KEY_FILE}" ]; then
+    echo ""
+    echo "--- [4/4] Generating signed release manifest ---"
+    cargo run --manifest-path "${REPO_ROOT}/desktop/Cargo.toml" -p osupad-update --bin osupad-manifest -- \
+        --dist "${DIST_DIR}" \
+        --base-url "${BASE_URL}" \
+        --firmware-version "${FW_VER}"
+    echo "✓ Release manifest and signature created in dist/"
+else
+    echo "Note: Secret key not found at ${KEY_FILE}; skipping manifest signing."
+fi
 
 echo ""
 echo "=========================================="

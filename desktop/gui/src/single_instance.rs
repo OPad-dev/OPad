@@ -83,7 +83,7 @@ mod platform {
 
     impl Drop for MutexGuard {
         fn drop(&mut self) {
-            if self.0 != 0 {
+            if !self.0.is_null() {
                 unsafe {
                     windows_sys::Win32::Foundation::CloseHandle(self.0);
                 }
@@ -115,7 +115,7 @@ mod platform {
             )
         };
 
-        if handle == 0 {
+        if handle.is_null() {
             tracing::warn!("Failed to create single-instance mutex Local\\osupad-gui");
             return true;
         }
