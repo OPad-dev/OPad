@@ -93,14 +93,14 @@ These have no Linux counterpart and are new work, so every one starts NOT RUN.
 
 | ID | Test Item | Procedure | Acceptance Criteria | Status |
 |---|---|---|---|---|
-| WIN-01 | No driver hunt | Plug the pad into a Windows 10/11 machine that has never seen the installer. | Enumerates as an HID keyboard and a `usbser.sys` COM port with no prompt, no `.inf`, no Zadig. Typing works immediately. **This is the §0 invariant on Windows.** | **NOT RUN** |
-| WIN-02 | Second daemon refuses to start | Start `osupad-daemon.exe` twice. | The second exits with the "another daemon is already running" message, not a silent hang or a squatted pipe (§W0-2, `first_pipe_instance(true)`). | **NOT RUN** |
-| WIN-03 | IPC pipe is private to the user | From a second Windows account, try to open `\\.\pipe\osupad-ipc-{sid}` of the first. | Access denied. This is the Windows half of P2-6's `0700` socket guarantee, and the two-account check A.7 deferred from W0-2. | **NOT RUN** |
-| WIN-04 | Autostart values | Install, log out, log back in. | `HKCU\...\Run` holds exactly `osupad-daemon` → `"<dir>\osupad-daemon.exe"` and `osupad-gui` → `"<dir>\osupad-gui.exe" --tray` (§W1-1), and both are running. | **NOT RUN** |
-| WIN-05 | Hotplug within 2 s | With the daemon running, unplug the pad, wait 5 s, plug it back in. | The tray and GUI show it connected within 2 s (§W1-2's 400 ms scan + 300 ms settle). | **NOT RUN** |
-| WIN-06 | Flash with the GUI running | `osupadctl flash firmware\build\osupad-firmware.bin` without stopping the daemon first. | Succeeds. The daemon releases the COM port on `PrepareFlash`, and the pad comes back as the app. **This is §W1-3's acceptance criterion.** | **NOT RUN** |
-| WIN-07 | Recovery flash from a release | Follow `docs/recovery.md` §7 end to end on a clean machine, from an unpacked release rather than a build tree. | The pad comes back unclaimed, `osupadctl status` shows `Running Slot: ota_0`, and nothing in the doc turned out to be wrong. **This is §W3-4's acceptance criterion.** | **NOT RUN** |
-| WIN-08 | COM port above COM9 | Force the pad onto COM10 or higher (Device Manager → Port Settings → Advanced). | `osupadctl status`, `flash` and `bootloader` all still find and open it. | **NOT RUN** |
+| WIN-01 | No driver hunt | Plug the pad into a Windows 10/11 machine that has never seen the installer. | Enumerates as an HID keyboard and a `usbser.sys` COM port with no prompt, no `.inf`, no Zadig. Typing works immediately. **This is the §0 invariant on Windows.** | **PASS** (2026-09-17) — Win 11 Pro 25H2 VM that has never seen the installer. `HID Keyboard Device` on inbox `hidclass.sys` and `USB Serial Device (COM3)` on inbox `usbser.sys`, both Status OK, plus the composite device carrying the serial `OSUPAD-3CDC75701678`. No prompt, no `.inf`, no Zadig. |
+| WIN-02 | Second daemon refuses to start | Start `osupad-daemon.exe` twice. | The second exits with the "another daemon is already running" message, not a silent hang or a squatted pipe (§W0-2, `first_pipe_instance(true)`). | **PASS** (2026-09-17) — Second instance exits 1 with "Another osupad-daemon instance is already running at `\\.\pipe\osupad-ipc-S-1-5-21-…-1000`"; one process remains. The pipe name carries the user SID as §W0-2 requires. |
+| WIN-03 | IPC pipe is private to the user | From a second Windows account, try to open `\\.\pipe\osupad-ipc-{sid}` of the first. | Access denied. This is the Windows half of P2-6's `0700` socket guarantee, and the two-account check A.7 deferred from W0-2. | **PASS** (2026-09-17) — From `tester2`: `Access to the path is denied.` From `osupad` (the owner): opens. `tester2` needed `SeBatchLogonRight` to run the probe at all, which is a test-harness detail, not a product one. |
+| WIN-04 | Autostart values | Install, log out, log back in. | `HKCU\...\Run` holds exactly `osupad-daemon` → `"<dir>\osupad-daemon.exe"` and `osupad-gui` → `"<dir>\osupad-gui.exe" --tray` (§W1-1), and both are running. | **BLOCKED** — needs the installer, which bundles `osupad-gui`, which does not compile on Windows (§10.2). |
+| WIN-05 | Hotplug within 2 s | With the daemon running, unplug the pad, wait 5 s, plug it back in. | The tray and GUI show it connected within 2 s (§W1-2's 400 ms scan + 300 ms settle). | **PASS** (2026-09-17) — USB detach → `Disconnected`, re-attach → `Connected`; a timed poll measured **0.75 s**, inside the 2 s budget. |
+| WIN-06 | Flash with the GUI running | `osupadctl flash firmware\build\osupad-firmware.bin` without stopping the daemon first. | Succeeds. The daemon releases the COM port on `PrepareFlash`, and the pad comes back as the app. **This is §W1-3's acceptance criterion.** | **FAIL — VM only, see §11.3** (2026-09-17). The daemon released the port correctly and the flash began; it then died because **libvirt did not hot-attach the pad when its PID flipped** to the bootloader. Not a product defect and **not a pass either** — it needs bare metal or PCI passthrough of the whole USB controller. |
+| WIN-07 | Recovery flash from a release | Follow `docs/recovery.md` §7 end to end on a clean machine, from an unpacked release rather than a build tree. | The pad comes back unclaimed, `osupadctl status` shows `Running Slot: ota_0`, and nothing in the doc turned out to be wrong. **This is §W3-4's acceptance criterion.** | **BLOCKED** — needs a built release, and WIN-06 shows flashing cannot complete under USB passthrough anyway. |
+| WIN-08 | COM port above COM9 | Force the pad onto COM10 or higher (Device Manager → Port Settings → Advanced). | `osupadctl status`, `flash` and `bootloader` all still find and open it. | **PASS** (2026-09-17) — Forced to **COM15** via the device's `PortName`. Daemon logged "Opening osu!pad serial port at COM15" / "Connected to osu!pad on COM15" and `osupadctl status` returned the full pad state. `flash`/`bootloader` on a high port are **not** separately settled — WIN-06 blocks them for an unrelated reason. |
 
 ---
 
@@ -193,7 +193,7 @@ observability gap, not a functional one.
 
 | ID | Test | Result | Evidence |
 |---|---|---|---|
-| W32-01 | Silent claim survives a replug | **PARTIAL — needs a physical replug** | The *mechanism* is proven: the pad reported owner `f4fc8f69…` — this install's id — on a fresh daemon start, so the silent claim really was written to NVS, and no prompt appeared. What is **not** yet done is pulling the cable: this session could not physically unplug it, and `/sys/bus/usb/.../authorized` needs root. A cable replug also power-cycles the pad, which a daemon restart does not. |
+| W32-01 | Silent claim survives a replug | **PASS** (completed 2026-09-17, §11.2) | The *mechanism* is proven: the pad reported owner `f4fc8f69…` — this install's id — on a fresh daemon start, so the silent claim really was written to NVS, and no prompt appeared. **Completed via USB passthrough:** the pad was handed to the Windows VM and taken back, which unbinds it from the host, re-enumerates it and gives the daemon a fresh `/dev/ttyACM0`; it was also reflashed and rebooted in between. On reconnect there was **no prompt**, sync completed immediately and the counters were unchanged — the `aaf6ca9` regression, on a real re-enumeration. It still does **not** power-cycle the pad, so FAIL-03 remains open. |
 | W32-02 | A re-claim writes nothing | **PASS** | On every reconnect after the first, the pad reported the owner it already had and the host sent no `ClaimOwnership` (host side, `Ownership::Ours`). The firmware's own `OWNER_CLAIM_ALREADY_OWNED` no-op is covered by `test_reclaim_by_the_same_host_writes_nothing`. |
 | W32-03 | Takeover prompt with a wiped `app_state` | **PASS** | Deleting `install.id` and restarting produced `pending_takeover { device_id, device_key1: 3745, device_key2: 20594, pc_key1: 3745, pc_key2: 20594 }` over IPC, and counter sync stayed blocked until it was answered. Resolving it wrote the new owner — a later fresh start saw the pad as its own and resumed syncing, which is the `aaf6ca9` regression, re-confirmed. |
 | W32-04 | A claim during PLAYING is refused | **PASS** | Drove the pad into PLAYING with `HostStatus { playing: true }`, sent a claim for a different owner: `owner_id` unchanged. **Control:** the identical claim applied once the pad returned to IDLE, so the refusal was the P1-3 state guard and not a broken claim path. |
@@ -222,7 +222,7 @@ real HTTPS release host. Nothing was added to production to make this testable.
 
 | ID | Why it is not done |
 |---|---|
-| W32-01 (replug half) | Needs a person to pull and re-insert the cable. |
+| ~~W32-01 (replug half)~~ | **Done 2026-09-17** via USB passthrough — see §9.2 and §11.2. |
 | HW-01, HW-02 | Need 20 deliberate physical taps each, watched in `evtest`. |
 | FAIL-03 | Needs ~500 presses, then the power physically removed. |
 | STR-02 | Needs a real map played while disk I/O is watched. |
@@ -308,6 +308,71 @@ firmware tree are all defensible — **owner decision, not settled here.**
 
 ---
 
+## 11. Windows run, 2026-09-17 — environment and caveats
+
+### 11.1 The machine
+
+Windows 11 Pro 25H2 (build 26200.8037) in a libvirt/QEMU VM: q35, UEFI with
+Secure Boot, emulated TPM 2.0 (swtpm), 4 vCPU, 6 GB, SATA disk, e1000e NIC.
+Installed fully unattended. Rust 1.98.1 `x86_64-pc-windows-msvc`, VS 2022 Build
+Tools 14.44, protoc 36.0, Inno Setup 6.7.3. Two local accounts, `osupad`
+(admin) and `tester2` (standard), created at install time for WIN-03.
+
+**The installer was never run on this machine**, which is what makes WIN-01 a
+real test of the §0 invariant rather than a formality.
+
+### 11.2 The pad reached the VM by USB passthrough
+
+Two `<hostdev>` entries with `startupPolicy='optional'`, one for `303a:4001`
+(application) and one for `303a:1001` (ROM bootloader), attached live.
+
+Because attach and detach are software operations, WIN-05's hotplug was done
+without anyone touching the cable — and on the Linux side, handing the pad to
+the VM and taking it back is a genuine USB re-enumeration, which is how
+**W32-01's replug half finally got tested** (§9.2 is updated).
+
+### 11.3 WIN-06 failed for an environmental reason, and that matters
+
+`osupadctl flash` got as far as "Asking osupad-daemon to release the serial
+port…", the pad rebooted into the ROM bootloader, and the flash then died with
+`COM3 could not be opened`. The cause is the one §W4-2's own instructions
+warned about: **`startupPolicy='optional'` governs VM start, not hot-attach.**
+When the pad re-enumerated as `303a:1001`, libvirt left that entry
+`missing='yes'` and handed the device back to the *host* instead of the guest.
+
+- This is **not** evidence against §W1-3. The daemon's half — releasing the
+  port on `PrepareFlash` — worked.
+- It is **not a pass** either. Flashing from Windows is unverified.
+- The pad was left in ROM download mode, exactly the recoverable state
+  `docs/recovery.md` §7.6 describes, and was recovered from Linux in one
+  `osupadctl flash`. The honest failure mode really is honest.
+- **To settle WIN-06:** bare metal, or PCI-pass the whole USB controller. The
+  latter was **not** attempted here: the pad shares bus 001 with this machine's
+  webcam, Bluetooth radio and another HID device, so passing the controller
+  through would strip them from the host mid-session.
+
+### 11.4 Verified along the way, outside the numbered rows
+
+- **§W0-4 paths on Windows.** The daemon resolved
+  `C:\Users\osupad\AppData\Roaming\osupad\osupad.db` and
+  `…\osupad\backups` with no configuration.
+- **§W3-3 ownership across two machines, on real hardware.** The pad is owned
+  by the Linux install. The Windows daemon saw a foreign pad, **paused counter
+  sync** (`Last Sync: Never`) and printed the takeover warning with both
+  counter pairs. Nothing was written and the counters were untouched — the pad
+  kept working as a keyboard throughout, and it came back to Linux still owned
+  by Linux.
+- **The new `Ownership:` line in `osupadctl status`** is what made that legible
+  on a machine with no GUI. Without it the pad looks connected and simply never
+  syncs.
+
+One cosmetic thing to be aware of: for a foreign pad, `osupadctl status` prints
+the **host's** `Key Pins` (the local default, `GPIO14`/`GPIO9`), not the pad's
+(`GPIO2`/`GPIO13`), because config is not synced from a pad this install does
+not own. Correct behaviour, mildly misleading presentation.
+
+---
+
 ## 8. Verification Sign-Off
 
 - **Linux v1.0.0, 2026-09-13:** sections 1–4 verified and passing, **except**
@@ -315,8 +380,13 @@ firmware tree are all defensible — **owner decision, not settled here.**
   two-slot partition table and are re-opened in §9.4.
 - **Linux, 2026-09-17:** U-3a, four of the five W3-2 checks, and U-3b's happy
   path all pass on the pad — see §9. The rest need a person at the hardware.
-- **Windows:** not started. Sections 1–4's Windows column, and sections 5–7
-  entirely, are open.
+- **Windows, 2026-09-17:** the port is real. WIN-01, WIN-02, WIN-03, WIN-05 and
+  WIN-08 **pass** on Windows 11 Pro 25H2; the `rust-windows` CI job passes in
+  full (§10). WIN-06 **fails for an environmental reason** (§11.3) and WIN-04 /
+  WIN-07 are **blocked** on `osupad-gui`, which does not compile on Windows
+  (§10.2, four errors handed to column B). Sections 1–4's Windows column and
+  section 6 are still untouched — they need physical key presses, a real map,
+  and an installer.
 - **Updates (section 7):** unblocked — the §U-0.3 signing key exists as of
   2026-09-17 (A.8 settled). No row in section 7 has been run yet.
 - **Latency:** see `docs/latency-testing.md`. The Linux table is still empty
