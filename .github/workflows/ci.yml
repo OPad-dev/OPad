@@ -30,7 +30,8 @@ jobs:
             libxkbcommon-dev \
             libwayland-dev \
             libfontconfig1-dev \
-            libdbus-1-dev
+            libdbus-1-dev \
+            protobuf-compiler
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -63,6 +64,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Install protoc
+        # osupad-protocol's build.rs runs prost-build, which shells out to
+        # protoc on every platform. It is not preinstalled on the runners, so
+        # without this the very first crate in the graph fails to build.
+        run: choco install protoc --no-progress -y
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -106,6 +113,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Install protoc
+        # osupad-protocol's build.rs runs prost-build, which shells out to
+        # protoc on every platform. It is not preinstalled on the runners, so
+        # without this the very first crate in the graph fails to build.
+        run: choco install protoc --no-progress -y
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
