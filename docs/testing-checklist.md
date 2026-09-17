@@ -250,6 +250,64 @@ map, and the state machine exercised above is the same code.
 
 ---
 
+## 10. W4-1 CI, run by hand on Windows (2026-09-17)
+
+No CI job in this repository has ever executed — there is no remote (A.2).
+These are the `.github/workflows/ci.yml` Windows job commands, run by hand in a
+Windows 11 Pro 25H2 (build 26200) VM with Rust 1.98.1 MSVC and VS 2022 Build
+Tools 14.44.
+
+| Job / step | Result |
+|---|---|
+| `rust-windows` / `cargo fmt --check` | **PASS** |
+| `rust-windows` / `cargo clippy --workspace --exclude osupad-gui --all-targets -- -D warnings` | **PASS** |
+| `rust-windows` / `cargo build --workspace --exclude osupad-gui` | **PASS** |
+| `rust-windows` / `cargo test --workspace --exclude osupad-gui` | **PASS** |
+| `rust-windows-gui` / `cargo clippy -p osupad-gui --all-targets -- -D warnings` | **FAIL** — four errors, §10.2 |
+| `rust-windows-gui` / `cargo build -p osupad-gui` | **FAIL** — same four |
+
+**The eleven non-GUI crates are green on Windows**: they compile, lint clean
+under `-D warnings`, and their whole test suite passes on a real windows-msvc
+host. That is the first actual evidence for §W4-2 that the port works.
+
+### 10.1 Three defects had to be fixed before any of it could run
+
+1. **`protoc` was installed by no job at all** (`1c0fb3f`). `osupad-protocol`'s
+   build script drives prost-build, which needs `protoc` on every platform and
+   has not vendored it since 0.11. Neither the Ubuntu apt list nor the two
+   Windows jobs provided it, so the first crate in the graph failed everywhere.
+   **The Linux job was equally broken and nobody could have known.**
+2. **The LVGL include macro could not survive MSVC** (`67f00fc`). MSVC strips
+   the quotes from `-DX="..."`, so `#include LV_CONF_KCONFIG_EXTERNAL_INCLUDE`
+   expanded bare and every LVGL file died with `error C2006`.
+3. **`\\?\` verbatim paths broke the source list** (`cd33dc4`).
+   `canonicalize()` returns the extended-length form on Windows; `cc` shortens
+   long command lines by relative-ising source paths, and doing that to a
+   verbatim path yielded `'\\lv_group.c'`.
+
+### 10.2 `osupad-gui` — four Windows errors, for column B
+
+These are in **B's files** and are left for B, per A.3. Exact locations:
+
+| # | Where | Error |
+|---|---|---|
+| 1 | `gui/src/single_instance.rs:111:52` | `E0425`: `CreateMutexW` not found in `windows_sys::Win32::System::Threading` — the W0-3 mutex; looks like a missing `windows-sys` feature or a moved module path |
+| 2 | `gui/src/single_instance.rs:86:26` | `E0308`: `if self.0 != 0` — expected `*mut c_void`, found `usize`. The handle is a pointer; compare against `std::ptr::null_mut()` |
+| 3 | `gui/src/tray.rs:341:46` | `unused import: TrayIcon` — fatal under `-D warnings` |
+| 4 | `gui/src/main.rs:358:17` | `E0560`: `iced::window::settings::PlatformSpecific` has no field `application_id` — that field is Linux-only and needs a `cfg` |
+
+### 10.3 Still blocking CI regardless of the above
+
+`osupad-ui-preview` needs `firmware/sdkconfig` and
+`firmware/managed_components/lvgl__lvgl`, and **both are gitignored**, so the
+crate cannot build from a clean checkout on any runner. `osupad-gui` depends on
+it, so `--exclude` cannot hide it. This VM run only got past it because those
+204 MB of build inputs were copied in by hand. Giving CI an ESP-IDF step,
+vendoring LVGL at a pinned version, or letting the crate degrade without the
+firmware tree are all defensible — **owner decision, not settled here.**
+
+---
+
 ## 8. Verification Sign-Off
 
 - **Linux v1.0.0, 2026-09-13:** sections 1–4 verified and passing, **except**
