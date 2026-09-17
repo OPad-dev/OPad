@@ -108,9 +108,16 @@ pub fn spawn_update_worker(
         tokio::time::sleep(Duration::from_secs(90)).await;
         let mut manifest: Option<ReleaseManifest> = None;
 
+        // An interval, not a sleep inside the loop: `tick()` fires immediately
+        // the first time, so the first check happens at the 90 s mark above.
+        // A `sleep(TICK)` there would have made it 90 s *plus* a full tick, so
+        // a fresh install went its first quarter of an hour without ever
+        // checking — and the 90 s spread would have bought nothing.
+        let mut ticker = tokio::time::interval(TICK);
+
         loop {
             tokio::select! {
-                _ = tokio::time::sleep(TICK) => {
+                _ = ticker.tick() => {
                     match tick(&daemon_state, &storage, &tosu_supervisor, &status).await {
                         Ok(m) => {
                             if m.is_some() {
@@ -213,7 +220,18 @@ async fn tick(
         }
     }
 
-    check_app(&manifest, daemon_state, storage, status)?;
+    // Reported, not propagated — exactly like the tosu arm above. A manifest
+    // that carries no app artifact for this platform (an unsupported arch, or
+    // a release that shipped one component late) must not throw the whole
+    // manifest away: the firmware offer (§U-3b) is read from it too, and
+    // losing it would silently disable firmware updates for a reason that has
+    // nothing to do with the firmware.
+    if let Err(e) = check_app(&manifest, daemon_state, storage, status) {
+        warn!("App update check failed: {}", e);
+        if let Ok(mut s) = status.lock() {
+            s.last_error = Some(e.to_string());
+        }
+    }
     Ok(Some(manifest))
 }
 

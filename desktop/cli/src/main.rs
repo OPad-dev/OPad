@@ -137,6 +137,7 @@ async fn main() -> Result<()> {
                 pending_replacement,
                 incompatible,
                 last_backup,
+                pending_takeover,
                 ..
             } = resp
             {
@@ -192,6 +193,24 @@ async fn main() -> Result<()> {
                 }
                 if let Some(err) = storage_error {
                     println!("Database Error:   ⚠ {}", err);
+                }
+                // §W3-3. Without this the CLI shows a connected pad that
+                // simply never syncs, with nothing saying why — the prompt
+                // used to exist only in the GUI, so a headless install had no
+                // way to even see that a pad belonged to someone else.
+                if let Some(t) = &pending_takeover {
+                    println!(
+                        "Ownership:        ⚠ This pad belongs to another osu!pad install. \
+                         Counter sync is paused until you decide."
+                    );
+                    println!(
+                        "                    pad: {} / {}   this PC: {} / {}",
+                        t.device_key1, t.device_key2, t.pc_key1, t.pc_key2
+                    );
+                    println!(
+                        "                    Take it over or leave it alone in the app; \
+                         see docs/recovery.md §7 to unbind it entirely."
+                    );
                 }
                 if let Some(old_id) = pending_replacement {
                     println!("Replacement:      ⚠ New pad detected (previous: {}). Run GUI to restore or adopt.", old_id);
