@@ -13,6 +13,7 @@ use osupad_model::{CounterState, DeviceConfig, LogSource, RuntimeMode};
 use osupad_storage::Storage;
 use osupad_tosu::{spawn_tosu_supervisor, TosuManager};
 
+pub mod backup;
 pub mod firmware_update;
 pub mod identity;
 pub mod ipc_handlers;
@@ -132,6 +133,21 @@ async fn main() -> Result<()> {
     );
 
     controller.set_install_id(install_id.clone());
+
+    // Seed the last-backup time from the directory so a restart reports what
+    // is really there rather than "Never".
+    match backup::backup_dir() {
+        Ok(dir) => {
+            controller.state.last_backup = backup::newest(&dir).map(backup::format_stamp);
+            info!(
+                "Automatic counter backups: {} (keeping the {} most recent, written {:?} after a session settles)",
+                dir.display(),
+                backup::KEEP,
+                runtime::AUTO_BACKUP_DELAY
+            );
+        }
+        Err(e) => warn!("Automatic counter backups are unavailable: {}", e),
+    }
 
     let daemon_state = Arc::new(Mutex::new(controller.state.clone()));
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
@@ -465,6 +481,18 @@ async fn main() -> Result<()> {
                     } => {
                         log_hub.push(LogSource::Esp, level, &tag, message);
                     }
+                    RuntimeAction::WriteAutoBackup => {
+                        // Synchronous and cheap (one small JSON file), and we
+                        // are in IDLE by construction. Every failure inside is
+                        // logged and swallowed: a backup must never be able to
+                        // take the daemon down or hold up anything else.
+                        if let Some(backup) = backup::current(&daemon_state, &storage) {
+                            if let Some(at) = backup::write_and_log(&backup) {
+                                daemon_state.lock().unwrap().last_backup =
+                                    Some(backup::format_stamp(at));
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -527,6 +555,7 @@ mod tests {
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
+            last_backup: None,
         }));
 
         // 1. GetStatus surfaces storage_error

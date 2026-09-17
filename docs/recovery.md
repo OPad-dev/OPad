@@ -71,6 +71,38 @@ When a player replaces their osu!pad or swaps hardware:
     1. `PreviewImport`: Validates JSON schema, key bindings, and counter values. Returns a side-by-side diff between current device state and backup state.
     2. `ImportBackup`: Requires explicit confirmation (`confirm: true`). Preserves local `tosu_endpoint`, increments generation, applies config to device, and commits new counter state.
 
+### 5.1 Automatic backups
+
+Exporting by hand only helps the people who remember to do it, so the daemon
+also writes a backup **by itself**, in the same §21 JSON format, after every
+play session:
+
+| | |
+|---|---|
+| Where | `<data>/backups/osupad-backup-YYYYMMDDTHHMMSSZ.json` — `~/.local/share/osupad/backups` on Linux, `%APPDATA%\osupad\backups` on Windows |
+| When | **20 seconds** after a session has settled into `IDLE` |
+| How many | The **10 most recent**. Older ones are deleted; files the daemon did not write are never touched. |
+| Restore | `osupadctl import <file>` — identical to a manual export, because it is the same document built by the same code |
+| Last one | `osupadctl status` → `Last Backup`, and the full path is in the daemon log every time one is written |
+
+**The 20 seconds are not a nicety.** A backup is a storage write, and P1-3
+forbids storage writes during `PLAYING` and `COOLDOWN` (§6). The sequence after
+a map is `COOLDOWN` → `SYNC` → `IDLE`; the timer starts only once the post-play
+sync has settled, and the write re-checks that the mode is still `IDLE` before
+it happens. Starting another map inside the window **cancels** the pending
+write rather than deferring it — the next session arms a fresh one.
+
+It is also deliberately incapable of causing a problem: a backup that cannot be
+written is logged and forgotten. It never fails the sync, never blocks the
+daemon and never surfaces an error dialog, because a safety net that can break
+the thing it protects is worse than no safety net. The corollary is that you
+should check `Last Backup` occasionally rather than assume it.
+
+What it does **not** do: it is a copy of the counters, not a second source of
+truth. It is written after the sync, so if the sync failed the backup carries
+the same stale numbers the daemon had — better than nothing, which is the point,
+but not a substitute for a working sync.
+
 ---
 
 ## 6. Deferred Operations During Gameplay
@@ -118,6 +150,21 @@ JSON anyway — it is the only copy that survives reinstalling the app:
 ```bash
 osupadctl export ~/osupad-backup.json     # or: the app → Device → Export backup
 ```
+
+**There is probably already one.** Since the automatic backups landed (§5.1)
+the daemon writes a JSON export 20 seconds after every play session, keeping
+the ten newest in `<data>/backups/`. Check what is there before you erase
+anything:
+
+```bash
+osupadctl status | grep 'Last Backup'
+ls -t ~/.local/share/osupad/backups/ | head        # %APPDATA%\osupad\backups on Windows
+```
+
+Export by hand anyway. It costs a second, it puts the file somewhere you chose
+rather than inside the directory a reinstall may clear, and the automatic one
+is as old as your last session — which is not the same as "as old as the
+counters", if you have played since the pad last synced.
 
 Restore it afterwards with `osupadctl import ~/osupad-backup.json`, which bumps
 the counter generation and writes the counts back to the pad (§5).

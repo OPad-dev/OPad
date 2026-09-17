@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod firmware_update;
 pub mod identity;
 pub mod ipc_handlers;

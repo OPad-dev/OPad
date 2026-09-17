@@ -454,6 +454,9 @@ impl App {
                         pending_replacement,
                         incompatible,
                         pending_takeover,
+                        // Shown by `osupadctl status`; a GUI surface for it is
+                        // B's to add if it is wanted.
+                        last_backup: _,
                     }) => {
                         self.daemon_online = true;
                         self.mode = mode;

@@ -136,6 +136,7 @@ async fn main() -> Result<()> {
                 latency,
                 pending_replacement,
                 incompatible,
+                last_backup,
                 ..
             } = resp
             {
@@ -179,6 +180,12 @@ async fn main() -> Result<()> {
                 println!(
                     "Last Sync:        {}",
                     last_sync_time.as_deref().unwrap_or("Never")
+                );
+                // Written automatically 20 s after a session settles into
+                // IDLE; see docs/recovery.md §5.
+                println!(
+                    "Last Backup:      {}",
+                    last_backup.as_deref().unwrap_or("Never")
                 );
                 if let Some(err) = last_sync_error {
                     println!("Last Sync Error:  ⚠ {}", err);

@@ -241,6 +241,10 @@ pub enum IpcResponse {
         pending_takeover: Option<Box<TakeoverPrompt>>,
         #[serde(default)]
         incompatible: Option<IncompatibleDevice>,
+        /// When the daemon last wrote an automatic counter backup, RFC 3339.
+        /// `None` means it never has — not that backups are off.
+        #[serde(default)]
+        last_backup: Option<String>,
     },
     ConfigUpdated {
         config: DeviceConfig,

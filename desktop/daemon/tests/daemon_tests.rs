@@ -400,6 +400,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
+            last_backup: None,
         }));
 
         // Set storage writes blocked guard
@@ -626,6 +627,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
+            last_backup: None,
         }));
 
         let res = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
@@ -681,6 +683,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
+            last_backup: None,
         }));
 
         let res = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
@@ -779,6 +782,7 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
+        last_backup: None,
     }));
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
@@ -839,6 +843,7 @@ async fn test_json_validation_preview_and_confirm() {
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
+        last_backup: None,
     }));
 
     // 1. Preview with counter rollback & generation bump warnings
@@ -943,6 +948,7 @@ async fn test_ipc_handshake_mismatch_and_protocol_version() {
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
+        last_backup: None,
     }));
 
     // Protocol mismatch rejected
@@ -1052,6 +1058,7 @@ async fn test_install_update_is_refused_outside_idle() {
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
+            last_backup: None,
         }));
 
         let resp = handle_ipc_request(
@@ -1103,6 +1110,7 @@ async fn test_firmware_is_not_an_enableable_updater() {
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
+        last_backup: None,
     }));
 
     let resp = handle_ipc_request(
@@ -1925,6 +1933,7 @@ fn firmware_update_fixture(mode: RuntimeMode, connected: bool) -> IpcFixture {
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
+        last_backup: None,
     }));
 
     (
@@ -2096,4 +2105,280 @@ async fn test_firmware_flash_is_refused_when_the_database_is_unavailable() {
         }
         other => panic!("expected a rejection, got {other:?}"),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Automatic JSON counter backups.
+//
+// The timing is the whole design: a backup is a storage write, so P1-3 forbids
+// it during PLAYING and COOLDOWN, and the delay is what keeps it out of both.
+// ---------------------------------------------------------------------------
+
+/// Drives one full play session and returns the controller sitting in IDLE
+/// with the backup armed, plus the instant the sync completed.
+fn play_a_session(start: Instant) -> (RuntimeController, Instant) {
+    let mut controller = RuntimeController::new(
+        DeviceConfig::default(),
+        None,
+        CounterState::default(),
+        HashMap::new(),
+        None,
+        Vec::new(),
+        start,
+    );
+
+    let _ = controller.on_event(
+        RuntimeEvent::TosuTelemetry {
+            is_playing: true,
+            live_time_ms: 1000.0,
+            title: "A Map".to_string(),
+            values: Vec::new(),
+        },
+        start,
+    );
+    let ended = start + Duration::from_secs(60);
+    let _ = controller.on_event(
+        RuntimeEvent::TosuTelemetry {
+            is_playing: false,
+            live_time_ms: 0.0,
+            title: "A Map".to_string(),
+            values: Vec::new(),
+        },
+        ended,
+    );
+    assert_eq!(controller.state.mode, RuntimeMode::Cooldown);
+
+    // Cooldown expires into SYNC
+    let synced = ended + COOLDOWN_DURATION;
+    let actions = controller.on_event(RuntimeEvent::Tick(synced), synced);
+    assert_eq!(controller.state.mode, RuntimeMode::Sync);
+    assert!(actions.contains(&RuntimeAction::TriggerSync));
+    // Not yet: SYNC is not IDLE
+    assert!(!actions.contains(&RuntimeAction::WriteAutoBackup));
+
+    let _ = controller.on_event(
+        RuntimeEvent::SyncCompleted {
+            success: true,
+            counters: CounterState::default(),
+            time_str: Some("2026-09-17T00:00:00Z".to_string()),
+            error: None,
+        },
+        synced,
+    );
+    assert_eq!(controller.state.mode, RuntimeMode::Idle);
+    (controller, synced)
+}
+
+#[tokio::test]
+async fn backup_fires_twenty_seconds_after_cooldown_settles_into_idle() {
+    let start = Instant::now();
+    let (mut controller, synced) = play_a_session(start);
+
+    // 19 s: still waiting
+    let early = synced + Duration::from_secs(19);
+    let actions = controller.on_event(RuntimeEvent::Tick(early), early);
+    assert!(
+        !actions.contains(&RuntimeAction::WriteAutoBackup),
+        "the delay must not be shortened"
+    );
+
+    // 20 s: written
+    let due = synced + Duration::from_secs(20);
+    let actions = controller.on_event(RuntimeEvent::Tick(due), due);
+    assert!(actions.contains(&RuntimeAction::WriteAutoBackup));
+    assert_eq!(controller.state.mode, RuntimeMode::Idle);
+
+    // …exactly once. A backup per tick would be a rotation shredder.
+    let later = due + Duration::from_secs(60);
+    let actions = controller.on_event(RuntimeEvent::Tick(later), later);
+    assert!(!actions.contains(&RuntimeAction::WriteAutoBackup));
+}
+
+#[tokio::test]
+async fn backup_never_fires_during_a_map_or_a_cooldown() {
+    let start = Instant::now();
+    let mut controller = RuntimeController::new(
+        DeviceConfig::default(),
+        None,
+        CounterState::default(),
+        HashMap::new(),
+        None,
+        Vec::new(),
+        start,
+    );
+
+    let _ = controller.on_event(
+        RuntimeEvent::TosuTelemetry {
+            is_playing: true,
+            live_time_ms: 1000.0,
+            title: "A Map".to_string(),
+            values: Vec::new(),
+        },
+        start,
+    );
+
+    // Five minutes of ticks mid-map: not one backup, and no storage write of
+    // any kind is enabled.
+    for i in 1..=300 {
+        let t = start + Duration::from_secs(i);
+        let actions = controller.on_event(RuntimeEvent::Tick(t), t);
+        assert!(
+            !actions.contains(&RuntimeAction::WriteAutoBackup),
+            "a backup during PLAYING violates P1-3 (t = {i}s)"
+        );
+        assert!(!actions.contains(&RuntimeAction::SetStorageWritesAllowed(true)));
+    }
+
+    // And across the cooldown, before the sync re-enables writes
+    let ended = start + Duration::from_secs(301);
+    let _ = controller.on_event(
+        RuntimeEvent::TosuTelemetry {
+            is_playing: false,
+            live_time_ms: 0.0,
+            title: "A Map".to_string(),
+            values: Vec::new(),
+        },
+        ended,
+    );
+    for i in 1..5 {
+        let t = ended + Duration::from_secs(i);
+        let actions = controller.on_event(RuntimeEvent::Tick(t), t);
+        assert_eq!(controller.state.mode, RuntimeMode::Cooldown);
+        assert!(
+            !actions.contains(&RuntimeAction::WriteAutoBackup),
+            "a backup during COOLDOWN violates P1-3 (t = {i}s)"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_map_starting_inside_the_window_cancels_the_pending_backup() {
+    let start = Instant::now();
+    let (mut controller, synced) = play_a_session(start);
+
+    // 10 s into the 20 s window the next map starts
+    let next_map = synced + Duration::from_secs(10);
+    let _ = controller.on_event(
+        RuntimeEvent::TosuTelemetry {
+            is_playing: true,
+            live_time_ms: 500.0,
+            title: "The Next Map".to_string(),
+            values: Vec::new(),
+        },
+        next_map,
+    );
+    assert_eq!(controller.state.mode, RuntimeMode::Playing);
+    assert_eq!(controller.backup_deadline, None, "cancelled, not deferred");
+
+    // Past the original deadline, mid-map: nothing is written
+    for i in 11..40 {
+        let t = synced + Duration::from_secs(i);
+        let actions = controller.on_event(RuntimeEvent::Tick(t), t);
+        assert!(!actions.contains(&RuntimeAction::WriteAutoBackup));
+    }
+
+    // The new session gets its own backup when *it* settles
+    let ended = next_map + Duration::from_secs(60);
+    let _ = controller.on_event(
+        RuntimeEvent::TosuTelemetry {
+            is_playing: false,
+            live_time_ms: 0.0,
+            title: "The Next Map".to_string(),
+            values: Vec::new(),
+        },
+        ended,
+    );
+    let synced2 = ended + COOLDOWN_DURATION;
+    let _ = controller.on_event(RuntimeEvent::Tick(synced2), synced2);
+    let _ = controller.on_event(
+        RuntimeEvent::SyncCompleted {
+            success: true,
+            counters: CounterState::default(),
+            time_str: None,
+            error: None,
+        },
+        synced2,
+    );
+    let due = synced2 + Duration::from_secs(20);
+    let actions = controller.on_event(RuntimeEvent::Tick(due), due);
+    assert!(actions.contains(&RuntimeAction::WriteAutoBackup));
+}
+
+#[tokio::test]
+async fn the_periodic_idle_sync_does_not_arm_a_backup() {
+    // Only a play session's sync arms one. Otherwise an idle machine would
+    // rotate the whole directory away every 50 minutes and lose the real ones.
+    let start = Instant::now();
+    let mut controller = RuntimeController::new(
+        DeviceConfig::default(),
+        None,
+        CounterState::default(),
+        HashMap::new(),
+        None,
+        Vec::new(),
+        start,
+    );
+    let _ = controller.on_event(
+        RuntimeEvent::SyncCompleted {
+            success: true,
+            counters: CounterState::default(),
+            time_str: None,
+            error: None,
+        },
+        start,
+    );
+    assert_eq!(controller.backup_deadline, None);
+
+    let due = start + Duration::from_secs(60);
+    let actions = controller.on_event(RuntimeEvent::Tick(due), due);
+    assert!(!actions.contains(&RuntimeAction::WriteAutoBackup));
+}
+
+#[tokio::test]
+async fn a_failed_post_play_sync_still_gets_a_backup() {
+    // The sync failing is precisely when the counters in memory are the only
+    // record, so this is the case the feature exists for.
+    let start = Instant::now();
+    let mut controller = RuntimeController::new(
+        DeviceConfig::default(),
+        None,
+        CounterState::default(),
+        HashMap::new(),
+        None,
+        Vec::new(),
+        start,
+    );
+    let _ = controller.on_event(
+        RuntimeEvent::TosuTelemetry {
+            is_playing: true,
+            live_time_ms: 1000.0,
+            title: "A Map".to_string(),
+            values: Vec::new(),
+        },
+        start,
+    );
+    let ended = start + Duration::from_secs(60);
+    let _ = controller.on_event(
+        RuntimeEvent::TosuTelemetry {
+            is_playing: false,
+            live_time_ms: 0.0,
+            title: "A Map".to_string(),
+            values: Vec::new(),
+        },
+        ended,
+    );
+    let synced = ended + COOLDOWN_DURATION;
+    let _ = controller.on_event(RuntimeEvent::Tick(synced), synced);
+    let _ = controller.on_event(
+        RuntimeEvent::SyncCompleted {
+            success: false,
+            counters: CounterState::default(),
+            time_str: None,
+            error: Some("the pad went away".to_string()),
+        },
+        synced,
+    );
+    let due = synced + Duration::from_secs(20);
+    let actions = controller.on_event(RuntimeEvent::Tick(due), due);
+    assert!(actions.contains(&RuntimeAction::WriteAutoBackup));
 }

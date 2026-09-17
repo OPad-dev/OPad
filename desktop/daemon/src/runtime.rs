@@ -16,6 +16,14 @@ pub const COOLDOWN_DURATION: Duration = Duration::from_secs(5);
 pub const HOST_STATUS_INTERVAL: Duration = Duration::from_secs(1);
 pub const STATUS_POLL_INTERVAL: Duration = Duration::from_secs(1);
 pub const RETRY_REWIND_MS: f64 = 2000.0;
+/// How long after a play session has settled the automatic backup is written.
+///
+/// A backup is a storage write, so P1-3 forbids it during PLAYING and
+/// COOLDOWN; this delay is measured from IDLE, not from the end of the map,
+/// and the write re-checks IDLE when it fires. It is also long enough that
+/// starting the next map immediately cancels the write instead of racing it.
+/// Do not shorten it — the delay *is* the mechanism.
+pub const AUTO_BACKUP_DELAY: Duration = Duration::from_secs(20);
 
 #[derive(Clone, Debug)]
 pub struct DaemonState {
@@ -49,6 +57,10 @@ pub struct DaemonState {
     pub incompatible: Option<IncompatibleDevice>,
     pub ui_values: Vec<(u8, SourceValue)>,
     pub custom_layouts: HashMap<Screen, Layout>,
+    /// When the last automatic counter backup was written, RFC 3339. Seeded
+    /// at startup from the backup directory, so a restart does not read as
+    /// "never".
+    pub last_backup: Option<String>,
 }
 
 /// The four cases in the §W3-3 table
@@ -142,12 +154,24 @@ pub enum RuntimeAction {
         tag: String,
         message: String,
     },
+    /// Write a JSON counter backup to `<data>/backups` (§P1-3-safe: only ever
+    /// emitted in IDLE, `AUTO_BACKUP_DELAY` after the post-play sync settled).
+    WriteAutoBackup,
 }
 
 pub struct RuntimeController {
     pub state: DaemonState,
     pub pending_ops: PendingOperations,
     pub cooldown_deadline: Option<Instant>,
+    /// Armed when a play session's sync settles into IDLE; fires one
+    /// `WriteAutoBackup` and disarms. Cleared the moment the mode leaves IDLE,
+    /// so a new map cancels the pending write rather than deferring it.
+    pub backup_deadline: Option<Instant>,
+    /// Set on the COOLDOWN -> SYNC transition and consumed by the matching
+    /// `SyncCompleted`, so only a *post-play* sync arms a backup. The periodic
+    /// five-minute idle sync must not: it would turn the rotation into a
+    /// clock rather than a record of play sessions.
+    backup_after_sync: bool,
     pub last_host_status: Instant,
     pub last_status_poll: Instant,
     pub last_periodic_sync: Instant,
@@ -207,12 +231,15 @@ impl RuntimeController {
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: initial_layouts,
+            last_backup: None,
         };
 
         Self {
             state,
             pending_ops: PendingOperations::default(),
             cooldown_deadline: None,
+            backup_deadline: None,
+            backup_after_sync: false,
             last_host_status: now - HOST_STATUS_INTERVAL,
             last_status_poll: now,
             last_periodic_sync: now,
@@ -456,6 +483,11 @@ impl RuntimeController {
                     if current_mode != RuntimeMode::Playing {
                         self.state.mode = RuntimeMode::Playing;
                         self.cooldown_deadline = None;
+                        // A map started inside the backup window: cancel the
+                        // pending write outright rather than deferring it. The
+                        // next session's sync arms a fresh one.
+                        self.backup_deadline = None;
+                        self.backup_after_sync = false;
                         actions.push(RuntimeAction::SetStorageWritesAllowed(false));
                     }
 
@@ -513,6 +545,9 @@ impl RuntimeController {
                         if now >= deadline {
                             self.state.mode = RuntimeMode::Sync;
                             self.cooldown_deadline = None;
+                            // A play session just ended, so the sync that
+                            // follows is the one that arms a backup.
+                            self.backup_after_sync = true;
                             // SYNC is the phase where persistence is allowed again (§11.3)
                             actions.push(RuntimeAction::SetStorageWritesAllowed(true));
                             actions.push(RuntimeAction::TriggerSync);
@@ -576,6 +611,19 @@ impl RuntimeController {
                         }
                     }
                 }
+
+                // 6. The automatic counter backup, once the post-play sync has
+                //    settled and nothing has started since. The IDLE check is
+                //    repeated here rather than trusted from arming time: it is
+                //    a storage write, and P1-3 is absolute.
+                if let Some(deadline) = self.backup_deadline {
+                    if self.state.mode != RuntimeMode::Idle {
+                        self.backup_deadline = None;
+                    } else if now >= deadline {
+                        self.backup_deadline = None;
+                        actions.push(RuntimeAction::WriteAutoBackup);
+                    }
+                }
             }
 
             RuntimeEvent::SyncCompleted {
@@ -606,6 +654,17 @@ impl RuntimeController {
                 }
                 if self.state.mode == RuntimeMode::Idle {
                     actions.push(RuntimeAction::SetStorageWritesAllowed(true));
+                }
+
+                // Arm the automatic backup, but only for the sync that a play
+                // session triggered, and only if a new map has not already
+                // pulled us back out of IDLE. Armed even when the sync failed:
+                // the counters we hold are then the best record there is, and
+                // "the pad might die" is exactly the case this exists for.
+                if std::mem::take(&mut self.backup_after_sync)
+                    && self.state.mode == RuntimeMode::Idle
+                {
+                    self.backup_deadline = Some(now + AUTO_BACKUP_DELAY);
                 }
             }
 

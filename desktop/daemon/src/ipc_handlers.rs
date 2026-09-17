@@ -7,9 +7,7 @@ use osupad_ipc::{
     CurrentBackupState, IpcRequest, IpcResponse, UpdateComponent, IPC_PROTOCOL_VERSION,
 };
 use osupad_layout::Screen;
-use osupad_model::{
-    char_to_hid_usage, CounterState, DeviceConfig, DeviceInfo, JsonBackup, RuntimeMode,
-};
+use osupad_model::{char_to_hid_usage, CounterState, DeviceConfig, DeviceInfo, RuntimeMode};
 use osupad_storage::Storage;
 
 use crate::identity;
@@ -104,6 +102,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 pending_replacement: st.pending_replacement.clone(),
                 pending_takeover: takeover_prompt,
                 incompatible: st.incompatible.clone(),
+                last_backup: st.last_backup.clone(),
             }
         }
 
@@ -758,36 +757,14 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
         }
 
-        IpcRequest::ExportBackup => {
-            let st = state.lock().unwrap();
-            if !st.device_connected && st.device_info.is_none() && st.counters.device_id.is_empty()
-            {
-                return IpcResponse::OperationRejected {
-                    reason: "No counters known yet: connect the pad once".to_string(),
-                };
-            }
-            let info = st
-                .device_info
-                .clone()
-                .or_else(|| {
-                    storage.lock().unwrap().as_ref().and_then(|s| {
-                        s.list_device_states()
-                            .ok()?
-                            .into_iter()
-                            .find(|(i, _)| i.device_id == st.counters.device_id)
-                            .map(|(i, _)| i)
-                    })
-                })
-                .unwrap_or_else(|| DeviceInfo {
-                    device_id: st.counters.device_id.clone(),
-                    board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
-                    firmware_version: String::new(),
-                    protocol_version: 1,
-                    running_partition: None,
-                });
-            let backup = JsonBackup::new(&info, &st.counters, &st.config);
-            IpcResponse::BackupExported(backup)
-        }
+        IpcRequest::ExportBackup => match crate::backup::current(state, storage) {
+            // The same document the automatic backup writes (§21), built in
+            // one place so a manual export and an automatic one cannot differ.
+            Some(backup) => IpcResponse::BackupExported(backup),
+            None => IpcResponse::OperationRejected {
+                reason: "No counters known yet: connect the pad once".to_string(),
+            },
+        },
 
         IpcRequest::PreviewImport(backup) => {
             if let Err(err) = backup.validate() {
