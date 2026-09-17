@@ -3,7 +3,27 @@
 
 #define MyAppName "osu!pad"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+  #define CargoTomlPath "..\..\desktop\Cargo.toml"
+  #define FileHandle FileOpen(CargoTomlPath)
+  #if !FileHandle
+    #error "Could not open " + CargoTomlPath + " to derive installer version!"
+  #endif
+  #define FoundVersion 0
+  #sub ProcessCargoLine
+    #define FileLine FileRead(FileHandle)
+    #if Pos("version = """, Trim(FileLine)) == 1
+      #define LineTrimmed Trim(FileLine)
+      #define Remainder Copy(LineTrimmed, 12, Len(LineTrimmed))
+      #define EndQuote Pos("""", Remainder)
+      #define MyAppVersion Copy(Remainder, 1, EndQuote - 1)
+      #define FoundVersion 1
+    #endif
+  #endsub
+  #for { ; !FileEof(FileHandle) && !FoundVersion; } ProcessCargoLine
+  #expr FileClose(FileHandle)
+  #if !FoundVersion || (MyAppVersion == "")
+    #error "Could not read workspace version from " + CargoTomlPath + "!"
+  #endif
 #endif
 #define MyAppPublisher "GFerreiroS"
 #define MyAppURL "https://github.com/GFerreiroS/osupad"

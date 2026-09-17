@@ -31,9 +31,14 @@ cp "${SCRIPT_DIR}/AppRun" "${APPDIR}/AppRun"
 chmod +x "${APPDIR}/AppRun"
 cp "${SCRIPT_DIR}/osupad.desktop" "${APPDIR}/osupad.desktop"
 cp "${SCRIPT_DIR}/install-origin" "${APPDIR}/usr/lib/osupad/install-origin"
+mkdir -p "${APPDIR}/etc/osupad"
+cp "${SCRIPT_DIR}/install-origin" "${APPDIR}/etc/osupad/install-origin"
 
-# Provide fallback icon if none exists
-if [ -f "${REPO_ROOT}/packaging/linux/icons/hicolor/scalable/apps/osupad.svg" ]; then
+# Provide icon matching desktop entry
+if [ -f "${SCRIPT_DIR}/input-keyboard.svg" ]; then
+    cp "${SCRIPT_DIR}/input-keyboard.svg" "${APPDIR}/input-keyboard.svg"
+    cp "${SCRIPT_DIR}/input-keyboard.svg" "${APPDIR}/osupad.svg"
+elif [ -f "${REPO_ROOT}/packaging/linux/icons/hicolor/scalable/apps/osupad.svg" ]; then
     cp "${REPO_ROOT}/packaging/linux/icons/hicolor/scalable/apps/osupad.svg" "${APPDIR}/osupad.svg"
 elif [ -f "${REPO_ROOT}/packaging/linux/osupad.png" ]; then
     cp "${REPO_ROOT}/packaging/linux/osupad.png" "${APPDIR}/osupad.png"

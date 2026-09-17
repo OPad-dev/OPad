@@ -108,10 +108,25 @@ pub enum RecoveryAction {
 }
 
 #[derive(Debug, Clone)]
-pub struct FlashModalState {
-    pub running: bool,
-    pub output: Vec<String>,
-    pub success: Option<bool>,
+pub enum FirmwareModalState {
+    Consent {
+        consent_text: String,
+        from_version: String,
+        to_version: String,
+    },
+    Flashing {
+        from_version: String,
+        to_version: String,
+    },
+    Success {
+        from: String,
+        to: String,
+        firmware_version: String,
+        running_partition: Option<String>,
+    },
+    Failed {
+        error: String,
+    },
 }
 
 /// The updater state the Settings page and the update banner render (§U-0.4)
@@ -155,7 +170,8 @@ pub struct App {
     pub reset_modal: Option<String>,
     pub import_modal: Option<ImportModalState>,
     pub recovery_modal: Option<RecoveryAction>,
-    pub flash_modal: Option<FlashModalState>,
+    pub firmware_offer: Option<osupad_ipc::FirmwareOffer>,
+    pub firmware_modal: Option<FirmwareModalState>,
     pub ui_values: HashMap<u8, SourceValue>,
 
     // Settings form
@@ -213,10 +229,12 @@ pub enum Message {
     ConfirmImportPcFromDevice,
     CancelRecoveryModal,
     RecoveryCompleted(Result<IpcResponse, String>),
-    PromptUpdateFirmware,
-    FirmwarePicked(Option<std::path::PathBuf>),
-    FlashFinished((Vec<String>, bool)),
-    CloseFlashModal,
+    // Firmware Update (§U-3b)
+    FirmwareOffer(Result<IpcResponse, String>),
+    PromptFirmwareConsent,
+    CancelFirmwareModal,
+    ConfirmFirmwareUpdate,
+    FirmwareUpdateResult(Result<IpcResponse, String>),
     // Daemon offline recovery
     StartDaemon,
     DaemonStarted(Result<(), String>),
@@ -303,7 +321,8 @@ impl App {
             reset_modal: None,
             import_modal: None,
             recovery_modal: None,
-            flash_modal: None,
+            firmware_offer: None,
+            firmware_modal: None,
             pc_counters: None,
             esp_counters: None,
             ui_values: HashMap::new(),
@@ -371,6 +390,10 @@ impl App {
             Task::perform(
                 ipc::request(IpcRequest::GetUpdateStatus),
                 Message::UpdateStatus,
+            ),
+            Task::perform(
+                ipc::request(IpcRequest::GetFirmwareUpdate),
+                Message::FirmwareOffer,
             ),
         ];
         if self.page == Page::Monitor && self.window.is_some() {
@@ -711,36 +734,87 @@ impl App {
                 }
                 _ => {}
             },
-            Message::PromptUpdateFirmware => {
-                if matches!(self.mode, RuntimeMode::Playing | RuntimeMode::Cooldown) {
-                    self.banner =
-                        Some("Cannot update firmware during active gameplay or cooldown".into());
-                    return Task::none();
+            Message::FirmwareOffer(res) => {
+                if let Ok(IpcResponse::FirmwareUpdateOffer(offer)) = res {
+                    self.firmware_offer = Some(offer);
                 }
-                return Task::perform(pick_firmware_dialog(), Message::FirmwarePicked);
             }
-            Message::FirmwarePicked(opt_path) => {
-                if let Some(path) = opt_path {
-                    self.flash_modal = Some(FlashModalState {
-                        running: true,
-                        output: vec![format!("Selected firmware: {}", path.display())],
-                        success: None,
+            Message::PromptFirmwareConsent => {
+                if let Some(offer) = &self.firmware_offer {
+                    if let (Some(consent_text), Some(available)) =
+                        (&offer.consent_text, &offer.available)
+                    {
+                        let from = offer.installed.clone().unwrap_or_else(|| "unknown".into());
+                        self.firmware_modal = Some(FirmwareModalState::Consent {
+                            consent_text: consent_text.clone(),
+                            from_version: from,
+                            to_version: available.clone(),
+                        });
+                    }
+                }
+            }
+            Message::CancelFirmwareModal => {
+                self.firmware_modal = None;
+                return self.poll();
+            }
+            Message::ConfirmFirmwareUpdate => {
+                if let Some(FirmwareModalState::Consent {
+                    from_version,
+                    to_version,
+                    ..
+                }) = &self.firmware_modal
+                {
+                    let from = from_version.clone();
+                    let to = to_version.clone();
+                    self.firmware_modal = Some(FirmwareModalState::Flashing {
+                        from_version: from,
+                        to_version: to,
                     });
-                    return Task::perform(run_flash_tool(path), Message::FlashFinished);
+                    return Task::perform(
+                        ipc::request(IpcRequest::InstallFirmwareUpdate { confirm: true }),
+                        Message::FirmwareUpdateResult,
+                    );
                 }
             }
-            Message::FlashFinished((output_lines, success)) => {
-                if let Some(modal) = &mut self.flash_modal {
-                    modal.running = false;
-                    modal.output.extend(output_lines);
-                    modal.success = Some(success);
+            Message::FirmwareUpdateResult(res) => match res {
+                Ok(IpcResponse::FirmwareUpdateFinished {
+                    from,
+                    to,
+                    firmware_version,
+                    running_partition,
+                    ..
+                }) => {
+                    self.firmware_modal = Some(FirmwareModalState::Success {
+                        from,
+                        to,
+                        firmware_version,
+                        running_partition,
+                    });
+                    return self.poll();
                 }
-                return self.poll();
-            }
-            Message::CloseFlashModal => {
-                self.flash_modal = None;
-                return self.poll();
-            }
+                Ok(IpcResponse::OperationRejected { reason }) => {
+                    self.firmware_modal = Some(FirmwareModalState::Failed {
+                        error: format!("Update rejected: {}", reason),
+                    });
+                    return self.poll();
+                }
+                Ok(IpcResponse::Error(err)) => {
+                    self.firmware_modal = Some(FirmwareModalState::Failed { error: err });
+                    return self.poll();
+                }
+                Err(err) => {
+                    self.firmware_modal = Some(FirmwareModalState::Failed {
+                        error: format!("Communication error: {}", err),
+                    });
+                    return self.poll();
+                }
+                Ok(other) => {
+                    self.firmware_modal = Some(FirmwareModalState::Failed {
+                        error: format!("Unexpected response from daemon: {:?}", other),
+                    });
+                    return self.poll();
+                }
+            },
             Message::StartDaemon => {
                 self.banner = Some("Starting osupad-daemon...".into());
                 return Task::perform(start_daemon_process(), Message::DaemonStarted);
@@ -1788,49 +1862,208 @@ impl App {
             };
         }
 
-        if let Some(modal) = &self.flash_modal {
-            let status_text = match modal.success {
-                None => text("Flashing firmware in progress... Please do not disconnect pad.")
-                    .size(14)
-                    .color(theme::YELLOW),
-                Some(true) => text("✓ Firmware update completed successfully!")
-                    .size(14)
-                    .color(theme::GREEN),
-                Some(false) => text("✗ Firmware update failed. Check the log below.")
-                    .size(14)
-                    .color(theme::RED),
+        if let Some(modal) = &self.firmware_modal {
+            let modal_box = match modal {
+                FirmwareModalState::Consent {
+                    consent_text,
+                    from_version,
+                    to_version,
+                } => {
+                    let header = column![
+                        text("Confirm Firmware Update")
+                            .size(20)
+                            .font(theme::FONT_BOLD)
+                            .color(theme::YELLOW),
+                        text(format!(
+                            "Update pad firmware: {} → {}",
+                            from_version, to_version
+                        ))
+                        .size(13)
+                        .color(theme::MUTED),
+                    ]
+                    .spacing(4);
+
+                    let consent_lines = column(
+                        consent_text
+                            .lines()
+                            .map(|l| text(l.to_string()).size(13).into()),
+                    )
+                    .spacing(4);
+
+                    let consent_box = container(scrollable(consent_lines).height(200))
+                        .padding(12)
+                        .style(theme::card);
+
+                    let actions = row![
+                        button(text("Cancel").size(14))
+                            .padding([10, 20])
+                            .style(theme::secondary)
+                            .on_press(Message::CancelFirmwareModal),
+                        Space::new().width(Length::Fill),
+                        button(text("Confirm & Flash Pad").size(14))
+                            .padding([10, 20])
+                            .style(theme::danger)
+                            .on_press(Message::ConfirmFirmwareUpdate),
+                    ];
+
+                    container(
+                        column![header, consent_box, actions]
+                            .spacing(14)
+                            .padding(24)
+                            .width(520),
+                    )
+                    .style(theme::card)
+                }
+                FirmwareModalState::Flashing {
+                    from_version,
+                    to_version,
+                } => {
+                    let warning_box = container(
+                        column![
+                            text("⚠ THE PAD IS CURRENTLY UNUSABLE AS A KEYBOARD")
+                                .size(14)
+                                .font(theme::FONT_BOLD)
+                                .color(theme::RED),
+                            text("Do NOT unplug the USB cable or close the application.")
+                                .size(13)
+                                .color(theme::WHITE),
+                            text("Writing app partition over USB. The pad will reboot automatically when finished (~30 seconds).")
+                                .size(12)
+                                .color(theme::MUTED),
+                        ]
+                        .spacing(6),
+                    )
+                    .padding(14)
+                    .style(theme::card);
+
+                    container(
+                        column![
+                            text("Flashing Firmware in Progress")
+                                .size(20)
+                                .font(theme::FONT_BOLD)
+                                .color(theme::YELLOW),
+                            warning_box,
+                            text(format!(
+                                "Flashing target: {} → {}",
+                                from_version, to_version
+                            ))
+                            .size(13)
+                            .color(theme::CYAN),
+                            text("Flashing and rebooting... Please wait.")
+                                .size(13)
+                                .color(theme::YELLOW),
+                            row![button(text("Flashing in progress...").size(14))
+                                .padding([10, 20])
+                                .style(theme::secondary),],
+                        ]
+                        .spacing(12)
+                        .padding(24)
+                        .width(520),
+                    )
+                    .style(theme::card)
+                }
+                FirmwareModalState::Success {
+                    from,
+                    to,
+                    firmware_version,
+                    running_partition,
+                } => {
+                    let partition_str = running_partition.as_deref().unwrap_or("unknown");
+                    container(
+                        column![
+                            text("✓ Firmware Update Complete")
+                                .size(20)
+                                .font(theme::FONT_BOLD)
+                                .color(theme::GREEN),
+                            text(format!(
+                                "Firmware was successfully updated from {} to {}.",
+                                from, to
+                            ))
+                            .size(14),
+                            text(format!(
+                                "Verified running version: {}",
+                                firmware_version
+                            ))
+                            .size(13)
+                            .font(theme::FONT_BOLD),
+                            text(format!("Running slot (OTA partition): {}", partition_str))
+                                .size(13)
+                                .color(theme::MUTED),
+                            text("The pad has rebooted and resumed normal 1000 Hz HID keyboard operation.")
+                                .size(12)
+                                .color(theme::MUTED),
+                            Space::new().height(6),
+                            row![
+                                Space::new().width(Length::Fill),
+                                button(text("Close").size(14))
+                                    .padding([10, 20])
+                                    .style(theme::primary)
+                                    .on_press(Message::CancelFirmwareModal),
+                            ],
+                        ]
+                        .spacing(10)
+                        .padding(24)
+                        .width(480),
+                    )
+                    .style(theme::card)
+                }
+                FirmwareModalState::Failed { error } => {
+                    let error_box = container(
+                        column![
+                            text("Error Details:")
+                                .size(13)
+                                .font(theme::FONT_BOLD)
+                                .color(theme::RED),
+                            text(error.clone()).size(13).color(theme::WHITE),
+                        ]
+                        .spacing(4),
+                    )
+                    .padding(12)
+                    .style(theme::card);
+
+                    let recovery_box = container(
+                        column![
+                            text("Disaster Recovery:")
+                                .size(13)
+                                .font(theme::FONT_BOLD)
+                                .color(theme::YELLOW),
+                            text("Lifetime counters were saved to this PC before flashing began.")
+                                .size(12),
+                            text("If the pad does not respond or boot, refer to docs/recovery.md (§7 Disaster Reflash).")
+                                .size(12),
+                            text("You can reflash the pad over USB via osupadctl flash without loss of lifetime press stats.")
+                                .size(12)
+                                .color(theme::MUTED),
+                        ]
+                        .spacing(4),
+                    )
+                    .padding(12)
+                    .style(theme::card);
+
+                    container(
+                        column![
+                            text("✗ Firmware Update Failed")
+                                .size(20)
+                                .font(theme::FONT_BOLD)
+                                .color(theme::RED),
+                            error_box,
+                            recovery_box,
+                            Space::new().height(6),
+                            row![
+                                Space::new().width(Length::Fill),
+                                button(text("Close").size(14))
+                                    .padding([10, 20])
+                                    .style(theme::secondary)
+                                    .on_press(Message::CancelFirmwareModal),
+                            ],
+                        ]
+                        .spacing(10)
+                        .padding(24)
+                        .width(520),
+                    )
+                    .style(theme::card)
+                }
             };
-
-            let log_lines =
-                column(modal.output.iter().map(|line| text(line).size(12).into())).spacing(4);
-
-            let mut close_btn = button(text("Close").size(14))
-                .padding([10, 20])
-                .style(theme::primary);
-            if !modal.running {
-                close_btn = close_btn.on_press(Message::CloseFlashModal);
-            } else {
-                close_btn = close_btn.style(theme::secondary);
-            }
-
-            let modal_box = container(
-                column![
-                    text("Firmware Flasher")
-                        .size(20)
-                        .font(theme::FONT_BOLD)
-                        .color(theme::WHITE),
-                    status_text,
-                    container(scrollable(log_lines).height(240))
-                        .padding(10)
-                        .style(theme::card)
-                        .height(240),
-                    row![Space::new().width(Length::Fill), close_btn,]
-                ]
-                .spacing(12)
-                .padding(24)
-                .width(540),
-            )
-            .style(theme::card);
 
             let modal_overlay = container(modal_box)
                 .width(Length::Fill)
@@ -1916,37 +2149,6 @@ async fn pick_backup_dialog() -> Result<JsonBackup, String> {
     Ok(backup)
 }
 
-async fn pick_firmware_dialog() -> Option<std::path::PathBuf> {
-    let file = rfd::AsyncFileDialog::new()
-        .add_filter("Firmware binary", &["bin"])
-        .pick_file()
-        .await?;
-    Some(file.path().to_path_buf())
-}
-
-async fn run_flash_tool(path: std::path::PathBuf) -> (Vec<String>, bool) {
-    let osupadctl = find_osupadctl();
-    let mut cmd = tokio::process::Command::new(osupadctl);
-    cmd.arg("flash").arg(path);
-    cmd.stdout(std::process::Stdio::piped());
-    cmd.stderr(std::process::Stdio::piped());
-    match cmd.output().await {
-        Ok(output) => {
-            let mut lines = Vec::new();
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            for l in stdout.lines() {
-                lines.push(l.to_string());
-            }
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            for l in stderr.lines() {
-                lines.push(format!("stderr: {}", l));
-            }
-            (lines, output.status.success())
-        }
-        Err(e) => (vec![format!("Failed to execute flash tool: {}", e)], false),
-    }
-}
-
 /// A binary installed next to this one. `EXE_SUFFIX` matters: the sibling is
 /// `osupadctl.exe` on Windows, and without it the lookup always misses.
 fn find_sibling_executable(stem: &str) -> std::path::PathBuf {
@@ -1960,10 +2162,6 @@ fn find_sibling_executable(stem: &str) -> std::path::PathBuf {
         }
     }
     std::path::PathBuf::from(name)
-}
-
-fn find_osupadctl() -> std::path::PathBuf {
-    find_sibling_executable("osupadctl")
 }
 
 fn find_daemon_executable() -> std::path::PathBuf {
