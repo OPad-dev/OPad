@@ -19,7 +19,7 @@ void usb_descriptors_init(void)
 const tusb_desc_device_t osupad_usb_device_desc = {
     .bLength            = sizeof(tusb_desc_device_t),
     .bDescriptorType    = TUSB_DESC_DEVICE,
-    .bcdUSB             = 0x0200,
+    .bcdUSB             = 0x0210,   // USB 2.1 (required for BOS & MS OS 2.0 descriptors)
     .bDeviceClass       = TUSB_CLASS_MISC,
     .bDeviceSubClass    = MISC_SUBCLASS_COMMON,
     .bDeviceProtocol    = MISC_PROTOCOL_IAD,
@@ -83,3 +83,71 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
     (void)buffer;
     (void)bufsize;
 }
+
+#define VENDOR_REQUEST_MICROSOFT 0x01
+
+// Binary Device Object Store (BOS) Descriptor exposing MS OS 2.0 platform capability
+const uint8_t osupad_usb_bos_desc[] = {
+    // BOS descriptor header: bLength (5), bDescriptorType (0x0F = TUSB_DESC_BOS), wTotalLength (33 bytes = 0x0021), bNumDeviceCaps (1)
+    0x05, TUSB_DESC_BOS, 0x21, 0x00, 0x01,
+
+    // Microsoft OS 2.0 Platform Capability Descriptor (28 bytes)
+    0x1C, TUSB_DESC_DEVICE_CAPABILITY, 0x05, 0x00,
+    // MS OS 2.0 Platform Capability UUID: {D8DD60DF-4589-4CC7-9CD2-659D9E648A9F}
+    0xDF, 0x60, 0xDD, 0xD8, 0x89, 0x45, 0xC7, 0x4C, 0x9C, 0xD2, 0x65, 0x9D, 0x9E, 0x64, 0x8A, 0x9F,
+    // dwWindowsVersion: 0x06030000 (Windows 8.1+)
+    0x00, 0x00, 0x03, 0x06,
+    // wMSOSDescriptorSetTotalLength: 78 bytes (0x004E)
+    0x4E, 0x00,
+    // bMS_VendorCode
+    VENDOR_REQUEST_MICROSOFT,
+    // bAltEnumCode
+    0x00
+};
+
+// Microsoft OS 2.0 Descriptor Set (Total 78 bytes)
+// Assigns FriendlyName = "osu!pad" to Interface 1 (CDC-ACM) so Windows Device Manager
+// displays "osu!pad (COMx)" instead of the generic "USB Serial Device (COMx)".
+const uint8_t osupad_usb_ms_os_20_desc[] = {
+    // Set Header: wLength (10), wDescriptorType (0x0000), dwWindowsVersion (0x06030000), wTotalLength (78 = 0x004E)
+    0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x06, 0x4E, 0x00,
+
+    // Configuration Subset Header: wLength (8), wDescriptorType (0x0001), bConfigurationValue (0), bReserved (0), wTotalLength (68 = 0x0044)
+    0x08, 0x00, 0x01, 0x00, 0x00, 0x00, 0x44, 0x00,
+
+    // Function Subset Header: wLength (8), wDescriptorType (0x0002), bFirstInterface (1 = ITF_NUM_CDC), bReserved (0), wSubsetLength (60 = 0x003C)
+    0x08, 0x00, 0x02, 0x00, ITF_NUM_CDC, 0x00, 0x3C, 0x00,
+
+    // Registry Property Feature Descriptor: wLength (52), wDescriptorType (0x0004), wPropertyDataType (0x0001 = REG_SZ)
+    0x34, 0x00, 0x04, 0x00, 0x01, 0x00,
+    // wPropertyNameLength (26 bytes = 13 UTF-16LE characters including null terminator)
+    0x1A, 0x00,
+    // PropertyName: "FriendlyName" in UTF-16LE
+    'F', 0x00, 'r', 0x00, 'i', 0x00, 'e', 0x00, 'n', 0x00, 'd', 0x00,
+    'l', 0x00, 'y', 0x00, 'N', 0x00, 'a', 0x00, 'm', 0x00, 'e', 0x00, 0x00, 0x00,
+    // wPropertyDataLength (16 bytes = 8 UTF-16LE characters including null terminator)
+    0x10, 0x00,
+    // PropertyData: "osu!pad" in UTF-16LE
+    'o', 0x00, 's', 0x00, 'u', 0x00, '!', 0x00, 'p', 0x00, 'a', 0x00, 'd', 0x00, 0x00, 0x00
+};
+
+uint8_t const *tud_descriptor_bos_cb(void)
+{
+    return osupad_usb_bos_desc;
+}
+
+bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const *request)
+{
+    if (stage != CONTROL_STAGE_SETUP) {
+        return true;
+    }
+
+    if (request->bmRequestType_bit.type == TUSB_REQ_TYPE_VENDOR &&
+        request->bRequest == VENDOR_REQUEST_MICROSOFT &&
+        request->wIndex == 7) {
+        return tud_control_xfer(rhport, request, (void *)(uintptr_t)osupad_usb_ms_os_20_desc, sizeof(osupad_usb_ms_os_20_desc));
+    }
+
+    return false;
+}
+
