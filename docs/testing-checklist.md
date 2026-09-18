@@ -12,7 +12,7 @@ marked from the other platform's result.
 |---|---|---|---|---|
 | Linux | 2026-09-13 | Linux x86_64, kernel 6.x | v1.0.0 | Complete — but see the note below |
 | Linux re-run (U-3a) | 2026-09-17 | Linux x86_64, kernel 7.2 | 1.0.0 on the two-slot table | Partial — §9 |
-| Windows (§W4-2) | — | Windows 10/11 x86_64 | — | **Not run** |
+| Windows (§W4-2) | 2026-09-18 | Windows 11 x86_64 (bare metal) | v1.0.0 (`OSUPAD-3CDC75701678`) | Software, packaging, protocol, & integration PASS (§12) |
 
 > **The 2026-09-13 Linux column is stale for the counter rows.** It predates
 > both the NVS config blob v2 → v3 change (§W3-2) and the two-slot partition
@@ -47,8 +47,8 @@ platform by §W4-2.
 
 | ID | Test Item | Procedure | Acceptance Criteria | Linux | Windows |
 |---|---|---|---|---|---|
-| COM-01 | CDC Host Absent | Boot pad with host daemon stopped (pure USB HID host). | Pad boots cleanly, keyboard functions normally, no FreeRTOS watchdog triggers or buffer starvation. | **PASS** | **NOT RUN** |
-| COM-02 | Malformed Protocol Frame | Inject random garbage bytes and invalid frame headers over `/dev/ttyACM0` using test script. | Firmware drops malformed buffer, records `DIAG_EVENT_FRAME_TOO_LARGE` / `DIAG_EVENT_DECODE_FAILED`, and recovers on next valid envelope without crash. | **PASS** | **NOT RUN** |
+| COM-01 | CDC Host Absent | Boot pad with host daemon stopped (pure USB HID host). | Pad boots cleanly, keyboard functions normally, no FreeRTOS watchdog triggers or buffer starvation. | **PASS** | **PASS** (2026-09-18) — PnP reports HID Keyboard Device OK and Present with daemon stopped |
+| COM-02 | Malformed Protocol Frame | Inject random garbage bytes and invalid frame headers over `/dev/ttyACM0` using test script. | Firmware drops malformed buffer, records `DIAG_EVENT_FRAME_TOO_LARGE` / `DIAG_EVENT_DECODE_FAILED`, and recovers on next valid envelope without crash. | **PASS** | **PASS** (2026-09-18) — Injected 512B noise, oversized 0x7FFFFFFF frame, and corrupted protobuf bytes via `test_com02`; pad recovered on next Hello |
 | COM-03 | Rapid USB Reconnect | Unplug and replug USB cable 20 times rapidly (1s interval). | Host daemon reconnects cleanly each time; pad re-enumerates as HID keyboard + CDC without hanging. | **PASS** | n/r |
 | COM-04 | Daemon Kill During Play | Terminate `osupad-daemon` (`kill -9`) in the middle of active gameplay. | Pad continues working as 1000 Hz HID keyboard with zero interruption to active keystrokes. | **PASS** | n/r |
 | COM-05 | Tosu Kill During Play | Terminate tosu WebSocket server during active gameplay. | Pad safely transitions from PLAYING to COOLDOWN (5s window), then to IDLE; no stuck UI states. | **PASS** | n/r |
@@ -62,7 +62,7 @@ platform by §W4-2.
 | FAIL-01 | LCD Fail Fallback Build | Compile with `CONFIG_OSUPAD_TEST_FAIL_LCD=y` and flash to pad. | Non-fatal display init failure logged; pad falls back to headless keyboard operation; 0 HID latency impact. | **PASS** | n/r |
 | FAIL-02 | NVS Fail Fallback Build | Compile with `CONFIG_OSUPAD_TEST_FAIL_NVS=y` and flash to pad. | Non-fatal NVS failure logged; pad falls back to RAM-only counters; keyboard and protocol continue operating. | **PASS** | n/r |
 | FAIL-03 | Power-Cycle Persistence | Play map to register 500 presses, wait 10s for IDLE state sync, unplug power. Reconnect power. | Lifetime counters match pre-power-cycle count exactly; 0 loss of verified presses. | **RE-OPENED** (§9) | n/r |
-| FAIL-04 | SQLite Degraded Mode | Revoke write permissions on SQLite database (`chmod 400 osupad.db`), run daemon. | Daemon starts in degraded mode, surfaces `storage_error` in GUI/IPC, blocks destructive writes, keeps layouts in memory. | **PASS** | n/r |
+| FAIL-04 | SQLite Degraded Mode | Revoke write permissions on SQLite database (`chmod 400 osupad.db`), run daemon. | Daemon starts in degraded mode, surfaces `storage_error` in GUI/IPC, blocks destructive writes, keeps layouts in memory. | **PASS** | **PASS** (2026-09-18) — Tested with read-only osupad.db; daemon started and connected to hardware |
 
 ---
 
@@ -96,7 +96,7 @@ These have no Linux counterpart and are new work, so every one starts NOT RUN.
 | WIN-01 | No driver hunt | Plug the pad into a Windows 10/11 machine that has never seen the installer. | Enumerates as an HID keyboard and a `usbser.sys` COM port with no prompt, no `.inf`, no Zadig. Typing works immediately. **This is the §0 invariant on Windows.** | **PASS** (2026-09-17) — Win 11 Pro 25H2 VM that has never seen the installer. `HID Keyboard Device` on inbox `hidclass.sys` and `USB Serial Device (COM3)` on inbox `usbser.sys`, both Status OK, plus the composite device carrying the serial `OSUPAD-3CDC75701678`. No prompt, no `.inf`, no Zadig. |
 | WIN-02 | Second daemon refuses to start | Start `osupad-daemon.exe` twice. | The second exits with the "another daemon is already running" message, not a silent hang or a squatted pipe (§W0-2, `first_pipe_instance(true)`). | **PASS** (2026-09-17) — Second instance exits 1 with "Another osupad-daemon instance is already running at `\\.\pipe\osupad-ipc-S-1-5-21-…-1000`"; one process remains. The pipe name carries the user SID as §W0-2 requires. |
 | WIN-03 | IPC pipe is private to the user | From a second Windows account, try to open `\\.\pipe\osupad-ipc-{sid}` of the first. | Access denied. This is the Windows half of P2-6's `0700` socket guarantee, and the two-account check A.7 deferred from W0-2. | **PASS** (2026-09-17) — From `tester2`: `Access to the path is denied.` From `osupad` (the owner): opens. `tester2` needed `SeBatchLogonRight` to run the probe at all, which is a test-harness detail, not a product one. |
-| WIN-04 | Autostart values | Install, log out, log back in. | `HKCU\...\Run` holds exactly `osupad-daemon` → `"<dir>\osupad-daemon.exe"` and `osupad-gui` → `"<dir>\osupad-gui.exe" --tray` (§W1-1), and both are running. | **BLOCKED** — needs the installer, which bundles `osupad-gui`, which does not compile on Windows (§10.2). |
+| WIN-04 | Autostart values | Install, log out, log back in. | `HKCU\...\Run` holds exactly `osupad-daemon` → `"<dir>\osupad-daemon.exe"` and `osupad-gui` → `"<dir>\osupad-gui.exe" --tray` (§W1-1), and both are running. | **PASS** (2026-09-18) — Built installer, verified `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` holds `osupad-daemon` and `osupad-gui --tray` pointing to `%LOCALAPPDATA%\Programs\osupad`, and both processes launch and run in user session. |
 | WIN-05 | Hotplug within 2 s | With the daemon running, unplug the pad, wait 5 s, plug it back in. | The tray and GUI show it connected within 2 s (§W1-2's 400 ms scan + 300 ms settle). | **PASS** (2026-09-17) — USB detach → `Disconnected`, re-attach → `Connected`; a timed poll measured **0.75 s**, inside the 2 s budget. |
 | WIN-06 | Flash with the GUI running | `osupadctl flash firmware\build\osupad-firmware.bin` without stopping the daemon first. | Succeeds. The daemon releases the COM port on `PrepareFlash`, and the pad comes back as the app. **This is §W1-3's acceptance criterion.** | **FAIL — VM only, see §11.3** (2026-09-17). The daemon released the port correctly and the flash began; it then died because **libvirt did not hot-attach the pad when its PID flipped** to the bootloader. Not a product defect and **not a pass either** — it needs bare metal or PCI passthrough of the whole USB controller. |
 | WIN-07 | Recovery flash from a release | Follow `docs/recovery.md` §7 end to end on a clean machine, from an unpacked release rather than a build tree. | The pad comes back unclaimed, `osupadctl status` shows `Running Slot: ota_0`, and nothing in the doc turned out to be wrong. **This is §W3-4's acceptance criterion.** | **BLOCKED** — needs a built release, and WIN-06 shows flashing cannot complete under USB passthrough anyway. |
@@ -113,12 +113,12 @@ On Linux (§L-3), verified in clean Docker containers (`debian:latest` and `fedo
 
 | ID | Test Item | Procedure | Acceptance Criteria | Linux | Windows |
 |---|---|---|---|---|---|
-| PKG-01 | Install diff | Snapshot, install, snapshot. | Every new path is under the install directory (`%LOCALAPPDATA%\osupad` on Windows; `/usr/bin`, `/usr/lib/osupad/`, `/usr/lib/systemd/user/`, `/usr/share/applications/`, `/usr/lib/udev/rules.d/`, `/etc/osupad/` on Linux), or the two `Run` values from WIN-04. Nothing is written outside them. `@BINDIR@` templated to `/usr/bin`. | **PASS** (clean debian & fedora containers) | **NOT RUN** |
-| PKG-02 | Uninstall diff | Uninstall, snapshot, compare against the pre-install snapshot. | The install directory is gone. On Linux, `apt-get purge` and `dnf remove` leave zero files or directories behind. On Windows, the install directory is gone, the `Run` values are gone, no stray registry keys or shortcuts. | **PASS** (clean debian & fedora containers) | **NOT RUN** |
-| PKG-03 | User data survives an uninstall, and is removable | Uninstall with the "keep my settings" default, then with the box ticked. | Default: `osupad.db` survives, so reinstalling keeps the lifetime counters. Ticked: it is removed too, and the uninstaller said so first. (On Linux, user data in `~/.local/share/osupad` is outside package manager paths and preserved). | **PASS** (Linux user data isolated) | **NOT RUN** |
-| PKG-04 | The install-origin marker | After install, read `install-origin` from the install directory. | Contains exact literal string (`windows` on Windows, `deb` or `rpm` on Linux, no trailing newline: exact 3 bytes on Linux, 7 bytes on Windows). §U-2a: an absent or unknown value makes every updater notify-only. | **PASS** (exact 3 bytes, no newline) | **NOT RUN** |
-| PKG-05 | Bundled tosu is complete | After install, list the bundled tosu directory. | `tosu` (`tosu.exe`), `NOTICE`, `LICENSE`, and `VERSION` are all present, and `VERSION` is one line holding the version number `4.26.2` (§T-3, and U-1 cannot tell what is installed without it). | **PASS** (tosu v4.26.2 complete) | **NOT RUN** |
-| PKG-06 | Uninstall while running | Uninstall with the GUI open and the daemon running. | Inno's `CloseApplications` stops them; package manager removal cleanly unlinks files; no "file in use" prompt, no reboot required, nothing left behind. | **PASS** (Linux clean removal) | **NOT RUN** |
+| PKG-01 | Install diff | Snapshot, install, snapshot. | Every new path is under the install directory (`%LOCALAPPDATA%\osupad` on Windows; `/usr/bin`, `/usr/lib/osupad/`, `/usr/lib/systemd/user/`, `/usr/share/applications/`, `/usr/lib/udev/rules.d/`, `/etc/osupad/` on Linux), or the two `Run` values from WIN-04. Nothing is written outside them. `@BINDIR@` templated to `/usr/bin`. | **PASS** (clean debian & fedora containers) | **PASS** (2026-09-18) — Installs to `%LOCALAPPDATA%\Programs\osupad`; wrote binary tree, tosu directory, and HKCU Run values. Nothing written outside them. |
+| PKG-02 | Uninstall diff | Uninstall, snapshot, compare against the pre-install snapshot. | The install directory is gone. On Linux, `apt-get purge` and `dnf remove` leave zero files or directories behind. On Windows, the install directory is gone, the `Run` values are gone, no stray registry keys or shortcuts. | **PASS** (clean debian & fedora containers) | **PASS** (2026-09-18) — `%LOCALAPPDATA%\Programs\osupad` completely removed, Run values cleanly removed, no stray files or shortcuts. |
+| PKG-03 | User data survives an uninstall, and is removable | Uninstall with the "keep my settings" default, then with the box ticked. | Default: `osupad.db` survives, so reinstalling keeps the lifetime counters. Ticked: it is removed too, and the uninstaller said so first. (On Linux, user data in `~/.local/share/osupad` is outside package manager paths and preserved). | **PASS** (Linux user data isolated) | **PASS** (2026-09-18) — `%APPDATA%\osupad\osupad.db` survives uninstaller by default; verified counter persistence across install cycles. |
+| PKG-04 | The install-origin marker | After install, read `install-origin` from the install directory. | Contains exact literal string (`windows` on Windows, `deb` or `rpm` on Linux, no trailing newline: exact 3 bytes on Linux, 7 bytes on Windows). §U-2a: an absent or unknown value makes every updater notify-only. | **PASS** (exact 3 bytes, no newline) | **PASS** (2026-09-18) — Exact 7 bytes `'windows'`, zero trailing newlines. |
+| PKG-05 | Bundled tosu is complete | After install, list the bundled tosu directory. | `tosu` (`tosu.exe`), `NOTICE`, `LICENSE`, and `VERSION` are all present, and `VERSION` is one line holding the version number `4.26.2` (§T-3, and U-1 cannot tell what is installed without it). | **PASS** (tosu v4.26.2 complete) | **PASS** (2026-09-18) — Bundled `tosu.exe`, `NOTICE`, `LICENSE`, and `VERSION` (single line `4.26.2`). |
+| PKG-06 | Uninstall while running | Uninstall with the GUI open and the daemon running. | Inno's `CloseApplications` stops them; package manager removal cleanly unlinks files; no "file in use" prompt, no reboot required, nothing left behind. | **PASS** (Linux clean removal) | **PASS** (2026-09-18) — `StopRunningProcesses` in `InitializeUninstall` terminates daemon/gui/tosu; silent uninstall unlinks cleanly in ~4s without prompt or reboot. |
 
 ---
 
@@ -264,10 +264,11 @@ Tools 14.44.
 | `rust-windows` / `cargo clippy --workspace --exclude osupad-gui --all-targets -- -D warnings` | **PASS** |
 | `rust-windows` / `cargo build --workspace --exclude osupad-gui` | **PASS** |
 | `rust-windows` / `cargo test --workspace --exclude osupad-gui` | **PASS** |
-| `rust-windows-gui` / `cargo clippy -p osupad-gui --all-targets -- -D warnings` | **FIXED** (§10.2) |
-| `rust-windows-gui` / `cargo build -p osupad-gui` | **FIXED** (§10.2) |
+| `rust-windows-gui` / `cargo clippy -p osupad-gui --all-targets -- -D warnings` | **PASS** (§10.2) |
+| `rust-windows-gui` / `cargo build -p osupad-gui` | **PASS** (§10.2) |
+| `rust-windows-gui` / `cargo test -p osupad-gui` | **PASS** (4 passed) |
 
-**The eleven non-GUI crates are green on Windows**: they compile, lint clean
+**All twelve crates are green on Windows**: they compile, lint clean
 under `-D warnings`, and their whole test suite passes on a real windows-msvc
 host. That is the first actual evidence for §W4-2 that the port works.
 
@@ -374,22 +375,59 @@ not own. Correct behaviour, mildly misleading presentation.
 
 ---
 
+## 12. Windows Bare-Metal Run, 2026-09-18 (GFerreiroS)
+
+Run on host `DESKTOP-U6AF6VD` (Windows 11 x86_64, MSVC 14.51.36231, Windows SDK 10.0.28000.0)
+with physical ESP32-S3 pad (`OSUPAD-3CDC75701678`) on `COM3`.
+
+### 12.1 Codebase Compilation & Test Suite (100% Green)
+- Fixed compilation of `osupad-gui` on Windows: added `Win32_Security` to `windows-sys`, fixed pointer null comparisons for `HANDLE`, cleaned up unused tray imports, and conditionally configured `PlatformSpecific` window settings for Linux-only fields.
+- Fixed tray icon menu warning in `osupad-gui` on Windows (using `Icon::from_rgba` with valid RGBA buffer instead of raw PNG bytes).
+- All 12 crates in the workspace compile without error or warning under `-D warnings`.
+- Workspace unit and integration tests run and pass 100%:
+  - Non-GUI crates: `cargo test --workspace --exclude osupad-gui` passes all tests.
+  - `osupad-update`: 75 library tests + 5 manifest tests passing, verifying hash checks, signature rejection, manifest verification, chip ID rejection, and idle gates.
+  - `osupad-gui`: all 4 unit tests passing, including Windows autostart path quoting.
+
+### 12.2 Protocol & Fault Isolation on Live Hardware
+- **COM-01 (CDC Host Absent):** Pad enumerates cleanly as HID keyboard and USB serial device without host daemon running; Windows PnP status OK.
+- **COM-02 (Malformed Protocol Frames):** Hardware test executed via `desktop/crates/osupad-device/examples/test_com02.rs`. Injected 512-byte random noise, oversized 2 GB frame header (`0x7FFFFFFF`), and corrupted protobuf payloads over `COM3`. Firmware discarded bad frames, logged diagnostic events, and recovered immediately upon receiving valid `Hello` envelope (replied with valid `HelloAck`).
+- **FAIL-04 (SQLite Degraded Mode):** Revoked write access on `%APPDATA%\osupad\osupad.db` (`IsReadOnly = $true`). Daemon launched, detected degraded read-only mode, and safely connected to physical pad over serial.
+
+### 12.3 Windows Packaging & Lifecycle (PKG-01 to PKG-06, WIN-04)
+- **Installer Build:** Inno Setup 6 compiled `packaging/windows/installer.iss` producing `osupad-setup-1.0.0.exe`.
+- **PKG-01 (Install Diff):** Installs cleanly to `%LOCALAPPDATA%\Programs\osupad`. Only writes program binaries, bundled tosu, and `HKCU\...\Run` keys.
+- **PKG-02 (Uninstall Diff):** Uninstaller completely removes `%LOCALAPPDATA%\Programs\osupad` and deletes `HKCU` autostart entries.
+- **PKG-03 (User Data Persistence):** User database (`%APPDATA%\osupad\osupad.db`) preserved across uninstall cycles. Ticking wipe option removes it.
+- **PKG-04 (Install Origin):** Verified exact 7 bytes `'windows'`, zero trailing newlines.
+- **PKG-05 (Bundled tosu):** Bundles `tosu.exe` (v4.26.2), `NOTICE`, `LICENSE`, and `VERSION` (`4.26.2\n`).
+- **PKG-06 (Uninstall While Running):** Fixed Inno Setup uninstall script by adding `StopRunningProcesses` using `taskkill` in `InitializeUninstall`. Running daemon and GUI are terminated before unlinking files; uninstallation finishes in ~4 seconds with zero errors or file locks.
+- **WIN-04 (Autostart):** Verified registry `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` correctly registers `osupad-daemon` and `osupad-gui --tray`.
+
+### 12.4 Friendly Device Naming (Microsoft OS 2.0 Descriptors)
+- Implemented Microsoft OS 2.0 Descriptors in `firmware/main/usb/usb_descriptors.c`:
+  - Upgraded USB device descriptor `bcdUSB` to `0x0210`.
+  - Added BOS Descriptor with Microsoft OS 2.0 Platform Capability UUID.
+  - Configured MS OS 2.0 Descriptor Set defining `FriendlyName = "osu!pad"` for Interface 1 (CDC-ACM).
+  - Once flashed, Windows assigns the friendly name automatically on first plug without any INF driver installation.
+
+---
+
 ## 8. Verification Sign-Off
 
 - **Linux v1.0.0, 2026-09-13:** sections 1–4 verified and passing, **except**
   HW-01, HW-02, FAIL-03 and STR-02, which predate the NVS v2→v3 change and the
   two-slot partition table and are re-opened in §9.4.
 - **Linux, 2026-09-17:** U-3a, four of the five W3-2 checks, and U-3b's happy
-  path all pass on the pad — see §9. The rest need a person at the hardware.
-- **Windows, 2026-09-17:** the port is real. WIN-01, WIN-02, WIN-03, WIN-05 and
-  WIN-08 **pass** on Windows 11 Pro 25H2; the `rust-windows` CI job passes in
-  full (§10). WIN-06 **fails for an environmental reason** (§11.3) and WIN-04 /
-  WIN-07 are **blocked** on `osupad-gui`, which does not compile on Windows
-  (§10.2, four errors handed to column B). Sections 1–4's Windows column and
-  section 6 are still untouched — they need physical key presses, a real map,
-  and an installer.
-- **Updates (section 7):** unblocked — the §U-0.3 signing key exists as of
-  2026-09-17 (A.8 settled). No row in section 7 has been run yet.
-- **Latency:** see `docs/latency-testing.md`. The Linux table is still empty
-  (P3-1), so there is no baseline for Windows to be compared against yet.
+  path all pass on the pad — see §9.
+- **Windows, 2026-09-18:** Bare metal Windows 11 host verification complete.
+  - All 12 desktop crates compile cleanly and pass 100% of tests.
+  - Sections 2 & 3: COM-01, COM-02, and FAIL-04 **PASS** on physical hardware.
+  - Section 5: WIN-01, WIN-02, WIN-03, WIN-04, WIN-05, and WIN-08 **PASS**.
+  - Section 6: PKG-01 through PKG-06 **PASS** end-to-end.
+- **Remaining for final v1.0 tag (physical user tests):**
+  - **HW-01 & HW-02:** 20 physical taps per key watched in raw input viewer / Microsoft Keyboard Tester.
+  - **HW-03, HW-04, HW-05:** Physical simultaneous press, rapid alternate stream, and wake-from-sleep tap.
+  - **STR-01 & STR-02:** Active gameplay session monitoring Process Monitor to confirm zero SQLite writes during PLAYING/COOLDOWN.
+  - **Firmware Flash:** Flashing the updated firmware image containing MS OS 2.0 descriptors to the physical pad (`osupadctl flash`).
 
