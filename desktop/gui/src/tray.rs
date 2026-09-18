@@ -77,6 +77,7 @@ pub enum MenuItemModel {
 
 #[derive(Debug, Clone)]
 pub struct TrayViewModel {
+    #[cfg_attr(windows, allow(dead_code))]
     pub title: String,
     pub tooltip_description: String,
     pub icon_state: IconState,

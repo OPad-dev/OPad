@@ -14,7 +14,11 @@ fn main() {
     );
     let lvgl = firmware.join("managed_components/lvgl__lvgl");
     let ui_core = firmware.join("main/ui/core");
-    let sdkconfig = firmware.join("sdkconfig");
+    let sdkconfig = if firmware.join("sdkconfig").exists() {
+        firmware.join("sdkconfig")
+    } else {
+        firmware.join("sdkconfig.defaults")
+    };
     if !lvgl.exists() || !sdkconfig.exists() {
         panic!(
             "LVGL sources or sdkconfig missing. Configure the firmware once: \
@@ -46,6 +50,7 @@ fn main() {
             "LV_CONF_KCONFIG_EXTERNAL_INCLUDE",
             Some("<lv_kconfig_host.h>"),
         )
+        .define("LV_CONF_SKIP", None)
         .flag_if_supported("-std=gnu11")
         .flag_if_supported("-w")
         .opt_level(2)

@@ -8,18 +8,20 @@
   #if !FileHandle
     #error "Could not open " + CargoTomlPath + " to derive installer version!"
   #endif
-  #define FoundVersion 0
+  #define public FoundVersion 0
+  #define public MyAppVersion ""
   #sub ProcessCargoLine
     #define FileLine FileRead(FileHandle)
     #if Pos("version = """, Trim(FileLine)) == 1
       #define LineTrimmed Trim(FileLine)
       #define Remainder Copy(LineTrimmed, 12, Len(LineTrimmed))
       #define EndQuote Pos("""", Remainder)
-      #define MyAppVersion Copy(Remainder, 1, EndQuote - 1)
-      #define FoundVersion 1
+      #expr MyAppVersion = Copy(Remainder, 1, EndQuote - 1)
+      #expr FoundVersion = 1
     #endif
   #endsub
-  #for { ; !FileEof(FileHandle) && !FoundVersion; } ProcessCargoLine
+  #define LoopIdx 0
+  #for {LoopIdx = 0; !FileEof(FileHandle) && !FoundVersion; LoopIdx = LoopIdx + 1} ProcessCargoLine
   #expr FileClose(FileHandle)
   #if !FoundVersion || (MyAppVersion == "")
     #error "Could not read workspace version from " + CargoTomlPath + "!"
@@ -140,8 +142,9 @@ begin
     if DirExists(AppDataDir) then
     begin
       // Prompt user whether to delete database and lifetime counters. Default is NO (keep).
-      if MsgBox('Also delete your osu!pad settings and lifetime key counters? This cannot be undone.',
-                mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+      // In silent mode (UninstallSilent), preserve user data as per default (§W2-3).
+      if (not UninstallSilent) and (MsgBox('Also delete your osu!pad settings and lifetime key counters? This cannot be undone.',
+                mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES) then
       begin
         DelTree(AppDataDir, True, True, True);
       end
