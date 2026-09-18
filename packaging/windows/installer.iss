@@ -128,6 +128,26 @@ Type: files; Name: "{userappdata}\osupad\tosu.log"
 //    - COM port: managed dynamically by usbser.sys.
 //    - Device NVS: hardware counters and calibration intentionally preserved (§W3-4).
 
+// Stop running background processes so binaries are not locked during install or uninstall (§W2-3, §PKG-06)
+procedure StopRunningProcesses;
+var
+  ResultCode: Integer;
+begin
+  Exec('taskkill.exe', '/F /IM osupad-daemon.exe /IM osupad-gui.exe /IM tosu.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+function InitializeUninstall(): Boolean;
+begin
+  StopRunningProcesses;
+  Result := True;
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  StopRunningProcesses;
+  Result := '';
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   AppDataDir: String;
