@@ -107,6 +107,9 @@ impl Storage {
         if v < 7 {
             self.apply_v7()?;
         }
+        if v < 8 {
+            self.apply_v8()?;
+        }
         Ok(())
     }
 
@@ -183,6 +186,17 @@ impl Storage {
                 updated_at TEXT NOT NULL
             );
             INSERT INTO schema_migrations (version, applied_at) VALUES (7, datetime('now'));
+            COMMIT;",
+        )?;
+        Ok(())
+    }
+
+    /// v8: update default debounce_us from 3000 to 5000 µs to eliminate switch chatter
+    fn apply_v8(&self) -> Result<(), StorageError> {
+        self.conn.execute_batch(
+            "BEGIN TRANSACTION;
+            UPDATE config SET debounce_us = 5000 WHERE debounce_us = 3000;
+            INSERT INTO schema_migrations (version, applied_at) VALUES (8, datetime('now'));
             COMMIT;",
         )?;
         Ok(())
@@ -274,7 +288,7 @@ impl Storage {
                 id, key1_hid_usage, key2_hid_usage, debounce_us,
                 brightness, display_sleep_seconds, gameplay_display_hz, tosu_endpoint
             ) VALUES (
-                1, 29, 27, 3000, 100, 600, 10, 'ws://127.0.0.1:24050/websocket/v2'
+                1, 29, 27, 5000, 100, 600, 10, 'ws://127.0.0.1:24050/websocket/v2'
             );
 
             INSERT INTO schema_migrations (version, applied_at) VALUES (1, datetime('now'));
@@ -510,6 +524,7 @@ mod tests {
         let config = storage.load_config().expect("load_config");
         assert_eq!(config.key1_hid_usage, 29); // 'Z'
         assert_eq!(config.key2_hid_usage, 27); // 'X'
+        assert_eq!(config.debounce_us, 5000);
         assert_eq!(config.brightness, 100);
         assert_eq!((config.key1_gpio, config.key2_gpio), (14, 9));
 
@@ -736,6 +751,35 @@ mod tests {
         let migrated = storage.load_config().unwrap();
         assert_eq!((migrated.key1_gpio, migrated.key2_gpio), (14, 9));
         assert_eq!(migrated.debounce_us, 4000);
+    }
+
+    #[test]
+    fn test_migration_v8_updates_default_debounce() {
+        let storage = Storage::open_in_memory().expect("open");
+        storage
+            .conn
+            .execute_batch(
+                "UPDATE config SET debounce_us = 3000 WHERE id = 1;
+                 DELETE FROM schema_migrations WHERE version >= 8;",
+            )
+            .unwrap();
+        storage.migrate().unwrap();
+
+        let migrated = storage.load_config().unwrap();
+        assert_eq!(migrated.debounce_us, 5000);
+
+        // Custom debounce value (e.g. 1500) should not be overwritten
+        storage
+            .conn
+            .execute_batch(
+                "UPDATE config SET debounce_us = 1500 WHERE id = 1;
+                 DELETE FROM schema_migrations WHERE version >= 8;",
+            )
+            .unwrap();
+        storage.migrate().unwrap();
+
+        let preserved = storage.load_config().unwrap();
+        assert_eq!(preserved.debounce_us, 1500);
     }
 
     #[test]

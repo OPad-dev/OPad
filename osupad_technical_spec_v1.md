@@ -961,7 +961,7 @@ Example:
   "config": {
     "key1": "Z",
     "key2": "X",
-    "debounce_us": 3000,
+    "debounce_us": 5000,
     "brightness": 100,
     "display_sleep_seconds": 600,
     "gameplay_display_hz": 5

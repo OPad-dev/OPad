@@ -20,7 +20,7 @@ static void test_valid_config_accepted(void)
         .key2_usage = 0x1B, // 'X'
         .key1_gpio = DEVICE_CONFIG_DEFAULT_KEY1_GPIO,
         .key2_gpio = DEVICE_CONFIG_DEFAULT_KEY2_GPIO,
-        .debounce_us = 3000,
+        .debounce_us = 5000,
         .brightness = 80,
         .sleep_s = 600,
     };
@@ -39,7 +39,7 @@ static void test_invalid_key_usages_rejected(void)
         .key2_usage = 0x1B,
         .key1_gpio = DEVICE_CONFIG_DEFAULT_KEY1_GPIO,
         .key2_gpio = DEVICE_CONFIG_DEFAULT_KEY2_GPIO,
-        .debounce_us = 3000,
+        .debounce_us = 5000,
         .brightness = 80,
         .sleep_s = 600,
     };
@@ -98,7 +98,7 @@ static void test_brightness_and_sleep_bounds(void)
         .key2_usage = 0x1B,
         .key1_gpio = DEVICE_CONFIG_DEFAULT_KEY1_GPIO,
         .key2_gpio = DEVICE_CONFIG_DEFAULT_KEY2_GPIO,
-        .debounce_us = 3000,
+        .debounce_us = 5000,
         .brightness = 101, // Above 100
         .sleep_s = 600,
     };
@@ -134,7 +134,7 @@ static void test_gameplay_display_hz_bounds(void)
         .key2_usage = 0x1B,
         .key1_gpio = DEVICE_CONFIG_DEFAULT_KEY1_GPIO,
         .key2_gpio = DEVICE_CONFIG_DEFAULT_KEY2_GPIO,
-        .debounce_us = 3000,
+        .debounce_us = 5000,
         .brightness = 100,
         .sleep_s = 600,
         .gameplay_display_hz = 61, // Above 60
@@ -164,7 +164,7 @@ static void test_key_gpio_allow_list(void)
         .version = DEVICE_CONFIG_VERSION,
         .key1_usage = 0x1D,
         .key2_usage = 0x1B,
-        .debounce_us = 3000,
+        .debounce_us = 5000,
         .brightness = 100,
         .sleep_s = 600,
         .key1_gpio = 14,

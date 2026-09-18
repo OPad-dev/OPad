@@ -89,7 +89,7 @@ typedef struct _osupad_DeviceStatus {
 typedef struct _osupad_ConfigPayload {
     uint32_t key1_hid_usage; /* Default: 0x1D ('Z') */
     uint32_t key2_hid_usage; /* Default: 0x1B ('X') */
-    uint32_t debounce_us; /* Lockout window, default: 3000 (3ms) */
+    uint32_t debounce_us; /* Lockout window, default: 5000 (5ms) */
     uint32_t brightness; /* 0 to 100%, default: 100 */
     uint32_t display_sleep_seconds; /* Inactivity timeout, default: 600 (10 min) */
     uint32_t gameplay_display_hz; /* Gameplay refresh rate cap, default: 10 */

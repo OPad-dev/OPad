@@ -114,7 +114,7 @@ The concrete work is task P2-8.
 **Spec:** §9.2 (eager debounce, step 4 re-sample), §34 (debounce bounce patterns, no stuck keys), §37 (2–3 ms default).
 
 **Required change:**
-1. Change `keypad_config_t.debounce_ms` (uint16 ms) to `debounce_us` (uint32 µs). Default **3000 µs**. Clamp accepted values to `500..=20000` µs. Update `protocol.c` to pass µs through without division, and `protocol_send_config_ack` to report µs directly.
+1. Change `keypad_config_t.debounce_ms` (uint16 ms) to `debounce_us` (uint32 µs). Default **5000 µs**. Clamp accepted values to `500..=20000` µs. Update `protocol.c` to pass µs through without division, and `protocol_send_config_ack` to report µs directly.
 2. Implement the re-sample in `keypad_task` (core 0, already highest priority). This avoids adding an esp_timer:
    - The task keeps a per-key `lockout_end_us`. Instead of `ulTaskNotifyTake(pdTRUE, portMAX_DELAY)`, it waits with a timeout equal to the smallest remaining lockout among keys still in lockout (or `portMAX_DELAY` when none are).
    - When a key's lockout has expired and it has not been re-sampled yet, read the GPIO. If the level differs from the accepted state, apply it as a new accepted transition: update state, start a new lockout, submit HID, and count it if it is a press.
@@ -127,7 +127,7 @@ The concrete work is task P2-8.
 **Acceptance:**
 - Unit tests (host-compiled) cover: clean press/release; bounce burst on press; bounce burst on release; glitch shorter than lockout (must end in the correct final state); tap shorter than lockout; both keys interleaved.
 - On hardware: 2 minutes of fast alternating taps with no stuck key and no missed press. `osupadctl latency` p99.9 unchanged within measurement resolution (10 µs buckets) compared to before the change.
-- Default debounce everywhere (firmware, proto comment, SQLite default, `DeviceConfig::default`, GUI) is 3000 µs.
+- Default debounce everywhere (firmware, proto comment, SQLite default, `DeviceConfig::default`, GUI) is 5000 µs.
 
 ---
 
@@ -145,7 +145,7 @@ The concrete work is task P2-8.
 3. On `SetConfig`: validate every field (HID usage `0x04..=0xE7`, debounce range from P0-2, brightness `0..=100`, sleep `0` or `10..=86400`). Reject invalid values with `ConfigAck{success=false, message}` instead of silently ignoring them. Apply valid values to RAM immediately **only if safe** (see 4). Persist to NVS **only in IDLE**; otherwise mark dirty and let the runtime supervisor persist when state becomes IDLE (the same pattern as counter checkpoints).
 4. Key mapping and debounce changes while a key is held could leave a stuck keycode on the host. Apply mapping changes only when both keys are released (check `keypad_is_pressed`); otherwise stage them and apply on the next all-released moment in `keypad_task`.
 5. Fill in all fields of `ConfigAck.current_config` (it currently omits sleep timeout and uses ms).
-6. Defaults: brightness **100**, sleep **600 s**, debounce **3000 µs**, Z (`0x1D`) / X (`0x1B`).
+6. Defaults: brightness **100**, sleep **600 s**, debounce **5000 µs**, Z (`0x1D`) / X (`0x1B`).
 
 **Acceptance:**
 - Set K1=A, K2=S via GUI, unplug, stop the daemon (`systemctl --user stop osupad-daemon`), plug in: A/S are produced.

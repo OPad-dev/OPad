@@ -508,7 +508,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
 
         // 8. UpdateConfig with key change is deferred (no storage write)
         let new_cfg = DeviceConfig {
-            debounce_us: 5000,
+            debounce_us: 6000,
             ..Default::default()
         };
         let r = handle_ipc_request(

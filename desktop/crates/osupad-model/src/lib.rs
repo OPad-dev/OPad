@@ -212,7 +212,7 @@ fn validate_key_gpios(key1_gpio: u32, key2_gpio: u32) -> Result<(), String> {
 pub struct DeviceConfig {
     pub key1_hid_usage: u32,        // Default: 0x1D ('Z')
     pub key2_hid_usage: u32,        // Default: 0x1B ('X')
-    pub debounce_us: u32,           // Default: 3000 (3ms)
+    pub debounce_us: u32,           // Default: 5000 (5ms)
     pub brightness: u32,            // 0..100, default: 100
     pub display_sleep_seconds: u32, // Default: 600 (10 min)
     pub gameplay_display_hz: u32,   // Default: 10
@@ -228,7 +228,7 @@ impl Default for DeviceConfig {
         Self {
             key1_hid_usage: 0x1D, // 'Z'
             key2_hid_usage: 0x1B, // 'X'
-            debounce_us: 3000,
+            debounce_us: 5000,
             brightness: 100,
             display_sleep_seconds: 600,
             gameplay_display_hz: 10,

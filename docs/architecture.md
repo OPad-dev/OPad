@@ -6,7 +6,7 @@ osu!pad is a competitive two-key osu! keypad and telemetry display based on the 
 The system is separated into two strictly decoupled layers:
 1. **Low-Latency Keyboard Subsystem (ESP32-S3 firmware)**:
    - Targets a 1 ms (1000 Hz) USB HID polling interval.
-   - Eager debounce: First edge accepted immediately in RAM, followed by lockout window (500–20,000 µs, default 3,000 µs).
+   - Eager debounce: First edge accepted immediately in RAM, followed by lockout window (500–20,000 µs, default 5,000 µs).
    - Dedicated hardware GPIO interrupts waking the highest-priority input task on Core 0.
    - Operates fully independently from display, host software, CDC telemetry, tosu, or persistence.
 2. **Auxiliary Telemetry & Management Subsystem (Host Daemon + Display)**:

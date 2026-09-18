@@ -17,7 +17,7 @@ extern "C" {
 
 #define DEBOUNCE_MIN_US     500
 #define DEBOUNCE_MAX_US     20000
-#define DEBOUNCE_DEFAULT_US 3000
+#define DEBOUNCE_DEFAULT_US 5000
 
 typedef enum {
     DEBOUNCE_SOURCE_EDGE = 0,

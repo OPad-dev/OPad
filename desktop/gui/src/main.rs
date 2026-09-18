@@ -330,7 +330,7 @@ impl App {
             k2_input: "X".into(),
             k1_gpio: osupad_model::DEFAULT_KEY1_GPIO,
             k2_gpio: osupad_model::DEFAULT_KEY2_GPIO,
-            debounce: 3000,
+            debounce: 5000,
             brightness: 100,
             sleep_seconds: 600,
             gameplay_display_hz: 10,
