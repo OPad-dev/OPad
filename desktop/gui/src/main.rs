@@ -1,3 +1,5 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 mod chrome;
 mod designer;
 mod ipc;
@@ -148,6 +150,7 @@ pub struct App {
 
     // Daemon state
     pub daemon_online: bool,
+    pub daemon_spawn_attempted: bool,
     pub device_connected: bool,
     pub tosu_connected: bool,
     pub mode: RuntimeMode,
@@ -303,6 +306,7 @@ impl App {
             tray: None,
             tray_available: None,
             daemon_online: false,
+            daemon_spawn_attempted: false,
             device_connected: false,
             tosu_connected: false,
             mode: RuntimeMode::Idle,
@@ -485,6 +489,10 @@ impl App {
                         last_backup: _,
                     }) => {
                         self.daemon_online = true;
+                        self.daemon_spawn_attempted = false;
+                        if self.banner.as_deref() == Some("Launched osupad-daemon. Connecting...") {
+                            self.banner = None;
+                        }
                         self.mode = mode;
                         self.device_connected = device_connected;
                         self.device_info = device_info;
@@ -519,6 +527,10 @@ impl App {
                         self.daemon_online = false;
                         self.device_connected = false;
                         self.tosu_connected = false;
+                        if !self.daemon_spawn_attempted {
+                            self.daemon_spawn_attempted = true;
+                            return Task::perform(start_daemon_process(), Message::DaemonStarted);
+                        }
                     }
                 }
                 self.update_tray();
