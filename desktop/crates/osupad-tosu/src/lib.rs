@@ -406,6 +406,8 @@ fn launch_tosu(bin: &Path, log_path: &Path) -> std::io::Result<tokio::process::C
     if let Some(dir) = bin.parent() {
         cmd.current_dir(dir);
     }
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: run tosu headlessly without console window
     cmd.spawn()
 }
 
