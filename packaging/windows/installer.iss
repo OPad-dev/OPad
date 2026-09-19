@@ -76,8 +76,8 @@ CloseApplicationsFilter=opad-gui.exe,opad-daemon.exe,opadctl.exe,osupad-gui.exe,
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-; Desktop icon is unchecked by default (§W2-1)
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+; Desktop icon is checked by default
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 ; Autostart at login is checked by default (§W2-1)
 Name: "autostart"; Description: "Start OPad when I log in"; GroupDescription: "Windows Startup:"
 
