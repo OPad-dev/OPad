@@ -63,7 +63,8 @@ fn main() {
     let chatter_threshold_ms = 15.0;
 
     loop {
-        if is_key_down(0x1B) { // Escape key to exit
+        if is_key_down(0x1B) {
+            // Escape key to exit
             break;
         }
 
@@ -165,12 +166,18 @@ fn main() {
     }
 
     println!("\n\n==================== TEST SUMMARY ====================");
-    println!("Elapsed Time:       {:.1} seconds", start_time.elapsed().as_secs_f64());
+    println!(
+        "Elapsed Time:       {:.1} seconds",
+        start_time.elapsed().as_secs_f64()
+    );
     println!("Total Presses:      {}", k1.press_count + k2.press_count);
     println!("  - Key 1 (Z):      {} presses", k1.press_count);
     println!("  - Key 2 (X):      {} presses", k2.press_count);
     println!();
-    println!("HW-03 (Ghosting):   {} simultaneous press events registered cleanly", simultaneous_passes);
+    println!(
+        "HW-03 (Ghosting):   {} simultaneous press events registered cleanly",
+        simultaneous_passes
+    );
     if simultaneous_passes > 0 {
         println!("  -> HW-03 RESULT:  PASS (Both keys report down concurrently with 0 ghosting)");
     } else {
@@ -179,13 +186,24 @@ fn main() {
     println!();
     let total = k1.press_count + k2.press_count;
     let total_chatter = k1.chatter_count + k2.chatter_count;
-    let chatter_pct = if total > 0 { (total_chatter as f64 / total as f64) * 100.0 } else { 0.0 };
-    println!("Switch Chatter:     {} double-tap bounce events detected ({:.2}%)", total_chatter, chatter_pct);
+    let chatter_pct = if total > 0 {
+        (total_chatter as f64 / total as f64) * 100.0
+    } else {
+        0.0
+    };
+    println!(
+        "Switch Chatter:     {} double-tap bounce events detected ({:.2}%)",
+        total_chatter, chatter_pct
+    );
     println!("  - Key 1 Chatter:  {}", k1.chatter_count);
     println!("  - Key 2 Chatter:  {}", k2.chatter_count);
     if total_chatter > 0 {
-        println!("  -> DIAGNOSTIC:    Mechanical contact bounce was observed < 15ms after release.");
-        println!("                    To eliminate this, increase Debounce Lockout to 5000 µs (5ms).");
+        println!(
+            "  -> DIAGNOSTIC:    Mechanical contact bounce was observed < 15ms after release."
+        );
+        println!(
+            "                    To eliminate this, increase Debounce Lockout to 5000 µs (5ms)."
+        );
     } else if total >= 20 {
         println!("  -> HW-04 RESULT:  PASS (Zero switch chatter or double-taps observed)");
     }

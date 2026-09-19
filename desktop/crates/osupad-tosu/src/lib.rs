@@ -334,6 +334,8 @@ pub fn strip_ansi(s: &str) -> String {
     out
 }
 
+pub type LogLineCallback = Arc<dyn Fn(&str) + Send + Sync>;
+
 /// Keeps a tosu process running for as long as the daemon runs.
 ///
 /// Does nothing while something already listens on tosu's port (e.g. a tosu the
@@ -342,7 +344,7 @@ pub fn strip_ansi(s: &str) -> String {
 pub fn spawn_tosu_supervisor(
     endpoint: String,
     log_path: PathBuf,
-    line_cb: Option<Arc<dyn Fn(&str) + Send + Sync>>,
+    line_cb: Option<LogLineCallback>,
 ) -> TosuSupervisor {
     let supervisor = TosuSupervisor::default();
     let paused = supervisor.paused.clone();
@@ -421,7 +423,7 @@ pub fn spawn_tosu_supervisor(
 fn launch_tosu(
     bin: &Path,
     log_path: &Path,
-    line_cb: Option<Arc<dyn Fn(&str) + Send + Sync>>,
+    line_cb: Option<LogLineCallback>,
 ) -> std::io::Result<tokio::process::Child> {
     if let Some(dir) = log_path.parent() {
         std::fs::create_dir_all(dir)?;
@@ -503,9 +505,7 @@ fn launch_tosu(
         Ok(child)
     } else {
         let log = std::fs::File::create(log_path)?;
-        cmd.stdout(log.try_clone()?)
-            .stderr(log)
-            .kill_on_drop(true);
+        cmd.stdout(log.try_clone()?).stderr(log).kill_on_drop(true);
         cmd.spawn()
     }
 }

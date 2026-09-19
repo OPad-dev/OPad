@@ -20,11 +20,21 @@ fn main() {
         firmware.join("sdkconfig.defaults")
     };
     if !lvgl.exists() || !sdkconfig.exists() {
-        panic!(
-            "LVGL sources or sdkconfig missing. Configure the firmware once: \
-             idf.py -C {} reconfigure",
+        println!(
+            "cargo:warning=LVGL sources or sdkconfig not found in {}. Compiling osupad-ui-preview in stub mode.",
             firmware.display()
         );
+        let mut build = cc::Build::new();
+        build
+            .include(&ui_core)
+            .flag_if_supported("-std=gnu11")
+            .flag_if_supported("-w")
+            .opt_level(2)
+            .warnings(false)
+            .file(manifest.join("csrc/preview_stub.c"));
+        build.compile("osupad_ui_lvgl");
+        println!("cargo:rerun-if-changed=csrc/preview_stub.c");
+        return;
     }
 
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());

@@ -862,23 +862,43 @@ impl App {
             },
             Message::StartDaemon => {
                 self.banner = Some("Starting osupad-daemon...".into());
-                self.log_event(LogSource::Program, LogLevel::Info, "gui", "Launching osupad-daemon process");
+                self.log_event(
+                    LogSource::Program,
+                    LogLevel::Info,
+                    "gui",
+                    "Launching osupad-daemon process",
+                );
                 return Task::perform(start_daemon_process(), Message::DaemonStarted);
             }
             Message::DaemonStarted(res) => match res {
                 Ok(()) => {
                     self.banner = Some("Launched osupad-daemon. Connecting...".into());
-                    self.log_event(LogSource::Program, LogLevel::Info, "gui", "osupad-daemon launched successfully");
+                    self.log_event(
+                        LogSource::Program,
+                        LogLevel::Info,
+                        "gui",
+                        "osupad-daemon launched successfully",
+                    );
                     return self.poll();
                 }
                 Err(e) => {
                     self.banner = Some(format!("Failed to start daemon: {}", e));
-                    self.log_event(LogSource::Program, LogLevel::Error, "gui", format!("Failed to start daemon: {}", e));
+                    self.log_event(
+                        LogSource::Program,
+                        LogLevel::Error,
+                        "gui",
+                        format!("Failed to start daemon: {}", e),
+                    );
                 }
             },
             Message::StartTosu => {
                 self.banner = Some("Starting tosu...".into());
-                self.log_event(LogSource::Program, LogLevel::Info, "gui", "Launching tosu process");
+                self.log_event(
+                    LogSource::Program,
+                    LogLevel::Info,
+                    "gui",
+                    "Launching tosu process",
+                );
                 return Task::perform(
                     start_tosu_process(self.tosu_override_path.clone()),
                     Message::TosuStarted,
@@ -887,12 +907,22 @@ impl App {
             Message::TosuStarted(res) => match res {
                 Ok(()) => {
                     self.banner = Some("Launched tosu.".into());
-                    self.log_event(LogSource::Program, LogLevel::Info, "gui", "tosu launched successfully");
+                    self.log_event(
+                        LogSource::Program,
+                        LogLevel::Info,
+                        "gui",
+                        "tosu launched successfully",
+                    );
                     return self.poll();
                 }
                 Err(e) => {
                     self.banner = Some(format!("Failed to start tosu: {}", e));
-                    self.log_event(LogSource::Program, LogLevel::Error, "gui", format!("Failed to start tosu: {}", e));
+                    self.log_event(
+                        LogSource::Program,
+                        LogLevel::Error,
+                        "gui",
+                        format!("Failed to start tosu: {}", e),
+                    );
                 }
             },
             Message::InstallSystemdService => {
@@ -981,7 +1011,11 @@ impl App {
                     return Task::none();
                 }
                 self.detecting_pin = Some(key_id);
-                let exclude = if key_id == 1 { self.k2_gpio } else { self.k1_gpio };
+                let exclude = if key_id == 1 {
+                    self.k2_gpio
+                } else {
+                    self.k1_gpio
+                };
                 return Task::perform(
                     ipc::request(IpcRequest::DetectPin {
                         key_id,
@@ -1319,7 +1353,11 @@ impl App {
         }))
         .spacing(6);
 
-        let clickable_status = |on: bool, label: &'static str, state: &'static str, msg: Option<Message>| -> Element<'_, Message> {
+        let clickable_status = |on: bool,
+                                label: &'static str,
+                                state: &'static str,
+                                msg: Option<Message>|
+         -> Element<'_, Message> {
             let row_content = row![
                 container(Space::new().width(10).height(10)).style(theme::dot(on)),
                 text(label).size(13),
@@ -1337,7 +1375,10 @@ impl App {
                     .on_press(m)
                     .into()
             } else {
-                container(row_content).padding([5, 8]).width(Length::Fill).into()
+                container(row_content)
+                    .padding([5, 8])
+                    .width(Length::Fill)
+                    .into()
             }
         };
 
@@ -2375,7 +2416,9 @@ async fn start_tosu_process(override_path: Option<std::path::PathBuf>) -> Result
     tokio::task::spawn_blocking(move || {
         let bin = override_path
             .or_else(osupad_tosu::find_tosu_binary)
-            .ok_or_else(|| "tosu executable not found (no bundled copy or system install)".to_string())?;
+            .ok_or_else(|| {
+                "tosu executable not found (no bundled copy or system install)".to_string()
+            })?;
 
         // Prevent opening browser window on startup
         if let Some(dir) = bin.parent() {

@@ -1033,7 +1033,10 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
             let mut sub = device.subscribe();
             let effective_timeout = if timeout_ms == 0 { 10000 } else { timeout_ms };
-            if let Err(_e) = device.send_detect_pin(key_id, effective_timeout, exclude_gpio).await {
+            if let Err(_e) = device
+                .send_detect_pin(key_id, effective_timeout, exclude_gpio)
+                .await
+            {
                 return IpcResponse::PinDetected {
                     key_id,
                     gpio: 0,

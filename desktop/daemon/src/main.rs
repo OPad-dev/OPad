@@ -194,8 +194,11 @@ async fn main() -> Result<()> {
         }
     });
 
-    let tosu_supervisor =
-        spawn_tosu_supervisor(initial_config.tosu_endpoint.clone(), tosu_log_path, Some(tosu_cb));
+    let tosu_supervisor = spawn_tosu_supervisor(
+        initial_config.tosu_endpoint.clone(),
+        tosu_log_path,
+        Some(tosu_cb),
+    );
     let (tosu_manager, mut tosu_rx) = TosuManager::new(initial_config.tosu_endpoint.clone());
     let mut tosu_connected_rx = tosu_manager.subscribe_connected();
     tosu_manager.start();

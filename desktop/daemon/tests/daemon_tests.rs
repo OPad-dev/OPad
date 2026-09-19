@@ -1271,7 +1271,10 @@ async fn test_replacement_detected_with_real_event_order() {
         RuntimeEvent::DeviceCounters(counters("OSUPAD-NEW", 1, 3, 4)),
         now,
     );
-    let actions = controller.on_event(RuntimeEvent::DeviceConnected(pad_info("OSUPAD-NEW"), None), now);
+    let actions = controller.on_event(
+        RuntimeEvent::DeviceConnected(pad_info("OSUPAD-NEW"), None),
+        now,
+    );
 
     assert_eq!(
         controller.state.pending_replacement,
@@ -1506,7 +1509,8 @@ async fn test_replug_during_play_keeps_the_state_machine_and_write_guard() {
             "an unplug must not reopen the write guard mid-map (cycle {cycle})"
         );
 
-        let actions = controller.on_event(RuntimeEvent::DeviceConnected(dev_info.clone(), None), now);
+        let actions =
+            controller.on_event(RuntimeEvent::DeviceConnected(dev_info.clone(), None), now);
         assert!(controller.state.device_connected, "cycle {cycle}");
         assert_eq!(
             controller.state.mode,
@@ -2423,10 +2427,14 @@ async fn test_device_connected_with_config_adopts_device_config() {
         now,
     );
 
-    let actions = controller.on_event(RuntimeEvent::DeviceConnected(dev_info.clone(), Some(dev_cfg.clone())), now);
+    let actions = controller.on_event(
+        RuntimeEvent::DeviceConnected(dev_info.clone(), Some(dev_cfg.clone())),
+        now,
+    );
     assert!(controller.state.device_connected);
     assert_eq!(controller.state.config, dev_cfg);
     assert!(actions.contains(&RuntimeAction::SaveDeviceConfig(dev_cfg)));
-    assert!(!actions.iter().any(|a| matches!(a, RuntimeAction::SendConfig(_))));
+    assert!(!actions
+        .iter()
+        .any(|a| matches!(a, RuntimeAction::SendConfig(_))));
 }
-

@@ -252,4 +252,3 @@ pub fn sidebar_status(_theme: &Theme, status: button::Status) -> button::Style {
         },
     )
 }
-

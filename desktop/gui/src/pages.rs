@@ -240,68 +240,64 @@ pub fn dashboard(app: &App) -> Element<'_, Message> {
 
 pub fn settings(app: &App) -> Element<'_, Message> {
     let key_input = |label: &'static str, value: &str, on_input: fn(String) -> Message| {
-        let mut input = text_input("Z", value)
-            .size(22)
-            .width(80)
-            .padding(10);
+        let mut input = text_input("Z", value).size(22).width(80).padding(10);
         if app.device_connected {
             input = input.on_input(on_input);
         }
-        column![
-            caption(label),
-            input
-        ]
-        .spacing(6)
+        column![caption(label), input].spacing(6)
     };
 
     // Only supported header pins, minus the one the other key uses
-    let pin_select =
-        |label: &'static str, key_id: u32, gpio: u32, other: u32, on_select: fn(KeyPin) -> Message| {
-            let options: Vec<KeyPin> = KEY_PINS
-                .iter()
-                .copied()
-                .filter(|p| p.gpio != other)
-                .collect();
+    let pin_select = |label: &'static str,
+                      key_id: u32,
+                      gpio: u32,
+                      other: u32,
+                      on_select: fn(KeyPin) -> Message| {
+        let options: Vec<KeyPin> = KEY_PINS
+            .iter()
+            .copied()
+            .filter(|p| p.gpio != other)
+            .collect();
 
-            let detect_btn = if app.detecting_pin == Some(key_id) {
-                button(text("Detecting... (click to cancel)").size(12))
-                    .style(theme::primary)
-                    .on_press(Message::CancelDetectPin)
-            } else if app.device_connected {
-                button(text("Auto-Detect").size(12))
-                    .style(theme::secondary)
-                    .on_press(Message::StartDetectPin(key_id))
-            } else {
-                button(text("Auto-Detect").size(12))
-                    .style(theme::secondary)
-            };
-
-            let picker_element: Element<'_, Message> = if app.device_connected {
-                pick_list(options, key_pin(gpio), on_select)
-                    .placeholder(format!("GPIO{} (unsupported)", gpio))
-                    .width(Length::Fill)
-                    .padding(10)
-                    .into()
-            } else {
-                text_input("", &key_pin(gpio).map_or(format!("GPIO{} (disconnected)", gpio), |p| format!("{} (disconnected)", p)))
-                    .size(13)
-                    .width(Length::Fill)
-                    .padding(10)
-                    .into()
-            };
-
-            column![
-                row![
-                    caption(label),
-                    Space::new().width(Length::Fill),
-                    detect_btn,
-                ]
-                .align_y(Alignment::Center),
-                picker_element,
-            ]
-            .spacing(6)
-            .width(Length::FillPortion(1))
+        let detect_btn = if app.detecting_pin == Some(key_id) {
+            button(text("Detecting... (click to cancel)").size(12))
+                .style(theme::primary)
+                .on_press(Message::CancelDetectPin)
+        } else if app.device_connected {
+            button(text("Auto-Detect").size(12))
+                .style(theme::secondary)
+                .on_press(Message::StartDetectPin(key_id))
+        } else {
+            button(text("Auto-Detect").size(12)).style(theme::secondary)
         };
+
+        let picker_element: Element<'_, Message> = if app.device_connected {
+            pick_list(options, key_pin(gpio), on_select)
+                .placeholder(format!("GPIO{} (unsupported)", gpio))
+                .width(Length::Fill)
+                .padding(10)
+                .into()
+        } else {
+            text_input(
+                "",
+                &key_pin(gpio).map_or(format!("GPIO{} (disconnected)", gpio), |p| {
+                    format!("{} (disconnected)", p)
+                }),
+            )
+            .size(13)
+            .width(Length::Fill)
+            .padding(10)
+            .into()
+        };
+
+        column![
+            row![caption(label), Space::new().width(Length::Fill), detect_btn,]
+                .align_y(Alignment::Center),
+            picker_element,
+        ]
+        .spacing(6)
+        .width(Length::FillPortion(1))
+    };
 
     let keys_header = if app.device_connected {
         row![text("Keys").size(18).font(theme::FONT_BOLD)].align_y(Alignment::Center)
@@ -416,11 +412,14 @@ pub fn settings(app: &App) -> Element<'_, Message> {
             .style(theme::primary)
             .on_press(Message::SaveConfig)
     } else {
-        button(text(if !app.device_connected {
-            "Save settings (device not connected)"
-        } else {
-            "Detecting pin..."
-        }).size(15))
+        button(
+            text(if !app.device_connected {
+                "Save settings (device not connected)"
+            } else {
+                "Detecting pin..."
+            })
+            .size(15),
+        )
         .padding([10, 22])
         .style(theme::secondary)
     };
@@ -430,12 +429,12 @@ pub fn settings(app: &App) -> Element<'_, Message> {
     if !app.device_connected {
         content = content.push(
             card(
-                row![
-                    text("⚠ Device not connected. Connect your osu!pad to adjust device settings.")
-                        .size(14)
-                        .font(theme::FONT_BOLD)
-                        .color(theme::YELLOW),
-                ]
+                row![text(
+                    "⚠ Device not connected. Connect your osu!pad to adjust device settings."
+                )
+                .size(14)
+                .font(theme::FONT_BOLD)
+                .color(theme::YELLOW),]
                 .padding([6, 10]),
             )
             .width(Length::Fill),

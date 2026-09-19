@@ -288,7 +288,8 @@ impl RuntimeController {
                 if let Some(cfg) = &dev_cfg {
                     let mut adopted = cfg.clone();
                     if adopted.tosu_endpoint.trim().is_empty() {
-                        adopted.tosu_endpoint = if self.state.config.tosu_endpoint.trim().is_empty() {
+                        adopted.tosu_endpoint = if self.state.config.tosu_endpoint.trim().is_empty()
+                        {
                             osupad_model::DeviceConfig::default().tosu_endpoint
                         } else {
                             self.state.config.tosu_endpoint.clone()
