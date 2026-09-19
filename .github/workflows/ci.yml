@@ -20,8 +20,10 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          if command -v sudo >/dev/null 2>&1; then SUDO="sudo"; else SUDO=""; fi
+          export DEBIAN_FRONTEND=noninteractive
+          $SUDO apt-get update
+          $SUDO apt-get install -y --no-install-recommends \
             build-essential \
             pkg-config \
             libasound2-dev \
@@ -40,6 +42,7 @@ jobs:
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
+        continue-on-error: true
         with:
           workspaces: desktop
 
@@ -59,8 +62,10 @@ jobs:
     # §W4-1. cargo check alone is not enough: the ksni/tray-icon split and the
     # IPC transport aliases fail at link time, not at check time, so this job
     # builds and runs the tests on a real windows-msvc host.
+    # Gated on GitHub Actions where windows-latest runners exist (§A.1, §A.7).
     name: Rust on Windows (Format, Clippy, Tests)
     runs-on: windows-latest
+    if: github.server_url == 'https://github.com'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -79,6 +84,7 @@ jobs:
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
+        continue-on-error: true
         with:
           workspaces: desktop
           key: windows
@@ -102,14 +108,9 @@ jobs:
         run: cargo test --workspace --exclude osupad-gui
 
   rust-windows-gui:
-    # EXPECTED TO FAIL on v1.0-claude, where osupad-gui still depends on ksni
-    # unconditionally and ksni is a Linux D-Bus StatusNotifierItem crate.
-    # W0-5 has landed on v1.0-agy (fc7cf7f), which splits the tray behind
-    # cfg(target_os) and adds tray-icon for Windows, so this job should go green
-    # on the integration merge. It is a separate job so the one unported crate
-    # cannot hide regressions in the other eleven.
-    name: Windows GUI (red until W0-5 is merged)
+    name: Windows GUI
     runs-on: windows-latest
+    if: github.server_url == 'https://github.com'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -128,6 +129,7 @@ jobs:
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
+        continue-on-error: true
         with:
           workspaces: desktop
           key: windows-gui
@@ -149,8 +151,10 @@ jobs:
 
       - name: Install compiler
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential
+          if command -v sudo >/dev/null 2>&1; then SUDO="sudo"; else SUDO=""; fi
+          export DEBIAN_FRONTEND=noninteractive
+          $SUDO apt-get update
+          $SUDO apt-get install -y build-essential
 
       - name: Run firmware host unit tests
         run: ./firmware/test/host/run_tests.sh
