@@ -58,6 +58,7 @@ const DECIMAL_CHOICES: [Decimals; 6] = [
 #[derive(Debug, Clone)]
 pub enum Message {
     Loaded(Result<(Option<Layout>, Option<Layout>), String>),
+    Reload,
     SelectScreen(Screen),
     Select(usize),
     PointerDown { x: f32, y: f32 },
@@ -120,7 +121,7 @@ pub struct Designer {
     live: bool,
     press: bool,
     busy: bool,
-    status: String,
+    pub status: String,
 }
 
 fn idx(screen: Screen) -> usize {
@@ -173,6 +174,12 @@ impl Designer {
         (designer, Task::perform(load_layouts(), Message::Loaded))
     }
 
+    pub fn reload(&mut self) -> Task<Message> {
+        self.busy = true;
+        self.status = "Loading layouts from the daemon...".into();
+        Task::perform(load_layouts(), Message::Loaded)
+    }
+
     fn layout(&self) -> &Layout {
         &self.working[idx(self.screen)]
     }
@@ -207,6 +214,9 @@ impl Designer {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Reload => {
+                return self.reload();
+            }
             Message::Loaded(result) => {
                 self.busy = false;
                 match result {
@@ -556,6 +566,9 @@ impl Designer {
             button("Import")
                 .style(theme::secondary)
                 .on_press(Message::Import),
+            button("Reload")
+                .style(theme::secondary)
+                .on_press(Message::Reload),
         ]
         .spacing(8);
 

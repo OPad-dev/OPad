@@ -112,17 +112,24 @@ pub fn dashboard(app: &App) -> Element<'_, Message> {
             caption("OSU! PROFILE"),
             text(name).size(24).font(theme::FONT_BOLD),
             row![
-                muted(
+                text(
                     number_value(app, src::PROFILE_RANK)
                         .map_or("#-".into(), |r| format!("#{}", grouped(r as u64)))
-                ),
+                )
+                .size(15)
+                .font(theme::FONT_BOLD)
+                .color(theme::MUTED),
+                text("·").size(15).color(theme::MUTED),
                 text(
                     number_value(app, src::PROFILE_PP)
                         .map_or("-".into(), |p| format!("{:.0}pp", p))
                 )
+                .size(15)
+                .font(theme::FONT_BOLD)
                 .color(theme::PINK),
             ]
-            .spacing(16),
+            .spacing(8)
+            .align_y(Alignment::Center),
             muted(format!(
                 "{} accuracy · {} plays",
                 number_value(app, src::PROFILE_ACCURACY)
@@ -233,38 +240,83 @@ pub fn dashboard(app: &App) -> Element<'_, Message> {
 
 pub fn settings(app: &App) -> Element<'_, Message> {
     let key_input = |label: &'static str, value: &str, on_input: fn(String) -> Message| {
+        let mut input = text_input("Z", value)
+            .size(22)
+            .width(80)
+            .padding(10);
+        if app.device_connected {
+            input = input.on_input(on_input);
+        }
         column![
             caption(label),
-            text_input("Z", value)
-                .on_input(on_input)
-                .size(22)
-                .width(80)
-                .padding(10)
+            input
         ]
         .spacing(6)
     };
 
     // Only supported header pins, minus the one the other key uses
     let pin_select =
-        |label: &'static str, gpio: u32, other: u32, on_select: fn(KeyPin) -> Message| {
+        |label: &'static str, key_id: u32, gpio: u32, other: u32, on_select: fn(KeyPin) -> Message| {
             let options: Vec<KeyPin> = KEY_PINS
                 .iter()
                 .copied()
                 .filter(|p| p.gpio != other)
                 .collect();
-            column![
-                caption(label),
+
+            let detect_btn = if app.detecting_pin == Some(key_id) {
+                button(text("Detecting... (click to cancel)").size(12))
+                    .style(theme::primary)
+                    .on_press(Message::CancelDetectPin)
+            } else if app.device_connected {
+                button(text("Auto-Detect").size(12))
+                    .style(theme::secondary)
+                    .on_press(Message::StartDetectPin(key_id))
+            } else {
+                button(text("Auto-Detect").size(12))
+                    .style(theme::secondary)
+            };
+
+            let picker_element: Element<'_, Message> = if app.device_connected {
                 pick_list(options, key_pin(gpio), on_select)
                     .placeholder(format!("GPIO{} (unsupported)", gpio))
                     .width(Length::Fill)
                     .padding(10)
+                    .into()
+            } else {
+                text_input("", &key_pin(gpio).map_or(format!("GPIO{} (disconnected)", gpio), |p| format!("{} (disconnected)", p)))
+                    .size(13)
+                    .width(Length::Fill)
+                    .padding(10)
+                    .into()
+            };
+
+            column![
+                row![
+                    caption(label),
+                    Space::new().width(Length::Fill),
+                    detect_btn,
+                ]
+                .align_y(Alignment::Center),
+                picker_element,
             ]
             .spacing(6)
+            .width(Length::FillPortion(1))
         };
+
+    let keys_header = if app.device_connected {
+        row![text("Keys").size(18).font(theme::FONT_BOLD)].align_y(Alignment::Center)
+    } else {
+        row![
+            text("Keys").size(18).font(theme::FONT_BOLD),
+            Space::new().width(8),
+            muted("(device disconnected)").size(12),
+        ]
+        .align_y(Alignment::Center)
+    };
 
     let keys = card(
         column![
-            text("Keys").size(18).font(theme::FONT_BOLD),
+            keys_header,
             row![
                 key_input("KEY 1", &app.k1_input, Message::Key1),
                 key_input("KEY 2", &app.k2_input, Message::Key2)
@@ -272,11 +324,11 @@ pub fn settings(app: &App) -> Element<'_, Message> {
             .spacing(24),
             column![
                 row![
-                    pin_select("KEY 1 PIN", app.k1_gpio, app.k2_gpio, Message::Key1Pin),
-                    pin_select("KEY 2 PIN", app.k2_gpio, app.k1_gpio, Message::Key2Pin),
+                    pin_select("KEY 1 PIN", 1, app.k1_gpio, app.k2_gpio, Message::Key1Pin),
+                    pin_select("KEY 2 PIN", 2, app.k2_gpio, app.k1_gpio, Message::Key2Pin),
                 ]
                 .spacing(24),
-                muted("Header pin each switch is wired to (other leg to GND). Camera pins are listed; don't use them with a camera fitted.").size(12),
+                muted("Header pin each switch is wired to (other leg to GND). Press 'Auto-Detect' and hit the switch to identify the pin automatically.").size(12),
             ]
             .spacing(8),
             column![
@@ -298,9 +350,21 @@ pub fn settings(app: &App) -> Element<'_, Message> {
     } else {
         format!("{} s", app.sleep_seconds)
     };
+
+    let display_header = if app.device_connected {
+        row![text("Display").size(18).font(theme::FONT_BOLD)].align_y(Alignment::Center)
+    } else {
+        row![
+            text("Display").size(18).font(theme::FONT_BOLD),
+            Space::new().width(8),
+            muted("(device disconnected)").size(12),
+        ]
+        .align_y(Alignment::Center)
+    };
+
     let display = card(
         column![
-            text("Display").size(18).font(theme::FONT_BOLD),
+            display_header,
             column![
                 row![
                     caption("BRIGHTNESS"),
@@ -346,20 +410,46 @@ pub fn settings(app: &App) -> Element<'_, Message> {
         .spacing(18),
     );
 
-    column![
-        heading("Settings"),
-        row![keys, display].spacing(14),
-        advanced,
-        tosu_settings(app),
-        row![updates(app), firmware_updates(app)].spacing(14),
-        about_section(),
-        row![button(text("Save settings").size(15))
+    let save_btn = if app.device_connected && app.detecting_pin.is_none() {
+        button(text("Save settings").size(15))
             .padding([10, 22])
             .style(theme::primary)
-            .on_press(Message::SaveConfig)],
-    ]
-    .spacing(14)
-    .into()
+            .on_press(Message::SaveConfig)
+    } else {
+        button(text(if !app.device_connected {
+            "Save settings (device not connected)"
+        } else {
+            "Detecting pin..."
+        }).size(15))
+        .padding([10, 22])
+        .style(theme::secondary)
+    };
+
+    let mut content = column![heading("Settings")].spacing(14);
+
+    if !app.device_connected {
+        content = content.push(
+            card(
+                row![
+                    text("⚠ Device not connected. Connect your osu!pad to adjust device settings.")
+                        .size(14)
+                        .font(theme::FONT_BOLD)
+                        .color(theme::YELLOW),
+                ]
+                .padding([6, 10]),
+            )
+            .width(Length::Fill),
+        );
+    }
+
+    content = content.push(row![keys, display].spacing(14));
+    content = content.push(advanced);
+    content = content.push(tosu_settings(app));
+    content = content.push(row![updates(app), firmware_updates(app)].spacing(14));
+    content = content.push(about_section());
+    content = content.push(row![save_btn]);
+
+    scrollable(content).into()
 }
 
 /// §U-0.4: every updater is switchable on its own, and shows what is
@@ -988,12 +1078,22 @@ pub fn monitor(app: &App) -> Element<'_, Message> {
             Message::FilterLogSource(None)
         ),
         filter_btn(
-            "HOST",
+            "DAEMON",
             app.log_filter_source == Some(LogSource::Host),
             Message::FilterLogSource(Some(LogSource::Host))
         ),
         filter_btn(
-            "ESP",
+            "PROGRAM",
+            app.log_filter_source == Some(LogSource::Program),
+            Message::FilterLogSource(Some(LogSource::Program))
+        ),
+        filter_btn(
+            "TOSU",
+            app.log_filter_source == Some(LogSource::Tosu),
+            Message::FilterLogSource(Some(LogSource::Tosu))
+        ),
+        filter_btn(
+            "DEVICE",
             app.log_filter_source == Some(LogSource::Esp),
             Message::FilterLogSource(Some(LogSource::Esp))
         ),
@@ -1036,7 +1136,7 @@ pub fn monitor(app: &App) -> Element<'_, Message> {
         .style(theme::secondary)
         .on_press(Message::ToggleAutoScroll),
         Space::new().width(Length::Fill),
-        caption(format!("{} entries", visible_entries.len())),
+        caption(format!("{} entries (24h retention)", visible_entries.len())),
     ]
     .spacing(8)
     .align_y(Alignment::Center);
@@ -1073,8 +1173,8 @@ pub fn monitor(app: &App) -> Element<'_, Message> {
     let lines = column(rendered_items).spacing(4);
 
     column![
-        heading("Monitor"),
-        muted("Live daemon and pad diagnostic events with real-time filtering."),
+        heading("Logs"),
+        muted("Live logs from daemon, program, tosu and device (24h retention)."),
         filter_row,
         action_row,
         card(scrollable(lines).height(Length::Fill)).height(Length::Fill),
@@ -1082,3 +1182,5 @@ pub fn monitor(app: &App) -> Element<'_, Message> {
     .spacing(12)
     .into()
 }
+
+pub use monitor as logs;

@@ -34,7 +34,7 @@ pub fn parse_page_arg() -> Option<Page> {
                 "designer" => Some(Page::Designer),
                 "settings" => Some(Page::Settings),
                 "device" => Some(Page::Device),
-                "monitor" => Some(Page::Monitor),
+                "monitor" | "logs" => Some(Page::Logs),
                 _ => None,
             };
         }
@@ -49,7 +49,7 @@ pub fn main() -> iced::Result {
         Page::Designer => "designer",
         Page::Settings => "settings",
         Page::Device => "device",
-        Page::Monitor => "monitor",
+        Page::Logs => "logs",
     });
 
     if !single_instance::claim(page_str) {
@@ -80,16 +80,19 @@ pub enum Page {
     Designer,
     Settings,
     Device,
-    Monitor,
+    Logs,
 }
 
 impl Page {
+    #[allow(non_upper_case_globals)]
+    pub const Monitor: Page = Page::Logs;
+
     const ALL: [(Page, &'static str); 5] = [
         (Page::Dashboard, "Dashboard"),
         (Page::Designer, "Designer"),
         (Page::Settings, "Settings"),
         (Page::Device, "Device"),
-        (Page::Monitor, "Monitor"),
+        (Page::Logs, "Logs"),
     ];
 }
 
@@ -187,6 +190,7 @@ pub struct App {
     pub sleep_seconds: u32,
     pub gameplay_display_hz: u32,
     pub autostart_tray: bool,
+    pub detecting_pin: Option<u32>,
     config_loaded: bool,
 
     pub logs: Vec<LogEntry>,
@@ -238,9 +242,11 @@ pub enum Message {
     CancelFirmwareModal,
     ConfirmFirmwareUpdate,
     FirmwareUpdateResult(Result<IpcResponse, String>),
-    // Daemon offline recovery
+    // Daemon and tosu recovery
     StartDaemon,
     DaemonStarted(Result<(), String>),
+    StartTosu,
+    TosuStarted(Result<(), String>),
     InstallSystemdService,
     SystemdServiceInstalled(Result<(), String>),
     // Settings
@@ -253,6 +259,9 @@ pub enum Message {
     SleepSeconds(u32),
     GameplayDisplayHz(u32),
     ToggleAutostartTray(bool),
+    StartDetectPin(u32),
+    PinDetected(Result<IpcResponse, String>),
+    CancelDetectPin,
     SaveConfig,
     // Actions
     Sync,
@@ -344,6 +353,7 @@ impl App {
             autostart_tray: platform_windows::is_gui_autostart_enabled(),
             #[cfg(not(any(target_os = "linux", windows)))]
             autostart_tray: false,
+            detecting_pin: None,
             config_loaded: false,
             logs: Vec::new(),
             latest_log_seq: 0,
@@ -355,6 +365,12 @@ impl App {
             tosu_override_path,
             designer,
         };
+        app.log_event(
+            LogSource::Program,
+            LogLevel::Info,
+            "gui",
+            "osu!pad application initialized",
+        );
         let mut tasks = vec![designer_task.map(Message::Designer), app.poll()];
         if !start_hidden {
             tasks.push(app.open_window());
@@ -403,7 +419,7 @@ impl App {
                 Message::FirmwareOffer,
             ),
         ];
-        if self.page == Page::Monitor && self.window.is_some() {
+        if self.page == Page::Logs && self.window.is_some() {
             let since_seq = if self.latest_log_seq > 0 {
                 Some(self.latest_log_seq)
             } else {
@@ -462,7 +478,14 @@ impl App {
         match message {
             Message::Navigate(page) => {
                 self.page = page;
-                return self.poll();
+                let mut tasks = vec![self.poll()];
+                if page == Page::Designer
+                    && self.daemon_online
+                    && self.designer.status.contains("Daemon unavailable")
+                {
+                    tasks.push(self.designer.reload().map(Message::Designer));
+                }
+                return Task::batch(tasks);
             }
             Message::Poll => return self.poll(),
             Message::Status(result) => {
@@ -488,6 +511,8 @@ impl App {
                         // B's to add if it is wanted.
                         last_backup: _,
                     }) => {
+                        let was_offline = !self.daemon_online;
+                        let device_just_connected = !self.device_connected && device_connected;
                         self.daemon_online = true;
                         self.daemon_spawn_attempted = false;
                         if self.banner.as_deref() == Some("Launched osupad-daemon. Connecting...") {
@@ -508,9 +533,12 @@ impl App {
                         self.tosu_connected = tosu_connected;
                         self.latency = latency;
                         self.last_sync_time = last_sync_time;
-                        // Refresh the form only when the saved config changed, so polling
-                        // never discards unsaved edits
-                        if !self.config_loaded || self.config != config {
+                        // Always adopt device config when device connects or config changes
+                        if device_connected
+                            && (!self.config_loaded
+                                || self.config != config
+                                || device_just_connected)
+                        {
                             self.config_loaded = true;
                             self.k1_input = config.key1_char();
                             self.k2_input = config.key2_char();
@@ -522,6 +550,11 @@ impl App {
                             self.gameplay_display_hz = config.gameplay_display_hz;
                         }
                         self.config = config;
+
+                        self.update_tray();
+                        if was_offline && self.designer.status.contains("Daemon unavailable") {
+                            return self.designer.reload().map(Message::Designer);
+                        }
                     }
                     _ => {
                         self.daemon_online = false;
@@ -531,9 +564,9 @@ impl App {
                             self.daemon_spawn_attempted = true;
                             return Task::perform(start_daemon_process(), Message::DaemonStarted);
                         }
+                        self.update_tray();
                     }
                 }
-                self.update_tray();
             }
             Message::UiValues(result) => {
                 if let Ok(IpcResponse::UiValues(values)) = result {
@@ -546,22 +579,19 @@ impl App {
                     latest_seq,
                 }) = result
                 {
-                    if self.latest_log_seq == 0 {
-                        self.logs = entries;
-                    } else {
-                        for entry in entries {
-                            if !self.logs.iter().any(|e| e.seq == entry.seq) {
-                                self.logs.push(entry);
-                            }
-                        }
-                        if self.logs.len() > 2000 {
-                            let excess = self.logs.len() - 2000;
-                            self.logs.drain(0..excess);
+                    for entry in entries {
+                        if !self
+                            .logs
+                            .iter()
+                            .any(|e| e.source == entry.source && e.seq == entry.seq)
+                        {
+                            self.logs.push(entry);
                         }
                     }
                     if latest_seq > 0 {
                         self.latest_log_seq = latest_seq;
                     }
+                    self.prune_logs();
                 }
             }
             Message::FilterLogLevel(lvl) => {
@@ -832,15 +862,37 @@ impl App {
             },
             Message::StartDaemon => {
                 self.banner = Some("Starting osupad-daemon...".into());
+                self.log_event(LogSource::Program, LogLevel::Info, "gui", "Launching osupad-daemon process");
                 return Task::perform(start_daemon_process(), Message::DaemonStarted);
             }
             Message::DaemonStarted(res) => match res {
                 Ok(()) => {
                     self.banner = Some("Launched osupad-daemon. Connecting...".into());
+                    self.log_event(LogSource::Program, LogLevel::Info, "gui", "osupad-daemon launched successfully");
                     return self.poll();
                 }
                 Err(e) => {
                     self.banner = Some(format!("Failed to start daemon: {}", e));
+                    self.log_event(LogSource::Program, LogLevel::Error, "gui", format!("Failed to start daemon: {}", e));
+                }
+            },
+            Message::StartTosu => {
+                self.banner = Some("Starting tosu...".into());
+                self.log_event(LogSource::Program, LogLevel::Info, "gui", "Launching tosu process");
+                return Task::perform(
+                    start_tosu_process(self.tosu_override_path.clone()),
+                    Message::TosuStarted,
+                );
+            }
+            Message::TosuStarted(res) => match res {
+                Ok(()) => {
+                    self.banner = Some("Launched tosu.".into());
+                    self.log_event(LogSource::Program, LogLevel::Info, "gui", "tosu launched successfully");
+                    return self.poll();
+                }
+                Err(e) => {
+                    self.banner = Some(format!("Failed to start tosu: {}", e));
+                    self.log_event(LogSource::Program, LogLevel::Error, "gui", format!("Failed to start tosu: {}", e));
                 }
             },
             Message::InstallSystemdService => {
@@ -885,17 +937,93 @@ impl App {
                 }
             },
             Message::Key1(s) => {
-                self.k1_input = s.chars().take(1).collect::<String>().to_uppercase()
+                if self.device_connected {
+                    self.k1_input = s.chars().take(1).collect::<String>().to_uppercase();
+                }
             }
             Message::Key2(s) => {
-                self.k2_input = s.chars().take(1).collect::<String>().to_uppercase()
+                if self.device_connected {
+                    self.k2_input = s.chars().take(1).collect::<String>().to_uppercase();
+                }
             }
-            Message::Key1Pin(pin) => self.k1_gpio = pin.gpio,
-            Message::Key2Pin(pin) => self.k2_gpio = pin.gpio,
-            Message::Debounce(v) => self.debounce = v,
-            Message::Brightness(v) => self.brightness = v,
-            Message::SleepSeconds(v) => self.sleep_seconds = v,
-            Message::GameplayDisplayHz(v) => self.gameplay_display_hz = v,
+            Message::Key1Pin(pin) => {
+                if self.device_connected {
+                    self.k1_gpio = pin.gpio;
+                }
+            }
+            Message::Key2Pin(pin) => {
+                if self.device_connected {
+                    self.k2_gpio = pin.gpio;
+                }
+            }
+            Message::Debounce(v) => {
+                if self.device_connected {
+                    self.debounce = v;
+                }
+            }
+            Message::Brightness(v) => {
+                if self.device_connected {
+                    self.brightness = v;
+                }
+            }
+            Message::SleepSeconds(v) => {
+                if self.device_connected {
+                    self.sleep_seconds = v;
+                }
+            }
+            Message::GameplayDisplayHz(v) => {
+                if self.device_connected {
+                    self.gameplay_display_hz = v;
+                }
+            }
+            Message::StartDetectPin(key_id) => {
+                if !self.device_connected {
+                    return Task::none();
+                }
+                self.detecting_pin = Some(key_id);
+                let exclude = if key_id == 1 { self.k2_gpio } else { self.k1_gpio };
+                return Task::perform(
+                    ipc::request(IpcRequest::DetectPin {
+                        key_id,
+                        timeout_ms: 10000,
+                        exclude_gpio: exclude,
+                    }),
+                    Message::PinDetected,
+                );
+            }
+            Message::PinDetected(res) => {
+                self.detecting_pin = None;
+                match res {
+                    Ok(IpcResponse::PinDetected {
+                        key_id,
+                        gpio,
+                        success: true,
+                    }) => {
+                        if key_id == 1 {
+                            self.k1_gpio = gpio;
+                        } else if key_id == 2 {
+                            self.k2_gpio = gpio;
+                        }
+                        self.banner = Some(format!(
+                            "Auto-detected Key {} on GPIO{}! Click 'Save settings' to apply.",
+                            key_id, gpio
+                        ));
+                    }
+                    Ok(IpcResponse::PinDetected { key_id, .. }) => {
+                        self.banner = Some(format!(
+                            "No key press detected for Key {} (timed out).",
+                            key_id
+                        ));
+                    }
+                    Ok(IpcResponse::Error(e)) | Err(e) => {
+                        self.banner = Some(format!("Pin detection failed: {}", e));
+                    }
+                    _ => {}
+                }
+            }
+            Message::CancelDetectPin => {
+                self.detecting_pin = None;
+            }
             Message::ToggleAutostartTray(enabled) => {
                 self.autostart_tray = enabled;
                 #[cfg(target_os = "linux")]
@@ -916,6 +1044,10 @@ impl App {
                 }
             }
             Message::SaveConfig => {
+                if !self.device_connected {
+                    self.banner = Some("Cannot save settings: device is not connected.".into());
+                    return Task::none();
+                }
                 let config = DeviceConfig {
                     key1_hid_usage: char_to_hid_usage(&self.k1_input)
                         .unwrap_or(self.config.key1_hid_usage),
@@ -1187,52 +1319,66 @@ impl App {
         }))
         .spacing(6);
 
-        let status_line = |on: bool, label: &'static str, state: &'static str| {
-            row![
+        let clickable_status = |on: bool, label: &'static str, state: &'static str, msg: Option<Message>| -> Element<'_, Message> {
+            let row_content = row![
                 container(Space::new().width(10).height(10)).style(theme::dot(on)),
                 text(label).size(13),
                 Space::new().width(Length::Fill),
                 theme::caption(state),
             ]
             .spacing(8)
-            .align_y(Alignment::Center)
+            .align_y(Alignment::Center);
+
+            if let Some(m) = msg {
+                button(row_content)
+                    .width(Length::Fill)
+                    .padding([5, 8])
+                    .style(theme::sidebar_status)
+                    .on_press(m)
+                    .into()
+            } else {
+                container(row_content).padding([5, 8]).width(Length::Fill).into()
+            }
         };
 
         let sidebar = container(
             column![
                 nav,
                 Space::new().height(Length::Fill),
-                status_line(
+                clickable_status(
                     self.device_connected,
                     "Pad",
                     if self.device_connected {
                         "connected"
                     } else {
                         "offline"
-                    }
+                    },
+                    Some(Message::Navigate(Page::Device)),
                 ),
-                status_line(
+                clickable_status(
                     self.tosu_connected,
                     "tosu",
                     if self.tosu_connected {
                         "connected"
                     } else {
-                        "offline"
-                    }
+                        "offline (click)"
+                    },
+                    Some(Message::StartTosu),
                 ),
-                status_line(
+                clickable_status(
                     self.daemon_online,
                     "Daemon",
                     if self.daemon_online {
                         "running"
                     } else {
-                        "offline"
-                    }
+                        "offline (click)"
+                    },
+                    Some(Message::StartDaemon),
                 ),
                 Space::new().height(4),
                 theme::caption("Close the window to keep osu!pad in the tray"),
             ]
-            .spacing(8)
+            .spacing(4)
             .padding(18),
         )
         .width(220)
@@ -1244,7 +1390,7 @@ impl App {
             Page::Designer => self.designer.view().map(Message::Designer),
             Page::Settings => pages::settings(self),
             Page::Device => pages::device(self),
-            Page::Monitor => pages::monitor(self),
+            Page::Logs => pages::logs(self),
         };
 
         let mut main = column![]
@@ -2110,6 +2256,28 @@ impl App {
         }
     }
 
+    pub fn log_event(
+        &mut self,
+        source: LogSource,
+        level: LogLevel,
+        target: impl Into<String>,
+        message: impl Into<String>,
+    ) {
+        self.latest_log_seq = self.latest_log_seq.saturating_add(1);
+        let entry = LogEntry::new(self.latest_log_seq, source, level, target, message);
+        self.logs.push(entry);
+        self.prune_logs();
+    }
+
+    pub fn prune_logs(&mut self) {
+        let cutoff = chrono::Local::now() - chrono::Duration::hours(24);
+        self.logs.retain(|e| e.ts >= cutoff);
+        if self.logs.len() > 5000 {
+            let excess = self.logs.len() - 5000;
+            self.logs.drain(0..excess);
+        }
+    }
+
     pub fn formatted_visible_logs(&self) -> Vec<String> {
         self.logs
             .iter()
@@ -2201,6 +2369,56 @@ async fn start_daemon_process() -> Result<(), String> {
     #[allow(unreachable_code)]
     tokio::time::sleep(Duration::from_millis(300)).await;
     Ok(())
+}
+
+async fn start_tosu_process(override_path: Option<std::path::PathBuf>) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let bin = override_path
+            .or_else(osupad_tosu::find_tosu_binary)
+            .ok_or_else(|| "tosu executable not found (no bundled copy or system install)".to_string())?;
+
+        // Prevent opening browser window on startup
+        if let Some(dir) = bin.parent() {
+            let env_file = dir.join("tosu.env");
+            if let Ok(content) = std::fs::read_to_string(&env_file) {
+                if content.contains("OPEN_DASHBOARD_ON_STARTUP=true") {
+                    let updated = content.replace(
+                        "OPEN_DASHBOARD_ON_STARTUP=true",
+                        "OPEN_DASHBOARD_ON_STARTUP=false",
+                    );
+                    let _ = std::fs::write(&env_file, updated);
+                }
+            } else {
+                let _ = std::fs::write(&env_file, "OPEN_DASHBOARD_ON_STARTUP=false\n");
+            }
+        }
+
+        let mut cmd = std::process::Command::new(&bin);
+        cmd.env("OPEN_DASHBOARD_ON_STARTUP", "false");
+        cmd.stdin(std::process::Stdio::null());
+        cmd.stdout(std::process::Stdio::null());
+        cmd.stderr(std::process::Stdio::null());
+        if let Some(dir) = bin.parent() {
+            cmd.current_dir(dir);
+        }
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
+        }
+
+        cmd.spawn()
+            .map_err(|e| format!("Failed to launch tosu from {}: {}", bin.display(), e))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Failed to run tosu spawn task: {}", e))?
 }
 
 pub fn tosu_source_status(override_path: Option<&std::path::Path>) -> String {

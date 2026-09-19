@@ -258,7 +258,7 @@ async fn flash_and_verify<D: DeviceLink>(
     let reconnected = tokio::time::timeout(RECONNECT_TIMEOUT, async {
         loop {
             match events.recv().await {
-                Ok(osupad_device::DeviceEvent::Connected(info)) => return Some(info),
+                Ok(osupad_device::DeviceEvent::Connected(info, _)) => return Some(info),
                 Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(_) => return None,
             }

@@ -997,7 +997,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             let wait_res = tokio::time::timeout(Duration::from_secs(15), async {
                 loop {
                     match events.recv().await {
-                        Ok(DeviceEvent::Connected(info)) => return Ok(info),
+                        Ok(DeviceEvent::Connected(info, _)) => return Ok(info),
                         Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                             continue
                         }
@@ -1020,6 +1020,55 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 Err(_) => IpcResponse::Error(
                     "Device did not reconnect within 15 seconds after flash".to_string(),
                 ),
+            }
+        }
+
+        IpcRequest::DetectPin {
+            key_id,
+            timeout_ms,
+            exclude_gpio,
+        } => {
+            if !device.is_connected() {
+                return IpcResponse::Error("Device is not connected".to_string());
+            }
+            let mut sub = device.subscribe();
+            let effective_timeout = if timeout_ms == 0 { 10000 } else { timeout_ms };
+            if let Err(_e) = device.send_detect_pin(key_id, effective_timeout, exclude_gpio).await {
+                return IpcResponse::PinDetected {
+                    key_id,
+                    gpio: 0,
+                    success: false,
+                };
+            }
+            let wait_timeout = Duration::from_millis(effective_timeout as u64 + 2000);
+            let result = tokio::time::timeout(wait_timeout, async {
+                loop {
+                    match sub.recv().await {
+                        Ok(DeviceEvent::PinDetected {
+                            key_id: kid,
+                            gpio,
+                            success,
+                        }) if kid == key_id => return Some((gpio, success)),
+                        Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                            continue
+                        }
+                        Err(_) => return None,
+                    }
+                }
+            })
+            .await;
+
+            match result {
+                Ok(Some((gpio, success))) => IpcResponse::PinDetected {
+                    key_id,
+                    gpio,
+                    success,
+                },
+                _ => IpcResponse::PinDetected {
+                    key_id,
+                    gpio: 0,
+                    success: false,
+                },
             }
         }
     }

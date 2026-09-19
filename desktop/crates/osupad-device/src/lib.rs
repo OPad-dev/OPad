@@ -48,7 +48,7 @@ pub enum DeviceEvent {
     Ownership {
         owner_id: Vec<u8>,
     },
-    Connected(DeviceInfo),
+    Connected(DeviceInfo, Option<DeviceConfig>),
     Disconnected,
     StatusUpdate(proto::DeviceStatus),
     Counters(CounterState),
@@ -69,6 +69,11 @@ pub enum DeviceEvent {
         screen: u8,
         success: bool,
         message: String,
+    },
+    PinDetected {
+        key_id: u32,
+        gpio: u32,
+        success: bool,
     },
 }
 
@@ -500,6 +505,25 @@ impl DeviceManager {
         self.send_msg(msg)?;
         Ok(seq)
     }
+
+    pub async fn send_detect_pin(
+        &self,
+        key_id: u32,
+        timeout_ms: u32,
+        exclude_gpio: u32,
+    ) -> Result<(), DeviceError> {
+        let msg = HostToDevice {
+            sequence_number: self.next_seq(),
+            payload: Some(host_to_device::Payload::DetectPin(
+                proto::DetectPinRequest {
+                    key_id,
+                    timeout_ms,
+                    exclude_gpio,
+                },
+            )),
+        };
+        self.send_msg(msg)
+    }
 }
 
 /// Truncate to fit a nanopb fixed `char[max_size]` field (max_size - 1 bytes + NUL).
@@ -545,7 +569,26 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     map_key1: 0,
                     map_key2: 0,
                 }));
-                let _ = tx.send(DeviceEvent::Connected(info));
+                let cfg_opt = ack.current_config.as_ref().map(|c| DeviceConfig {
+                    key1_hid_usage: c.key1_hid_usage,
+                    key2_hid_usage: c.key2_hid_usage,
+                    debounce_us: c.debounce_us,
+                    brightness: c.brightness,
+                    display_sleep_seconds: c.display_sleep_seconds,
+                    gameplay_display_hz: c.gameplay_display_hz,
+                    tosu_endpoint: osupad_model::DeviceConfig::default().tosu_endpoint,
+                    key1_gpio: if c.key1_gpio == 0 {
+                        osupad_model::DEFAULT_KEY1_GPIO
+                    } else {
+                        c.key1_gpio
+                    },
+                    key2_gpio: if c.key2_gpio == 0 {
+                        osupad_model::DEFAULT_KEY2_GPIO
+                    } else {
+                        c.key2_gpio
+                    },
+                });
+                let _ = tx.send(DeviceEvent::Connected(info, cfg_opt));
             }
             proto::device_to_host::Payload::Status(st) => {
                 let _ = tx.send(DeviceEvent::StatusUpdate(*st));
@@ -585,7 +628,7 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     brightness: c.brightness,
                     display_sleep_seconds: c.display_sleep_seconds,
                     gameplay_display_hz: c.gameplay_display_hz,
-                    tosu_endpoint: "".to_string(),
+                    tosu_endpoint: osupad_model::DeviceConfig::default().tosu_endpoint,
                     // 0 from firmware without configurable pins, which uses the defaults
                     key1_gpio: if c.key1_gpio == 0 {
                         osupad_model::DEFAULT_KEY1_GPIO
@@ -613,6 +656,13 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     screen: ack.screen.min(u8::MAX as u32) as u8,
                     success: ack.success,
                     message: ack.message.clone(),
+                });
+            }
+            proto::device_to_host::Payload::DetectPinResp(resp) => {
+                let _ = tx.send(DeviceEvent::PinDetected {
+                    key_id: resp.key_id,
+                    gpio: resp.gpio,
+                    success: resp.success,
                 });
             }
         }
@@ -686,7 +736,7 @@ mod tests {
         assert!(
             matches!(rx.try_recv(), Ok(DeviceEvent::Counters(c)) if c.device_id == "OSUPAD-NEW")
         );
-        assert!(matches!(rx.try_recv(), Ok(DeviceEvent::Connected(_))));
+        assert!(matches!(rx.try_recv(), Ok(DeviceEvent::Connected(..))));
     }
 
     /// Firmware that predates §W3-2 sends no owner at all. The event must still

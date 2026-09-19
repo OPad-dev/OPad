@@ -96,7 +96,7 @@ pub struct PendingOperations {
 
 #[derive(Debug, Clone)]
 pub enum RuntimeEvent {
-    DeviceConnected(DeviceInfo),
+    DeviceConnected(DeviceInfo, Option<DeviceConfig>),
     /// The pad's recorded owner, from the same HelloAck as the connect (§W3-3)
     DeviceOwnership(Vec<u8>),
     DeviceDisconnected,
@@ -134,6 +134,7 @@ pub enum RuntimeEvent {
 pub enum RuntimeAction {
     SendTimeSync,
     SendConfig(DeviceConfig),
+    SaveDeviceConfig(DeviceConfig),
     SendHostStatus {
         tosu_connected: bool,
         is_playing: bool,
@@ -280,9 +281,22 @@ impl RuntimeController {
         let mut actions = Vec::new();
 
         match event {
-            RuntimeEvent::DeviceConnected(info) => {
+            RuntimeEvent::DeviceConnected(info, dev_cfg) => {
                 self.state.device_connected = true;
                 self.state.counters_source = CounterSource::Device;
+
+                if let Some(cfg) = &dev_cfg {
+                    let mut adopted = cfg.clone();
+                    if adopted.tosu_endpoint.trim().is_empty() {
+                        adopted.tosu_endpoint = if self.state.config.tosu_endpoint.trim().is_empty() {
+                            osupad_model::DeviceConfig::default().tosu_endpoint
+                        } else {
+                            self.state.config.tosu_endpoint.clone()
+                        };
+                    }
+                    self.state.config = adopted.clone();
+                    actions.push(RuntimeAction::SaveDeviceConfig(adopted));
+                }
 
                 if info.protocol_version != 1 {
                     self.state.incompatible = Some(IncompatibleDevice {
@@ -369,7 +383,7 @@ impl RuntimeController {
                 }
 
                 actions.push(RuntimeAction::SendTimeSync);
-                if !self.state.foreign_pad {
+                if dev_cfg.is_none() && !self.state.foreign_pad {
                     actions.push(RuntimeAction::SendConfig(self.state.config.clone()));
                 }
                 actions.push(RuntimeAction::SendHostStatus {

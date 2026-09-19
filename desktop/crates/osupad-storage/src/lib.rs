@@ -314,7 +314,14 @@ impl Storage {
                         brightness: row.get(3)?,
                         display_sleep_seconds: row.get(4)?,
                         gameplay_display_hz: row.get(5)?,
-                        tosu_endpoint: row.get(6)?,
+                        tosu_endpoint: {
+                            let ep: String = row.get(6)?;
+                            if ep.trim().is_empty() {
+                                "ws://127.0.0.1:24050/websocket/v2".to_string()
+                            } else {
+                                ep
+                            }
+                        },
                         key1_gpio: row.get(7)?,
                         key2_gpio: row.get(8)?,
                     })

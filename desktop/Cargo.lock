@@ -3827,6 +3827,7 @@ dependencies = [
  "osupad-ipc",
  "osupad-layout",
  "osupad-model",
+ "osupad-tosu",
  "osupad-ui-preview",
  "rfd",
  "serde",

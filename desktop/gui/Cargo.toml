@@ -22,6 +22,7 @@ serde_json.workspace = true
 chrono.workspace = true
 osupad-model = { path = "../crates/osupad-model" }
 osupad-ipc = { path = "../crates/osupad-ipc" }
+osupad-tosu = { path = "../crates/osupad-tosu" }
 dirs.workspace = true
 futures-util = { workspace = true, features = ["sink"] }
 

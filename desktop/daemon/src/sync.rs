@@ -35,6 +35,12 @@ pub trait DeviceLink: Send + Sync {
     async fn request_status(&self) -> Result<(), DeviceError>;
     async fn request_logs(&self) -> Result<(), DeviceError>;
     async fn reset_latency_stats(&self) -> Result<(), DeviceError>;
+    async fn send_detect_pin(
+        &self,
+        key_id: u32,
+        timeout_ms: u32,
+        exclude_gpio: u32,
+    ) -> Result<(), DeviceError>;
     fn subscribe(&self) -> broadcast::Receiver<DeviceEvent>;
     async fn pause_and_release(&self, timeout: Duration) -> bool;
     fn resume(&self);
@@ -94,6 +100,15 @@ impl DeviceLink for DeviceManager {
 
     async fn reset_latency_stats(&self) -> Result<(), DeviceError> {
         self.reset_latency_stats().await
+    }
+
+    async fn send_detect_pin(
+        &self,
+        key_id: u32,
+        timeout_ms: u32,
+        exclude_gpio: u32,
+    ) -> Result<(), DeviceError> {
+        self.send_detect_pin(key_id, timeout_ms, exclude_gpio).await
     }
 
     fn subscribe(&self) -> broadcast::Receiver<DeviceEvent> {

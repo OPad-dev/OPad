@@ -233,3 +233,23 @@ pub fn list_item(selected: bool) -> impl Fn(&Theme, button::Status) -> button::S
         }
     }
 }
+
+/// Clickable status row in sidebar
+pub fn sidebar_status(_theme: &Theme, status: button::Status) -> button::Style {
+    let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+    let background = if hovered {
+        Some(Color { a: 0.5, ..CARD }.into())
+    } else {
+        None
+    };
+    base(
+        background,
+        WHITE,
+        Border {
+            radius: 8.0.into(),
+            width: if hovered { 1.0 } else { 0.0 },
+            color: if hovered { BORDER } else { Color::TRANSPARENT },
+        },
+    )
+}
+

@@ -157,8 +157,45 @@ async fn main() -> Result<()> {
     // Launch and supervise tosu, then follow its WebSocket
     let tosu_log_path = osupad_model::paths::tosu_log_path()
         .context("Cannot resolve where to keep the tosu log")?;
+
+    if tosu_log_path.is_file() {
+        if let Ok(content) = std::fs::read_to_string(&tosu_log_path) {
+            let lines: Vec<&str> = content.lines().collect();
+            let start = lines.len().saturating_sub(150);
+            for line in &lines[start..] {
+                let clean = osupad_tosu::strip_ansi(line);
+                let trimmed = clean.trim();
+                if !trimmed.is_empty() {
+                    let level = if trimmed.contains("error") || trimmed.contains("Error") {
+                        osupad_model::LogLevel::Error
+                    } else if trimmed.contains("warn") || trimmed.contains("Warn") {
+                        osupad_model::LogLevel::Warn
+                    } else {
+                        osupad_model::LogLevel::Info
+                    };
+                    log_hub.push(LogSource::Tosu, level, "tosu", trimmed);
+                }
+            }
+        }
+    }
+
+    let lh = log_hub.clone();
+    let tosu_cb = Arc::new(move |line: &str| {
+        let clean = line.trim();
+        if !clean.is_empty() {
+            let level = if clean.contains("error") || clean.contains("Error") {
+                osupad_model::LogLevel::Error
+            } else if clean.contains("warn") || clean.contains("Warn") {
+                osupad_model::LogLevel::Warn
+            } else {
+                osupad_model::LogLevel::Info
+            };
+            lh.push(LogSource::Tosu, level, "tosu", clean);
+        }
+    });
+
     let tosu_supervisor =
-        spawn_tosu_supervisor(initial_config.tosu_endpoint.clone(), tosu_log_path);
+        spawn_tosu_supervisor(initial_config.tosu_endpoint.clone(), tosu_log_path, Some(tosu_cb));
     let (tosu_manager, mut tosu_rx) = TosuManager::new(initial_config.tosu_endpoint.clone());
     let mut tosu_connected_rx = tosu_manager.subscribe_connected();
     tosu_manager.start();
@@ -245,7 +282,7 @@ async fn main() -> Result<()> {
             // 1. Device hardware events
             Ok(dev_event) = device_rx.recv() => {
                 match dev_event {
-                    DeviceEvent::Connected(info) => {
+                    DeviceEvent::Connected(info, dev_cfg) => {
                         info!(
                             "ESP32 Device Connected: ID={}, Board={}, Firmware={}, Slot={}",
                             info.device_id,
@@ -253,7 +290,7 @@ async fn main() -> Result<()> {
                             info.firmware_version,
                             info.running_partition.as_deref().unwrap_or("unknown"),
                         );
-                        event_opt = Some(RuntimeEvent::DeviceConnected(info));
+                        event_opt = Some(RuntimeEvent::DeviceConnected(info, dev_cfg));
                     }
                     DeviceEvent::Ownership { owner_id } => {
                         event_opt = Some(RuntimeEvent::DeviceOwnership(owner_id));
@@ -290,6 +327,7 @@ async fn main() -> Result<()> {
                     DeviceEvent::LogBatch(batch) => {
                         event_opt = Some(RuntimeEvent::DeviceLogBatch(batch));
                     }
+                    DeviceEvent::PinDetected { .. } => {}
                 }
             }
 
@@ -419,6 +457,16 @@ async fn main() -> Result<()> {
                         tokio::spawn(async move {
                             let _ = dm.send_config(&cfg).await;
                         });
+                    }
+                    RuntimeAction::SaveDeviceConfig(cfg) => {
+                        let s_guard = storage.lock().unwrap();
+                        if let Some(s) = s_guard.as_ref() {
+                            if let Err(e) = s.save_config(&cfg) {
+                                warn!("Failed to persist device configuration from pad: {}", e);
+                            } else {
+                                info!("Saved pad configuration to SQLite database");
+                            }
+                        }
                     }
                     RuntimeAction::SendHostStatus {
                         tosu_connected,

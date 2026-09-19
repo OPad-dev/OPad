@@ -6,13 +6,17 @@ use serde::{Deserialize, Serialize};
 pub enum LogSource {
     Host,
     Esp,
+    Program,
+    Tosu,
 }
 
 impl std::fmt::Display for LogSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Host => write!(f, "HOST"),
-            Self::Esp => write!(f, "ESP"),
+            Self::Host => write!(f, "DAEMON"),
+            Self::Esp => write!(f, "DEVICE"),
+            Self::Program => write!(f, "PROGRAM"),
+            Self::Tosu => write!(f, "TOSU"),
         }
     }
 }
@@ -68,7 +72,7 @@ impl LogEntry {
     /// Formats line per spec §24.3: HH:MM:SS SOURCE LEVEL message
     pub fn format_line(&self) -> String {
         format!(
-            "{} {:<4} {:<5} {}",
+            "{} {:<7} {:<5} {}",
             self.ts.format("%H:%M:%S"),
             self.source,
             self.level,

@@ -317,8 +317,33 @@ const PAUSE_POLL_INTERVAL: Duration = Duration::from_millis(250);
 ///
 /// Does nothing while something already listens on tosu's port (e.g. a tosu the
 /// user started by hand). Otherwise launches tosu and restarts it with backoff
+pub fn strip_ansi(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut in_escape = false;
+    for c in s.chars() {
+        if c == '\x1b' {
+            in_escape = true;
+        } else if in_escape {
+            if c.is_ascii_alphabetic() {
+                in_escape = false;
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Keeps a tosu process running for as long as the daemon runs.
+///
+/// Does nothing while something already listens on tosu's port (e.g. a tosu the
+/// user started by hand). Otherwise launches tosu and restarts it with backoff
 /// if it exits. The child is killed when the daemon exits.
-pub fn spawn_tosu_supervisor(endpoint: String, log_path: PathBuf) -> TosuSupervisor {
+pub fn spawn_tosu_supervisor(
+    endpoint: String,
+    log_path: PathBuf,
+    line_cb: Option<Arc<dyn Fn(&str) + Send + Sync>>,
+) -> TosuSupervisor {
     let supervisor = TosuSupervisor::default();
     let paused = supervisor.paused.clone();
 
@@ -350,7 +375,7 @@ pub fn spawn_tosu_supervisor(endpoint: String, log_path: PathBuf) -> TosuSupervi
             };
             warned_missing = false;
 
-            match launch_tosu(&bin, &log_path) {
+            match launch_tosu(&bin, &log_path, line_cb.clone()) {
                 Ok(mut child) => {
                     info!(
                         "Launched tosu (pid {:?}) from {}",
@@ -393,22 +418,96 @@ pub fn spawn_tosu_supervisor(endpoint: String, log_path: PathBuf) -> TosuSupervi
     supervisor
 }
 
-fn launch_tosu(bin: &Path, log_path: &Path) -> std::io::Result<tokio::process::Child> {
+fn launch_tosu(
+    bin: &Path,
+    log_path: &Path,
+    line_cb: Option<Arc<dyn Fn(&str) + Send + Sync>>,
+) -> std::io::Result<tokio::process::Child> {
     if let Some(dir) = log_path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let log = std::fs::File::create(log_path)?;
+    // Prevent tosu from ever auto-opening the web dashboard on launch
+    if let Some(dir) = bin.parent() {
+        let env_file = dir.join("tosu.env");
+        if let Ok(content) = std::fs::read_to_string(&env_file) {
+            if content.contains("OPEN_DASHBOARD_ON_STARTUP=true") {
+                let updated = content.replace(
+                    "OPEN_DASHBOARD_ON_STARTUP=true",
+                    "OPEN_DASHBOARD_ON_STARTUP=false",
+                );
+                let _ = std::fs::write(&env_file, updated);
+            }
+        } else {
+            let _ = std::fs::write(&env_file, "OPEN_DASHBOARD_ON_STARTUP=false\n");
+        }
+    }
+
     let mut cmd = tokio::process::Command::new(bin);
-    cmd.stdin(Stdio::null())
-        .stdout(log.try_clone()?)
-        .stderr(log)
-        .kill_on_drop(true);
+    cmd.env("OPEN_DASHBOARD_ON_STARTUP", "false");
+    cmd.stdin(Stdio::null());
     if let Some(dir) = bin.parent() {
         cmd.current_dir(dir);
     }
     #[cfg(windows)]
     cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW: run tosu headlessly without console window
-    cmd.spawn()
+
+    if let Some(cb) = line_cb {
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut child = cmd.kill_on_drop(true).spawn()?;
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+        let log_file = Arc::new(std::sync::Mutex::new(
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(log_path)
+                .ok(),
+        ));
+
+        if let Some(p) = stdout {
+            let cb_clone = cb.clone();
+            let file_clone = log_file.clone();
+            tokio::spawn(async move {
+                use tokio::io::AsyncBufReadExt;
+                let mut lines = tokio::io::BufReader::new(p).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let clean = strip_ansi(&line);
+                    cb_clone(&clean);
+                    if let Ok(mut guard) = file_clone.lock() {
+                        if let Some(f) = guard.as_mut() {
+                            use std::io::Write;
+                            let _ = writeln!(f, "{}", line);
+                        }
+                    }
+                }
+            });
+        }
+        if let Some(p) = stderr {
+            let cb_clone = cb;
+            let file_clone = log_file;
+            tokio::spawn(async move {
+                use tokio::io::AsyncBufReadExt;
+                let mut lines = tokio::io::BufReader::new(p).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let clean = strip_ansi(&line);
+                    cb_clone(&clean);
+                    if let Ok(mut guard) = file_clone.lock() {
+                        if let Some(f) = guard.as_mut() {
+                            use std::io::Write;
+                            let _ = writeln!(f, "{}", line);
+                        }
+                    }
+                }
+            });
+        }
+        Ok(child)
+    } else {
+        let log = std::fs::File::create(log_path)?;
+        cmd.stdout(log.try_clone()?)
+            .stderr(log)
+            .kill_on_drop(true);
+        cmd.spawn()
+    }
 }
 
 /// "ws://127.0.0.1:24050/websocket/v2" -> "127.0.0.1:24050"

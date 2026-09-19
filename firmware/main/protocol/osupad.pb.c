@@ -66,6 +66,12 @@ PB_BIND(osupad_LogEvent, osupad_LogEvent, AUTO)
 PB_BIND(osupad_LogEventBatch, osupad_LogEventBatch, 2)
 
 
+PB_BIND(osupad_DetectPinRequest, osupad_DetectPinRequest, AUTO)
+
+
+PB_BIND(osupad_DetectPinResponse, osupad_DetectPinResponse, AUTO)
+
+
 PB_BIND(osupad_HostToDevice, osupad_HostToDevice, 2)
 
 

@@ -72,6 +72,11 @@ esp_err_t protocol_send_layout_ack(uint32_t seq, uint32_t screen, bool success, 
 esp_err_t protocol_send_counter_sync_resp(uint32_t seq, bool success, const char *msg);
 
 /**
+ * @brief Report the result of a detect_pin request.
+ */
+esp_err_t protocol_send_detect_pin_resp(uint32_t seq, uint32_t key_id, uint32_t gpio, bool success);
+
+/**
  * @brief Send a batch of diagnostic log events to host over CDC (only in IDLE).
  */
 esp_err_t protocol_send_log_batch(void);

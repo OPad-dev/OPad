@@ -39,24 +39,6 @@ typedef struct _osupad_Hello {
     char client_version[32];
 } osupad_Hello;
 
-typedef PB_BYTES_ARRAY_T(16) osupad_HelloAck_owner_id_t;
-typedef struct _osupad_HelloAck {
-    uint32_t protocol_version;
-    char firmware_version[32];
-    char board_profile[32];
-    char device_id[32];
-    uint32_t counter_generation;
-    uint64_t lifetime_key1;
-    uint64_t lifetime_key2;
-    /* Which host install owns this pad (§W3-1, §W3-2). 16 bytes; empty or all
- zero means unclaimed, which is also what firmware predating W3-2 sends. */
-    osupad_HelloAck_owner_id_t owner_id;
-    /* Which app partition the running image booted from (§U-3a): "ota_0",
- "ota_1", or "factory" for a pad still on the pre-OTA single-app layout.
- Empty means firmware predating the two-slot table. */
-    char running_partition[17];
-} osupad_HelloAck;
-
 typedef PB_BYTES_ARRAY_T(16) osupad_ClaimOwnership_owner_id_t;
 /* Record a new owner in NVS (§W3-2). An NVS write, so the firmware must honour
  it only in IDLE, never during PLAYING or COOLDOWN (P1-3). The host only ever
@@ -97,6 +79,26 @@ typedef struct _osupad_ConfigPayload {
     uint32_t key1_gpio; /* Switch GPIO for key 1, default: 14. 0 = keep current */
     uint32_t key2_gpio; /* Switch GPIO for key 2, default: 9. 0 = keep current */
 } osupad_ConfigPayload;
+
+typedef PB_BYTES_ARRAY_T(16) osupad_HelloAck_owner_id_t;
+typedef struct _osupad_HelloAck {
+    uint32_t protocol_version;
+    char firmware_version[32];
+    char board_profile[32];
+    char device_id[32];
+    uint32_t counter_generation;
+    uint64_t lifetime_key1;
+    uint64_t lifetime_key2;
+    /* Which host install owns this pad (§W3-1, §W3-2). 16 bytes; empty or all
+ zero means unclaimed, which is also what firmware predating W3-2 sends. */
+    osupad_HelloAck_owner_id_t owner_id;
+    /* Which app partition the running image booted from (§U-3a): "ota_0",
+ "ota_1", or "factory" for a pad still on the pre-OTA single-app layout.
+ Empty means firmware predating the two-slot table. */
+    char running_partition[17];
+    bool has_current_config;
+    osupad_ConfigPayload current_config;
+} osupad_HelloAck;
 
 typedef struct _osupad_SetConfig {
     bool has_config;
@@ -222,6 +224,18 @@ typedef struct _osupad_LogEventBatch {
     osupad_LogEvent events[8];
 } osupad_LogEventBatch;
 
+typedef struct _osupad_DetectPinRequest {
+    uint32_t key_id; /* 1 = Key 1, 2 = Key 2 */
+    uint32_t timeout_ms; /* Listening timeout in ms */
+    uint32_t exclude_gpio; /* GPIO to ignore (e.g. key1 when detecting key2) */
+} osupad_DetectPinRequest;
+
+typedef struct _osupad_DetectPinResponse {
+    uint32_t key_id;
+    uint32_t gpio; /* Detected GPIO pin number (0 = none/timeout) */
+    bool success;
+} osupad_DetectPinResponse;
+
 typedef struct _osupad_HostToDevice {
     uint32_t sequence_number;
     pb_size_t which_payload;
@@ -239,6 +253,7 @@ typedef struct _osupad_HostToDevice {
         uint32_t reset_layout; /* screen id: back to the built-in default */
         bool request_logs;
         osupad_ClaimOwnership claim_ownership;
+        osupad_DetectPinRequest detect_pin;
     } payload;
 } osupad_HostToDevice;
 
@@ -252,6 +267,7 @@ typedef struct _osupad_DeviceToHost {
         osupad_CounterSyncResponse counter_sync_resp;
         osupad_LogEventBatch log_batch;
         osupad_LayoutAck layout_ack;
+        osupad_DetectPinResponse detect_pin_resp;
     } payload;
 } osupad_DeviceToHost;
 
@@ -298,9 +314,11 @@ extern "C" {
 
 
 
+
+
 /* Initializer values for message structs */
 #define osupad_Hello_init_default                {0, ""}
-#define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0, {0, {0}}, ""}
+#define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_default}
 #define osupad_ClaimOwnership_init_default       {{0, {0}}}
 #define osupad_DeviceStatus_init_default         {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_ConfigPayload_init_default        {0, 0, 0, 0, 0, 0, 0, 0, 0}
@@ -319,10 +337,12 @@ extern "C" {
 #define osupad_CounterSyncResponse_init_default  {0, false, osupad_CounterState_init_default, ""}
 #define osupad_LogEvent_init_default             {0, _osupad_LogLevel_MIN, "", "", 0, 0, 0}
 #define osupad_LogEventBatch_init_default        {0, {osupad_LogEvent_init_default, osupad_LogEvent_init_default, osupad_LogEvent_init_default, osupad_LogEvent_init_default, osupad_LogEvent_init_default, osupad_LogEvent_init_default, osupad_LogEvent_init_default, osupad_LogEvent_init_default}}
+#define osupad_DetectPinRequest_init_default     {0, 0, 0}
+#define osupad_DetectPinResponse_init_default    {0, 0, 0}
 #define osupad_HostToDevice_init_default         {0, 0, {osupad_Hello_init_default}}
 #define osupad_DeviceToHost_init_default         {0, 0, {osupad_HelloAck_init_default}}
 #define osupad_Hello_init_zero                   {0, ""}
-#define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0, {0, {0}}, ""}
+#define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_zero}
 #define osupad_ClaimOwnership_init_zero          {{0, {0}}}
 #define osupad_DeviceStatus_init_zero            {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_ConfigPayload_init_zero           {0, 0, 0, 0, 0, 0, 0, 0, 0}
@@ -341,21 +361,14 @@ extern "C" {
 #define osupad_CounterSyncResponse_init_zero     {0, false, osupad_CounterState_init_zero, ""}
 #define osupad_LogEvent_init_zero                {0, _osupad_LogLevel_MIN, "", "", 0, 0, 0}
 #define osupad_LogEventBatch_init_zero           {0, {osupad_LogEvent_init_zero, osupad_LogEvent_init_zero, osupad_LogEvent_init_zero, osupad_LogEvent_init_zero, osupad_LogEvent_init_zero, osupad_LogEvent_init_zero, osupad_LogEvent_init_zero, osupad_LogEvent_init_zero}}
+#define osupad_DetectPinRequest_init_zero        {0, 0, 0}
+#define osupad_DetectPinResponse_init_zero       {0, 0, 0}
 #define osupad_HostToDevice_init_zero            {0, 0, {osupad_Hello_init_zero}}
 #define osupad_DeviceToHost_init_zero            {0, 0, {osupad_HelloAck_init_zero}}
 
 /* Field tags (for use in manual encoding/decoding) */
 #define osupad_Hello_protocol_version_tag        1
 #define osupad_Hello_client_version_tag          2
-#define osupad_HelloAck_protocol_version_tag     1
-#define osupad_HelloAck_firmware_version_tag     2
-#define osupad_HelloAck_board_profile_tag        3
-#define osupad_HelloAck_device_id_tag            4
-#define osupad_HelloAck_counter_generation_tag   5
-#define osupad_HelloAck_lifetime_key1_tag        6
-#define osupad_HelloAck_lifetime_key2_tag        7
-#define osupad_HelloAck_owner_id_tag             8
-#define osupad_HelloAck_running_partition_tag    9
 #define osupad_ClaimOwnership_owner_id_tag       1
 #define osupad_DeviceStatus_uptime_seconds_tag   1
 #define osupad_DeviceStatus_state_tag            2
@@ -383,6 +396,16 @@ extern "C" {
 #define osupad_ConfigPayload_press_color_rgb_tag 7
 #define osupad_ConfigPayload_key1_gpio_tag       8
 #define osupad_ConfigPayload_key2_gpio_tag       9
+#define osupad_HelloAck_protocol_version_tag     1
+#define osupad_HelloAck_firmware_version_tag     2
+#define osupad_HelloAck_board_profile_tag        3
+#define osupad_HelloAck_device_id_tag            4
+#define osupad_HelloAck_counter_generation_tag   5
+#define osupad_HelloAck_lifetime_key1_tag        6
+#define osupad_HelloAck_lifetime_key2_tag        7
+#define osupad_HelloAck_owner_id_tag             8
+#define osupad_HelloAck_running_partition_tag    9
+#define osupad_HelloAck_current_config_tag       10
 #define osupad_SetConfig_config_tag              1
 #define osupad_ConfigAck_success_tag             1
 #define osupad_ConfigAck_message_tag             2
@@ -449,6 +472,12 @@ extern "C" {
 #define osupad_LogEvent_arg0_tag                 6
 #define osupad_LogEvent_arg1_tag                 7
 #define osupad_LogEventBatch_events_tag          1
+#define osupad_DetectPinRequest_key_id_tag       1
+#define osupad_DetectPinRequest_timeout_ms_tag   2
+#define osupad_DetectPinRequest_exclude_gpio_tag 3
+#define osupad_DetectPinResponse_key_id_tag      1
+#define osupad_DetectPinResponse_gpio_tag        2
+#define osupad_DetectPinResponse_success_tag     3
 #define osupad_HostToDevice_sequence_number_tag  1
 #define osupad_HostToDevice_hello_tag            2
 #define osupad_HostToDevice_set_config_tag       3
@@ -463,6 +492,7 @@ extern "C" {
 #define osupad_HostToDevice_reset_layout_tag     12
 #define osupad_HostToDevice_request_logs_tag     13
 #define osupad_HostToDevice_claim_ownership_tag  14
+#define osupad_HostToDevice_detect_pin_tag       15
 #define osupad_DeviceToHost_sequence_number_tag  1
 #define osupad_DeviceToHost_hello_ack_tag        2
 #define osupad_DeviceToHost_status_tag           3
@@ -470,6 +500,7 @@ extern "C" {
 #define osupad_DeviceToHost_counter_sync_resp_tag 5
 #define osupad_DeviceToHost_log_batch_tag        6
 #define osupad_DeviceToHost_layout_ack_tag       7
+#define osupad_DeviceToHost_detect_pin_resp_tag  8
 
 /* Struct field encoding specification for nanopb */
 #define osupad_Hello_FIELDLIST(X, a) \
@@ -487,9 +518,11 @@ X(a, STATIC,   SINGULAR, UINT32,   counter_generation,   5) \
 X(a, STATIC,   SINGULAR, UINT64,   lifetime_key1,     6) \
 X(a, STATIC,   SINGULAR, UINT64,   lifetime_key2,     7) \
 X(a, STATIC,   SINGULAR, BYTES,    owner_id,          8) \
-X(a, STATIC,   SINGULAR, STRING,   running_partition,   9)
+X(a, STATIC,   SINGULAR, STRING,   running_partition,   9) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  current_config,   10)
 #define osupad_HelloAck_CALLBACK NULL
 #define osupad_HelloAck_DEFAULT NULL
+#define osupad_HelloAck_current_config_MSGTYPE osupad_ConfigPayload
 
 #define osupad_ClaimOwnership_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, BYTES,    owner_id,          1)
@@ -663,6 +696,20 @@ X(a, STATIC,   REPEATED, MESSAGE,  events,            1)
 #define osupad_LogEventBatch_DEFAULT NULL
 #define osupad_LogEventBatch_events_MSGTYPE osupad_LogEvent
 
+#define osupad_DetectPinRequest_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   key_id,            1) \
+X(a, STATIC,   SINGULAR, UINT32,   timeout_ms,        2) \
+X(a, STATIC,   SINGULAR, UINT32,   exclude_gpio,      3)
+#define osupad_DetectPinRequest_CALLBACK NULL
+#define osupad_DetectPinRequest_DEFAULT NULL
+
+#define osupad_DetectPinResponse_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   key_id,            1) \
+X(a, STATIC,   SINGULAR, UINT32,   gpio,              2) \
+X(a, STATIC,   SINGULAR, BOOL,     success,           3)
+#define osupad_DetectPinResponse_CALLBACK NULL
+#define osupad_DetectPinResponse_DEFAULT NULL
+
 #define osupad_HostToDevice_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   sequence_number,   1) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,hello,payload.hello),   2) \
@@ -677,7 +724,8 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,data_update,payload.data_update),  1
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,set_layout,payload.set_layout),  11) \
 X(a, STATIC,   ONEOF,    UINT32,   (payload,reset_layout,payload.reset_layout),  12) \
 X(a, STATIC,   ONEOF,    BOOL,     (payload,request_logs,payload.request_logs),  13) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,claim_ownership,payload.claim_ownership),  14)
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,claim_ownership,payload.claim_ownership),  14) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,detect_pin,payload.detect_pin),  15)
 #define osupad_HostToDevice_CALLBACK NULL
 #define osupad_HostToDevice_DEFAULT NULL
 #define osupad_HostToDevice_payload_hello_MSGTYPE osupad_Hello
@@ -689,6 +737,7 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,claim_ownership,payload.claim_owners
 #define osupad_HostToDevice_payload_data_update_MSGTYPE osupad_DataUpdate
 #define osupad_HostToDevice_payload_set_layout_MSGTYPE osupad_SetLayout
 #define osupad_HostToDevice_payload_claim_ownership_MSGTYPE osupad_ClaimOwnership
+#define osupad_HostToDevice_payload_detect_pin_MSGTYPE osupad_DetectPinRequest
 
 #define osupad_DeviceToHost_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   sequence_number,   1) \
@@ -697,7 +746,8 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,status,payload.status),   3) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,config_ack,payload.config_ack),   4) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,counter_sync_resp,payload.counter_sync_resp),   5) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,log_batch,payload.log_batch),   6) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,layout_ack,payload.layout_ack),   7)
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,layout_ack,payload.layout_ack),   7) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,detect_pin_resp,payload.detect_pin_resp),   8)
 #define osupad_DeviceToHost_CALLBACK NULL
 #define osupad_DeviceToHost_DEFAULT NULL
 #define osupad_DeviceToHost_payload_hello_ack_MSGTYPE osupad_HelloAck
@@ -706,6 +756,7 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,layout_ack,payload.layout_ack),   7)
 #define osupad_DeviceToHost_payload_counter_sync_resp_MSGTYPE osupad_CounterSyncResponse
 #define osupad_DeviceToHost_payload_log_batch_MSGTYPE osupad_LogEventBatch
 #define osupad_DeviceToHost_payload_layout_ack_MSGTYPE osupad_LayoutAck
+#define osupad_DeviceToHost_payload_detect_pin_resp_MSGTYPE osupad_DetectPinResponse
 
 extern const pb_msgdesc_t osupad_Hello_msg;
 extern const pb_msgdesc_t osupad_HelloAck_msg;
@@ -727,6 +778,8 @@ extern const pb_msgdesc_t osupad_CounterSyncRequest_msg;
 extern const pb_msgdesc_t osupad_CounterSyncResponse_msg;
 extern const pb_msgdesc_t osupad_LogEvent_msg;
 extern const pb_msgdesc_t osupad_LogEventBatch_msg;
+extern const pb_msgdesc_t osupad_DetectPinRequest_msg;
+extern const pb_msgdesc_t osupad_DetectPinResponse_msg;
 extern const pb_msgdesc_t osupad_HostToDevice_msg;
 extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 
@@ -751,6 +804,8 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_CounterSyncResponse_fields &osupad_CounterSyncResponse_msg
 #define osupad_LogEvent_fields &osupad_LogEvent_msg
 #define osupad_LogEventBatch_fields &osupad_LogEventBatch_msg
+#define osupad_DetectPinRequest_fields &osupad_DetectPinRequest_msg
+#define osupad_DetectPinResponse_fields &osupad_DetectPinResponse_msg
 #define osupad_HostToDevice_fields &osupad_HostToDevice_msg
 #define osupad_DeviceToHost_fields &osupad_DeviceToHost_msg
 
@@ -764,10 +819,12 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_CounterSyncResponse_size          130
 #define osupad_DataUpdate_size                   2336
 #define osupad_DataValue_size                    71
+#define osupad_DetectPinRequest_size             18
+#define osupad_DetectPinResponse_size            14
 #define osupad_DeviceStatus_size                 98
 #define osupad_DeviceToHost_size                 889
 #define osupad_GameplayDisplayState_size         196
-#define osupad_HelloAck_size                     169
+#define osupad_HelloAck_size                     225
 #define osupad_Hello_size                        39
 #define osupad_HostStatus_size                   10
 #define osupad_HostToDevice_size                 4309

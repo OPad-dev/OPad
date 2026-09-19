@@ -429,8 +429,10 @@ async fn main() -> Result<()> {
             let filter_source = source
                 .as_deref()
                 .and_then(|s| match s.to_lowercase().as_str() {
-                    "host" => Some(osupad_model::LogSource::Host),
+                    "host" | "daemon" => Some(osupad_model::LogSource::Host),
                     "esp" | "device" => Some(osupad_model::LogSource::Esp),
+                    "program" | "app" | "gui" => Some(osupad_model::LogSource::Program),
+                    "tosu" => Some(osupad_model::LogSource::Tosu),
                     _ => None,
                 });
 

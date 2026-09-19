@@ -148,6 +148,13 @@ pub enum IpcRequest {
         #[serde(default)]
         confirm: bool,
     },
+    DetectPin {
+        key_id: u32,
+        #[serde(default)]
+        timeout_ms: u32,
+        #[serde(default)]
+        exclude_gpio: u32,
+    },
 }
 
 /// The firmware update offer, and what is in the way (§U-3b)
@@ -327,6 +334,11 @@ pub enum IpcResponse {
     },
     OperationRejected {
         reason: String,
+    },
+    PinDetected {
+        key_id: u32,
+        gpio: u32,
+        success: bool,
     },
     Error(String),
 }

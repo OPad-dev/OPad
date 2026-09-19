@@ -426,3 +426,71 @@ void keypad_get_config(keypad_config_t *out_config)
         portEXIT_CRITICAL(&s_keypad_spinlock);
     }
 }
+
+static const uint8_t SCAN_PINS[] = {2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 21};
+
+int keypad_detect_pressed_pin(uint32_t timeout_ms, uint32_t exclude_gpio)
+{
+    ESP_LOGI(TAG, "Starting interactive pin detection (timeout=%lu ms, exclude=GPIO%lu)",
+             (unsigned long)timeout_ms, (unsigned long)exclude_gpio);
+
+    if (timeout_ms == 0) {
+        timeout_ms = 8000;
+    }
+
+    // Configure candidate pins with internal pull-ups
+    uint64_t pin_mask = 0;
+    for (size_t i = 0; i < sizeof(SCAN_PINS); i++) {
+        if (SCAN_PINS[i] != exclude_gpio) {
+            pin_mask |= (1ULL << SCAN_PINS[i]);
+        }
+    }
+
+    gpio_config_t io_conf = {
+        .pin_bit_mask = pin_mask,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&io_conf);
+    esp_rom_delay_us(500);
+
+    int64_t deadline = esp_timer_get_time() + (int64_t)timeout_ms * 1000;
+    int detected_pin = -1;
+
+    while (esp_timer_get_time() < deadline) {
+        for (size_t i = 0; i < sizeof(SCAN_PINS); i++) {
+            uint8_t pin = SCAN_PINS[i];
+            if (pin == exclude_gpio) continue;
+            if (gpio_get_level(pin) == 0) {
+                // Confirm debounced LOW level (held for 15ms)
+                vTaskDelay(pdMS_TO_TICKS(15));
+                if (gpio_get_level(pin) == 0) {
+                    detected_pin = pin;
+                    ESP_LOGI(TAG, "Pin detected: GPIO%d pulled LOW", pin);
+                    break;
+                }
+            }
+        }
+        if (detected_pin >= 0) {
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    // Restore active key GPIOs with pull-ups and interrupts
+    portENTER_CRITICAL(&s_keypad_spinlock);
+    keypad_config_t cfg = s_config;
+    portEXIT_CRITICAL(&s_keypad_spinlock);
+
+    for (size_t i = 0; i < sizeof(SCAN_PINS); i++) {
+        if (SCAN_PINS[i] != cfg.key1_gpio && SCAN_PINS[i] != cfg.key2_gpio) {
+            gpio_reset_pin(SCAN_PINS[i]);
+        }
+    }
+    board_keys_set_gpio(cfg.key1_gpio, cfg.key2_gpio);
+
+    return detected_pin;
+}
+

@@ -124,9 +124,23 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
                 sizeof(msg.payload.hello_ack.running_partition) - 1);
     }
 
-    ESP_LOGI(TAG, "Sending HelloAck to host (Firmware: %s, Gen: %lu, Partition: %s)",
+    device_config_data_t cfg;
+    device_config_get(&cfg);
+    msg.payload.hello_ack.has_current_config = true;
+    msg.payload.hello_ack.current_config.key1_hid_usage = cfg.key1_usage;
+    msg.payload.hello_ack.current_config.key2_hid_usage = cfg.key2_usage;
+    msg.payload.hello_ack.current_config.debounce_us = cfg.debounce_us;
+    msg.payload.hello_ack.current_config.brightness = cfg.brightness;
+    msg.payload.hello_ack.current_config.display_sleep_seconds = cfg.sleep_s;
+    msg.payload.hello_ack.current_config.gameplay_display_hz = cfg.gameplay_display_hz ? cfg.gameplay_display_hz : 10;
+    msg.payload.hello_ack.current_config.press_color_rgb = 0;
+    msg.payload.hello_ack.current_config.key1_gpio = cfg.key1_gpio;
+    msg.payload.hello_ack.current_config.key2_gpio = cfg.key2_gpio;
+
+    ESP_LOGI(TAG, "Sending HelloAck to host (Firmware: %s, Gen: %lu, Partition: %s, K1: GPIO%lu, K2: GPIO%lu)",
              app_desc->version, (unsigned long)snap.generation,
-             msg.payload.hello_ack.running_partition);
+             msg.payload.hello_ack.running_partition,
+             (unsigned long)cfg.key1_gpio, (unsigned long)cfg.key2_gpio);
     return send_envelope(&msg);
 }
 
@@ -221,6 +235,17 @@ esp_err_t protocol_send_layout_ack(uint32_t seq, uint32_t screen, bool success, 
     if (text) {
         strncpy(msg.payload.layout_ack.message, text, sizeof(msg.payload.layout_ack.message) - 1);
     }
+    return send_envelope(&msg);
+}
+
+esp_err_t protocol_send_detect_pin_resp(uint32_t seq, uint32_t key_id, uint32_t gpio, bool success)
+{
+    osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+    msg.sequence_number = seq ? seq : s_out_sequence++;
+    msg.which_payload = osupad_DeviceToHost_detect_pin_resp_tag;
+    msg.payload.detect_pin_resp.key_id = key_id;
+    msg.payload.detect_pin_resp.gpio = gpio;
+    msg.payload.detect_pin_resp.success = success;
     return send_envelope(&msg);
 }
 
@@ -499,6 +524,15 @@ static void handle_host_message(const osupad_HostToDevice *msg)
             }
         }
         break;
+
+    case osupad_HostToDevice_detect_pin_tag: {
+        const osupad_DetectPinRequest *req = &msg->payload.detect_pin;
+        uint32_t timeout = req->timeout_ms > 0 ? req->timeout_ms : 10000;
+        int detected = keypad_detect_pressed_pin(timeout, req->exclude_gpio);
+        bool ok = (detected > 0);
+        protocol_send_detect_pin_resp(msg->sequence_number, req->key_id, ok ? (uint32_t)detected : 0, ok);
+        break;
+    }
 
     default:
         diag_record(DIAG_EVENT_UNKNOWN_HOST_MSG, 0 /* DEBUG */, msg->which_payload, 0);

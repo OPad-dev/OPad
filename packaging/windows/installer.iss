@@ -92,6 +92,7 @@ Source: "install-origin"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Bundled tosu and LGPL-3.0 compliance files (§T-2, §T-3)
 Source: "{#TosuDir}\tosu.exe"; DestDir: "{app}\tosu"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#TosuDir}\tosu.env"; DestDir: "{app}\tosu"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#LicensesDir}\tosu\VERSION"; DestDir: "{app}\tosu"; Flags: ignoreversion
 Source: "{#LicensesDir}\tosu\NOTICE"; DestDir: "{app}\tosu"; Flags: ignoreversion
 Source: "{#LicensesDir}\tosu\LICENSE"; DestDir: "{app}\tosu"; Flags: ignoreversion

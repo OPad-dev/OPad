@@ -49,6 +49,9 @@ impl LogHub {
             inner.entries.pop_front();
         }
 
+        let cutoff = chrono::Local::now() - chrono::Duration::hours(24);
+        inner.entries.retain(|e| e.ts >= cutoff);
+
         let entry = LogEntry::new(seq, source, level, target, message);
         inner.entries.push_back(entry);
     }

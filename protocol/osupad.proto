@@ -49,6 +49,7 @@ message HelloAck {
     // "ota_1", or "factory" for a pad still on the pre-OTA single-app layout.
     // Empty means firmware predating the two-slot table.
     string running_partition = 9;
+    ConfigPayload current_config = 10;
 }
 
 // Record a new owner in NVS (§W3-2). An NVS write, so the firmware must honour
@@ -232,6 +233,22 @@ message LogEventBatch {
 }
 
 // -----------------------------------------------------------------------------
+// Interactive Hardware Pin Detection
+// -----------------------------------------------------------------------------
+
+message DetectPinRequest {
+    uint32 key_id = 1;       // 1 = Key 1, 2 = Key 2
+    uint32 timeout_ms = 2;   // Listening timeout in ms
+    uint32 exclude_gpio = 3; // GPIO to ignore (e.g. key1 when detecting key2)
+}
+
+message DetectPinResponse {
+    uint32 key_id = 1;
+    uint32 gpio = 2;         // Detected GPIO pin number (0 = none/timeout)
+    bool success = 3;
+}
+
+// -----------------------------------------------------------------------------
 // Top-Level Envelopes
 // -----------------------------------------------------------------------------
 
@@ -251,6 +268,7 @@ message HostToDevice {
         uint32 reset_layout = 12;    // screen id: back to the built-in default
         bool request_logs = 13;
         ClaimOwnership claim_ownership = 14;
+        DetectPinRequest detect_pin = 15;
     }
 }
 
@@ -263,5 +281,6 @@ message DeviceToHost {
         CounterSyncResponse counter_sync_resp = 5;
         LogEventBatch log_batch = 6;
         LayoutAck layout_ack = 7;
+        DetectPinResponse detect_pin_resp = 8;
     }
 }

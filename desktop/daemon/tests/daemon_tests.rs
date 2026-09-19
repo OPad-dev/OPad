@@ -128,6 +128,15 @@ impl DeviceLink for MockDeviceLink {
         Ok(())
     }
 
+    async fn send_detect_pin(
+        &self,
+        _key_id: u32,
+        _timeout_ms: u32,
+        _exclude_gpio: u32,
+    ) -> Result<(), DeviceError> {
+        Ok(())
+    }
+
     fn subscribe(&self) -> broadcast::Receiver<DeviceEvent> {
         self.event_tx.subscribe()
     }
@@ -174,7 +183,7 @@ async fn test_daemon_connection_states_and_reconnect() {
         protocol_version: 1,
         running_partition: None,
     };
-    let actions = controller.on_event(RuntimeEvent::DeviceConnected(dev_info.clone()), now);
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(dev_info.clone(), None), now);
     assert!(controller.state.device_connected);
     assert_eq!(controller.state.counters_source, CounterSource::Device);
     assert!(actions.contains(&RuntimeAction::SendTimeSync));
@@ -725,7 +734,7 @@ async fn test_reconcile_and_replacement_scenarios() {
         controller.state.counters.lifetime_key1 = 5;
         controller.state.counters.lifetime_key2 = 8;
 
-        let _ = controller.on_event(RuntimeEvent::DeviceConnected(new_pad_info), now);
+        let _ = controller.on_event(RuntimeEvent::DeviceConnected(new_pad_info, None), now);
         assert_eq!(
             controller.state.pending_replacement,
             Some("OSUPAD-OLD".to_string())
@@ -1262,7 +1271,7 @@ async fn test_replacement_detected_with_real_event_order() {
         RuntimeEvent::DeviceCounters(counters("OSUPAD-NEW", 1, 3, 4)),
         now,
     );
-    let actions = controller.on_event(RuntimeEvent::DeviceConnected(pad_info("OSUPAD-NEW")), now);
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(pad_info("OSUPAD-NEW"), None), now);
 
     assert_eq!(
         controller.state.pending_replacement,
@@ -1377,7 +1386,7 @@ async fn test_apply_event_keeps_ipc_changes() {
         &mut controller,
         &shared,
         &pending,
-        RuntimeEvent::DeviceConnected(pad_info("OSUPAD-OLD")),
+        RuntimeEvent::DeviceConnected(pad_info("OSUPAD-OLD"), None),
         now,
     );
     assert!(actions
@@ -1396,7 +1405,7 @@ async fn test_apply_event_keeps_ipc_changes() {
         &mut controller,
         &shared,
         &pending,
-        RuntimeEvent::DeviceConnected(pad_info("OSUPAD-NEW")),
+        RuntimeEvent::DeviceConnected(pad_info("OSUPAD-NEW"), None),
         now,
     );
     assert!(shared.lock().unwrap().pending_replacement.is_some());
@@ -1470,7 +1479,7 @@ async fn test_replug_during_play_keeps_the_state_machine_and_write_guard() {
         now,
     );
 
-    controller.on_event(RuntimeEvent::DeviceConnected(dev_info.clone()), now);
+    controller.on_event(RuntimeEvent::DeviceConnected(dev_info.clone(), None), now);
     let actions = controller.on_event(
         RuntimeEvent::TosuTelemetry {
             is_playing: true,
@@ -1497,7 +1506,7 @@ async fn test_replug_during_play_keeps_the_state_machine_and_write_guard() {
             "an unplug must not reopen the write guard mid-map (cycle {cycle})"
         );
 
-        let actions = controller.on_event(RuntimeEvent::DeviceConnected(dev_info.clone()), now);
+        let actions = controller.on_event(RuntimeEvent::DeviceConnected(dev_info.clone(), None), now);
         assert!(controller.state.device_connected, "cycle {cycle}");
         assert_eq!(
             controller.state.mode,
@@ -1576,7 +1585,7 @@ async fn test_unclaimed_pad_is_claimed_without_a_prompt() {
     let now = Instant::now();
 
     controller.on_event(RuntimeEvent::DeviceOwnership(Vec::new()), now);
-    let actions = controller.on_event(RuntimeEvent::DeviceConnected(info), now);
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(info, None), now);
 
     assert!(controller.state.pending_takeover.is_none());
     assert!(!controller.state.foreign_pad);
@@ -1593,7 +1602,7 @@ async fn test_our_own_pad_connects_silently() {
     let now = Instant::now();
 
     controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&id)), now);
-    let actions = controller.on_event(RuntimeEvent::DeviceConnected(info), now);
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(info, None), now);
 
     assert!(controller.state.pending_takeover.is_none());
     assert!(!controller.state.foreign_pad);
@@ -1625,7 +1634,7 @@ async fn test_a_pad_owned_elsewhere_prompts_and_blocks_sync() {
         now,
     );
     controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&other)), now);
-    let actions = controller.on_event(RuntimeEvent::DeviceConnected(info.clone()), now);
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(info.clone(), None), now);
 
     let pending = controller
         .state
@@ -1661,7 +1670,7 @@ async fn test_leaving_a_foreign_pad_alone_writes_nothing() {
     let now = Instant::now();
 
     controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&other)), now);
-    controller.on_event(RuntimeEvent::DeviceConnected(info.clone()), now);
+    controller.on_event(RuntimeEvent::DeviceConnected(info.clone(), None), now);
 
     let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
     let device = MockDeviceLink::new(true);
@@ -1730,7 +1739,7 @@ async fn test_taking_over_claims_the_pad_and_resumes() {
         now,
     );
     controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&other)), now);
-    controller.on_event(RuntimeEvent::DeviceConnected(info.clone()), now);
+    controller.on_event(RuntimeEvent::DeviceConnected(info.clone(), None), now);
 
     let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
     let device = MockDeviceLink::new(true);
@@ -1778,7 +1787,7 @@ async fn test_taking_over_claims_the_pad_and_resumes() {
     controller.state = st;
     controller.on_event(RuntimeEvent::DeviceDisconnected, now);
     controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&id)), now);
-    let actions = controller.on_event(RuntimeEvent::DeviceConnected(info), now);
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(info, None), now);
     assert!(controller.state.pending_takeover.is_none());
     assert!(!actions.contains(&RuntimeAction::ClaimOwnership));
 }
@@ -1795,7 +1804,7 @@ async fn test_takeover_without_an_identity_is_refused_and_stays_pending() {
     );
     let now = Instant::now();
     controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&other)), now);
-    controller.on_event(RuntimeEvent::DeviceConnected(info), now);
+    controller.on_event(RuntimeEvent::DeviceConnected(info, None), now);
 
     // Storage went away after the prompt appeared
     let mut state_without_identity = controller.state.clone();
@@ -1845,7 +1854,7 @@ async fn test_a_second_pad_is_never_judged_by_the_first_pads_owner() {
 
     // A pad owned by someone else connects and is left alone
     controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&other)), now);
-    controller.on_event(RuntimeEvent::DeviceConnected(pad("OSUPAD-ONE")), now);
+    controller.on_event(RuntimeEvent::DeviceConnected(pad("OSUPAD-ONE"), None), now);
     assert!(controller.state.pending_takeover.is_some());
     controller.on_event(RuntimeEvent::DeviceDisconnected, now);
 
@@ -1853,7 +1862,7 @@ async fn test_a_second_pad_is_never_judged_by_the_first_pads_owner() {
     // standing, this one would be wrongly prompted about — and worse, a pad we
     // do own could be wrongly claimed under someone else's id.
     controller.on_event(RuntimeEvent::DeviceOwnership(Vec::new()), now);
-    let actions = controller.on_event(RuntimeEvent::DeviceConnected(pad("OSUPAD-TWO")), now);
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(pad("OSUPAD-TWO"), None), now);
     assert!(
         controller.state.pending_takeover.is_none(),
         "the previous pad's owner leaked into this connect"
@@ -1871,7 +1880,7 @@ async fn test_an_install_with_no_identity_neither_claims_nor_prompts() {
     let now = Instant::now();
 
     controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&other)), now);
-    let actions = controller.on_event(RuntimeEvent::DeviceConnected(info), now);
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(info, None), now);
 
     assert!(controller.state.pending_takeover.is_none());
     assert!(!controller.state.foreign_pad);
@@ -2382,3 +2391,42 @@ async fn a_failed_post_play_sync_still_gets_a_backup() {
     let actions = controller.on_event(RuntimeEvent::Tick(due), due);
     assert!(actions.contains(&RuntimeAction::WriteAutoBackup));
 }
+
+#[tokio::test]
+async fn test_device_connected_with_config_adopts_device_config() {
+    let dev_info = DeviceInfo {
+        device_id: "OSUPAD-CONFIG-TEST".to_string(),
+        board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+        firmware_version: "1.0.0".to_string(),
+        protocol_version: 1,
+        running_partition: None,
+    };
+    let dev_cfg = DeviceConfig {
+        key1_hid_usage: 0x1D,
+        key2_hid_usage: 0x1B,
+        debounce_us: 4000,
+        brightness: 80,
+        display_sleep_seconds: 300,
+        gameplay_display_hz: 30,
+        tosu_endpoint: "ws://127.0.0.1:24050/websocket/v2".to_string(),
+        key1_gpio: 14,
+        key2_gpio: 9,
+    };
+    let now = Instant::now();
+    let mut controller = RuntimeController::new(
+        DeviceConfig::default(),
+        None,
+        CounterState::default(),
+        HashMap::new(),
+        None,
+        vec![dev_info.device_id.clone()],
+        now,
+    );
+
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(dev_info.clone(), Some(dev_cfg.clone())), now);
+    assert!(controller.state.device_connected);
+    assert_eq!(controller.state.config, dev_cfg);
+    assert!(actions.contains(&RuntimeAction::SaveDeviceConfig(dev_cfg)));
+    assert!(!actions.iter().any(|a| matches!(a, RuntimeAction::SendConfig(_))));
+}
+
