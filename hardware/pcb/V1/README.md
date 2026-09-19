@@ -26,7 +26,7 @@ Status: both boards pass ERC, DRC (zero errors, zero warnings) and schematic par
 | 7 | IO4 | P1-2 | GPIO4 (ADC1_CH3) | not used | e.g. SPI MOSI |
 | 8 | IO2 | P1-1 | GPIO2 (ADC1_CH1) | not used | e.g. SPI SCK |
 
-- All six signals are ADC1 pins. On the ESP32-S3, ADC continuous (DMA) mode only supports ADC1 (see `osupad_v2_rapid_trigger_plan.md` §2.2).
+- All six signals are ADC1 pins. On the ESP32-S3, ADC continuous (DMA) mode only supports ADC1 (see `docs/specs/v2-rapid-trigger.md` §2.2).
 - SPI3 can be routed to any of these pins through the GPIO matrix. None of them are strapping pins, USB, UART0, or the touch/IMU I2C.
 - The pin order is chosen so both boards route on two layers with no crossings.
 - **Firmware:** in the app, set Key 1 = GPIO10 and Key 2 = GPIO7 (both are already in the allowed pin list). The hand-wired defaults (GPIO14 / GPIO9) don't apply to this board.

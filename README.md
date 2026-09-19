@@ -225,13 +225,17 @@ osupadctl monitor
 ---
 
 ## 📄 Documentation
+- [Documentation Hub & Wiki](docs/README.md)
 - [System Architecture](docs/architecture.md)
+- [Project Roadmap & Hardware Variants](docs/roadmap.md)
 - [osu!pad on Windows — as built](docs/windows-portability.md)
 - [USB Framing & Protocol](docs/protocol.md)
 - [Counter Reconciliation, Recovery & Unbinding](docs/recovery.md) — including the reflash / unbind path
 - [Latency Testing Methodology](docs/latency-testing.md)
 - [Testing & Hardware Checklist](docs/testing-checklist.md)
-- [Technical Specification](osupad_technical_spec_v1.md)
+- [Technical Specification v1](docs/specs/technical-spec-v1.md)
+- [Rapid Trigger v2 Specification](docs/specs/v2-rapid-trigger.md)
+
 
 ---
 
