@@ -12,9 +12,11 @@ static const char *TAG = "usb_hid";
 
 static uint8_t s_key1_code = 0x1D; // 'z'
 static uint8_t s_key2_code = 0x1B; // 'x'
+static uint8_t s_key3_code = 0x35; // '`' / '~' (osu! Quick Retry)
 
 static volatile bool s_key1_pressed = false;
 static volatile bool s_key2_pressed = false;
+static volatile bool s_key3_pressed = false;
 // Set when a state change could not be submitted (endpoint busy); resent on completion
 static atomic_bool s_report_pending = false;
 // Edge time of the oldest key change not yet delivered, for latency stats (0 = none)
@@ -34,9 +36,11 @@ esp_err_t usb_hid_init(void)
     keypad_get_config(&cfg);
     s_key1_code = cfg.keycode1;
     s_key2_code = cfg.keycode2;
+    s_key3_code = 0x35; // Default: '`' (Grave accent / Tilde for osu! Quick Retry)
 
     keypad_set_state_callback(usb_hid_handle_key_event);
-    ESP_LOGI(TAG, "USB HID keyboard initialized (Key1: 0x%02X, Key2: 0x%02X)", s_key1_code, s_key2_code);
+    ESP_LOGI(TAG, "USB HID keyboard initialized (Key1: 0x%02X, Key2: 0x%02X, TouchRetry: 0x%02X)",
+             s_key1_code, s_key2_code, s_key3_code);
     return ESP_OK;
 }
 
@@ -51,6 +55,11 @@ void usb_hid_set_keycodes(uint8_t key1_code, uint8_t key2_code)
     s_key2_code = key2_code;
 }
 
+void usb_hid_set_key3_code(uint8_t key3_code)
+{
+    s_key3_code = key3_code;
+}
+
 static bool submit_current_state(void)
 {
     uint8_t keycodes[6] = {0};
@@ -62,8 +71,23 @@ static bool submit_current_state(void)
     if (s_key2_pressed && count < 6) {
         keycodes[count++] = s_key2_code;
     }
+    if (s_key3_pressed && count < 6) {
+        keycodes[count++] = s_key3_code;
+    }
 
     return tud_hid_ready() && tud_hid_keyboard_report(0, 0, keycodes);
+}
+
+void usb_hid_set_touch_retry(bool pressed)
+{
+    if (s_key3_pressed == pressed) {
+        return;
+    }
+    s_key3_pressed = pressed;
+    atomic_store(&s_report_pending, true);
+    if (submit_current_state()) {
+        atomic_store(&s_report_pending, false);
+    }
 }
 
 bool IRAM_ATTR usb_hid_handle_key_event(uint8_t key_index, bool pressed, int64_t edge_us)

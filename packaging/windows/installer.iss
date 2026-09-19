@@ -86,6 +86,7 @@ Name: "autostart"; Description: "Start OPad when I log in"; GroupDescription: "W
 Source: "{#SourceDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\{#MyAppDaemonName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\{#MyAppCliName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceDir}\espflash.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
 
 ; Install-origin marker identifying this installation as "windows" (§U-2a)
 Source: "install-origin"; DestDir: "{app}"; Flags: ignoreversion

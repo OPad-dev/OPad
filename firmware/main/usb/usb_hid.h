@@ -24,6 +24,16 @@ bool usb_hid_is_ready(void);
 void usb_hid_set_keycodes(uint8_t key1_code, uint8_t key2_code);
 
 /**
+ * @brief Update configured HID keycode for Key 3 (Touch Retry).
+ */
+void usb_hid_set_key3_code(uint8_t key3_code);
+
+/**
+ * @brief Set the touchscreen quick retry key state (pressed/released).
+ */
+void usb_hid_set_touch_retry(bool pressed);
+
+/**
  * @brief Handler dispatched when keypad physical state changes.
  */
 bool usb_hid_handle_key_event(uint8_t key_index, bool pressed, int64_t edge_us);

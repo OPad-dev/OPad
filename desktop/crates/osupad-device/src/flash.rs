@@ -141,6 +141,28 @@ pub async fn enter_bootloader(app_port: Option<&str>) -> Result<String, FlashErr
     Err(last_err.unwrap_or(FlashError::NoBootloader))
 }
 
+fn resolve_espflash() -> PathBuf {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join("espflash.exe");
+            if candidate.is_file() {
+                return candidate;
+            }
+            let candidate_unix = dir.join("espflash");
+            if candidate_unix.is_file() {
+                return candidate_unix;
+            }
+        }
+    }
+    if let Ok(userprofile) = std::env::var("USERPROFILE") {
+        let candidate = PathBuf::from(userprofile).join(".cargo").join("bin").join("espflash.exe");
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+    PathBuf::from("espflash")
+}
+
 /// Write each image at its offset, in the order given.
 ///
 /// Every invocation stays in the flasher stub (`--after no-reset-no-stub`), so
@@ -150,6 +172,7 @@ pub fn write_images(
     boot_port: &str,
     progress: &(dyn Fn(&str) + Sync),
 ) -> Result<(), FlashError> {
+    let espflash_cmd = resolve_espflash();
     for (offset, path) in images {
         progress(&format!(
             "Writing {} at {:#x} on {}...",
@@ -157,7 +180,7 @@ pub fn write_images(
             offset,
             boot_port
         ));
-        let status = std::process::Command::new("espflash")
+        let status = std::process::Command::new(&espflash_cmd)
             .args(["write-bin", "--chip", "esp32s3", "-p", boot_port])
             // Already in download mode, and every image after the first needs
             // the stub still there. espflash cannot reset an ESP32-S3 out of

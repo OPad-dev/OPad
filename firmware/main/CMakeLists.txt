@@ -6,6 +6,7 @@ idf_component_register(
         "input/keypad.c"
         "input/debounce.c"
         "input/latency_stats.c"
+        "input/touch_retry.c"
         "usb/usb_descriptors.c"
         "usb/usb_hid.c"
         "usb/usb_cdc.c"

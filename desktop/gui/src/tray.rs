@@ -138,16 +138,8 @@ impl TrayViewModel {
             s.total_presses
         )));
 
-        // 4. Session line (active only during song play)
-        if let Some(session_taps) = s.current_song_presses {
-            items.push(MenuItemModel::Disabled(format!(
-                "This Map: {}",
-                session_taps
-            )));
-        }
-
-        // 5. tosu status
-        let tosu_status_str = if s.tosu_active {
+        // 4. tosu status
+        let tosu_status_str = if s.tosu_connected {
             "tosu: Active"
         } else {
             "tosu: Offline"

@@ -8,6 +8,7 @@
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
 #include "config/device_config.h"
 #include "input/keypad.h"
+#include "input/touch_retry.h"
 #include "input/latency_stats.h"
 #include "usb/usb_descriptors.h"
 #include "usb/usb_hid.h"
@@ -157,6 +158,12 @@ void app_main(void)
 
     // Apply brightness and sleep timeout to display & UI
     device_config_apply(&dev_cfg);
+
+    // 8. Capacitive Touchscreen Quick Retry (core 1, NON-FATAL)
+    err = touch_retry_init();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "touch_retry_init failed: %s (continuing without touch)", esp_err_to_name(err));
+    }
 #else
     ESP_LOGW(TAG, "BENCHMARK STAGE B: Display UI and Backlight Disabled");
 #endif
