@@ -62,10 +62,8 @@ jobs:
     # §W4-1. cargo check alone is not enough: the ksni/tray-icon split and the
     # IPC transport aliases fail at link time, not at check time, so this job
     # builds and runs the tests on a real windows-msvc host.
-    # Gated on GitHub Actions where windows-latest runners exist (§A.1, §A.7).
     name: Rust on Windows (Format, Clippy, Tests)
     runs-on: windows-latest
-    if: github.server_url == 'https://github.com'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -108,9 +106,8 @@ jobs:
         run: cargo test --workspace --exclude osupad-gui
 
   rust-windows-gui:
-    name: Windows GUI
+    name: Windows GUI (Clippy, Build, Tests)
     runs-on: windows-latest
-    if: github.server_url == 'https://github.com'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -141,6 +138,10 @@ jobs:
       - name: Build
         working-directory: desktop
         run: cargo build -p osupad-gui
+
+      - name: GUI Unit Tests
+        working-directory: desktop
+        run: cargo test -p osupad-gui
 
   firmware-host-tests:
     name: Firmware Host Unit Tests
