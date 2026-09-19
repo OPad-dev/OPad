@@ -1,4 +1,4 @@
-// Headless LVGL display for rendering osu!pad layouts on the host.
+// Headless LVGL display for rendering OPad layouts on the host.
 
 #include "ui_core.h"
 #include <string.h>

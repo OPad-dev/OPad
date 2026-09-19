@@ -1,8 +1,8 @@
-# osu!pad Latency Regression Gate & Benchmark Results
+# OPad Latency Regression Gate & Benchmark Results
 
 ## 1. Testing Principle & Release Gate Criteria (§3, §33)
 
-Input latency is the primary release gate for osu!pad. Background tasks, display rendering (LVGL), USB CDC communication, and protocol parsing must not degrade keystroke responsiveness or introduce jitter.
+Input latency is the primary release gate for OPad. Background tasks, display rendering (LVGL), USB CDC communication, and protocol parsing must not degrade keystroke responsiveness or introduce jitter.
 
 ### Gate Criteria (§33.3):
 1. **Missed Presses**: 0 missed accepted presses during fast alternating streams (> 20 keys/sec).

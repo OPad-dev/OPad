@@ -287,7 +287,7 @@ fn check_app(
     }
 
     if let AppAction::Available { available, .. } = &action {
-        info!("osu!pad {} is available to install", available);
+        info!("OPad {} is available to install", available);
     }
     Ok(())
 }
@@ -366,7 +366,7 @@ async fn install_app(
         s.app.installed = Some(available.clone());
     }
     info!(
-        "osu!pad {} applied; a restart is needed to run it",
+        "OPad {} applied; a restart is needed to run it",
         available
     );
     Ok(())

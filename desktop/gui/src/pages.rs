@@ -430,7 +430,7 @@ pub fn settings(app: &App) -> Element<'_, Message> {
         content = content.push(
             card(
                 row![text(
-                    "⚠ Device not connected. Connect your osu!pad to adjust device settings."
+                    "⚠ Device not connected. Connect your OPad to adjust device settings."
                 )
                 .size(14)
                 .font(theme::FONT_BOLD)
@@ -510,7 +510,7 @@ fn updates(app: &App) -> Element<'_, Message> {
 
     let mut content = column![
         caption("SOFTWARE UPDATES"),
-        line("osu!pad", &u.app, UpdateComponent::App),
+        line("OPad", &u.app, UpdateComponent::App),
         line("tosu", &u.tosu, UpdateComponent::Tosu),
         muted(checked).size(11),
     ]
@@ -660,7 +660,7 @@ fn about_section() -> Element<'static, Message> {
             caption("ABOUT & THIRD-PARTY SOFTWARE"),
             row![
                 muted("Application:").width(140),
-                text(format!("osu!pad v{}", env!("CARGO_PKG_VERSION"))).size(13)
+                text(format!("OPad v{}", env!("CARGO_PKG_VERSION"))).size(13)
             ]
             .spacing(8),
             row![

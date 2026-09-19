@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::time::Duration;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let port_name = osupad_device::find_target_port().expect("osu!pad not found on USB!");
+    let port_name = osupad_device::find_target_port().expect("OPad not found on USB!");
     println!("Testing COM-02 against device on {}", port_name);
 
     let mut port = serialport::new(&port_name, 115_200)

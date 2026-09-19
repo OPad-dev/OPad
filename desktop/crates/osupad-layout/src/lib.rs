@@ -1,4 +1,4 @@
-//! Screen layout model for the osu!pad display.
+//! Screen layout model for the OPad display.
 //!
 //! Mirrors `ui_layout_t` / `ui_widget_t` in `firmware/main/ui/core/ui_core.h`; the numeric values
 //! of every enum are wire format. `validate` applies the same rules as the firmware's

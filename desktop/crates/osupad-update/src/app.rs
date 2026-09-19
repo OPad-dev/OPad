@@ -1,4 +1,4 @@
-//! The osu!pad app updater (§U-2).
+//! The OPad app updater (§U-2).
 //!
 //! Every install checks and, where it may, downloads. What differs between
 //! platforms is only **how the update is applied**, and that difference comes

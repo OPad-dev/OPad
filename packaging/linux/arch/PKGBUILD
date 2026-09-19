@@ -2,9 +2,9 @@
 pkgname=osupad
 pkgver=1.0.0
 pkgrel=1
-pkgdesc="Low-latency ESP32-S3 keypad manager, telemetry HUD, and tray applet for osu!"
+pkgdesc="Low-latency ESP32-S3 keypad manager, telemetry HUD, and tray applet for OPad"
 arch=('x86_64')
-url="https://github.com/GFerreiroS/osupad"
+url="https://github.com/OPad-dev/OPad"
 license=('MIT' 'LGPL-3.0-only')
 
 # Runtime dependencies:

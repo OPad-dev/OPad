@@ -145,7 +145,7 @@ fn sign(manifest: &Path, secret_key: &Path) -> Result<(), String> {
         .arg("-x")
         .arg(signature_path(manifest))
         .arg("-t")
-        .arg(format!("osu!pad release manifest {}", now_rfc3339()))
+        .arg(format!("OPad release manifest {}", now_rfc3339()))
         .status()
         .map_err(|e| format!("could not run minisign (is it installed?): {e}"))?;
     if !status.success() {

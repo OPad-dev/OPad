@@ -1,6 +1,6 @@
 #pragma once
 
-// Portable osu!pad UI core on top of LVGL: layout model, data subjects and screen builder.
+// Portable OPad UI core on top of LVGL: layout model, data subjects and screen builder.
 // Depends only on LVGL, so the PC designer compiles the same code for its preview.
 // All functions must be called with the LVGL lock held (lvgl_port_lock on the device).
 

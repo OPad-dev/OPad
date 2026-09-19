@@ -1,7 +1,7 @@
 tosu
 ====
 
-This copy of tosu is redistributed with osu!pad.
+This copy of tosu is redistributed with OPad.
 
 Project:   tosu (https://github.com/KotRikD/tosu)
 Author:    Mikhail Babynichev and the tosu contributors
@@ -13,7 +13,7 @@ Obtained:  https://github.com/KotRikD/tosu/releases/tag/v4.26.2
 The full licence text is in LICENSE next to this file.
 
 Corresponding source for this exact version is published alongside the
-osu!pad release this binary came from, under the upstream tag above.
+OPad release this binary came from, under the upstream tag above.
 
 LGPL-3.0 gives you the right to replace this component with your own
 version. Point the $OSUPAD_TOSU_PATH environment variable at your own

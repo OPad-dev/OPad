@@ -1,4 +1,4 @@
-# osu!pad partition table (§U-3a).
+# OPad partition table (§U-3a).
 #
 # Two OTA slots so the layout is in place before the OTA code lands (§U-3c).
 # Rewriting the table at 0x8000 needs a full serial reflash of every pad in the

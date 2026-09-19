@@ -27,7 +27,7 @@ pub const APP_PARTITION_OFFSET: u32 = 0x20000;
 
 #[derive(Debug, Error)]
 pub enum FlashError {
-    #[error("osu!pad not found: neither the app (303a:4001) nor the ROM bootloader (303a:1001) is connected")]
+    #[error("OPad not found: neither the app (303a:4001) nor the ROM bootloader (303a:1001) is connected")]
     NoDevice,
     #[error("{0} could not be opened. On Windows the port is exclusive: close anything else using it (a serial monitor, another osupad-daemon) first. ({1})")]
     PortBusy(String, String),
@@ -412,7 +412,7 @@ pub fn check_esp32s3_image(header: &[u8]) -> Result<(), String> {
     let chip_id = u16::from_le_bytes([header[12], header[13]]);
     if chip_id != ESP32S3_CHIP_ID {
         return Err(format!(
-            "built for chip ID 0x{:04X}, but osu!pad requires ESP32-S3 (chip ID 0x{:04X})",
+            "built for chip ID 0x{:04X}, but OPad requires ESP32-S3 (chip ID 0x{:04X})",
             chip_id, ESP32S3_CHIP_ID
         ));
     }

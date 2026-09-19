@@ -1,11 +1,11 @@
 [Desktop Entry]
-Name=osu!pad
-Comment=Low-latency ESP32-S3 keypad manager and HUD
+Name=OPad
+Comment=Low-latency ESP32-S3 rhythm gaming keypad manager and HUD
 Exec=@BINDIR@/osupad-gui
 Icon=input-keyboard
 Terminal=false
 Type=Application
 Categories=Game;Utility;Settings;
-Keywords=osu;keypad;esp32;latency;
+Keywords=osu;keypad;esp32;latency;opad;
 StartupNotify=true
 StartupWMClass=osupad

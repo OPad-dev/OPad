@@ -1,4 +1,4 @@
-# osu!pad — Packaging, Distribution and Device Pairing
+# OPad — Packaging, Distribution and Device Pairing
 
 **Companion to:** `osupad_technical_spec_v1.md`, `osupad_remaining_work_v1.md`, `docs/windows-portability.md`
 **Audience:** the project owner, Antigravity and other coding agents
@@ -11,7 +11,7 @@
 
 ### Goal
 
-Ship osu!pad on Windows 10/11 and on the major Linux distros as real, installable packages, and make the pad and the app feel like **one product** without ever locking the user out of their own hardware.
+Ship OPad on Windows 10/11 and on the major Linux distros as real, installable packages, and make the pad and the app feel like **one product** without ever locking the user out of their own hardware.
 
 ### Decided (owner, 2026-09-16)
 
@@ -213,7 +213,7 @@ Note the R7 lesson: the Linux version was broken precisely by writing a *second*
 
   Per-user install, not `Program Files`. This avoids requiring admin rights, matches the per-user daemon model, and keeps the uninstall entirely inside the user's own profile.
 - Start Menu shortcut for the GUI. **No desktop shortcut by default** — offer it as an unchecked checkbox.
-- The `HKCU\...\Run` autostart value from W1-1, as an opt-in checkbox on the final page ("Start osu!pad when I log in", default checked).
+- The `HKCU\...\Run` autostart value from W1-1, as an opt-in checkbox on the final page ("Start OPad when I log in", default checked).
 - Uninstall entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\osupad`.
 
 **Does not install:** any driver, any `.inf`, any service, any redistributable. If a VC++ runtime turns out to be needed, prefer static CRT linking in the MSVC build over shipping a redist.
@@ -226,7 +226,7 @@ Note the R7 lesson: the Linux version was broken precisely by writing a *second*
 
 **Decision:** ship unsigned for the first release, and pursue free signing afterwards.
 
-**Free signing is genuinely available for this project.** [SignPath Foundation](https://signpath.org/) provides free OV code signing to open-source projects; osu!pad is MIT, so it qualifies. The private key lives on SignPath's HSM and signing runs as a step in the release pipeline, which also certifies that the signed binary was built from the public source tree.
+**Free signing is genuinely available for this project.** [SignPath Foundation](https://signpath.org/) provides free OV code signing to open-source projects; OPad is MIT, so it qualifies. The private key lives on SignPath's HSM and signing runs as a step in the release pipeline, which also certifies that the signed binary was built from the public source tree.
 
 **Prerequisites, in order — note that the first one does not exist yet:**
 1. **A public repository.** `git remote -v` is currently empty; nothing has ever been pushed. SignPath requires a publicly available codebase, so publishing the repo is a hard prerequisite, not a nice-to-have.
@@ -257,7 +257,7 @@ This is an explicit owner requirement. The uninstaller must be *provably* comple
 **Must prompt (a clear, explicit dialog, default = keep):**
 - `%APPDATA%\osupad\` — the SQLite DB with **lifetime counters**, config, layouts, logs
 
-  > "Also delete your osu!pad settings and lifetime key counters? This cannot be undone."
+  > "Also delete your OPad settings and lifetime key counters? This cannot be undone."
 
   Offer a "Export backup first" button that invokes the existing JSON export (P1-5/P2-3) before deleting. Counters are the emotionally valuable data in this product; deleting them silently would be the single worst thing the uninstaller could do.
 
@@ -266,7 +266,7 @@ This is an explicit owner requirement. The uninstaller must be *provably* comple
 - The COM port assignment — owned by Windows' `usbser.sys` enumeration, not by us
 - The pad's own NVS — deliberately untouched; see W3-4
 
-**Acceptance.** Install → use → uninstall (choosing "delete everything") leaves **zero** osu!pad files and **zero** registry values. Verify with a filesystem+registry diff across the whole cycle, and record the procedure in `docs/testing-checklist.md` as a new section. Run the same check for the "keep my data" path and confirm that `%APPDATA%\osupad\` is the *only* thing left.
+**Acceptance.** Install → use → uninstall (choosing "delete everything") leaves **zero** OPad files and **zero** registry values. Verify with a filesystem+registry diff across the whole cycle, and record the procedure in `docs/testing-checklist.md` as a new section. Run the same check for the "keep my data" path and confirm that `%APPDATA%\osupad\` is the *only* thing left.
 
 ---
 
@@ -307,7 +307,7 @@ Cross-platform — this ships on Linux too, not just Windows.
 
 The prompt must be friction-light, because per the owner's decision the *only* alternative is reflashing:
 
-> "This osu!pad is paired with another installation. Its lifetime counters are 1,234,567 / 1,234,567.
+> "This OPad is paired with another installation. Its lifetime counters are 1,234,567 / 1,234,567.
 > **[Take over and keep the pad's counters]** · [Take over and use this PC's counters] · [Leave it alone]"
 
 **Critical ordering constraint (R3 applies directly here).** R3 was exactly this class of bug: `HelloAck` emitted `Connected` before `Counters`, so the connect handler saw the *previous* pad's counters, the replacement prompt never fired, and old counters were saved under the new `device_id`. The owner check must happen in the **same** `HelloAck` arm, before any counter reconciliation, and it must be covered by a daemon test that would have caught R3.
@@ -334,7 +334,7 @@ Per the owner's decision this is the **only** unbind mechanism: no GUI unpair bu
 
 ## 6. B: Build from source — the Makefile
 
-**Owner decision (2026-09-16):** a top-level `Makefile` builds osu!pad and, on request, tosu, for the machine it runs on. The AUR package is a thin wrapper around it, and so is every other from-source install.
+**Owner decision (2026-09-16):** a top-level `Makefile` builds OPad and, on request, tosu, for the machine it runs on. The AUR package is a thin wrapper around it, and so is every other from-source install.
 
 This supersedes `packaging/linux/install.sh`, which is a per-user copy script with the install layout hardcoded.
 
@@ -487,9 +487,9 @@ An AppImage covers every other distro with one artifact and is cheap to add once
 
 ### T-1. The licensing position
 
-**tosu is LGPL-3.0** (Mikhail Babynichev). osu!pad is MIT. These interact cleanly here, for a specific reason worth writing down so it is not re-litigated later:
+**tosu is LGPL-3.0** (Mikhail Babynichev). OPad is MIT. These interact cleanly here, for a specific reason worth writing down so it is not re-litigated later:
 
-**osu!pad does not link tosu in any way.** `desktop/crates/osupad-tosu/src/lib.rs` talks to it over a WebSocket at `ws://127.0.0.1:24050/websocket/v2` (`DEFAULT_TOSU_ENDPOINT`), and `spawn_tosu_supervisor` (`:275`) launches it as a **separate process**. Separate programs communicating over a socket are not a derivative work, and executing a program is not linking. **No copyleft obligation reaches osu!pad's own MIT-licensed code.** This is true whether or not tosu is bundled.
+**OPad does not link tosu in any way.** `desktop/crates/osupad-tosu/src/lib.rs` talks to it over a WebSocket at `ws://127.0.0.1:24050/websocket/v2` (`DEFAULT_TOSU_ENDPOINT`), and `spawn_tosu_supervisor` (`:275`) launches it as a **separate process**. Separate programs communicating over a socket are not a derivative work, and executing a program is not linking. **No copyleft obligation reaches OPad's own MIT-licensed code.** This is true whether or not tosu is bundled.
 
 **Redistribution is the only thing that creates obligations.** If an installer or package *ships the tosu binary*, that is conveying an LGPL-3.0 work, which requires shipping the license text and copyright notice, and providing the corresponding source (or a valid written offer / access from the same place the binary is offered). All of this is satisfiable — it is permitted, not forbidden — but it is an ongoing maintenance burden: every tosu version bump means re-checking the source offer.
 
@@ -504,7 +504,7 @@ The auto-update requirement resolves the main practical objection to bundling. A
 - Linux `.deb`/`.rpm`: the tosu binary under `/usr/lib/osupad/tosu/`, **not** `/usr/bin` — it is a private, auto-updating component, not a system command, and it must not collide with a tosu the user installed themselves.
 - **AUR: bundled too, but built from source** (see **B-3**). Arch policy rejects vendored *prebuilt* binaries, but building from source is the normal AUR path, so the package compiles tosu on the user's machine and installs it to `/usr/lib/osupad/tosu/`. Same end result as the other platforms, arrived at the Arch-correct way.
 
-**Auto-update is disabled for package-manager-owned builds.** On AUR (and on any `.deb`/`.rpm` installed system-wide), the package manager owns the tosu binary, so U-1 must not replace it — `pacman`/`apt`/`dnf` would be overwritten behind their back and the file would be reported as modified. The rule generalises cleanly: **osu!pad only ever auto-updates a tosu it owns and installed into a user-writable location.** Everything else is reported, not touched.
+**Auto-update is disabled for package-manager-owned builds.** On AUR (and on any `.deb`/`.rpm` installed system-wide), the package manager owns the tosu binary, so U-1 must not replace it — `pacman`/`apt`/`dnf` would be overwritten behind their back and the file would be reported as modified. The rule generalises cleanly: **OPad only ever auto-updates a tosu it owns and installed into a user-writable location.** Everything else is reported, not touched.
 
 **The existing resolution order stays and gains one step at the end.** `find_tosu_binary` (`desktop/crates/osupad-tosu/src/lib.rs:256`) resolves `$OSUPAD_TOSU_PATH` → `~/.local/opt/tosu/tosu` → `$PATH`. Append the bundled location **last**, so a tosu the user installed deliberately always wins over the bundled copy. Never overwrite or auto-update a tosu found outside the bundled directory — that binary is not yours to manage.
 
@@ -514,7 +514,7 @@ Conveying tosu requires three things per artifact. None are difficult; all must 
 
 **Do:**
 1. **License text and notice.** Ship `licenses/tosu/LICENSE` (the full LGPL-3.0 text) and a `NOTICE` recording the upstream project, author (Mikhail Babynichev), copyright, the exact bundled version, and the release URL it came from. Installed alongside the binary on every platform.
-2. **Corresponding source.** LGPL-3.0 conveying obligations are satisfied by offering source from the same place the binary is offered. Publish, next to each osu!pad release artifact, the matching tosu source tarball or an explicit written offer naming the exact upstream tag. **Generate this automatically from the version the build pulled**, so it cannot drift from the binary actually shipped.
+2. **Corresponding source.** LGPL-3.0 conveying obligations are satisfied by offering source from the same place the binary is offered. Publish, next to each OPad release artifact, the matching tosu source tarball or an explicit written offer naming the exact upstream tag. **Generate this automatically from the version the build pulled**, so it cannot drift from the binary actually shipped.
 3. **Distro metadata.** `.deb` needs `debian/copyright` listing LGPL-3.0 for the bundled component; `.rpm` needs the composite `License:` field. A package whose metadata claims MIT while shipping an LGPL binary is simply incorrect.
 
 **Also required, and easy to forget:** LGPL-3.0 grants the user the right to **replace** the bundled component with their own version. The `$OSUPAD_TOSU_PATH` override and the "use my own tosu install" setting satisfy this in practice, so keep both working and mention them in the NOTICE.
@@ -565,7 +565,7 @@ Three separate updaters with three different risk profiles. **None of them exist
 
 **Acceptance.** A stale bundled tosu updates itself within a day of a new stable release. Killing the app mid-download leaves the previous version intact and working. An update never happens during a map.
 
-### U-2. osu!pad app auto-update
+### U-2. OPad app auto-update
 
 **Every install checks GitHub and downloads the update.** What differs between platforms is only how the update is **applied**, and that difference comes from who owns the installed files.
 
@@ -573,7 +573,7 @@ Three separate updaters with three different risk profiles. **None of them exist
 |---|---|---|---|
 | **Windows installer** | auto | auto | Run the new signed installer `/SILENT /NORESTART`; Inno's `CloseApplications` stops the running processes. No prompt if the user opted in. |
 | **`.deb` / `.rpm`** (GitHub) | auto | auto | `pkexec apt-get install -y <file>` / `pkexec dnf install -y <file>` → **one polkit password prompt**, then the real package manager applies it. |
-| **AUR** | auto | **no** | **Notify only.** `pacman` owns these files and `yay`/`paru` update them. osu!pad must not touch them. |
+| **AUR** | auto | **no** | **Notify only.** `pacman` owns these files and `yay`/`paru` update them. OPad must not touch them. |
 | **`make install-user`** (`~/.local`) | auto | auto | Direct file replacement. No prompt — the user already owns every file. |
 | **AppImage** (if L-4) | auto | auto | Direct replacement. |
 
@@ -690,7 +690,7 @@ Each updater needs its own checklist entries, because these are the paths that c
 - Download interrupted mid-transfer for each of the three updaters: previous working state survives in all cases.
 - No updater fires during PLAYING or COOLDOWN; a pending update defers and applies afterwards (U-0.1).
 - Firmware update preserves lifetime counters (U-3b flashes the app partition only, never `erase-flash`).
-- Post-update, the pad still enumerates as a keyboard on a machine with no osu!pad software installed.
+- Post-update, the pad still enumerates as a keyboard on a machine with no OPad software installed.
 
 ### W4-3. Latency on Windows
 
@@ -757,7 +757,7 @@ Then **W0-1**, which gates every remaining Windows task, and **U-0**, which gate
 | Windows storage writes violate P1-3 during play | W4-2 re-runs STR-02 on Windows rather than assuming it |
 | Distro package misses a runtime library; GUI dies with an opaque wgpu error | L-3 requires a clean-container install test on all four distros |
 | Packaged systemd unit keeps the `%h/.local/bin` path and the daemon never starts | L-1 templates one source unit into both variants (the R7 lesson) |
-| A tosu update breaks telemetry and users blame osu!pad | tosu is never pinned or bundled (T-2); the GUI reports tosu status explicitly (T-3) |
+| A tosu update breaks telemetry and users blame OPad | tosu is never pinned or bundled (T-2); the GUI reports tosu status explicitly (T-3) |
 | SmartScreen suppresses Windows adoption while unsigned | W2-2: publish SHA-256 checksums and document the prompt honestly; pursue SignPath once public |
 | **An updater becomes a remote code execution channel** | U-0.3: minisign-signed manifest, hash-verified artifacts, public key in the binary. The single highest-risk item in this plan |
 | A firmware update is interrupted and the pad stops being a keyboard | U-3a ships the OTA layout in v1.0 so U-3c's automatic rollback becomes possible; until then U-3b requires explicit consent and documents recovery |
@@ -767,7 +767,7 @@ Then **W0-1**, which gates every remaining Windows task, and **U-0**, which gate
 | Shipping an OTA partition table later strands every pad in the field | U-3a: do it now, while the field is ~zero devices |
 | Arch's `nodejs` moves past the 24.x that tosu's `engines` pins | B-4: depend on the `nodejs-lts-*` that actually satisfies it, and verify before publishing |
 | `make install` tries a privileged action and breaks staged package builds | B-2: `install` writes only under `$(DESTDIR)`; reloads and enables live in scriptlets |
-| U-1 overwrites a tosu owned by `pacman`/`apt`/`dnf` | T-2: only auto-update a tosu osu!pad installed into a user-writable location |
+| U-1 overwrites a tosu owned by `pacman`/`apt`/`dnf` | T-2: only auto-update a tosu OPad installed into a user-writable location |
 | Updater writes `/usr/bin` directly and desynchronises the package database | U-2: apply only through the package manager; U-2a marker decides which path is legal |
 
 ---
@@ -807,7 +807,7 @@ cut a short-lived branch for the task and merge it when it closes.
 > `main` was the integration target. Rows before `482a51b` refer to that layout.
 
 **There is now a remote.** `origin` is
-`https://git.gferreiro.com/GFerreiroS/osu-pad.git` — a **private** Gitea instance
+`https://git.gferreiro.com/GFerreiroS/OPad.git` — a **private** Gitea instance
 with Actions, reached over the owner's tailnet. It is not public, so **§W2-2 code
 signing stays deferred**: SignPath Foundation requires a publicly published
 repository. The §U-0.3 signing key's secret half has never been in the repo and
@@ -924,7 +924,7 @@ Keep it to one line per task. This is how the other agent learns what landed.
 | 2026-09-17 | A→B | `osupad-gui` is red on Windows | — | **B: four real compile errors, your files, not touched by me (A.3).** `single_instance.rs:111` `E0425` `CreateMutexW` missing from `windows_sys::Win32::System::Threading` (feature flag or moved path); `single_instance.rs:86` `E0308` `if self.0 != 0` — it is a `*mut c_void`, not a `usize`, so compare with `std::ptr::null_mut()`; `tray.rs:341` unused import `TrayIcon`, fatal under `-D warnings`; `main.rs:358` `E0560` `iced::window::settings::PlatformSpecific` has no `application_id` on Windows — that field is Linux-only and needs a `cfg`. **Also blocking you and everyone else:** `osupad-ui-preview` (which `osupad-gui` depends on) cannot build from a clean checkout, because `firmware/sdkconfig` and `firmware/managed_components/lvgl__lvgl` are both **gitignored** — §10.3, owner decision. |
 | 2026-09-17 | A | W4-2 Windows run | `f1433a5` | **Windows is no longer theoretical.** Built a Win 11 Pro 25H2 VM (UEFI+SecureBoot+TPM 2.0, unattended, two local accounts for WIN-03) and passed the pad through with the two `<hostdev>` entries. **PASS: WIN-01** (HID + inbox `usbser.sys`, no prompt, on a machine that never saw the installer — the §0 invariant), **WIN-02**, **WIN-03** (`tester2` gets access-denied on the pipe, the W0-2 deferral closed), **WIN-05** (0.75 s reconnect), **WIN-08** (COM15). **WIN-06 FAILS for an environmental reason**: `startupPolicy='optional'` covers VM start, *not* hot-attach, so when the pad flipped to `303a:1001` libvirt handed it back to the host mid-flash — needs bare metal or a PCI-passed USB controller, and the controller here also carries the webcam/Bluetooth so it was not taken. **WIN-04/WIN-07 blocked on B's GUI.** Also verified: **W0-4 paths on Windows**, and **W3-3 ownership across two machines on real hardware** — the Windows install saw a Linux-owned pad, paused sync and wrote nothing. **W32-01's replug half is now done** too: handing the pad to the VM and back is a real re-enumeration. `docs/testing-checklist.md` §§9–11. |
 | 2026-09-17 | A | full integration | `482a51b` | **`main`, `v1.0-claude` and `v1.0-agy` are all at this commit** — both columns merged, both worktrees clean, one starting point for whatever comes next. Only three files overlapped; `gui/src/main.rs` and `testing-checklist.md` auto-merged (B's rewrite kept the `last_backup: _,` line the auto-backup needs, and the checklist now carries B's Linux PKG column beside A's §§9–11), and the A.7 conflict was two sets of appended rows, both kept. Green on the result: `cargo fmt --check`, `clippy --workspace --all-targets -D warnings`, `cargo test --workspace` (226), firmware host tests, full ESP-IDF build. **Unchanged by the merge: `osupad-gui` still does not compile for windows-msvc** (§10.2) — B's four errors, and they block WIN-04, WIN-07 and PKG-Windows. |
-| 2026-09-18 | — | one branch, one remote | `39f9965` | **Owner decision.** `v1.0-agy` and `v1.0-claude` are deleted and the `../osupad-agy` worktree removed — they were three labels on one commit after `482a51b`, nothing was unmerged, and nothing was lost (that worktree held only 18 GB of regenerable build artifacts). **`main` is now the only branch and this is the only checkout**; A.1 says not to recreate the per-agent branches. `origin` added: `https://git.gferreiro.com/GFerreiroS/osu-pad.git`, a **private** Gitea with Actions on a Proxmox CT runner. **W2-2 stays deferred** — SignPath needs a *public* repo. Expect the first CI run to be red for the reason in §10.3 (`osupad-ui-preview` cannot build from a clean checkout), and the two `windows-latest` jobs to queue against a Linux-only runner until they are gated. |
+| 2026-09-18 | — | one branch, one remote | `39f9965` | **Owner decision.** `v1.0-agy` and `v1.0-claude` are deleted and the `../osupad-agy` worktree removed — they were three labels on one commit after `482a51b`, nothing was unmerged, and nothing was lost (that worktree held only 18 GB of regenerable build artifacts). **`main` is now the only branch and this is the only checkout**; A.1 says not to recreate the per-agent branches. `origin` added: `https://git.gferreiro.com/GFerreiroS/OPad.git`, a **private** Gitea with Actions on a Proxmox CT runner. **W2-2 stays deferred** — SignPath needs a *public* repo. Expect the first CI run to be red for the reason in §10.3 (`osupad-ui-preview` cannot build from a clean checkout), and the two `windows-latest` jobs to queue against a Linux-only runner until they are gated. |
 | 2026-09-18 | B | Windows GUI fixes & manifest hook | `4b74ac0` | **All four Windows compile errors in `osupad-gui` fixed (§10.2).** (1) Added `Win32_Security` feature to `windows-sys` in `desktop/gui/Cargo.toml` (`CreateMutexW` requirement); (2) Checked `HANDLE` against `.is_null()` instead of `0` in `single_instance.rs`; (3) Dropped unused `TrayIcon` import in `tray.rs`; (4) Guarded `PlatformSpecific.application_id` with `#[cfg(target_os = "linux")]` in `main.rs`. Added step 4 to `scripts/release/build_release.sh` to generate and sign `osupad-manifest.json` with the secret key when present (§U-0.3). Verified: `cargo fmt`, `clippy -D warnings`, `cargo test` (226 passed), package builds (`.deb`, `.rpm`, `AppImage`) and signed manifest generation. |
 | 2026-09-19 | B | CI stub, tosu clippy, Inno installer | `d078edd` | **Clean-checkout CI blocker resolved (§10.3) and Windows installer verified.** Added `csrc/preview_stub.c` and updated `build.rs` so `osupad-ui-preview` compiles a headless fallback with valid default layouts and layout validation when managed LVGL sources are missing, allowing clean checkouts to pass `cargo build`, `clippy -D warnings`, and `cargo test --workspace` (230 passed) without requiring an ESP-IDF step. Fixed `osupad-tosu` `clippy::type_complexity` with `LogLineCallback`. Verified Windows installer compilation with `ISCC.exe` producing `build/installer/osupad-setup.exe` (40.6 MB). Updated `docs/testing-checklist.md` with automated test verification for UPD-01 through UPD-05, UPD-07, UPD-08, and UPD-10. |
 | 2026-09-19 | B | Gitea CI on Proxmox CT & VM | — | **CI workflow adapted for Gitea Actions with Proxmox CT (Linux) & VM (Windows) runners.** Kept Windows runner targets native on `windows-latest` for the Proxmox Windows VM; added fallback `sudo` detection and `DEBIAN_FRONTEND=noninteractive` for minimal CT environments; added `continue-on-error: true` on `rust-cache` to tolerate unconfigured cache servers; added `cargo test -p osupad-gui` to the Windows GUI CI job. |

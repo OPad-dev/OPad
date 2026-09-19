@@ -147,7 +147,7 @@ pub fn notice_text(version: &str, upstream_tag: Option<&str>, url: &str) -> Stri
     format!(
         "tosu\n\
          ====\n\n\
-         This copy of tosu is redistributed with osu!pad.\n\n\
+         This copy of tosu is redistributed with OPad.\n\n\
          Project:   tosu (https://github.com/tosuapp/tosu)\n\
          Author:    Mikhail Babynichev and the tosu contributors\n\
          License:   GNU Lesser General Public License v3.0\n\
@@ -156,11 +156,11 @@ pub fn notice_text(version: &str, upstream_tag: Option<&str>, url: &str) -> Stri
          Obtained:  {url}\n\n\
          The full licence text is in LICENSE next to this file.\n\n\
          Corresponding source for this exact version is published alongside the\n\
-         osu!pad release this binary came from, under the upstream tag above.\n\n\
+         OPad release this binary came from, under the upstream tag above.\n\n\
          LGPL-3.0 gives you the right to replace this component with your own\n\
-         build. osu!pad supports that directly: set $OSUPAD_TOSU_PATH, or point\n\
+         build. OPad supports that directly: set $OSUPAD_TOSU_PATH, or point\n\
          the app at your own tosu in Settings. A tosu found that way is used as\n\
-         is and is never updated or overwritten by osu!pad.\n"
+         is and is never updated or overwritten by OPad.\n"
     )
 }
 

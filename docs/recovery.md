@@ -1,4 +1,4 @@
-# osu!pad Counter Reconciliation, Recovery & Unbinding
+# OPad Counter Reconciliation, Recovery & Unbinding
 
 ## 1. Dual-Storage Model (§12, §13)
 
@@ -39,7 +39,7 @@ When the daemon opens the USB CDC port and receives `HelloAck`:
 
 ## 4. Device Replacement Flow (§14 / P1-5)
 
-When a player replaces their osu!pad or swaps hardware:
+When a player replaces their OPad or swaps hardware:
 1. The daemon detects a connection from an unknown `device_id`, but finds exactly one existing device record in SQLite.
 2. The daemon creates a pending replacement recommendation (`suggested_replacement: Some(old_device_id)`).
 3. The GUI displays a non-blocking replacement banner:

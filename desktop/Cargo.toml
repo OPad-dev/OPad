@@ -20,7 +20,7 @@ version = "1.0.0-rc"
 edition = "2021"
 authors = ["GFerreiroS <info@gferreiro.com>"]
 license = "MIT"
-repository = "https://github.com/GFerreiroS/osupad"
+repository = "https://github.com/OPad-dev/OPad"
 
 [workspace.dependencies]
 tokio = { version = "1.40", features = ["full"] }

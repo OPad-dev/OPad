@@ -369,7 +369,7 @@ impl App {
             LogSource::Program,
             LogLevel::Info,
             "gui",
-            "osu!pad application initialized",
+            "OPad application initialized",
         );
         let mut tasks = vec![designer_task.map(Message::Designer), app.poll()];
         if !start_hidden {
@@ -379,7 +379,7 @@ impl App {
     }
 
     fn title(&self, _window: window::Id) -> String {
-        "osu!pad".to_string()
+        "OPad".to_string()
     }
 
     fn open_window(&mut self) -> Task<Message> {
@@ -1417,7 +1417,7 @@ impl App {
                     Some(Message::StartDaemon),
                 ),
                 Space::new().height(4),
-                theme::caption("Close the window to keep osu!pad in the tray"),
+                theme::caption("Close the window to keep OPad in the tray"),
             ]
             .spacing(4)
             .padding(18),
@@ -1542,7 +1542,7 @@ impl App {
             main = main.push(
                 container(
                     row![text(
-                        "osu!pad was updated. Restart the app and the daemon to \
+                        "OPad was updated. Restart the app and the daemon to \
                              finish — the pad keeps working as a keyboard meanwhile."
                     )
                     .size(14),]
@@ -1559,7 +1559,7 @@ impl App {
             main = main.push(
                 container(
                     column![
-                        text("This osu!pad is paired with another installation.").size(14),
+                        text("This OPad is paired with another installation.").size(14),
                         text(format!(
                             "Its counters: {} / {}   ·   this PC's: {} / {}",
                             pages::grouped(t.device_key1),
@@ -1587,7 +1587,7 @@ impl App {
                         Space::new().height(4),
                         text(
                             "Leaving it alone keeps the pad working as a keyboard; \
-                             osu!pad just will not configure or count for it. \
+                             OPad just will not configure or count for it. \
                              To unpair a pad completely, see docs/recovery.md."
                         )
                         .size(11)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-osu!pad Latency & Jitter Measurement Tool (§33)
+OPad Latency & Jitter Measurement Tool (§33)
 Measures interval regularity, polling consistency, and jitter on USB HID key events.
 """
 
@@ -13,7 +13,7 @@ import math
 
 def find_osupad_event_device():
     # Search /dev/input/by-id or by-path
-    matches = glob.glob("/dev/input/by-id/*osu*")
+    matches = glob.glob("/dev/input/by-id/*OPad*") + glob.glob("/dev/input/by-id/*osu*")
     if matches:
         return matches[0]
     
@@ -24,7 +24,7 @@ def find_osupad_event_device():
             try:
                 with open(name_file, "r") as f:
                     name = f.read().strip()
-                    if "osu!pad" in name or "GFerreiroS" in name:
+                    if "OPad" in name or "GFerreiroS" in name:
                         event_node = "/dev/input/" + os.path.basename(event_path)
                         return event_node
             except Exception:
@@ -32,10 +32,10 @@ def find_osupad_event_device():
     return None
 
 def main():
-    print("=== osu!pad Latency & Jitter Benchmark ===")
+    print("=== OPad Latency & Jitter Benchmark ===")
     device_node = find_osupad_event_device()
     if not device_node:
-        print("Note: osu!pad input event device node not found under /dev/input/by-id.")
+        print("Note: OPad input event device node not found under /dev/input/by-id.")
         print("Available event nodes:")
         for node in sorted(glob.glob("/dev/input/event*")):
             print(f"  {node}")

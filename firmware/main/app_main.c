@@ -51,8 +51,8 @@ void app_main(void)
     diag_record(DIAG_EVENT_BOOT, 1 /* INFO */, (uint32_t)rst_reason, 0);
 
     ESP_LOGI(TAG, "========================================");
-    ESP_LOGI(TAG, "  osu!pad ESP32-S3 Firmware v1.0.0      ");
-    ESP_LOGI(TAG, "  Ultra Low-Latency 2-Key osu! Keypad   ");
+    ESP_LOGI(TAG, "  OPad ESP32-S3 Firmware v1.0.0         ");
+    ESP_LOGI(TAG, "  Ultra Low-Latency Rhythm Gaming Keypad");
     ESP_LOGI(TAG, "========================================");
 
     // 1. Load device configuration from NVS (or fall back to defaults) (NON-FATAL)
@@ -161,6 +161,6 @@ void app_main(void)
     ESP_LOGW(TAG, "BENCHMARK STAGE B: Display UI and Backlight Disabled");
 #endif
 
-    ESP_LOGI(TAG, "osu!pad initialized and ready");
+    ESP_LOGI(TAG, "OPad initialized and ready");
 #endif
 }

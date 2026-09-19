@@ -1,4 +1,4 @@
-//! Where osu!pad keeps its files, on every platform (§W0-4).
+//! Where OPad keeps its files, on every platform (§W0-4).
 //!
 //! Every path the app reads or writes is resolved here, so the uninstaller has
 //! one list to work from (§W2-3) and no code falls back to a relative path. A

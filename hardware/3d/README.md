@@ -1,4 +1,4 @@
-# osu!pad ESP32-S3 — 3D Models & Enclosure CAD Reference
+# OPad ESP32-S3 — 3D Models & Enclosure CAD Reference
 
 This directory contains 3D CAD models, official hardware blueprints, and ready-to-print/modify enclosure files for the **Waveshare ESP32-S3-Touch-LCD-2** and standard **MX mechanical switches**.
 

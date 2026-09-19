@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Pixel-exact preview of osu!pad screen layouts: compiles the firmware's LVGL UI core for the host"
+description = "Pixel-exact preview of OPad screen layouts: compiles the firmware's LVGL UI core for the host"
 
 [dependencies]
 png = "0.17"

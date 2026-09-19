@@ -1,8 +1,8 @@
-# osu!pad
+# OPad
 
-**Low-Latency ESP32-S3 osu! Keypad & Telemetry Display**
+**Low-Latency ESP32-S3 Rhythm Gaming Keypad & Telemetry Display**
 
-A deterministic, ultra-low-latency two-key mechanical keypad and live telemetry HUD designed for competitive osu!lazer gameplay on **Linux and Windows 10/11**.
+A deterministic, ultra-low-latency mechanical keypad and live telemetry HUD designed for competitive osu!, osu!lazer, and rhythm games on **Linux and Windows 10/11**.
 
 ---
 
@@ -149,7 +149,7 @@ telemetry HUD and the lifetime counters.
    to start at login. There is nothing else to do.
 
 > **SmartScreen will warn you.** The installer is **not code-signed** yet:
-> osu!pad is applying to SignPath Foundation for free OSS signing, which
+> OPad is applying to SignPath Foundation for free OSS signing, which
 > requires the repository to be public first. Until then, Windows shows
 > "Windows protected your PC" — choose **More info → Run anyway**. Check the
 > download against `SHA256SUMS` on the release page if you would rather verify
@@ -228,7 +228,7 @@ osupadctl monitor
 - [Documentation Hub & Wiki](docs/README.md)
 - [System Architecture](docs/architecture.md)
 - [Project Roadmap & Hardware Variants](docs/roadmap.md)
-- [osu!pad on Windows — as built](docs/windows-portability.md)
+- [OPad on Windows — as built](docs/windows-portability.md)
 - [USB Framing & Protocol](docs/protocol.md)
 - [Counter Reconciliation, Recovery & Unbinding](docs/recovery.md) — including the reflash / unbind path
 - [Latency Testing Methodology](docs/latency-testing.md)
@@ -241,17 +241,23 @@ osupadctl monitor
 
 ## 📦 Third-Party Software
 
-osu!pad bundles or interacts with the following third-party software:
+OPad bundles or interacts with the following third-party software:
 
 ### tosu
 - **Project**: [tosu](https://github.com/KotRikD/tosu)
 - **Author**: Mikhail Babynichev and the tosu contributors
 - **License**: [GNU Lesser General Public License v3.0 (LGPL-3.0)](licenses/tosu/LICENSE)
 - **Redistribution Notice**: See [licenses/tosu/NOTICE](licenses/tosu/NOTICE)
-- **User Replacement Rights**: Under the terms of LGPL-3.0, users are entitled to replace the bundled tosu binary with their own version. You can point the `OSUPAD_TOSU_PATH` environment variable to a custom tosu executable, or configure an external path in the osu!pad desktop GUI (**Settings → tosu**).
+- **User Replacement Rights**: Under the terms of LGPL-3.0, users are entitled to replace the bundled tosu binary with their own version. You can point the `OSUPAD_TOSU_PATH` environment variable to a custom tosu executable, or configure an external path in the OPad desktop GUI (**Settings → tosu**).
+
+---
+
+## ⚖️ Trademark Disclaimer
+OPad is an independent open-source hardware and software project. OPad is not affiliated with, endorsed by, or sponsored by ppy Pty Ltd or osu!. "osu!" is a registered trademark of ppy Pty Ltd.
 
 ---
 
 ## 📜 License
 Licensed under the [MIT License](LICENSE).
+
 

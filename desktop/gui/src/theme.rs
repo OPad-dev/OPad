@@ -39,7 +39,7 @@ pub const FONT_BOLD: Font = Font {
 
 pub fn theme() -> Theme {
     Theme::custom(
-        "osu!pad".to_string(),
+        "OPad".to_string(),
         iced::theme::Palette {
             background: BG,
             text: WHITE,

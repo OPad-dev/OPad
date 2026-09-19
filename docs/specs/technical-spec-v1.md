@@ -1,4 +1,4 @@
-# osu!pad - ESP32-S3 Low-Latency osu! Keypad and Telemetry Display
+# OPad - ESP32-S3 Low-Latency osu! Keypad and Telemetry Display
 
 **Technical Specification / Implementation Contract - v1.0**  
 **Primary target:** Waveshare ESP32-S3-Touch-LCD-2 + Linux + osu!lazer AppImage  
@@ -28,7 +28,7 @@ Do not expand scope. In particular, do not turn this into a general macro pad, R
 
 # 1. Project summary
 
-osu!pad is a two-key osu! keypad based on an ESP32-S3 board with an integrated 2-inch LCD. It has two responsibilities that must remain architecturally independent:
+OPad is a two-key osu! keypad based on an ESP32-S3 board with an integrated 2-inch LCD. It has two responsibilities that must remain architecturally independent:
 
 1. **Low-latency keyboard:** two physical MX-compatible switches are exposed to the host as USB HID keys, defaulting to `Z` and `X`.
 2. **Small telemetry display:** when osu!lazer is being played, the LCD shows a minimal set of live data from tosu. When osu! is not being played, it behaves as a small desk clock and shows lifetime key-press counters.
@@ -852,7 +852,7 @@ The tray is intentionally device-focused. Do not fill it with osu status.
 Suggested native menu:
 
 ```text
-osu!pad
+OPad
 --------------------------
 ESP32: Connected
 Firmware: 1.0.0

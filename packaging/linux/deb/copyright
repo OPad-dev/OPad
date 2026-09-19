@@ -1,7 +1,7 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: osupad
 Upstream-Contact: GFerreiroS <info@gferreiro.com>
-Source: https://github.com/GFerreiroS/osupad
+Source: https://github.com/OPad-dev/OPad
 
 Files: *
 Copyright: 2026 GFerreiroS <info@gferreiro.com>

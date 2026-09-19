@@ -42,7 +42,7 @@ fn systemctl_user(args: &[&str]) -> Result<(), String> {
     }
 }
 
-/// True when a systemd user manager is reachable and knows the osu!pad unit
+/// True when a systemd user manager is reachable and knows the OPad unit
 fn service_installed() -> bool {
     Command::new("systemctl")
         .args(["--user", "cat", SERVICE_NAME])
@@ -153,7 +153,7 @@ pub fn set_gui_autostart_enabled(enabled: bool) -> Result<(), String> {
     if enabled {
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("Failed to create directory {}: {}", dir.display(), e))?;
-        let content = "[Desktop Entry]\nType=Application\nName=osu!pad Tray\nComment=osu!pad configuration and system tray applet\nExec=osupad-gui --tray\nIcon=input-keyboard\nTerminal=false\nCategories=Utility;HardwareSettings;\nX-GNOME-Autostart-enabled=true\n";
+        let content = "[Desktop Entry]\nType=Application\nName=OPad Tray\nComment=OPad configuration and system tray applet\nExec=osupad-gui --tray\nIcon=input-keyboard\nTerminal=false\nCategories=Utility;HardwareSettings;\nX-GNOME-Autostart-enabled=true\n";
         std::fs::write(&path, content)
             .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
     } else if path.exists() {

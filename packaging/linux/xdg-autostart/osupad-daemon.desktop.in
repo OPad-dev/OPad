@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=osu!pad Daemon
-Comment=osu!pad background service daemon
+Name=OPad Daemon
+Comment=OPad background service daemon
 Exec=@BINDIR@/osupad-daemon
 Icon=input-keyboard
 Terminal=false

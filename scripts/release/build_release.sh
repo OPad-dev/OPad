@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # -----------------------------------------------------------------------------
-# Release build script for osu!pad v1.0 (Linux x86_64)
+# Release build script for OPad v1.0 (Linux x86_64)
 # Builds ESP32-S3 firmware .bin, release host binaries, packages, and SHA256SUMS
 # -----------------------------------------------------------------------------
 
@@ -11,7 +11,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 DIST_DIR="${REPO_ROOT}/dist"
 
 echo "=========================================="
-echo "  osu!pad v1.0 Release Build              "
+echo "  OPad v1.0 Release Build                 "
 echo "=========================================="
 
 rm -rf "${DIST_DIR}"
@@ -103,7 +103,7 @@ cat SHA256SUMS
 
 # 4. Generate and sign release manifest (§U-0.3)
 KEY_FILE="${HOME}/.config/osupad/osupad-manifest.key"
-BASE_URL="${BASE_URL:-https://github.com/GFerreiroS/osu-pad/releases/latest/download}"
+BASE_URL="${BASE_URL:-https://github.com/OPad-dev/OPad/releases/latest/download}"
 FW_VER="${FIRMWARE_VERSION:-1.0.0}"
 if [ -f "${KEY_FILE}" ]; then
     echo ""

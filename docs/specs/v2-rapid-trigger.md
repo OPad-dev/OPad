@@ -1,4 +1,4 @@
-# osu!pad v2 — Rapid Trigger (Hall-Effect Keys) Plan
+# OPad v2 — Rapid Trigger (Hall-Effect Keys) Plan
 
 **Companion to:** `osupad_technical_spec_v1.md` and `osupad_remaining_work_v1.md`
 **Audience:** the project owner, Antigravity and other coding agents

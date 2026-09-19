@@ -1,4 +1,4 @@
-//! Pixel-exact preview of osu!pad screens.
+//! Pixel-exact preview of OPad screens.
 //!
 //! Links the firmware's LVGL UI core (`firmware/main/ui/core`) and LVGL itself, built with the
 //! firmware's sdkconfig, and renders layouts into RGBA images on the host.

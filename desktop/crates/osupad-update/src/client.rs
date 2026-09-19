@@ -18,7 +18,7 @@ use std::time::SystemTime;
 /// that resolves today. `$OSUPAD_MANIFEST_URL` overrides it for testing
 /// against a local copy.
 pub const DEFAULT_MANIFEST_URL: &str =
-    "https://github.com/GFerreiroS/osupad/releases/latest/download/osupad-manifest.json";
+    "https://github.com/OPad-dev/OPad/releases/latest/download/osupad-manifest.json";
 
 pub struct UpdateClient {
     http: Http,

@@ -1,4 +1,4 @@
-# osu!pad on Windows — as built
+# OPad on Windows — as built
 
 **Status:** the code is written and compiles; **none of it has been run on
 Windows hardware.** `docs/testing-checklist.md` §5 is the list of things that

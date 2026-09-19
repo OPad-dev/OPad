@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
     }
 
     let db_path = osupad_model::paths::database_path()
-        .context("Cannot resolve where to keep the osu!pad database")?;
+        .context("Cannot resolve where to keep the OPad database")?;
     info!("Using SQLite database at {}", db_path.display());
     let (
         storage,

@@ -1,4 +1,4 @@
-# osu!pad USB CDC Framing & Protocol
+# OPad USB CDC Framing & Protocol
 
 ## 1. Framing Specification (§23)
 USB CDC is a streaming byte-oriented transport. Framing is achieved by prepending each protobuf-encoded envelope with a 4-byte little-endian length prefix:
@@ -18,7 +18,7 @@ USB CDC is a streaming byte-oriented transport. Framing is achieved by prependin
 
 ## 2. Protobuf Message Envelopes
 
-All messages are defined in [`protocol/osupad.proto`](file:///home/paella/Documents/projects/esp32/osu-pad-esp32/protocol/osupad.proto) using NanoPB-compatible schemas.
+All messages are defined in [`protocol/osupad.proto`](file:///home/paella/Documents/projects/esp32/OPad-esp32/protocol/osupad.proto) using NanoPB-compatible schemas.
 
 Every message transmitted in either direction is wrapped in a top-level envelope containing a 32-bit sequence number:
 

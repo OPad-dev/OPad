@@ -25,7 +25,7 @@ const tusb_desc_device_t osupad_usb_device_desc = {
     .bDeviceProtocol    = MISC_PROTOCOL_IAD,
     .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
     .idVendor           = 0x303A,   // Espressif VID
-    .idProduct          = 0x4001,   // Custom PID for osu!pad
+    .idProduct          = 0x4001,   // Custom PID for OPad
     .bcdDevice          = 0x0100,   // Version 1.0.0
     .iManufacturer      = STRID_MANUFACTURER,
     .iProduct           = STRID_PRODUCT,
@@ -52,10 +52,10 @@ const uint8_t osupad_usb_config_desc[] = {
 const char *osupad_usb_string_desc[] = {
     (const char[]) { 0x09, 0x04 },  // 0: Supported language (English 0x0409)
     "GFerreiroS",                   // 1: Manufacturer
-    "osu!pad ESP32-S3",             // 2: Product
+    "OPad ESP32-S3",                // 2: Product
     s_serial_str,                   // 3: Serial (runtime MAC-derived)
-    "osu!pad HID Keyboard",         // 4: HID Interface
-    "osu!pad CDC Telemetry",        // 5: CDC Interface
+    "OPad HID Keyboard",            // 4: HID Interface
+    "OPad CDC Telemetry",           // 5: CDC Interface
 };
 
 
@@ -97,38 +97,38 @@ const uint8_t osupad_usb_bos_desc[] = {
     0xDF, 0x60, 0xDD, 0xD8, 0x89, 0x45, 0xC7, 0x4C, 0x9C, 0xD2, 0x65, 0x9D, 0x9E, 0x64, 0x8A, 0x9F,
     // dwWindowsVersion: 0x06030000 (Windows 8.1+)
     0x00, 0x00, 0x03, 0x06,
-    // wMSOSDescriptorSetTotalLength: 78 bytes (0x004E)
-    0x4E, 0x00,
+    // wMSOSDescriptorSetTotalLength: 72 bytes (0x0048)
+    0x48, 0x00,
     // bMS_VendorCode
     VENDOR_REQUEST_MICROSOFT,
     // bAltEnumCode
     0x00
 };
 
-// Microsoft OS 2.0 Descriptor Set (Total 78 bytes)
-// Assigns FriendlyName = "osu!pad" to Interface 1 (CDC-ACM) so Windows Device Manager
-// displays "osu!pad (COMx)" instead of the generic "USB Serial Device (COMx)".
+// Microsoft OS 2.0 Descriptor Set (Total 72 bytes)
+// Assigns FriendlyName = "OPad" to Interface 1 (CDC-ACM) so Windows Device Manager
+// displays "OPad (COMx)" instead of the generic "USB Serial Device (COMx)".
 const uint8_t osupad_usb_ms_os_20_desc[] = {
-    // Set Header: wLength (10), wDescriptorType (0x0000), dwWindowsVersion (0x06030000), wTotalLength (78 = 0x004E)
-    0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x06, 0x4E, 0x00,
+    // Set Header: wLength (10), wDescriptorType (0x0000), dwWindowsVersion (0x06030000), wTotalLength (72 = 0x0048)
+    0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x06, 0x48, 0x00,
 
-    // Configuration Subset Header: wLength (8), wDescriptorType (0x0001), bConfigurationValue (0), bReserved (0), wTotalLength (68 = 0x0044)
-    0x08, 0x00, 0x01, 0x00, 0x00, 0x00, 0x44, 0x00,
+    // Configuration Subset Header: wLength (8), wDescriptorType (0x0001), bConfigurationValue (0), bReserved (0), wTotalLength (62 = 0x003E)
+    0x08, 0x00, 0x01, 0x00, 0x00, 0x00, 0x3E, 0x00,
 
-    // Function Subset Header: wLength (8), wDescriptorType (0x0002), bFirstInterface (1 = ITF_NUM_CDC), bReserved (0), wSubsetLength (60 = 0x003C)
-    0x08, 0x00, 0x02, 0x00, ITF_NUM_CDC, 0x00, 0x3C, 0x00,
+    // Function Subset Header: wLength (8), wDescriptorType (0x0002), bFirstInterface (1 = ITF_NUM_CDC), bReserved (0), wSubsetLength (54 = 0x0036)
+    0x08, 0x00, 0x02, 0x00, ITF_NUM_CDC, 0x00, 0x36, 0x00,
 
-    // Registry Property Feature Descriptor: wLength (52), wDescriptorType (0x0004), wPropertyDataType (0x0001 = REG_SZ)
-    0x34, 0x00, 0x04, 0x00, 0x01, 0x00,
+    // Registry Property Feature Descriptor: wLength (46), wDescriptorType (0x0004), wPropertyDataType (0x0001 = REG_SZ)
+    0x2E, 0x00, 0x04, 0x00, 0x01, 0x00,
     // wPropertyNameLength (26 bytes = 13 UTF-16LE characters including null terminator)
     0x1A, 0x00,
     // PropertyName: "FriendlyName" in UTF-16LE
     'F', 0x00, 'r', 0x00, 'i', 0x00, 'e', 0x00, 'n', 0x00, 'd', 0x00,
     'l', 0x00, 'y', 0x00, 'N', 0x00, 'a', 0x00, 'm', 0x00, 'e', 0x00, 0x00, 0x00,
-    // wPropertyDataLength (16 bytes = 8 UTF-16LE characters including null terminator)
-    0x10, 0x00,
-    // PropertyData: "osu!pad" in UTF-16LE
-    'o', 0x00, 's', 0x00, 'u', 0x00, '!', 0x00, 'p', 0x00, 'a', 0x00, 'd', 0x00, 0x00, 0x00
+    // wPropertyDataLength (10 bytes = 5 UTF-16LE characters including null terminator)
+    0x0A, 0x00,
+    // PropertyData: "OPad" in UTF-16LE
+    'O', 0x00, 'P', 0x00, 'a', 0x00, 'd', 0x00, 0x00, 0x00
 };
 
 uint8_t const *tud_descriptor_bos_cb(void)

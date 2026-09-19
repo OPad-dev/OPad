@@ -69,7 +69,7 @@ assets = [
 name = "osupad"
 version = "1.0.0~rc"
 summary = "Low-latency ESP32-S3 keypad manager, telemetry HUD, and tray applet for osu!"
-description = "osu!pad desktop daemon, configuration GUI, and CLI utility."
+description = "OPad desktop daemon, configuration GUI, and CLI utility."
 license = "MIT AND LGPL-3.0-only"
 assets = [
     { source = "../target/release/osupad-daemon", dest = "/usr/bin/osupad-daemon", mode = "755" },

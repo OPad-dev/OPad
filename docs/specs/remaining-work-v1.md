@@ -1,4 +1,4 @@
-# osu!pad — Remaining Work to v1.0 (Linux)
+# OPad — Remaining Work to v1.0 (Linux)
 
 **Companion to:** `osupad_technical_spec_v1.md` (the contract)
 **Audience:** Antigravity and other coding agents
@@ -448,7 +448,7 @@ Put this Linux-specific code in one module (`gui/src/platform_linux.rs`) to keep
 ### P2-8. Finish the GUI-hosted tray (decision A5)
 
 **Problem:** The GUI tray (`desktop/gui/src/tray.rs`) exists, but:
-- The menu only has *Open osu!pad*, *Sync pad now*, *Quit*. It lacks the §19 status lines and an *Open Monitor* item.
+- The menu only has *Open OPad*, *Sync pad now*, *Quit*. It lacks the §19 status lines and an *Open Monitor* item.
 - Status is only in the tooltip, which many StatusNotifier hosts (KDE, waybar, AppIndicator) show inconsistently.
 - Nothing starts the GUI in the background at login, so after a reboot there is no tray until the user opens the app.
 - The daemon still depends on `tray-icon` and `winit` without using them.
@@ -458,7 +458,7 @@ Put this Linux-specific code in one module (`gui/src/platform_linux.rs`) to keep
 **Required change:**
 1. **Menu content.** Rebuild the ksni menu from `TrayStatus` on every status update:
    ```text
-   osu!pad
+   OPad
    --------------------------
    Pad: Connected            (disabled item; "Disconnected" / "Incompatible firmware" / "Daemon offline")
    Firmware: 1.0.0           (disabled; hidden when unknown)
@@ -466,11 +466,11 @@ Put this Linux-specific code in one module (`gui/src/platform_linux.rs`) to keep
    Key 2: 1,176,822          (disabled)
    Last sync: 00:47          (disabled; local time, "Never" if none; "Sync failed" if last_sync_error)
    --------------------------
-   Open osu!pad
+   Open OPad
    Open Monitor
    Sync pad now              (disabled while PLAYING/COOLDOWN or pad offline)
    --------------------------
-   Quit osu!pad app
+   Quit OPad app
    ```
    Keep the tooltip as a short summary. Use a status-dependent icon (connected / disconnected / daemon offline) if a suitable themed icon exists; otherwise keep one icon.
 2. **Open Monitor.** Shows the window and switches to `Page::Monitor`. Also accept `osupad-gui --page monitor` (and `--page device`, etc.) so a second launch forwards the page to the running instance through the existing `single_instance` mechanism.
@@ -542,7 +542,7 @@ Put this Linux-specific code in one module (`gui/src/platform_linux.rs`) to keep
 **Spec:** §33 (release gate), §37 ("If a default changes after benchmarking, document the measured reason").
 
 **Required change:**
-1. Add a Kconfig menu `osu!pad benchmark` in `firmware/main/Kconfig.projbuild`:
+1. Add a Kconfig menu `OPad benchmark` in `firmware/main/Kconfig.projbuild`:
    - `OSUPAD_BENCH_HID_ONLY`: skips `ui_init`, the CDC protocol task, and the runtime supervisor (stage A).
    - `OSUPAD_BENCH_DEBUG_GPIO` + `OSUPAD_BENCH_DEBUG_GPIO_NUM`: toggle a spare GPIO in `keypad_task` right after the HID submit, for logic-analyzer correlation. Verify the pin is free on the Waveshare header; it must not be the key pins, LCD, USB, or strapping pins.
 2. Stage A (HID-only) does not have CDC, so the stats cannot be read over the protocol. Print the latency stats on the USB-Serial-JTAG console every 10 s in that build only, or read them via a GPIO-triggered log.

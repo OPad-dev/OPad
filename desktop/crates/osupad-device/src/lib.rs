@@ -18,7 +18,7 @@ use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, info, warn};
 
 pub const ESPRESSIF_VID: u16 = 0x303A;
-/// USB PID of the osu!pad application firmware (TinyUSB composite device)
+/// USB PID of the OPad application firmware (TinyUSB composite device)
 pub const OSUPAD_APP_PID: u16 = 0x4001;
 /// USB PID of the ESP32-S3 ROM download bootloader (USB-Serial-JTAG)
 pub const ESP_ROM_BOOTLOADER_PID: u16 = 0x1001;
@@ -157,13 +157,13 @@ impl DeviceManager {
                 let port_path = match find_target_port() {
                     Some(p) => p,
                     None => {
-                        debug!("Searching for osu!pad ESP32-S3 USB port...");
+                        debug!("Searching for OPad ESP32-S3 USB port...");
                         std::thread::sleep(PORT_SCAN_INTERVAL);
                         continue;
                     }
                 };
 
-                info!("Opening osu!pad serial port at {}", port_path);
+                info!("Opening OPad serial port at {}", port_path);
                 let port_builder =
                     serialport::new(&port_path, 115200).timeout(Duration::from_millis(100));
 
@@ -182,7 +182,7 @@ impl DeviceManager {
 
                 is_open_clone.store(true, Ordering::SeqCst);
                 is_conn_clone.store(true, Ordering::SeqCst);
-                info!("Connected to osu!pad on {}", port_path);
+                info!("Connected to OPad on {}", port_path);
 
                 let mut raw_buf = [0u8; 1024];
                 let mut last_hello = Instant::now() - Duration::from_secs(10);
@@ -669,7 +669,7 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
     }
 }
 
-/// Finds the serial port of the osu!pad running its application firmware.
+/// Finds the serial port of the OPad running its application firmware.
 ///
 /// Deliberately ignores the ROM bootloader (303a:1001): opening that port
 /// toggles DTR/RTS, which resets the chip out of download mode mid-flash.

@@ -116,8 +116,8 @@ impl TrayViewModel {
 
         let mut items = Vec::new();
 
-        // 1. Header: osu!pad
-        items.push(MenuItemModel::Disabled("osu!pad".to_string()));
+        // 1. Header: OPad
+        items.push(MenuItemModel::Disabled("OPad".to_string()));
         items.push(MenuItemModel::Separator);
 
         // 2. Pad status
@@ -132,45 +132,33 @@ impl TrayViewModel {
         };
         items.push(MenuItemModel::Disabled(pad_status_str.to_string()));
 
-        // 3. Firmware (hidden when unknown or device disconnected)
-        if s.daemon_online && s.device_connected {
-            if let Some(fw) = &s.firmware_version {
-                if !fw.is_empty() {
-                    items.push(MenuItemModel::Disabled(format!("Firmware: {fw}")));
-                }
-            }
+        // 3. Counter line
+        items.push(MenuItemModel::Disabled(format!(
+            "Total Taps: {}",
+            s.total_presses
+        )));
+
+        // 4. Session line (active only during song play)
+        if let Some(session_taps) = s.current_song_presses {
+            items.push(MenuItemModel::Disabled(format!(
+                "This Map: {}",
+                session_taps
+            )));
         }
 
-        // 4. Counters
-        items.push(MenuItemModel::Disabled(format!(
-            "Key 1: {}",
-            crate::pages::grouped(s.key1_presses)
-        )));
-        items.push(MenuItemModel::Disabled(format!(
-            "Key 2: {}",
-            crate::pages::grouped(s.key2_presses)
-        )));
-
-        // 5. Last sync
-        let sync_str = if s.last_sync_error.is_some() {
-            "Last sync: Sync failed".to_string()
-        } else if let Some(sync_time) = &s.last_sync_time {
-            let display_time = if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(sync_time) {
-                parsed.format("%H:%M").to_string()
-            } else {
-                sync_time.clone()
-            };
-            format!("Last sync: {display_time}")
+        // 5. tosu status
+        let tosu_status_str = if s.tosu_active {
+            "tosu: Active"
         } else {
-            "Last sync: Never".to_string()
+            "tosu: Offline"
         };
-        items.push(MenuItemModel::Disabled(sync_str));
+        items.push(MenuItemModel::Disabled(tosu_status_str.to_string()));
 
         items.push(MenuItemModel::Separator);
 
         // 6. Navigation and actions
         items.push(MenuItemModel::Action {
-            label: "Open osu!pad".into(),
+            label: "Open OPad".into(),
             action: TrayAction::ShowWindow,
             enabled: true,
         });
@@ -197,15 +185,15 @@ impl TrayViewModel {
 
         items.push(MenuItemModel::Separator);
 
-        // 7. Quit osu!pad app (exits GUI only, not daemon)
+        // 7. Quit OPad app (exits GUI only, not daemon)
         items.push(MenuItemModel::Action {
-            label: "Quit osu!pad app".into(),
+            label: "Quit OPad app".into(),
             action: TrayAction::Quit,
             enabled: true,
         });
 
         Self {
-            title: "osu!pad".to_string(),
+            title: "OPad".to_string(),
             tooltip_description,
             icon_state,
             menu_items: items,
@@ -232,7 +220,7 @@ mod linux {
         }
 
         fn title(&self) -> String {
-            "osu!pad".into()
+            "OPad".into()
         }
 
         fn icon_name(&self) -> String {

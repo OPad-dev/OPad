@@ -90,7 +90,7 @@ fn parse_key_arg(arg: &str) -> Option<(char, i32)> {
 }
 
 fn print_help() {
-    println!("osu!pad In-Game Hardware Input & Chatter Diagnostic Tool");
+    println!("OPad In-Game Hardware Input & Chatter Diagnostic Tool");
     println!();
     println!("Usage:");
     println!("  test_hw_input.exe [KEY1] [KEY2] [OPTIONS]");
@@ -143,7 +143,7 @@ fn main() {
     }
 
     println!("==================================================================");
-    println!("      osu!pad In-Game Hardware Input & Switch Chatter Tester      ");
+    println!("        OPad In-Game Hardware Input & Switch Chatter Tester       ");
     println!("==================================================================");
     println!("Monitoring Keys: '{}' (0x{:02X}) and '{}' (0x{:02X}) globally", k1_char, k1_vk, k2_char, k2_vk);
     println!("Audio Alert:     {}", if sound_enabled { "ENABLED (short beep on switch chatter)" } else { "DISABLED" });
@@ -366,7 +366,7 @@ fn main() {
         let recommended_debounce = ((min_delta + 3.0).ceil() as u32 * 1000).clamp(5000, 15000);
         println!("  Recommended Fix:");
         println!("  - Increase the firmware debounce lockout to {} µs ({:.1} ms).", recommended_debounce, recommended_debounce as f64 / 1000.0);
-        println!("  - Because osu!pad uses eager debounce, increasing this setting adds ZERO input");
+        println!("  - Because OPad uses eager debounce, increasing this setting adds ZERO input");
         println!("    latency to your initial keypress, while cleanly filtering out post-release bounce!");
     } else if total_flutter > 0 && total_taps >= 50 {
         println!("  🔍 BORDERLINE RE-PRESSES DETECTED (15ms - 35ms):");

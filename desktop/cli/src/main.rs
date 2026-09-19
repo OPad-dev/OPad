@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 #[derive(Parser)]
-#[command(name = "osupadctl", about = "osu!pad CLI management tool")]
+#[command(name = "osupadctl", about = "OPad CLI management tool")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -141,7 +141,7 @@ async fn main() -> Result<()> {
                 ..
             } = resp
             {
-                println!("=== osu!pad Status ===");
+                println!("=== OPad Status ===");
                 println!("Daemon Mode:      {:?}", mode);
                 println!(
                     "ESP32 Device:     {}",
@@ -200,7 +200,7 @@ async fn main() -> Result<()> {
                 // way to even see that a pad belonged to someone else.
                 if let Some(t) = &pending_takeover {
                     println!(
-                        "Ownership:        ⚠ This pad belongs to another osu!pad install. \
+                        "Ownership:        ⚠ This pad belongs to another OPad install. \
                          Counter sync is paused until you decide."
                     );
                     println!(
@@ -451,7 +451,7 @@ async fn main() -> Result<()> {
                 } = resp
                 {
                     if first_batch && !follow {
-                        println!("=== osu!pad Monitor (Last {} entries) ===", entries.len());
+                        println!("=== OPad Monitor (Last {} entries) ===", entries.len());
                     }
                     for entry in &entries {
                         if let Some(fl) = filter_level {
@@ -528,7 +528,7 @@ async fn main() -> Result<()> {
                     {
                         Some(p) => println!("✓ Flash succeeded! The pad came back on {}", p),
                         None => bail!(
-                        "Firmware was written, but the pad did not come back as the osu!pad app \
+                        "Firmware was written, but the pad did not come back as the OPad app \
                          within 15s. See docs/recovery.md."
                     ),
                     }
@@ -555,7 +555,7 @@ async fn main() -> Result<()> {
                     other => bail!("Unexpected response from daemon: {:?}", other),
                 };
 
-            println!("=== osu!pad Firmware ===");
+            println!("=== OPad Firmware ===");
             println!(
                 "Installed:        {}",
                 offer.installed.as_deref().unwrap_or("unknown (no pad?)")
@@ -783,13 +783,13 @@ fn run_setup() -> Result<()> {
     // udev is Linux's; on Windows the pad binds to inbox drivers with no setup
     // step at all, so saying nothing would read as "something is missing".
     if !cfg!(target_os = "linux") {
-        println!("=== osu!pad Setup ===");
+        println!("=== OPad Setup ===");
         println!("Nothing to do on this platform: the pad uses the inbox USB");
         println!("drivers, so HID and the CDC port work with no setup step.");
         return Ok(());
     }
 
-    println!("=== osu!pad Linux Setup ===");
+    println!("=== OPad Linux Setup ===");
     let udev_rule = r#"# /etc/udev/rules.d/99-osupad.rules
 # Espressif ESP32-S3 USB JTAG / Serial / CDC
 SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", MODE="0666", GROUP="uucp", TAG+="uaccess"

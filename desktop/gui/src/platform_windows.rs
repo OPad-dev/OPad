@@ -136,7 +136,7 @@ pub fn set_gui_autostart_enabled(enabled: bool) -> Result<(), String> {
         return delete_value(GUI_VALUE);
     }
     let exe = std::env::current_exe()
-        .map_err(|e| format!("Cannot locate the osu!pad executable: {}", e))?;
+        .map_err(|e| format!("Cannot locate the OPad executable: {}", e))?;
     write_value(GUI_VALUE, &gui_autostart_command(&exe))
 }
 

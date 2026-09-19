@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # -----------------------------------------------------------------------------
-# osu!pad AppImage packaging script (L-4)
+# OPad AppImage packaging script (L-4)
 # Assembles AppDir and builds osupad-x86_64.AppImage
 # -----------------------------------------------------------------------------
 
@@ -12,7 +12,7 @@ BUILD_DIR="${REPO_ROOT}/build/appimage"
 APPDIR="${BUILD_DIR}/AppDir"
 OUTPUT_DIR="${REPO_ROOT}/dist"
 
-echo "=== Building osu!pad binaries ==="
+echo "=== Building OPad binaries ==="
 make -C "${REPO_ROOT}" all
 
 echo "=== Assembling AppDir ==="

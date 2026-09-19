@@ -1,5 +1,5 @@
 // =============================================================================
-//  osu!pad ESP32-S3 Screwless Ergonomic Enclosure
+//  OPad ESP32-S3 Screwless Ergonomic Enclosure
 //  - Flat front deck (0°) for 2x mechanical MX switches (Z & X)
 //  - Distinct 20.3° Angled rear deck for Waveshare 2.0" Touch LCD (Landscape)
 //  - USB-C port cutout elevated at top-right of right side wall

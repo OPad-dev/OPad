@@ -1,7 +1,7 @@
-# osu!pad Architecture
+# OPad Architecture
 
 ## 1. Design Overview
-osu!pad is a competitive two-key osu! keypad and telemetry display based on the Waveshare ESP32-S3-Touch-LCD-2 board.
+OPad is a competitive two-key osu! keypad and telemetry display based on the Waveshare ESP32-S3-Touch-LCD-2 board.
 
 The system is separated into two strictly decoupled layers:
 1. **Low-Latency Keyboard Subsystem (ESP32-S3 firmware)**:

@@ -196,7 +196,7 @@ pub struct ComponentUpdate {
     pub notes: Option<String>,
     pub enabled: bool,
     /// A newer version exists but this install's files belong to a package
-    /// manager, so osu!pad reports it and changes nothing (§U-2a)
+    /// manager, so OPad reports it and changes nothing (§U-2a)
     pub notify_only: bool,
     /// An update is downloaded and waiting for the user to press Install
     pub ready_to_install: bool,

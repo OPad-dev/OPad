@@ -1,5 +1,5 @@
 [Unit]
-Description=osu!pad background service daemon
+Description=OPad background service daemon
 After=graphical-session.target
 PartOf=graphical-session.target
 

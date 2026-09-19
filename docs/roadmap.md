@@ -1,6 +1,6 @@
-# osu!pad Future Roadmap
+# OPad Future Roadmap
 
-This document outlines planned future hardware and firmware extensions for the osu!pad ecosystem.
+This document outlines planned future hardware and firmware extensions for the OPad ecosystem.
 
 ---
 
@@ -18,7 +18,7 @@ While standard Bluetooth LE (BLE) introduces 7.5–15 ms latency and Wi-Fi intro
 
 ```text
 ┌────────────────────────────────────────┐                      ┌────────────────────────────────────────┐
-│         osu!pad (Transmitter)          │                      │          USB Dongle (Receiver)         │
+│           OPad (Transmitter)           │                      │          USB Dongle (Receiver)         │
 │                                        │       ESP-NOW        │                                        │
 │   [2x MX Keys] ──> ESP32-S3 (Pad)      ├─ (1ms Peer-to-Peer) ─┤──> ESP32-S3 (Dongle) ──> [Host PC]     │
 │   [3.7V LiPo]                          │                      │    (Hardware 1000Hz USB HID Keyboard)  │
@@ -73,11 +73,11 @@ While standard Bluetooth LE (BLE) introduces 7.5–15 ms latency and Wi-Fi intro
 
 | Variant | Target Game Mode | Key Configuration | Display Type | Sensing Options |
 | :--- | :--- | :--- | :--- | :--- |
-| **osu!pad Standard (2k)** | osu! Standard / Taiko | 2× Primary Keys | 2.0" Touch IPS (320×240) | MX Hot-Swap / Hall Effect (Rapid Trigger) |
-| **osu!pad Standard Plus (3k)** | osu! Standard | 2× Hall Effect Keys + 1× Quick Retry / Reset key + Aux Tactile Buttons | 2.0" Touch IPS (320×240) | 2× Hall Effect + 1× Mechanical + Tactile Aux |
-| **osu!pad Mania (4k)** | 4-Key Mania, Quaver, Etterna | 4× Linear Keys | 3.4" or 4.3" Bar Display | Multi-channel Hall Effect (Rapid Trigger) |
-| **osu!pad Mania (5k / 6k / 7k)** | 7K Mania, BMS, O2Jam | 5, 6, or 7× Keys + Spacebar option | Ultra-wide Bar Display (e.g. 480×120 / 800×320) | Multi-channel Hall Effect (Rapid Trigger) |
-| **osu!pad Mania Pro (10k)** | 10K Mania, Pop'n, Dual-Hand | 10× Keys | Ultra-wide Bar Display | Multi-channel Hall Effect via on-board SPI ADC |
+| **OPad Standard (2k)** | osu! Standard / Taiko | 2× Primary Keys | 2.0" Touch IPS (320×240) | MX Hot-Swap / Hall Effect (Rapid Trigger) |
+| **OPad Standard Plus (3k)** | osu! Standard | 2× Hall Effect Keys + 1× Quick Retry / Reset key + Aux Tactile Buttons | 2.0" Touch IPS (320×240) | 2× Hall Effect + 1× Mechanical + Tactile Aux |
+| **OPad Mania (4k)** | 4-Key Mania, Quaver, Etterna | 4× Linear Keys | 3.4" or 4.3" Bar Display | Multi-channel Hall Effect (Rapid Trigger) |
+| **OPad Mania (5k / 6k / 7k)** | 7K Mania, BMS, O2Jam | 5, 6, or 7× Keys + Spacebar option | Ultra-wide Bar Display (e.g. 480×120 / 800×320) | Multi-channel Hall Effect (Rapid Trigger) |
+| **OPad Mania Pro (10k)** | 10K Mania, Pop'n, Dual-Hand | 10× Keys | Ultra-wide Bar Display | Multi-channel Hall Effect via on-board SPI ADC |
 
 ### 2. 3-Key Standard Layout Details
 - **Primary Keys (Z, X)**: Magnetic Hall Effect switches with continuous sub-0.1 mm Rapid Trigger.

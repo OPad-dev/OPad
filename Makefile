@@ -1,4 +1,4 @@
-# osu!pad top-level Makefile
+# OPad top-level Makefile
 # Implements packaging and build-from-source requirements (B-1..B-4, L-1).
 
 SHELL := /bin/bash

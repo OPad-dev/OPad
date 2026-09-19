@@ -2,14 +2,14 @@
 set -euo pipefail
 
 # -----------------------------------------------------------------------------
-# Complete build script for osu!pad (Firmware + Desktop Workspace)
+# Complete build script for OPad (Firmware + Desktop Workspace)
 # -----------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 echo "=========================================="
-echo "  Building osu!pad Complete Project       "
+echo "  Building OPad Complete Project          "
 echo "=========================================="
 
 # 1. Build ESP-IDF Firmware

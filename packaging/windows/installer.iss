@@ -1,7 +1,7 @@
-; osu!pad Inno Setup Installer Script (§W2-1, §W2-3)
-; Compliant with per-user installation, clean upgrade, and strong uninstall contracts.
+; OPad Inno Setup Installer Script (§W2-1, §W2-3)
+; Produces: target/installer/OPad-Setup-<version>.exe
 
-#define MyAppName "osu!pad"
+#define MyAppName "OPad"
 #ifndef MyAppVersion
   #define CargoTomlPath "..\..\desktop\Cargo.toml"
   #define FileHandle FileOpen(CargoTomlPath)
@@ -28,7 +28,7 @@
   #endif
 #endif
 #define MyAppPublisher "GFerreiroS"
-#define MyAppURL "https://github.com/GFerreiroS/osupad"
+#define MyAppURL "https://github.com/OPad-dev/OPad"
 #define MyAppExeName "osupad-gui.exe"
 #define MyAppDaemonName "osupad-daemon.exe"
 #define MyAppCliName "osupadctl.exe"
@@ -54,7 +54,7 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 DefaultDirName={localappdata}\Programs\osupad
-DefaultGroupName=osu!pad
+DefaultGroupName=OPad
 DisableProgramGroupPage=yes
 ; Per-user install: avoids requiring administrator privileges, matches per-user daemon model
 PrivilegesRequired=lowest
@@ -79,7 +79,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 ; Desktop icon is unchecked by default (§W2-1)
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 ; Autostart at login is checked by default (§W2-1)
-Name: "autostart"; Description: "Start osu!pad when I log in"; GroupDescription: "Windows Startup:"
+Name: "autostart"; Description: "Start OPad when I log in"; GroupDescription: "Windows Startup:"
 
 [Files]
 ; Core application binaries
@@ -165,7 +165,7 @@ begin
     begin
       // Prompt user whether to delete database and lifetime counters. Default is NO (keep).
       // In silent mode (UninstallSilent), preserve user data as per default (§W2-3).
-      if (not UninstallSilent) and (MsgBox('Also delete your osu!pad settings and lifetime key counters? This cannot be undone.',
+      if (not UninstallSilent) and (MsgBox('Also delete your OPad settings and lifetime key counters? This cannot be undone.',
                 mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES) then
       begin
         DelTree(AppDataDir, True, True, True);

@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=osu!pad Tray
-Comment=osu!pad configuration and system tray applet
+Name=OPad Tray
+Comment=OPad configuration and system tray applet
 Exec=@BINDIR@/osupad-gui --tray
 Icon=input-keyboard
 Terminal=false

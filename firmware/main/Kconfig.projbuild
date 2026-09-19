@@ -1,4 +1,4 @@
-menu "osu!pad Testing and Benchmark"
+menu "OPad Testing and Benchmark"
 
     config OSUPAD_TEST_FAIL_LCD
         bool "Force display initialization to fail (P0-1 test)"

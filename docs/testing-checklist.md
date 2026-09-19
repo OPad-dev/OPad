@@ -1,4 +1,4 @@
-# osu!pad Hardware & Release Verification Checklist
+# OPad Hardware & Release Verification Checklist
 
 This checklist documents the manual hardware release verification procedure
 (§34, §35) required prior to tagged releases. Every row is run by a person with
@@ -100,7 +100,7 @@ These have no Linux counterpart and are new work, so every one starts NOT RUN.
 | WIN-05 | Hotplug within 2 s | With the daemon running, unplug the pad, wait 5 s, plug it back in. | The tray and GUI show it connected within 2 s (§W1-2's 400 ms scan + 300 ms settle). | **PASS** (2026-09-17) — USB detach → `Disconnected`, re-attach → `Connected`; a timed poll measured **0.75 s**, inside the 2 s budget. |
 | WIN-06 | Flash with the GUI running | `osupadctl flash firmware\build\osupad-firmware.bin` without stopping the daemon first. | Succeeds. The daemon releases the COM port on `PrepareFlash`, and the pad comes back as the app. **This is §W1-3's acceptance criterion.** | **PASS** (2026-09-18) — Bare metal Windows 11 host verified. `osupadctl flash` triggered ROM bootloader on COM4, wrote `osupad-firmware.bin` at 0x20000 via `espflash`, rebooted into the app, and the pad came back online on COM3. |
 | WIN-07 | Recovery flash from a release | Follow `docs/recovery.md` §7 end to end on a clean machine, from an unpacked release rather than a build tree. | The pad comes back unclaimed, `osupadctl status` shows `Running Slot: ota_0`, and nothing in the doc turned out to be wrong. **This is §W3-4's acceptance criterion.** | **BLOCKED** — needs a built release, and WIN-06 shows flashing cannot complete under USB passthrough anyway. |
-| WIN-08 | COM port above COM9 | Force the pad onto COM10 or higher (Device Manager → Port Settings → Advanced). | `osupadctl status`, `flash` and `bootloader` all still find and open it. | **PASS** (2026-09-17) — Forced to **COM15** via the device's `PortName`. Daemon logged "Opening osu!pad serial port at COM15" / "Connected to osu!pad on COM15" and `osupadctl status` returned the full pad state. `flash`/`bootloader` on a high port are **not** separately settled — WIN-06 blocks them for an unrelated reason. |
+| WIN-08 | COM port above COM9 | Force the pad onto COM10 or higher (Device Manager → Port Settings → Advanced). | `osupadctl status`, `flash` and `bootloader` all still find and open it. | **PASS** (2026-09-17) — Forced to **COM15** via the device's `PortName`. Daemon logged "Opening OPad serial port at COM15" / "Connected to OPad on COM15" and `osupadctl status` returned the full pad state. `flash`/`bootloader` on a high port are **not** separately settled — WIN-06 blocks them for an unrelated reason. |
 
 ---
 
@@ -161,7 +161,7 @@ same manifest with a second throwaway keypair (`minisign -G -W`) and serve that
 | UPD-06 | Firmware update preserves the counters | Note the lifetime counts, run `osupadctl firmware-update`, check them afterwards. | Identical. §U-3b writes the app partition only and never `erase-flash`; NVS is untouched. | **PASS** (2026-09-17, §9.3) — 1.0.0 → 1.0.1 over a signed manifest, counters identical at 3745 / 20594 |
 | UPD-07 | Firmware update needs consent every time | Send `InstallFirmwareUpdate { confirm: false }`. Then run it twice in a row with consent. | The first is rejected outright. The second time still asks — consent is never remembered (§U-3b). | **PASS (Automated & HW)** — Hardware rejection verified on 2026-09-17 (§9.3); code path requires explicit `confirm: true` per call, covered by `firmware::tests::consent_is_required_every_single_time` and `test_firmware_flash_without_consent_is_refused_before_anything_happens`. |
 | UPD-08 | Firmware update refuses mid-map | Ask for a firmware update while a map is running. | Rejected, naming the map as the reason. Nothing is downloaded and the serial port is never released. | **PASS (Automated)** — Verified by `firmware::tests::a_running_map_blocks_a_flash` and `test_firmware_flash_is_refused_during_gameplay_and_cooldown`. |
-| UPD-09 | The pad is still a keyboard afterwards | After a firmware update, plug the pad into a machine with no osu!pad software at all. | It enumerates and types. **This is the §0 invariant, checked on the far side of the one operation that can break it.** | **NOT RUN** (requires physical replug to clean host post-OTA) |
+| UPD-09 | The pad is still a keyboard afterwards | After a firmware update, plug the pad into a machine with no OPad software at all. | It enumerates and types. **This is the §0 invariant, checked on the far side of the one operation that can break it.** | **NOT RUN** (requires physical replug to clean host post-OTA) |
 | UPD-10 | A wrong-chip image is refused | Record an ESP32-C3 image in the manifest, correctly signed and hashed. | Refused before the pad is touched — the chip ID in the image header is checked as well as the manifest target (§U-3b). | **PASS (Automated)** — Verified by `firmware::tests::an_image_for_another_chip_is_not_silently_accepted` (manifest target check) and `osupad_device::flash` (ESP32-S3 header check). |
 | UPD-11 | An interrupted flash is recoverable | Unplug the pad mid-write. | The pad does not run as a keyboard, and `docs/recovery.md` §7.6 brings it back. Confirms the honest failure mode is honest, and is the argument for U-3c. | **PARTIAL** (2026-09-17, §11.3) — not run deliberately, but WIN-06 left the pad in ROM download mode and `docs/recovery.md` §7.6 brought it back in one `osupadctl flash`. The mid-write unplug itself is untested. |
 
@@ -412,7 +412,7 @@ with physical ESP32-S3 pad (`OSUPAD-3CDC75701678`) on `COM3`.
 - Implemented Microsoft OS 2.0 Descriptors in `firmware/main/usb/usb_descriptors.c`:
   - Upgraded USB device descriptor `bcdUSB` to `0x0210`.
   - Added BOS Descriptor with Microsoft OS 2.0 Platform Capability UUID.
-  - Configured MS OS 2.0 Descriptor Set defining `FriendlyName = "osu!pad"` for Interface 1 (CDC-ACM).
+  - Configured MS OS 2.0 Descriptor Set defining `FriendlyName = "OPad"` for Interface 1 (CDC-ACM).
   - Once flashed, Windows assigns the friendly name automatically on first plug without any INF driver installation.
 
 ---

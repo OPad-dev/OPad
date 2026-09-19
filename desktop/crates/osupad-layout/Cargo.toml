@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "osu!pad screen layout model shared by the daemon, GUI designer and preview"
+description = "OPad screen layout model shared by the daemon, GUI designer and preview"
 
 [dependencies]
 serde.workspace = true

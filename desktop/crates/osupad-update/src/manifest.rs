@@ -12,7 +12,7 @@
 //! recorded here and this manifest re-signed. Keeping the "within a day of a
 //! new stable release" promise in §U-1 is therefore a release-automation job:
 //! regenerate and re-sign this manifest when upstream publishes, not only when
-//! osu!pad itself ships.
+//! OPad itself ships.
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

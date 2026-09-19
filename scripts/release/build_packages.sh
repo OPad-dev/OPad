@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # -----------------------------------------------------------------------------
-# Package build script for osu!pad (Linux .deb, .rpm, AppImage, Windows .exe)
+# Package build script for OPad (Linux .deb, .rpm, AppImage, Windows .exe)
 # Requirements: §L-1, §L-3, §L-4, §T-2, §T-3, §W2-1
 # -----------------------------------------------------------------------------
 
@@ -13,7 +13,7 @@ DIST_DIR="${REPO_ROOT}/dist"
 mkdir -p "${DIST_DIR}"
 
 echo "=========================================="
-echo "  osu!pad Package Build                   "
+echo "  OPad Package Build                      "
 echo "=========================================="
 
 # 1. Ensure prerequisites (tosu bundle & host release binaries)

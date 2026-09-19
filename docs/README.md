@@ -1,6 +1,6 @@
-# osu!pad Documentation Hub & Wiki
+# OPad Documentation Hub & Wiki
 
-Welcome to the official documentation and technical wiki for the **osu!pad** project.
+Welcome to the official documentation and technical wiki for the **OPad** project.
 
 This directory serves as the single source of truth for hardware specifications, firmware implementation, desktop daemon architecture, testing protocols, and future milestones.
 
@@ -11,7 +11,7 @@ This directory serves as the single source of truth for hardware specifications,
 ### 🏗️ Architecture & Core System
 * **[System Architecture](architecture.md)** — Hardware layout, ESP32-S3 dual-core isolation, IPC design, desktop daemon, and state machine.
 * **[USB Framing & Serial Protocol](protocol.md)** — Binary CDC packet framing, command opcodes, sequence numbers, and telemetry streams.
-* **[osu!pad on Windows](windows-portability.md)** — Windows-specific design: Named Pipes IPC, Windows Service daemon, auto-start, and driverless HID operation.
+* **[OPad on Windows](windows-portability.md)** — Windows-specific design: Named Pipes IPC, Windows Service daemon, auto-start, and driverless HID operation.
 * **[Recovery, Reconciliation & Unbinding](recovery.md)** — Safe counter synchronization, flashing procedures, bootloader entry, and pairing models.
 
 ### ⏱️ Latency & Hardware Testing
@@ -28,54 +28,19 @@ This directory serves as the single source of truth for hardware specifications,
   * **Adaptive Debounce & Rapid Trigger Velocity Hysteresis**.
 
 ### 📋 Specifications & Development Plans
-* **[Technical Specification v1](specs/technical-spec-v1.md)** — Complete normative specification for osu!pad V1 hardware, firmware, and desktop integration.
+* **[Technical Specification v1](specs/technical-spec-v1.md)** — Complete normative specification for OPad V1 hardware, firmware, and desktop integration.
 * **[Remaining Work & Gap Analysis](specs/remaining-work-v1.md)** — As-built gap analysis and audit tracking for V1 release.
 * **[Packaging & Distribution Plan](specs/packaging-distribution.md)** — Build system, CI/CD, Windows/Linux packaging, and release delivery.
 * **[Rapid Trigger (Hall-Effect Keys) v2 Plan](specs/v2-rapid-trigger.md)** — Implementation blueprint for Hall-effect magnetic switches, ADC sampling pipeline, and continuous Rapid Trigger engine.
 
 ---
 
-## 🌐 Using Gitea Wiki
+## 🌐 Community & Repository
 
-Gitea includes a built-in **Wiki** system that operates almost identically to GitHub:
+* **Primary Repository**: [https://github.com/OPad-dev/OPad](https://github.com/OPad-dev/OPad)
+* **Organization**: [OPad-dev](https://github.com/OPad-dev)
 
-### 1. Enabling the Wiki in Gitea
-1. Navigate to your repository on your Gitea server: `https://git.gferreiro.com/GFerreiroS/osu-pad`.
-2. Go to **Settings** $\to$ **Repository Settings**.
-3. Under **Navigation / Features**, make sure **Enable Wiki** is checked.
-4. A **Wiki** tab will appear directly in the top navigation bar of the repository.
+---
 
-### 2. The Wiki is a Standalone Git Repository
-Just like GitHub, Gitea wikis are standard Git repositories ending in `.wiki.git`:
-```bash
-git clone https://git.gferreiro.com/GFerreiroS/osu-pad.wiki.git
-```
-You can edit markdown files locally, organize pages, and push changes directly with standard `git commit` and `git push`.
-
-### 3. Automated Sync via Gitea Actions (Optional)
-If you prefer maintaining your documentation inside this `docs/` folder in the main repository, you can set up a simple Gitea Action to automatically mirror `docs/` into the Gitea Wiki whenever commits merge to `main`:
-
-```yaml
-# .gitea/workflows/sync-wiki.yml
-name: Sync Docs to Wiki
-on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'docs/**'
-
-jobs:
-  sync:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Push docs to Gitea Wiki
-        run: |
-          git clone https://${{ secrets.GITEA_TOKEN }}@git.gferreiro.com/GFerreiroS/osu-pad.wiki.git wiki
-          cp -r docs/* wiki/
-          cd wiki
-          git config user.name "GFerreiroS"
-          git config user.email "info@gferreiro.com"
-          git add -A
-          git diff-index --quiet HEAD || (git commit -m "docs: sync wiki from main repo" && git push origin master)
-```
+## ⚖️ Trademark Disclaimer
+OPad is an independent open-source hardware and software project. OPad is not affiliated with, endorsed by, or sponsored by ppy Pty Ltd or osu!. "osu!" is a registered trademark of ppy Pty Ltd.
