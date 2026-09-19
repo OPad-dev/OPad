@@ -71,11 +71,11 @@ pub fn title_bar<'a>(maximized: bool) -> Element<'a, Message> {
     let drag_area = mouse_area(
         container(
             row![
-                text("osu!")
+                text("O")
                     .size(15)
                     .font(theme::FONT_BOLD)
                     .color(theme::PINK),
-                text("pad").size(15).font(theme::FONT_BOLD),
+                text("Pad").size(15).font(theme::FONT_BOLD),
             ]
             .align_y(Alignment::Center),
         )
