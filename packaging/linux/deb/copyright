@@ -1,5 +1,5 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: osupad
+Upstream-Name: opad
 Upstream-Contact: GFerreiroS <info@gferreiro.com>
 Source: https://github.com/OPad-dev/OPad
 
@@ -7,7 +7,7 @@ Files: *
 Copyright: 2026 GFerreiroS <info@gferreiro.com>
 License: MIT
 
-Files: usr/lib/osupad/tosu/*
+Files: usr/lib/opad/tosu/*
 Copyright: 2020-2026 Mikhail Babynichev <kotrik@kotrik.ru>
 License: LGPL-3.0-only
 

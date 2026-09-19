@@ -7,8 +7,8 @@ use iced::widget::{
     Space,
 };
 use iced::{Alignment, Color, Element, Length};
-use osupad_model::ui_source::{self as src, SourceValue};
-use osupad_model::{key_pin, KeyPin, KEY_PINS};
+use opad_model::ui_source::{self as src, SourceValue};
+use opad_model::{key_pin, KeyPin, KEY_PINS};
 
 pub(crate) fn grouped(n: u64) -> String {
     let digits = n.to_string();
@@ -175,7 +175,7 @@ pub fn dashboard(app: &App) -> Element<'_, Message> {
                 .spacing(10),
             ]
             .spacing(6);
-            if app.mode == osupad_model::RuntimeMode::Playing {
+            if app.mode == opad_model::RuntimeMode::Playing {
                 if let Some(pp) = number_value(app, src::PLAY_PP) {
                     info = info.push(
                         text(format!("{:.0}pp", pp))
@@ -454,7 +454,7 @@ pub fn settings(app: &App) -> Element<'_, Message> {
 /// §U-0.4: every updater is switchable on its own, and shows what is
 /// installed, what is available and when it last managed to check.
 fn updates(app: &App) -> Element<'_, Message> {
-    use osupad_ipc::UpdateComponent;
+    use opad_ipc::UpdateComponent;
 
     let Some(u) = &app.updates else {
         return card(
@@ -468,7 +468,7 @@ fn updates(app: &App) -> Element<'_, Message> {
         .into();
     };
 
-    let line = |name: &'static str, c: &osupad_ipc::ComponentUpdate, component: UpdateComponent| {
+    let line = |name: &'static str, c: &opad_ipc::ComponentUpdate, component: UpdateComponent| {
         let installed = c.installed.clone().unwrap_or_else(|| "unknown".into());
         let state = match (&c.available, c.notify_only) {
             // §U-2a: a package manager owns these files, so we report only
@@ -754,7 +754,7 @@ pub fn device(app: &App) -> Element<'_, Message> {
 
     let playing_or_cooldown = matches!(
         app.mode,
-        osupad_model::RuntimeMode::Playing | osupad_model::RuntimeMode::Cooldown
+        opad_model::RuntimeMode::Playing | opad_model::RuntimeMode::Cooldown
     );
 
     let pc_k1 = app
@@ -1036,7 +1036,7 @@ fn filter_btn<'a>(label: &'a str, selected: bool, msg: Message) -> Element<'a, M
 }
 
 pub fn monitor(app: &App) -> Element<'_, Message> {
-    use osupad_model::{LogLevel, LogSource};
+    use opad_model::{LogLevel, LogSource};
 
     let severity_filters = row![
         caption("LEVEL:"),

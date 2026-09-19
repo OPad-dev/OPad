@@ -3741,6 +3741,191 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "opad-daemon"
+version = "1.0.0-rc"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "opad-device",
+ "opad-ipc",
+ "opad-layout",
+ "opad-model",
+ "opad-protocol",
+ "opad-storage",
+ "opad-tosu",
+ "opad-update",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "opad-device"
+version = "1.0.0-rc"
+dependencies = [
+ "bytes",
+ "chrono",
+ "opad-layout",
+ "opad-model",
+ "opad-protocol",
+ "serialport",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "opad-gui"
+version = "1.0.0-rc"
+dependencies = [
+ "chrono",
+ "dirs 5.0.1",
+ "futures-util",
+ "iced",
+ "iced_aw",
+ "ksni",
+ "opad-ipc",
+ "opad-layout",
+ "opad-model",
+ "opad-tosu",
+ "opad-ui-preview",
+ "rfd",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tray-icon",
+ "windows-sys 0.59.0",
+ "winreg",
+]
+
+[[package]]
+name = "opad-ipc"
+version = "1.0.0-rc"
+dependencies = [
+ "byteorder",
+ "bytes",
+ "opad-layout",
+ "opad-model",
+ "rustix 0.38.44",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "opad-layout"
+version = "1.0.0-rc"
+dependencies = [
+ "opad-model",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "opad-model"
+version = "1.0.0-rc"
+dependencies = [
+ "chrono",
+ "dirs 5.0.1",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "opad-protocol"
+version = "1.0.0-rc"
+dependencies = [
+ "byteorder",
+ "bytes",
+ "opad-model",
+ "prost",
+ "prost-build",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "opad-storage"
+version = "1.0.0-rc"
+dependencies = [
+ "chrono",
+ "opad-model",
+ "rusqlite",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tracing",
+]
+
+[[package]]
+name = "opad-tosu"
+version = "1.0.0-rc"
+dependencies = [
+ "dirs 5.0.1",
+ "futures-util",
+ "opad-model",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
+]
+
+[[package]]
+name = "opad-ui-preview"
+version = "1.0.0-rc"
+dependencies = [
+ "cc",
+ "opad-layout",
+ "opad-model",
+ "png 0.17.16",
+ "serde_json",
+]
+
+[[package]]
+name = "opad-update"
+version = "1.0.0-rc"
+dependencies = [
+ "chrono",
+ "futures-util",
+ "minisign-verify",
+ "opad-model",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "opadctl"
+version = "1.0.0-rc"
+dependencies = [
+ "anyhow",
+ "clap",
+ "opad-device",
+ "opad-ipc",
+ "opad-model",
+ "serde",
+ "serde_json",
+ "serialport",
+ "tokio",
+]
+
+[[package]]
 name = "option-ext"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3773,191 +3958,6 @@ checksum = "9aa2b01e1d916879f73a53d01d1d6cee68adbb31d6d9177a8cfce093cced1d50"
 dependencies = [
  "futures-core",
  "pin-project-lite",
-]
-
-[[package]]
-name = "osupad-daemon"
-version = "1.0.0-rc"
-dependencies = [
- "anyhow",
- "chrono",
- "osupad-device",
- "osupad-ipc",
- "osupad-layout",
- "osupad-model",
- "osupad-protocol",
- "osupad-storage",
- "osupad-tosu",
- "osupad-update",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "osupad-device"
-version = "1.0.0-rc"
-dependencies = [
- "bytes",
- "chrono",
- "osupad-layout",
- "osupad-model",
- "osupad-protocol",
- "serialport",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "osupad-gui"
-version = "1.0.0-rc"
-dependencies = [
- "chrono",
- "dirs 5.0.1",
- "futures-util",
- "iced",
- "iced_aw",
- "ksni",
- "osupad-ipc",
- "osupad-layout",
- "osupad-model",
- "osupad-tosu",
- "osupad-ui-preview",
- "rfd",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tray-icon",
- "windows-sys 0.59.0",
- "winreg",
-]
-
-[[package]]
-name = "osupad-ipc"
-version = "1.0.0-rc"
-dependencies = [
- "byteorder",
- "bytes",
- "osupad-layout",
- "osupad-model",
- "rustix 0.38.44",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "osupad-layout"
-version = "1.0.0-rc"
-dependencies = [
- "osupad-model",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "osupad-model"
-version = "1.0.0-rc"
-dependencies = [
- "chrono",
- "dirs 5.0.1",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "osupad-protocol"
-version = "1.0.0-rc"
-dependencies = [
- "byteorder",
- "bytes",
- "osupad-model",
- "prost",
- "prost-build",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "osupad-storage"
-version = "1.0.0-rc"
-dependencies = [
- "chrono",
- "osupad-model",
- "rusqlite",
- "tempfile",
- "thiserror 1.0.69",
- "tracing",
-]
-
-[[package]]
-name = "osupad-tosu"
-version = "1.0.0-rc"
-dependencies = [
- "dirs 5.0.1",
- "futures-util",
- "osupad-model",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "tokio-tungstenite",
- "tracing",
-]
-
-[[package]]
-name = "osupad-ui-preview"
-version = "1.0.0-rc"
-dependencies = [
- "cc",
- "osupad-layout",
- "osupad-model",
- "png 0.17.16",
- "serde_json",
-]
-
-[[package]]
-name = "osupad-update"
-version = "1.0.0-rc"
-dependencies = [
- "chrono",
- "futures-util",
- "minisign-verify",
- "osupad-model",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "osupadctl"
-version = "1.0.0-rc"
-dependencies = [
- "anyhow",
- "clap",
- "osupad-device",
- "osupad-ipc",
- "osupad-model",
- "serde",
- "serde_json",
- "serialport",
- "tokio",
 ]
 
 [[package]]

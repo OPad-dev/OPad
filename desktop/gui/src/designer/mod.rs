@@ -1,5 +1,5 @@
 //! Screen designer: edit the pad's idle and playing layouts on a pixel-exact preview
-//! (the firmware's own LVGL UI, compiled into `osupad-ui-preview`) and push them to the pad.
+//! (the firmware's own LVGL UI, compiled into `opad-ui-preview`) and push them to the pad.
 
 mod overlay;
 
@@ -10,13 +10,13 @@ use iced::widget::{
 };
 use iced::{keyboard, Alignment, Color, Element, Length, Subscription, Task};
 use iced_aw::helpers::{color_picker, number_input};
-use osupad_ipc::{IpcRequest, IpcResponse};
-use osupad_layout::{
+use opad_ipc::{IpcRequest, IpcResponse};
+use opad_layout::{
     all_sources, source_info, Align, Font, Layout, Screen, SourceInfo, Widget, WidgetKind,
     DECIMALS_DEFAULT, FLAG_BG_FILL, FLAG_BORDER, FLAG_HIDE_WHEN_EMPTY, MAX_WIDGETS,
 };
-use osupad_model::ui_source::{self, SourceValue};
-use osupad_ui_preview as preview;
+use opad_model::ui_source::{self, SourceValue};
+use opad_ui_preview as preview;
 use std::time::Duration;
 
 /// Preview zoom (pad pixels -> screen pixels)
@@ -301,11 +301,11 @@ impl Designer {
             Message::Decimals(d) => self.edit(|w| w.decimals = d.0),
             Message::Flag(flag, on) => self.edit(|w| w.set_flag(flag, on)),
             Message::Label(s) => {
-                let s = truncate(&s, osupad_layout::LABEL_MAX_BYTES);
+                let s = truncate(&s, opad_layout::LABEL_MAX_BYTES);
                 self.edit(|w| w.label = s);
             }
             Message::Suffix(s) => {
-                let s = truncate(&s, osupad_layout::SUFFIX_MAX_BYTES);
+                let s = truncate(&s, opad_layout::SUFFIX_MAX_BYTES);
                 self.edit(|w| w.suffix = s);
             }
             Message::OpenColor(field) => self.picker = Some(field),
@@ -465,14 +465,14 @@ impl Designer {
         match drag {
             Drag::Move { index, dx, dy } => {
                 if let Some(w) = self.layout_mut().widgets.get_mut(index) {
-                    w.x = clamp(x - dx, -w.w + 4, osupad_layout::SCREEN_W - 4);
-                    w.y = clamp(y - dy, -w.h + 4, osupad_layout::SCREEN_H - 4);
+                    w.x = clamp(x - dx, -w.w + 4, opad_layout::SCREEN_W - 4);
+                    w.y = clamp(y - dy, -w.h + 4, opad_layout::SCREEN_H - 4);
                 }
             }
             Drag::Resize { index } => {
                 if let Some(w) = self.layout_mut().widgets.get_mut(index) {
-                    w.w = clamp(x - w.x as f32, 2, 2 * osupad_layout::SCREEN_W);
-                    w.h = clamp(y - w.y as f32, 2, 2 * osupad_layout::SCREEN_H);
+                    w.w = clamp(x - w.x as f32, 2, 2 * opad_layout::SCREEN_W);
+                    w.h = clamp(y - w.y as f32, 2, 2 * opad_layout::SCREEN_H);
                 }
             }
         }

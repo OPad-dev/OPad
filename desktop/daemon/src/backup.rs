@@ -21,8 +21,8 @@
 //! here is logged and swallowed.
 
 use chrono::{DateTime, SecondsFormat, Utc};
-use osupad_model::{paths, DeviceInfo, JsonBackup};
-use osupad_storage::Storage;
+use opad_model::{paths, DeviceInfo, JsonBackup};
+use opad_storage::Storage;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -81,7 +81,7 @@ pub fn backup_dir() -> Result<PathBuf, paths::PathError> {
 
 /// Writes one backup and prunes the directory back to [`KEEP`].
 ///
-/// Atomic in the same sense as `osupad_update::download::stage_bytes`: a
+/// Atomic in the same sense as `opad_update::download::stage_bytes`: a
 /// temporary file in the destination directory, fsynced, then renamed into
 /// place, so a kill at any point leaves whole files only. Returns the path so
 /// the caller can log it.
@@ -174,7 +174,7 @@ pub fn prune(dir: &Path, keep: usize) {
 
 /// The newest backup's timestamp, read from the file names.
 ///
-/// Called once at startup so `osupadctl status` reports a real last-backup
+/// Called once at startup so `opadctl status` reports a real last-backup
 /// time across a daemon restart rather than "never".
 pub fn newest(dir: &Path) -> Option<DateTime<Utc>> {
     let mut names: Vec<String> = std::fs::read_dir(dir)
@@ -212,7 +212,7 @@ pub fn format_stamp(at: DateTime<Utc>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use osupad_model::{CounterState, DeviceConfig, DeviceInfo};
+    use opad_model::{CounterState, DeviceConfig, DeviceInfo};
 
     fn backup_at(secs: i64, key1: u64) -> JsonBackup {
         let mut b = JsonBackup::new(

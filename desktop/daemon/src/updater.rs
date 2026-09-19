@@ -10,15 +10,15 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 use tracing::{debug, info, warn};
 
-use osupad_ipc::{ComponentUpdate, UpdateComponent};
-use osupad_model::RuntimeMode;
-use osupad_storage::Storage;
-use osupad_tosu::TosuSupervisor;
-use osupad_update::app::{self, AppAction};
-use osupad_update::client::UpdateClient;
-use osupad_update::manifest::current_target;
-use osupad_update::tosu::{self, TosuAction};
-use osupad_update::{
+use opad_ipc::{ComponentUpdate, UpdateComponent};
+use opad_model::RuntimeMode;
+use opad_storage::Storage;
+use opad_tosu::TosuSupervisor;
+use opad_update::app::{self, AppAction};
+use opad_update::client::UpdateClient;
+use opad_update::manifest::current_target;
+use opad_update::tosu::{self, TosuAction};
+use opad_update::{
     may_update_now, ApplyPolicy, CheckSchedule, InstallOrigin, ReleaseManifest, UpdateError,
 };
 
@@ -338,7 +338,7 @@ async fn install_app(
     // The verified bytes go to a file the apply step can hand to a package
     // manager or run. It lives in the state directory, not /tmp, so a
     // hardened /tmp mounted noexec cannot break the Windows installer path.
-    let staging = osupad_model::paths::state_dir()
+    let staging = opad_model::paths::state_dir()
         .map_err(|e| UpdateError::Io(std::io::Error::other(e.to_string())))?
         .join("updates");
     let file_name = artifact
@@ -346,9 +346,9 @@ async fn install_app(
         .rsplit('/')
         .next()
         .filter(|n| !n.is_empty())
-        .unwrap_or("osupad-update");
+        .unwrap_or("opad-update");
     let target = staging.join(file_name);
-    osupad_update::download::stage_bytes(&target, &bytes, &artifact.sha256, &artifact.url)?
+    opad_update::download::stage_bytes(&target, &bytes, &artifact.sha256, &artifact.url)?
         .install_to(&target)?;
 
     let applied = apply_downloaded(policy, origin, &target);
@@ -410,7 +410,7 @@ fn apply_downloaded(
             Ok(())
         }
         _ => {
-            let prefix = osupad_model::paths::install_prefix()
+            let prefix = opad_model::paths::install_prefix()
                 .map_err(|e| UpdateError::Io(std::io::Error::other(e.to_string())))?;
             let status = Command::new("tar")
                 .arg("-xzf")
@@ -461,7 +461,7 @@ async fn update_tosu(
     if let Ok(mut s) = status.lock() {
         s.tosu.installed = installed.clone();
         s.tosu.available = manifest
-            .component(osupad_update::TOSU)
+            .component(opad_update::TOSU)
             .map(|c| c.version.clone());
         s.tosu.enabled = enabled;
         s.tosu.notify_only = matches!(action, TosuAction::NotifyOnly { .. });
@@ -493,7 +493,7 @@ async fn update_tosu(
             // old inode would hide the update until the next restart.
             supervisor.pause().await;
             let upstream_tag = manifest
-                .component(osupad_update::TOSU)
+                .component(opad_update::TOSU)
                 .and_then(|c| c.upstream_tag.clone());
             let result = tosu::install(
                 &bundled_dir,

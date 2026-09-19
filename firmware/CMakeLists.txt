@@ -6,4 +6,4 @@ set(PROJECT_VER "1.0.0")
 # Include ESP-IDF project boilerplate
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
-project(osupad-firmware)
+project(opad-firmware)

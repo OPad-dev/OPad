@@ -14,7 +14,7 @@
 //! one; the same mistake is available here, so the exact strings live in
 //! [`daemon_autostart_command`] and [`gui_autostart_command`] and nowhere else.
 
-use osupad_model::paths;
+use opad_model::paths;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_WRITE};
@@ -22,8 +22,8 @@ use winreg::RegKey;
 
 /// The per-user autostart key. Not `HKLM`: this install is per-user.
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-const DAEMON_VALUE: &str = "osupad-daemon";
-const GUI_VALUE: &str = "osupad-gui";
+const DAEMON_VALUE: &str = "opad-daemon";
+const GUI_VALUE: &str = "opad-gui";
 
 /// Detached, no console window — the analogue of `process_group(0)` on Linux.
 /// A daemon started from a terminal must not die when that terminal closes.
@@ -34,7 +34,7 @@ pub fn daemon_autostart_command(daemon_bin: &Path) -> String {
     format!("\"{}\"", daemon_bin.display())
 }
 
-/// The exact `Run` value for the tray, mirroring `Exec=osupad-gui --tray` in
+/// The exact `Run` value for the tray, mirroring `Exec=opad-gui --tray` in
 /// the Linux `.desktop` entry.
 pub fn gui_autostart_command(gui_bin: &Path) -> String {
     format!("\"{}\" --tray", gui_bin.display())
@@ -146,15 +146,15 @@ mod tests {
 
     #[test]
     fn autostart_commands_are_quoted_and_match_the_installer() {
-        let bin = Path::new(r"C:\Users\me\AppData\Local\Programs\osupad\osupad-daemon.exe");
+        let bin = Path::new(r"C:\Users\me\AppData\Local\Programs\osupad\opad-daemon.exe");
         assert_eq!(
             daemon_autostart_command(bin),
-            r#""C:\Users\me\AppData\Local\Programs\osupad\osupad-daemon.exe""#
+            r#""C:\Users\me\AppData\Local\Programs\osupad\opad-daemon.exe""#
         );
-        let gui = Path::new(r"C:\Users\me\AppData\Local\Programs\osupad\osupad-gui.exe");
+        let gui = Path::new(r"C:\Users\me\AppData\Local\Programs\osupad\opad-gui.exe");
         assert_eq!(
             gui_autostart_command(gui),
-            r#""C:\Users\me\AppData\Local\Programs\osupad\osupad-gui.exe" --tray"#
+            r#""C:\Users\me\AppData\Local\Programs\osupad\opad-gui.exe" --tray"#
         );
     }
 }

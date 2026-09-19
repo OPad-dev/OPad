@@ -12,7 +12,7 @@ mod platform {
     static LISTENER: OnceLock<UnixListener> = OnceLock::new();
 
     fn socket_path() -> PathBuf {
-        osupad_ipc::get_socket_path().with_file_name("gui.sock")
+        opad_ipc::get_socket_path().with_file_name("gui.sock")
     }
 
     /// Returns false if another instance is running (it has been asked to show its window).
@@ -95,18 +95,18 @@ mod platform {
     static PIPE_NAME: OnceLock<String> = OnceLock::new();
 
     fn windows_pipe_name() -> String {
-        let base = osupad_ipc::get_socket_path().to_string_lossy().to_string();
-        if base.contains("osupad-ipc-") {
-            base.replace("osupad-ipc-", "osupad-gui-")
+        let base = opad_ipc::get_socket_path().to_string_lossy().to_string();
+        if base.contains("opad-ipc-") {
+            base.replace("opad-ipc-", "opad-gui-")
         } else {
-            r"\\.\pipe\osupad-gui".to_string()
+            r"\\.\pipe\opad-gui".to_string()
         }
     }
 
     /// Returns false if another instance is running (it has been asked to show its window).
     pub fn claim(page: Option<&str>) -> bool {
         let pipe_name = windows_pipe_name();
-        let name_utf16: Vec<u16> = "Local\\osupad-gui\0".encode_utf16().collect();
+        let name_utf16: Vec<u16> = "Local\\opad-gui\0".encode_utf16().collect();
         let handle = unsafe {
             windows_sys::Win32::System::Threading::CreateMutexW(
                 std::ptr::null(),
@@ -116,7 +116,7 @@ mod platform {
         };
 
         if handle.is_null() {
-            tracing::warn!("Failed to create single-instance mutex Local\\osupad-gui");
+            tracing::warn!("Failed to create single-instance mutex Local\\opad-gui");
             return true;
         }
 

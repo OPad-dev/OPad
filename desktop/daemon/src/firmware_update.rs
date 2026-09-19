@@ -2,7 +2,7 @@
 //!
 //! The v1.0 mechanism, and deliberately the path that already exists rather
 //! than new firmware attack surface: the daemon verifies an image against the
-//! signed manifest, hands it to the same flashing engine `osupadctl flash`
+//! signed manifest, hands it to the same flashing engine `opadctl flash`
 //! uses, and the pad comes back on `reset_to_app`.
 //!
 //! The order below is the safety argument, and none of it is optional:
@@ -24,14 +24,14 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{info, warn};
 
-use osupad_device::flash::{self, APP_PARTITION_OFFSET};
-use osupad_ipc::FirmwareOffer;
-use osupad_model::DeviceInfo;
-use osupad_storage::Storage;
-use osupad_update::firmware::{
+use opad_device::flash::{self, APP_PARTITION_OFFSET};
+use opad_ipc::FirmwareOffer;
+use opad_model::DeviceInfo;
+use opad_storage::Storage;
+use opad_update::firmware::{
     blockers, consent_text, Blocker, FirmwareAction, Preconditions, TYPICAL_OUTAGE_SECONDS,
 };
-use osupad_update::{may_update_now, ReleaseManifest, UpdateError};
+use opad_update::{may_update_now, ReleaseManifest, UpdateError};
 
 use crate::runtime::DaemonState;
 use crate::sync::DeviceLink;
@@ -81,7 +81,7 @@ pub fn offer(
     let Some(manifest) = manifest else {
         return out;
     };
-    let action = match osupad_update::firmware::plan(
+    let action = match opad_update::firmware::plan(
         manifest,
         installed.as_deref(),
         may_update_now(mode, true),
@@ -180,7 +180,7 @@ pub async fn install<D: DeviceLink>(
         UpdateError::Http("No verified release manifest yet; check for updates first".to_string())
     })?;
     let action =
-        osupad_update::firmware::plan(manifest, installed.as_deref(), may_update_now(mode, true))?;
+        opad_update::firmware::plan(manifest, installed.as_deref(), may_update_now(mode, true))?;
     let FirmwareAction::Available {
         installed,
         available,
@@ -204,16 +204,16 @@ pub async fn install<D: DeviceLink>(
 
     // Step 3. Download, then verify the hash the signed manifest gave, then
     // verify the image is actually for this chip.
-    let client = osupad_update::client::UpdateClient::new()?;
+    let client = opad_update::client::UpdateClient::new()?;
     let bytes = client.fetch_artifact(&artifact).await?;
-    let staging = osupad_model::paths::state_dir()
+    let staging = opad_model::paths::state_dir()
         .map_err(|e| UpdateError::Io(std::io::Error::other(e.to_string())))?
         .join("updates");
     let target = staging.join("osupad-firmware.bin");
     // stage_bytes checks the SHA-256 and refuses to hand back a file that does
     // not match, so nothing unverified ever reaches the disk under this name.
     let staged =
-        osupad_update::download::stage_bytes(&target, &bytes, &artifact.sha256, &artifact.url)?;
+        opad_update::download::stage_bytes(&target, &bytes, &artifact.sha256, &artifact.url)?;
     flash::check_esp32s3_image(&bytes).map_err(|e| {
         UpdateError::Http(format!(
             "The signed manifest's firmware image is not one this pad can run: {e}"
@@ -242,7 +242,7 @@ async fn flash_and_verify<D: DeviceLink>(
         return Err(FirmwareUpdateError::PortNotReleased);
     }
     state.lock().unwrap().device_connected = false;
-    let app_port = osupad_device::find_target_port();
+    let app_port = opad_device::find_target_port();
 
     // Step 5. The app partition and nothing else.
     let images = [(APP_PARTITION_OFFSET, image.to_path_buf())];
@@ -258,7 +258,7 @@ async fn flash_and_verify<D: DeviceLink>(
     let reconnected = tokio::time::timeout(RECONNECT_TIMEOUT, async {
         loop {
             match events.recv().await {
-                Ok(osupad_device::DeviceEvent::Connected(info, _)) => return Some(info),
+                Ok(opad_device::DeviceEvent::Connected(info, _)) => return Some(info),
                 Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(_) => return None,
             }
@@ -307,11 +307,11 @@ fn capitalise(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use osupad_model::{CounterState, RuntimeMode};
+    use opad_model::{CounterState, RuntimeMode};
 
     fn state_with(mode: RuntimeMode, connected: bool, firmware: &str) -> Arc<Mutex<DaemonState>> {
         let controller = crate::runtime::RuntimeController::new(
-            osupad_model::DeviceConfig::default(),
+            opad_model::DeviceConfig::default(),
             Some(DeviceInfo {
                 device_id: "OSUPAD-TEST".to_string(),
                 board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
@@ -332,16 +332,16 @@ mod tests {
     }
 
     fn manifest(version: &str) -> ReleaseManifest {
-        use osupad_update::manifest::{Artifact, ArtifactKind, Component};
+        use opad_update::manifest::{Artifact, ArtifactKind, Component};
         let mut components = std::collections::BTreeMap::new();
         components.insert(
-            osupad_update::FIRMWARE.to_string(),
+            opad_update::FIRMWARE.to_string(),
             Component {
                 version: version.to_string(),
                 upstream_tag: None,
                 notes: None,
                 artifacts: vec![Artifact {
-                    target: osupad_update::firmware::FIRMWARE_TARGET.to_string(),
+                    target: opad_update::firmware::FIRMWARE_TARGET.to_string(),
                     kind: ArtifactKind::Firmware,
                     url: "https://x/osupad-firmware.bin".to_string(),
                     sha256: "00".to_string(),

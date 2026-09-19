@@ -16,9 +16,9 @@ use iced::widget::{
     button, checkbox, column, container, row, scrollable, stack, text, text_input, Space,
 };
 use iced::{window, Alignment, Element, Length, Size, Subscription, Task};
-use osupad_ipc::{CurrentBackupState, IpcRequest, IpcResponse};
-use osupad_model::ui_source::SourceValue;
-use osupad_model::{
+use opad_ipc::{CurrentBackupState, IpcRequest, IpcResponse};
+use opad_model::ui_source::SourceValue;
+use opad_model::{
     char_to_hid_usage, CounterSource, CounterState, DeviceConfig, DeviceInfo, IncompatibleDevice,
     JsonBackup, KeyPin, LatencyStats, LogEntry, LogLevel, LogSource, RuntimeMode,
 };
@@ -137,8 +137,8 @@ pub enum FirmwareModalState {
 /// The updater state the Settings page and the update banner render (§U-0.4)
 #[derive(Debug, Clone, Default)]
 pub struct UpdateView {
-    pub app: osupad_ipc::ComponentUpdate,
-    pub tosu: osupad_ipc::ComponentUpdate,
+    pub app: opad_ipc::ComponentUpdate,
+    pub tosu: opad_ipc::ComponentUpdate,
     pub last_check: Option<String>,
     pub last_error: Option<String>,
     pub restart_required: bool,
@@ -169,14 +169,14 @@ pub struct App {
     pub latency: Option<LatencyStats>,
     pub pending_replacement: Option<String>,
     /// A pad paired with another installation (§W3-3)
-    pub pending_takeover: Option<osupad_ipc::TakeoverPrompt>,
+    pub pending_takeover: Option<opad_ipc::TakeoverPrompt>,
     /// What each updater knows (§U-0.4)
     pub updates: Option<UpdateView>,
     pub incompatible: Option<IncompatibleDevice>,
     pub reset_modal: Option<String>,
     pub import_modal: Option<ImportModalState>,
     pub recovery_modal: Option<RecoveryAction>,
-    pub firmware_offer: Option<osupad_ipc::FirmwareOffer>,
+    pub firmware_offer: Option<opad_ipc::FirmwareOffer>,
     pub firmware_modal: Option<FirmwareModalState>,
     pub ui_values: HashMap<u8, SourceValue>,
 
@@ -273,8 +273,8 @@ pub enum Message {
     /// (take over, keep the pad's counters rather than this PC's)
     ResolveTakeover(bool, bool),
     UpdateStatus(Result<IpcResponse, String>),
-    ToggleUpdater(osupad_ipc::UpdateComponent, bool),
-    InstallUpdate(osupad_ipc::UpdateComponent),
+    ToggleUpdater(opad_ipc::UpdateComponent, bool),
+    InstallUpdate(opad_ipc::UpdateComponent),
     ResetLatency,
     ActionDone(Result<IpcResponse, String>),
     DismissBanner,
@@ -296,7 +296,7 @@ pub enum Message {
 impl App {
     fn new(start_hidden: bool, initial_page: Option<Page>) -> (Self, Task<Message>) {
         let (designer, designer_task) = designer::Designer::new();
-        let tosu_override_path = osupad_model::paths::data_dir()
+        let tosu_override_path = opad_model::paths::data_dir()
             .ok()
             .and_then(|d| std::fs::read_to_string(d.join("tosu_path")).ok())
             .map(|s| s.trim().to_string())
@@ -341,8 +341,8 @@ impl App {
             ui_values: HashMap::new(),
             k1_input: "Z".into(),
             k2_input: "X".into(),
-            k1_gpio: osupad_model::DEFAULT_KEY1_GPIO,
-            k2_gpio: osupad_model::DEFAULT_KEY2_GPIO,
+            k1_gpio: opad_model::DEFAULT_KEY1_GPIO,
+            k2_gpio: opad_model::DEFAULT_KEY2_GPIO,
             debounce: 5000,
             brightness: 100,
             sleep_seconds: 600,
@@ -507,7 +507,7 @@ impl App {
                         pending_replacement,
                         incompatible,
                         pending_takeover,
-                        // Shown by `osupadctl status`; a GUI surface for it is
+                        // Shown by `opadctl status`; a GUI surface for it is
                         // B's to add if it is wanted.
                         last_backup: _,
                     }) => {
@@ -515,7 +515,7 @@ impl App {
                         let device_just_connected = !self.device_connected && device_connected;
                         self.daemon_online = true;
                         self.daemon_spawn_attempted = false;
-                        if self.banner.as_deref() == Some("Launched osupad-daemon. Connecting...") {
+                        if self.banner.as_deref() == Some("Launched opad-daemon. Connecting...") {
                             self.banner = None;
                         }
                         self.mode = mode;
@@ -861,23 +861,23 @@ impl App {
                 }
             },
             Message::StartDaemon => {
-                self.banner = Some("Starting osupad-daemon...".into());
+                self.banner = Some("Starting opad-daemon...".into());
                 self.log_event(
                     LogSource::Program,
                     LogLevel::Info,
                     "gui",
-                    "Launching osupad-daemon process",
+                    "Launching opad-daemon process",
                 );
                 return Task::perform(start_daemon_process(), Message::DaemonStarted);
             }
             Message::DaemonStarted(res) => match res {
                 Ok(()) => {
-                    self.banner = Some("Launched osupad-daemon. Connecting...".into());
+                    self.banner = Some("Launched opad-daemon. Connecting...".into());
                     self.log_event(
                         LogSource::Program,
                         LogLevel::Info,
                         "gui",
-                        "osupad-daemon launched successfully",
+                        "opad-daemon launched successfully",
                     );
                     return self.poll();
                 }
@@ -1173,9 +1173,9 @@ impl App {
                 // Reflect it now; the next poll confirms what the daemon saved
                 if let Some(u) = &mut self.updates {
                     match component {
-                        osupad_ipc::UpdateComponent::App => u.app.enabled = enabled,
-                        osupad_ipc::UpdateComponent::Tosu => u.tosu.enabled = enabled,
-                        osupad_ipc::UpdateComponent::Firmware => {}
+                        opad_ipc::UpdateComponent::App => u.app.enabled = enabled,
+                        opad_ipc::UpdateComponent::Tosu => u.tosu.enabled = enabled,
+                        opad_ipc::UpdateComponent::Firmware => {}
                     }
                 }
                 return Task::perform(
@@ -1210,7 +1210,7 @@ impl App {
             }
             Message::TosuPathPicked(path) => {
                 if let Some(p) = path {
-                    if let Ok(d) = osupad_model::paths::data_dir() {
+                    if let Ok(d) = opad_model::paths::data_dir() {
                         let _ = std::fs::create_dir_all(&d);
                         let _ = std::fs::write(d.join("tosu_path"), p.to_string_lossy().as_bytes());
                     }
@@ -1220,7 +1220,7 @@ impl App {
                 }
             }
             Message::ResetTosuPath => {
-                if let Ok(d) = osupad_model::paths::data_dir() {
+                if let Ok(d) = opad_model::paths::data_dir() {
                     let _ = std::fs::remove_file(d.join("tosu_path"));
                 }
                 std::env::remove_var("OSUPAD_TOSU_PATH");
@@ -1471,7 +1471,7 @@ impl App {
             main = main.push(
                 container(
                     row![
-                        text("⚠ osupad-daemon is offline. Communication, synchronization, and persistence are paused.")
+                        text("⚠ opad-daemon is offline. Communication, synchronization, and persistence are paused.")
                             .size(13)
                             .color(theme::YELLOW),
                         Space::new().width(Length::Fill),
@@ -1502,7 +1502,7 @@ impl App {
             main = main.push(
                 container(
                     row![
-                        text(format!("⚠ Incompatible device protocol (device: {}, required: {}). Update firmware.", incompat.protocol_version, osupad_ipc::IPC_PROTOCOL_VERSION)).size(14).color(theme::YELLOW),
+                        text(format!("⚠ Incompatible device protocol (device: {}, required: {}). Update firmware.", incompat.protocol_version, opad_ipc::IPC_PROTOCOL_VERSION)).size(14).color(theme::YELLOW),
                     ]
                     .align_y(Alignment::Center),
                 )
@@ -2233,7 +2233,7 @@ impl App {
                                 .size(12),
                             text("If the pad does not respond or boot, refer to docs/recovery.md (§7 Disaster Reflash).")
                                 .size(12),
-                            text("You can reflash the pad over USB via osupadctl flash without loss of lifetime press stats.")
+                            text("You can reflash the pad over USB via opadctl flash without loss of lifetime press stats.")
                                 .size(12)
                                 .color(theme::MUTED),
                         ]
@@ -2374,7 +2374,7 @@ async fn pick_backup_dialog() -> Result<JsonBackup, String> {
 }
 
 /// A binary installed next to this one. `EXE_SUFFIX` matters: the sibling is
-/// `osupadctl.exe` on Windows, and without it the lookup always misses.
+/// `opadctl.exe` on Windows, and without it the lookup always misses.
 fn find_sibling_executable(stem: &str) -> std::path::PathBuf {
     let name = format!("{}{}", stem, std::env::consts::EXE_SUFFIX);
     if let Ok(exe) = std::env::current_exe() {
@@ -2389,7 +2389,7 @@ fn find_sibling_executable(stem: &str) -> std::path::PathBuf {
 }
 
 fn find_daemon_executable() -> std::path::PathBuf {
-    find_sibling_executable("osupad-daemon")
+    find_sibling_executable("opad-daemon")
 }
 
 async fn start_daemon_process() -> Result<(), String> {
@@ -2397,11 +2397,11 @@ async fn start_daemon_process() -> Result<(), String> {
     #[cfg(target_os = "linux")]
     tokio::task::spawn_blocking(move || platform_linux::start_daemon(&exe))
         .await
-        .map_err(|e| format!("Failed to start osupad-daemon: {}", e))??;
+        .map_err(|e| format!("Failed to start opad-daemon: {}", e))??;
     #[cfg(windows)]
     tokio::task::spawn_blocking(move || platform_windows::start_daemon(&exe))
         .await
-        .map_err(|e| format!("Failed to start osupad-daemon: {}", e))??;
+        .map_err(|e| format!("Failed to start opad-daemon: {}", e))??;
     #[cfg(not(any(target_os = "linux", windows)))]
     {
         let _ = exe;
@@ -2415,7 +2415,7 @@ async fn start_daemon_process() -> Result<(), String> {
 async fn start_tosu_process(override_path: Option<std::path::PathBuf>) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let bin = override_path
-            .or_else(osupad_tosu::find_tosu_binary)
+            .or_else(opad_tosu::find_tosu_binary)
             .ok_or_else(|| {
                 "tosu executable not found (no bundled copy or system install)".to_string()
             })?;
@@ -2473,27 +2473,27 @@ pub fn tosu_source_status(override_path: Option<&std::path::Path>) -> String {
     }
     let home_install = dirs::home_dir().map(|h| {
         h.join(".local/opt/tosu")
-            .join(osupad_model::paths::TOSU_BINARY)
+            .join(opad_model::paths::TOSU_BINARY)
     });
     if let Some(p) = home_install.filter(|p| p.is_file()) {
         return format!("Installed at {}", p.display());
     }
     let on_path = std::env::var_os("PATH").and_then(|path| {
         std::env::split_paths(&path)
-            .map(|dir| dir.join(osupad_model::paths::TOSU_BINARY))
+            .map(|dir| dir.join(opad_model::paths::TOSU_BINARY))
             .find(|p| p.is_file())
     });
     if let Some(p) = on_path {
         return format!("Installed at PATH ({})", p.display());
     }
-    if let Ok(bundled_dir) = osupad_model::paths::bundled_tosu_dir() {
+    if let Ok(bundled_dir) = opad_model::paths::bundled_tosu_dir() {
         if let Ok(v) = std::fs::read_to_string(bundled_dir.join("VERSION")) {
             let v = v.trim();
             if !v.is_empty() {
                 return format!("Bundled (v{})", v);
             }
         }
-        if bundled_dir.join(osupad_model::paths::TOSU_BINARY).is_file() {
+        if bundled_dir.join(opad_model::paths::TOSU_BINARY).is_file() {
             return "Bundled".to_string();
         }
     }

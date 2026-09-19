@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=OPad Daemon
+Comment=OPad background service daemon
+Exec=@BINDIR@/opad-daemon
+Icon=input-keyboard
+Terminal=false
+Categories=Utility;
+X-GNOME-Autostart-enabled=true

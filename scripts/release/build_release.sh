@@ -34,7 +34,7 @@ fi
 cd "${REPO_ROOT}/firmware"
 idf.py build
 
-FW_BIN="${REPO_ROOT}/firmware/build/osupad-firmware.bin"
+FW_BIN="${REPO_ROOT}/firmware/build/opad-firmware.bin"
 BOOT_BIN="${REPO_ROOT}/firmware/build/bootloader/bootloader.bin"
 PART_BIN="${REPO_ROOT}/firmware/build/partition_table/partition-table.bin"
 # Points the bootloader back at ota_0 (§U-3a). Without it a recovery flash onto
@@ -47,7 +47,7 @@ if [ ! -f "${FW_BIN}" ]; then
     exit 1
 fi
 
-cp "${FW_BIN}" "${DIST_DIR}/osupad-firmware.bin"
+cp "${FW_BIN}" "${DIST_DIR}/opad-firmware.bin"
 [ -f "${BOOT_BIN}" ] && cp "${BOOT_BIN}" "${DIST_DIR}/bootloader.bin"
 [ -f "${PART_BIN}" ] && cp "${PART_BIN}" "${DIST_DIR}/partition-table.bin"
 [ -f "${OTA_BIN}" ] && cp "${OTA_BIN}" "${DIST_DIR}/ota_data_initial.bin"
@@ -60,7 +60,7 @@ cd "${REPO_ROOT}/desktop"
 cargo build --workspace --release
 
 TARGET_RELEASE="${REPO_ROOT}/desktop/target/release"
-for bin in osupad-daemon osupadctl osupad-gui; do
+for bin in opad-daemon opadctl opad-gui; do
     if [ ! -f "${TARGET_RELEASE}/${bin}" ]; then
         echo "ERROR: Binary ${bin} not found at ${TARGET_RELEASE}/${bin}!" >&2
         exit 1
@@ -81,10 +81,10 @@ if [ -z "${VERSION}" ]; then
     echo "ERROR: could not read the workspace version from desktop/Cargo.toml!" >&2
     exit 1
 fi
-ARCHIVE_NAME="osupad-linux-x86_64-${VERSION}.tar.gz"
+ARCHIVE_NAME="opad-linux-x86_64-${VERSION}.tar.gz"
 TAR_TMP="${DIST_DIR}/tar_staging"
 mkdir -p "${TAR_TMP}/bin"
-cp "${DIST_DIR}/osupad-daemon" "${DIST_DIR}/osupad-gui" "${DIST_DIR}/osupadctl" "${TAR_TMP}/bin/"
+cp "${DIST_DIR}/opad-daemon" "${DIST_DIR}/opad-gui" "${DIST_DIR}/opadctl" "${TAR_TMP}/bin/"
 mkdir -p "${TAR_TMP}/packaging"
 cp -r "${REPO_ROOT}/packaging/"* "${TAR_TMP}/packaging/"
 cp "${REPO_ROOT}/README.md" "${REPO_ROOT}/LICENSE" "${TAR_TMP}/"
@@ -102,13 +102,13 @@ echo "✓ Checksums generated:"
 cat SHA256SUMS
 
 # 4. Generate and sign release manifest (§U-0.3)
-KEY_FILE="${HOME}/.config/osupad/osupad-manifest.key"
+KEY_FILE="${HOME}/.config/opad/opad-manifest.key"
 BASE_URL="${BASE_URL:-https://github.com/OPad-dev/OPad/releases/latest/download}"
 FW_VER="${FIRMWARE_VERSION:-1.0.0}"
 if [ -f "${KEY_FILE}" ]; then
     echo ""
     echo "--- [4/4] Generating signed release manifest ---"
-    cargo run --manifest-path "${REPO_ROOT}/desktop/Cargo.toml" -p osupad-update --bin osupad-manifest -- \
+    cargo run --manifest-path "${REPO_ROOT}/desktop/Cargo.toml" -p opad-update --bin opad-manifest -- \
         --dist "${DIST_DIR}" \
         --base-url "${BASE_URL}" \
         --firmware-version "${FW_VER}"

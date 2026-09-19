@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Turn an `osupadctl latency` run into the finished markdown row for
+Turn an `opadctl latency` run into the finished markdown row for
 docs/latency-testing.md (P3-1, §W4-3).
 
 The measurement itself is hardware work and cannot be automated: flash the
@@ -49,11 +49,11 @@ FIELDS = {
 
 
 class NoData(Exception):
-    """`osupadctl latency` ran, but the pad had nothing to report."""
+    """`opadctl latency` ran, but the pad had nothing to report."""
 
 
 def parse_latency(text):
-    """The six numbers from `osupadctl latency`, as ints."""
+    """The six numbers from `opadctl latency`, as ints."""
     if "No latency data yet" in text:
         raise NoData(
             "The pad reported no samples. Connect it, reset the statistics with "
@@ -70,7 +70,7 @@ def parse_latency(text):
             out[name] = int(match.group(1))
     if missing:
         raise NoData(
-            "Could not read %s from osupadctl's output. Has its wording changed?"
+            "Could not read %s from opadctl's output. Has its wording changed?"
             % ", ".join(missing)
         )
     # A freshly reset pad answers with six zeros. That is a real answer to a
@@ -124,7 +124,7 @@ def format_row(stats, stage, commit, date, stuck, notes):
     return "| " + " | ".join(cells) + " |"
 
 
-def run_osupadctl(args, binary):
+def run_opadctl(args, binary):
     try:
         done = subprocess.run(
             [binary, *args], capture_output=True, text=True, check=False
@@ -132,7 +132,7 @@ def run_osupadctl(args, binary):
     except FileNotFoundError:
         sys.exit(
             f"{binary} not found. Build it with `cargo build --release` in desktop/, "
-            "or pass --osupadctl."
+            "or pass --opadctl."
         )
     if done.returncode != 0:
         sys.exit(f"{binary} {' '.join(args)} failed:\n{done.stderr.strip()}")
@@ -207,12 +207,12 @@ def main():
         "--date", default=None, help="Override the date (default: today, ISO)"
     )
     parser.add_argument(
-        "--osupadctl", default="osupadctl", help="Path to the osupadctl binary"
+        "--opadctl", default="opadctl", help="Path to the opadctl binary"
     )
     parser.add_argument(
         "--input",
         type=Path,
-        help="Parse saved `osupadctl latency` output instead of running it",
+        help="Parse saved `opadctl latency` output instead of running it",
     )
     parser.add_argument(
         "--self-test", action="store_true", help="Check the parser and exit"
@@ -224,7 +224,7 @@ def main():
         return
 
     if args.reset:
-        run_osupadctl(["latency", "--reset"], args.osupadctl)
+        run_opadctl(["latency", "--reset"], args.opadctl)
         print("Samples cleared. Tap both keys alternately at > 15 presses/s for 2")
         print("minutes, then re-run with --stage to get the row.")
         return
@@ -241,7 +241,7 @@ def main():
     text = (
         args.input.read_text()
         if args.input
-        else run_osupadctl(["latency"], args.osupadctl)
+        else run_opadctl(["latency"], args.opadctl)
     )
     try:
         stats = parse_latency(text)

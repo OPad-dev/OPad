@@ -1,4 +1,0 @@
-# 99-osupad.rules
-# Espressif ESP32-S3 OPad (application firmware PID 0x4001, ROM bootloader PID 0x1001)
-SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4001|1001", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4001|1001", TAG+="uaccess"

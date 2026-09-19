@@ -24,7 +24,7 @@ fi
 if command -v idf.py >/dev/null 2>&1; then
     cd "${REPO_ROOT}/firmware"
     idf.py build
-    echo "✓ Firmware built: firmware/build/osupad-firmware.bin"
+    echo "✓ Firmware built: firmware/build/opad-firmware.bin"
 else
     echo "WARNING: idf.py not found in PATH, skipping firmware compilation."
 fi
@@ -35,9 +35,9 @@ echo "--- [2/2] Building Desktop Rust Workspace ---"
 cd "${REPO_ROOT}/desktop"
 cargo build --workspace --release
 echo "✓ Desktop binaries built in desktop/target/release/:"
-echo "  - osupad-daemon"
-echo "  - osupadctl"
-echo "  - osupad-gui"
+echo "  - opad-daemon"
+echo "  - opadctl"
+echo "  - opad-gui"
 
 echo ""
 echo "=========================================="

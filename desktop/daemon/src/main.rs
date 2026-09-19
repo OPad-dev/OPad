@@ -8,12 +8,12 @@ use tracing::{error, info, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
-use osupad_device::{DeviceEvent, DeviceManager};
-use osupad_ipc::{create_listener, get_socket_path, read_request, send_response};
-use osupad_layout::{Layout, Screen};
-use osupad_model::{CounterState, DeviceConfig, LogSource, RuntimeMode};
-use osupad_storage::Storage;
-use osupad_tosu::{spawn_tosu_supervisor, TosuManager};
+use opad_device::{DeviceEvent, DeviceManager};
+use opad_ipc::{create_listener, get_socket_path, read_request, send_response};
+use opad_layout::{Layout, Screen};
+use opad_model::{CounterState, DeviceConfig, LogSource, RuntimeMode};
+use opad_storage::Storage;
+use opad_tosu::{spawn_tosu_supervisor, TosuManager};
 
 pub mod backup;
 pub mod firmware_update;
@@ -44,17 +44,17 @@ async fn main() -> Result<()> {
         .with(hub_layer)
         .init();
 
-    info!("Starting osupad-daemon v1.0.0");
+    info!("Starting opad-daemon v1.0.0");
 
     let socket_path = get_socket_path();
-    if osupad_ipc::connect(&socket_path).await.is_ok() {
+    if opad_ipc::connect(&socket_path).await.is_ok() {
         anyhow::bail!(
-            "Another osupad-daemon instance is already running at {}",
+            "Another opad-daemon instance is already running at {}",
             socket_path.display()
         );
     }
 
-    let db_path = osupad_model::paths::database_path()
+    let db_path = opad_model::paths::database_path()
         .context("Cannot resolve where to keep the OPad database")?;
     info!("Using SQLite database at {}", db_path.display());
     let (
@@ -87,7 +87,7 @@ async fn main() -> Result<()> {
                 .into_iter()
                 .map(|(info, _)| info.device_id)
                 .collect();
-            info!("osupad-daemon initialized, storage loaded successfully");
+            info!("opad-daemon initialized, storage loaded successfully");
             (
                 Arc::new(Mutex::new(Some(s))),
                 None,
@@ -155,7 +155,7 @@ async fn main() -> Result<()> {
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
     // Launch and supervise tosu, then follow its WebSocket
-    let tosu_log_path = osupad_model::paths::tosu_log_path()
+    let tosu_log_path = opad_model::paths::tosu_log_path()
         .context("Cannot resolve where to keep the tosu log")?;
 
     if tosu_log_path.is_file() {
@@ -163,15 +163,15 @@ async fn main() -> Result<()> {
             let lines: Vec<&str> = content.lines().collect();
             let start = lines.len().saturating_sub(150);
             for line in &lines[start..] {
-                let clean = osupad_tosu::strip_ansi(line);
+                let clean = opad_tosu::strip_ansi(line);
                 let trimmed = clean.trim();
                 if !trimmed.is_empty() {
                     let level = if trimmed.contains("error") || trimmed.contains("Error") {
-                        osupad_model::LogLevel::Error
+                        opad_model::LogLevel::Error
                     } else if trimmed.contains("warn") || trimmed.contains("Warn") {
-                        osupad_model::LogLevel::Warn
+                        opad_model::LogLevel::Warn
                     } else {
-                        osupad_model::LogLevel::Info
+                        opad_model::LogLevel::Info
                     };
                     log_hub.push(LogSource::Tosu, level, "tosu", trimmed);
                 }
@@ -184,11 +184,11 @@ async fn main() -> Result<()> {
         let clean = line.trim();
         if !clean.is_empty() {
             let level = if clean.contains("error") || clean.contains("Error") {
-                osupad_model::LogLevel::Error
+                opad_model::LogLevel::Error
             } else if clean.contains("warn") || clean.contains("Warn") {
-                osupad_model::LogLevel::Warn
+                opad_model::LogLevel::Warn
             } else {
-                osupad_model::LogLevel::Info
+                opad_model::LogLevel::Info
             };
             lh.push(LogSource::Tosu, level, "tosu", clean);
         }
@@ -211,8 +211,8 @@ async fn main() -> Result<()> {
     let socket_path = get_socket_path();
     let ipc_listener = match create_listener(&socket_path) {
         Ok(l) => l,
-        Err(osupad_ipc::IpcError::AlreadyRunning) => {
-            eprintln!("osupad-daemon is already running");
+        Err(opad_ipc::IpcError::AlreadyRunning) => {
+            eprintln!("opad-daemon is already running");
             std::process::exit(0);
         }
         Err(e) => return Err(e.into()),
@@ -306,7 +306,7 @@ async fn main() -> Result<()> {
                         event_opt = Some(RuntimeEvent::DeviceCounters(c));
                     }
                     DeviceEvent::StatusUpdate(status) => {
-                        event_opt = Some(RuntimeEvent::DeviceLatency(osupad_model::LatencyStats {
+                        event_opt = Some(RuntimeEvent::DeviceLatency(opad_model::LatencyStats {
                             samples: status.latency_samples,
                             p50_us: status.latency_p50_us,
                             p99_us: status.latency_p99_us,
@@ -556,8 +556,8 @@ async fn main() -> Result<()> {
 mod tests {
     use super::*;
     use crate::runtime::DaemonState;
-    use osupad_ipc::{IpcRequest, IpcResponse};
-    use osupad_model::{CounterSource, DeviceInfo};
+    use opad_ipc::{IpcRequest, IpcResponse};
+    use opad_model::{CounterSource, DeviceInfo};
 
     #[tokio::test]
     async fn test_sqlite_failure_isolation() {

@@ -1,6 +1,6 @@
 //! Keeps the pad's UI data in sync with tosu while sending as little as possible.
 
-use osupad_model::ui_source::SourceValue;
+use opad_model::ui_source::SourceValue;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 

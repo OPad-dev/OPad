@@ -1,12 +1,12 @@
 [package]
-name = "osupad-daemon"
+name = "opad-daemon"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
 [[bin]]
-name = "osupad-daemon"
+name = "opad-daemon"
 path = "src/main.rs"
 
 [dependencies]
@@ -18,15 +18,15 @@ thiserror.workspace = true
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-osupad-model = { path = "../crates/osupad-model" }
-osupad-protocol = { path = "../crates/osupad-protocol" }
-osupad-storage = { path = "../crates/osupad-storage" }
-osupad-ipc = { path = "../crates/osupad-ipc" }
-osupad-tosu = { path = "../crates/osupad-tosu" }
-osupad-update = { path = "../crates/osupad-update" }
+opad-model = { path = "../crates/opad-model" }
+opad-protocol = { path = "../crates/opad-protocol" }
+opad-storage = { path = "../crates/opad-storage" }
+opad-ipc = { path = "../crates/opad-ipc" }
+opad-tosu = { path = "../crates/opad-tosu" }
+opad-update = { path = "../crates/opad-update" }
 uuid = { version = "1", features = ["v4"] }
-osupad-device = { path = "../crates/osupad-device" }
-osupad-layout = { path = "../crates/osupad-layout" }
+opad-device = { path = "../crates/opad-device" }
+opad-layout = { path = "../crates/opad-layout" }
 
 [dev-dependencies]
 uuid = { version = "1", features = ["v4"] }

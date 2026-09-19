@@ -10,7 +10,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use osupad_storage::Storage;
+use opad_storage::Storage;
 use tracing::{info, warn};
 
 pub const INSTALL_ID_KEY: &str = "install.id";

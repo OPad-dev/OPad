@@ -2,13 +2,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{info, warn};
 
-use osupad_device::DeviceEvent;
-use osupad_ipc::{
+use opad_device::DeviceEvent;
+use opad_ipc::{
     CurrentBackupState, IpcRequest, IpcResponse, UpdateComponent, IPC_PROTOCOL_VERSION,
 };
-use osupad_layout::Screen;
-use osupad_model::{char_to_hid_usage, CounterState, DeviceConfig, DeviceInfo, RuntimeMode};
-use osupad_storage::Storage;
+use opad_layout::Screen;
+use opad_model::{char_to_hid_usage, CounterState, DeviceConfig, DeviceInfo, RuntimeMode};
+use opad_storage::Storage;
 
 use crate::identity;
 use crate::log_hub::LogHub;
@@ -51,7 +51,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     daemon_protocol: IPC_PROTOCOL_VERSION,
                     reason: format!(
                         "Version mismatch: this client is {} but the running daemon is {}. \
-                         The app was updated; restart osupad-daemon to finish.",
+                         The app was updated; restart opad-daemon to finish.",
                         client_version, daemon_version
                     ),
                 };
@@ -77,7 +77,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             };
             let takeover_prompt = st.pending_takeover.as_ref().map(|t| {
                 let pc = pc_counters.clone().unwrap_or_default();
-                Box::new(osupad_ipc::TakeoverPrompt {
+                Box::new(opad_ipc::TakeoverPrompt {
                     device_id: t.device_id.clone(),
                     device_key1: t.device_key1,
                     device_key2: t.device_key2,
@@ -985,7 +985,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 let mut st = state.lock().unwrap();
                 st.device_connected = false;
             }
-            let port = osupad_device::find_target_port();
+            let port = opad_device::find_target_port();
             IpcResponse::ReadyForFlash { port }
         }
 

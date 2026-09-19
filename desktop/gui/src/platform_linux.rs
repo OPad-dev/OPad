@@ -19,9 +19,9 @@ pub fn get_user_systemd_dir() -> Result<PathBuf, String> {
 }
 
 /// The unit shipped in packaging/, so the GUI and install.sh manage the same service
-const SERVICE_NAME: &str = "osupad-daemon.service";
+const SERVICE_NAME: &str = "opad-daemon.service";
 const PACKAGED_UNIT: &str =
-    include_str!("../../../packaging/linux/systemd-user/osupad-daemon.service");
+    include_str!("../../../packaging/linux/systemd-user/opad-daemon.service");
 /// Written by earlier GUI builds under another name; removed so two units never start two daemons
 const LEGACY_SERVICE_NAME: &str = "osupad.service";
 
@@ -141,7 +141,7 @@ pub fn get_user_autostart_dir() -> Result<PathBuf, String> {
 
 pub fn is_gui_autostart_enabled() -> bool {
     if let Ok(dir) = get_user_autostart_dir() {
-        dir.join("osupad-gui.desktop").exists()
+        dir.join("opad-gui.desktop").exists()
     } else {
         false
     }
@@ -149,11 +149,11 @@ pub fn is_gui_autostart_enabled() -> bool {
 
 pub fn set_gui_autostart_enabled(enabled: bool) -> Result<(), String> {
     let dir = get_user_autostart_dir()?;
-    let path = dir.join("osupad-gui.desktop");
+    let path = dir.join("opad-gui.desktop");
     if enabled {
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("Failed to create directory {}: {}", dir.display(), e))?;
-        let content = "[Desktop Entry]\nType=Application\nName=OPad Tray\nComment=OPad configuration and system tray applet\nExec=osupad-gui --tray\nIcon=input-keyboard\nTerminal=false\nCategories=Utility;HardwareSettings;\nX-GNOME-Autostart-enabled=true\n";
+        let content = "[Desktop Entry]\nType=Application\nName=OPad Tray\nComment=OPad configuration and system tray applet\nExec=opad-gui --tray\nIcon=input-keyboard\nTerminal=false\nCategories=Utility;HardwareSettings;\nX-GNOME-Autostart-enabled=true\n";
         std::fs::write(&path, content)
             .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
     } else if path.exists() {

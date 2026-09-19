@@ -1,28 +1,28 @@
 [package]
-name = "osupad-gui"
+name = "opad-gui"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
 [[bin]]
-name = "osupad-gui"
+name = "opad-gui"
 path = "src/main.rs"
 
 [dependencies]
 iced = { workspace = true, features = ["image", "canvas"] }
 iced_aw = { version = "0.14.1", default-features = false, features = ["color_picker", "number_input"] }
 rfd = "0.15"
-osupad-layout = { path = "../crates/osupad-layout" }
-osupad-ui-preview = { path = "../crates/osupad-ui-preview" }
+opad-layout = { path = "../crates/opad-layout" }
+opad-ui-preview = { path = "../crates/opad-ui-preview" }
 tokio.workspace = true
 tracing.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
-osupad-model = { path = "../crates/osupad-model" }
-osupad-ipc = { path = "../crates/osupad-ipc" }
-osupad-tosu = { path = "../crates/osupad-tosu" }
+opad-model = { path = "../crates/opad-model" }
+opad-ipc = { path = "../crates/opad-ipc" }
+opad-tosu = { path = "../crates/opad-tosu" }
 dirs.workspace = true
 futures-util = { workspace = true, features = ["sink"] }
 
@@ -40,7 +40,7 @@ windows-sys = { version = "0.59", features = [
 tray-icon = { version = "0.19", default-features = false }
 
 [package.metadata.deb]
-name = "osupad"
+name = "opad"
 maintainer = "GFerreiroS <info@gferreiro.com>"
 copyright = "2026, GFerreiroS <info@gferreiro.com>"
 license-file = ["../../LICENSE", "4"]
@@ -50,41 +50,41 @@ priority = "optional"
 depends = "$auto, libvulkan1, libwayland-client0, libx11-6, libxcursor1, libxkbcommon0, libxi6, libdbus-1-3"
 maintainer-scripts = "../../packaging/linux/deb"
 assets = [
-    ["../target/release/osupad-daemon", "usr/bin/osupad-daemon", "755"],
-    ["../target/release/osupad-gui", "usr/bin/osupad-gui", "755"],
-    ["../target/release/osupadctl", "usr/bin/osupadctl", "755"],
-    ["../../packaging/linux/deb/osupad-daemon.service", "usr/lib/systemd/user/osupad-daemon.service", "644"],
-    ["../../packaging/linux/deb/osupad.desktop", "usr/share/applications/osupad.desktop", "644"],
-    ["../../packaging/linux/udev/99-osupad.rules", "usr/lib/udev/rules.d/99-osupad.rules", "644"],
-    ["../../packaging/linux/deb/install-origin", "usr/lib/osupad/install-origin", "644"],
-    ["../../packaging/linux/deb/install-origin", "etc/osupad/install-origin", "644"],
-    ["../../build/tosu/tosu", "usr/lib/osupad/tosu/tosu", "755"],
-    ["../../build/tosu/VERSION", "usr/lib/osupad/tosu/VERSION", "644"],
-    ["../../build/tosu/NOTICE", "usr/lib/osupad/tosu/NOTICE", "644"],
-    ["../../build/tosu/LICENSE", "usr/lib/osupad/tosu/LICENSE", "644"],
-    ["../../build/tosu/dist/*", "usr/lib/osupad/tosu/dist/", "644"],
+    ["../target/release/opad-daemon", "usr/bin/opad-daemon", "755"],
+    ["../target/release/opad-gui", "usr/bin/opad-gui", "755"],
+    ["../target/release/opadctl", "usr/bin/opadctl", "755"],
+    ["../../packaging/linux/deb/opad-daemon.service", "usr/lib/systemd/user/opad-daemon.service", "644"],
+    ["../../packaging/linux/deb/opad.desktop", "usr/share/applications/opad.desktop", "644"],
+    ["../../packaging/linux/udev/99-opad.rules", "usr/lib/udev/rules.d/99-opad.rules", "644"],
+    ["../../packaging/linux/deb/install-origin", "usr/lib/opad/install-origin", "644"],
+    ["../../packaging/linux/deb/install-origin", "etc/opad/install-origin", "644"],
+    ["../../build/tosu/tosu", "usr/lib/opad/tosu/tosu", "755"],
+    ["../../build/tosu/VERSION", "usr/lib/opad/tosu/VERSION", "644"],
+    ["../../build/tosu/NOTICE", "usr/lib/opad/tosu/NOTICE", "644"],
+    ["../../build/tosu/LICENSE", "usr/lib/opad/tosu/LICENSE", "644"],
+    ["../../build/tosu/dist/*", "usr/lib/opad/tosu/dist/", "644"],
 ]
 
 [package.metadata.generate-rpm]
-name = "osupad"
+name = "opad"
 version = "1.0.0~rc"
 summary = "Low-latency ESP32-S3 keypad manager, telemetry HUD, and tray applet for osu!"
 description = "OPad desktop daemon, configuration GUI, and CLI utility."
 license = "MIT AND LGPL-3.0-only"
 assets = [
-    { source = "../target/release/osupad-daemon", dest = "/usr/bin/osupad-daemon", mode = "755" },
-    { source = "../target/release/osupad-gui", dest = "/usr/bin/osupad-gui", mode = "755" },
-    { source = "../target/release/osupadctl", dest = "/usr/bin/osupadctl", mode = "755" },
-    { source = "../../packaging/linux/rpm/osupad-daemon.service", dest = "/usr/lib/systemd/user/osupad-daemon.service", mode = "644" },
-    { source = "../../packaging/linux/rpm/osupad.desktop", dest = "/usr/share/applications/osupad.desktop", mode = "644" },
-    { source = "../../packaging/linux/udev/99-osupad.rules", dest = "/usr/lib/udev/rules.d/99-osupad.rules", mode = "644" },
-    { source = "../../packaging/linux/rpm/install-origin", dest = "/usr/lib/osupad/install-origin", mode = "644" },
-    { source = "../../packaging/linux/rpm/install-origin", dest = "/etc/osupad/install-origin", mode = "644" },
-    { source = "../../build/tosu/tosu", dest = "/usr/lib/osupad/tosu/tosu", mode = "755" },
-    { source = "../../build/tosu/VERSION", dest = "/usr/lib/osupad/tosu/VERSION", mode = "644" },
-    { source = "../../build/tosu/NOTICE", dest = "/usr/lib/osupad/tosu/NOTICE", mode = "644" },
-    { source = "../../build/tosu/LICENSE", dest = "/usr/lib/osupad/tosu/LICENSE", mode = "644" },
-    { source = "../../build/tosu/dist/*", dest = "/usr/lib/osupad/tosu/dist/", mode = "644" },
+    { source = "../target/release/opad-daemon", dest = "/usr/bin/opad-daemon", mode = "755" },
+    { source = "../target/release/opad-gui", dest = "/usr/bin/opad-gui", mode = "755" },
+    { source = "../target/release/opadctl", dest = "/usr/bin/opadctl", mode = "755" },
+    { source = "../../packaging/linux/rpm/opad-daemon.service", dest = "/usr/lib/systemd/user/opad-daemon.service", mode = "644" },
+    { source = "../../packaging/linux/rpm/opad.desktop", dest = "/usr/share/applications/opad.desktop", mode = "644" },
+    { source = "../../packaging/linux/udev/99-opad.rules", dest = "/usr/lib/udev/rules.d/99-opad.rules", mode = "644" },
+    { source = "../../packaging/linux/rpm/install-origin", dest = "/usr/lib/opad/install-origin", mode = "644" },
+    { source = "../../packaging/linux/rpm/install-origin", dest = "/etc/opad/install-origin", mode = "644" },
+    { source = "../../build/tosu/tosu", dest = "/usr/lib/opad/tosu/tosu", mode = "755" },
+    { source = "../../build/tosu/VERSION", dest = "/usr/lib/opad/tosu/VERSION", mode = "644" },
+    { source = "../../build/tosu/NOTICE", dest = "/usr/lib/opad/tosu/NOTICE", mode = "644" },
+    { source = "../../build/tosu/LICENSE", dest = "/usr/lib/opad/tosu/LICENSE", mode = "644" },
+    { source = "../../build/tosu/dist/*", dest = "/usr/lib/opad/tosu/dist/", mode = "644" },
 ]
 post_install_script = """
 if [ $1 -ge 1 ]; then
@@ -99,7 +99,7 @@ if [ $1 -eq 0 ]; then
     if command -v udevadm >/dev/null 2>&1; then
         udevadm control --reload-rules || true
     fi
-    rm -rf /usr/lib/osupad /etc/osupad
+    rm -rf /usr/lib/opad /etc/opad
 fi
 """
 

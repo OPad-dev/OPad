@@ -12,15 +12,15 @@ use osupad_daemon::runtime::{
     COOLDOWN_DURATION,
 };
 use osupad_daemon::sync::{perform_sync, DeviceLink};
-use osupad_device::{DeviceError, DeviceEvent};
-use osupad_ipc::{IpcRequest, IpcResponse, IPC_PROTOCOL_VERSION};
-use osupad_layout::{Layout, Screen};
-use osupad_model::ui_source::SourceValue;
-use osupad_model::{
+use opad_device::{DeviceError, DeviceEvent};
+use opad_ipc::{IpcRequest, IpcResponse, IPC_PROTOCOL_VERSION};
+use opad_layout::{Layout, Screen};
+use opad_model::ui_source::SourceValue;
+use opad_model::{
     CounterSource, CounterState, DeviceConfig, DeviceInfo, JsonBackup, LogLevel, LogSource,
     RuntimeMode,
 };
-use osupad_storage::Storage;
+use opad_storage::Storage;
 
 struct MockDeviceLink {
     event_tx: broadcast::Sender<DeviceEvent>,
@@ -112,8 +112,8 @@ impl DeviceLink for MockDeviceLink {
 
     async fn request_status(&self) -> Result<(), DeviceError> {
         let _ = self.event_tx.send(DeviceEvent::StatusUpdate(
-            osupad_device::proto::DeviceStatus {
-                state: osupad_device::proto::DeviceState::Idle as i32,
+            opad_device::proto::DeviceStatus {
+                state: opad_device::proto::DeviceState::Idle as i32,
                 ..Default::default()
             },
         ));
@@ -1072,7 +1072,7 @@ async fn test_install_update_is_refused_outside_idle() {
 
         let resp = handle_ipc_request(
             IpcRequest::InstallUpdate {
-                component: osupad_ipc::UpdateComponent::App,
+                component: opad_ipc::UpdateComponent::App,
             },
             &daemon_state,
             &storage,
@@ -1124,7 +1124,7 @@ async fn test_firmware_is_not_an_enableable_updater() {
 
     let resp = handle_ipc_request(
         IpcRequest::SetUpdateEnabled {
-            component: osupad_ipc::UpdateComponent::Firmware,
+            component: opad_ipc::UpdateComponent::Firmware,
             enabled: true,
         },
         &daemon_state,
@@ -1142,8 +1142,8 @@ async fn test_firmware_is_not_an_enableable_updater() {
 
     // The other two are ordinary settings and persist
     for component in [
-        osupad_ipc::UpdateComponent::App,
-        osupad_ipc::UpdateComponent::Tosu,
+        opad_ipc::UpdateComponent::App,
+        opad_ipc::UpdateComponent::Tosu,
     ] {
         let resp = handle_ipc_request(
             IpcRequest::SetUpdateEnabled {
@@ -1210,24 +1210,24 @@ async fn test_log_hub_since_seq_paging_and_ring() {
 // 10. queue does not block without a device (P1-8)
 #[tokio::test]
 async fn test_queue_does_not_block_without_device() {
-    let (device_manager, _) = osupad_device::DeviceManager::new_dummy();
+    let (device_manager, _) = opad_device::DeviceManager::new_dummy();
     // Device is not connected
     assert!(!device_manager.is_connected());
 
     // Sending commands returns NotConnected immediately without blocking or hanging
     let res = device_manager.send_time_sync().await;
-    assert!(matches!(res, Err(osupad_device::DeviceError::NotConnected)));
+    assert!(matches!(res, Err(opad_device::DeviceError::NotConnected)));
 
     let res = device_manager.send_config(&DeviceConfig::default()).await;
-    assert!(matches!(res, Err(osupad_device::DeviceError::NotConnected)));
+    assert!(matches!(res, Err(opad_device::DeviceError::NotConnected)));
 
     let res = device_manager.send_host_status(false, false, 1).await;
-    assert!(matches!(res, Err(osupad_device::DeviceError::NotConnected)));
+    assert!(matches!(res, Err(opad_device::DeviceError::NotConnected)));
 
     let res = device_manager
         .send_counter_sync(&CounterState::default(), false)
         .await;
-    assert!(matches!(res, Err(osupad_device::DeviceError::NotConnected)));
+    assert!(matches!(res, Err(opad_device::DeviceError::NotConnected)));
 }
 
 fn pad_info(id: &str) -> DeviceInfo {

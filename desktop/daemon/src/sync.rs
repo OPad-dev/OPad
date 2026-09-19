@@ -4,11 +4,11 @@ use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use tracing::{error, info, warn};
 
-use osupad_device::{DeviceError, DeviceEvent, DeviceManager};
-use osupad_layout::{Layout, Screen};
-use osupad_model::ui_source::SourceValue;
-use osupad_model::{CounterState, DeviceConfig};
-use osupad_storage::{reconcile_counters, Storage};
+use opad_device::{DeviceError, DeviceEvent, DeviceManager};
+use opad_layout::{Layout, Screen};
+use opad_model::ui_source::SourceValue;
+use opad_model::{CounterState, DeviceConfig};
+use opad_storage::{reconcile_counters, Storage};
 
 use crate::runtime::{DaemonState, PendingOperations};
 
@@ -182,7 +182,7 @@ pub async fn perform_sync<D: DeviceLink>(
             loop {
                 match events.recv().await {
                     Ok(DeviceEvent::StatusUpdate(s)) => {
-                        return s.state == osupad_device::proto::DeviceState::Idle as i32;
+                        return s.state == opad_device::proto::DeviceState::Idle as i32;
                     }
                     Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                     Err(_) => return false,

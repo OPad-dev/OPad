@@ -1,4 +1,4 @@
-use osupad_model::{LogEntry, LogLevel, LogSource};
+use opad_model::{LogEntry, LogLevel, LogSource};
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use tracing::{Event, Subscriber};

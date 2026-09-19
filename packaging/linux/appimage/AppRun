@@ -6,16 +6,16 @@ export PATH="${HERE}/usr/bin:${PATH}"
 export LD_LIBRARY_PATH="${HERE}/usr/lib:${HERE}/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
 
 cmd="$(basename "$0")"
-if [ "$cmd" = "osupad-daemon" ] || [ "$cmd" = "osupadctl" ]; then
+if [ "$cmd" = "opad-daemon" ] || [ "$cmd" = "opadctl" ]; then
     exec "${HERE}/usr/bin/${cmd}" "$@"
 fi
 
-if [ "$1" = "daemon" ] || [ "$1" = "osupad-daemon" ]; then
+if [ "$1" = "daemon" ] || [ "$1" = "opad-daemon" ]; then
     shift
-    exec "${HERE}/usr/bin/osupad-daemon" "$@"
-elif [ "$1" = "ctl" ] || [ "$1" = "osupadctl" ]; then
+    exec "${HERE}/usr/bin/opad-daemon" "$@"
+elif [ "$1" = "ctl" ] || [ "$1" = "opadctl" ]; then
     shift
-    exec "${HERE}/usr/bin/osupadctl" "$@"
+    exec "${HERE}/usr/bin/opadctl" "$@"
 fi
 
-exec "${HERE}/usr/bin/osupad-gui" "$@"
+exec "${HERE}/usr/bin/opad-gui" "$@"

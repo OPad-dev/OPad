@@ -29,9 +29,9 @@
 #endif
 #define MyAppPublisher "GFerreiroS"
 #define MyAppURL "https://github.com/OPad-dev/OPad"
-#define MyAppExeName "osupad-gui.exe"
-#define MyAppDaemonName "osupad-daemon.exe"
-#define MyAppCliName "osupadctl.exe"
+#define MyAppExeName "opad-gui.exe"
+#define MyAppDaemonName "opad-daemon.exe"
+#define MyAppCliName "opadctl.exe"
 
 #ifndef SourceDir
   #define SourceDir "..\..\desktop\target\release"
@@ -53,13 +53,13 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
-DefaultDirName={localappdata}\Programs\osupad
+DefaultDirName={localappdata}\Programs\opad
 DefaultGroupName=OPad
 DisableProgramGroupPage=yes
 ; Per-user install: avoids requiring administrator privileges, matches per-user daemon model
 PrivilegesRequired=lowest
 OutputDir=..\..\build\installer
-OutputBaseFilename=osupad-setup
+OutputBaseFilename=opad-setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -70,7 +70,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 
 ; Upgrade behaviour: cleanly stop running instances before replacing binaries
 CloseApplications=yes
-CloseApplicationsFilter=osupad-gui.exe,osupad-daemon.exe,osupadctl.exe,tosu.exe
+CloseApplicationsFilter=opad-gui.exe,opad-daemon.exe,opadctl.exe,osupad-gui.exe,osupad-daemon.exe,osupadctl.exe,tosu.exe
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -107,10 +107,10 @@ Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Registry]
 ; Exact autostart values matching W1-1 (platform_windows.rs)
-; osupad-daemon -> "<dir>\osupad-daemon.exe"
-; osupad-gui    -> "<dir>\osupad-gui.exe" --tray
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "osupad-daemon"; ValueData: """{app}\{#MyAppDaemonName}"""; Tasks: autostart; Flags: uninsdeletevalue
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "osupad-gui"; ValueData: """{app}\{#MyAppExeName}"" --tray"; Tasks: autostart; Flags: uninsdeletevalue
+; opad-daemon -> "<dir>\opad-daemon.exe"
+; opad-gui    -> "<dir>\opad-gui.exe" --tray
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "opad-daemon"; ValueData: """{app}\{#MyAppDaemonName}"""; Tasks: autostart; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "opad-gui"; ValueData: """{app}\{#MyAppExeName}"" --tray"; Tasks: autostart; Flags: uninsdeletevalue
 
 [Run]
 Filename: "{app}\{#MyAppDaemonName}"; Flags: nowait runhidden
@@ -119,13 +119,15 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChang
 [UninstallDelete]
 ; Strong uninstall (§W2-3): remove entire install directory and disposable state
 Type: filesandordirs; Name: "{app}"
+Type: files; Name: "{userappdata}\opad\daemon.log"
+Type: files; Name: "{userappdata}\opad\tosu.log"
 Type: files; Name: "{userappdata}\osupad\daemon.log"
 Type: files; Name: "{userappdata}\osupad\tosu.log"
 
 [Code]
 // Strong uninstall contract (§W2-3)
 // 1. Unconditionally remove Run autostart keys even if toggled inside the GUI.
-// 2. Prompt user before deleting lifetime counters and config in %APPDATA%\osupad (default = keep).
+// 2. Prompt user before deleting lifetime counters and config in %APPDATA%\opad (default = keep).
 // 3. Document why no cleanup is needed for:
 //    - Named pipe: Windows kernel object, cleaned up when processes exit.
 //    - COM port: managed dynamically by usbser.sys.
@@ -136,7 +138,7 @@ procedure StopRunningProcesses;
 var
   ResultCode: Integer;
 begin
-  Exec('taskkill.exe', '/F /IM osupad-daemon.exe /IM osupad-gui.exe /IM tosu.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM opad-daemon.exe /IM opad-gui.exe /IM opadctl.exe /IM osupad-daemon.exe /IM osupad-gui.exe /IM osupadctl.exe /IM tosu.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
 function InitializeUninstall(): Boolean;
@@ -158,10 +160,15 @@ begin
   if CurUninstallStep = usUninstall then
   begin
     // Unconditionally remove Run registry entries (may have been toggled by the app at runtime)
-    RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'osupad-daemon');
-    RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'osupad-gui');
+    RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'opad-daemon');
+    RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'opad-gui');
+    RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'opad-daemon');
+    RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'opad-gui');
 
-    AppDataDir := ExpandConstant('{userappdata}\osupad');
+    AppDataDir := ExpandConstant('{userappdata}\opad');
+    if not DirExists(AppDataDir) then
+      AppDataDir := ExpandConstant('{userappdata}\opad');
+
     if DirExists(AppDataDir) then
     begin
       // Prompt user whether to delete database and lifetime counters. Default is NO (keep).
@@ -173,7 +180,7 @@ begin
       end
       else
       begin
-        // Keep osupad.db, but purge disposable log files
+        // Keep opad.db/opad.db, but purge disposable log files
         DeleteFile(AppDataDir + '\daemon.log');
         DeleteFile(AppDataDir + '\tosu.log');
       end;

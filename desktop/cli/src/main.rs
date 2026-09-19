@@ -1,14 +1,14 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use osupad_device::flash::{self, APP_PARTITION_OFFSET};
-use osupad_ipc::{send_request, IpcRequest, IpcResponse, IpcStream, IPC_PROTOCOL_VERSION};
-use osupad_model::JsonBackup;
+use opad_device::flash::{self, APP_PARTITION_OFFSET};
+use opad_ipc::{send_request, IpcRequest, IpcResponse, IpcStream, IPC_PROTOCOL_VERSION};
+use opad_model::JsonBackup;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 #[derive(Parser)]
-#[command(name = "osupadctl", about = "OPad CLI management tool")]
+#[command(name = "opadctl", about = "OPad CLI management tool")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -102,18 +102,18 @@ async fn main() -> Result<()> {
         cli.command,
         Commands::Flash { .. } | Commands::Bootloader { .. }
     );
-    let mut stream = match osupad_ipc::connect_and_handshake().await {
+    let mut stream = match opad_ipc::connect_and_handshake().await {
         Ok((s, _)) => Some(s),
         Err(e) => {
             if !flashing {
                 return Err(e)
-                    .context("Failed to connect to osupad-daemon. Is the daemon running?");
+                    .context("Failed to connect to opad-daemon. Is the daemon running?");
             }
             // Not necessarily "not running": a version-mismatched handshake
             // fails here too, and that daemon still holds the port. Say what
             // actually happened so a Windows sharing-violation later reads as
             // a consequence rather than a mystery.
-            println!("Could not reach osupad-daemon ({e:#}); flashing without it.");
+            println!("Could not reach opad-daemon ({e:#}); flashing without it.");
             println!("If a daemon is in fact running, stop it before flashing on Windows.");
             None
         }
@@ -260,7 +260,7 @@ async fn main() -> Result<()> {
         Commands::Reset { yes } => {
             if !yes {
                 bail!(
-                    "Resetting counters is permanent! Pass --yes to confirm: osupadctl reset --yes"
+                    "Resetting counters is permanent! Pass --yes to confirm: opadctl reset --yes"
                 );
             }
             let resp = send_request(
@@ -420,19 +420,19 @@ async fn main() -> Result<()> {
             let filter_level = level
                 .as_deref()
                 .and_then(|l| match l.to_lowercase().as_str() {
-                    "debug" => Some(osupad_model::LogLevel::Debug),
-                    "info" => Some(osupad_model::LogLevel::Info),
-                    "warn" | "warning" => Some(osupad_model::LogLevel::Warn),
-                    "error" => Some(osupad_model::LogLevel::Error),
+                    "debug" => Some(opad_model::LogLevel::Debug),
+                    "info" => Some(opad_model::LogLevel::Info),
+                    "warn" | "warning" => Some(opad_model::LogLevel::Warn),
+                    "error" => Some(opad_model::LogLevel::Error),
                     _ => None,
                 });
             let filter_source = source
                 .as_deref()
                 .and_then(|s| match s.to_lowercase().as_str() {
-                    "host" | "daemon" => Some(osupad_model::LogSource::Host),
-                    "esp" | "device" => Some(osupad_model::LogSource::Esp),
-                    "program" | "app" | "gui" => Some(osupad_model::LogSource::Program),
-                    "tosu" => Some(osupad_model::LogSource::Tosu),
+                    "host" | "daemon" => Some(opad_model::LogSource::Host),
+                    "esp" | "device" => Some(opad_model::LogSource::Esp),
+                    "program" | "app" | "gui" => Some(opad_model::LogSource::Program),
+                    "tosu" => Some(opad_model::LogSource::Tosu),
                     _ => None,
                 });
 
@@ -521,7 +521,7 @@ async fn main() -> Result<()> {
                 // as the app ourselves — the last step flash_board.sh did
                 None => {
                     match flash::wait_for_port(
-                        osupad_device::find_target_port,
+                        opad_device::find_target_port,
                         Duration::from_secs(15),
                     )
                     .await
@@ -678,7 +678,7 @@ async fn main() -> Result<()> {
 fn daemon(stream: &mut Option<IpcStream>) -> Result<&mut IpcStream> {
     stream
         .as_mut()
-        .context("Failed to connect to osupad-daemon. Is the daemon running?")
+        .context("Failed to connect to opad-daemon. Is the daemon running?")
 }
 
 /// Ask the daemon to release the serial port. Returns the app port to trigger,
@@ -694,13 +694,13 @@ async fn prepare_flash(
     explicit_port: Option<String>,
 ) -> Result<Option<String>> {
     let Some(stream) = stream else {
-        return Ok(explicit_port.or_else(osupad_device::find_target_port));
+        return Ok(explicit_port.or_else(opad_device::find_target_port));
     };
-    println!("Asking osupad-daemon to release the serial port...");
+    println!("Asking opad-daemon to release the serial port...");
     match send_request(stream, &IpcRequest::PrepareFlash).await? {
         IpcResponse::ReadyForFlash { port } => Ok(explicit_port
             .or(port)
-            .or_else(osupad_device::find_target_port)),
+            .or_else(opad_device::find_target_port)),
         IpcResponse::OperationRejected { reason } => bail!("Rejected by daemon: {}", reason),
         other => bail!("Unexpected response from daemon: {:?}", other),
     }
@@ -820,7 +820,7 @@ mod tests {
 
     fn make_test_file(name: &str, content: &[u8]) -> PathBuf {
         let path =
-            std::env::temp_dir().join(format!("osupadctl-test-{}-{}", std::process::id(), name));
+            std::env::temp_dir().join(format!("opadctl-test-{}-{}", std::process::id(), name));
         let mut f = std::fs::File::create(&path).unwrap();
         f.write_all(content).unwrap();
         path
@@ -837,7 +837,7 @@ mod tests {
 
     #[test]
     fn full_flash_covers_the_bootloader_table_otadata_and_app_in_order() {
-        let dir = std::env::temp_dir().join(format!("osupadctl-full-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("opadctl-full-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("bootloader")).unwrap();
         std::fs::create_dir_all(dir.join("partition_table")).unwrap();
         for f in [
@@ -862,7 +862,7 @@ mod tests {
     fn full_flash_accepts_the_flat_layout_a_release_ships() {
         // dist/ from scripts/release/build_release.sh: no bootloader/ or
         // partition_table/ subdirectories, everything side by side.
-        let dir = std::env::temp_dir().join(format!("osupadctl-flat-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("opadctl-flat-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         for f in [
             "bootloader.bin",
@@ -884,7 +884,7 @@ mod tests {
     #[test]
     fn full_flash_without_a_build_directory_is_refused() {
         // A lone app image in a directory of its own: no bootloader, no table.
-        let dir = std::env::temp_dir().join(format!("osupadctl-lonely-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("opadctl-lonely-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("osupad-firmware.bin");
         std::fs::write(&path, [0xE9; 32]).unwrap();
@@ -898,7 +898,7 @@ mod tests {
     fn full_flash_tolerates_a_build_without_ota_data() {
         // A build of the old single-app layout has no ota_data_initial.bin.
         // Writing the other three is still the right recovery flash.
-        let dir = std::env::temp_dir().join(format!("osupadctl-noota-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("opadctl-noota-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("bootloader")).unwrap();
         std::fs::create_dir_all(dir.join("partition_table")).unwrap();
         for f in [

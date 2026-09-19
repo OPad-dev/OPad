@@ -1,5 +1,5 @@
 # Maintainer: GFerreiroS <info@gferreiro.com>
-pkgname=osupad
+pkgname=opad
 pkgver=1.0.0
 pkgrel=1
 pkgdesc="Low-latency ESP32-S3 keypad manager, telemetry HUD, and tray applet for OPad"

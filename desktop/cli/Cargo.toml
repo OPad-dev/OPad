@@ -1,12 +1,12 @@
 [package]
-name = "osupadctl"
+name = "opadctl"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
 [[bin]]
-name = "osupadctl"
+name = "opadctl"
 path = "src/main.rs"
 
 [dependencies]
@@ -15,7 +15,7 @@ clap.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-osupad-model = { path = "../crates/osupad-model" }
-osupad-ipc = { path = "../crates/osupad-ipc" }
-osupad-device = { path = "../crates/osupad-device" }
+opad-model = { path = "../crates/opad-model" }
+opad-ipc = { path = "../crates/opad-ipc" }
+opad-device = { path = "../crates/opad-device" }
 serialport.workspace = true

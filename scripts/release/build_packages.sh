@@ -31,8 +31,8 @@ make -C "${REPO_ROOT}" all
 echo "✓ Host release binaries ready"
 
 # Ensure templated systemd user units have @BINDIR@ replaced with /usr/bin (§L-1)
-sed 's|@BINDIR@|/usr/bin|g' "${REPO_ROOT}/packaging/linux/systemd-user/osupad-daemon.service.in" > "${REPO_ROOT}/packaging/linux/deb/osupad-daemon.service"
-sed 's|@BINDIR@|/usr/bin|g' "${REPO_ROOT}/packaging/linux/systemd-user/osupad-daemon.service.in" > "${REPO_ROOT}/packaging/linux/rpm/osupad-daemon.service"
+sed 's|@BINDIR@|/usr/bin|g' "${REPO_ROOT}/packaging/linux/systemd-user/opad-daemon.service.in" > "${REPO_ROOT}/packaging/linux/deb/opad-daemon.service"
+sed 's|@BINDIR@|/usr/bin|g' "${REPO_ROOT}/packaging/linux/systemd-user/opad-daemon.service.in" > "${REPO_ROOT}/packaging/linux/rpm/opad-daemon.service"
 
 # Ensure install-origin markers have no trailing newlines
 printf "%s" "deb" > "${REPO_ROOT}/packaging/linux/deb/install-origin"
@@ -44,7 +44,7 @@ printf "%s" "windows" > "${REPO_ROOT}/packaging/windows/install-origin"
 echo ""
 echo "--- [2/5] Building Debian package (.deb) ---"
 if command -v cargo-deb >/dev/null 2>&1; then
-    (cd "${REPO_ROOT}/desktop" && cargo deb -p osupad-gui --no-build -o "${DIST_DIR}/")
+    (cd "${REPO_ROOT}/desktop" && cargo deb -p opad-gui --no-build -o "${DIST_DIR}/")
     echo "✓ Debian package built in dist/"
 else
     echo "ERROR: 'cargo-deb' not found in PATH!" >&2

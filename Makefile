@@ -38,7 +38,7 @@ TOSU_SRC_DIR ?= build/tosu-src
 TOSU_BUILD_DIR ?= build/tosu
 
 TARGET_DIR ?= desktop/target/release
-BINS := osupad-daemon osupad-gui osupadctl
+BINS := opad-daemon opad-gui opadctl
 
 .PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage deb rpm packages
 
@@ -48,7 +48,7 @@ appimage: all
 
 # L-3: Build Debian package (.deb)
 deb: all tosu
-	cd desktop && cargo deb -p osupad-gui --no-build -o ../dist/
+	cd desktop && cargo deb -p opad-gui --no-build -o ../dist/
 
 # L-3: Build RPM package (.rpm)
 rpm: all tosu
@@ -97,28 +97,28 @@ install: all
 		install -m 755 "$(TARGET_DIR)/$$bin" "$(DESTDIR)$(BINDIR)/$$bin"; \
 	done
 	install -d "$(DESTDIR)$(SYSTEMDUSERDIR)"
-	sed 's|@BINDIR@|$(BINDIR)|g' packaging/linux/systemd-user/osupad-daemon.service.in > "$(DESTDIR)$(SYSTEMDUSERDIR)/osupad-daemon.service"
-	chmod 644 "$(DESTDIR)$(SYSTEMDUSERDIR)/osupad-daemon.service"
+	sed 's|@BINDIR@|$(BINDIR)|g' packaging/linux/systemd-user/opad-daemon.service.in > "$(DESTDIR)$(SYSTEMDUSERDIR)/opad-daemon.service"
+	chmod 644 "$(DESTDIR)$(SYSTEMDUSERDIR)/opad-daemon.service"
 	install -d "$(DESTDIR)$(APPLICATIONSDIR)"
-	sed 's|@BINDIR@|$(BINDIR)|g' packaging/linux/osupad.desktop.in > "$(DESTDIR)$(APPLICATIONSDIR)/osupad.desktop"
-	chmod 644 "$(DESTDIR)$(APPLICATIONSDIR)/osupad.desktop"
+	sed 's|@BINDIR@|$(BINDIR)|g' packaging/linux/opad.desktop.in > "$(DESTDIR)$(APPLICATIONSDIR)/opad.desktop"
+	chmod 644 "$(DESTDIR)$(APPLICATIONSDIR)/opad.desktop"
 	install -d "$(DESTDIR)$(UDEVRULESDIR)"
-	install -m 644 packaging/linux/udev/99-osupad.rules "$(DESTDIR)$(UDEVRULESDIR)/99-osupad.rules"
-	install -d "$(DESTDIR)$(LIBDIR)/osupad"
-	printf '%s\n' "$(INSTALL_ORIGIN)" > "$(DESTDIR)$(LIBDIR)/osupad/install-origin"
-	chmod 644 "$(DESTDIR)$(LIBDIR)/osupad/install-origin"
+	install -m 644 packaging/linux/udev/99-opad.rules "$(DESTDIR)$(UDEVRULESDIR)/99-opad.rules"
+	install -d "$(DESTDIR)$(LIBDIR)/opad"
+	printf '%s\n' "$(INSTALL_ORIGIN)" > "$(DESTDIR)$(LIBDIR)/opad/install-origin"
+	chmod 644 "$(DESTDIR)$(LIBDIR)/opad/install-origin"
 	@if [ -d "packaging/linux/icons" ]; then \
 		install -d "$(DESTDIR)$(DATADIR)/icons"; \
 		cp -r packaging/linux/icons/* "$(DESTDIR)$(DATADIR)/icons/"; \
 	fi
 	@if [ -d "$(TOSU_BUILD_DIR)" ]; then \
-		echo "Installing bundled tosu to $(DESTDIR)$(LIBDIR)/osupad/tosu..."; \
-		install -d "$(DESTDIR)$(LIBDIR)/osupad/tosu"; \
-		cp -r $(TOSU_BUILD_DIR)/dist/* "$(DESTDIR)$(LIBDIR)/osupad/tosu/"; \
-		install -m 755 "$(TOSU_BUILD_DIR)/tosu" "$(DESTDIR)$(LIBDIR)/osupad/tosu/tosu"; \
-		install -m 644 licenses/tosu/VERSION "$(DESTDIR)$(LIBDIR)/osupad/tosu/VERSION"; \
-		install -m 644 licenses/tosu/NOTICE "$(DESTDIR)$(LIBDIR)/osupad/tosu/NOTICE"; \
-		install -m 644 licenses/tosu/LICENSE "$(DESTDIR)$(LIBDIR)/osupad/tosu/LICENSE"; \
+		echo "Installing bundled tosu to $(DESTDIR)$(LIBDIR)/opad/tosu..."; \
+		install -d "$(DESTDIR)$(LIBDIR)/opad/tosu"; \
+		cp -r $(TOSU_BUILD_DIR)/dist/* "$(DESTDIR)$(LIBDIR)/opad/tosu/"; \
+		install -m 755 "$(TOSU_BUILD_DIR)/tosu" "$(DESTDIR)$(LIBDIR)/opad/tosu/tosu"; \
+		install -m 644 licenses/tosu/VERSION "$(DESTDIR)$(LIBDIR)/opad/tosu/VERSION"; \
+		install -m 644 licenses/tosu/NOTICE "$(DESTDIR)$(LIBDIR)/opad/tosu/NOTICE"; \
+		install -m 644 licenses/tosu/LICENSE "$(DESTDIR)$(LIBDIR)/opad/tosu/LICENSE"; \
 	fi
 
 # B-2: Install into ~/.local layout (replaces install.sh)
@@ -128,34 +128,34 @@ install-user: all
 		install -m 755 "$(TARGET_DIR)/$$bin" "$(BINDIR_USER)/$$bin"; \
 	done
 	install -d "$(SYSTEMDUSERDIR_USER)"
-	sed 's|@BINDIR@|$(BINDIR_USER)|g' packaging/linux/systemd-user/osupad-daemon.service.in > "$(SYSTEMDUSERDIR_USER)/osupad-daemon.service"
-	chmod 644 "$(SYSTEMDUSERDIR_USER)/osupad-daemon.service"
+	sed 's|@BINDIR@|$(BINDIR_USER)|g' packaging/linux/systemd-user/opad-daemon.service.in > "$(SYSTEMDUSERDIR_USER)/opad-daemon.service"
+	chmod 644 "$(SYSTEMDUSERDIR_USER)/opad-daemon.service"
 	install -d "$(APPLICATIONSDIR_USER)"
-	sed 's|@BINDIR@|$(BINDIR_USER)|g' packaging/linux/osupad.desktop.in > "$(APPLICATIONSDIR_USER)/osupad.desktop"
-	chmod 644 "$(APPLICATIONSDIR_USER)/osupad.desktop"
+	sed 's|@BINDIR@|$(BINDIR_USER)|g' packaging/linux/opad.desktop.in > "$(APPLICATIONSDIR_USER)/opad.desktop"
+	chmod 644 "$(APPLICATIONSDIR_USER)/opad.desktop"
 	install -d "$(AUTOSTARTDIR_USER)"
-	sed 's|@BINDIR@|$(BINDIR_USER)|g' packaging/linux/xdg-autostart/osupad-gui.desktop.in > "$(AUTOSTARTDIR_USER)/osupad-gui.desktop"
-	chmod 644 "$(AUTOSTARTDIR_USER)/osupad-gui.desktop"
-	install -d "$(LIBDIR_USER)/osupad"
-	printf '%s\n' "$(INSTALL_ORIGIN_USER)" > "$(LIBDIR_USER)/osupad/install-origin"
-	chmod 644 "$(LIBDIR_USER)/osupad/install-origin"
+	sed 's|@BINDIR@|$(BINDIR_USER)|g' packaging/linux/xdg-autostart/opad-gui.desktop.in > "$(AUTOSTARTDIR_USER)/opad-gui.desktop"
+	chmod 644 "$(AUTOSTARTDIR_USER)/opad-gui.desktop"
+	install -d "$(LIBDIR_USER)/opad"
+	printf '%s\n' "$(INSTALL_ORIGIN_USER)" > "$(LIBDIR_USER)/opad/install-origin"
+	chmod 644 "$(LIBDIR_USER)/opad/install-origin"
 	@if [ -d "$(TOSU_BUILD_DIR)" ]; then \
-		echo "Installing bundled tosu to $(LIBDIR_USER)/osupad/tosu..."; \
-		install -d "$(LIBDIR_USER)/osupad/tosu"; \
-		cp -r $(TOSU_BUILD_DIR)/dist/* "$(LIBDIR_USER)/osupad/tosu/"; \
-		install -m 755 "$(TOSU_BUILD_DIR)/tosu" "$(LIBDIR_USER)/osupad/tosu/tosu"; \
-		install -m 644 licenses/tosu/VERSION "$(LIBDIR_USER)/osupad/tosu/VERSION"; \
-		install -m 644 licenses/tosu/NOTICE "$(LIBDIR_USER)/osupad/tosu/NOTICE"; \
-		install -m 644 licenses/tosu/LICENSE "$(LIBDIR_USER)/osupad/tosu/LICENSE"; \
+		echo "Installing bundled tosu to $(LIBDIR_USER)/opad/tosu..."; \
+		install -d "$(LIBDIR_USER)/opad/tosu"; \
+		cp -r $(TOSU_BUILD_DIR)/dist/* "$(LIBDIR_USER)/opad/tosu/"; \
+		install -m 755 "$(TOSU_BUILD_DIR)/tosu" "$(LIBDIR_USER)/opad/tosu/tosu"; \
+		install -m 644 licenses/tosu/VERSION "$(LIBDIR_USER)/opad/tosu/VERSION"; \
+		install -m 644 licenses/tosu/NOTICE "$(LIBDIR_USER)/opad/tosu/NOTICE"; \
+		install -m 644 licenses/tosu/LICENSE "$(LIBDIR_USER)/opad/tosu/LICENSE"; \
 	fi
 	@echo ""
 	@echo "=== User installation finished ==="
 	@echo "Binaries installed to: $(BINDIR_USER)"
 	@echo "To enable and start the daemon:"
 	@echo "  systemctl --user daemon-reload"
-	@echo "  systemctl --user enable --now osupad-daemon.service"
+	@echo "  systemctl --user enable --now opad-daemon.service"
 	@echo "To grant non-root access to the pad (if not already done):"
-	@echo "  sudo cp packaging/linux/udev/99-osupad.rules /etc/udev/rules.d/"
+	@echo "  sudo cp packaging/linux/udev/99-opad.rules /etc/udev/rules.d/"
 	@echo "  sudo udevadm control --reload-rules && sudo udevadm trigger"
 
 # B-2: Remove everything placed by install
@@ -163,20 +163,20 @@ uninstall:
 	for bin in $(BINS); do \
 		rm -f "$(DESTDIR)$(BINDIR)/$$bin"; \
 	done
-	rm -f "$(DESTDIR)$(SYSTEMDUSERDIR)/osupad-daemon.service"
-	rm -f "$(DESTDIR)$(APPLICATIONSDIR)/osupad.desktop"
-	rm -f "$(DESTDIR)$(UDEVRULESDIR)/99-osupad.rules"
-	rm -rf "$(DESTDIR)$(LIBDIR)/osupad"
+	rm -f "$(DESTDIR)$(SYSTEMDUSERDIR)/opad-daemon.service"
+	rm -f "$(DESTDIR)$(APPLICATIONSDIR)/opad.desktop"
+	rm -f "$(DESTDIR)$(UDEVRULESDIR)/99-opad.rules"
+	rm -rf "$(DESTDIR)$(LIBDIR)/opad"
 	@echo "✓ Uninstall complete."
 
 uninstall-user:
 	for bin in $(BINS); do \
 		rm -f "$(BINDIR_USER)/$$bin"; \
 	done
-	rm -f "$(SYSTEMDUSERDIR_USER)/osupad-daemon.service"
-	rm -f "$(APPLICATIONSDIR_USER)/osupad.desktop"
-	rm -f "$(AUTOSTARTDIR_USER)/osupad-gui.desktop"
-	rm -rf "$(LIBDIR_USER)/osupad"
+	rm -f "$(SYSTEMDUSERDIR_USER)/opad-daemon.service"
+	rm -f "$(APPLICATIONSDIR_USER)/opad.desktop"
+	rm -f "$(AUTOSTARTDIR_USER)/opad-gui.desktop"
+	rm -rf "$(LIBDIR_USER)/opad"
 	@echo "✓ User uninstall complete."
 
 # B-2: Verification target

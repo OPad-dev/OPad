@@ -2,13 +2,13 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use osupad_layout::{Layout, Screen};
-use osupad_model::ui_source::SourceValue;
-use osupad_model::{
+use opad_layout::{Layout, Screen};
+use opad_model::ui_source::SourceValue;
+use opad_model::{
     CounterSource, CounterState, DeviceConfig, DeviceInfo, IncompatibleDevice, LatencyStats,
     LogLevel, RuntimeMode,
 };
-use osupad_protocol::proto;
+use opad_protocol::proto;
 
 use crate::telemetry::DataSync;
 
@@ -290,7 +290,7 @@ impl RuntimeController {
                     if adopted.tosu_endpoint.trim().is_empty() {
                         adopted.tosu_endpoint = if self.state.config.tosu_endpoint.trim().is_empty()
                         {
-                            osupad_model::DeviceConfig::default().tosu_endpoint
+                            opad_model::DeviceConfig::default().tosu_endpoint
                         } else {
                             self.state.config.tosu_endpoint.clone()
                         };
@@ -461,7 +461,7 @@ impl RuntimeController {
                         _ => LogLevel::Info,
                     };
                     let msg = if ev.event_id != 0 {
-                        osupad_model::diag::format_diag_event(ev.event_id, ev.arg0, ev.arg1)
+                        opad_model::diag::format_diag_event(ev.event_id, ev.arg0, ev.arg1)
                     } else if !ev.message.is_empty() {
                         ev.message
                     } else {

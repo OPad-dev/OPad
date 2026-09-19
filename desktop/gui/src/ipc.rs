@@ -1,4 +1,4 @@
-use osupad_ipc::{connect_and_handshake, send_request, IpcRequest, IpcResponse};
+use opad_ipc::{connect_and_handshake, send_request, IpcRequest, IpcResponse};
 
 pub async fn request(request: IpcRequest) -> Result<IpcResponse, String> {
     let (mut stream, _) = connect_and_handshake()

@@ -11,7 +11,7 @@ import glob
 import struct
 import math
 
-def find_osupad_event_device():
+def find_opad_event_device():
     # Search /dev/input/by-id or by-path
     matches = glob.glob("/dev/input/by-id/*OPad*") + glob.glob("/dev/input/by-id/*osu*")
     if matches:
@@ -33,7 +33,7 @@ def find_osupad_event_device():
 
 def main():
     print("=== OPad Latency & Jitter Benchmark ===")
-    device_node = find_osupad_event_device()
+    device_node = find_opad_event_device()
     if not device_node:
         print("Note: OPad input event device node not found under /dev/input/by-id.")
         print("Available event nodes:")
