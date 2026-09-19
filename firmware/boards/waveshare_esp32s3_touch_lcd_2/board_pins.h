@@ -21,7 +21,9 @@
 #define BOARD_LCD_PIXEL_CLOCK_HZ (40 * 1000 * 1000)
 
 // -----------------------------------------------------------------------------
-// Onboard I2C (Touch CST816 & IMU QMI8658) - Unused by keypad core
+// Onboard I2C (Touch CST816 & IMU QMI8658)
 // -----------------------------------------------------------------------------
 #define BOARD_I2C_SDA_GPIO      GPIO_NUM_48
 #define BOARD_I2C_SCL_GPIO      GPIO_NUM_47
+#define BOARD_TOUCH_INT_GPIO    GPIO_NUM_46
+
