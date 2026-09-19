@@ -219,7 +219,7 @@ async fn main() -> Result<()> {
                     println!("Incompatible:     ⚠ Device protocol {} incompatible with daemon protocol {}. Update firmware or host.", incompat.protocol_version, IPC_PROTOCOL_VERSION);
                 }
                 println!(
-                    "tosu (osu!lazer): {}",
+                    "tosu (osu!):      {}",
                     if tosu_connected { "Active" } else { "Offline" }
                 );
                 if let Some(l) = latency {
