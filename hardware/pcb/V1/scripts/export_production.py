@@ -26,7 +26,7 @@ import zipfile
 from collections import OrderedDict
 
 V1 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BOARDS = [("MX", "mx_input_v1"), ("PCB Base", "controller_carrier_v1")]
+BOARDS = [("MX", "mx_input_v1"), ("HE", "he_input_v1"), ("Carrier", "controller_carrier_v1")]
 GERBER_LAYERS = "F.Cu,B.Cu,F.Paste,B.Paste,F.Silkscreen,B.Silkscreen,F.Mask,B.Mask,Edge.Cuts"
 
 # DRC warnings that may be accepted (none today: both boards are warning-free)

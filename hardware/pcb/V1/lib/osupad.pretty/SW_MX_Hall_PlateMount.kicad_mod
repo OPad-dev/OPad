@@ -1,0 +1,98 @@
+(footprint "SW_MX_Hall_PlateMount"
+	(version 20260206)
+	(generator "pcbnew")
+	(generator_version "10.0")
+	(layer "F.Cu")
+	(descr "MX magnetic switch footprint for Hall Effect keypads (Gateron KS-20, Magnetic Jade, Wooting Lekker, Geon Raw HE). Has 4.0 mm center hole for stem clearance, dual 1.75 mm side alignment peg holes. Switches clip into the 14x14 mm plate cutout above.")
+	(tags "MX Hall Effect magnetic keyswitch plate mount")
+	(property "Reference" "REF**"
+		(at 0 -8.9 0)
+		(layer "F.SilkS")
+		(uuid "8a5e2fbc-8f72-4b14-c6af-8e4d4bb9df1b")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "SW_MX_Hall"
+		(at 0 8.9 0)
+		(layer "F.Fab")
+		(uuid "1b6f30cd-9a83-4c25-d7b0-9f5e5cc0ea2c")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "2c7041de-ab94-4d36-e8c1-a06f6dd1fb3d")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(property "Description" "MX magnetic switch footprint"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "3d8152ef-bc05-4e47-f9d2-b1707ee2ac4e")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(fp_rect
+		(start -7 -7)
+		(end 7 7)
+		(stroke
+			(width 0.12)
+			(type default)
+		)
+		(fill
+			(type none)
+		)
+		(layer "Dwgs.User")
+		(uuid "4e9263f0-cd16-4f58-0ae3-c2818ff3bd5f")
+	)
+	(fp_text user "14 mm plate cutout (top side)"
+		(at 0 6.2 0)
+		(layer "Dwgs.User")
+		(uuid "5fa37401-de27-4069-1bf4-d3929004ce60")
+		(effects
+			(font
+				(size 0.6 0.6)
+				(thickness 0.1)
+			)
+		)
+	)
+	(pad "" np_thru_hole circle
+		(at 0 0)
+		(size 4 4)
+		(drill 4)
+		(layers "*.Cu" "*.Mask")
+		(uuid "60b48512-ef38-417a-2cf5-e4a3a115df71")
+	)
+	(pad "" np_thru_hole circle
+		(at -5.08 0)
+		(size 1.75 1.75)
+		(drill 1.75)
+		(layers "*.Cu" "*.Mask")
+		(uuid "71c59623-f049-428b-3d06-f5b4b226e082")
+	)
+	(pad "" np_thru_hole circle
+		(at 5.08 0)
+		(size 1.75 1.75)
+		(drill 1.75)
+		(layers "*.Cu" "*.Mask")
+		(uuid "82d6a734-015a-439c-4e17-06c5c337f193")
+	)
+	(embedded_fonts no)
+)

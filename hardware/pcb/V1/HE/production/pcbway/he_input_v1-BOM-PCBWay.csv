@@ -1,0 +1,6 @@
+Item #,Designator,Qty,Manufacturer,Mfg Part #,Description / Value,Package/Footprint,Type,Your Instructions / Notes
+1,J1,1,JST,SM08B-SRSS-TB(LF)(SN),MODULE,JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal,SMD,BOTTOM side. Cable opening faces the nearest board edge; the 8 contacts sit inward, the two retention tabs toward the edge
+2,"U1,U2",2,Texas Instruments,DRV5055A3QDBZR,DRV5055A3,SOT-23,SMD,BOTTOM side. SOT-23 pin 1 (VCC) is the lower-left lead seen from the bottom; the part sits exactly on the key centre over solid FR-4
+3,"C1,C2,C3",3,YAGEO,CC0603KRX7R9BB104,100nF,C_0603_1608Metric,SMD,Bottom side
+4,R1,1,UNI-ROYAL,0603WAF1003T5E,100k,R_0603_1608Metric,SMD,Bottom side
+5,R2,1,UNI-ROYAL,0603WAF4702T5E,47k,R_0603_1608Metric,SMD,Bottom side
