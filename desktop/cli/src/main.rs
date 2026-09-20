@@ -84,6 +84,12 @@ enum Commands {
     },
     /// Perform initial system setup (udev permissions & directories)
     Setup,
+    /// Hidden command: trigger freaky 67 easter egg on the pad
+    #[command(hide = true)]
+    Freaky67,
+    /// Hidden command: trigger freaky 67 easter egg on the pad
+    #[command(hide = true)]
+    EasterEgg,
 }
 
 #[tokio::main]
@@ -669,6 +675,16 @@ async fn main() -> Result<()> {
         }
 
         Commands::Setup => unreachable!(),
+        Commands::Freaky67 | Commands::EasterEgg => {
+            let resp = send_request(daemon(&mut stream)?, &IpcRequest::TriggerEasterEgg).await?;
+            match resp {
+                IpcResponse::EasterEggTriggered => {
+                    println!("🐱👅 Freaky 67 easter egg triggered on device!");
+                }
+                IpcResponse::Error(e) => bail!("{}", e),
+                other => bail!("Unexpected response from daemon: {:?}", other),
+            }
+        }
     }
 
     Ok(())

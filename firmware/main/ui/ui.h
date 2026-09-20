@@ -37,6 +37,9 @@ void ui_set_string(uint8_t source, const char *value);
 /** Replace a screen layout. Returns false with a reason if it is invalid. */
 bool ui_set_layout(uint8_t screen, const ui_layout_t *layout, char *err, size_t err_len);
 
+/** Trigger the 67 freaky cat easter egg animation. */
+void ui_trigger_easter_egg(void);
+
 #ifdef __cplusplus
 }
 #endif

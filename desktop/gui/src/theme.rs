@@ -31,10 +31,11 @@ pub const YELLOW: Color = rgb(0xFFCC33);
 pub const FONT_MEDIUM_BYTES: &[u8] = include_bytes!("../assets/fonts/Montserrat-Medium.ttf");
 pub const FONT_BOLD_BYTES: &[u8] = include_bytes!("../assets/fonts/Montserrat-Bold.ttf");
 
-pub const FONT: Font = Font::with_name("Montserrat");
+pub const FONT: Font = Font::with_name("Montserrat Medium");
 pub const FONT_BOLD: Font = Font {
+    family: font::Family::Name("Montserrat"),
     weight: font::Weight::Bold,
-    ..FONT
+    ..Font::DEFAULT
 };
 
 pub fn theme() -> Theme {
@@ -59,11 +60,11 @@ pub fn heading<'a>(content: impl text::IntoFragment<'a>) -> Text<'a> {
 
 /// Small uppercase-style caption, like "TOTAL PRESSES" on the pad
 pub fn caption<'a>(content: impl text::IntoFragment<'a>) -> Text<'a> {
-    text(content).size(12).color(MUTED)
+    text(content).size(12).font(FONT).color(MUTED)
 }
 
 pub fn muted<'a>(content: impl text::IntoFragment<'a>) -> Text<'a> {
-    text(content).size(14).color(MUTED)
+    text(content).size(14).font(FONT).color(MUTED)
 }
 
 // ---- containers -------------------------------------------------------------------------
@@ -251,4 +252,40 @@ pub fn sidebar_status(_theme: &Theme, status: button::Status) -> button::Style {
             color: if hovered { BORDER } else { Color::TRANSPARENT },
         },
     )
+}
+
+/// Tab selector button style (for Settings and Diagnostics tabs)
+pub fn tab_button(selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    move |_, status| {
+        let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
+        if selected {
+            button::Style {
+                background: Some(PINK.into()),
+                text_color: BG,
+                border: Border {
+                    color: PINK_HOVER,
+                    width: 1.0,
+                    radius: 8.0.into(),
+                },
+                shadow: Shadow::default(),
+                snap: true,
+            }
+        } else {
+            button::Style {
+                background: if hovered {
+                    Some(CARD_HOVER.into())
+                } else {
+                    Some(CARD.into())
+                },
+                text_color: if hovered { WHITE } else { MUTED },
+                border: Border {
+                    color: if hovered { PINK } else { BORDER },
+                    width: 1.0,
+                    radius: 8.0.into(),
+                },
+                shadow: Shadow::default(),
+                snap: true,
+            }
+        }
+    }
 }

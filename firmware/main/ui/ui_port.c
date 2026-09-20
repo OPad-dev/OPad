@@ -1,5 +1,6 @@
 #include "ui.h"
 #include "ui/ui_store.h"
+#include "ui/easter_egg.h"
 #include "ui/core/ui_internal.h"
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
 #include "input/keypad.h"
@@ -126,7 +127,25 @@ static void pad_timer_cb(lv_timer_t *timer)
     (void)timer;
     int64_t now_us = esp_timer_get_time();
 
-    int want = runtime_get_state() == OSUPAD_STATE_PLAYING ? UI_SCREEN_PLAYING : UI_SCREEN_IDLE;
+    osupad_state_t st = runtime_get_state();
+    static osupad_state_t s_prev_runtime_state = OSUPAD_STATE_IDLE;
+    if (s_prev_runtime_state == OSUPAD_STATE_PLAYING && (st == OSUPAD_STATE_COOLDOWN || st == OSUPAD_STATE_IDLE)) {
+        lv_subject_t *subj = ui_data_subject(UI_SRC_PLAY_PP);
+        if (subj) {
+            int32_t raw_pp = lv_subject_get_int(subj);
+            if (raw_pp != UI_VALUE_EMPTY && raw_pp > 0) {
+                int32_t pp = (raw_pp + 50) / 100;
+                ESP_LOGI(TAG, "Song finished with PP: %ld", (long)pp);
+                if (pp > 0 && (pp % 100 == 67)) {
+                    ESP_LOGI(TAG, "Score PP ends in 67 -> Triggering easter egg!");
+                    easter_egg_trigger();
+                }
+            }
+        }
+    }
+    s_prev_runtime_state = st;
+
+    int want = st == OSUPAD_STATE_PLAYING ? UI_SCREEN_PLAYING : UI_SCREEN_IDLE;
     if (want != s_active_screen && s_screens[want]) {
         s_active_screen = want;
         lv_screen_load(s_screens[want]);
@@ -197,6 +216,7 @@ esp_err_t ui_init(void)
     lvgl_port_stop();
     lv_tick_set_cb(ui_tick_ms);
     lv_timer_enable(true);
+    easter_egg_init();
 
     ui_data_init();
     for (int s = 0; s < UI_SCREEN_COUNT; s++) {
@@ -313,4 +333,12 @@ bool ui_set_layout(uint8_t screen, const ui_layout_t *layout, char *err, size_t 
     rebuild_screen(screen);
     lvgl_port_unlock();
     return true;
+}
+
+void ui_trigger_easter_egg(void)
+{
+    if (!s_ui_ok) return;
+    lvgl_port_lock(0);
+    easter_egg_trigger();
+    lvgl_port_unlock();
 }

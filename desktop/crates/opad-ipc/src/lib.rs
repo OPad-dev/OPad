@@ -155,6 +155,7 @@ pub enum IpcRequest {
         #[serde(default)]
         exclude_gpio: u32,
     },
+    TriggerEasterEgg,
 }
 
 /// The firmware update offer, and what is in the way (§U-3b)
@@ -340,6 +341,7 @@ pub enum IpcResponse {
         gpio: u32,
         success: bool,
     },
+    EasterEggTriggered,
     Error(String),
 }
 

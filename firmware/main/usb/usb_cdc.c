@@ -1,6 +1,7 @@
 #include "usb_cdc.h"
 #include "protocol/protocol.h"
 #include "diag/diag.h"
+#include "ui/ui.h"
 #include "tusb.h"
 #include "tinyusb.h"
 #include "esp_log.h"
@@ -163,6 +164,22 @@ static bool is_bootloader_command(const uint8_t *buf, size_t len)
     return true;
 }
 
+static bool is_easter_egg_command(const uint8_t *buf, size_t len)
+{
+    static const char cmd[] = "FREAKY67";
+    const size_t cmd_len = sizeof(cmd) - 1;
+
+    if (len < cmd_len) {
+        return false;
+    }
+    for (size_t i = 0; i <= len - cmd_len; i++) {
+        if (memcmp(buf + i, cmd, cmd_len) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void usb_cdc_task_poll(void)
 {
     if (s_rx_reset_requested) {
@@ -178,6 +195,12 @@ static void usb_cdc_task_poll(void)
     uint8_t rx_buf[256];
     uint32_t count;
     while (tud_cdc_n_available(0) && (count = tud_cdc_n_read(0, rx_buf, sizeof(rx_buf))) > 0) {
+        if (is_easter_egg_command(rx_buf, count)) {
+            ESP_LOGI(TAG, "CDC serial command received: triggering easter egg!");
+            protocol_reset_rx();
+            ui_trigger_easter_egg();
+            return;
+        }
         if (protocol_rx_idle() && is_bootloader_command(rx_buf, count)) {
             ESP_LOGI(TAG, "CDC serial command received: entering bootloader...");
             schedule_bootloader_reboot();

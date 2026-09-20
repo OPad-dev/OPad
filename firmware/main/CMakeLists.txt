@@ -17,6 +17,7 @@ idf_component_register(
         "config/owner.c"
         "ui/ui_port.c"
         "ui/ui_store.c"
+        "ui/easter_egg.c"
         "ui/core/ui_data.c"
         "ui/core/ui_screen.c"
         "ui/core/ui_defaults.c"

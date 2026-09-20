@@ -20,6 +20,8 @@ managed_components/
 # Editor / OS noise
 .DS_Store
 *.swp
+__pycache__/
+*.py[cod]
 
 # Firmware host test binaries
 firmware/test/host/bin/

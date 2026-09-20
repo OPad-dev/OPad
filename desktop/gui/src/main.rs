@@ -2,6 +2,7 @@
 
 mod chrome;
 mod designer;
+mod diagnostics;
 mod ipc;
 mod pages;
 #[cfg(target_os = "linux")]
@@ -35,6 +36,7 @@ pub fn parse_page_arg() -> Option<Page> {
                 "settings" => Some(Page::Settings),
                 "device" => Some(Page::Device),
                 "monitor" | "logs" => Some(Page::Logs),
+                "diagnostics" | "test" | "testing" => Some(Page::Diagnostics),
                 _ => None,
             };
         }
@@ -50,6 +52,7 @@ pub fn main() -> iced::Result {
         Page::Settings => "settings",
         Page::Device => "device",
         Page::Logs => "logs",
+        Page::Diagnostics => "diagnostics",
     });
 
     if !single_instance::claim(page_str) {
@@ -81,18 +84,28 @@ pub enum Page {
     Settings,
     Device,
     Logs,
+    Diagnostics,
 }
 
 impl Page {
     #[allow(non_upper_case_globals)]
     pub const Monitor: Page = Page::Logs;
 
-    const ALL: [(Page, &'static str); 5] = [
+    pub const ALL: [(Page, &'static str); 5] = [
         (Page::Dashboard, "Dashboard"),
         (Page::Designer, "Designer"),
         (Page::Settings, "Settings"),
         (Page::Device, "Device"),
         (Page::Logs, "Logs"),
+    ];
+
+    pub const ALL_WITH_DIAGNOSTICS: [(Page, &'static str); 6] = [
+        (Page::Dashboard, "Dashboard"),
+        (Page::Designer, "Designer"),
+        (Page::Settings, "Settings"),
+        (Page::Device, "Device"),
+        (Page::Logs, "Logs"),
+        (Page::Diagnostics, "Diagnostics"),
     ];
 }
 
@@ -202,6 +215,9 @@ pub struct App {
     pub banner: Option<String>,
     pub tosu_override_path: Option<std::path::PathBuf>,
     pub designer: designer::Designer,
+    pub diagnostics_enabled: bool,
+    pub diagnostics: diagnostics::DiagnosticsState,
+    pub settings_tab: pages::SettingsTab,
 }
 
 #[derive(Debug, Clone)]
@@ -218,6 +234,15 @@ pub enum Message {
     SaveLogs,
     LogsSaved(Result<String, String>),
     ToggleAutoScroll,
+    // Diagnostics & Settings tabs
+    SelectSettingsTab(pages::SettingsTab),
+    ToggleDiagnostics(bool),
+    Diagnostics(diagnostics::DiagnosticsMessage),
+    CopyDiagnosticBundle,
+    SaveDiagnosticBundle,
+    DiagnosticBundleSaved(Result<String, String>),
+    DiagnosticsPoll,
+    DiagnosticsKeyEvent { key: iced::keyboard::Key, is_down: bool },
     // Backup
     ExportBackup,
     ExportBackupReceived(Result<IpcResponse, String>),
@@ -308,6 +333,11 @@ impl App {
             std::env::set_var("OSUPAD_TOSU_PATH", p);
         }
 
+        let diagnostics_enabled = initial_page == Some(Page::Diagnostics)
+            || opad_model::paths::data_dir()
+                .map(|d| d.join("diagnostics.flag").exists())
+                .unwrap_or(false);
+
         let mut app = App {
             page: initial_page.unwrap_or(Page::Dashboard),
             window: None,
@@ -364,6 +394,9 @@ impl App {
             banner: None,
             tosu_override_path,
             designer,
+            diagnostics_enabled,
+            diagnostics: diagnostics::DiagnosticsState::default(),
+            settings_tab: pages::SettingsTab::default(),
         };
         app.log_event(
             LogSource::Program,
@@ -1077,6 +1110,120 @@ impl App {
                     let _ = enabled;
                 }
             }
+            Message::SelectSettingsTab(tab) => {
+                self.settings_tab = tab;
+            }
+            Message::ToggleDiagnostics(enabled) => {
+                self.diagnostics_enabled = enabled;
+                if let Ok(dir) = opad_model::paths::data_dir() {
+                    let _ = std::fs::create_dir_all(&dir);
+                    let flag = dir.join("diagnostics.flag");
+                    if enabled {
+                        let _ = std::fs::write(flag, "1");
+                    } else {
+                        let _ = std::fs::remove_file(flag);
+                    }
+                }
+                if !enabled && self.page == Page::Diagnostics {
+                    self.page = Page::Settings;
+                }
+            }
+            Message::Diagnostics(msg) => match msg {
+                diagnostics::DiagnosticsMessage::SelectTab(tab) => {
+                    self.diagnostics.active_tab = tab;
+                }
+                diagnostics::DiagnosticsMessage::ToggleSound(s) => {
+                    self.diagnostics.sound_enabled = s;
+                }
+                diagnostics::DiagnosticsMessage::ResetInputTester => {
+                    self.diagnostics.reset_input_tester();
+                }
+                diagnostics::DiagnosticsMessage::KeyEvent { key_idx, is_down } => {
+                    self.diagnostics.handle_key_event(key_idx, is_down);
+                }
+                diagnostics::DiagnosticsMessage::SelectDisplayPattern(idx) => {
+                    self.diagnostics.test_pattern_index = idx;
+                }
+                diagnostics::DiagnosticsMessage::TestBrightness(b) => {
+                    self.brightness = b;
+                    if self.device_connected {
+                        let cfg = DeviceConfig {
+                            brightness: b,
+                            ..self.config.clone()
+                        };
+                        return Task::perform(
+                            ipc::request(IpcRequest::UpdateConfig(cfg)),
+                            Message::ActionDone,
+                        );
+                    }
+                }
+                diagnostics::DiagnosticsMessage::PingDaemon => {
+                    self.diagnostics.ping_in_progress = true;
+                    let start = std::time::Instant::now();
+                    return Task::perform(
+                        async move {
+                            match ipc::request(IpcRequest::GetStatus).await {
+                                Ok(_) => Ok(start.elapsed()),
+                                Err(e) => Err(e.to_string()),
+                            }
+                        },
+                        |res| Message::Diagnostics(diagnostics::DiagnosticsMessage::PingDone(res)),
+                    );
+                }
+                diagnostics::DiagnosticsMessage::PingDone(res) => {
+                    self.diagnostics.ping_in_progress = false;
+                    match res {
+                        Ok(dur) => {
+                            self.diagnostics.last_ping_ms = Some(dur.as_secs_f64() * 1000.0);
+                        }
+                        Err(e) => {
+                            self.diagnostics.last_ping_ms = None;
+                            self.banner = Some(format!("Ping failed: {}", e));
+                        }
+                    }
+                }
+            },
+            Message::DiagnosticsPoll => {
+                let k1_vk = diagnostics::char_to_vk(&self.k1_input);
+                let k2_vk = diagnostics::char_to_vk(&self.k2_input);
+                if let Some(vk) = k1_vk {
+                    let down = diagnostics::is_key_down(vk);
+                    self.diagnostics.handle_key_event(1, down);
+                }
+                if let Some(vk) = k2_vk {
+                    let down = diagnostics::is_key_down(vk);
+                    self.diagnostics.handle_key_event(2, down);
+                }
+            }
+            Message::DiagnosticsKeyEvent { key, is_down } => {
+                let key_str = match &key {
+                    iced::keyboard::Key::Character(s) => s.to_string().to_uppercase(),
+                    iced::keyboard::Key::Named(n) => format!("{:?}", n).to_uppercase(),
+                    _ => String::new(),
+                };
+                let k1 = self.k1_input.trim().to_uppercase();
+                let k2 = self.k2_input.trim().to_uppercase();
+                if !k1.is_empty() && (key_str == k1 || (k1 == "SPACE" && key_str == "SPACE")) {
+                    self.diagnostics.handle_key_event(1, is_down);
+                }
+                if !k2.is_empty() && (key_str == k2 || (k2 == "SPACE" && key_str == "SPACE")) {
+                    self.diagnostics.handle_key_event(2, is_down);
+                }
+            }
+            Message::CopyDiagnosticBundle => {
+                let bundle = diagnostics::generate_diagnostic_bundle(self, &self.diagnostics);
+                self.banner = Some("Diagnostic bundle copied to clipboard! Ready to share.".into());
+                return iced::clipboard::write(bundle);
+            }
+            Message::SaveDiagnosticBundle => {
+                let bundle = diagnostics::generate_diagnostic_bundle(self, &self.diagnostics);
+                return Task::perform(save_diagnostic_dialog(bundle), Message::DiagnosticBundleSaved);
+            }
+            Message::DiagnosticBundleSaved(res) => match res {
+                Ok(path) => self.banner = Some(format!("Saved diagnostic report to {}", path)),
+                Err(e) if e.is_empty() => {}
+                Err(e) => self.banner = Some(format!("Failed to save diagnostic report: {}", e)),
+            },
             Message::SaveConfig => {
                 if !self.device_connected {
                     self.banner = Some("Cannot save settings: device is not connected.".into());
@@ -1339,11 +1486,40 @@ impl App {
         if self.window.is_some() && self.page == Page::Designer {
             subscriptions.push(self.designer.subscription().map(Message::Designer));
         }
+        if self.window.is_some() && self.page == Page::Diagnostics {
+            subscriptions.push(
+                iced::event::listen().filter_map(|event| {
+                    if let iced::Event::Keyboard(key_event) = event {
+                        match key_event {
+                            iced::keyboard::Event::KeyPressed { key, .. } => {
+                                Some(Message::DiagnosticsKeyEvent { key, is_down: true })
+                            }
+                            iced::keyboard::Event::KeyReleased { key, .. } => {
+                                Some(Message::DiagnosticsKeyEvent { key, is_down: false })
+                            }
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    }
+                })
+            );
+            #[cfg(windows)]
+            subscriptions.push(
+                iced::time::every(Duration::from_millis(4)).map(|_| Message::DiagnosticsPoll),
+            );
+        }
         Subscription::batch(subscriptions)
     }
 
     fn view(&self, _window: window::Id) -> Element<'_, Message> {
-        let nav = column(Page::ALL.iter().map(|(page, label)| {
+        let pages: &[(Page, &'static str)] = if self.diagnostics_enabled {
+            &Page::ALL_WITH_DIAGNOSTICS
+        } else {
+            &Page::ALL
+        };
+
+        let nav = column(pages.iter().map(|(page, label)| {
             button(text(*label).size(15))
                 .width(Length::Fill)
                 .padding([10, 14])
@@ -1432,6 +1608,7 @@ impl App {
             Page::Settings => pages::settings(self),
             Page::Device => pages::device(self),
             Page::Logs => pages::logs(self),
+            Page::Diagnostics => self.diagnostics.view(self),
         };
 
         let mut main = column![]
@@ -2334,6 +2511,21 @@ async fn save_logs_dialog(content: String) -> Result<String, String> {
     let file = rfd::AsyncFileDialog::new()
         .set_file_name("osupad.log")
         .add_filter("Log file", &["log", "txt"])
+        .save_file()
+        .await
+        .ok_or_else(String::new)?;
+    std::fs::write(file.path(), content).map_err(|e| format!("Save failed: {}", e))?;
+    Ok(file.path().display().to_string())
+}
+
+async fn save_diagnostic_dialog(content: String) -> Result<String, String> {
+    let filename = format!(
+        "opad-diagnostics-{}.json",
+        chrono::Local::now().format("%Y%m%d-%H%M%S")
+    );
+    let file = rfd::AsyncFileDialog::new()
+        .set_file_name(filename)
+        .add_filter("JSON Diagnostic Bundle", &["json"])
         .save_file()
         .await
         .ok_or_else(String::new)?;

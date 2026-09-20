@@ -31,8 +31,9 @@ CONFIG_LV_FONT_MONTSERRAT_24=y
 CONFIG_LV_FONT_MONTSERRAT_32=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
 CONFIG_LV_USE_OBSERVER=y
+CONFIG_LV_USE_GIF=y
 # LVGL's own fixed pool: never contends with the heap used on the key/USB core
-CONFIG_LV_MEM_SIZE_KILOBYTES=128
+CONFIG_LV_MEM_SIZE_KILOBYTES=160
 
 # Only the LVGL widgets the layouts use (label, bar, image, observer)
 # CONFIG_LV_USE_ANIMIMG is not set

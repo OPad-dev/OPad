@@ -10,6 +10,16 @@ use iced::{Alignment, Color, Element, Length};
 use opad_model::ui_source::{self as src, SourceValue};
 use opad_model::{key_pin, KeyPin, KEY_PINS};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SettingsTab {
+    #[default]
+    Keypad,
+    Display,
+    Updates,
+    AboutTosu,
+    Diagnostics,
+}
+
 pub(crate) fn grouped(n: u64) -> String {
     let digits = n.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
@@ -424,13 +434,27 @@ pub fn settings(app: &App) -> Element<'_, Message> {
         .style(theme::secondary)
     };
 
-    let mut content = column![heading("Settings")].spacing(14);
+    let tab_btn = |tab: SettingsTab, label: &'static str| {
+        button(text(label).size(13).font(theme::FONT))
+            .padding([8, 16])
+            .style(theme::tab_button(app.settings_tab == tab))
+            .on_press(Message::SelectSettingsTab(tab))
+    };
 
-    if !app.device_connected {
-        content = content.push(
+    let tab_bar = row![
+        tab_btn(SettingsTab::Keypad, "⌨ Keypad"),
+        tab_btn(SettingsTab::Display, "🖥 Display & Game"),
+        tab_btn(SettingsTab::Updates, "🔄 Updates & Firmware"),
+        tab_btn(SettingsTab::AboutTosu, "ℹ About & tosu"),
+        tab_btn(SettingsTab::Diagnostics, "🛠 Diagnostics"),
+    ]
+    .spacing(8);
+
+    let disconnected_warning = if !app.device_connected {
+        Some(
             card(
                 row![text(
-                    "⚠ Device not connected. Connect your OPad to adjust device settings."
+                    "⚠ Device not connected. Connect your OPad to adjust hardware settings."
                 )
                 .size(14)
                 .font(theme::FONT_BOLD)
@@ -438,15 +462,74 @@ pub fn settings(app: &App) -> Element<'_, Message> {
                 .padding([6, 10]),
             )
             .width(Length::Fill),
-        );
-    }
+        )
+    } else {
+        None
+    };
 
-    content = content.push(row![keys, display].spacing(14));
-    content = content.push(advanced);
-    content = content.push(tosu_settings(app));
-    content = content.push(row![updates(app), firmware_updates(app)].spacing(14));
-    content = content.push(about_section());
-    content = content.push(row![save_btn]);
+    let mut content = column![
+        heading("Settings"),
+        muted("Configure keypad switches, display brightness, integrations, updates, and testing tools."),
+        tab_bar,
+    ]
+    .spacing(14);
+
+    match app.settings_tab {
+        SettingsTab::Keypad => {
+            if let Some(w) = disconnected_warning {
+                content = content.push(w);
+            }
+            content = content.push(keys);
+            content = content.push(row![save_btn]);
+        }
+        SettingsTab::Display => {
+            if let Some(w) = disconnected_warning {
+                content = content.push(w);
+            }
+            content = content.push(display);
+            content = content.push(advanced);
+            content = content.push(row![save_btn]);
+        }
+        SettingsTab::Updates => {
+            content = content.push(row![updates(app), firmware_updates(app)].spacing(14));
+        }
+        SettingsTab::AboutTosu => {
+            content = content.push(tosu_settings(app));
+            content = content.push(about_section());
+        }
+        SettingsTab::Diagnostics => {
+            let diag_card = card(
+                column![
+                    text("Interactive Diagnostics & Testing Mode").size(16).font(theme::FONT_BOLD),
+                    muted(
+                        "Activate the Diagnostics suite to access interactive test tools built for OPad: \
+                         the switch chatter / contact bounce tester, COM-02 protocol recovery check, \
+                         screen backlight / color verification, and one-click diagnostic report exporter."
+                    ).size(13),
+                    checkbox(app.diagnostics_enabled)
+                        .label("Enable Diagnostics Menu in Navigation")
+                        .on_toggle(Message::ToggleDiagnostics),
+                    if app.diagnostics_enabled {
+                        row![
+                            button(text("Open Diagnostics Menu →").size(14).font(theme::FONT_BOLD))
+                                .padding([8, 18])
+                                .style(theme::primary)
+                                .on_press(Message::Navigate(crate::Page::Diagnostics)),
+                            Space::new().width(12),
+                            muted("The Diagnostics tab is now accessible from the main left sidebar.").size(12),
+                        ]
+                        .align_y(Alignment::Center)
+                    } else {
+                        row![
+                            muted("Turn on the toggle above to add 'Diagnostics' to your sidebar navigation.").size(12),
+                        ]
+                    }
+                ]
+                .spacing(14),
+            );
+            content = content.push(diag_card);
+        }
+    }
 
     scrollable(content).into()
 }
