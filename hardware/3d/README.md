@@ -1,6 +1,6 @@
 # OPad ESP32-S3 — 3D Models & Enclosure CAD Reference
 
-This directory contains 3D CAD models, official hardware blueprints, and ready-to-print/modify enclosure files for the **Waveshare ESP32-S3-Touch-LCD-2** and standard **MX mechanical switches**.
+This directory contains the ready-to-print/modify OPad enclosure for the **Waveshare ESP32-S3-Touch-LCD-2** and standard **MX mechanical switches**. Everything here is original OPad work under the repository's [MIT License](../../LICENSE).
 
 ---
 
@@ -8,21 +8,6 @@ This directory contains 3D CAD models, official hardware blueprints, and ready-t
 
 ```
 hardware/3d/
-├── waveshare_board/
-│   ├── esp32-s3-touch-lcd-2_20241108.stp   # Official 15.2 MB 3D STEP solid model from Waveshare
-│   ├── ESP32-S3-Touch-LCD-2-20241108.pdf   # Official mechanical dimension drawing
-│   ├── ESP32-S3-Touch-LCD-2-20241108.dwg   # Official AutoCAD / CAD layout drawing
-│   └── dims-1.png                          # High-resolution 2D mechanical blueprint image
-│
-├── reference_keypads/
-│   ├── milkcrate-plate-mount.step          # Open-source 2-key MX switch plate mount (STEP)
-│   ├── milkcrate-plate-mount.stl           # 2-key MX switch plate (STL)
-│   ├── milkcrate-pcb-mount.step            # 2-key MX switch base mount (STEP)
-│   ├── milkcrate-pcb-mount.stl             # 2-key MX switch base mount (STL)
-│   ├── osu_keypad_clay53.FCStd             # 2-key osu! keypad native FreeCAD parametric project
-│   ├── osu_case_top_kamehameha.stl         # Printables #943460 2-key case top (STL)
-│   └── osu_case_bottom_kamehameha.stl      # Printables #943460 2-key case bottom (STL)
-│
 └── custom_case/
     └── V1/                                 # Enclosure (~22° screen deck, recessed glass pocket)
         ├── osupad_enclosure.scad           # Parametric OpenSCAD enclosure integrating the Waveshare LCD + 2x MX keys
@@ -30,6 +15,8 @@ hardware/3d/
         ├── osupad_case_bottom.stl
         └── osupad_preview.png
 ```
+
+Third-party models (the Waveshare board model and other keypads) are not stored in this repository, since they are not MIT licensed. Download them from their authors if you want them as a modelling reference; see section 4.
 
 ---
 
@@ -53,22 +40,21 @@ hardware/3d/
 
 ## 3. How to Use & Modify These Models
 
-### Option A: Edit the STEP Models in FreeCAD or Fusion 360 (Recommended)
-1. Open [`hardware/3d/reference_keypads/milkcrate-plate-mount.step`](reference_keypads/milkcrate-plate-mount.step) in **FreeCAD**, **Fusion 360**, or **Onshape**.
-2. Import the official board model [`hardware/3d/waveshare_board/esp32-s3-touch-lcd-2_20241108.stp`](waveshare_board/esp32-s3-touch-lcd-2_20241108.stp).
-3. Align the board above the 2 switch cutouts and perform a boolean cut or extrude the perimeter walls to create an integrated enclosure.
-4. Export as `.stl` or `.step` for slicing.
-
-### Option B: Use OpenSCAD Parametric Generator
+### Option A: Use the OpenSCAD Parametric Generator (Recommended)
 1. Open [`hardware/3d/custom_case/V1/osupad_enclosure.scad`](custom_case/V1/osupad_enclosure.scad) in [OpenSCAD](https://openscad.org/).
 2. Change `PART = "top_case";` or `PART = "bottom_plate";`.
 3. Press `F6` to render, then `F7` to export directly to `.stl`.
 4. All dimensions, wall thicknesses, and tolerances are fully configurable as variables at the top of the file.
 
+### Option B: Model Around the Board in FreeCAD, Fusion 360 or Onshape
+1. Download the official board STEP model from the [Waveshare Wiki](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-2) (not redistributed here).
+2. Import it next to an export of the OPad case, or model around the dimensions in section 2.
+3. Export as `.stl` or `.step` for slicing.
+
 ---
 
-## 4. Upstream Credits & Licenses
-- **Waveshare**: Official 3D CAD model and 2D blueprints ([Waveshare Wiki](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-2))
-- **`milk-crate`**: 2-Key Macropad by *somepin* ([GitHub](https://github.com/somepin/milk-crate), MIT License)
-- **`osu-keypad`**: 2-Key Keypad by *clay53* ([GitHub](https://github.com/clay53/Osu-Keypad), MIT License)
-- **`osu-clicker`**: 2-Key Hotswap Keypad by *kameHame HA* ([Printables #943460](https://www.printables.com/model/943460-osu-keypad), CC BY-NC 4.0)
+## 4. External References (not included, not MIT)
+- **Waveshare ESP32-S3-Touch-LCD-2**: official 3D CAD model and 2D drawings on the [Waveshare Wiki](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-2). No redistribution license is stated, so the files are not included here.
+- **`milk-crate`**: 2-key macropad by *somepin* ([GitHub](https://github.com/somepin/milk-crate), MIT License).
+- **`osu-keypad`**: 2-key keypad by *clay53* ([GitHub](https://github.com/clay53/Osu-Keypad), MIT License).
+- **`osu-clicker`**: 2-key hotswap keypad by *kameHame HA* ([Printables #943460](https://www.printables.com/model/943460-osu-keypad), CC BY-NC 4.0, non-commercial only).
