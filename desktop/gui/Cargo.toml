@@ -62,7 +62,6 @@ assets = [
     ["../../build/tosu/VERSION", "usr/lib/opad/tosu/VERSION", "644"],
     ["../../build/tosu/NOTICE", "usr/lib/opad/tosu/NOTICE", "644"],
     ["../../build/tosu/LICENSE", "usr/lib/opad/tosu/LICENSE", "644"],
-    ["../../build/tosu/dist/*", "usr/lib/opad/tosu/dist/", "644"],
 ]
 
 [package.metadata.generate-rpm]
@@ -84,7 +83,6 @@ assets = [
     { source = "../../build/tosu/VERSION", dest = "/usr/lib/opad/tosu/VERSION", mode = "644" },
     { source = "../../build/tosu/NOTICE", dest = "/usr/lib/opad/tosu/NOTICE", mode = "644" },
     { source = "../../build/tosu/LICENSE", dest = "/usr/lib/opad/tosu/LICENSE", mode = "644" },
-    { source = "../../build/tosu/dist/*", dest = "/usr/lib/opad/tosu/dist/", mode = "644" },
 ]
 post_install_script = """
 if [ $1 -ge 1 ]; then

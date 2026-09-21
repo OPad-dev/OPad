@@ -393,6 +393,8 @@ Verified against tosu's manifests:
 
 `find_tosu_binary` (`desktop/crates/osupad-tosu/src/lib.rs:256`) only checks that the path is a file and then spawns it as a process, so a wrapper script works with **no code change**.
 
+**The wrapper is for Arch only (`make tosu TOSU_STANDALONE=0`).** The `.deb`, `.rpm` and AppImage use the default `TOSU_STANDALONE=1`, which runs upstream's `compile:linux` and ships the self-contained `pkg` binary. Found on 2026-09-21: the wrapper approach broke on Ubuntu, because Debian/Ubuntu/Fedora ship Node 18-22, tosu needs 24.x, and its native `.node` addons are built for the Node 24 ABI. The wrapper also needs `{"type":"module"}` in a `package.json` next to `index.js` (the bundle is an ES module); the Makefile writes it.
+
 **Node version risk, flag it in the PKGBUILD.** tosu pins `engines.node` to the 24.x series. Arch's `nodejs` tracks current and will move past 24, so the package may need to depend on a specific `nodejs-lts-*` rather than `nodejs`. Test this before publishing, and pick the dependency that actually satisfies the engine constraint on the day you ship.
 
 **LGPL note, in your favour:** distributing a build recipe is not distributing the work. For the AUR package you convey no tosu binary at all — the user's machine builds it from upstream source — so the T-3 conveying obligations do not apply there. They still apply in full to the Windows installer and the `.deb`/`.rpm`, which do ship a binary.

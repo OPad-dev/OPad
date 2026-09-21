@@ -40,7 +40,7 @@ pkgver() {
 build() {
     cd "$pkgname"
     make all
-    make tosu
+    make tosu TOSU_STANDALONE=0
 }
 
 check() {

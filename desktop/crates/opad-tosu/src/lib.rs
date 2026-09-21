@@ -420,6 +420,16 @@ pub fn spawn_tosu_supervisor(
     supervisor
 }
 
+/// Where tosu reads its `tosu.env`: `$XDG_CONFIG_HOME/tosu` on Linux, next to
+/// the binary elsewhere (tosu's `getConfigPath`).
+fn tosu_config_dir(bin: &Path) -> Option<PathBuf> {
+    if cfg!(target_os = "linux") {
+        dirs::config_dir().map(|d| d.join("tosu"))
+    } else {
+        bin.parent().map(Path::to_path_buf)
+    }
+}
+
 fn launch_tosu(
     bin: &Path,
     log_path: &Path,
@@ -428,8 +438,11 @@ fn launch_tosu(
     if let Some(dir) = log_path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    // Prevent tosu from ever auto-opening the web dashboard on launch
-    if let Some(dir) = bin.parent() {
+    // Prevent tosu from ever auto-opening the web dashboard on launch. Its
+    // tosu.env wins over the environment variable below, so the file is what
+    // has to say false.
+    if let Some(dir) = tosu_config_dir(bin) {
+        let _ = std::fs::create_dir_all(&dir);
         let env_file = dir.join("tosu.env");
         if let Ok(content) = std::fs::read_to_string(&env_file) {
             if content.contains("OPEN_DASHBOARD_ON_STARTUP=true") {

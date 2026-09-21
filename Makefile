@@ -36,6 +36,10 @@ TOSU_REPO ?= https://github.com/KotRikD/tosu.git
 TOSU_VERSION ?= v4.26.2
 TOSU_SRC_DIR ?= build/tosu-src
 TOSU_BUILD_DIR ?= build/tosu
+# 1: standalone tosu binary via @yao-pkg/pkg (downloads a Node 24 base binary
+# at build time; used for .deb/.rpm/AppImage). 0: dist/ plus a wrapper that
+# runs the system `node`, which must be 24.x (Arch, see PKGBUILD).
+TOSU_STANDALONE ?= 1
 
 TARGET_DIR ?= desktop/target/release
 BINS := opad-daemon opad-gui opadctl
@@ -71,11 +75,21 @@ tosu:
 	fi
 	@echo "Building tosu from source..."
 	cd $(TOSU_SRC_DIR) && $(PNPM) install --frozen-lockfile
+	rm -rf $(TOSU_BUILD_DIR)/dist $(TOSU_BUILD_DIR)/tosu
+ifeq ($(TOSU_STANDALONE),1)
+	# Self-contained binary with Node 24 built in (upstream's own release
+	# recipe): tosu needs Node >=24.14 <25, which Debian/Ubuntu/Fedora do not ship
+	cd $(TOSU_SRC_DIR) && $(PNPM) --filter tosu run compile:linux
+	install -m 755 $(TOSU_SRC_DIR)/packages/tosu/dist/tosu $(TOSU_BUILD_DIR)/tosu
+else
 	cd $(TOSU_SRC_DIR) && $(PNPM) --filter tosu run genver && $(PNPM) --filter tosu run ts:compile
 	mkdir -p $(TOSU_BUILD_DIR)/dist
 	cp -r $(TOSU_SRC_DIR)/packages/tosu/dist/* $(TOSU_BUILD_DIR)/dist/
+	# dist/index.js is an ES module; without this Node parses it as CommonJS
+	printf '{"type":"module"}\n' > $(TOSU_BUILD_DIR)/dist/package.json
 	@printf '#!/bin/sh\nDIR="$$(cd "$$(dirname "$$0")" && pwd)"\nif [ -f "$$DIR/index.js" ]; then\n  exec node "$$DIR/index.js" "$$@"\nelif [ -f "$$DIR/dist/index.js" ]; then\n  exec node "$$DIR/dist/index.js" "$$@"\nelse\n  echo "tosu: index.js not found in $$DIR" >&2\n  exit 1\nfi\n' > $(TOSU_BUILD_DIR)/tosu
 	@chmod +x $(TOSU_BUILD_DIR)/tosu
+endif
 	install -m 644 licenses/tosu/VERSION $(TOSU_BUILD_DIR)/VERSION
 	install -m 644 licenses/tosu/NOTICE $(TOSU_BUILD_DIR)/NOTICE
 	install -m 644 licenses/tosu/LICENSE $(TOSU_BUILD_DIR)/LICENSE
@@ -114,7 +128,7 @@ install: all
 	@if [ -d "$(TOSU_BUILD_DIR)" ]; then \
 		echo "Installing bundled tosu to $(DESTDIR)$(LIBDIR)/opad/tosu..."; \
 		install -d "$(DESTDIR)$(LIBDIR)/opad/tosu"; \
-		cp -r $(TOSU_BUILD_DIR)/dist/* "$(DESTDIR)$(LIBDIR)/opad/tosu/"; \
+		if [ -d "$(TOSU_BUILD_DIR)/dist" ]; then cp -r $(TOSU_BUILD_DIR)/dist/. "$(DESTDIR)$(LIBDIR)/opad/tosu/"; fi; \
 		install -m 755 "$(TOSU_BUILD_DIR)/tosu" "$(DESTDIR)$(LIBDIR)/opad/tosu/tosu"; \
 		install -m 644 licenses/tosu/VERSION "$(DESTDIR)$(LIBDIR)/opad/tosu/VERSION"; \
 		install -m 644 licenses/tosu/NOTICE "$(DESTDIR)$(LIBDIR)/opad/tosu/NOTICE"; \
@@ -142,7 +156,7 @@ install-user: all
 	@if [ -d "$(TOSU_BUILD_DIR)" ]; then \
 		echo "Installing bundled tosu to $(LIBDIR_USER)/opad/tosu..."; \
 		install -d "$(LIBDIR_USER)/opad/tosu"; \
-		cp -r $(TOSU_BUILD_DIR)/dist/* "$(LIBDIR_USER)/opad/tosu/"; \
+		if [ -d "$(TOSU_BUILD_DIR)/dist" ]; then cp -r $(TOSU_BUILD_DIR)/dist/. "$(LIBDIR_USER)/opad/tosu/"; fi; \
 		install -m 755 "$(TOSU_BUILD_DIR)/tosu" "$(LIBDIR_USER)/opad/tosu/tosu"; \
 		install -m 644 licenses/tosu/VERSION "$(LIBDIR_USER)/opad/tosu/VERSION"; \
 		install -m 644 licenses/tosu/NOTICE "$(LIBDIR_USER)/opad/tosu/NOTICE"; \

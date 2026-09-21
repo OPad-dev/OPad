@@ -12,7 +12,7 @@ license=('MIT' 'LGPL-3.0-only')
 # - ksni needs dbus
 # - tosu wrapper needs nodejs
 # Node version risk: tosu upstream specifies Node 24.x engine. If current arch
-# nodejs introduces incompatibilities, depend on nodejs-lts-iron (or latest active LTS).
+# nodejs introduces incompatibilities, depend on the Node 24 LTS package instead of nodejs (tosu needs >=24.14 <25).
 depends=(
     'vulkan-loader'
     'wayland'
@@ -39,7 +39,7 @@ sha256sums=('SKIP')
 build() {
     cd "$srcdir/$pkgname-$pkgver"
     make all
-    make tosu
+    make tosu TOSU_STANDALONE=0
 }
 
 check() {
