@@ -171,7 +171,7 @@ the pad's lifetime counters along with the owner record.
 ### 1. Udev Rules
 Allow non-root user access to USB CDC and ROM bootloader devices:
 ```bash
-sudo cp packaging/linux/udev/99-osupad.rules /etc/udev/rules.d/
+sudo cp packaging/linux/udev/70-opad.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 

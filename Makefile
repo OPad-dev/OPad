@@ -103,7 +103,7 @@ install: all
 	sed 's|@BINDIR@|$(BINDIR)|g' packaging/linux/opad.desktop.in > "$(DESTDIR)$(APPLICATIONSDIR)/opad.desktop"
 	chmod 644 "$(DESTDIR)$(APPLICATIONSDIR)/opad.desktop"
 	install -d "$(DESTDIR)$(UDEVRULESDIR)"
-	install -m 644 packaging/linux/udev/99-opad.rules "$(DESTDIR)$(UDEVRULESDIR)/99-opad.rules"
+	install -m 644 packaging/linux/udev/70-opad.rules "$(DESTDIR)$(UDEVRULESDIR)/70-opad.rules"
 	install -d "$(DESTDIR)$(LIBDIR)/opad"
 	printf '%s\n' "$(INSTALL_ORIGIN)" > "$(DESTDIR)$(LIBDIR)/opad/install-origin"
 	chmod 644 "$(DESTDIR)$(LIBDIR)/opad/install-origin"
@@ -155,7 +155,7 @@ install-user: all
 	@echo "  systemctl --user daemon-reload"
 	@echo "  systemctl --user enable --now opad-daemon.service"
 	@echo "To grant non-root access to the pad (if not already done):"
-	@echo "  sudo cp packaging/linux/udev/99-opad.rules /etc/udev/rules.d/"
+	@echo "  sudo cp packaging/linux/udev/70-opad.rules /etc/udev/rules.d/"
 	@echo "  sudo udevadm control --reload-rules && sudo udevadm trigger"
 
 # B-2: Remove everything placed by install
@@ -165,7 +165,7 @@ uninstall:
 	done
 	rm -f "$(DESTDIR)$(SYSTEMDUSERDIR)/opad-daemon.service"
 	rm -f "$(DESTDIR)$(APPLICATIONSDIR)/opad.desktop"
-	rm -f "$(DESTDIR)$(UDEVRULESDIR)/99-opad.rules"
+	rm -f "$(DESTDIR)$(UDEVRULESDIR)/70-opad.rules"
 	rm -rf "$(DESTDIR)$(LIBDIR)/opad"
 	@echo "✓ Uninstall complete."
 

@@ -806,20 +806,17 @@ fn run_setup() -> Result<()> {
     }
 
     println!("=== OPad Linux Setup ===");
-    let udev_rule = r#"# /etc/udev/rules.d/99-osupad.rules
-# Espressif ESP32-S3 USB JTAG / Serial / CDC
-SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", MODE="0666", GROUP="uucp", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="303a", MODE="0666", GROUP="uucp", TAG+="uaccess"
-"#;
+    // The same file the packages install, so the two cannot drift apart
+    let udev_rule = include_str!("../../../packaging/linux/udev/70-opad.rules");
 
-    let target_path = "/etc/udev/rules.d/99-osupad.rules";
+    let target_path = "/etc/udev/rules.d/70-opad.rules";
     println!("Recommended udev rule for non-root CDC access:");
     println!("{}", udev_rule);
 
     if std::path::Path::new("/etc/udev/rules.d").exists() {
         println!("To install this rule, run:");
         println!(
-            "  sudo cp packaging/linux/udev/99-osupad.rules {}",
+            "  sudo cp packaging/linux/udev/70-opad.rules {}",
             target_path
         );
         println!("  sudo udevadm control --reload-rules && sudo udevadm trigger");

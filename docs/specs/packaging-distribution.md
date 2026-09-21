@@ -184,7 +184,7 @@ Note the R7 lesson: the Linux version was broken precisely by writing a *second*
 
 ### W1-2. Hotplug detection
 
-**Problem.** The Linux daemon relies on udev (`packaging/linux/udev/99-osupad.rules`) plus reconnect polling. Windows has no udev.
+**Problem.** The Linux daemon relies on udev (`packaging/linux/udev/70-opad.rules`) plus reconnect polling. Windows has no udev.
 
 **Required change.** Register for `WM_DEVICECHANGE` / `RegisterDeviceNotification` on the daemon side, or — if that forces an unwanted message pump — fall back to the existing reconnect poll, which already works. Poll interval must respect P1-3: **no storage writes during PLAYING or COOLDOWN**, and hotplug polling must not become a write trigger.
 
@@ -438,14 +438,14 @@ It is also the only workable one. Both archives require every Rust dependency to
 - Binaries → `/usr/bin/{osupad-daemon,osupad-gui,osupadctl}`
 - systemd **user** unit → `/usr/lib/systemd/user/osupad-daemon.service`, with `ExecStart=/usr/bin/osupad-daemon`
 - `.desktop` files → `/usr/share/applications/`
-- udev rules → `/usr/lib/udev/rules.d/99-osupad.rules` (**not** `/etc/udev/rules.d/`, which is reserved for local administrator overrides)
+- udev rules → `/usr/lib/udev/rules.d/70-opad.rules` (**not** `/etc/udev/rules.d/`, which is reserved for local administrator overrides)
 - Icons → `/usr/share/icons/hicolor/...`
 
 Keep the unit a **user** unit, not a system one: the daemon is per-user, needs the session bus for the tray, and owns a per-user IPC socket. Template the `ExecStart` path so the same source file produces both the `~/.local/bin` and `/usr/bin` variants rather than maintaining two divergent copies — this is exactly the R7 failure mode (a second, divergent unit file) and it must not be repeated.
 
 ### L-2. Fix the udev rule before shipping it
 
-**Problem.** `packaging/linux/udev/99-osupad.rules` is Arch-centric and looser than it needs to be:
+**Problem.** `packaging/linux/udev/70-opad.rules` is Arch-centric and looser than it needs to be:
 
 ```
 SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", MODE="0666", GROUP="uucp", TAG+="uaccess"
