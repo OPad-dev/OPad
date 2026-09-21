@@ -43,7 +43,7 @@ tray-icon = { version = "0.19", default-features = false }
 name = "opad"
 maintainer = "GFerreiroS <info@gferreiro.com>"
 copyright = "2026, GFerreiroS <info@gferreiro.com>"
-license-file = ["../../LICENSE", "4"]
+license-file = ["../../packaging/linux/deb/copyright", "0"]
 extended-description = "Low-latency ESP32-S3 keypad manager, telemetry HUD, and tray applet for osu!"
 section = "games"
 priority = "optional"
@@ -58,6 +58,7 @@ assets = [
     ["../../packaging/linux/udev/70-opad.rules", "usr/lib/udev/rules.d/70-opad.rules", "644"],
     ["../../packaging/linux/deb/install-origin", "usr/lib/opad/install-origin", "644"],
     ["../../packaging/linux/deb/install-origin", "etc/opad/install-origin", "644"],
+    ["assets/fonts/Montserrat-OFL.txt", "usr/share/doc/opad/Montserrat-OFL.txt", "644"],
     ["../../build/tosu/tosu", "usr/lib/opad/tosu/tosu", "755"],
     ["../../build/tosu/VERSION", "usr/lib/opad/tosu/VERSION", "644"],
     ["../../build/tosu/NOTICE", "usr/lib/opad/tosu/NOTICE", "644"],
@@ -69,7 +70,7 @@ name = "opad"
 version = "1.0.0~rc"
 summary = "Low-latency ESP32-S3 keypad manager, telemetry HUD, and tray applet for osu!"
 description = "OPad desktop daemon, configuration GUI, and CLI utility."
-license = "MIT AND LGPL-3.0-only"
+license = "MIT AND LGPL-3.0-only AND OFL-1.1"
 assets = [
     { source = "../target/release/opad-daemon", dest = "/usr/bin/opad-daemon", mode = "755" },
     { source = "../target/release/opad-gui", dest = "/usr/bin/opad-gui", mode = "755" },
@@ -79,6 +80,8 @@ assets = [
     { source = "../../packaging/linux/udev/70-opad.rules", dest = "/usr/lib/udev/rules.d/70-opad.rules", mode = "644" },
     { source = "../../packaging/linux/rpm/install-origin", dest = "/usr/lib/opad/install-origin", mode = "644" },
     { source = "../../packaging/linux/rpm/install-origin", dest = "/etc/opad/install-origin", mode = "644" },
+    { source = "assets/fonts/Montserrat-OFL.txt", dest = "/usr/share/licenses/opad/Montserrat-OFL.txt", mode = "644" },
+    { source = "../../LICENSE", dest = "/usr/share/licenses/opad/LICENSE", mode = "644" },
     { source = "../../build/tosu/tosu", dest = "/usr/lib/opad/tosu/tosu", mode = "755" },
     { source = "../../build/tosu/VERSION", dest = "/usr/lib/opad/tosu/VERSION", mode = "644" },
     { source = "../../build/tosu/NOTICE", dest = "/usr/lib/opad/tosu/NOTICE", mode = "644" },

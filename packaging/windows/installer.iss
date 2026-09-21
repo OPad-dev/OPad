@@ -100,6 +100,8 @@ Source: "{#LicensesDir}\tosu\LICENSE"; DestDir: "{app}\tosu"; Flags: ignoreversi
 
 ; Top-level application license
 Source: "..\..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
+; Montserrat fonts embedded in opad-gui.exe (SIL OFL 1.1)
+Source: "..\..\desktop\gui\assets\fonts\Montserrat-OFL.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{userprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

@@ -44,6 +44,11 @@ elif [ -f "${REPO_ROOT}/packaging/linux/opad.png" ]; then
     cp "${REPO_ROOT}/packaging/linux/opad.png" "${APPDIR}/opad.png"
 fi
 
+# OPad's license and the Montserrat font license (the fonts are embedded in opad-gui)
+mkdir -p "${APPDIR}/usr/share/licenses/opad"
+cp "${REPO_ROOT}/LICENSE" "${APPDIR}/usr/share/licenses/opad/LICENSE"
+cp "${REPO_ROOT}/desktop/gui/assets/fonts/Montserrat-OFL.txt" "${APPDIR}/usr/share/licenses/opad/Montserrat-OFL.txt"
+
 # Bundle tosu if available in build/tosu/
 if [ -d "${REPO_ROOT}/build/tosu" ]; then
     echo "=== Bundling tosu ==="

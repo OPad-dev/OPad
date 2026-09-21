@@ -258,6 +258,13 @@ OPad is an independent open-source hardware and software project. OPad is not af
 ---
 
 ## 📜 License
-Licensed under the [MIT License](LICENSE).
+Everything original to OPad is licensed under the [MIT License](LICENSE): the firmware, the desktop app (daemon, GUI, CLI), the PCB designs and footprints, the enclosure CAD, and the documentation.
+
+Third-party components keep their own open licenses and ship with their notices:
+- [tosu](licenses/tosu/LICENSE) (LGPL-3.0), built from upstream source and bundled with the desktop packages, see the section above. Not stored in this repository.
+- [Montserrat](desktop/gui/assets/fonts/Montserrat-OFL.txt) fonts embedded in the GUI (SIL Open Font License 1.1).
+- [nanopb](firmware/main/protocol/nanopb/LICENSE.txt) protobuf runtime vendored in the firmware (zlib license).
+
+Libraries pulled in at build time (Rust crates, ESP-IDF components such as LVGL and TinyUSB) are not stored here and are used under their own permissive licenses.
 
 
