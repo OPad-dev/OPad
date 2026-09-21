@@ -274,13 +274,14 @@ Order each board as a separate item.
 ```
 V1/
 ├── lib/                      project library shared by all boards
-│   ├── osupad.kicad_sym      R, C, SW_Push, DRV5055, Conn_01x08, Conn_01x14
-│   └── osupad.pretty/        KiCad library footprints + Kailh hot-swap + SOT-23
+│   ├── osupad.kicad_sym      R, C, SW_Push, DRV5055, Conn_01x08, Conn_01x14, TestPoint
+│   └── osupad.pretty/        0603 R/C, SOT-23, JST SH, pin socket, M2 hole, Kailh hot-swap, Hall switch positions, test pad
 ├── Carrier/                  controller_carrier_v1.kicad_pro / .kicad_sch / .kicad_pcb, production/
 ├── MX/                       mx_input_v1.kicad_pro / .kicad_sch / .kicad_pcb, production/
 ├── HE/                       he_input_v1.kicad_pro / .kicad_sch / .kicad_pcb, production/
 ├── mechanical_reference_case_coords.dxf   case, plate cutouts, input PCB outline/holes/J1 (case coordinates)
 └── scripts/
+    ├── gen_library.py           writes the standard parts in lib/ (symbols, 0603 R/C, SOT-23, JST SH, pin socket, M2 hole)
     ├── generate_boards.py       generator for projects (see below)
     ├── export_production.py     ERC + DRC + parity check, then Gerbers, drills, BOM, CPL, PDFs, STEP, renders
     ├── he_board.py              HE module: geometry, netlist, placement and its own DRC (no KiCad needed)
@@ -297,4 +298,5 @@ Each `production/` folder contains `-gerbers.zip`, `-BOM-JLCPCB.csv`, `-CPL-JLCP
 
 - **Regenerating:** `python3 hardware/pcb/V1/scripts/generate_boards.py` rebuilds the schematics and boards from the netlist in the script and overwrites any edits made in KiCad. After editing in KiCad, only run `export_production.py`.
 - **Requirements:** KiCad 10 (`kicad-cli` and the `pcbnew` Python module) for MX and the carrier. The KiCad libraries don't need to be installed: everything used is in `lib/`.
+- **Library:** every part in `lib/` is OPad's own drawing under the repository's MIT license. The standard parts are written by `scripts/gen_library.py` (pads and pins from the component datasheets; outlines, silkscreen, courtyards and symbol graphics computed by the script); edit the tables there and re-run it rather than editing those files in KiCad. The Kailh hot-swap, Hall switch and test-pad footprints are hand-drawn. Footprints reference KiCad's installed 3D models by path (`${KICAD10_3DMODEL_DIR}`); the models themselves are not in this repository.
 - **The HE module is the exception:** it is generated and verified with plain Python (3.9+), no KiCad and no `pcbnew`; Pillow is needed only for `verify_he_gerbers.py` and `render_he_preview.py`. Its `production/` folder has no `drc.json`/`erc.json`/PDF/STEP, because those come from `kicad-cli`; run `export_production.py` under a KiCad install if you want them.
