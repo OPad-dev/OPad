@@ -6,7 +6,7 @@ Symptom: the pad is not detected and tosu never opens.
 
 ## Status (updated 2026-09-21, after the fixes)
 
-Done in the working tree (not committed):
+Done and pushed to `main` on 2026-09-21:
 
 | Item | What changed |
 |---|---|
@@ -23,7 +23,7 @@ Done in the working tree (not committed):
 
 Still open:
 - Install the new deb (`sudo apt install ./dist/opad_1.0.0-rc-1_amd64.deb`), replug the pad, and check `getfacl /dev/ttyACM0`, `Connected to OPad` in `journalctl --user -u opad-daemon`, and tosu running.
-- Firmware not rebuilt here (no ESP-IDF on this machine): build and flash to see the new easter-egg animation.
+- Firmware not rebuilt here (no ESP-IDF on this machine); no firmware change is pending.
 - Open `lib/` in KiCad once to confirm the regenerated parts load (no KiCad on this machine). Optionally regenerate the boards so their embedded footprints use the new drawings.
 - Section 4 (own USB ID): pid.codes PR not sent, firmware still `303a:4001`.
 - 5.2: the easter-egg GIF is kept, so it is still third-party with no known license and not covered by MIT. Find its creator and get permission, or accept the risk for pid.codes and selling.
