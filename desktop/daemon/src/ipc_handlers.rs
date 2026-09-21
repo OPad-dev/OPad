@@ -1076,7 +1076,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::TriggerEasterEgg => {
-            let _ = device_manager
+            let _ = device
                 .send_data_update(&[(67, opad_model::ui_source::SourceValue::Number(67.0))])
                 .await;
             IpcResponse::EasterEggTriggered
