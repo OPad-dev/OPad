@@ -146,6 +146,9 @@ impl DeviceManager {
         // Spawn background worker managing the serial port lifecycle
         tokio::task::spawn_blocking(move || {
             let mut read_buf = BytesMut::with_capacity(8192);
+            // Last open failure, so a port that keeps refusing is reported once
+            // rather than on every retry. Cleared when the pad goes away.
+            let mut last_open_error: Option<String> = None;
 
             loop {
                 if is_paused_clone.load(Ordering::SeqCst) {
@@ -158,12 +161,15 @@ impl DeviceManager {
                     Some(p) => p,
                     None => {
                         debug!("Searching for OPad ESP32-S3 USB port...");
+                        last_open_error = None;
                         std::thread::sleep(PORT_SCAN_INTERVAL);
                         continue;
                     }
                 };
 
-                info!("Opening OPad serial port at {}", port_path);
+                if last_open_error.is_none() {
+                    info!("Opening OPad serial port at {}", port_path);
+                }
                 let port_builder =
                     serialport::new(&port_path, 115200).timeout(Duration::from_millis(100));
 
@@ -171,10 +177,23 @@ impl DeviceManager {
                     Ok(mut p) => {
                         let _ = p.write_data_terminal_ready(true);
                         let _ = p.write_request_to_send(true);
+                        last_open_error = None;
                         p
                     }
                     Err(e) => {
-                        debug!("Failed to open port {}: {}", port_path, e);
+                        let message = e.to_string();
+                        if last_open_error.as_deref() != Some(message.as_str()) {
+                            warn!(
+                                "Cannot open OPad serial port {}: {}{} (retrying every {:?})",
+                                port_path,
+                                message,
+                                open_error_hint(&e),
+                                PORT_OPEN_RETRY_INTERVAL
+                            );
+                            last_open_error = Some(message);
+                        } else {
+                            debug!("Failed to open port {}: {}", port_path, e);
+                        }
                         std::thread::sleep(PORT_OPEN_RETRY_INTERVAL);
                         continue;
                     }
@@ -666,6 +685,23 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                 });
             }
         }
+    }
+}
+
+/// What to check when the pad's port exists but will not open.
+fn open_error_hint(e: &serialport::Error) -> &'static str {
+    match e.kind() {
+        serialport::ErrorKind::Io(std::io::ErrorKind::PermissionDenied) => {
+            if cfg!(target_os = "linux") {
+                ". Permission denied: the udev rule (70-opad.rules) should give the \
+                 logged-in user access; check it is installed and `getfacl` on the port \
+                 lists your user"
+            } else {
+                ". Access denied: another program probably has the port open"
+            }
+        }
+        serialport::ErrorKind::NoDevice => ". The port went away while opening it",
+        _ => "",
     }
 }
 
