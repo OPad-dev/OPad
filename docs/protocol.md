@@ -52,7 +52,7 @@ at least 0x55AA bytes, more than any frame may hold.
 
 ## 2. Protobuf Message Envelopes
 
-All messages are defined in [`protocol/osupad.proto`](file:///home/paella/Documents/projects/esp32/OPad-esp32/protocol/osupad.proto) using NanoPB-compatible schemas.
+All messages are defined in [`protocol/osupad.proto`](../protocol/osupad.proto) using NanoPB-compatible schemas.
 
 Every message transmitted in either direction is wrapped in a top-level envelope containing a 32-bit sequence number:
 

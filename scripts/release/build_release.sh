@@ -20,8 +20,10 @@ mkdir -p "${DIST_DIR}"
 # 1. Build Firmware (.bin)
 echo ""
 echo "--- [1/3] Building ESP32-S3 Firmware ---"
-if [ -f "${HOME}/Documents/projects/esp32/v5.5.2/esp-idf/export.sh" ]; then
-    source "${HOME}/Documents/projects/esp32/v5.5.2/esp-idf/export.sh" >/dev/null 2>&1
+if [ -n "${IDF_PATH:-}" ] && [ -f "${IDF_PATH}/export.sh" ]; then
+    source "${IDF_PATH}/export.sh" >/dev/null 2>&1
+elif [ -f "${HOME}/esp/esp-idf/export.sh" ]; then
+    source "${HOME}/esp/esp-idf/export.sh" >/dev/null 2>&1
 elif [ -f "${HOME}/export-esp.sh" ]; then
     source "${HOME}/export-esp.sh" >/dev/null 2>&1
 fi

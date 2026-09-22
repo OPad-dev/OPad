@@ -11,13 +11,13 @@ fn test_addr(name: &str) -> PathBuf {
     #[cfg(unix)]
     {
         std::env::temp_dir()
-            .join(format!("osupad-test-{}-{}", std::process::id(), name))
+            .join(format!("opad-test-{}-{}", std::process::id(), name))
             .join("daemon.sock")
     }
     #[cfg(windows)]
     {
         PathBuf::from(format!(
-            r"\\.\pipe\osupad-test-{}-{}",
+            r"\\.\pipe\opad-test-{}-{}",
             std::process::id(),
             name
         ))

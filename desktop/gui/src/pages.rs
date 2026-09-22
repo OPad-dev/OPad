@@ -757,7 +757,7 @@ fn about_section() -> Element<'static, Message> {
                 muted("Author: Mikhail Babynichev and the tosu contributors").size(12),
                 muted("License: GNU Lesser General Public License v3.0 (LGPL-3.0)").size(12),
                 muted("Repository: https://github.com/KotRikD/tosu").size(12),
-                muted("Under LGPL-3.0, you may replace this bundled component with your own version via the setting above or $OSUPAD_TOSU_PATH.").size(11),
+                muted("Under LGPL-3.0, you may replace this bundled component with your own version via the setting above or $OPAD_TOSU_PATH.").size(11),
             ]
             .spacing(4),
         ]

@@ -15,7 +15,7 @@ pub enum TrayAction {
 #[derive(Clone)]
 pub struct TrayHandle {
     #[cfg(target_os = "linux")]
-    inner: ksni::Handle<linux::OsuPadTray>,
+    inner: ksni::Handle<linux::OpadTray>,
     #[cfg(windows)]
     inner: windows::WindowsTrayHandle,
     #[cfg(not(any(target_os = "linux", windows)))]
@@ -221,14 +221,14 @@ impl TrayViewModel {
 mod linux {
     use super::*;
 
-    pub struct OsuPadTray {
+    pub struct OpadTray {
         pub tx: tokio::sync::mpsc::UnboundedSender<TrayAction>,
         pub status: TrayStatus,
     }
 
-    impl ksni::Tray for OsuPadTray {
+    impl ksni::Tray for OpadTray {
         fn id(&self) -> String {
-            "osupad".into()
+            "opad".into()
         }
 
         fn title(&self) -> String {
@@ -279,7 +279,7 @@ mod linux {
                     } => StandardItem {
                         label,
                         enabled,
-                        activate: Box::new(move |tray: &mut OsuPadTray| {
+                        activate: Box::new(move |tray: &mut OpadTray| {
                             let _ = tray.tx.send(action);
                         }),
                         ..Default::default()
@@ -298,7 +298,7 @@ pub fn stream() -> impl futures_util::Stream<Item = TrayEvent> {
         20,
         |mut output: iced::futures::channel::mpsc::Sender<TrayEvent>| async move {
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<TrayAction>();
-            let tray = linux::OsuPadTray {
+            let tray = linux::OpadTray {
                 tx,
                 status: TrayStatus::default(),
             };
@@ -418,7 +418,7 @@ mod windows {
         let (status_tx, status_rx) = channel::<TrayStatus>();
         let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<u32, String>>();
 
-        let builder = std::thread::Builder::new().name("osupad-tray".into());
+        let builder = std::thread::Builder::new().name("opad-tray".into());
         let spawn_res = builder.spawn(move || {
             let thread_id = unsafe { GetCurrentThreadId() };
 

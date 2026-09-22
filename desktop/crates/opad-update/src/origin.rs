@@ -7,7 +7,7 @@
 //!
 //! So each packaging path drops a one-word marker file, and this reads it.
 //! **The contract for the packagers (§B-2, §L-3, §W2-1):** write
-//! `$(PREFIX)/lib/osupad/install-origin` — on Windows, `install-origin` in the
+//! `$(PREFIX)/lib/opad/install-origin` — on Windows, `install-origin` in the
 //! install directory — containing exactly one of:
 //!
 //! `windows` · `deb` · `rpm` · `aur` · `appimage` · `user` · `source`

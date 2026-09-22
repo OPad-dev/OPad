@@ -330,10 +330,14 @@ impl App {
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .map(std::path::PathBuf::from)
-            .or_else(|| std::env::var_os("OSUPAD_TOSU_PATH").map(std::path::PathBuf::from));
+            .or_else(|| {
+                std::env::var_os("OPAD_TOSU_PATH")
+                    .or_else(|| std::env::var_os("OSUPAD_TOSU_PATH"))
+                    .map(std::path::PathBuf::from)
+            });
 
         if let Some(ref p) = tosu_override_path {
-            std::env::set_var("OSUPAD_TOSU_PATH", p);
+            std::env::set_var("OPAD_TOSU_PATH", p);
         }
 
         let diagnostics_enabled = initial_page == Some(Page::Diagnostics)
@@ -431,7 +435,7 @@ impl App {
             decorations: false,
             #[cfg(target_os = "linux")]
             platform_specific: window::settings::PlatformSpecific {
-                application_id: "osupad".to_string(),
+                application_id: "opad".to_string(),
                 ..Default::default()
             },
             #[cfg(not(target_os = "linux"))]
@@ -1367,7 +1371,7 @@ impl App {
                         let _ = std::fs::create_dir_all(&d);
                         let _ = std::fs::write(d.join("tosu_path"), p.to_string_lossy().as_bytes());
                     }
-                    std::env::set_var("OSUPAD_TOSU_PATH", &p);
+                    std::env::set_var("OPAD_TOSU_PATH", &p);
                     self.banner = Some(format!("Using external tosu: {}", p.display()));
                     self.tosu_override_path = Some(p);
                 }
@@ -1376,6 +1380,7 @@ impl App {
                 if let Ok(d) = opad_model::paths::data_dir() {
                     let _ = std::fs::remove_file(d.join("tosu_path"));
                 }
+                std::env::remove_var("OPAD_TOSU_PATH");
                 std::env::remove_var("OSUPAD_TOSU_PATH");
                 self.tosu_override_path = None;
                 self.banner = Some("Reset to bundled tosu".into());

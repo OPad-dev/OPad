@@ -20,7 +20,7 @@ use std::path::Path;
 /// The minisign public key the release manifest is signed with.
 ///
 /// The matching secret key is **not in this repository and must never be**. It
-/// lives at `~/.config/osupad/opad-manifest.key` on the release machine, and
+/// lives at `~/.config/opad/opad-manifest.key` on the release machine, and
 /// `opad-manifest` (the signing tool beside this crate) is the only thing
 /// that reads it.
 ///

@@ -528,7 +528,7 @@ mod tests {
 
     #[test]
     fn the_real_build_is_accepted_if_it_is_present() {
-        let path = Path::new("../../../firmware/build/osupad-firmware.bin");
+        let path = Path::new("../../../firmware/build/opad-firmware.bin");
         if path.exists() {
             assert_eq!(check_esp32s3_image_file(path), Ok(()));
         }

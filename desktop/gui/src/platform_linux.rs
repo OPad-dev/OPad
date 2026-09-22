@@ -90,17 +90,14 @@ pub fn install_systemd_user_service(daemon_bin: &Path) -> Result<(), String> {
 }
 
 /// Starts the daemon through its user service when installed, so systemd supervises and logs it.
-/// Otherwise launches it detached from the GUI with output in $XDG_STATE_HOME/osupad/daemon.log.
+/// Otherwise launches it detached from the GUI with output in opad_model::paths::state_dir()/daemon.log.
 pub fn start_daemon(daemon_bin: &Path) -> Result<(), String> {
     if service_installed() {
         return systemctl_user(&["start", SERVICE_NAME]);
     }
 
-    let log_dir = std::env::var_os("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local").join("state")))
-        .unwrap_or_else(std::env::temp_dir)
-        .join("osupad");
+    let log_dir = opad_model::paths::state_dir()
+        .map_err(|e| format!("Failed to resolve state directory: {}", e))?;
     std::fs::create_dir_all(&log_dir)
         .map_err(|e| format!("Failed to create {}: {}", log_dir.display(), e))?;
     let log_path = log_dir.join("daemon.log");

@@ -9,9 +9,11 @@
 //!
 //! | | Linux | Windows |
 //! |---|---|---|
-//! | data | `$XDG_DATA_HOME/osupad`, else `~/.local/share/osupad` | `%APPDATA%\osupad` |
-//! | state (logs) | `$XDG_STATE_HOME/osupad`, else `~/.local/state/osupad` | `%APPDATA%\osupad` |
-//! | installed private files | `$(PREFIX)/lib/osupad` | the install directory |
+//! | data | `$XDG_DATA_HOME/opad`, else `~/.local/share/opad` | `%APPDATA%\opad` |
+//! | state (logs) | `$XDG_STATE_HOME/opad`, else `~/.local/state/opad` | `%APPDATA%\opad` |
+//! | installed private files | `$(PREFIX)/lib/opad` | the install directory |
+//!
+//! Data left under the old `osupad` names is moved on first use.
 
 use std::path::PathBuf;
 use thiserror::Error;

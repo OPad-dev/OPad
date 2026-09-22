@@ -744,7 +744,18 @@ fn resolve_flash_set(path: &Path, full: bool) -> Result<Vec<(u32, PathBuf)>> {
     }
 
     let (build_dir, app_image) = if path.is_dir() {
-        (path.to_path_buf(), path.join("osupad-firmware.bin"))
+        let opad_bin = path.join("opad-firmware.bin");
+        let bin = if opad_bin.exists() {
+            opad_bin
+        } else {
+            let legacy_bin = path.join("osupad-firmware.bin");
+            if legacy_bin.exists() {
+                legacy_bin
+            } else {
+                opad_bin
+            }
+        };
+        (path.to_path_buf(), bin)
     } else {
         let parent = path.parent().unwrap_or(Path::new("."));
         (parent.to_path_buf(), path.to_path_buf())
@@ -860,7 +871,7 @@ mod tests {
             dir.join("bootloader/bootloader.bin"),
             dir.join("partition_table/partition-table.bin"),
             dir.join("ota_data_initial.bin"),
-            dir.join("osupad-firmware.bin"),
+            dir.join("opad-firmware.bin"),
         ] {
             std::fs::write(&f, [0xE9; 32]).unwrap();
         }
@@ -884,7 +895,7 @@ mod tests {
             "bootloader.bin",
             "partition-table.bin",
             "ota_data_initial.bin",
-            "osupad-firmware.bin",
+            "opad-firmware.bin",
         ] {
             std::fs::write(dir.join(f), [0xE9; 32]).unwrap();
         }
@@ -902,7 +913,7 @@ mod tests {
         // A lone app image in a directory of its own: no bootloader, no table.
         let dir = std::env::temp_dir().join(format!("opadctl-lonely-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("osupad-firmware.bin");
+        let path = dir.join("opad-firmware.bin");
         std::fs::write(&path, [0xE9; 32]).unwrap();
 
         let err = resolve_flash_set(&path, true).unwrap_err();
@@ -920,7 +931,7 @@ mod tests {
         for f in [
             dir.join("bootloader/bootloader.bin"),
             dir.join("partition_table/partition-table.bin"),
-            dir.join("osupad-firmware.bin"),
+            dir.join("opad-firmware.bin"),
         ] {
             std::fs::write(&f, [0xE9; 32]).unwrap();
         }

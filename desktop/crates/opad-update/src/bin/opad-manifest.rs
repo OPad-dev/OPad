@@ -14,7 +14,7 @@
 //!
 //! # The secret key
 //!
-//! Lives at `~/.config/osupad/opad-manifest.key`, outside the repository,
+//! Lives at `~/.config/opad/opad-manifest.key`, outside the repository,
 //! and is never committed, printed or logged. Only this tool reads it, and
 //! only through the `minisign` CLI — the key bytes never enter this process.
 //!
@@ -229,7 +229,9 @@ fn build_manifest(args: &Args) -> Result<ReleaseManifest, String> {
 /// without building a release.
 fn app_artifact(name: &str) -> Option<(String, ArtifactKind)> {
     let lower = name.to_ascii_lowercase();
-    if lower.starts_with("osupad-setup-") && lower.ends_with(".exe") {
+    if (lower.starts_with("opad-setup") || lower.starts_with("osupad-setup-"))
+        && lower.ends_with(".exe")
+    {
         return Some(("windows-x86_64".into(), ArtifactKind::Installer));
     }
     if lower.ends_with(".deb") {
@@ -238,7 +240,9 @@ fn app_artifact(name: &str) -> Option<(String, ArtifactKind)> {
     if lower.ends_with(".rpm") {
         return Some(("linux-x86_64".into(), ArtifactKind::Rpm));
     }
-    if lower.starts_with("osupad-linux-x86_64-") && lower.ends_with(".tar.gz") {
+    if (lower.starts_with("opad-linux-x86_64-") || lower.starts_with("osupad-linux-x86_64-"))
+        && lower.ends_with(".tar.gz")
+    {
         return Some(("linux-x86_64".into(), ArtifactKind::Archive));
     }
     None
@@ -248,7 +252,8 @@ fn firmware_artifact(name: &str) -> Option<(String, ArtifactKind)> {
     // The app image only. bootloader.bin, partition-table.bin and
     // ota_data_initial.bin are recovery-flash files a person writes by hand
     // (§W3-4); §U-3b never sends them over the wire.
-    (name == "osupad-firmware.bin").then(|| (FIRMWARE_TARGET.to_string(), ArtifactKind::Firmware))
+    (name == "opad-firmware.bin" || name == "osupad-firmware.bin")
+        .then(|| (FIRMWARE_TARGET.to_string(), ArtifactKind::Firmware))
 }
 
 fn collect(
@@ -358,7 +363,22 @@ fn parse_args() -> Result<Args, String> {
     })
 }
 
-/// `~/.config/osupad/opad-manifest.key`, honouring `$XDG_CONFIG_HOME`.
+const HELP: &str = "\
+opad-manifest — build and sign the release manifest (§U-0.3)
+
+  --dist <dir>              directory of built artifacts (required)
+  --base-url <url>          URL prefix the artifacts are published under (required)
+  --app-version <v>         default: this build's workspace version
+  --firmware-version <v>    required when dist holds opad-firmware.bin
+  --tosu-version <v>        version of the bundled tosu
+  --tosu-tag <tag>          upstream tag, for the §T-3 source offer
+  --tosu <target>=<path>    a tosu binary to record; repeatable
+  --secret-key <path>       default: <config dir>/opad-manifest.key
+  --out <path>              default: <dist>/opad-manifest.json
+  --no-sign                 write the manifest but do not sign it
+";
+
+/// `~/.config/opad/opad-manifest.key`, honouring `$XDG_CONFIG_HOME`.
 ///
 /// Resolved here rather than in `opad_model::paths`: that module is the
 /// uninstaller's list of everything the *app* touches, and the signing key is
@@ -370,41 +390,46 @@ fn default_secret_key() -> PathBuf {
         .filter(|p| p.is_absolute())
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
         .unwrap_or_else(|| PathBuf::from("."));
-    base.join("osupad").join("opad-manifest.key")
+    base.join("opad").join("opad-manifest.key")
 }
-
-const HELP: &str = "\
-opad-manifest — build and sign the release manifest (§U-0.3)
-
-  --dist <dir>              directory of built artifacts (required)
-  --base-url <url>          URL prefix the artifacts are published under (required)
-  --app-version <v>         default: this build's workspace version
-  --firmware-version <v>    required when dist holds osupad-firmware.bin
-  --tosu-version <v>        version of the bundled tosu
-  --tosu-tag <tag>          upstream tag, for the §T-3 source offer
-  --tosu <target>=<path>    a tosu binary to record; repeatable
-  --secret-key <path>       default: <config dir>/opad-manifest.key
-  --out <path>              default: <dist>/opad-manifest.json
-  --no-sign                 write the manifest but do not sign it
-";
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn dist_file_names_map_to_the_right_artifacts() {
+    fn app_artifacts_are_classified_by_name() {
+        assert_eq!(
+            app_artifact("opad-setup.exe"),
+            Some(("windows-x86_64".into(), ArtifactKind::Installer))
+        );
+        assert_eq!(
+            app_artifact("opad-setup-1.0.0.exe"),
+            Some(("windows-x86_64".into(), ArtifactKind::Installer))
+        );
         assert_eq!(
             app_artifact("osupad-setup-1.0.0-rc.exe"),
             Some(("windows-x86_64".into(), ArtifactKind::Installer))
+        );
+        assert_eq!(
+            app_artifact("opad_1.0.0_amd64.deb"),
+            Some(("linux-x86_64".into(), ArtifactKind::Deb))
         );
         assert_eq!(
             app_artifact("osupad_1.0.0-rc_amd64.deb"),
             Some(("linux-x86_64".into(), ArtifactKind::Deb))
         );
         assert_eq!(
+            app_artifact("opad-1.0.0-1.x86_64.rpm"),
+            Some(("linux-x86_64".into(), ArtifactKind::Rpm))
+        );
+        assert_eq!(
             app_artifact("osupad-1.0.0_rc-1.x86_64.rpm"),
             Some(("linux-x86_64".into(), ArtifactKind::Rpm))
+        );
+        assert_eq!(
+            app_artifact("opad-linux-x86_64-1.0.0.tar.gz"),
+            Some(("linux-x86_64".into(), ArtifactKind::Archive))
         );
         assert_eq!(
             app_artifact("osupad-linux-x86_64-1.0.0-rc.tar.gz"),
@@ -413,11 +438,16 @@ mod tests {
         // Not app artifacts, and in particular not silently classified as one
         assert_eq!(app_artifact("SHA256SUMS"), None);
         assert_eq!(app_artifact("osupad-firmware.bin"), None);
+        assert_eq!(app_artifact("opad-firmware.bin"), None);
         assert_eq!(app_artifact("opad-daemon"), None);
     }
 
     #[test]
     fn only_the_app_image_is_a_firmware_artifact() {
+        assert_eq!(
+            firmware_artifact("opad-firmware.bin"),
+            Some((FIRMWARE_TARGET.to_string(), ArtifactKind::Firmware))
+        );
         assert_eq!(
             firmware_artifact("osupad-firmware.bin"),
             Some((FIRMWARE_TARGET.to_string(), ArtifactKind::Firmware))
@@ -437,7 +467,7 @@ mod tests {
     fn a_built_manifest_round_trips_and_finds_its_artifacts() {
         let dir = tempfile::tempdir().unwrap();
         let dist = dir.path();
-        std::fs::write(dist.join("osupad-firmware.bin"), b"firmware bytes").unwrap();
+        std::fs::write(dist.join("opad-firmware.bin"), b"firmware bytes").unwrap();
         std::fs::write(dist.join("osupad-setup-1.0.0-rc.exe"), b"installer bytes").unwrap();
         std::fs::write(dist.join("SHA256SUMS"), b"ignored").unwrap();
 
@@ -469,10 +499,7 @@ mod tests {
         );
         assert_eq!(fw.size, Some(14));
         // The trailing slash on base_url must not double up
-        assert_eq!(
-            fw.url,
-            "https://example.invalid/download/osupad-firmware.bin"
-        );
+        assert_eq!(fw.url, "https://example.invalid/download/opad-firmware.bin");
 
         let app = parsed
             .artifact_for(APP, "windows-x86_64", Some(ArtifactKind::Installer))
@@ -487,7 +514,7 @@ mod tests {
     #[test]
     fn a_firmware_image_without_a_version_is_refused() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("osupad-firmware.bin"), b"x").unwrap();
+        std::fs::write(dir.path().join("opad-firmware.bin"), b"x").unwrap();
         let args = Args {
             dist: dir.path().to_path_buf(),
             base_url: "https://example.invalid".into(),

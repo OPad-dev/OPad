@@ -9,7 +9,7 @@
 use crate::UpdateError;
 use std::time::Duration;
 
-const USER_AGENT: &str = concat!("osupad/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = concat!("opad/", env!("CARGO_PKG_VERSION"));
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 

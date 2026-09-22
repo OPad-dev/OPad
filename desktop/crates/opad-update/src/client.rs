@@ -15,7 +15,7 @@ use std::time::SystemTime;
 
 /// Where the signed manifest is published. The repository has no remote yet
 /// (A.1), so this is the address the release process must publish to, not one
-/// that resolves today. `$OSUPAD_MANIFEST_URL` overrides it for testing
+/// that resolves today. `$OPAD_MANIFEST_URL` (or the legacy `$OSUPAD_MANIFEST_URL`) overrides it for testing
 /// against a local copy.
 pub const DEFAULT_MANIFEST_URL: &str =
     "https://github.com/OPad-dev/OPad/releases/latest/download/opad-manifest.json";
@@ -29,7 +29,8 @@ impl UpdateClient {
     pub fn new() -> Result<Self, UpdateError> {
         Ok(Self {
             http: Http::new()?,
-            manifest_url: std::env::var("OSUPAD_MANIFEST_URL")
+            manifest_url: std::env::var("OPAD_MANIFEST_URL")
+                .or_else(|_| std::env::var("OSUPAD_MANIFEST_URL"))
                 .unwrap_or_else(|_| DEFAULT_MANIFEST_URL.to_string()),
         })
     }

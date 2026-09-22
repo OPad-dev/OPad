@@ -20,10 +20,13 @@ try:
 except ImportError:
     # On Windows, try using espressif python env if system python lacks pyserial
     if sys.platform == "win32":
-        idf_py = r"C:\Users\paella\.espressif\python_env\idf5.5_py3.14_env\Scripts\python.exe"
-        if os.path.exists(idf_py) and sys.executable != idf_py:
-            ret = subprocess.run([idf_py, __file__] + sys.argv[1:])
-            sys.exit(ret.returncode)
+        espressif_dir = os.path.expanduser(r"~/.espressif/python_env")
+        if os.path.isdir(espressif_dir):
+            for env in os.listdir(espressif_dir):
+                candidate = os.path.join(espressif_dir, env, "Scripts", "python.exe")
+                if os.path.exists(candidate) and sys.executable != candidate:
+                    ret = subprocess.run([candidate, __file__] + sys.argv[1:])
+                    sys.exit(ret.returncode)
 
     print("Error: pyserial is required. Run: pip install pyserial", file=sys.stderr)
     sys.exit(1)
@@ -48,12 +51,15 @@ def get_linux_socket_path():
         if os.path.exists(p):
             return p
     uid = os.getuid() if hasattr(os, "getuid") else 1000
+    run_user = f"/run/user/{uid}/opad/daemon.sock"
+    if os.path.exists(run_user):
+        return run_user
     p = f"/tmp/opad-{uid}/daemon.sock"
     if os.path.exists(p):
         return p
     if xdg:
         return os.path.join(xdg, "opad", "daemon.sock")
-    return f"/tmp/opad-{uid}/daemon.sock"
+    return run_user if os.path.isdir(f"/run/user/{uid}") else f"/tmp/opad-{uid}/daemon.sock"
 
 
 class DaemonConnection:

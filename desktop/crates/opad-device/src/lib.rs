@@ -26,7 +26,7 @@ pub const PIDCODES_VID: u16 = 0x1209;
 /// Every pad's USB serial number and HelloAck device_id start with this
 pub const DEVICE_ID_PREFIX: &str = "OSUPAD-";
 /// USB PID of the OPad application firmware (TinyUSB composite device)
-pub const OSUPAD_APP_PID: u16 = 0x4001;
+pub const OPAD_APP_PID: u16 = 0x4001;
 /// USB PID of the ESP32-S3 ROM download bootloader (USB-Serial-JTAG)
 pub const ESP_ROM_BOOTLOADER_PID: u16 = 0x1001;
 

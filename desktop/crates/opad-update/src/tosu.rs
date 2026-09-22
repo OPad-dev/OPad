@@ -15,7 +15,7 @@
 //! that promise is checking daily, which it does.
 //!
 //! **We only ever update a tosu we own** (§T-2). A tosu on `$PATH`, one the
-//! user pointed `$OSUPAD_TOSU_PATH` at, or one a package manager installed is
+//! user pointed `$OPAD_TOSU_PATH` at, or one a package manager installed is
 //! reported and left alone — replacing it would desynchronise dpkg/rpm/pacman
 //! and overwrite a choice the user made deliberately.
 
@@ -141,7 +141,7 @@ pub fn install(
 
 /// The §T-3 notice: upstream project, author, license, exact bundled version
 /// and where the binary came from, plus the replacement rights LGPL-3.0 grants
-/// the user — which the `$OSUPAD_TOSU_PATH` override is what satisfies.
+/// the user — which the `$OPAD_TOSU_PATH` override is what satisfies.
 pub fn notice_text(version: &str, upstream_tag: Option<&str>, url: &str) -> String {
     let tag = upstream_tag.unwrap_or(version);
     format!(
@@ -158,7 +158,7 @@ pub fn notice_text(version: &str, upstream_tag: Option<&str>, url: &str) -> Stri
          Corresponding source for this exact version is published alongside the\n\
          OPad release this binary came from, under the upstream tag above.\n\n\
          LGPL-3.0 gives you the right to replace this component with your own\n\
-         build. OPad supports that directly: set $OSUPAD_TOSU_PATH, or point\n\
+         build. OPad supports that directly: set $OPAD_TOSU_PATH, or point\n\
          the app at your own tosu in Settings. A tosu found that way is used as\n\
          is and is never updated or overwritten by OPad.\n"
     )
@@ -343,7 +343,7 @@ mod tests {
         assert!(notice.contains("v4.2.0"));
         assert!(notice.contains("Lesser General Public License v3.0"));
         assert!(notice.contains("Mikhail Babynichev"));
-        assert!(notice.contains("OSUPAD_TOSU_PATH"));
+        assert!(notice.contains("OPAD_TOSU_PATH"));
         assert!(notice.contains("https://example.invalid/tosu-4.2.0"));
     }
 

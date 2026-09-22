@@ -255,14 +255,16 @@ fn friendly_state(name: &str) -> String {
 // tosu process supervisor
 // -----------------------------------------------------------------------------
 
-/// Resolve the tosu binary: `$OSUPAD_TOSU_PATH`, `~/.local/opt/tosu/tosu`,
-/// `tosu` on `$PATH`, then the bundled copy (§T-2).
+/// Resolve the tosu binary: `$OPAD_TOSU_PATH`, legacy `$OSUPAD_TOSU_PATH`,
+/// `~/.local/opt/tosu/tosu`, `tosu` on `$PATH`, then the bundled copy (§T-2).
 ///
 /// The bundled copy is deliberately last: a tosu the user installed themselves
 /// always wins, and §T-2 forbids us from updating or overwriting one we did
 /// not install.
 pub fn find_tosu_binary() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("OSUPAD_TOSU_PATH") {
+    if let Some(p) =
+        std::env::var_os("OPAD_TOSU_PATH").or_else(|| std::env::var_os("OSUPAD_TOSU_PATH"))
+    {
         return Some(PathBuf::from(p)).filter(|p| p.is_file());
     }
     let home_install = dirs::home_dir().map(|h| h.join(".local/opt/tosu").join(paths::TOSU_BINARY));
@@ -368,7 +370,7 @@ pub fn spawn_tosu_supervisor(
             let Some(bin) = find_tosu_binary() else {
                 if !warned_missing {
                     warn!(
-                        "tosu binary not found: no $OSUPAD_TOSU_PATH, none on $PATH, and no bundled copy"
+                        "tosu binary not found: no $OPAD_TOSU_PATH, none on $PATH, and no bundled copy"
                     );
                     warned_missing = true;
                 }

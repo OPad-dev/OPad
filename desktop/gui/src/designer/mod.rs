@@ -891,7 +891,7 @@ async fn apply_layout(screen: Screen, layout: Layout) -> Result<String, String> 
 
 async fn export_layout(screen: Screen, layout: Layout) -> Result<String, String> {
     let file = rfd::AsyncFileDialog::new()
-        .set_file_name(format!("osupad-{}.json", screen.label().to_lowercase()))
+        .set_file_name(format!("opad-{}.json", screen.label().to_lowercase()))
         .add_filter("Layout", &["json"])
         .save_file()
         .await

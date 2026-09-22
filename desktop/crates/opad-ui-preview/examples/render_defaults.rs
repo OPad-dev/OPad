@@ -13,7 +13,7 @@ fn main() {
     for (screen, name) in [(SCREEN_IDLE, "idle"), (SCREEN_PLAYING, "playing")] {
         let layout = default_layout(screen).unwrap();
         let rgba = render(&layout).expect("layout renders");
-        let path = format!("{}/osupad-{}.png", out_dir, name);
+        let path = format!("{}/opad-{}.png", out_dir, name);
         std::fs::write(&path, encode_png(&rgba, 2)).unwrap();
         println!("wrote {}", path);
     }

@@ -4,8 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-if [ -f "${HOME}/Documents/projects/esp32/v5.5.2/esp-idf/export.sh" ]; then
-    source "${HOME}/Documents/projects/esp32/v5.5.2/esp-idf/export.sh" >/dev/null 2>&1
+if [ -n "${IDF_PATH:-}" ] && [ -f "${IDF_PATH}/export.sh" ]; then
+    source "${IDF_PATH}/export.sh" >/dev/null 2>&1
 elif [ -f "${HOME}/export-esp.sh" ]; then
     source "${HOME}/export-esp.sh" >/dev/null 2>&1
 fi
@@ -28,5 +28,5 @@ if [ -z "${NANOPB_GEN}" ]; then
 fi
 
 echo "Generating protobuf files with: ${NANOPB_GEN}"
-${NANOPB_GEN} -L '#include "nanopb/%s"' -I "${REPO_ROOT}/protocol" -D "${REPO_ROOT}/firmware/main/protocol" "${REPO_ROOT}/protocol/opad.proto"
+${NANOPB_GEN} -L '#include "nanopb/%s"' -I "${REPO_ROOT}/protocol" -D "${REPO_ROOT}/firmware/main/protocol" "${REPO_ROOT}/protocol/osupad.proto"
 echo "Done."

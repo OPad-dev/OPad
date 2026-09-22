@@ -216,7 +216,7 @@ pub async fn install<D: DeviceLink>(
     let staging = opad_model::paths::state_dir()
         .map_err(|e| UpdateError::Io(std::io::Error::other(e.to_string())))?
         .join("updates");
-    let target = staging.join("osupad-firmware.bin");
+    let target = staging.join("opad-firmware.bin");
     // stage_bytes checks the SHA-256 and refuses to hand back a file that does
     // not match, so nothing unverified ever reaches the disk under this name.
     let staged =
