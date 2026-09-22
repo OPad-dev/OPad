@@ -52,7 +52,10 @@ enum Commands {
     Flash {
         #[arg(help = "Path to the app image (.bin), or an ESP-IDF build directory with --full")]
         firmware: PathBuf,
-        #[arg(long, help = "Explicit serial port (default: auto-detect)")]
+        #[arg(
+            long,
+            help = "The pad's app port, or its ROM bootloader port when several are connected (default: auto-detect)"
+        )]
         port: Option<String>,
         #[arg(
             long,
@@ -502,7 +505,8 @@ async fn main() -> Result<()> {
 
             let app_port = prepare_flash(stream.as_mut(), port).await?;
             // Always hand the port back to the daemon, even if flashing failed
-            let result = flash::flash(&images, app_port.as_deref(), &|m| println!("{m}")).await;
+            let result =
+                flash::flash(&images, app_port.as_deref(), None, &|m| println!("{m}")).await;
             let finish_resp = finish_flash(stream.as_mut()).await;
             result?;
 
@@ -544,7 +548,7 @@ async fn main() -> Result<()> {
 
         Commands::Bootloader { port } => {
             let app_port = prepare_flash(stream.as_mut(), port).await?;
-            let result = flash::enter_bootloader(app_port.as_deref()).await;
+            let result = flash::enter_bootloader(app_port.as_deref(), None).await;
             // The daemon only opens the app port (303a:4001), so resuming now cannot
             // interfere with the bootloader; it reconnects once the app is flashed
             let _ = finish_flash(stream.as_mut()).await;

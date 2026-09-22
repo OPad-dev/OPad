@@ -243,10 +243,19 @@ async fn flash_and_verify<D: DeviceLink>(
     }
     state.lock().unwrap().device_connected = false;
     let app_port = device.port().or_else(opad_device::find_target_port);
+    let device_id = state
+        .lock()
+        .unwrap()
+        .device_info
+        .as_ref()
+        .map(|i| i.device_id.clone());
 
     // Step 5. The app partition and nothing else.
     let images = [(APP_PARTITION_OFFSET, image.to_path_buf())];
-    let flashed = flash::flash(&images, app_port.as_deref(), &|m| info!("{m}")).await;
+    let flashed = flash::flash(&images, app_port.as_deref(), device_id.as_deref(), &|m| {
+        info!("{m}")
+    })
+    .await;
 
     // Step 6. Whatever happened, the device loop gets its port back: if the
     // write failed the pad may still be a working keyboard on the old image,

@@ -932,24 +932,152 @@ fn hello_message() -> HostToDevice {
     }
 }
 
-/// Finds the serial port of the ESP32-S3 ROM download bootloader.
-pub fn find_bootloader_port() -> Option<String> {
-    find_usb_port(ESPRESSIF_VID, ESP_ROM_BOOTLOADER_PID)
+/// Where a pad sits, recorded from its app port before it is rebooted into the
+/// ROM bootloader, so the bootloader port can be matched to the same chip.
+///
+/// 303a:1001 is the USB-Serial-JTAG of every ESP32-S3/C3/C6/H2, so "any
+/// bootloader port" can be someone else's dev board.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PadLocation {
+    /// Chip MAC as 12 uppercase hex digits: the app's serial is OSUPAD-<MAC>,
+    /// the ROM's is the same MAC written XX:XX:XX:XX:XX:XX
+    pub mac: Option<String>,
+    /// Physical USB path (Linux sysfs, e.g. "1-3"); the bootloader re-enumerates
+    /// on the same one
+    pub usb_path: Option<String>,
 }
 
-fn find_usb_port(vid: u16, pid: u16) -> Option<String> {
+/// A ROM bootloader port and what identifies it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BootloaderPort {
+    pub name: String,
+    pub location: PadLocation,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum BootloaderMatch {
+    Found(String),
+    None,
+    /// Several bootloader ports could be this pad; the caller must name one
+    Ambiguous(Vec<String>),
+}
+
+fn normalize_mac(s: &str) -> Option<String> {
+    let hex: String = s.chars().filter(|c| *c != ':' && *c != '-').collect();
+    (hex.len() == 12 && hex.chars().all(|c| c.is_ascii_hexdigit()))
+        .then(|| hex.to_ascii_uppercase())
+}
+
+#[cfg(target_os = "linux")]
+fn usb_path_of(port_name: &str) -> Option<String> {
+    // /sys/class/tty/ttyACM0/device -> .../usb1/1-3/1-3:1.1; the parent of the
+    // interface directory is the physical device
+    let tty = std::path::Path::new(port_name).file_name()?;
+    let iface = std::fs::canonicalize(
+        std::path::Path::new("/sys/class/tty")
+            .join(tty)
+            .join("device"),
+    )
+    .ok()?;
+    let dev = iface.parent()?.file_name()?.to_str()?;
+    Some(dev.to_string())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn usb_path_of(_port_name: &str) -> Option<String> {
+    None
+}
+
+/// Where the pad behind `app_port` sits. `device_id` (from HelloAck) supplies
+/// the MAC when the platform does not report the USB serial string.
+pub fn locate_pad(app_port: &str, device_id: Option<&str>) -> PadLocation {
+    let serial = serialport::available_ports().ok().and_then(|ports| {
+        ports
+            .into_iter()
+            .find(|p| p.port_name == app_port)
+            .and_then(|p| match p.port_type {
+                SerialPortType::UsbPort(info) => info.serial_number,
+                _ => None,
+            })
+    });
+    let mac = serial
+        .as_deref()
+        .or(device_id)
+        .and_then(|s| s.strip_prefix(DEVICE_ID_PREFIX))
+        .and_then(normalize_mac);
+    PadLocation {
+        mac,
+        usb_path: usb_path_of(app_port),
+    }
+}
+
+/// Every connected ESP ROM bootloader (303a:1001) port.
+pub fn bootloader_ports() -> Vec<BootloaderPort> {
     serialport::available_ports()
-        .ok()?
+        .unwrap_or_default()
         .into_iter()
-        .find(|p| matches!(&p.port_type, SerialPortType::UsbPort(info) if info.vid == vid && info.pid == pid))
-        .map(|p| p.port_name)
+        .filter_map(|p| match p.port_type {
+            SerialPortType::UsbPort(info)
+                if info.vid == ESPRESSIF_VID && info.pid == ESP_ROM_BOOTLOADER_PID =>
+            {
+                Some(BootloaderPort {
+                    location: PadLocation {
+                        mac: info.serial_number.as_deref().and_then(normalize_mac),
+                        usb_path: usb_path_of(&p.port_name),
+                    },
+                    name: p.port_name,
+                })
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn differs(a: &Option<String>, b: &Option<String>) -> bool {
+    matches!((a, b), (Some(a), Some(b)) if a != b)
+}
+
+fn same(a: &Option<String>, b: &Option<String>) -> bool {
+    matches!((a, b), (Some(a), Some(b)) if a == b)
+}
+
+/// Picks the bootloader port that is `pad`.
+///
+/// A MAC or USB-path match wins. A port that contradicts either is someone
+/// else's. What is left — ports that cannot be compared — is accepted only if
+/// exactly one of them appeared since `preexisting` was taken, i.e. came up
+/// because this pad was just rebooted.
+pub fn select_bootloader_port(
+    candidates: &[BootloaderPort],
+    pad: &PadLocation,
+    preexisting: &[String],
+) -> BootloaderMatch {
+    if let Some(c) = candidates
+        .iter()
+        .find(|c| same(&c.location.mac, &pad.mac) || same(&c.location.usb_path, &pad.usb_path))
+    {
+        return BootloaderMatch::Found(c.name.clone());
+    }
+    let unproven: Vec<&BootloaderPort> = candidates
+        .iter()
+        .filter(|c| {
+            !differs(&c.location.mac, &pad.mac) && !differs(&c.location.usb_path, &pad.usb_path)
+        })
+        .filter(|c| !preexisting.contains(&c.name))
+        .collect();
+    match unproven.as_slice() {
+        [] => BootloaderMatch::None,
+        [one] => BootloaderMatch::Found(one.name.clone()),
+        many => BootloaderMatch::Ambiguous(many.iter().map(|c| c.name.clone()).collect()),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_port, fit_nanopb_string, handle_device_message, is_opad_device_id, proto,
-        DeviceEvent, PortClass, ProbeHistory, PORT_SCAN_INTERVAL, PROBE_RETRY_KNOWN_VID,
+        classify_port, fit_nanopb_string, handle_device_message, is_opad_device_id, normalize_mac,
+        proto, select_bootloader_port, BootloaderMatch, BootloaderPort, DeviceEvent, PadLocation,
+        PortClass, ProbeHistory, PORT_SCAN_INTERVAL, PROBE_RETRY_KNOWN_VID,
         RECONNECT_SETTLE_INTERVAL,
     };
     use serialport::SerialPortType;
@@ -1078,6 +1206,72 @@ mod tests {
         assert!(is_opad_device_id("OSUPAD-0011223344AA"));
         assert!(!is_opad_device_id("osupad-0011"));
         assert!(!is_opad_device_id(""));
+    }
+
+    fn boot(name: &str, mac: Option<&str>, path: Option<&str>) -> BootloaderPort {
+        BootloaderPort {
+            name: name.into(),
+            location: PadLocation {
+                mac: mac.map(Into::into),
+                usb_path: path.map(Into::into),
+            },
+        }
+    }
+
+    #[test]
+    fn the_bootloader_port_is_matched_by_mac_or_usb_path() {
+        let pad = PadLocation {
+            mac: Some("3CDC75701678".into()),
+            usb_path: Some("1-3".into()),
+        };
+        let other = boot("/dev/ttyACM1", Some("AABBCCDDEEFF"), Some("1-4"));
+        let ours = boot("/dev/ttyACM2", Some("3CDC75701678"), Some("1-3"));
+        // Even though the other board was there first and is listed first
+        let all = [other.clone(), ours.clone()];
+        let pre = ["/dev/ttyACM1".to_string()];
+        assert_eq!(
+            select_bootloader_port(&all, &pad, &pre),
+            BootloaderMatch::Found("/dev/ttyACM2".into())
+        );
+        // Only the stranger is in download mode: never it
+        assert_eq!(
+            select_bootloader_port(&[other], &pad, &[]),
+            BootloaderMatch::None
+        );
+        // USB path alone is enough (no serial string reported)
+        let by_path = boot("/dev/ttyACM3", None, Some("1-3"));
+        assert_eq!(
+            select_bootloader_port(&[by_path], &pad, &[]),
+            BootloaderMatch::Found("/dev/ttyACM3".into())
+        );
+    }
+
+    #[test]
+    fn unidentifiable_bootloader_ports_need_to_be_the_only_new_one() {
+        let pad = PadLocation::default();
+        let a = boot("COM4", None, None);
+        let b = boot("COM6", None, None);
+        assert_eq!(
+            select_bootloader_port(&[a.clone(), b.clone()], &pad, &["COM4".into()]),
+            BootloaderMatch::Found("COM6".into())
+        );
+        assert_eq!(
+            select_bootloader_port(&[a, b], &pad, &[]),
+            BootloaderMatch::Ambiguous(vec!["COM4".into(), "COM6".into()])
+        );
+    }
+
+    #[test]
+    fn macs_are_normalised_from_both_spellings() {
+        assert_eq!(
+            normalize_mac("3c:dc:75:70:16:78").as_deref(),
+            Some("3CDC75701678")
+        );
+        assert_eq!(
+            normalize_mac("3CDC75701678").as_deref(),
+            Some("3CDC75701678")
+        );
+        assert_eq!(normalize_mac("123456"), None);
     }
 
     #[test]

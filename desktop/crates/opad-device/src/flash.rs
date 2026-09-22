@@ -14,6 +14,7 @@
 //! counters and the owner record (§U-3b). Erasing is a deliberate, documented,
 //! manual act (`docs/recovery.md` §7), not something an updater does.
 
+use crate::{select_bootloader_port, BootloaderMatch, PadLocation};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -33,6 +34,8 @@ pub enum FlashError {
     PortBusy(String, String),
     #[error("The pad did not re-enumerate as the ROM bootloader (303a:1001) after every trigger. See docs/recovery.md for the manual BOOT+RESET sequence.")]
     NoBootloader,
+    #[error("Several ESP32 ROM bootloader ports could be this pad ({0:?}); pass the right one with --port")]
+    AmbiguousBootloader(Vec<String>),
     #[error("Could not run espflash ({0}). Install espflash, or flash by hand as docs/recovery.md describes.")]
     EspflashMissing(String),
     #[error("espflash failed writing {path} at {offset:#x} (exit {code:?}). The pad is still in download mode; see docs/recovery.md.")]
@@ -99,15 +102,44 @@ fn pulse_trigger(path: &str, trigger: BootTrigger) -> Result<(), FlashError> {
     Ok(())
 }
 
-/// Reboot the running app into the ROM download bootloader and return the port
-/// it came back on. A pad already sitting in the bootloader is returned as-is.
-pub async fn enter_bootloader(app_port: Option<&str>) -> Result<String, FlashError> {
-    if let Some(p) = crate::find_bootloader_port() {
-        return Ok(p);
+fn is_bootloader_port(path: &str) -> bool {
+    crate::bootloader_ports().iter().any(|b| b.name == path)
+}
+
+fn pick(pad: &PadLocation, preexisting: &[String]) -> Result<Option<String>, FlashError> {
+    match select_bootloader_port(&crate::bootloader_ports(), pad, preexisting) {
+        BootloaderMatch::Found(p) => Ok(Some(p)),
+        BootloaderMatch::None => Ok(None),
+        BootloaderMatch::Ambiguous(ports) => Err(FlashError::AmbiguousBootloader(ports)),
     }
+}
+
+/// Reboot the running app into the ROM download bootloader and return the port
+/// it came back on — the port of *this* pad, matched by MAC or USB path, never
+/// just any 303a:1001 port.
+///
+/// `app_port` may itself name a bootloader port (`--port` override), which is
+/// then used as-is. With no app port, a pad already in the bootloader is used
+/// only if it is the sole bootloader port.
+pub async fn enter_bootloader(
+    app_port: Option<&str>,
+    device_id: Option<&str>,
+) -> Result<String, FlashError> {
     let Some(app_port) = app_port else {
-        return Err(FlashError::NoDevice);
+        return pick(&PadLocation::default(), &[])?.ok_or(FlashError::NoDevice);
     };
+    if is_bootloader_port(app_port) {
+        return Ok(app_port.to_string());
+    }
+
+    let pad = crate::locate_pad(app_port, device_id);
+    debug!("Pad on {} is at {:?}", app_port, pad);
+    // Ports already in download mode are someone else's unless they prove
+    // otherwise by MAC or path
+    let preexisting: Vec<String> = crate::bootloader_ports()
+        .into_iter()
+        .map(|b| b.name)
+        .collect();
 
     info!("Rebooting {} into the ROM download bootloader", app_port);
     let mut last_err = None;
@@ -121,8 +153,12 @@ pub async fn enter_bootloader(app_port: Option<&str>) -> Result<String, FlashErr
             last_err = Some(e);
             continue;
         }
-        if let Some(p) = wait_for_port(crate::find_bootloader_port, Duration::from_secs(3)).await {
-            return Ok(p);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
+        while tokio::time::Instant::now() < deadline {
+            if let Some(p) = pick(&pad, &preexisting)? {
+                return Ok(p);
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
         debug!("The {:?} trigger did not take", trigger);
     }
@@ -203,9 +239,10 @@ pub fn write_images(
 pub async fn flash(
     images: &[(u32, PathBuf)],
     app_port: Option<&str>,
+    device_id: Option<&str>,
     progress: &(dyn Fn(&str) + Sync),
 ) -> Result<(), FlashError> {
-    let boot_port = enter_bootloader(app_port).await?;
+    let boot_port = enter_bootloader(app_port, device_id).await?;
     write_images(images, &boot_port, progress)?;
     progress("Firmware written, rebooting into the application...");
     reset_to_app(&boot_port)
