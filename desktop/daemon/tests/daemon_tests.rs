@@ -432,6 +432,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             install_id: None,
             pending_takeover: None,
             foreign_pad: false,
+            nvs_restore_pending: false,
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
@@ -653,6 +654,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             install_id: None,
             pending_takeover: None,
             foreign_pad: false,
+            nvs_restore_pending: false,
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
@@ -709,6 +711,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             install_id: None,
             pending_takeover: None,
             foreign_pad: false,
+            nvs_restore_pending: false,
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
@@ -807,6 +810,7 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
         install_id: None,
         pending_takeover: None,
         foreign_pad: false,
+        nvs_restore_pending: false,
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
@@ -875,6 +879,7 @@ async fn a_non_monotonic_rejection_is_retried_with_the_pads_current_counters() {
         install_id: None,
         pending_takeover: None,
         foreign_pad: false,
+        nvs_restore_pending: false,
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
@@ -932,6 +937,7 @@ async fn test_json_validation_preview_and_confirm() {
         install_id: None,
         pending_takeover: None,
         foreign_pad: false,
+        nvs_restore_pending: false,
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
@@ -1037,6 +1043,7 @@ async fn test_ipc_handshake_mismatch_and_protocol_version() {
         install_id: None,
         pending_takeover: None,
         foreign_pad: false,
+        nvs_restore_pending: false,
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
@@ -1147,6 +1154,7 @@ async fn test_install_update_is_refused_outside_idle() {
             install_id: None,
             pending_takeover: None,
             foreign_pad: false,
+            nvs_restore_pending: false,
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
@@ -1199,6 +1207,7 @@ async fn test_firmware_is_not_an_enableable_updater() {
         install_id: None,
         pending_takeover: None,
         foreign_pad: false,
+        nvs_restore_pending: false,
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
@@ -2022,6 +2031,7 @@ fn firmware_update_fixture(mode: RuntimeMode, connected: bool) -> IpcFixture {
         install_id: None,
         pending_takeover: None,
         foreign_pad: false,
+        nvs_restore_pending: false,
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
@@ -2516,4 +2526,66 @@ async fn test_device_connected_with_config_adopts_device_config() {
     assert!(!actions
         .iter()
         .any(|a| matches!(a, RuntimeAction::SendConfig(_))));
+}
+
+// A known pad whose NVS was erased reports generation 1 and zero counters.
+// Its default config must not replace ours, and the flag asks for a restore.
+#[tokio::test]
+async fn a_known_pad_with_erased_nvs_is_restored_not_adopted() {
+    let now = Instant::now();
+    let ours = DeviceConfig {
+        key1_hid_usage: 0x04, // 'a', not the firmware default
+        ..Default::default()
+    };
+    let mut controller = RuntimeController::new(
+        ours.clone(),
+        Some(pad_info("OSUPAD-WIPED")),
+        counters("OSUPAD-WIPED", 1, 5000, 4000),
+        HashMap::new(),
+        None,
+        vec!["OSUPAD-WIPED".to_string()],
+        now,
+    );
+    let _ = controller.on_event(
+        RuntimeEvent::DeviceCounters(counters("OSUPAD-WIPED", 1, 0, 0)),
+        now,
+    );
+    let actions = controller.on_event(
+        RuntimeEvent::DeviceConnected(pad_info("OSUPAD-WIPED"), Some(DeviceConfig::default())),
+        now,
+    );
+
+    assert!(controller.state.nvs_restore_pending);
+    assert_eq!(controller.state.config.key1_hid_usage, 0x04);
+    assert!(actions
+        .iter()
+        .any(|a| matches!(a, RuntimeAction::SendConfig(c) if c.key1_hid_usage == 0x04)));
+    assert!(!actions
+        .iter()
+        .any(|a| matches!(a, RuntimeAction::SaveDeviceConfig(_))));
+    assert!(actions.contains(&RuntimeAction::TriggerSync));
+}
+
+// The same pad with its counters intact adopts the pad's config as before
+#[tokio::test]
+async fn a_known_pad_with_its_counters_is_not_flagged() {
+    let now = Instant::now();
+    let mut controller = RuntimeController::new(
+        DeviceConfig::default(),
+        Some(pad_info("OSUPAD-FINE")),
+        counters("OSUPAD-FINE", 1, 5000, 4000),
+        HashMap::new(),
+        None,
+        vec!["OSUPAD-FINE".to_string()],
+        now,
+    );
+    let _ = controller.on_event(
+        RuntimeEvent::DeviceCounters(counters("OSUPAD-FINE", 1, 5001, 4000)),
+        now,
+    );
+    let _ = controller.on_event(
+        RuntimeEvent::DeviceConnected(pad_info("OSUPAD-FINE"), Some(DeviceConfig::default())),
+        now,
+    );
+    assert!(!controller.state.nvs_restore_pending);
 }

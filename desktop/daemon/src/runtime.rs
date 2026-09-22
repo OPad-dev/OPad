@@ -12,6 +12,7 @@ use opad_model::{
 use opad_protocol::proto;
 
 use crate::telemetry::DataSync;
+use tracing::warn;
 
 pub const COOLDOWN_DURATION: Duration = Duration::from_secs(5);
 pub const HOST_STATUS_INTERVAL: Duration = Duration::from_secs(1);
@@ -62,7 +63,14 @@ pub struct DaemonState {
     /// at startup from the backup directory, so a restart does not read as
     /// "never".
     pub last_backup: Option<String>,
+    /// The connected pad is one we know but came back blank (NVS erased:
+    /// generation 1, zero counters, or DIAG_EVENT_NVS_ERASED). The next sync
+    /// restores its counters from this PC; its default config is not adopted.
+    pub nvs_restore_pending: bool,
 }
+
+/// DIAG_EVENT_NVS_ERASED in firmware/main/diag/diag.h
+const DIAG_EVENT_NVS_ERASED: u32 = 8;
 
 /// The four cases in the §W3-3 table
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,6 +238,7 @@ impl RuntimeController {
             install_id: None,
             pending_takeover: None,
             foreign_pad: false,
+            nvs_restore_pending: false,
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: initial_layouts,
@@ -286,7 +295,27 @@ impl RuntimeController {
                 self.state.device_connected = true;
                 self.state.counters_source = CounterSource::Device;
 
-                if let Some(cfg) = &dev_cfg {
+                // A pad we have counters for, reporting a factory-fresh NVS:
+                // its flash was erased. Its config is the firmware default, not
+                // a choice anyone made, so ours is pushed rather than replaced.
+                let c = &self.state.counters;
+                let nvs_wiped = self.known_devices.contains(&info.device_id)
+                    && c.counter_generation <= 1
+                    && c.lifetime_key1 == 0
+                    && c.lifetime_key2 == 0
+                    && self.state.pc_counters.as_ref().is_some_and(|pc| {
+                        pc.device_id == info.device_id
+                            && (pc.lifetime_key1 > 0 || pc.lifetime_key2 > 0)
+                    });
+                self.state.nvs_restore_pending = nvs_wiped;
+                if nvs_wiped {
+                    warn!(
+                        "{} came back with blank counters (NVS erased?); restoring them from this PC",
+                        info.device_id
+                    );
+                }
+
+                if let Some(cfg) = dev_cfg.as_ref().filter(|_| !nvs_wiped) {
                     let mut adopted = cfg.clone();
                     if adopted.tosu_endpoint.trim().is_empty() {
                         adopted.tosu_endpoint = if self.state.config.tosu_endpoint.trim().is_empty()
@@ -385,7 +414,7 @@ impl RuntimeController {
                 }
 
                 actions.push(RuntimeAction::SendTimeSync);
-                if dev_cfg.is_none() && !self.state.foreign_pad {
+                if (dev_cfg.is_none() || nvs_wiped) && !self.state.foreign_pad {
                     actions.push(RuntimeAction::SendConfig(self.state.config.clone()));
                 }
                 actions.push(RuntimeAction::SendHostStatus {
@@ -454,6 +483,22 @@ impl RuntimeController {
 
             RuntimeEvent::DeviceLogBatch(batch) => {
                 for ev in batch.events {
+                    if ev.event_id == DIAG_EVENT_NVS_ERASED
+                        && self.state.device_connected
+                        && !self.state.foreign_pad
+                        && !self.state.nvs_restore_pending
+                    {
+                        warn!(
+                            "The pad reports its NVS was erased; restoring counters from this PC"
+                        );
+                        self.state.nvs_restore_pending = true;
+                        if self.state.mode == RuntimeMode::Idle
+                            && self.state.pending_takeover.is_none()
+                            && self.state.pending_replacement.is_none()
+                        {
+                            actions.push(RuntimeAction::TriggerSync);
+                        }
+                    }
                     let level = match ev.level {
                         0 => LogLevel::Debug,
                         1 => LogLevel::Info,
@@ -656,6 +701,7 @@ impl RuntimeController {
                     self.state.esp_counters = Some(counters.clone());
                     self.state.last_sync_time = time_str;
                     self.state.last_sync_error = None;
+                    self.state.nvs_restore_pending = false;
                     self.last_synced_counters = Some(counters);
                     self.last_periodic_sync = now;
                     self.last_periodic_time_sync = now;

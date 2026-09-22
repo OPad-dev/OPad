@@ -619,6 +619,7 @@ mod tests {
             install_id: None,
             pending_takeover: None,
             foreign_pad: false,
+            nvs_restore_pending: false,
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
