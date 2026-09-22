@@ -99,6 +99,9 @@ jobs:
           # No FUSE on the runner
           echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
 
+      # Rebuilds tosu's lazer pp calculator in almalinux:8 (docker) and its
+      # tsprocess addon with zig, so tosu runs down to glibc 2.28 (RHEL 9,
+      # Ubuntu 22.04, Debian 12); upstream's prebuilt needs glibc 2.38
       - name: Build bundled tosu
         run: make tosu
 
@@ -161,12 +164,13 @@ jobs:
       # Install each package on clean distros and exercise it (install scripts,
       # libraries, daemon, espflash, tosu, removal)
       - name: Test the packages on clean distros
-        run: scripts/release/test_packages.sh ubuntu:20.04 ubuntu:24.04 debian:13 fedora:43
+        run: scripts/release/test_packages.sh ubuntu:22.04 ubuntu:24.04 debian:12 debian:13 rockylinux:9 fedora:43
 
       - name: Third-party notices and tosu source
         run: |
           make notices
           make tosu-source
+          make lazer-calculator-source
 
       - name: Stage Linux artifacts
         run: |

@@ -22,3 +22,13 @@ its npm production dependencies and the embedded Node.js 24 runtime.
 LGPL-3.0 gives you the right to replace this component with your own
 version. Point the $OSUPAD_TOSU_PATH environment variable at your own
 binary to use it instead of this bundled copy.
+
+Rebuilt component: on Linux, tosu's pp calculator (@tosuapp/lazer-calculator,
+LGPL-3.0-only, https://github.com/tosuapp/lazer-calculator) is rebuilt by
+OPad from the source of the exact version tosu pins, in an AlmaLinux 8
+container, so that it runs on older glibc than upstream's prebuilt. The only
+change is that ppy.osu.Game.Resources, taken by upstream at version "*", is
+pinned to the version the pinned osu! revision names. The build script is
+scripts/release/lazer-calculator/build-in-container.sh in the OPad repository,
+and the calculator's source is published with each OPad release as
+lazer-calculator-<version>-source.tar.gz.

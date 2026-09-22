@@ -45,7 +45,7 @@ TOSU_STANDALONE ?= 1
 TARGET_DIR ?= desktop/target/release
 BINS := opad-daemon opad-gui opadctl
 
-.PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage deb rpm packages notices tosu-source tosu-notices lvgl espflash
+.PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage deb rpm packages notices tosu-source tosu-notices lvgl espflash lazer-calculator lazer-calculator-source
 
 # L-4: Build AppDir / AppImage
 appimage: all
@@ -67,6 +67,40 @@ packages:
 all:
 	$(CARGO) build $(CARGO_FLAGS) --manifest-path desktop/Cargo.toml --bins
 
+# Portable native code in the standalone tosu. Upstream's prebuilt lazer pp
+# calculator is built on ubuntu-latest and needs glibc 2.38, and tosu's own
+# tsprocess addon needs the build host's glibc and libstdc++, so a tosu built
+# as-is fails to start on Ubuntu 22.04, Debian 12 and RHEL 9. With
+# TOSU_PORTABLE=1 the calculator is rebuilt in almalinux:8 (needs docker) and
+# tsprocess is compiled with zig for glibc $(TOSU_GLIBC) and a static libc++.
+TOSU_PORTABLE ?= 1
+TOSU_GLIBC ?= 2.28
+ZIG ?= zig
+LAZER_DIR ?= build/lazer-calculator
+# The calculator version the tosu tree pins (@tosuapp/lazer-calculator-prebuilt)
+LAZER_VERSION = $(shell sed -n 's/.*"@tosuapp\/lazer-calculator-prebuilt": "\([^"]*\)".*/\1/p' $(TOSU_SRC_DIR)/packages/tosu/package.json 2>/dev/null)
+LAZER_REPO ?= https://github.com/tosuapp/lazer-calculator.git
+
+lazer-calculator:
+	@test -n "$(LAZER_VERSION)" || { echo "No lazer-calculator version in $(TOSU_SRC_DIR) (clone tosu first: make tosu)" >&2; exit 1; }
+	@if [ ! -d "$(LAZER_DIR)/src" ]; then \
+		git clone --depth 1 --branch v$(LAZER_VERSION) $(LAZER_REPO) "$(LAZER_DIR)/src"; \
+	fi
+	docker run --rm -v "$(abspath $(LAZER_DIR)/src):/src" \
+		-v "$(abspath scripts/release/lazer-calculator/build-in-container.sh):/build.sh:ro" \
+		almalinux:8 /build.sh
+	install -m 644 "$(LAZER_DIR)/src/lib/native/dist/binding.node" "$(LAZER_DIR)/binding.node"
+	@echo "✓ lazer-calculator $(LAZER_VERSION) in $(LAZER_DIR)/binding.node"
+
+# LGPL-3.0 corresponding source for the rebuilt calculator
+LAZER_SOURCE_TARBALL ?= dist/lazer-calculator-$(LAZER_VERSION)-source.tar.gz
+lazer-calculator-source:
+	@test -d "$(LAZER_DIR)/src" || $(MAKE) lazer-calculator
+	@mkdir -p "$(dir $(LAZER_SOURCE_TARBALL))"
+	git -C "$(LAZER_DIR)/src" archive --format=tar.gz --prefix=lazer-calculator-$(LAZER_VERSION)/ \
+		-o "$(abspath $(LAZER_SOURCE_TARBALL))" v$(LAZER_VERSION)
+	@echo "✓ $(LAZER_SOURCE_TARBALL)"
+
 # B-4: Build tosu from source into build/tosu/
 tosu:
 	@mkdir -p $(TOSU_BUILD_DIR)
@@ -78,6 +112,19 @@ tosu:
 	cd $(TOSU_SRC_DIR) && $(PNPM) install --frozen-lockfile
 	rm -rf $(TOSU_BUILD_DIR)/dist $(TOSU_BUILD_DIR)/tosu
 ifeq ($(TOSU_STANDALONE),1)
+ifeq ($(TOSU_PORTABLE),1)
+	@mkdir -p build/zigcc
+	@printf '#!/bin/sh\nexec $(ZIG) cc -target x86_64-linux-gnu.$(TOSU_GLIBC) "$$@"\n' > build/zigcc/cc
+	@printf '#!/bin/sh\nexec $(ZIG) c++ -target x86_64-linux-gnu.$(TOSU_GLIBC) "$$@"\n' > build/zigcc/c++
+	@chmod +x build/zigcc/cc build/zigcc/c++
+	cd $(TOSU_SRC_DIR)/packages/tsprocess && CC="$(abspath build/zigcc/cc)" CXX="$(abspath build/zigcc/c++)" \
+		LINK="$(abspath build/zigcc/c++)" npx --no-install node-gyp rebuild
+	$(MAKE) lazer-calculator
+	# Replace the npm prebuilt (rm first: pnpm hard-links it to its store)
+	for d in $(TOSU_SRC_DIR)/node_modules/.pnpm/@tosuapp+lazer-calculator-linux-x64@*/node_modules/@tosuapp/lazer-calculator-linux-x64; do \
+		rm -f "$$d/binding.node" && cp "$(LAZER_DIR)/binding.node" "$$d/binding.node"; \
+	done
+endif
 	# Self-contained binary with Node 24 built in (upstream's own release
 	# recipe): tosu needs Node >=24.14 <25, which Debian/Ubuntu/Fedora do not ship
 	cd $(TOSU_SRC_DIR) && $(PNPM) --filter tosu run compile:linux
