@@ -81,6 +81,15 @@ sudo sysctl --system
 
 ---
 
+### tosu needs glibc 2.38 or newer
+OPad itself (the keypad, daemon, counters and GUI) runs on any distribution
+with glibc 2.31 or newer: Ubuntu 20.04, Debian 11 and later. The bundled
+**tosu 4.26.2** does not: at startup it loads its prebuilt pp calculator
+(`@tosuapp/lazer-calculator`), which needs **glibc 2.38**. On Ubuntu 22.04,
+Debian 12 and older, tosu exits immediately and the pad shows no live gameplay
+data; everything else works. Ubuntu 24.04, Debian 13, Fedora 39 and newer are
+fine. This comes from upstream tosu's prebuilt binary, not from OPad.
+
 ## 3. USB Permissions & Serial Port Access (Linux)
 
 ### Symptom: `Permission denied (os error 13)` or Device Not Detected

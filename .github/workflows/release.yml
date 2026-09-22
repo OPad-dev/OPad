@@ -158,6 +158,11 @@ jobs:
             fi
           done
 
+      # Install each package on clean distros and exercise it (install scripts,
+      # libraries, daemon, espflash, tosu, removal)
+      - name: Test the packages on clean distros
+        run: scripts/release/test_packages.sh ubuntu:20.04 ubuntu:24.04 debian:13 fedora:43
+
       - name: Third-party notices and tosu source
         run: |
           make notices
