@@ -143,6 +143,25 @@ module usbc_cutout() {
     }
 }
 
+// M2 heat-set insert boss for the MX/HE input module (hardware/pcb/V1: 2x M2
+// at case (15.5, 16.5) and (60.5, 16.5)). Its top meets the module PCB's
+// underside: MX puts the PCB top 5.0 mm under the plate top (H_FLAT), the PCB
+// is 1.6 mm, and assembled the bottom plate's frame sits PLATE_Z_OFFSET above
+// the case's (snap bead at 2.0 + SNAP_Z meets the groove at SNAP_Z).
+MX_PLATE_TO_PCB     = 5.0;
+MODULE_PCB_T        = 1.6;
+PLATE_Z_OFFSET      = 2.0;
+PLATE_BASE_T        = 2.0;
+M2_BOSS_H           = H_FLAT - MX_PLATE_TO_PCB - MODULE_PCB_T + PLATE_Z_OFFSET - PLATE_BASE_T; // 8.4
+module m2_boss() {
+    difference() {
+        cylinder(h=M2_BOSS_H, r=2.5);
+        // 3.2 mm bore for an M2 brass insert
+        translate([0, 0, -0.1])
+            cylinder(h=M2_BOSS_H + 0.2, r=1.6);
+    }
+}
+
 // --- Top Case Module ---
 
 module top_case() {
@@ -201,6 +220,10 @@ module top_case() {
         // 6. USB-C Port Cutout on RIGHT SIDE WALL (Elevated at Top-Right: Y = 62.0, Z = 18.0)
         translate([CASE_W - WALL_T/2, 62.0, 18.0])
             usbc_cutout();
+
+        // The JST SH cable from the input module to the carrier runs through
+        // the main cavity (item 2), which is open from the module to under
+        // the screen; no extra channel is cut.
 
         // 7. Rear Pry Notch (for opening with a coin or pick without damage)
         translate([CASE_W/2 - 6.0, CASE_L - 2.0, -0.1])
@@ -318,6 +341,10 @@ module bottom_plate() {
             cylinder(h=19.2, r1=2.5, r2=2.0);
         translate([60.8, 73.5, 2.0])
             cylinder(h=19.2, r1=2.5, r2=2.0);
+
+        // 5. M2 Heat-Set Insert Mounting Bosses (PCB input module retention)
+        translate([15.5, 16.5, 2.0]) m2_boss();
+        translate([60.5, 16.5, 2.0]) m2_boss();
     }
 }
 
