@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
@@ -16,6 +17,7 @@ use opad_storage::Storage;
 use opad_tosu::{spawn_tosu_supervisor, TosuManager};
 
 pub mod backup;
+pub mod device_actor;
 pub mod firmware_update;
 pub mod identity;
 pub mod ipc_handlers;
@@ -25,6 +27,7 @@ pub mod sync;
 pub mod telemetry;
 pub mod updater;
 
+use device_actor::DeviceCommand;
 use ipc_handlers::handle_ipc_request;
 use log_hub::{LogHub, LogHubLayer};
 use runtime::{apply_event, PendingOperations, RuntimeAction, RuntimeController, RuntimeEvent};
@@ -206,6 +209,9 @@ async fn main() -> Result<()> {
     // Start Device CDC manager
     let (device_manager, mut device_rx) = DeviceManager::new();
     let device_manager = Arc::new(device_manager);
+    // Every runtime action reaches the pad through this one ordered queue
+    let resend_data = Arc::new(AtomicBool::new(false));
+    let device_cmd = device_actor::spawn(device_manager.clone(), resend_data.clone());
 
     // Setup Local IPC Server
     let socket_path = get_socket_path();
@@ -384,10 +390,12 @@ async fn main() -> Result<()> {
                 last_system_time = now_system;
 
                 if clock_jump && controller.state.device_connected && controller.state.mode == RuntimeMode::Idle {
-                    let dm = device_manager.clone();
-                    tokio::spawn(async move {
-                        let _ = dm.send_time_sync().await;
-                    });
+                    let _ = device_cmd.send(DeviceCommand::TimeSync).await;
+                }
+
+                // A telemetry diff met a full device queue: resend everything
+                if resend_data.swap(false, Ordering::SeqCst) {
+                    controller.data_sync.reset_sent();
                 }
 
                 // Retry opening SQLite every 60s if unavailable (§P2-12)
@@ -436,10 +444,7 @@ async fn main() -> Result<()> {
             for action in actions {
                 match action {
                     RuntimeAction::SendTimeSync => {
-                        let dm = device_manager.clone();
-                        tokio::spawn(async move {
-                            let _ = dm.send_time_sync().await;
-                        });
+                        let _ = device_cmd.send(DeviceCommand::TimeSync).await;
                     }
                     RuntimeAction::ClaimOwnership => {
                         // §W3-2: an NVS write, which the firmware honours only
@@ -447,19 +452,13 @@ async fn main() -> Result<()> {
                         if let Some(owner) =
                             install_id.as_deref().and_then(identity::parse_owner_id)
                         {
-                            let dm = device_manager.clone();
-                            tokio::spawn(async move {
-                                if let Err(e) = dm.claim_ownership(&owner).await {
-                                    warn!("Could not record ownership on the pad: {}", e);
-                                }
-                            });
+                            let _ = device_cmd
+                                .send(DeviceCommand::ClaimOwnership(owner.to_vec()))
+                                .await;
                         }
                     }
                     RuntimeAction::SendConfig(cfg) => {
-                        let dm = device_manager.clone();
-                        tokio::spawn(async move {
-                            let _ = dm.send_config(&cfg).await;
-                        });
+                        let _ = device_cmd.send(DeviceCommand::Config(cfg)).await;
                     }
                     RuntimeAction::SaveDeviceConfig(cfg) => {
                         let s_guard = storage.lock().unwrap();
@@ -476,24 +475,19 @@ async fn main() -> Result<()> {
                         is_playing,
                         play_id,
                     } => {
-                        let dm = device_manager.clone();
-                        tokio::spawn(async move {
-                            let _ = dm
-                                .send_host_status(tosu_connected, is_playing, play_id)
-                                .await;
-                        });
+                        let _ = device_cmd
+                            .send(DeviceCommand::HostStatus {
+                                tosu_connected,
+                                is_playing,
+                                play_id,
+                            })
+                            .await;
                     }
                     RuntimeAction::SendDataUpdate(changes) => {
-                        let dm = device_manager.clone();
-                        tokio::spawn(async move {
-                            let _ = dm.send_data_update(&changes).await;
-                        });
+                        let _ = device_cmd.send(DeviceCommand::DataUpdate(changes)).await;
                     }
                     RuntimeAction::SendLayout(screen, layout) => {
-                        let dm = device_manager.clone();
-                        tokio::spawn(async move {
-                            let _ = dm.send_layout(screen, &layout).await;
-                        });
+                        let _ = device_cmd.send(DeviceCommand::Layout(screen, layout)).await;
                     }
                     RuntimeAction::TriggerSync => {
                         let ds = daemon_state.clone();
@@ -507,10 +501,7 @@ async fn main() -> Result<()> {
                         });
                     }
                     RuntimeAction::RequestDeviceStatus => {
-                        let dm = device_manager.clone();
-                        tokio::spawn(async move {
-                            let _ = dm.request_status().await;
-                        });
+                        let _ = device_cmd.send(DeviceCommand::RequestStatus).await;
                     }
                     RuntimeAction::SetStorageWritesAllowed(allowed) => {
                         if let Some(s) = storage.lock().unwrap().as_mut() {
