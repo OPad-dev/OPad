@@ -220,6 +220,11 @@ pub struct App {
     pub settings_tab: pages::SettingsTab,
 }
 
+/// Shown when no tray host appeared: closing the window then quits the app
+/// rather than leaving it running with no way back to it
+const NO_TRAY_BANNER: &str =
+    "No system tray found; the app will quit when closed. The pad keeps working.";
+
 #[derive(Debug, Clone)]
 pub enum Message {
     Navigate(Page),
@@ -315,6 +320,7 @@ pub enum Message {
     WindowOpened(window::Id),
     CloseRequested(window::Id),
     Tray(tray::TrayEvent),
+    TrayTimeout,
     ShowRequested(Option<String>),
     Window(chrome::WindowAction),
     Resized,
@@ -411,7 +417,13 @@ impl App {
             "gui",
             "OPad application initialized",
         );
-        let mut tasks = vec![designer_task.map(Message::Designer), app.poll()];
+        let mut tasks = vec![
+            designer_task.map(Message::Designer),
+            app.poll(),
+            Task::perform(tokio::time::sleep(Duration::from_secs(2)), |_| {
+                Message::TrayTimeout
+            }),
+        ];
         if !start_hidden {
             tasks.push(app.open_window());
         }
@@ -1417,12 +1429,24 @@ impl App {
 
             Message::WindowOpened(_) => {}
             Message::CloseRequested(id) => {
-                if self.tray_available == Some(false) {
-                    // Nowhere to live without a window
+                if self.tray_available != Some(true) {
+                    // Nowhere to live without a window; exit cleanly to avoid zombie background process
                     return iced::exit();
                 }
                 self.window = None;
                 return window::close(id);
+            }
+            Message::TrayTimeout => {
+                if self.tray_available.is_none() {
+                    tracing::warn!("Tray host not detected within 2 seconds; falling back to standard window lifecycle");
+                    self.tray_available = Some(false);
+                    if self.banner.is_none() {
+                        self.banner = Some(NO_TRAY_BANNER.into());
+                    }
+                    if self.window.is_none() {
+                        return self.open_window();
+                    }
+                }
             }
             Message::ShowRequested(target) => {
                 if let Some(target_str) = target {
@@ -1462,12 +1486,16 @@ impl App {
                 tray::TrayEvent::Started(handle) => {
                     self.tray = Some(handle);
                     self.tray_available = Some(true);
+                    // The tray can come up after the 2 s fallback already fired
+                    if self.banner.as_deref() == Some(NO_TRAY_BANNER) {
+                        self.banner = None;
+                    }
                     self.update_tray();
                 }
                 tray::TrayEvent::Unavailable => {
                     self.tray_available = Some(false);
                     if self.banner.is_none() {
-                        self.banner = Some("No system tray found; the app will quit when closed. The pad keeps working.".into());
+                        self.banner = Some(NO_TRAY_BANNER.into());
                     }
                     if self.window.is_none() {
                         return self.open_window();

@@ -292,6 +292,20 @@ mod linux {
 }
 
 #[cfg(target_os = "linux")]
+async fn check_status_notifier_watcher() -> bool {
+    let Ok(conn) = zbus::connection::Connection::session().await else {
+        return false;
+    };
+    let Ok(proxy) = zbus::fdo::DBusProxy::new(&conn).await else {
+        return false;
+    };
+    let Ok(well_known) = "org.kde.StatusNotifierWatcher".try_into() else {
+        return false;
+    };
+    proxy.name_has_owner(well_known).await.unwrap_or(false)
+}
+
+#[cfg(target_os = "linux")]
 pub fn stream() -> impl futures_util::Stream<Item = TrayEvent> {
     use ksni::TrayMethods;
     iced::stream::channel(
@@ -302,8 +316,23 @@ pub fn stream() -> impl futures_util::Stream<Item = TrayEvent> {
                 tx,
                 status: TrayStatus::default(),
             };
-            match tray.spawn().await {
-                Ok(handle) => {
+
+            // 2-second timeout to check if a StatusNotifierItem host is present on GNOME Shell / desktop
+            let watcher_available = tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                check_status_notifier_watcher(),
+            )
+            .await
+            .unwrap_or(false);
+
+            if !watcher_available {
+                tracing::warn!("No StatusNotifierWatcher host found on DBus within 2 seconds (e.g. GNOME Shell without AppIndicator extension); marking tray unavailable");
+                let _ = output.send(TrayEvent::Unavailable).await;
+                return;
+            }
+
+            match tokio::time::timeout(std::time::Duration::from_secs(2), tray.spawn()).await {
+                Ok(Ok(handle)) => {
                     let _ = output
                         .send(TrayEvent::Started(TrayHandle { inner: handle }))
                         .await;
@@ -311,8 +340,12 @@ pub fn stream() -> impl futures_util::Stream<Item = TrayEvent> {
                         let _ = output.send(TrayEvent::Action(action)).await;
                     }
                 }
-                Err(e) => {
-                    tracing::warn!("System tray unavailable: {e}");
+                Ok(Err(e)) => {
+                    tracing::warn!("System tray spawn failed: {e}");
+                    let _ = output.send(TrayEvent::Unavailable).await;
+                }
+                Err(_) => {
+                    tracing::warn!("System tray spawn timed out after 2 seconds");
                     let _ = output.send(TrayEvent::Unavailable).await;
                 }
             }
