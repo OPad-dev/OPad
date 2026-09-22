@@ -75,6 +75,10 @@ pub enum Blocker {
     NoConsent,
     /// The daemon has no database, so there is nowhere to sync counters to
     NoStorage,
+    /// The pad is not running from `ota_0`: a legacy single-app layout (app at
+    /// 0x10000, no OTA slots) or a pad booted from `ota_1`. Writing the app at
+    /// 0x20000 would either brick the first or be ignored by the second.
+    NeedsFullReflash,
 }
 
 impl std::fmt::Display for Blocker {
@@ -92,6 +96,11 @@ impl std::fmt::Display for Blocker {
             Blocker::NoStorage => f.write_str(
                 "the database is unavailable, so the counters cannot be saved before flashing",
             ),
+            Blocker::NeedsFullReflash => f.write_str(
+                "the pad's partition layout does not match this update (it is not running \
+                 from ota_0); it needs a one-time full reflash with `opadctl flash --full`, \
+                 see docs/recovery.md",
+            ),
         }
     }
 }
@@ -104,6 +113,15 @@ pub struct Preconditions {
     pub counters_synced: bool,
     pub storage_available: bool,
     pub consented: bool,
+    /// What the pad's HelloAck reported as its running partition
+    pub running_from_ota_0: bool,
+}
+
+/// The only layout a host-driven update may write to: the app at 0x20000 in
+/// `ota_0` (§U-3a). `None` is firmware too old to report, i.e. the legacy
+/// single-app layout.
+pub fn is_ota_0(running_partition: Option<&str>) -> bool {
+    running_partition == Some("ota_0")
 }
 
 /// Every reason a flash may not start, in the order a user should hear them.
@@ -111,6 +129,8 @@ pub fn blockers(p: Preconditions) -> Vec<Blocker> {
     let mut out = Vec::new();
     if !p.connected {
         out.push(Blocker::NotConnected);
+    } else if !p.running_from_ota_0 {
+        out.push(Blocker::NeedsFullReflash);
     }
     if let Err(reason) = p.gate {
         out.push(Blocker::NotIdle(reason));
@@ -306,7 +326,20 @@ mod tests {
             counters_synced: true,
             storage_available: true,
             consented: true,
+            running_from_ota_0: true,
         }
+    }
+
+    #[test]
+    fn a_pad_not_on_ota_0_needs_a_full_reflash_not_an_update() {
+        for slot in [None, Some("factory"), Some("ota_1")] {
+            let p = Preconditions {
+                running_from_ota_0: is_ota_0(slot),
+                ..ok_preconditions()
+            };
+            assert_eq!(blockers(p), vec![Blocker::NeedsFullReflash], "{slot:?}");
+        }
+        assert!(is_ota_0(Some("ota_0")));
     }
 
     #[test]
@@ -374,6 +407,7 @@ mod tests {
             Blocker::CountersNotSynced,
             Blocker::NoConsent,
             Blocker::NoStorage,
+            Blocker::NeedsFullReflash,
         ] {
             assert!(!b.to_string().is_empty());
         }

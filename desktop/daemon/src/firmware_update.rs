@@ -30,7 +30,8 @@ use opad_ipc::FirmwareOffer;
 use opad_model::DeviceInfo;
 use opad_storage::Storage;
 use opad_update::firmware::{
-    blockers, consent_text, Blocker, FirmwareAction, Preconditions, TYPICAL_OUTAGE_SECONDS,
+    blockers, consent_text, is_ota_0, Blocker, FirmwareAction, Preconditions,
+    TYPICAL_OUTAGE_SECONDS,
 };
 use opad_update::{may_update_now, ReleaseManifest, UpdateError};
 
@@ -74,6 +75,7 @@ pub fn offer(
         // Consent is given with the request, not held as state, so it is never
         // one of the things this answer is waiting on.
         consented: true,
+        running_from_ota_0: is_ota_0(out.running_partition.as_deref()),
     })
     .iter()
     .map(|b| capitalise(&b.to_string()))
@@ -149,12 +151,15 @@ pub async fn install<D: DeviceLink>(
     pending_ops: &Arc<Mutex<crate::runtime::PendingOperations>>,
 ) -> Result<FirmwareUpdateOutcome, FirmwareUpdateError> {
     let storage_available = storage.lock().is_some();
-    let (mode, connected, installed) = {
+    let (mode, connected, installed, running_partition) = {
         let st = state.lock();
         (
             st.mode,
             st.device_connected,
             st.device_info.as_ref().map(|i| i.firmware_version.clone()),
+            st.device_info
+                .as_ref()
+                .and_then(|i| i.running_partition.clone()),
         )
     };
 
@@ -167,6 +172,7 @@ pub async fn install<D: DeviceLink>(
         counters_synced: false,
         storage_available,
         consented,
+        running_from_ota_0: is_ota_0(running_partition.as_deref()),
     });
     if stopping.iter().any(|b| *b != Blocker::CountersNotSynced) {
         return Ok(FirmwareUpdateOutcome::Refused {
