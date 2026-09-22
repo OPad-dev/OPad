@@ -51,7 +51,7 @@ license-file = ["../../packaging/linux/deb/copyright", "0"]
 extended-description = "Low-latency ESP32-S3 keypad manager, telemetry HUD, and tray applet for osu!"
 section = "games"
 priority = "optional"
-depends = "$auto, libvulkan1, libwayland-client0, libx11-6, libxcursor1, libxkbcommon0, libxi6, libdbus-1-3"
+depends = "$auto, libvulkan1, libwayland-client0, libx11-6, libxcursor1, libxkbcommon0, libxi6, libdbus-1-3, libasound2t64 | libasound2"
 maintainer-scripts = "../../packaging/linux/deb"
 assets = [
     ["../target/release/opad-daemon", "usr/bin/opad-daemon", "755"],
@@ -69,6 +69,7 @@ assets = [
     ["../../build/tosu/VERSION", "usr/lib/opad/tosu/VERSION", "644"],
     ["../../build/tosu/NOTICE", "usr/lib/opad/tosu/NOTICE", "644"],
     ["../../build/tosu/LICENSE", "usr/lib/opad/tosu/LICENSE", "644"],
+    ["../../build/tosu/THIRD_PARTY_NOTICES.txt", "usr/lib/opad/tosu/THIRD_PARTY_NOTICES.txt", "644"],
 ]
 
 [package.metadata.generate-rpm]
@@ -94,6 +95,7 @@ assets = [
     { source = "../../build/tosu/VERSION", dest = "/usr/lib/opad/tosu/VERSION", mode = "644" },
     { source = "../../build/tosu/NOTICE", dest = "/usr/lib/opad/tosu/NOTICE", mode = "644" },
     { source = "../../build/tosu/LICENSE", dest = "/usr/lib/opad/tosu/LICENSE", mode = "644" },
+    { source = "../../build/tosu/THIRD_PARTY_NOTICES.txt", dest = "/usr/lib/opad/tosu/THIRD_PARTY_NOTICES.txt", mode = "644" },
 ]
 post_install_script = """
 if [ $1 -ge 1 ]; then
@@ -126,3 +128,5 @@ libXcursor = "*"
 libxkbcommon = "*"
 libXi = "*"
 dbus-libs = "*"
+# The Diagnostics chatter beep (rodio) links libasound
+alsa-lib = "*"
