@@ -1191,15 +1191,26 @@ impl App {
                 }
             },
             Message::DiagnosticsPoll => {
-                let k1_vk = diagnostics::char_to_vk(&self.k1_input);
-                let k2_vk = diagnostics::char_to_vk(&self.k2_input);
-                if let Some(vk) = k1_vk {
-                    let down = diagnostics::is_key_down(vk);
-                    self.diagnostics.handle_key_event(1, down);
+                #[cfg(windows)]
+                {
+                    let k1_vk = diagnostics::char_to_vk(&self.k1_input);
+                    let k2_vk = diagnostics::char_to_vk(&self.k2_input);
+                    if let Some(vk) = k1_vk {
+                        let down = diagnostics::is_key_down(vk);
+                        self.diagnostics.handle_key_event(1, down);
+                    }
+                    if let Some(vk) = k2_vk {
+                        let down = diagnostics::is_key_down(vk);
+                        self.diagnostics.handle_key_event(2, down);
+                    }
                 }
-                if let Some(vk) = k2_vk {
-                    let down = diagnostics::is_key_down(vk);
-                    self.diagnostics.handle_key_event(2, down);
+                #[cfg(target_os = "linux")]
+                {
+                    diagnostics::poll_linux_switch_inputs(
+                        &mut self.diagnostics,
+                        &self.k1_input,
+                        &self.k2_input,
+                    );
                 }
             }
             Message::DiagnosticsKeyEvent { key, is_down } => {
@@ -1516,7 +1527,7 @@ impl App {
                     None
                 }
             }));
-            #[cfg(windows)]
+            #[cfg(any(windows, target_os = "linux"))]
             subscriptions.push(
                 iced::time::every(Duration::from_millis(4)).map(|_| Message::DiagnosticsPoll),
             );

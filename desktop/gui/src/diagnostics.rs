@@ -25,6 +25,7 @@ extern "system" {
     fn Beep(dwFreq: u32, dwDuration: u32) -> i32;
 }
 
+#[allow(dead_code)]
 pub fn is_key_down(vk: i32) -> bool {
     #[cfg(windows)]
     unsafe {
@@ -37,15 +38,192 @@ pub fn is_key_down(vk: i32) -> bool {
     }
 }
 
+#[cfg(windows)]
 pub fn play_chatter_beep() {
-    #[cfg(windows)]
-    {
-        std::thread::spawn(|| unsafe {
-            Beep(1760, 40);
-        });
+    std::thread::spawn(|| unsafe {
+        Beep(1760, 40);
+    });
+}
+
+#[cfg(target_os = "linux")]
+pub fn play_chatter_beep() {
+    std::thread::spawn(|| {
+        use rodio::Source as _;
+        if let Ok(handle) = rodio::DeviceSinkBuilder::open_default_sink() {
+            let source = rodio::source::SineWave::new(1760.0)
+                .take_duration(Duration::from_millis(40))
+                .amplify(0.20);
+            handle.mixer().add(source);
+            std::thread::sleep(Duration::from_millis(45));
+            return;
+        }
+        // Fallback: terminal ASCII bell
+        print!("\x07");
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+    });
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
+pub fn play_chatter_beep() {}
+
+#[cfg(target_os = "linux")]
+static LINUX_EVDEV: std::sync::Mutex<Option<evdev::Device>> = std::sync::Mutex::new(None);
+
+/// When the pad's input device was last looked for. The poll runs every 4 ms,
+/// and scanning /dev/input that often while no pad is plugged in is wasted work.
+#[cfg(target_os = "linux")]
+static LINUX_EVDEV_LAST_SCAN: std::sync::Mutex<Option<std::time::Instant>> =
+    std::sync::Mutex::new(None);
+
+#[cfg(target_os = "linux")]
+const EVDEV_RESCAN_INTERVAL: Duration = Duration::from_secs(2);
+
+#[cfg(target_os = "linux")]
+pub fn char_to_evdev_key(s: &str) -> Option<evdev::KeyCode> {
+    let s = s.trim().to_uppercase();
+    if s.len() == 1 {
+        let c = s.chars().next()?;
+        if c.is_ascii_alphabetic() {
+            return match c {
+                'A' => Some(evdev::KeyCode::KEY_A),
+                'B' => Some(evdev::KeyCode::KEY_B),
+                'C' => Some(evdev::KeyCode::KEY_C),
+                'D' => Some(evdev::KeyCode::KEY_D),
+                'E' => Some(evdev::KeyCode::KEY_E),
+                'F' => Some(evdev::KeyCode::KEY_F),
+                'G' => Some(evdev::KeyCode::KEY_G),
+                'H' => Some(evdev::KeyCode::KEY_H),
+                'I' => Some(evdev::KeyCode::KEY_I),
+                'J' => Some(evdev::KeyCode::KEY_J),
+                'K' => Some(evdev::KeyCode::KEY_K),
+                'L' => Some(evdev::KeyCode::KEY_L),
+                'M' => Some(evdev::KeyCode::KEY_M),
+                'N' => Some(evdev::KeyCode::KEY_N),
+                'O' => Some(evdev::KeyCode::KEY_O),
+                'P' => Some(evdev::KeyCode::KEY_P),
+                'Q' => Some(evdev::KeyCode::KEY_Q),
+                'R' => Some(evdev::KeyCode::KEY_R),
+                'S' => Some(evdev::KeyCode::KEY_S),
+                'T' => Some(evdev::KeyCode::KEY_T),
+                'U' => Some(evdev::KeyCode::KEY_U),
+                'V' => Some(evdev::KeyCode::KEY_V),
+                'W' => Some(evdev::KeyCode::KEY_W),
+                'X' => Some(evdev::KeyCode::KEY_X),
+                'Y' => Some(evdev::KeyCode::KEY_Y),
+                'Z' => Some(evdev::KeyCode::KEY_Z),
+                _ => None,
+            };
+        } else if c.is_ascii_digit() {
+            return match c {
+                '0' => Some(evdev::KeyCode::KEY_0),
+                '1' => Some(evdev::KeyCode::KEY_1),
+                '2' => Some(evdev::KeyCode::KEY_2),
+                '3' => Some(evdev::KeyCode::KEY_3),
+                '4' => Some(evdev::KeyCode::KEY_4),
+                '5' => Some(evdev::KeyCode::KEY_5),
+                '6' => Some(evdev::KeyCode::KEY_6),
+                '7' => Some(evdev::KeyCode::KEY_7),
+                '8' => Some(evdev::KeyCode::KEY_8),
+                '9' => Some(evdev::KeyCode::KEY_9),
+                _ => None,
+            };
+        }
+    }
+    match s.as_str() {
+        "SPACE" => Some(evdev::KeyCode::KEY_SPACE),
+        "ENTER" | "RETURN" => Some(evdev::KeyCode::KEY_ENTER),
+        "LSHIFT" | "SHIFT" => Some(evdev::KeyCode::KEY_LEFTSHIFT),
+        "LCTRL" | "CTRL" => Some(evdev::KeyCode::KEY_LEFTCTRL),
+        "LALT" | "ALT" => Some(evdev::KeyCode::KEY_LEFTALT),
+        "ESC" | "ESCAPE" => Some(evdev::KeyCode::KEY_ESC),
+        "LEFT" => Some(evdev::KeyCode::KEY_LEFT),
+        "UP" => Some(evdev::KeyCode::KEY_UP),
+        "RIGHT" => Some(evdev::KeyCode::KEY_RIGHT),
+        "DOWN" => Some(evdev::KeyCode::KEY_DOWN),
+        _ => None,
     }
 }
 
+#[cfg(target_os = "linux")]
+fn open_opad_evdev() -> Option<evdev::Device> {
+    static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    let found = find_opad_evdev();
+    if found.is_none() && !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        tracing::warn!(
+            "Cannot open the OPad's input device, so switch diagnostics see no presses. \
+             Is the pad plugged in and 70-opad.rules installed (it grants access to it)?"
+        );
+    }
+    found
+}
+
+#[cfg(target_os = "linux")]
+fn find_opad_evdev() -> Option<evdev::Device> {
+    if let Ok(entries) = std::fs::read_dir("/dev/input/by-id") {
+        let mut candidates = Vec::new();
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let lower = name.to_lowercase();
+            if lower.contains("opad") || lower.contains("osupad") {
+                if lower.contains("event-kbd") {
+                    if let Ok(dev) = evdev::Device::open(entry.path()) {
+                        return Some(dev);
+                    }
+                }
+                candidates.push(entry.path());
+            }
+        }
+        for path in candidates {
+            if let Ok(dev) = evdev::Device::open(path) {
+                return Some(dev);
+            }
+        }
+    }
+
+    for (_path, dev) in evdev::enumerate() {
+        let id = dev.input_id();
+        if id.vendor() == 0x303a && id.product() == 0x4001 {
+            return Some(dev);
+        }
+    }
+
+    None
+}
+
+#[cfg(target_os = "linux")]
+pub fn poll_linux_switch_inputs(diag: &mut DiagnosticsState, k1_str: &str, k2_str: &str) {
+    let mut guard = match LINUX_EVDEV.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+
+    if guard.is_none() {
+        let mut last = LINUX_EVDEV_LAST_SCAN.lock().unwrap_or_else(|e| e.into_inner());
+        if last.is_some_and(|t| t.elapsed() < EVDEV_RESCAN_INTERVAL) {
+            return;
+        }
+        *last = Some(std::time::Instant::now());
+        *guard = open_opad_evdev();
+    }
+
+    if let Some(dev) = guard.as_mut() {
+        match dev.get_key_state() {
+            Ok(keys) => {
+                if let Some(k1) = char_to_evdev_key(k1_str) {
+                    diag.handle_key_event(1, keys.contains(k1));
+                }
+                if let Some(k2) = char_to_evdev_key(k2_str) {
+                    diag.handle_key_event(2, keys.contains(k2));
+                }
+            }
+            Err(_) => {
+                *guard = None;
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
 pub fn char_to_vk(s: &str) -> Option<i32> {
     let s = s.trim().to_uppercase();
     if s.len() == 1 {
@@ -690,7 +868,6 @@ impl DiagnosticsState {
             .width(Length::Fill)
             .style(theme::card)
         };
-
         column![com_status_card, com02_card, latency_card]
             .spacing(14)
             .into()

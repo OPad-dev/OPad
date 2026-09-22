@@ -28,12 +28,17 @@ futures-util = { workspace = true, features = ["sink"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ksni = "0.3"
+evdev = "0.13"
+rodio = { version = "0.22", default-features = false, features = ["playback"] }
+zbus = { version = "5.19", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_Memory",
     "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",
 ] }
@@ -55,6 +60,7 @@ assets = [
     ["../target/release/opadctl", "usr/bin/opadctl", "755"],
     ["../../packaging/linux/deb/opad-daemon.service", "usr/lib/systemd/user/opad-daemon.service", "644"],
     ["../../packaging/linux/deb/opad.desktop", "usr/share/applications/opad.desktop", "644"],
+    ["../../packaging/linux/xdg-autostart/opad-gui.desktop", "etc/xdg/autostart/opad-gui.desktop", "644"],
     ["../../packaging/linux/udev/70-opad.rules", "usr/lib/udev/rules.d/70-opad.rules", "644"],
     ["../../packaging/linux/deb/install-origin", "usr/lib/opad/install-origin", "644"],
     ["../../packaging/linux/deb/install-origin", "etc/opad/install-origin", "644"],
@@ -77,6 +83,7 @@ assets = [
     { source = "../target/release/opadctl", dest = "/usr/bin/opadctl", mode = "755" },
     { source = "../../packaging/linux/rpm/opad-daemon.service", dest = "/usr/lib/systemd/user/opad-daemon.service", mode = "644" },
     { source = "../../packaging/linux/rpm/opad.desktop", dest = "/usr/share/applications/opad.desktop", mode = "644" },
+    { source = "../../packaging/linux/xdg-autostart/opad-gui.desktop", dest = "/etc/xdg/autostart/opad-gui.desktop", mode = "644" },
     { source = "../../packaging/linux/udev/70-opad.rules", dest = "/usr/lib/udev/rules.d/70-opad.rules", mode = "644" },
     { source = "../../packaging/linux/rpm/install-origin", dest = "/usr/lib/opad/install-origin", mode = "644" },
     { source = "../../packaging/linux/rpm/install-origin", dest = "/etc/opad/install-origin", mode = "644" },
