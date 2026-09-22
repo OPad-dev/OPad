@@ -68,7 +68,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config libasound2-dev libudev-dev libx11-dev \
             libxkbcommon-dev libwayland-dev libfontconfig1-dev libdbus-1-dev \
-            binutils rpm file unzip
+            binutils rpm cpio file unzip
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -139,6 +139,24 @@ jobs:
         env:
           OPAD_PREBUILT: "1"
         run: ./scripts/release/build_packages.sh
+
+      # Again on what was actually packaged: a packaging step that rebuilt the
+      # binaries would otherwise slip host-glibc ones past the check above
+      - name: Assert glibc <= 2.31 inside the packages
+        run: |
+          rm -rf pkgcheck && mkdir -p pkgcheck/deb pkgcheck/rpm
+          dpkg-deb -x dist/*.deb pkgcheck/deb
+          (cd pkgcheck/rpm && rpm2cpio ../../dist/*.rpm | cpio -idm --quiet)
+          (cd pkgcheck && ../dist/*.AppImage --appimage-extract >/dev/null)
+          for bin in pkgcheck/{deb,rpm}/usr/bin/* pkgcheck/{deb,rpm}/usr/lib/opad/bin/espflash \
+                     pkgcheck/squashfs-root/usr/bin/* pkgcheck/squashfs-root/usr/lib/opad/bin/espflash; do
+            max_ver=$(objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -n 1)
+            echo "$bin: $max_ver"
+            if dpkg --compare-versions "${max_ver#GLIBC_}" gt "2.31"; then
+              echo "ERROR: $bin needs $max_ver, above glibc 2.31" >&2
+              exit 1
+            fi
+          done
 
       - name: Third-party notices and tosu source
         run: |

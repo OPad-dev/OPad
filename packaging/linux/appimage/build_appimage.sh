@@ -12,8 +12,14 @@ BUILD_DIR="${REPO_ROOT}/build/appimage"
 APPDIR="${BUILD_DIR}/AppDir"
 OUTPUT_DIR="${REPO_ROOT}/dist"
 
-echo "=== Building OPad binaries ==="
-make -C "${REPO_ROOT}" all
+# OPAD_PREBUILT=1 (as in build_packages.sh): package desktop/target/release
+# as it is; the release workflow put glibc-2.31 binaries there
+if [ "${OPAD_PREBUILT:-0}" = "1" ]; then
+    echo "=== Using prebuilt OPad binaries (OPAD_PREBUILT=1) ==="
+else
+    echo "=== Building OPad binaries ==="
+    make -C "${REPO_ROOT}" all
+fi
 
 echo "=== Assembling AppDir ==="
 rm -rf "${APPDIR}"
