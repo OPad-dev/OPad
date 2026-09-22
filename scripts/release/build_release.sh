@@ -51,6 +51,7 @@ cp "${FW_BIN}" "${DIST_DIR}/opad-firmware.bin"
 [ -f "${BOOT_BIN}" ] && cp "${BOOT_BIN}" "${DIST_DIR}/bootloader.bin"
 [ -f "${PART_BIN}" ] && cp "${PART_BIN}" "${DIST_DIR}/partition-table.bin"
 [ -f "${OTA_BIN}" ] && cp "${OTA_BIN}" "${DIST_DIR}/ota_data_initial.bin"
+cp "${REPO_ROOT}/firmware/THIRD_PARTY_NOTICES.md" "${DIST_DIR}/FIRMWARE_THIRD_PARTY_NOTICES.md"
 echo "✓ Firmware artifacts copied to dist/"
 
 # 2. Build Desktop Host Binaries
