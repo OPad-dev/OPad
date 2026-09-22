@@ -107,6 +107,9 @@ const RECONNECT_SETTLE_INTERVAL: Duration = Duration::from_millis(300);
 /// The pad queues each frame whole (usb_cdc_write), so bytes that stay an
 /// incomplete frame this long are a false start or a torn stream: drop them
 /// and re-handshake rather than wait for a length that will never arrive.
+/// Device events buffered per subscriber before the slowest one lags
+pub const EVENT_BUFFER: usize = 256;
+
 /// Read timeout of the worker's port. The worker alternates between sending
 /// queued commands and a blocking read, so this bounds how long a command (the
 /// HUD's telemetry) waits behind a quiet line.
@@ -132,17 +135,20 @@ pub struct DeviceManager {
     seq_counter: Arc<AtomicU32>,
     /// Port of the pad last handshaken with, for flashing without re-discovery
     last_port: Arc<Mutex<Option<String>>>,
+    /// Asks the worker to re-send Hello, so the pad re-announces its state
+    rehello: Arc<AtomicBool>,
 }
 
 impl DeviceManager {
     pub fn new_dummy() -> (Self, broadcast::Receiver<DeviceEvent>) {
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<HostToDevice>(64);
-        let (event_tx, event_rx) = broadcast::channel(64);
+        let (event_tx, event_rx) = broadcast::channel(EVENT_BUFFER);
         let is_connected = Arc::new(AtomicBool::new(false));
         let is_paused = Arc::new(AtomicBool::new(false));
         let is_port_open = Arc::new(AtomicBool::new(false));
         let seq_counter = Arc::new(AtomicU32::new(1));
         let last_port = Arc::new(Mutex::new(None));
+        let rehello = Arc::new(AtomicBool::new(false));
         tokio::spawn(async move { while cmd_rx.recv().await.is_some() {} });
         (
             Self {
@@ -153,6 +159,7 @@ impl DeviceManager {
                 is_port_open,
                 seq_counter,
                 last_port,
+                rehello,
             },
             event_rx,
         )
@@ -160,7 +167,7 @@ impl DeviceManager {
 
     pub fn new() -> (Self, broadcast::Receiver<DeviceEvent>) {
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<HostToDevice>(64);
-        let (event_tx, event_rx) = broadcast::channel(64);
+        let (event_tx, event_rx) = broadcast::channel(EVENT_BUFFER);
         let is_connected = Arc::new(AtomicBool::new(false));
         let is_paused = Arc::new(AtomicBool::new(false));
         let seq_counter = Arc::new(AtomicU32::new(1));
@@ -172,6 +179,8 @@ impl DeviceManager {
         let event_tx_clone = event_tx.clone();
         let last_port = Arc::new(Mutex::new(None));
         let last_port_clone = last_port.clone();
+        let rehello = Arc::new(AtomicBool::new(false));
+        let rehello_clone = rehello.clone();
 
         // Spawn background worker managing the serial port lifecycle
         tokio::task::spawn_blocking(move || {
@@ -253,6 +262,11 @@ impl DeviceManager {
                         );
                         read_buf.clear();
                         partial_since = None;
+                        has_hello_ack = false;
+                        last_hello = Instant::now() - Duration::from_secs(10);
+                    }
+
+                    if rehello_clone.swap(false, Ordering::SeqCst) {
                         has_hello_ack = false;
                         last_hello = Instant::now() - Duration::from_secs(10);
                     }
@@ -351,6 +365,7 @@ impl DeviceManager {
                 is_port_open,
                 seq_counter,
                 last_port,
+                rehello,
             },
             event_rx,
         )
@@ -382,6 +397,13 @@ impl DeviceManager {
 
     pub fn is_connected(&self) -> bool {
         self.is_connected.load(Ordering::SeqCst)
+    }
+
+    /// Re-send Hello. The pad answers with a fresh HelloAck, which re-emits
+    /// Ownership, Counters and Connected: how a subscriber that lagged and
+    /// lost events rebuilds its view of the pad.
+    pub fn rehandshake(&self) {
+        self.rehello.store(true, Ordering::SeqCst);
     }
 
     /// Serial port of the pad this manager last completed a handshake with.

@@ -300,7 +300,20 @@ async fn main() -> Result<()> {
 
         tokio::select! {
             // 1. Device hardware events
-            Ok(dev_event) = device_rx.recv() => {
+            res = device_rx.recv() => {
+                let dev_event = match res {
+                    Ok(ev) => ev,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        // Whatever was skipped (a Connected, a Counters) is
+                        // lost; ask the pad to announce itself again
+                        warn!("Fell {} device events behind; re-handshaking with the pad", skipped);
+                        device_manager.rehandshake();
+                        continue;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        anyhow::bail!("The device event channel closed");
+                    }
+                };
                 match dev_event {
                     DeviceEvent::Connected(info, dev_cfg) => {
                         info!(
