@@ -9,6 +9,7 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
 #include "diag/diag.h"
 #include <stddef.h>
 #include <stdio.h>
@@ -37,6 +38,31 @@ static device_config_data_t s_current_config = {
 #define DEVICE_CONFIG_V2_SIZE offsetof(device_config_data_t, owner_id)
 
 static bool s_dirty = false;
+// Guards s_current_config and s_dirty: written by the protocol task, read by the
+// runtime task (flush) and others. Only copies happen under it, never NVS I/O.
+static portMUX_TYPE s_config_lock = portMUX_INITIALIZER_UNLOCKED;
+
+static device_config_data_t config_snapshot(void)
+{
+    portENTER_CRITICAL(&s_config_lock);
+    device_config_data_t cfg = s_current_config;
+    portEXIT_CRITICAL(&s_config_lock);
+    return cfg;
+}
+
+static void config_store(const device_config_data_t *cfg)
+{
+    portENTER_CRITICAL(&s_config_lock);
+    s_current_config = *cfg;
+    portEXIT_CRITICAL(&s_config_lock);
+}
+
+static void set_dirty(bool dirty)
+{
+    portENTER_CRITICAL(&s_config_lock);
+    s_dirty = dirty;
+    portEXIT_CRITICAL(&s_config_lock);
+}
 
 static void set_defaults(device_config_data_t *cfg)
 {
@@ -58,7 +84,7 @@ static esp_err_t write_to_nvs(const device_config_data_t *cfg)
     // STRICT SPEC INVARIANT: zero NVS writes during PLAYING and COOLDOWN
     if (runtime_get_state() != OSUPAD_STATE_IDLE) {
         ESP_LOGW(TAG, "NVS write blocked: state != IDLE (deferred to supervisor)");
-        s_dirty = true;
+        set_dirty(true);
         return ESP_OK;
     }
 
@@ -73,7 +99,7 @@ static esp_err_t write_to_nvs(const device_config_data_t *cfg)
     if (err == ESP_OK) {
         err = nvs_commit(handle);
         if (err == ESP_OK) {
-            s_dirty = false;
+            set_dirty(false);
             counters_record_nvs_write();
             ESP_LOGI(TAG, "Device config persisted to NVS: K1=0x%02lx@GPIO%lu, K2=0x%02lx@GPIO%lu, debounce=%lu us, brightness=%lu%%, sleep=%lu s",
                      (unsigned long)cfg->key1_usage, (unsigned long)cfg->key1_gpio,
@@ -166,7 +192,7 @@ esp_err_t device_config_init(void)
 void device_config_get(device_config_data_t *out_cfg)
 {
     if (out_cfg) {
-        *out_cfg = s_current_config;
+        *out_cfg = config_snapshot();
     }
 }
 
@@ -174,13 +200,14 @@ esp_err_t device_config_set(const device_config_data_t *cfg)
 {
     if (!cfg) return ESP_ERR_INVALID_ARG;
 
-    s_current_config = *cfg;
-    device_config_apply(&s_current_config);
+    device_config_data_t next = *cfg;
+    config_store(&next);
+    device_config_apply(&next);
 
     if (runtime_get_state() == OSUPAD_STATE_IDLE) {
-        return write_to_nvs(&s_current_config);
+        return write_to_nvs(&next);
     } else {
-        s_dirty = true;
+        set_dirty(true);
         ESP_LOGI(TAG, "Config applied in RAM; NVS write deferred until IDLE");
         return ESP_OK;
     }
@@ -189,7 +216,8 @@ esp_err_t device_config_set(const device_config_data_t *cfg)
 void device_config_get_owner(uint8_t out_owner[OWNER_ID_LEN])
 {
     if (out_owner) {
-        memcpy(out_owner, s_current_config.owner_id, OWNER_ID_LEN);
+        device_config_data_t cfg = config_snapshot();
+        memcpy(out_owner, cfg.owner_id, OWNER_ID_LEN);
     }
 }
 
@@ -199,7 +227,8 @@ esp_err_t device_config_claim_owner(const uint8_t owner[OWNER_ID_LEN])
                                       ? OWNER_STATE_IDLE
                                       : OWNER_STATE_ACTIVE;
 
-    switch (owner_claim_decide(s_current_config.owner_id, owner, state)) {
+    device_config_data_t next = config_snapshot();
+    switch (owner_claim_decide(next.owner_id, owner, state)) {
     case OWNER_CLAIM_ALREADY_OWNED:
         // Every connect would otherwise cost a flash write for no change
         return ESP_OK;
@@ -216,23 +245,26 @@ esp_err_t device_config_claim_owner(const uint8_t owner[OWNER_ID_LEN])
         break;
     }
 
-    device_config_data_t next = s_current_config;
     memcpy(next.owner_id, owner, OWNER_ID_LEN);
-    s_current_config = next;
+    config_store(&next);
     ESP_LOGI(TAG, "Pad claimed by a new host install");
     // IDLE is guaranteed by the decision above, so this writes rather than
     // deferring — the host claims at connect time and expects it to stick.
-    return write_to_nvs(&s_current_config);
+    return write_to_nvs(&next);
 }
 
 esp_err_t device_config_flush(void)
 {
-    if (!s_dirty) {
+    portENTER_CRITICAL(&s_config_lock);
+    bool dirty = s_dirty;
+    portEXIT_CRITICAL(&s_config_lock);
+    if (!dirty) {
         return ESP_OK;
     }
     if (runtime_get_state() != OSUPAD_STATE_IDLE) {
         return ESP_OK;
     }
     ESP_LOGI(TAG, "Flushing deferred config to NVS");
-    return write_to_nvs(&s_current_config);
+    device_config_data_t cfg = config_snapshot();
+    return write_to_nvs(&cfg);
 }
