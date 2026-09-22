@@ -146,10 +146,17 @@ static void reboot_to_rom_download(void)
  * boundary those bytes would decode as an oversized length prefix, so a valid
  * frame can never be mistaken for the command.
  */
-static bool is_bootloader_command(const uint8_t *buf, size_t len)
+/*
+ * Plain-text commands ("BOOTLOADER", "FREAKY67") are only honoured when the
+ * command is the entire read, optionally followed by \r/\n, and arrives between
+ * protocol frames. Searching the stream for the text instead would fire whenever
+ * a protobuf payload (e.g. a song title) happened to contain it. At a frame
+ * boundary those bytes would decode as an oversized length prefix, so a valid frame can
+ * never be mistaken for a command.
+ */
+static bool is_text_command(const uint8_t *buf, size_t len, const char *cmd)
 {
-    static const char cmd[] = "BOOTLOADER";
-    const size_t cmd_len = sizeof(cmd) - 1;
+    const size_t cmd_len = strlen(cmd);
 
     if (len < cmd_len || memcmp(buf, cmd, cmd_len) != 0) {
         return false;
@@ -160,22 +167,6 @@ static bool is_bootloader_command(const uint8_t *buf, size_t len)
         }
     }
     return true;
-}
-
-static bool is_easter_egg_command(const uint8_t *buf, size_t len)
-{
-    static const char cmd[] = "FREAKY67";
-    const size_t cmd_len = sizeof(cmd) - 1;
-
-    if (len < cmd_len) {
-        return false;
-    }
-    for (size_t i = 0; i <= len - cmd_len; i++) {
-        if (memcmp(buf + i, cmd, cmd_len) == 0) {
-            return true;
-        }
-    }
-    return false;
 }
 
 static void usb_cdc_task_poll(void)
@@ -193,13 +184,12 @@ static void usb_cdc_task_poll(void)
     uint8_t rx_buf[256];
     uint32_t count;
     while (tud_cdc_n_available(0) && (count = tud_cdc_n_read(0, rx_buf, sizeof(rx_buf))) > 0) {
-        if (is_easter_egg_command(rx_buf, count)) {
+        if (protocol_rx_idle() && is_text_command(rx_buf, count, "FREAKY67")) {
             ESP_LOGI(TAG, "CDC serial command received: triggering easter egg!");
-            protocol_reset_rx();
             ui_trigger_easter_egg();
-            return;
+            continue;
         }
-        if (protocol_rx_idle() && is_bootloader_command(rx_buf, count)) {
+        if (protocol_rx_idle() && is_text_command(rx_buf, count, "BOOTLOADER")) {
             ESP_LOGI(TAG, "CDC serial command received: entering bootloader...");
             schedule_bootloader_reboot();
             return;
