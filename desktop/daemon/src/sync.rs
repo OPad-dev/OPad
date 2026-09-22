@@ -232,7 +232,7 @@ pub async fn perform_sync<D: DeviceLink>(
     };
 
     // Reconcile (§13)
-    let reconciled = reconcile_counters(&stored_counters, &in_memory_counters);
+    let mut reconciled = reconcile_counters(&stored_counters, &in_memory_counters);
 
     // Save reconciled state to SQLite (blocked by the write guard if a map started)
     {
@@ -258,9 +258,9 @@ pub async fn perform_sync<D: DeviceLink>(
                                 seq: r_seq,
                                 success,
                                 message,
-                                state: _,
+                                state,
                             }) if r_seq == seq => {
-                                return Ok((success, message));
+                                return Ok((success, message, state));
                             }
                             Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                                 continue
@@ -272,17 +272,38 @@ pub async fn perform_sync<D: DeviceLink>(
                 .await;
 
                 match wait_resp {
-                    Ok(Ok((true, _))) => {
+                    Ok(Ok((true, _, _))) => {
                         sync_success = true;
                         break;
                     }
-                    Ok(Ok((false, msg))) => {
+                    Ok(Ok((false, msg, device_now))) => {
                         last_error_msg = msg;
                         warn!(
                             "Device rejected CounterSync (attempt {}): {}",
                             attempt + 1,
                             last_error_msg
                         );
+                        // The pad counted presses (or was reset) after the
+                        // snapshot we reconciled from, so resending the same
+                        // numbers would be rejected the same way. Its reply
+                        // carries its counters now: reconcile against those.
+                        if let Some(device_now) = device_now {
+                            let refreshed = reconcile_counters(&reconciled, &device_now);
+                            if refreshed != reconciled {
+                                info!(
+                                    "Re-reconciled against the pad's current counters: K1={}, K2={}, gen={}",
+                                    refreshed.lifetime_key1,
+                                    refreshed.lifetime_key2,
+                                    refreshed.counter_generation
+                                );
+                                if let Some(s) = storage.lock().as_ref() {
+                                    if let Err(e) = s.save_device_state(&info, &refreshed) {
+                                        error!("Failed to save re-reconciled device state: {}", e);
+                                    }
+                                }
+                                reconciled = refreshed;
+                            }
+                        }
                     }
                     Ok(Err(e)) => {
                         last_error_msg = e;

@@ -31,6 +31,9 @@ struct MockDeviceLink {
     sync_response: Arc<Mutex<Option<Result<(), String>>>>,
     sync_seq: Arc<AtomicU32>,
     claimed_owners: Arc<Mutex<Vec<Vec<u8>>>>,
+    /// When set, the mock applies the firmware's own acceptance rules against
+    /// these counters and reports them back, as the pad does
+    device_counters: Arc<Mutex<Option<CounterState>>>,
 }
 
 impl MockDeviceLink {
@@ -44,6 +47,7 @@ impl MockDeviceLink {
             sync_response: Arc::new(Mutex::new(Some(Ok(())))),
             sync_seq: Arc::new(AtomicU32::new(1)),
             claimed_owners: Arc::new(Mutex::new(Vec::new())),
+            device_counters: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -88,6 +92,28 @@ impl DeviceLink for MockDeviceLink {
             .lock()
             .push((counters.clone(), force_restore));
         let seq = self.sync_seq.fetch_add(1, Ordering::SeqCst);
+
+        let mut device = self.device_counters.lock();
+        if let Some(dev) = device.as_mut() {
+            let non_monotonic = counters.counter_generation == dev.counter_generation
+                && (counters.lifetime_key1 < dev.lifetime_key1
+                    || counters.lifetime_key2 < dev.lifetime_key2);
+            if !non_monotonic {
+                *dev = counters.clone();
+            }
+            let _ = self.event_tx.send(DeviceEvent::CounterSyncResult {
+                seq,
+                success: !non_monotonic,
+                message: if non_monotonic {
+                    "non-monotonic".into()
+                } else {
+                    String::new()
+                },
+                state: Some(dev.clone()),
+            });
+            return Ok(seq);
+        }
+        drop(device);
 
         let resp_opt = self.sync_response.lock().clone();
         if let Some(resp) = resp_opt {
@@ -799,6 +825,70 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
         .as_ref()
         .unwrap()
         .contains("flash write failure"));
+}
+
+// 6b. The pad counted presses after the snapshot: the retry must carry them
+#[tokio::test]
+async fn a_non_monotonic_rejection_is_retried_with_the_pads_current_counters() {
+    let storage = Storage::open_in_memory().unwrap();
+    let dev_info = DeviceInfo {
+        device_id: "OSUPAD-RACE".to_string(),
+        board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+        firmware_version: "1.0.0".to_string(),
+        protocol_version: 1,
+        running_partition: None,
+    };
+    let snapshot = CounterState {
+        device_id: "OSUPAD-RACE".to_string(),
+        counter_generation: 1,
+        lifetime_key1: 10,
+        lifetime_key2: 20,
+        map_key1: 0,
+        map_key2: 0,
+    };
+    storage.save_device_state(&dev_info, &snapshot).unwrap();
+    let storage = Arc::new(Mutex::new(Some(storage)));
+
+    let device = MockDeviceLink::new(true);
+    // Five and seven presses landed on the pad since the snapshot
+    *device.device_counters.lock() = Some(CounterState {
+        lifetime_key1: 15,
+        lifetime_key2: 27,
+        ..snapshot.clone()
+    });
+
+    let daemon_state = Arc::new(Mutex::new(DaemonState {
+        mode: RuntimeMode::Idle,
+        device_connected: true,
+        device_info: Some(dev_info),
+        counters: snapshot,
+        counters_source: CounterSource::Device,
+        pc_counters: None,
+        esp_counters: None,
+        config: DeviceConfig::default(),
+        last_sync_time: None,
+        last_sync_error: None,
+        storage_error: None,
+        tosu_connected: false,
+        latency: None,
+        pending_replacement: None,
+        install_id: None,
+        pending_takeover: None,
+        foreign_pad: false,
+        incompatible: None,
+        ui_values: Vec::new(),
+        custom_layouts: HashMap::new(),
+        last_backup: None,
+    }));
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+
+    let synced = perform_sync(&daemon_state, &storage, &device, &pending_ops)
+        .await
+        .expect("the second attempt carries the refreshed counters");
+    let sent = device.sent_syncs.lock();
+    assert_eq!(sent.len(), 2, "one rejection, then success");
+    assert_eq!((sent[1].0.lifetime_key1, sent[1].0.lifetime_key2), (15, 27));
+    assert_eq!((synced.lifetime_key1, synced.lifetime_key2), (15, 27));
 }
 
 // 7. JSON validation rules and preview/confirm (P1-5)
