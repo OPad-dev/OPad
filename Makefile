@@ -13,6 +13,7 @@ LIBDIR ?= $(PREFIX)/lib
 SYSTEMDUSERDIR ?= $(LIBDIR)/systemd/user
 UDEVRULESDIR ?= /usr/lib/udev/rules.d
 APPLICATIONSDIR ?= $(DATADIR)/applications
+AUTOSTARTDIR ?= /etc/xdg/autostart
 INSTALL_ORIGIN ?= source
 
 # User install paths (~/.local layout, B-2)
@@ -140,6 +141,9 @@ install: all
 	install -d "$(DESTDIR)$(APPLICATIONSDIR)"
 	sed 's|@BINDIR@|$(BINDIR)|g' packaging/linux/opad.desktop.in > "$(DESTDIR)$(APPLICATIONSDIR)/opad.desktop"
 	chmod 644 "$(DESTDIR)$(APPLICATIONSDIR)/opad.desktop"
+	install -d "$(DESTDIR)$(AUTOSTARTDIR)"
+	sed 's|/usr/bin/opad-gui|$(BINDIR)/opad-gui|g' packaging/linux/xdg-autostart/opad-gui.desktop > "$(DESTDIR)$(AUTOSTARTDIR)/opad-gui.desktop"
+	chmod 644 "$(DESTDIR)$(AUTOSTARTDIR)/opad-gui.desktop"
 	install -d "$(DESTDIR)$(UDEVRULESDIR)"
 	install -m 644 packaging/linux/udev/70-opad.rules "$(DESTDIR)$(UDEVRULESDIR)/70-opad.rules"
 	install -d "$(DESTDIR)$(LIBDIR)/opad"
@@ -205,6 +209,7 @@ uninstall:
 	done
 	rm -f "$(DESTDIR)$(SYSTEMDUSERDIR)/opad-daemon.service"
 	rm -f "$(DESTDIR)$(APPLICATIONSDIR)/opad.desktop"
+	rm -f "$(DESTDIR)$(AUTOSTARTDIR)/opad-gui.desktop"
 	rm -f "$(DESTDIR)$(UDEVRULESDIR)/70-opad.rules"
 	rm -rf "$(DESTDIR)$(LIBDIR)/opad"
 	@echo "✓ Uninstall complete."

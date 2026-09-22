@@ -15,7 +15,12 @@ pub fn get_socket_path() -> PathBuf {
         PathBuf::from(runtime_dir).join("opad").join("daemon.sock")
     } else {
         let uid = rustix::process::getuid().as_raw();
-        PathBuf::from(format!("/tmp/opad-{}", uid)).join("daemon.sock")
+        let run_user = PathBuf::from(format!("/run/user/{}", uid));
+        if run_user.is_dir() {
+            run_user.join("opad").join("daemon.sock")
+        } else {
+            PathBuf::from(format!("/tmp/opad-{}", uid)).join("daemon.sock")
+        }
     }
 }
 

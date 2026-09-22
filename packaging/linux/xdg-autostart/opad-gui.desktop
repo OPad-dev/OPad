@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=OPad Tray
+Comment=OPad configuration and system tray applet
+Exec=/usr/bin/opad-gui --tray
+Icon=input-keyboard
+Terminal=false
+Categories=Utility;HardwareSettings;
+X-GNOME-Autostart-enabled=true
