@@ -211,6 +211,37 @@ pub fn set_gui_autostart_enabled(enabled: bool) -> Result<(), String> {
     )
 }
 
+/// Whether the pad's udev rule is installed anywhere udev reads rules from
+pub fn udev_rule_installed() -> bool {
+    [
+        "/etc/udev/rules.d/70-opad.rules",
+        "/usr/lib/udev/rules.d/70-opad.rules",
+        "/lib/udev/rules.d/70-opad.rules",
+    ]
+    .iter()
+    .any(|p| Path::new(p).exists())
+}
+
+/// The AppImage installs nothing system-wide, so it offers to install the rule
+/// itself (AppRun's `install-udev`, which asks for a password via pkexec).
+/// None when not running as an AppImage or the rule is already there.
+pub fn appimage_needing_udev_rule() -> Option<PathBuf> {
+    let appimage = std::env::var_os("APPIMAGE").map(PathBuf::from)?;
+    (!udev_rule_installed()).then_some(appimage)
+}
+
+pub fn install_udev_rule_from_appimage(appimage: &Path) -> Result<(), String> {
+    let status = Command::new(appimage)
+        .arg("install-udev")
+        .status()
+        .map_err(|e| format!("Failed to run {}: {}", appimage.display(), e))?;
+    if status.success() && udev_rule_installed() {
+        Ok(())
+    } else {
+        Err("The udev rule was not installed (cancelled, or pkexec is unavailable)".to_string())
+    }
+}
+
 #[cfg(test)]
 mod autostart_tests {
     use super::*;

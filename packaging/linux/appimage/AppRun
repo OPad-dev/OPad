@@ -2,8 +2,19 @@
 set -e
 
 HERE="$(dirname "$(readlink -f "$0")")"
-export PATH="${HERE}/usr/bin:${PATH}"
+export PATH="${HERE}/usr/bin:${HERE}/usr/lib/opad/bin:${PATH}"
 export LD_LIBRARY_PATH="${HERE}/usr/lib:${HERE}/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
+
+# `OPad.AppImage install-udev`: install the pad's udev rule as root. The rule
+# goes in on stdin because root cannot read this user's FUSE mount.
+if [ "$1" = "install-udev" ]; then
+    rules="${HERE}/usr/lib/opad/70-opad.rules"
+    if [ ! -f "$rules" ]; then
+        echo "Error: udev rules file not found in AppImage" >&2
+        exit 1
+    fi
+    exec pkexec sh -c 'cat > /etc/udev/rules.d/70-opad.rules && chmod 644 /etc/udev/rules.d/70-opad.rules && udevadm control --reload-rules && udevadm trigger --subsystem-match=tty --subsystem-match=usb --subsystem-match=input' < "$rules"
+fi
 
 cmd="$(basename "$0")"
 if [ "$cmd" = "opad-daemon" ] || [ "$cmd" = "opadctl" ]; then

@@ -827,7 +827,13 @@ fn run_setup() -> Result<()> {
     println!("Recommended udev rule for non-root CDC access:");
     println!("{}", udev_rule);
 
-    if std::path::Path::new("/etc/udev/rules.d").exists() {
+    if let Some(appimage) = std::env::var_os("APPIMAGE") {
+        println!("This is the AppImage; it can install the rule itself:");
+        println!(
+            "  \"{}\" install-udev",
+            std::path::Path::new(&appimage).display()
+        );
+    } else if std::path::Path::new("/etc/udev/rules.d").exists() {
         println!("To install this rule, run:");
         println!(
             "  sudo cp packaging/linux/udev/70-opad.rules {}",

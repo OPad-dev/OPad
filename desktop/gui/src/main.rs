@@ -183,6 +183,9 @@ pub struct App {
     pub pending_replacement: Option<String>,
     /// A pad paired with another installation (§W3-3)
     pub pending_takeover: Option<opad_ipc::TakeoverPrompt>,
+    /// The AppImage's path while its udev rule is not installed: the pad's
+    /// serial port and input node stay root-only until it is
+    pub appimage_udev: Option<std::path::PathBuf>,
     /// What each updater knows (§U-0.4)
     pub updates: Option<UpdateView>,
     pub incompatible: Option<IncompatibleDevice>,
@@ -279,6 +282,8 @@ pub enum Message {
     StartDaemon,
     DaemonStarted(Result<(), String>),
     StartTosu,
+    InstallUdevRule,
+    UdevRuleInstalled(Result<(), String>),
     TosuStarted(Result<(), String>),
     InstallSystemdService,
     SystemdServiceInstalled(Result<(), String>),
@@ -372,6 +377,10 @@ impl App {
             latency: None,
             pending_replacement: None,
             pending_takeover: None,
+            #[cfg(target_os = "linux")]
+            appimage_udev: platform_linux::appimage_needing_udev_rule(),
+            #[cfg(not(target_os = "linux"))]
+            appimage_udev: None,
             updates: None,
             incompatible: None,
             reset_modal: None,
@@ -942,6 +951,32 @@ impl App {
                         format!("Failed to start daemon: {}", e),
                     );
                 }
+            },
+            Message::InstallUdevRule =>
+            {
+                #[cfg(target_os = "linux")]
+                if let Some(appimage) = self.appimage_udev.clone() {
+                    return Task::perform(
+                        async move {
+                            tokio::task::spawn_blocking(move || {
+                                platform_linux::install_udev_rule_from_appimage(&appimage)
+                            })
+                            .await
+                            .map_err(|e| e.to_string())?
+                        },
+                        Message::UdevRuleInstalled,
+                    );
+                }
+            }
+            Message::UdevRuleInstalled(res) => match res {
+                Ok(()) => {
+                    self.appimage_udev = None;
+                    self.banner = Some(
+                        "Device permissions installed. Replug the pad if it is not detected."
+                            .into(),
+                    );
+                }
+                Err(e) => self.banner = Some(e),
             },
             Message::StartTosu => {
                 self.banner = Some("Starting tosu...".into());
@@ -1774,6 +1809,26 @@ impl App {
                              finish — the pad keeps working as a keyboard meanwhile."
                     )
                     .size(14),]
+                    .align_y(Alignment::Center),
+                )
+                .padding([8, 14])
+                .style(theme::banner),
+            );
+        }
+        if self.appimage_udev.is_some() {
+            main = main.push(
+                container(
+                    row![
+                        text(
+                            "The pad's device permissions (udev rule) are not installed, \
+                             so OPad cannot talk to it."
+                        )
+                        .size(14),
+                        Space::new().width(Length::Fill),
+                        button(text("Install (asks for your password)").size(12))
+                            .style(theme::primary)
+                            .on_press(Message::InstallUdevRule),
+                    ]
                     .align_y(Alignment::Center),
                 )
                 .padding([8, 14])
