@@ -1,0 +1,50 @@
+# cargo-deny: advisories, licences, duplicate crates and sources of the desktop
+# workspace.   cargo deny check   (run in desktop/)
+#
+# The licence list is the one desktop/about.toml accepts for
+# THIRD_PARTY_NOTICES.html; a crate with a new licence fails both until
+# someone has looked at it.
+
+[graph]
+targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+
+[advisories]
+# Vulnerabilities fail the check in any crate. "Unmaintained" notices only for
+# crates we depend on directly: the transitive ones (paste, proc-macro-error,
+# ttf-parser, via iced and GTK) have no replacement we can choose.
+unmaintained = "workspace"
+# Every other advisory fails unless listed here with the reason it does not apply
+ignore = []
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MPL-2.0",
+    "NCSA",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.8
+
+[licenses.private]
+# The workspace's own crates are MIT, and publish = false
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

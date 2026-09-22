@@ -32,8 +32,7 @@ jobs:
             libxkbcommon-dev \
             libwayland-dev \
             libfontconfig1-dev \
-            libdbus-1-dev \
-            protobuf-compiler
+            libdbus-1-dev
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -68,12 +67,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install protoc
-        # osupad-protocol's build.rs runs prost-build, which shells out to
-        # protoc on every platform. It is not preinstalled on the runners, so
-        # without this the very first crate in the graph fails to build.
-        run: choco install protoc --no-progress -y
-
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -91,19 +84,19 @@ jobs:
         working-directory: desktop
         run: cargo fmt --check
 
-      # osupad-gui is excluded here and built by the job below, so that one
+      # opad-gui is excluded here and built by the job below, so that one
       # crate's Windows port does not hide regressions in the other eleven.
       - name: Clippy
         working-directory: desktop
-        run: cargo clippy --workspace --exclude osupad-gui --all-targets -- -D warnings
+        run: cargo clippy --workspace --exclude opad-gui --all-targets -- -D warnings
 
       - name: Build
         working-directory: desktop
-        run: cargo build --workspace --exclude osupad-gui
+        run: cargo build --workspace --exclude opad-gui
 
       - name: Workspace Unit & Integration Tests
         working-directory: desktop
-        run: cargo test --workspace --exclude osupad-gui
+        run: cargo test --workspace --exclude opad-gui
 
   rust-windows-gui:
     name: Windows GUI (Clippy, Build, Tests)
@@ -111,12 +104,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Install protoc
-        # osupad-protocol's build.rs runs prost-build, which shells out to
-        # protoc on every platform. It is not preinstalled on the runners, so
-        # without this the very first crate in the graph fails to build.
-        run: choco install protoc --no-progress -y
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -133,15 +120,15 @@ jobs:
 
       - name: Clippy
         working-directory: desktop
-        run: cargo clippy -p osupad-gui --all-targets -- -D warnings
+        run: cargo clippy -p opad-gui --all-targets -- -D warnings
 
       - name: Build
         working-directory: desktop
-        run: cargo build -p osupad-gui
+        run: cargo build -p opad-gui
 
       - name: GUI Unit Tests
         working-directory: desktop
-        run: cargo test -p osupad-gui
+        run: cargo test -p opad-gui
 
   firmware-host-tests:
     name: Firmware Host Unit Tests
@@ -191,8 +178,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Build firmware with ESP-IDF
         shell: bash
@@ -209,3 +194,35 @@ jobs:
             firmware/build/*.bin
             firmware/build/bootloader/*.bin
             firmware/build/partition_table/*.bin
+
+  license-compliance:
+    name: Licences (REUSE, cargo-deny, third-party notices)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Plain `reuse lint` can never pass: the easter-egg GIF is deliberately
+      # kept under LicenseRef-Unknown-ThirdParty. This fails on anything else.
+      - name: REUSE compliance
+        run: |
+          pipx install reuse
+          python3 scripts/check_reuse.py
+
+      - name: cargo-deny (advisories, licences, bans, sources)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: desktop/Cargo.toml
+
+      - name: Install cargo-about
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+
+      # cargo about runs --offline, reading licence files from the crates
+      - name: Fetch crates
+        working-directory: desktop
+        run: cargo fetch --locked
+
+      - name: Third-party notices generate
+        run: make notices
