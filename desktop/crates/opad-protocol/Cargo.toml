@@ -13,3 +13,4 @@ opad-model = { path = "../opad-model" }
 
 [build-dependencies]
 prost-build.workspace = true
+protox.workspace = true

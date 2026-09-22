@@ -1,30 +1,21 @@
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    if std::env::var("PROTOC").is_err() {
-        for candidate in [
-            r"C:\msys64\mingw64\bin\protoc.exe",
-            r"C:\Espressif\tools\python\v5.5.2\venv\Scripts\protoc.exe",
-        ] {
-            if std::path::Path::new(candidate).exists() {
-                std::env::set_var("PROTOC", candidate);
-                break;
-            }
-        }
-    }
-
     let manifest_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR")?);
+    // desktop/crates/opad-protocol -> repo root; protocol/osupad.proto is the
+    // same schema nanopb generates the firmware's osupad_* types from
     let proto_dir = manifest_dir
-        .parent()
-        .and_then(|p| p.parent())
-        .and_then(|p| p.parent())
-        .unwrap()
+        .ancestors()
+        .nth(3)
+        .ok_or("opad-protocol is expected at desktop/crates/opad-protocol")?
         .join("protocol");
     let proto_file = proto_dir.join("osupad.proto");
 
     println!("cargo:rerun-if-changed={}", proto_file.display());
 
-    prost_build::Config::new().compile_protos(&[proto_file], &[proto_dir])?;
+    // protox parses the schema in-process, so building needs no protoc install
+    let descriptors = protox::compile([&proto_file], [&proto_dir])?;
+    prost_build::Config::new().compile_fds(descriptors)?;
 
     Ok(())
 }
