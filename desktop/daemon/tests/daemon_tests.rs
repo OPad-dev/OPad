@@ -5,13 +5,13 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::broadcast;
 
-use osupad_daemon::ipc_handlers::handle_ipc_request;
-use osupad_daemon::log_hub::LogHub;
-use osupad_daemon::runtime::{
+use opad_daemon::ipc_handlers::handle_ipc_request;
+use opad_daemon::log_hub::LogHub;
+use opad_daemon::runtime::{
     DaemonState, PendingOperations, RuntimeAction, RuntimeController, RuntimeEvent,
     COOLDOWN_DURATION,
 };
-use osupad_daemon::sync::{perform_sync, DeviceLink};
+use opad_daemon::sync::{perform_sync, DeviceLink};
 use opad_device::{DeviceError, DeviceEvent};
 use opad_ipc::{IpcRequest, IpcResponse, IPC_PROTOCOL_VERSION};
 use opad_layout::{Layout, Screen};
@@ -1163,7 +1163,7 @@ async fn test_firmware_is_not_an_enableable_updater() {
             "{resp:?}"
         );
     }
-    let key = osupad_daemon::updater::APP_ENABLED_KEY;
+    let key = opad_daemon::updater::APP_ENABLED_KEY;
     assert_eq!(
         storage
             .lock()
@@ -1376,7 +1376,7 @@ async fn test_apply_event_keeps_ipc_changes() {
 
     // UpdateConfig over IPC
     shared.lock().unwrap().config.brightness = 42;
-    let _ = osupad_daemon::runtime::apply_event(
+    let _ = opad_daemon::runtime::apply_event(
         &mut controller,
         &shared,
         &pending,
@@ -1385,7 +1385,7 @@ async fn test_apply_event_keeps_ipc_changes() {
     );
     assert_eq!(shared.lock().unwrap().config.brightness, 42);
 
-    let actions = osupad_daemon::runtime::apply_event(
+    let actions = opad_daemon::runtime::apply_event(
         &mut controller,
         &shared,
         &pending,
@@ -1397,14 +1397,14 @@ async fn test_apply_event_keeps_ipc_changes() {
         .any(|a| matches!(a, RuntimeAction::SendConfig(c) if c.brightness == 42)));
 
     // Replacement prompt answered over IPC: the pad is remembered and not asked about again
-    let _ = osupad_daemon::runtime::apply_event(
+    let _ = opad_daemon::runtime::apply_event(
         &mut controller,
         &shared,
         &pending,
         RuntimeEvent::DeviceCounters(counters("OSUPAD-NEW", 1, 0, 0)),
         now,
     );
-    let _ = osupad_daemon::runtime::apply_event(
+    let _ = opad_daemon::runtime::apply_event(
         &mut controller,
         &shared,
         &pending,
@@ -1413,7 +1413,7 @@ async fn test_apply_event_keeps_ipc_changes() {
     );
     assert!(shared.lock().unwrap().pending_replacement.is_some());
     shared.lock().unwrap().pending_replacement = None;
-    let _ = osupad_daemon::runtime::apply_event(
+    let _ = opad_daemon::runtime::apply_event(
         &mut controller,
         &shared,
         &pending,
@@ -1551,7 +1551,7 @@ async fn test_replug_during_play_keeps_the_state_machine_and_write_guard() {
 // ---------------------------------------------------------------------------
 
 fn owner_bytes(install_id: &str) -> Vec<u8> {
-    osupad_daemon::identity::parse_owner_id(install_id)
+    opad_daemon::identity::parse_owner_id(install_id)
         .expect("a valid install id")
         .to_vec()
 }
