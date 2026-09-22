@@ -72,6 +72,16 @@ for bin in opad-daemon opadctl opad-gui; do
 done
 echo "✓ Host binaries copied and stripped in dist/"
 
+# Third-party notices shipped with every archive: the Rust crates (cargo-about,
+# desktop/about.toml) and the firmware's components
+if ! cargo about --version >/dev/null 2>&1; then
+    echo "ERROR: cargo-about is required (cargo install cargo-about --locked --features cli)" >&2
+    exit 1
+fi
+(cd "${REPO_ROOT}/desktop" && cargo about generate --offline --fail about.hbs \
+    -o "${DIST_DIR}/THIRD_PARTY_NOTICES.html")
+echo "✓ THIRD_PARTY_NOTICES.html generated"
+
 # Create tarball archive for Linux distribution. The version comes from the
 # workspace rather than a literal: it reads 1.0.0-rc until W4 passes (§0), and a
 # tarball claiming 1.0.0 while the binaries inside report 1.0.0-rc is the kind of
@@ -88,6 +98,7 @@ cp "${DIST_DIR}/opad-daemon" "${DIST_DIR}/opad-gui" "${DIST_DIR}/opadctl" "${TAR
 mkdir -p "${TAR_TMP}/packaging"
 cp -r "${REPO_ROOT}/packaging/"* "${TAR_TMP}/packaging/"
 cp "${REPO_ROOT}/README.md" "${REPO_ROOT}/LICENSE" "${TAR_TMP}/"
+cp "${DIST_DIR}/THIRD_PARTY_NOTICES.html" "${TAR_TMP}/"
 
 tar -czf "${DIST_DIR}/${ARCHIVE_NAME}" -C "${TAR_TMP}" .
 rm -rf "${TAR_TMP}"

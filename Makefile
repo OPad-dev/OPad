@@ -44,7 +44,7 @@ TOSU_STANDALONE ?= 1
 TARGET_DIR ?= desktop/target/release
 BINS := opad-daemon opad-gui opadctl
 
-.PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage deb rpm packages
+.PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage deb rpm packages notices
 
 # L-4: Build AppDir / AppImage
 appimage: all
@@ -194,6 +194,14 @@ uninstall-user:
 	@echo "✓ User uninstall complete."
 
 # B-2: Verification target
+# Licences of every Rust crate in the shipped binaries (desktop/about.toml).
+# Needs cargo-about: cargo install cargo-about --locked --features cli
+NOTICES_OUT ?= dist/THIRD_PARTY_NOTICES.html
+notices:
+	@mkdir -p "$(dir $(NOTICES_OUT))"
+	cd desktop && $(CARGO) about generate --offline --fail about.hbs -o "$(abspath $(NOTICES_OUT))"
+	@echo "✓ $(NOTICES_OUT)"
+
 check:
 	$(CARGO) fmt --manifest-path desktop/Cargo.toml --all -- --check
 	$(CARGO) clippy --manifest-path desktop/Cargo.toml --all-targets -- -D warnings
