@@ -18,4 +18,5 @@ serde_json.workspace = true
 opad-model = { path = "../crates/opad-model" }
 opad-ipc = { path = "../crates/opad-ipc" }
 opad-device = { path = "../crates/opad-device" }
+opad-tosu = { path = "../crates/opad-tosu" }
 serialport.workspace = true

@@ -10,7 +10,9 @@ license=('MIT' 'LGPL-3.0-only' 'OFL-1.1')
 # Runtime dependencies:
 # - iced/wgpu needs Vulkan loader and client libraries (Wayland + X11)
 # - ksni needs dbus
-# - tosu wrapper needs nodejs
+# - tosu wrapper needs nodejs. It runs as `node`, so it cannot carry
+#   cap_sys_ptrace like the .deb/.rpm tosu does; under Yama ptrace_scope > 0
+#   opadctl setup and the GUI explain lowering the scope instead.
 # Node version risk: tosu upstream specifies Node 24.x engine. If current arch
 # nodejs introduces incompatibilities, depend on the Node 24 LTS package instead of nodejs (tosu needs >=24.14 <25).
 depends=(

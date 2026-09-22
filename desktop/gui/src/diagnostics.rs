@@ -198,7 +198,9 @@ pub fn poll_linux_switch_inputs(diag: &mut DiagnosticsState, k1_str: &str, k2_st
     };
 
     if guard.is_none() {
-        let mut last = LINUX_EVDEV_LAST_SCAN.lock().unwrap_or_else(|e| e.into_inner());
+        let mut last = LINUX_EVDEV_LAST_SCAN
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if last.is_some_and(|t| t.elapsed() < EVDEV_RESCAN_INTERVAL) {
             return;
         }
@@ -219,6 +221,21 @@ pub fn poll_linux_switch_inputs(diag: &mut DiagnosticsState, k1_str: &str, k2_st
             Err(_) => {
                 *guard = None;
             }
+        }
+    }
+}
+
+/// opad_tosu::ptrace_access() runs `getcap`, and view() runs every frame
+fn cached_ptrace_access() -> opad_tosu::PtraceAccess {
+    static CACHE: std::sync::Mutex<Option<(Instant, opad_tosu::PtraceAccess)>> =
+        std::sync::Mutex::new(None);
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    match cache.as_ref() {
+        Some((at, access)) if at.elapsed() < Duration::from_secs(10) => access.clone(),
+        _ => {
+            let access = opad_tosu::ptrace_access();
+            *cache = Some((Instant::now(), access.clone()));
+            access
         }
     }
 }
@@ -868,9 +885,54 @@ impl DiagnosticsState {
             .width(Length::Fill)
             .style(theme::card)
         };
-        column![com_status_card, com02_card, latency_card]
-            .spacing(14)
-            .into()
+        let yama_card: Option<Element<'a, Message>> = match cached_ptrace_access() {
+            opad_tosu::PtraceAccess::Blocked { scope, fix }
+            | opad_tosu::PtraceAccess::Unknown { scope, fix } => Some(
+                container(
+                    column![
+                        text(format!(
+                            "Linux ptrace_scope is {scope}: tosu may be unable to read osu!"
+                        ))
+                        .size(14)
+                        .font(theme::FONT_BOLD)
+                        .color(theme::RED),
+                        text(
+                            "Yama only lets a process read its own children's memory, and osu! \
+                             is not tosu's child, so the pad would get no live gameplay data."
+                        )
+                        .size(12),
+                        text(format!("Fix: {fix}"))
+                            .size(12)
+                            .font(theme::FONT_BOLD)
+                            .color(theme::YELLOW),
+                    ]
+                    .spacing(8),
+                )
+                .padding(14)
+                .width(Length::Fill)
+                .style(|t| {
+                    let mut s = theme::card(t);
+                    s.border = Border {
+                        color: theme::RED,
+                        width: 1.0,
+                        radius: 8.0.into(),
+                    };
+                    s
+                })
+                .into(),
+            ),
+            _ => None,
+        };
+
+        let mut cards: Vec<Element<'a, Message>> = Vec::new();
+        if let Some(y) = yama_card {
+            cards.push(y);
+        }
+        cards.push(com_status_card.into());
+        cards.push(com02_card.into());
+        cards.push(latency_card.into());
+
+        column(cards).spacing(14).into()
     }
 
     fn view_display_screen<'a>(&'a self, app: &'a App) -> Element<'a, Message> {

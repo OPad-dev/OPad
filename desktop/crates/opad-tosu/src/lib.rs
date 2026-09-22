@@ -282,6 +282,88 @@ pub fn find_tosu_binary() -> Option<PathBuf> {
     paths::bundled_tosu_binary().ok().filter(|p| p.is_file())
 }
 
+/// Why tosu may be unable to read osu!'s memory on Linux, and what fixes it.
+///
+/// Yama (`/proc/sys/kernel/yama/ptrace_scope` > 0) lets a process read only its
+/// own children's memory, and osu! is not tosu's child. A binary with
+/// `cap_sys_ptrace` is exempt, but only a real executable can carry it: on the
+/// AppImage the squashfs is mounted nosuid, which ignores file capabilities,
+/// and where tosu is a script run by the system `node` the capability would
+/// have to go on `node` itself, handing it to every Node program.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PtraceAccess {
+    /// Not Linux, no Yama, or scope 0: nothing stands in the way
+    Unrestricted,
+    /// Yama is on, and the tosu binary carries cap_sys_ptrace
+    Capable { scope: u32 },
+    /// Yama is on and tosu cannot read osu!. `fix` is the command that helps.
+    Blocked { scope: u32, fix: String },
+    /// Yama is on, but whether tosu has the capability cannot be told
+    /// (no `getcap`); `fix` is what to run if telemetry stays empty
+    Unknown { scope: u32, fix: String },
+}
+
+/// Yama's ptrace scope, or None where there is no Yama (or not Linux)
+pub fn yama_ptrace_scope() -> Option<u32> {
+    std::fs::read_to_string("/proc/sys/kernel/yama/ptrace_scope")
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
+fn is_script(bin: &Path) -> bool {
+    let mut head = [0u8; 2];
+    std::fs::File::open(bin)
+        .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut head))
+        .is_ok_and(|_| &head == b"#!")
+}
+
+/// Whether tosu can read osu!'s memory under Yama, and the fix when it cannot.
+pub fn ptrace_access() -> PtraceAccess {
+    let scope = match yama_ptrace_scope() {
+        Some(s) if s > 0 => s,
+        _ => return PtraceAccess::Unrestricted,
+    };
+    let scope_fix = "echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope   \
+                     (persist with kernel.yama.ptrace_scope = 0 in /etc/sysctl.d/10-ptrace.conf)"
+        .to_string();
+    if scope >= 3 {
+        // No ptrace at all until reboot, capability or not
+        return PtraceAccess::Blocked {
+            scope,
+            fix: "ptrace_scope 3 cannot be lowered until reboot; set 0 in /etc/sysctl.d and reboot"
+                .into(),
+        };
+    }
+    let Some(bin) = find_tosu_binary() else {
+        return PtraceAccess::Blocked {
+            scope,
+            fix: scope_fix,
+        };
+    };
+    if std::env::var_os("APPIMAGE").is_some() || is_script(&bin) {
+        return PtraceAccess::Blocked {
+            scope,
+            fix: scope_fix,
+        };
+    }
+    let setcap_fix = format!("sudo setcap cap_sys_ptrace=eip {}", bin.display());
+    match std::process::Command::new("getcap").arg(&bin).output() {
+        Ok(out) if String::from_utf8_lossy(&out.stdout).contains("cap_sys_ptrace") => {
+            PtraceAccess::Capable { scope }
+        }
+        Ok(_) => PtraceAccess::Blocked {
+            scope,
+            fix: setcap_fix,
+        },
+        Err(_) => PtraceAccess::Unknown {
+            scope,
+            fix: setcap_fix,
+        },
+    }
+}
+
 /// Stops and restarts the supervised tosu.
 ///
 /// Swapping the binary needs it held down: on Windows the file cannot be

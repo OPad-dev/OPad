@@ -58,6 +58,9 @@ if [ -d "${REPO_ROOT}/build/tosu" ]; then
     cp "${REPO_ROOT}/licenses/tosu/VERSION" "${APPDIR}/usr/lib/opad/tosu/VERSION"
     cp "${REPO_ROOT}/licenses/tosu/NOTICE" "${APPDIR}/usr/lib/opad/tosu/NOTICE"
     cp "${REPO_ROOT}/licenses/tosu/LICENSE" "${APPDIR}/usr/lib/opad/tosu/LICENSE"
+    cp "${REPO_ROOT}/licenses/tosu/THIRD_PARTY_NOTICES.txt" "${APPDIR}/usr/lib/opad/tosu/THIRD_PARTY_NOTICES.txt"
+    # No setcap here: the AppImage runs from a nosuid mount, which ignores file
+    # capabilities. opadctl setup and the GUI explain ptrace_scope instead.
 fi
 
 echo "=== AppDir assembled at ${APPDIR} ==="

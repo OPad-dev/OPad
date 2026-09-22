@@ -836,6 +836,29 @@ fn run_setup() -> Result<()> {
         println!("  sudo udevadm control --reload-rules && sudo udevadm trigger");
     }
 
+    // Yama: can tosu read osu!'s memory at all?
+    match opad_tosu::ptrace_access() {
+        opad_tosu::PtraceAccess::Blocked { scope, fix } => {
+            println!();
+            println!("⚠ kernel.yama.ptrace_scope is {scope}: tosu cannot read osu!'s memory,");
+            println!("  so the pad shows no live gameplay data. To fix:");
+            println!("    {fix}");
+            println!("  See docs/troubleshooting.md §2.");
+        }
+        opad_tosu::PtraceAccess::Unknown { scope, fix } => {
+            println!();
+            println!("kernel.yama.ptrace_scope is {scope} and `getcap` is not installed, so");
+            println!(
+                "whether tosu may read osu!'s memory is unknown. If the pad shows no live data:"
+            );
+            println!("    {fix}");
+        }
+        opad_tosu::PtraceAccess::Capable { scope } => {
+            println!("✓ Yama ptrace_scope {scope}, and tosu has cap_sys_ptrace");
+        }
+        opad_tosu::PtraceAccess::Unrestricted => {}
+    }
+
     println!("Setup check completed.");
     Ok(())
 }
