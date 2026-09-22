@@ -50,4 +50,5 @@ idf_component_register(
         freertos
         esp_tinyusb
         esp_app_format
+        esp_adc
 )

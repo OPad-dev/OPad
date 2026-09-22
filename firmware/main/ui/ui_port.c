@@ -342,3 +342,25 @@ void ui_trigger_easter_egg(void)
     easter_egg_trigger();
     lvgl_port_unlock();
 }
+
+void ui_show_notice(const char *text)
+{
+    if (!s_ui_ok || !text) return;
+    lvgl_port_lock(0);
+    lv_obj_t *box = lv_obj_create(lv_layer_top());
+    lv_obj_set_size(box, lv_pct(92), LV_SIZE_CONTENT);
+    lv_obj_align(box, LV_ALIGN_BOTTOM_MID, 0, -8);
+    lv_obj_set_style_bg_color(box, lv_color_hex(0x7A1F1F), 0);
+    lv_obj_set_style_bg_opa(box, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(box, 0, 0);
+    lv_obj_set_style_radius(box, 8, 0);
+    lv_obj_set_style_pad_all(box, 8, 0);
+    lv_obj_remove_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *label = lv_label_create(box);
+    lv_obj_set_width(label, lv_pct(100));
+    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
+    lv_label_set_text(label, text);
+    lvgl_port_unlock();
+}

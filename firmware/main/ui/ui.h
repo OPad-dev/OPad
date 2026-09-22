@@ -40,6 +40,9 @@ bool ui_set_layout(uint8_t screen, const ui_layout_t *layout, char *err, size_t 
 /** Trigger the 67 freaky cat easter egg animation. */
 void ui_trigger_easter_egg(void);
 
+// A message that stays on top of every screen until reboot (e.g. an unsupported input module)
+void ui_show_notice(const char *text);
+
 #ifdef __cplusplus
 }
 #endif

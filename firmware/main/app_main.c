@@ -64,6 +64,23 @@ void app_main(void)
     device_config_data_t dev_cfg;
     device_config_get(&dev_cfg);
 
+    // 1b. Which input module is on the carrier's connector (ID divider on GPIO8).
+    // Hand-wired pads read as none and keep their configured pins.
+    board_module_type_t module = board_detect_module();
+    if (module == BOARD_MODULE_MX &&
+        dev_cfg.key1_gpio == DEVICE_CONFIG_DEFAULT_KEY1_GPIO &&
+        dev_cfg.key2_gpio == DEVICE_CONFIG_DEFAULT_KEY2_GPIO) {
+        // The carrier routes the MX keys to GPIO10/GPIO7; the defaults are the
+        // hand-wired pins. Pins someone chose themselves are left alone.
+        ESP_LOGI(TAG, "MX module on the default hand-wired pins: moving keys to GPIO%d/GPIO%d",
+                 BOARD_MX_KEY1_GPIO, BOARD_MX_KEY2_GPIO);
+        dev_cfg.key1_gpio = BOARD_MX_KEY1_GPIO;
+        dev_cfg.key2_gpio = BOARD_MX_KEY2_GPIO;
+        device_config_set(&dev_cfg);
+    } else if (module == BOARD_MODULE_HE) {
+        ESP_LOGW(TAG, "Hall Effect module: needs firmware v2, key input disabled");
+    }
+
     keypad_config_t k_cfg = {
         .keycode1 = (uint8_t)dev_cfg.key1_usage,
         .keycode2 = (uint8_t)dev_cfg.key2_usage,
@@ -73,6 +90,10 @@ void app_main(void)
     };
 
     // 2. Initialize Keypad: switch GPIOs, usages and debouncing (FATAL if fails)
+    if (module == BOARD_MODULE_HE) {
+        // Before the ISR is armed: Hall sensors drive analog levels on the key pins
+        keypad_set_input_enabled(false);
+    }
     ESP_ERROR_CHECK(keypad_init(&k_cfg));
 
     // 4. Initialize USB HID Subsystem and install TinyUSB stack (FATAL if fails)
@@ -165,6 +186,8 @@ void app_main(void)
     if (err != ESP_OK) {
         diag_record(DIAG_EVENT_LCD_INIT_FAILED, 3 /* ERROR */, (uint32_t)err, 0);
         ESP_LOGE(TAG, "ui_init failed: %s (continuing in headless mode)", esp_err_to_name(err));
+    } else if (module == BOARD_MODULE_HE) {
+        ui_show_notice("Hall Effect module needs firmware v2.\nKeys are disabled.");
     }
 
     // Apply brightness and sleep timeout to display & UI

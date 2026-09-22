@@ -92,6 +92,12 @@ void keypad_get_config(keypad_config_t *out_config);
  */
 int keypad_detect_pressed_pin(uint32_t timeout_ms, uint32_t exclude_gpio);
 
+/**
+ * @brief Turn key input off (edges ignored, no presses reported) or back on.
+ * Used when the connected input module is not one this firmware can read.
+ */
+void keypad_set_input_enabled(bool enabled);
+
 #ifdef __cplusplus
 }
 #endif

@@ -91,6 +91,23 @@ int board_get_key1_gpio(void);
  */
 int board_get_key2_gpio(void);
 
+/**
+ * @brief Detected input module type from the ID voltage divider on GPIO8.
+ */
+typedef enum {
+    BOARD_MODULE_NONE = 0,   /**< No module detected (ID line floating) */
+    BOARD_MODULE_MX   = 1,   /**< MX mechanical switch module (~0.30 V) */
+    BOARD_MODULE_HE   = 2,   /**< Hall Effect rapid-trigger module (~1.06 V) */
+} board_module_type_t;
+
+/**
+ * @brief Read the module ID voltage on GPIO8 (ADC1_CH7) and identify the
+ *        input module on the carrier's connector. BOARD_MODULE_NONE also
+ *        covers hand-wired pads, where nothing drives GPIO8.
+ *        Call once at boot before keypad_init.
+ */
+board_module_type_t board_detect_module(void);
+
 #ifdef __cplusplus
 }
 #endif

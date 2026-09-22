@@ -42,12 +42,15 @@ static atomic_uint_least32_t s_key1_map_presses = 0;
 static atomic_uint_least32_t s_key2_map_presses = 0;
 
 static TaskHandle_t s_input_task_handle = NULL;
+// Off when the input module is one v1 cannot read (Hall Effect): its analog
+// outputs on the key pins would otherwise register as presses
+static volatile bool s_input_enabled = true;
 static keypad_state_callback_t s_callback = NULL;
 
 static void IRAM_ATTR gpio_isr_handler(void *arg)
 {
     int key_index = (intptr_t)arg - 1;
-    if (key_index < 0 || key_index >= KEY_ID_COUNT) {
+    if (key_index < 0 || key_index >= KEY_ID_COUNT || !s_input_enabled) {
         return;
     }
 
@@ -503,3 +506,8 @@ int keypad_detect_pressed_pin(uint32_t timeout_ms, uint32_t exclude_gpio)
     return detected_pin;
 }
 
+
+void keypad_set_input_enabled(bool enabled)
+{
+    s_input_enabled = enabled;
+}

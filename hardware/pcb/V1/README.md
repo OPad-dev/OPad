@@ -1,12 +1,15 @@
-# osuPad V1 PCBs
+# OPad V1 PCBs
 
 Modular hardware ecosystem joined by one 8-wire JST-SH cable:
 
-| Board | Folder | Size | What it does |
-|---|---|---|---|
-| **Controller carrier** | `Carrier/` | 35.0 × 48.2 mm, C-shaped | Plugs onto the Waveshare ESP32-S3-Touch-LCD-2 headers and brings the module signals to a connector |
-| **MX input module** | `MX/` | 52.0 × 24.0 mm | Two Kailh MX mechanical hot-swap sockets under the key plate |
-| **Hall Effect input module** | `HE/` | 52.0 × 24.0 mm | Two magnetic Rapid Trigger Hall sensors (TI DRV5055) under the key plate |
+| Board | Folder | Size | Status | What it does |
+|---|---|---|---|---|
+| **Controller carrier** | `Carrier/` | 35.0 × 48.2 mm, C-shaped | Production | Plugs onto the Waveshare ESP32-S3-Touch-LCD-2 headers and brings the module signals to a connector |
+| **MX input module** | `MX/` | 52.0 × 24.0 mm | Production | Two Kailh MX mechanical hot-swap sockets under the key plate |
+| **Hall Effect input module** | `HE/` | 52.0 × 24.0 mm | **v2 Experimental** | Two magnetic Rapid Trigger Hall sensors (TI DRV5055) under the key plate |
+
+> [!IMPORTANT]
+> The **Hall Effect module** requires firmware v2 (Rapid Trigger support), which is not yet available. The PCB design is complete but has not been built and tested; the firmware's ADC sampling pipeline and Rapid Trigger engine are specified in [`docs/specs/v2-rapid-trigger.md`](../../docs/specs/v2-rapid-trigger.md). v1 firmware recognises an HE module by its ID voltage, shows a warning on the LCD and ignores key input rather than reading the analog sensor outputs as presses.
 
 The input module is **swappable**: both the MX mechanical module and the Hall-effect (rapid trigger) module use the same outline, mounting holes, connector position and pinout, and plug into the same carrier and cable. The module reports which kind it is through an ID voltage on the connector (0.30 V for MX, 1.06 V for Hall Effect).
 

@@ -27,3 +27,11 @@
 #define BOARD_I2C_SCL_GPIO      GPIO_NUM_47
 #define BOARD_TOUCH_INT_GPIO    GPIO_NUM_46
 
+// -----------------------------------------------------------------------------
+// Module ID Detection (ADC1_CH7 on connector pin 5)
+// -----------------------------------------------------------------------------
+#define BOARD_MODULE_ID_GPIO    GPIO_NUM_8    // ADC1_CH7, connector pin 5 (ID)
+// Where the carrier routes an MX module's keys (connector pins 3/4)
+#define BOARD_MX_KEY1_GPIO      10
+#define BOARD_MX_KEY2_GPIO      7
+
