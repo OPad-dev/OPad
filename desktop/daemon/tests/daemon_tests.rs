@@ -1,6 +1,7 @@
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use tokio::sync::broadcast;
@@ -53,7 +54,7 @@ impl DeviceLink for MockDeviceLink {
     }
 
     async fn send_config(&self, config: &DeviceConfig) -> Result<(), DeviceError> {
-        self.sent_configs.lock().unwrap().push(config.clone());
+        self.sent_configs.lock().push(config.clone());
         Ok(())
     }
 
@@ -85,11 +86,10 @@ impl DeviceLink for MockDeviceLink {
     ) -> Result<u32, DeviceError> {
         self.sent_syncs
             .lock()
-            .unwrap()
             .push((counters.clone(), force_restore));
         let seq = self.sync_seq.fetch_add(1, Ordering::SeqCst);
 
-        let resp_opt = self.sync_response.lock().unwrap().clone();
+        let resp_opt = self.sync_response.lock().clone();
         if let Some(resp) = resp_opt {
             let (success, message) = match resp {
                 Ok(()) => (true, String::new()),
@@ -106,7 +106,7 @@ impl DeviceLink for MockDeviceLink {
     }
 
     async fn claim_ownership(&self, owner_id: &[u8]) -> Result<(), DeviceError> {
-        self.claimed_owners.lock().unwrap().push(owner_id.to_vec());
+        self.claimed_owners.lock().push(owner_id.to_vec());
         Ok(())
     }
 
@@ -413,12 +413,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
         }));
 
         // Set storage writes blocked guard
-        storage
-            .lock()
-            .unwrap()
-            .as_mut()
-            .unwrap()
-            .set_writes_allowed(false);
+        storage.lock().as_mut().unwrap().set_writes_allowed(false);
 
         // 1. ForceSync rejected
         let r = handle_ipc_request(
@@ -569,7 +564,6 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
         // Verify storage counters did NOT change
         let loaded = storage
             .lock()
-            .unwrap()
             .as_ref()
             .unwrap()
             .load_device_state("OSUPAD-SAFE")
@@ -699,7 +693,6 @@ async fn test_reconcile_and_replacement_scenarios() {
         assert!(res.is_ok());
         let saved = storage
             .lock()
-            .unwrap()
             .as_ref()
             .unwrap()
             .load_device_state("OSUPAD-RECON")
@@ -768,7 +761,7 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
 
     let device = MockDeviceLink::new(true);
     // Configure device to reject sync with error message
-    *device.sync_response.lock().unwrap() = Some(Err("flash write failure".to_string()));
+    *device.sync_response.lock() = Some(Err("flash write failure".to_string()));
 
     let daemon_state = Arc::new(Mutex::new(DaemonState {
         mode: RuntimeMode::Idle,
@@ -798,9 +791,9 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
     let res = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
     assert!(res.is_err());
     // Verify all 3 retry attempts took place
-    assert_eq!(device.sent_syncs.lock().unwrap().len(), 3);
+    assert_eq!(device.sent_syncs.lock().len(), 3);
     // Verify error is surfaced in daemon state
-    let st = daemon_state.lock().unwrap();
+    let st = daemon_state.lock();
     assert!(st
         .last_sync_error
         .as_ref()
@@ -1167,7 +1160,6 @@ async fn test_firmware_is_not_an_enableable_updater() {
     assert_eq!(
         storage
             .lock()
-            .unwrap()
             .as_ref()
             .unwrap()
             .get_app_state(key)
@@ -1375,7 +1367,7 @@ async fn test_apply_event_keeps_ipc_changes() {
     let pending = Arc::new(Mutex::new(PendingOperations::default()));
 
     // UpdateConfig over IPC
-    shared.lock().unwrap().config.brightness = 42;
+    shared.lock().config.brightness = 42;
     let _ = opad_daemon::runtime::apply_event(
         &mut controller,
         &shared,
@@ -1383,7 +1375,7 @@ async fn test_apply_event_keeps_ipc_changes() {
         RuntimeEvent::Tick(now),
         now,
     );
-    assert_eq!(shared.lock().unwrap().config.brightness, 42);
+    assert_eq!(shared.lock().config.brightness, 42);
 
     let actions = opad_daemon::runtime::apply_event(
         &mut controller,
@@ -1411,8 +1403,8 @@ async fn test_apply_event_keeps_ipc_changes() {
         RuntimeEvent::DeviceConnected(pad_info("OSUPAD-NEW"), None),
         now,
     );
-    assert!(shared.lock().unwrap().pending_replacement.is_some());
-    shared.lock().unwrap().pending_replacement = None;
+    assert!(shared.lock().pending_replacement.is_some());
+    shared.lock().pending_replacement = None;
     let _ = opad_daemon::runtime::apply_event(
         &mut controller,
         &shared,
@@ -1455,7 +1447,7 @@ async fn test_perform_sync_leaves_write_guard_to_runtime() {
     let _ = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
 
     assert!(!guard.load(Ordering::SeqCst));
-    assert_eq!(daemon_state.lock().unwrap().mode, RuntimeMode::Playing);
+    assert_eq!(daemon_state.lock().mode, RuntimeMode::Playing);
 }
 
 /// §W1-2 / P1-8: a cable that drops and comes back mid-map must not wedge the
@@ -1701,13 +1693,13 @@ async fn test_leaving_a_foreign_pad_alone_writes_nothing() {
     );
 
     assert!(
-        device.claimed_owners.lock().unwrap().is_empty(),
+        device.claimed_owners.lock().is_empty(),
         "declining must not write an owner onto someone else's pad"
     );
-    assert!(device.sent_syncs.lock().unwrap().is_empty());
-    assert!(device.sent_configs.lock().unwrap().is_empty());
+    assert!(device.sent_syncs.lock().is_empty());
+    assert!(device.sent_configs.lock().is_empty());
 
-    let st = daemon_state.lock().unwrap().clone();
+    let st = daemon_state.lock().clone();
     assert!(st.pending_takeover.is_none(), "the prompt is answered");
     assert!(st.foreign_pad, "the pad still belongs to someone else");
 
@@ -1773,16 +1765,13 @@ async fn test_taking_over_claims_the_pad_and_resumes() {
     }
 
     assert_eq!(
-        device.claimed_owners.lock().unwrap().as_slice(),
+        device.claimed_owners.lock().as_slice(),
         &[owner_bytes(&id)],
         "the pad must be told who owns it now"
     );
-    assert!(
-        !device.sent_configs.lock().unwrap().is_empty(),
-        "config resumes"
-    );
+    assert!(!device.sent_configs.lock().is_empty(), "config resumes");
 
-    let st = daemon_state.lock().unwrap().clone();
+    let st = daemon_state.lock().clone();
     assert!(!st.foreign_pad);
     assert!(st.pending_takeover.is_none());
 
@@ -1837,9 +1826,9 @@ async fn test_takeover_without_an_identity_is_refused_and_stays_pending() {
         matches!(resp, IpcResponse::OperationRejected { .. }),
         "{resp:?}"
     );
-    assert!(device.claimed_owners.lock().unwrap().is_empty());
+    assert!(device.claimed_owners.lock().is_empty());
     assert!(
-        daemon_state.lock().unwrap().pending_takeover.is_some(),
+        daemon_state.lock().pending_takeover.is_some(),
         "an unanswerable takeover must stay pending, not vanish"
     );
 }
@@ -1984,7 +1973,7 @@ async fn test_firmware_offer_reports_the_pad_without_writing_anything() {
     assert!(offer.available.is_none());
     assert!(offer.consent_text.is_none());
     assert!(offer.blockers.is_empty(), "{:?}", offer.blockers);
-    assert_eq!(device.sent_syncs.lock().unwrap().len(), 0);
+    assert_eq!(device.sent_syncs.lock().len(), 0);
 }
 
 #[tokio::test]
@@ -2012,8 +2001,8 @@ async fn test_firmware_flash_without_consent_is_refused_before_anything_happens(
         other => panic!("a flash without consent must be rejected, got {other:?}"),
     }
     // Nothing was synced, nothing was released, nothing was written
-    assert_eq!(device.sent_syncs.lock().unwrap().len(), 0);
-    assert!(state.lock().unwrap().device_connected);
+    assert_eq!(device.sent_syncs.lock().len(), 0);
+    assert!(state.lock().device_connected);
 }
 
 #[tokio::test]
@@ -2038,8 +2027,8 @@ async fn test_firmware_flash_is_refused_during_gameplay_and_cooldown() {
             }
             other => panic!("{mode:?} must refuse a flash, got {other:?}"),
         }
-        assert_eq!(device.sent_syncs.lock().unwrap().len(), 0);
-        assert!(state.lock().unwrap().device_connected);
+        assert_eq!(device.sent_syncs.lock().len(), 0);
+        assert!(state.lock().device_connected);
     }
 }
 
@@ -2089,8 +2078,8 @@ async fn test_firmware_flash_is_refused_without_a_verified_manifest() {
         IpcResponse::Error(e) => assert!(e.contains("manifest"), "{e}"),
         other => panic!("expected a manifest error, got {other:?}"),
     }
-    assert_eq!(device.sent_syncs.lock().unwrap().len(), 0);
-    assert!(state.lock().unwrap().device_connected);
+    assert_eq!(device.sent_syncs.lock().len(), 0);
+    assert!(state.lock().device_connected);
 }
 
 #[tokio::test]

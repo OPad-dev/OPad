@@ -3821,6 +3821,7 @@ dependencies = [
  "opad-storage",
  "opad-tosu",
  "opad-update",
+ "parking_lot",
  "serde",
  "serde_json",
  "tempfile",

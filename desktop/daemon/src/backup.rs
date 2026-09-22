@@ -23,9 +23,10 @@
 use chrono::{DateTime, SecondsFormat, Utc};
 use opad_model::{paths, DeviceInfo, JsonBackup};
 use opad_storage::Storage;
+use parking_lot::Mutex;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tracing::{info, warn};
 
 use crate::runtime::DaemonState;
@@ -40,7 +41,7 @@ pub fn current(
     state: &Arc<Mutex<DaemonState>>,
     storage: &Arc<Mutex<Option<Storage>>>,
 ) -> Option<JsonBackup> {
-    let st = state.lock().unwrap();
+    let st = state.lock();
     if !st.device_connected && st.device_info.is_none() && st.counters.device_id.is_empty() {
         return None;
     }
@@ -48,7 +49,7 @@ pub fn current(
         .device_info
         .clone()
         .or_else(|| {
-            storage.lock().unwrap().as_ref().and_then(|s| {
+            storage.lock().as_ref().and_then(|s| {
                 s.list_device_states()
                     .ok()?
                     .into_iter()

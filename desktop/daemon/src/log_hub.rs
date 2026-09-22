@@ -1,6 +1,7 @@
 use opad_model::{LogEntry, LogLevel, LogSource};
+use parking_lot::Mutex;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::Layer;
@@ -41,7 +42,7 @@ impl LogHub {
         target: impl Into<String>,
         message: impl Into<String>,
     ) {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock();
         let seq = inner.next_seq;
         inner.next_seq = inner.next_seq.wrapping_add(1);
 
@@ -57,7 +58,7 @@ impl LogHub {
     }
 
     pub fn get_entries(&self, since_seq: Option<u64>, limit: usize) -> (Vec<LogEntry>, u64) {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock();
         let latest_seq = inner.next_seq.saturating_sub(1);
 
         let entries = match since_seq {

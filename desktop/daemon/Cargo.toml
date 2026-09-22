@@ -27,6 +27,8 @@ opad-update = { path = "../crates/opad-update" }
 uuid = { version = "1", features = ["v4"] }
 opad-device = { path = "../crates/opad-device" }
 opad-layout = { path = "../crates/opad-layout" }
+# No lock poisoning: one panicking task must not wedge every other lock user
+parking_lot = "0.12"
 
 [dev-dependencies]
 uuid = { version = "1", features = ["v4"] }

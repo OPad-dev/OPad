@@ -1,4 +1,5 @@
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::{info, warn};
 
@@ -25,7 +26,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
     pending_ops: &Arc<Mutex<PendingOperations>>,
     updates: Option<&UpdateService>,
 ) -> IpcResponse {
-    let mode = { state.lock().unwrap().mode };
+    let mode = { state.lock().mode };
 
     match req {
         IpcRequest::Handshake {
@@ -56,7 +57,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     ),
                 };
             }
-            let st = state.lock().unwrap();
+            let st = state.lock();
             IpcResponse::HandshakeAck {
                 daemon_version: env!("CARGO_PKG_VERSION").to_string(),
                 daemon_protocol: IPC_PROTOCOL_VERSION,
@@ -65,9 +66,9 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::GetStatus => {
-            let st = state.lock().unwrap();
+            let st = state.lock();
             let pc_counters = if let Some(info) = &st.device_info {
-                let s_guard = storage.lock().unwrap();
+                let s_guard = storage.lock();
                 s_guard
                     .as_ref()
                     .and_then(|s| s.load_device_state(&info.device_id).unwrap_or(None))
@@ -107,7 +108,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::GetLayouts => {
-            let st = state.lock().unwrap();
+            let st = state.lock();
             IpcResponse::Layouts {
                 idle: st.custom_layouts.get(&Screen::Idle).cloned(),
                 playing: st.custom_layouts.get(&Screen::Playing).cloned(),
@@ -120,16 +121,11 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     reason: format!("Invalid layout: {}", e),
                 };
             }
-            state
-                .lock()
-                .unwrap()
-                .custom_layouts
-                .insert(screen, layout.clone());
+            state.lock().custom_layouts.insert(screen, layout.clone());
             if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
                 let _ = device.send_layout(screen, &layout).await;
                 pending_ops
                     .lock()
-                    .unwrap()
                     .pending_layouts
                     .push((screen, Some(layout)));
                 return IpcResponse::LayoutApplied {
@@ -137,13 +133,13 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     message: "Layout applied to pad RAM; will be saved after gameplay".to_string(),
                 };
             }
-            if let Some(s) = storage.lock().unwrap().as_ref() {
+            if let Some(s) = storage.lock().as_ref() {
                 if let Err(e) = s.save_layout(screen.to_wire(), &layout.to_json()) {
                     warn!("Failed to save layout: {}", e);
                 }
             }
             info!("Layout {} saved", screen.label());
-            if !state.lock().unwrap().device_connected {
+            if !state.lock().device_connected {
                 return IpcResponse::LayoutApplied {
                     screen,
                     message: "Saved; it will be applied when the pad connects".to_string(),
@@ -157,26 +153,22 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::ResetLayout { screen } => {
-            state.lock().unwrap().custom_layouts.remove(&screen);
+            state.lock().custom_layouts.remove(&screen);
             if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
                 let _ = device.reset_layout(screen).await;
-                pending_ops
-                    .lock()
-                    .unwrap()
-                    .pending_layouts
-                    .push((screen, None));
+                pending_ops.lock().pending_layouts.push((screen, None));
                 return IpcResponse::LayoutApplied {
                     screen,
                     message: "Layout reset in pad RAM; will be saved after gameplay".to_string(),
                 };
             }
-            if let Some(s) = storage.lock().unwrap().as_ref() {
+            if let Some(s) = storage.lock().as_ref() {
                 if let Err(e) = s.delete_layout(screen.to_wire()) {
                     warn!("Failed to delete layout: {}", e);
                 }
             }
             info!("Layout {} reset to default", screen.label());
-            if !state.lock().unwrap().device_connected {
+            if !state.lock().device_connected {
                 return IpcResponse::LayoutApplied {
                     screen,
                     message: "Reset; the pad will use its default".to_string(),
@@ -189,7 +181,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             wait_for_layout_ack(&mut events, screen).await
         }
 
-        IpcRequest::GetUiValues => IpcResponse::UiValues(state.lock().unwrap().ui_values.clone()),
+        IpcRequest::GetUiValues => IpcResponse::UiValues(state.lock().ui_values.clone()),
 
         IpcRequest::GetUpdateStatus => {
             let Some(updates) = updates else {
@@ -221,11 +213,11 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     }
                 }
             };
-            let guard = storage.lock().unwrap();
+            let guard = storage.lock();
             match guard.as_ref() {
                 Some(s) => match s.set_app_state(key, if enabled { "1" } else { "0" }) {
                     Ok(()) => IpcResponse::ConfigUpdated {
-                        config: state.lock().unwrap().config.clone(),
+                        config: state.lock().config.clone(),
                         deferred_persist: false,
                     },
                     // Mid-map this is a blocked storage write, not a failure
@@ -258,12 +250,12 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             if let Err(e) = device.reset_latency_stats().await {
                 return IpcResponse::Error(format!("Failed to reset latency stats: {}", e));
             }
-            state.lock().unwrap().latency = None;
+            state.lock().latency = None;
             info!("Latency statistics reset");
             IpcResponse::HandshakeAck {
                 daemon_version: env!("CARGO_PKG_VERSION").to_string(),
                 daemon_protocol: IPC_PROTOCOL_VERSION,
-                device_connected: state.lock().unwrap().device_connected,
+                device_connected: state.lock().device_connected,
             }
         }
 
@@ -274,7 +266,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 };
             }
 
-            let current_cfg = { state.lock().unwrap().config.clone() };
+            let current_cfg = { state.lock().config.clone() };
 
             if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
                 let keys_or_debounce_changed = current_cfg.key1_hid_usage
@@ -285,7 +277,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     || current_cfg.key2_gpio != new_config.key2_gpio;
 
                 if keys_or_debounce_changed {
-                    pending_ops.lock().unwrap().pending_config = Some(new_config);
+                    pending_ops.lock().pending_config = Some(new_config);
                     return IpcResponse::OperationDeferred {
                         reason:
                             "Key mapping, pin and debounce changes are deferred until IDLE mode"
@@ -296,10 +288,10 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 // Brightness / sleep / hz changes are applied to RAM immediately (§P1-3)
                 let _ = device.send_config(&new_config).await;
                 {
-                    let mut st = state.lock().unwrap();
+                    let mut st = state.lock();
                     st.config = new_config.clone();
                 }
-                pending_ops.lock().unwrap().pending_config = Some(new_config.clone());
+                pending_ops.lock().pending_config = Some(new_config.clone());
                 info!("Configuration applied to RAM (persistence queued for SYNC)");
                 return IpcResponse::ConfigUpdated {
                     config: new_config,
@@ -307,14 +299,14 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 };
             }
 
-            if let Some(s) = storage.lock().unwrap().as_ref() {
+            if let Some(s) = storage.lock().as_ref() {
                 if let Err(e) = s.save_config(&new_config) {
                     return IpcResponse::Error(format!("Failed to save config: {}", e));
                 }
             }
 
             {
-                let mut st = state.lock().unwrap();
+                let mut st = state.lock();
                 st.config = new_config.clone();
             }
 
@@ -332,7 +324,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     reason: "Cannot force synchronization during gameplay or cooldown".to_string(),
                 };
             }
-            if storage.lock().unwrap().is_none() {
+            if storage.lock().is_none() {
                 return IpcResponse::OperationRejected {
                     reason:
                         "Database unavailable: counter sync is rejected without persistent storage"
@@ -362,7 +354,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 };
             }
 
-            if storage.lock().unwrap().is_none() {
+            if storage.lock().is_none() {
                 return IpcResponse::OperationRejected {
                     reason:
                         "Database unavailable: counter reset is rejected without persistent storage"
@@ -371,26 +363,26 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
 
             let updated = {
-                let mut st = state.lock().unwrap();
+                let mut st = state.lock();
                 st.counters.counter_generation = st.counters.counter_generation.saturating_add(1);
                 st.counters.lifetime_key1 = 0;
                 st.counters.lifetime_key2 = 0;
                 let updated = st.counters.clone();
 
                 if let Some(info) = &st.device_info {
-                    if let Some(s) = storage.lock().unwrap().as_ref() {
+                    if let Some(s) = storage.lock().as_ref() {
                         let _ = s.save_device_state(info, &updated);
                     }
                 } else {
-                    pending_ops.lock().unwrap().pending_device_push = true;
+                    pending_ops.lock().pending_device_push = true;
                 }
                 updated
             };
 
-            if state.lock().unwrap().device_connected {
+            if state.lock().device_connected {
                 let _ = device.send_counter_sync(&updated, true).await;
             } else {
-                pending_ops.lock().unwrap().pending_device_push = true;
+                pending_ops.lock().pending_device_push = true;
             }
             info!("Lifetime counters reset with incremented generation");
             IpcResponse::CountersReset { counters: updated }
@@ -409,14 +401,14 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                         .to_string(),
                 };
             }
-            if storage.lock().unwrap().is_none() {
+            if storage.lock().is_none() {
                 return IpcResponse::OperationRejected {
                     reason: "Database unavailable: restore from PC is rejected without persistent storage"
                         .to_string(),
                 };
             }
             let (info_opt, in_memory_counters, is_connected) = {
-                let st = state.lock().unwrap();
+                let st = state.lock();
                 (
                     st.device_info.clone(),
                     st.counters.clone(),
@@ -435,7 +427,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
 
             let pc_state = {
-                let s_guard = storage.lock().unwrap();
+                let s_guard = storage.lock();
                 s_guard
                     .as_ref()
                     .and_then(|s| s.load_device_state(&info.device_id).unwrap_or(None))
@@ -460,14 +452,14 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 map_key2: 0,
             };
 
-            if let Some(s) = storage.lock().unwrap().as_ref() {
+            if let Some(s) = storage.lock().as_ref() {
                 let _ = s.save_device_state(&info, &target);
                 let _ = s.touch_device_last_seen(&info.device_id);
             }
 
             let _ = device.send_counter_sync(&target, true).await;
             {
-                let mut st = state.lock().unwrap();
+                let mut st = state.lock();
                 st.counters = target.clone();
                 st.pc_counters = Some(target.clone());
                 st.esp_counters = Some(target.clone());
@@ -490,14 +482,14 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     reason: "Confirmation required to overwrite PC counters from ESP".to_string(),
                 };
             }
-            if storage.lock().unwrap().is_none() {
+            if storage.lock().is_none() {
                 return IpcResponse::OperationRejected {
                     reason: "Database unavailable: import from device is rejected without persistent storage"
                         .to_string(),
                 };
             }
             let (info_opt, in_memory_counters, is_connected) = {
-                let st = state.lock().unwrap();
+                let st = state.lock();
                 (
                     st.device_info.clone(),
                     st.counters.clone(),
@@ -516,7 +508,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
 
             let pc_state = {
-                let s_guard = storage.lock().unwrap();
+                let s_guard = storage.lock();
                 s_guard
                     .as_ref()
                     .and_then(|s| s.load_device_state(&info.device_id).unwrap_or(None))
@@ -534,14 +526,14 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 map_key2: 0,
             };
 
-            if let Some(s) = storage.lock().unwrap().as_ref() {
+            if let Some(s) = storage.lock().as_ref() {
                 let _ = s.save_device_state(&info, &target);
                 let _ = s.touch_device_last_seen(&info.device_id);
             }
 
             let _ = device.send_counter_sync(&target, true).await;
             {
-                let mut st = state.lock().unwrap();
+                let mut st = state.lock();
                 st.counters = target.clone();
                 st.pc_counters = Some(target.clone());
                 st.esp_counters = Some(target.clone());
@@ -565,7 +557,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
 
             let (pending, info_opt, device_counters, install_id) = {
-                let mut st = state.lock().unwrap();
+                let mut st = state.lock();
                 (
                     st.pending_takeover.take(),
                     st.device_info.clone(),
@@ -596,10 +588,10 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 };
             }
 
-            if storage.lock().unwrap().is_none() {
+            if storage.lock().is_none() {
                 // Put the prompt back: an unanswerable takeover must not be
                 // silently forgotten.
-                state.lock().unwrap().pending_takeover = Some(pending);
+                state.lock().pending_takeover = Some(pending);
                 return IpcResponse::OperationRejected {
                     reason: "Database unavailable: taking over a pad needs persistent storage"
                         .to_string(),
@@ -610,7 +602,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             // choice, and is applied before anything is saved, so no counter is
             // ever written under the wrong owner (§W3-3).
             let pc_state = {
-                let s_guard = storage.lock().unwrap();
+                let s_guard = storage.lock();
                 s_guard
                     .as_ref()
                     .and_then(|s| s.load_device_state(&info.device_id).unwrap_or(None))
@@ -641,28 +633,28 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             // pad still names the other install and would prompt again on the
             // next connect, which §W3-3 says must not happen.
             let Some(owner) = install_id.as_deref().and_then(identity::parse_owner_id) else {
-                state.lock().unwrap().pending_takeover = Some(pending);
+                state.lock().pending_takeover = Some(pending);
                 return IpcResponse::OperationRejected {
                     reason: "This install has no identity, so it cannot take a pad over"
                         .to_string(),
                 };
             };
             if let Err(e) = device.claim_ownership(&owner).await {
-                state.lock().unwrap().pending_takeover = Some(pending);
+                state.lock().pending_takeover = Some(pending);
                 return IpcResponse::Error(format!("Could not record ownership on the pad: {}", e));
             }
 
-            if let Some(s) = storage.lock().unwrap().as_ref() {
+            if let Some(s) = storage.lock().as_ref() {
                 let _ = s.save_device_state(&info, &target);
                 let _ = s.touch_device_last_seen(&info.device_id);
             }
             let _ = device.send_counter_sync(&target, true).await;
             // The pad is ours now, so the config we suppressed while it was
             // foreign goes out (§W3-3)
-            let config = { state.lock().unwrap().config.clone() };
+            let config = { state.lock().config.clone() };
             let _ = device.send_config(&config).await;
             {
-                let mut st = state.lock().unwrap();
+                let mut st = state.lock();
                 st.foreign_pad = false;
                 st.counters = target.clone();
                 st.pc_counters = Some(target.clone());
@@ -687,7 +679,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     reason: "Cannot resolve replacement during gameplay or cooldown".to_string(),
                 };
             }
-            if storage.lock().unwrap().is_none() {
+            if storage.lock().is_none() {
                 return IpcResponse::OperationRejected {
                     reason: "Database unavailable: resolving replacement is rejected without persistent storage"
                         .to_string(),
@@ -695,7 +687,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
 
             let (old_device_id_opt, current_info_opt, current_counters) = {
-                let mut st = state.lock().unwrap();
+                let mut st = state.lock();
                 (
                     st.pending_replacement.take(),
                     st.device_info.clone(),
@@ -712,7 +704,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             if restore {
                 if let Some(old_id) = old_device_id_opt {
                     let old_state = {
-                        let s_guard = storage.lock().unwrap();
+                        let s_guard = storage.lock();
                         s_guard
                             .as_ref()
                             .and_then(|s| s.load_device_state(&old_id).unwrap_or(None))
@@ -731,12 +723,12 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                             map_key1: 0,
                             map_key2: 0,
                         };
-                        if let Some(s) = storage.lock().unwrap().as_ref() {
+                        if let Some(s) = storage.lock().as_ref() {
                             let _ = s.save_device_state(&current_info, &restored);
                             let _ = s.touch_device_last_seen(&current_info.device_id);
                         }
                         let _ = device.send_counter_sync(&restored, true).await;
-                        state.lock().unwrap().counters = restored.clone();
+                        state.lock().counters = restored.clone();
                         info!("Restored lifetime counters from previous pad");
                         return IpcResponse::CountersReset { counters: restored };
                     }
@@ -746,7 +738,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 }
             } else {
                 // Treat as new pad: register it in SQLite
-                if let Some(s) = storage.lock().unwrap().as_ref() {
+                if let Some(s) = storage.lock().as_ref() {
                     let _ = s.save_device_state(&current_info, &current_counters);
                     let _ = s.touch_device_last_seen(&current_info.device_id);
                 }
@@ -771,7 +763,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 return IpcResponse::Error(format!("Invalid backup: {}", err));
             }
 
-            let st = state.lock().unwrap();
+            let st = state.lock();
             let current = Some(CurrentBackupState {
                 device_id: st.counters.device_id.clone(),
                 counter_generation: st.counters.counter_generation,
@@ -829,7 +821,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 };
             }
 
-            if storage.lock().unwrap().is_none() {
+            if storage.lock().is_none() {
                 return IpcResponse::OperationRejected {
                     reason:
                         "Database unavailable: backup import is rejected without persistent storage"
@@ -842,7 +834,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
 
             let (current_tosu, current_gen) = {
-                let st = state.lock().unwrap();
+                let st = state.lock();
                 (
                     st.config.tosu_endpoint.clone(),
                     st.counters.counter_generation,
@@ -874,11 +866,10 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 map_key2: 0,
             };
 
-            if let Some(s) = storage.lock().unwrap().as_ref() {
+            if let Some(s) = storage.lock().as_ref() {
                 let _ = s.save_config(&new_config);
                 let last_firmware_version = state
                     .lock()
-                    .unwrap()
                     .device_info
                     .as_ref()
                     .map(|i| i.firmware_version.clone())
@@ -901,7 +892,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
 
             {
-                let mut st = state.lock().unwrap();
+                let mut st = state.lock();
                 st.config = new_config.clone();
                 st.counters = new_counters.clone();
             }
@@ -926,7 +917,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::GetFirmwareUpdate => {
-            let storage_available = storage.lock().unwrap().is_some();
+            let storage_available = storage.lock().is_some();
             IpcResponse::FirmwareUpdateOffer(crate::firmware_update::offer(
                 updates.and_then(|u| u.manifest()).as_ref(),
                 state,
@@ -982,7 +973,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 };
             }
             {
-                let mut st = state.lock().unwrap();
+                let mut st = state.lock();
                 st.device_connected = false;
             }
             let port = device.port().or_else(opad_device::find_target_port);

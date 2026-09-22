@@ -1,5 +1,6 @@
+use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use opad_layout::{Layout, Screen};
@@ -722,7 +723,7 @@ pub fn apply_event(
     now: Instant,
 ) -> Vec<RuntimeAction> {
     let actions = {
-        let mut ds = shared.lock().unwrap();
+        let mut ds = shared.lock();
         // A replacement prompt resolved over IPC: remember the pad so it is not asked again
         if controller.state.pending_replacement.is_some() && ds.pending_replacement.is_none() {
             if let Some(info) = &ds.device_info {
@@ -736,7 +737,7 @@ pub fn apply_event(
     };
     // perform_sync drains the shared queue, so hand over what the controller deferred
     if let Some(id) = controller.pending_ops.pending_last_seen.take() {
-        pending_ops.lock().unwrap().pending_last_seen = Some(id);
+        pending_ops.lock().pending_last_seen = Some(id);
     }
     actions
 }

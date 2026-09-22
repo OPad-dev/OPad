@@ -20,7 +20,8 @@
 //! 6. The pad is rebooted into the app and has to come back reporting the
 //!    version we just wrote. If it does not, that is said loudly.
 
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::{info, warn};
 
@@ -49,7 +50,7 @@ pub fn offer(
     storage_available: bool,
 ) -> FirmwareOffer {
     let (mode, device_info, connected) = {
-        let st = state.lock().unwrap();
+        let st = state.lock();
         (st.mode, st.device_info.clone(), st.device_connected)
     };
     let installed = device_info.as_ref().map(|i| i.firmware_version.clone());
@@ -147,9 +148,9 @@ pub async fn install<D: DeviceLink>(
     device: &D,
     pending_ops: &Arc<Mutex<crate::runtime::PendingOperations>>,
 ) -> Result<FirmwareUpdateOutcome, FirmwareUpdateError> {
-    let storage_available = storage.lock().unwrap().is_some();
+    let storage_available = storage.lock().is_some();
     let (mode, connected, installed) = {
-        let st = state.lock().unwrap();
+        let st = state.lock();
         (
             st.mode,
             st.device_connected,
@@ -241,11 +242,10 @@ async fn flash_and_verify<D: DeviceLink>(
         device.resume();
         return Err(FirmwareUpdateError::PortNotReleased);
     }
-    state.lock().unwrap().device_connected = false;
+    state.lock().device_connected = false;
     let app_port = device.port().or_else(opad_device::find_target_port);
     let device_id = state
         .lock()
-        .unwrap()
         .device_info
         .as_ref()
         .map(|i| i.device_id.clone());

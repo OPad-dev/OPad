@@ -1,9 +1,10 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 use anyhow::{Context, Result};
+use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 use tracing_subscriber::layer::SubscriberExt;
@@ -46,6 +47,16 @@ async fn main() -> Result<()> {
         .with(fmt_layer)
         .with(hub_layer)
         .init();
+
+    // A panic in any task takes the whole daemon down, loudly, so the service
+    // manager (systemd Restart=on-failure) restarts it clean. Left alone, tokio
+    // swallows a task's panic and the daemon limps on with that task missing.
+    std::panic::set_hook(Box::new(|info| {
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        error!("opad-daemon panicked: {}\n{}", info, backtrace);
+        eprintln!("opad-daemon panicked: {info}");
+        std::process::exit(1);
+    }));
 
     info!("Starting opad-daemon v1.0.0");
 
@@ -399,7 +410,7 @@ async fn main() -> Result<()> {
                 }
 
                 // Retry opening SQLite every 60s if unavailable (§P2-12)
-                if storage.lock().unwrap().is_none() && last_db_retry.elapsed() >= Duration::from_secs(60) {
+                if storage.lock().is_none() && last_db_retry.elapsed() >= Duration::from_secs(60) {
                     last_db_retry = Instant::now();
                     info!("Retrying SQLite database connection at {}", db_path.display());
                     match Storage::open(&db_path) {
@@ -419,7 +430,7 @@ async fn main() -> Result<()> {
                             } else {
                                 None
                             };
-                            *storage.lock().unwrap() = Some(s);
+                            *storage.lock() = Some(s);
                             let _ = apply_event(&mut controller, &daemon_state, &pending_ops, RuntimeEvent::SqliteReconnected {
                                 config: cfg,
                                 layouts,
@@ -461,7 +472,7 @@ async fn main() -> Result<()> {
                         let _ = device_cmd.send(DeviceCommand::Config(cfg)).await;
                     }
                     RuntimeAction::SaveDeviceConfig(cfg) => {
-                        let s_guard = storage.lock().unwrap();
+                        let s_guard = storage.lock();
                         if let Some(s) = s_guard.as_ref() {
                             if let Err(e) = s.save_config(&cfg) {
                                 warn!("Failed to persist device configuration from pad: {}", e);
@@ -504,17 +515,17 @@ async fn main() -> Result<()> {
                         let _ = device_cmd.send(DeviceCommand::RequestStatus).await;
                     }
                     RuntimeAction::SetStorageWritesAllowed(allowed) => {
-                        if let Some(s) = storage.lock().unwrap().as_mut() {
+                        if let Some(s) = storage.lock().as_mut() {
                             s.set_writes_allowed(allowed);
                         }
                     }
                     RuntimeAction::SaveInitialDeviceState(info, counters) => {
-                        if let Some(s) = storage.lock().unwrap().as_ref() {
+                        if let Some(s) = storage.lock().as_ref() {
                             let _ = s.save_device_state(&info, &counters);
                         }
                     }
                     RuntimeAction::TouchDeviceLastSeen(device_id) => {
-                        if let Some(s) = storage.lock().unwrap().as_ref() {
+                        if let Some(s) = storage.lock().as_ref() {
                             let _ = s.touch_device_last_seen(&device_id);
                         }
                     }
@@ -532,8 +543,7 @@ async fn main() -> Result<()> {
                         // take the daemon down or hold up anything else.
                         if let Some(backup) = backup::current(&daemon_state, &storage) {
                             if let Some(at) = backup::write_and_log(&backup) {
-                                daemon_state.lock().unwrap().last_backup =
-                                    Some(backup::format_stamp(at));
+                                daemon_state.lock().last_backup = Some(backup::format_stamp(at));
                             }
                         }
                     }
@@ -694,7 +704,7 @@ mod tests {
         // 4. perform_sync does not modify ESP counters when storage is None
         let res = perform_sync(&daemon_state, &storage, &*device_manager, &pending_ops).await;
         assert!(res.is_err());
-        let st = daemon_state.lock().unwrap();
+        let st = daemon_state.lock();
         assert_eq!(st.counters.lifetime_key1, 50);
         assert_eq!(st.counters.lifetime_key2, 60);
         assert!(st.last_sync_error.is_some());

@@ -8,7 +8,8 @@
 //! This is what a pad records as its owner (§W3-2). Nothing about it is
 //! cryptographic: it protects counter integrity, not exclusivity (§0).
 
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 use opad_storage::Storage;
 use tracing::{info, warn};
@@ -24,7 +25,7 @@ pub const OWNER_ID_LEN: usize = 16;
 /// rather than not at all (P2-12), and an install with no identity simply
 /// claims nothing and prompts about nothing.
 pub fn load_or_create(storage: &Arc<Mutex<Option<Storage>>>) -> Option<String> {
-    let guard = storage.lock().ok()?;
+    let guard = storage.lock();
     let storage = guard.as_ref()?;
 
     match storage.get_app_state(INSTALL_ID_KEY) {
@@ -105,7 +106,6 @@ mod tests {
         let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
         storage
             .lock()
-            .unwrap()
             .as_ref()
             .unwrap()
             .set_app_state(INSTALL_ID_KEY, "not-a-uuid")
@@ -119,12 +119,7 @@ mod tests {
         // Otherwise every restart would invent a new owner and re-prompt about
         // a pad it already claimed.
         let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
-        storage
-            .lock()
-            .unwrap()
-            .as_ref()
-            .unwrap()
-            .set_writes_allowed(false);
+        storage.lock().as_ref().unwrap().set_writes_allowed(false);
         assert_eq!(load_or_create(&storage), None);
     }
 

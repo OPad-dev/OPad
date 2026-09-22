@@ -1,5 +1,6 @@
 use chrono::Utc;
-use std::sync::{Arc, Mutex, OnceLock};
+use parking_lot::Mutex;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
 use tracing::{error, info, warn};
@@ -153,17 +154,17 @@ pub async fn perform_sync<D: DeviceLink>(
     // while this runs, and storage writes must then stay blocked
     info!("Performing atomic state synchronization (§11.3, §13)...");
 
-    let is_storage_available = storage.lock().unwrap().is_some();
+    let is_storage_available = storage.lock().is_some();
     if !is_storage_available {
         let err_msg = "Sync skipped: persistent storage unavailable".to_string();
         warn!("perform_sync skipped: SQLite storage unavailable (P2-12). ESP counters will not be modified.");
-        let mut st = state.lock().unwrap();
+        let mut st = state.lock();
         st.last_sync_error = Some(err_msg.clone());
         return Err(err_msg);
     }
 
     let (info_opt, in_memory_counters, is_connected) = {
-        let st = state.lock().unwrap();
+        let st = state.lock();
         (
             st.device_info.clone(),
             st.counters.clone(),
@@ -210,13 +211,13 @@ pub async fn perform_sync<D: DeviceLink>(
     if !idle_reached {
         let err_msg = "Device not in IDLE state within 3s timeout".to_string();
         warn!("Timed out waiting for device to report IDLE state before counter sync");
-        let mut st = state.lock().unwrap();
+        let mut st = state.lock();
         st.last_sync_error = Some(err_msg.clone());
         return Err(err_msg);
     }
 
     let stored_counters = {
-        let s_guard = storage.lock().unwrap();
+        let s_guard = storage.lock();
         s_guard
             .as_ref()
             .and_then(|s| s.load_device_state(&info.device_id).unwrap_or(None))
@@ -235,7 +236,7 @@ pub async fn perform_sync<D: DeviceLink>(
 
     // Save reconciled state to SQLite (blocked by the write guard if a map started)
     {
-        if let Some(s) = storage.lock().unwrap().as_ref() {
+        if let Some(s) = storage.lock().as_ref() {
             if let Err(e) = s.save_device_state(&info, &reconciled) {
                 error!("Failed to save reconciled device state to SQLite: {}", e);
             }
@@ -313,7 +314,7 @@ pub async fn perform_sync<D: DeviceLink>(
             "State synchronization failed after 3 attempts: {}",
             last_error_msg
         );
-        let mut st = state.lock().unwrap();
+        let mut st = state.lock();
         st.last_sync_error = Some(format!("Counter sync failed: {}", last_error_msg));
         st.counters = reconciled; // Keep SQLite as reconciled (§P1-1)
         return Err(last_error_msg);
@@ -324,7 +325,7 @@ pub async fn perform_sync<D: DeviceLink>(
     let now_str = Utc::now().to_rfc3339();
 
     {
-        if let Some(s) = storage.lock().unwrap().as_ref() {
+        if let Some(s) = storage.lock().as_ref() {
             let _ = s.save_device_state(&info, &reconciled);
             let _ = s.touch_device_last_seen(&info.device_id);
         }
@@ -332,7 +333,7 @@ pub async fn perform_sync<D: DeviceLink>(
 
     // Drain pending operations (§P1-3)
     let (pending_cfg, pending_layouts, pending_seen) = {
-        let mut p = pending_ops.lock().unwrap();
+        let mut p = pending_ops.lock();
         (
             p.pending_config.take(),
             std::mem::take(&mut p.pending_layouts),
@@ -342,26 +343,26 @@ pub async fn perform_sync<D: DeviceLink>(
 
     if let Some(cfg) = pending_cfg {
         {
-            if let Some(s) = storage.lock().unwrap().as_ref() {
+            if let Some(s) = storage.lock().as_ref() {
                 let _ = s.save_config(&cfg);
             }
         }
         let _ = device.send_config(&cfg).await;
         // Otherwise the next connect would push the old config back to the pad
-        state.lock().unwrap().config = cfg;
+        state.lock().config = cfg;
     }
 
     for (screen, layout_opt) in pending_layouts {
         if let Some(layout) = layout_opt {
             {
-                if let Some(s) = storage.lock().unwrap().as_ref() {
+                if let Some(s) = storage.lock().as_ref() {
                     let _ = s.save_layout(screen.to_wire(), &layout.to_json());
                 }
             }
             let _ = device.send_layout(screen, &layout).await;
         } else {
             {
-                if let Some(s) = storage.lock().unwrap().as_ref() {
+                if let Some(s) = storage.lock().as_ref() {
                     let _ = s.delete_layout(screen.to_wire());
                 }
             }
@@ -370,13 +371,13 @@ pub async fn perform_sync<D: DeviceLink>(
     }
 
     if let Some(seen_id) = pending_seen {
-        if let Some(s) = storage.lock().unwrap().as_ref() {
+        if let Some(s) = storage.lock().as_ref() {
             let _ = s.touch_device_last_seen(&seen_id);
         }
     }
 
     {
-        let mut st = state.lock().unwrap();
+        let mut st = state.lock();
         st.counters = reconciled.clone();
         st.pc_counters = Some(reconciled.clone());
         st.esp_counters = Some(reconciled.clone());

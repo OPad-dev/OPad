@@ -114,7 +114,7 @@ mod tests {
     use super::*;
     use opad_device::DeviceEvent;
     use opad_model::CounterState;
-    use std::sync::Mutex;
+    use parking_lot::Mutex;
     use tokio::sync::broadcast;
 
     /// Records what was sent; answers Busy while `busy` is set
@@ -129,7 +129,7 @@ mod tests {
             if self.busy.load(Ordering::SeqCst) {
                 return Err(DeviceError::Busy);
             }
-            self.sent.lock().unwrap().push(what);
+            self.sent.lock().push(what);
             Ok(())
         }
     }
@@ -195,10 +195,7 @@ mod tests {
         ] {
             execute(&dm, &cmd, &resend).await;
         }
-        assert_eq!(
-            *dm.sent.lock().unwrap(),
-            vec!["config", "data", "data", "status"]
-        );
+        assert_eq!(*dm.sent.lock(), vec!["config", "data", "data", "status"]);
         assert!(!resend.load(Ordering::SeqCst));
     }
 
@@ -214,6 +211,6 @@ mod tests {
         )
         .await;
         assert!(resend.load(Ordering::SeqCst));
-        assert!(dm.sent.lock().unwrap().is_empty());
+        assert!(dm.sent.lock().is_empty());
     }
 }

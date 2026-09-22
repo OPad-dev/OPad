@@ -6,12 +6,12 @@
 //! check happened", because recording it is a storage write and P1-3 forbids
 //! those during PLAYING and COOLDOWN.
 
-use std::sync::{Arc, Mutex};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tracing::{debug, info, warn};
 
 use opad_ipc::{ComponentUpdate, UpdateComponent};
-use opad_model::RuntimeMode;
 use opad_storage::Storage;
 use opad_tosu::TosuSupervisor;
 use opad_update::app::{self, AppAction};
@@ -72,12 +72,12 @@ pub struct UpdateService {
 
 impl UpdateService {
     pub fn status(&self) -> UpdateStatus {
-        self.status.lock().map(|s| s.clone()).unwrap_or_default()
+        self.status.lock().clone()
     }
 
     /// The verified manifest, or `None` if no check has succeeded yet.
     pub fn manifest(&self) -> Option<ReleaseManifest> {
-        self.manifest.lock().ok().and_then(|m| m.clone())
+        self.manifest.lock().clone()
     }
 
     pub fn request_install(&self, component: UpdateComponent) -> Result<(), String> {
@@ -121,17 +121,13 @@ pub fn spawn_update_worker(
                     match tick(&daemon_state, &storage, &tosu_supervisor, &status).await {
                         Ok(m) => {
                             if m.is_some() {
-                                if let Ok(mut shared) = shared_manifest.lock() {
-                                    shared.clone_from(&m);
-                                }
+                                shared_manifest.lock().clone_from(&m);
                                 manifest = m;
                             }
                         }
                         Err(e) => {
                             warn!("Update check failed: {}", e);
-                            if let Ok(mut s) = status.lock() {
-                                s.last_error = Some(e.to_string());
-                            }
+                            status.lock().last_error = Some(e.to_string());
                         }
                     }
                 }
@@ -151,9 +147,7 @@ pub fn spawn_update_worker(
                     };
                     if let Err(e) = result {
                         warn!("Applying the update failed: {}", e);
-                        if let Ok(mut s) = status.lock() {
-                            s.last_error = Some(e.to_string());
-                        }
+                        status.lock().last_error = Some(e.to_string());
                     }
                 }
             }
@@ -171,10 +165,7 @@ async fn tick(
     tosu_supervisor: &TosuSupervisor,
     status: &SharedUpdateStatus,
 ) -> Result<Option<ReleaseManifest>, UpdateError> {
-    let mode = daemon_state
-        .lock()
-        .map(|s| s.mode)
-        .unwrap_or(RuntimeMode::Playing);
+    let mode = daemon_state.lock().mode;
 
     // Not idle: change nothing, write nothing, do not even look.
     if let Err(reason) = may_update_now(mode, true) {
@@ -193,7 +184,8 @@ async fn tick(
     // The schedule is recorded whatever happened, so a failure backs off
     // instead of retrying on every tick.
     write_json(storage, SCHEDULE_KEY, &schedule);
-    if let Ok(mut s) = status.lock() {
+    {
+        let mut s = status.lock();
         s.last_check = schedule.last_check;
         s.last_error = schedule.last_error.clone();
     }
@@ -215,9 +207,7 @@ async fn tick(
     .await
     {
         warn!("tosu update failed: {}", e);
-        if let Ok(mut s) = status.lock() {
-            s.last_error = Some(e.to_string());
-        }
+        status.lock().last_error = Some(e.to_string());
     }
 
     // Reported, not propagated — exactly like the tosu arm above. A manifest
@@ -228,9 +218,7 @@ async fn tick(
     // nothing to do with the firmware.
     if let Err(e) = check_app(&manifest, daemon_state, storage, status) {
         warn!("App update check failed: {}", e);
-        if let Ok(mut s) = status.lock() {
-            s.last_error = Some(e.to_string());
-        }
+        status.lock().last_error = Some(e.to_string());
     }
     Ok(Some(manifest))
 }
@@ -247,10 +235,7 @@ fn check_app(
     let enabled = read_flag(storage, APP_ENABLED_KEY);
     let installed = env!("CARGO_PKG_VERSION");
     let origin = InstallOrigin::detect();
-    let mode = daemon_state
-        .lock()
-        .map(|s| s.mode)
-        .unwrap_or(RuntimeMode::Playing);
+    let mode = daemon_state.lock().mode;
 
     let action = app::plan(
         manifest,
@@ -260,7 +245,8 @@ fn check_app(
         may_update_now(mode, enabled),
     )?;
 
-    if let Ok(mut s) = status.lock() {
+    {
+        let mut s = status.lock();
         s.app.installed = Some(installed.to_string());
         s.app.enabled = enabled;
         match &action {
@@ -307,10 +293,7 @@ async fn install_app(
         UpdateError::Http("No verified release manifest yet; check for updates first".to_string())
     })?;
 
-    let mode = daemon_state
-        .lock()
-        .map(|s| s.mode)
-        .unwrap_or(RuntimeMode::Playing);
+    let mode = daemon_state.lock().mode;
     let origin = InstallOrigin::detect();
     let action = app::plan(
         manifest,
@@ -360,7 +343,8 @@ async fn install_app(
     let _ = std::fs::remove_file(&target);
     applied?;
 
-    if let Ok(mut s) = status.lock() {
+    {
+        let mut s = status.lock();
         s.restart_required = true;
         s.app.ready_to_install = false;
         s.app.installed = Some(available.clone());
@@ -442,10 +426,7 @@ async fn update_tosu(
 
     // Re-read the mode: fetching the manifest took time, and the user may have
     // started a map while it was in flight.
-    let mode = daemon_state
-        .lock()
-        .map(|s| s.mode)
-        .unwrap_or(RuntimeMode::Playing);
+    let mode = daemon_state.lock().mode;
 
     let action = tosu::plan(
         manifest,
@@ -455,7 +436,8 @@ async fn update_tosu(
         may_update_now(mode, enabled),
     )?;
 
-    if let Ok(mut s) = status.lock() {
+    {
+        let mut s = status.lock();
         s.tosu.installed = installed.clone();
         s.tosu.available = manifest
             .component(opad_update::TOSU)
@@ -510,9 +492,7 @@ async fn update_tosu(
                         "tosu update to {} failed, keeping the current binary: {}",
                         to, e
                     );
-                    if let Ok(mut s) = status.lock() {
-                        s.last_error = Some(e.to_string());
-                    }
+                    status.lock().last_error = Some(e.to_string());
                     return Err(e);
                 }
             }
@@ -525,16 +505,14 @@ async fn update_tosu(
 /// silently switch an updater off — or on — so the default is the documented
 /// one and the error is visible in the log.
 fn read_flag(storage: &Arc<Mutex<Option<Storage>>>, key: &str) -> bool {
-    match storage.lock() {
-        Ok(guard) => match guard.as_ref().map(|s| s.get_app_state(key)) {
-            Some(Ok(Some(v))) => v != "0" && !v.eq_ignore_ascii_case("false"),
-            Some(Err(e)) => {
-                warn!("Could not read {}: {}", key, e);
-                true
-            }
-            _ => true,
-        },
-        Err(_) => true,
+    let guard = storage.lock();
+    match guard.as_ref().map(|s| s.get_app_state(key)) {
+        Some(Ok(Some(v))) => v != "0" && !v.eq_ignore_ascii_case("false"),
+        Some(Err(e)) => {
+            warn!("Could not read {}: {}", key, e);
+            true
+        }
+        _ => true,
     }
 }
 
@@ -542,7 +520,7 @@ fn read_json<T: serde::de::DeserializeOwned>(
     storage: &Arc<Mutex<Option<Storage>>>,
     key: &str,
 ) -> Option<T> {
-    let guard = storage.lock().ok()?;
+    let guard = storage.lock();
     let raw = guard.as_ref()?.get_app_state(key).ok()??;
     serde_json::from_str(&raw).ok()
 }
@@ -551,7 +529,8 @@ fn write_json<T: serde::Serialize>(storage: &Arc<Mutex<Option<Storage>>>, key: &
     let Ok(json) = serde_json::to_string(value) else {
         return;
     };
-    if let Ok(guard) = storage.lock() {
+    {
+        let guard = storage.lock();
         if let Some(s) = guard.as_ref() {
             // A blocked write here means the mode changed under us; the next
             // idle tick records it instead.
