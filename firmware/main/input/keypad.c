@@ -438,11 +438,18 @@ int keypad_detect_pressed_pin(uint32_t timeout_ms, uint32_t exclude_gpio)
         timeout_ms = 8000;
     }
 
-    // Configure candidate pins with internal pull-ups
+    portENTER_CRITICAL(&s_keypad_spinlock);
+    keypad_config_t cfg = s_config;
+    portEXIT_CRITICAL(&s_keypad_spinlock);
+
+    // Configure candidate pins with internal pull-ups. The active key pins are
+    // already pulled-up inputs, so they are scanned as they are: reconfiguring
+    // them here would turn their interrupts off mid-session.
     uint64_t pin_mask = 0;
     for (size_t i = 0; i < sizeof(SCAN_PINS); i++) {
-        if (SCAN_PINS[i] != exclude_gpio) {
-            pin_mask |= (1ULL << SCAN_PINS[i]);
+        uint8_t pin = SCAN_PINS[i];
+        if (pin != exclude_gpio && pin != cfg.key1_gpio && pin != cfg.key2_gpio) {
+            pin_mask |= (1ULL << pin);
         }
     }
 
@@ -479,13 +486,15 @@ int keypad_detect_pressed_pin(uint32_t timeout_ms, uint32_t exclude_gpio)
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 
-    // Restore active key GPIOs with pull-ups and interrupts
+    // Release the scanned pins, then re-arm the active keys unconditionally
+    // (the config may have changed during the scan)
     portENTER_CRITICAL(&s_keypad_spinlock);
-    keypad_config_t cfg = s_config;
+    cfg = s_config;
     portEXIT_CRITICAL(&s_keypad_spinlock);
 
     for (size_t i = 0; i < sizeof(SCAN_PINS); i++) {
-        if (SCAN_PINS[i] != cfg.key1_gpio && SCAN_PINS[i] != cfg.key2_gpio) {
+        if ((pin_mask & (1ULL << SCAN_PINS[i])) &&
+            SCAN_PINS[i] != cfg.key1_gpio && SCAN_PINS[i] != cfg.key2_gpio) {
             gpio_reset_pin(SCAN_PINS[i]);
         }
     }

@@ -19,6 +19,16 @@ esp_err_t board_keys_set_gpio(int key1_gpio, int key2_gpio)
         return ESP_ERR_INVALID_ARG;
     }
     if (key1_gpio == s_key1_gpio && key2_gpio == s_key2_gpio) {
+        // Same pins: re-arm them anyway. Something else (pin detection) may have
+        // reconfigured the pad with interrupts off, and skipping here left the
+        // keys dead until the next reboot.
+        gpio_num_t pins[2] = {s_key1_gpio, s_key2_gpio};
+        for (int i = 0; i < 2; i++) {
+            gpio_set_direction(pins[i], GPIO_MODE_INPUT);
+            gpio_set_pull_mode(pins[i], GPIO_PULLUP_ONLY);
+            gpio_set_intr_type(pins[i], GPIO_INTR_ANYEDGE);
+            gpio_intr_enable(pins[i]);
+        }
         return ESP_OK;
     }
 
