@@ -90,7 +90,7 @@ pub enum DiagnosticsMessage {
     PingDone(Result<Duration, String>),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct KeyTrackerState {
     pub is_down: bool,
     pub press_count: u32,
@@ -100,21 +100,6 @@ pub struct KeyTrackerState {
     pub fast_flutter_count: u32,
     pub last_press_time: Option<Instant>,
     pub last_release_time: Option<Instant>,
-}
-
-impl Default for KeyTrackerState {
-    fn default() -> Self {
-        Self {
-            is_down: false,
-            press_count: 0,
-            last_hold_ms: None,
-            shortest_repress_ms: None,
-            definite_chatter_count: 0,
-            fast_flutter_count: 0,
-            last_press_time: None,
-            last_release_time: None,
-        }
-    }
 }
 
 pub struct DiagnosticsState {
@@ -308,12 +293,12 @@ impl DiagnosticsState {
             &app.k2_input
         };
 
-        let key_card = |label: &'a str, k: &'a KeyTrackerState, pin: u32, is_k1: bool| -> Element<'a, Message> {
-            let fill = if k.is_down {
-                theme::PINK
-            } else {
-                theme::CARD
-            };
+        let key_card = |label: &'a str,
+                        k: &'a KeyTrackerState,
+                        pin: u32,
+                        is_k1: bool|
+         -> Element<'a, Message> {
+            let fill = if k.is_down { theme::PINK } else { theme::CARD };
             let border_color = if k.is_down {
                 theme::WHITE
             } else if k.definite_chatter_count > 0 {
@@ -349,7 +334,10 @@ impl DiagnosticsState {
 
             let key_box = container(
                 column![
-                    text(label).size(42).font(theme::FONT_BOLD).color(text_color),
+                    text(label)
+                        .size(42)
+                        .font(theme::FONT_BOLD)
+                        .color(text_color),
                     text(if k.is_down { "PRESSED" } else { "RELEASED" })
                         .size(11)
                         .font(theme::FONT_BOLD)
@@ -390,10 +378,7 @@ impl DiagnosticsState {
                                 .size(14)
                                 .font(theme::FONT_BOLD),
                         ],
-                        row![
-                            muted("Last hold time:").width(130),
-                            text(hold_str).size(13),
-                        ],
+                        row![muted("Last hold time:").width(130), text(hold_str).size(13),],
                         row![
                             muted("Shortest repress:").width(130),
                             text(repress_str).size(13),
@@ -422,7 +407,9 @@ impl DiagnosticsState {
         let summary_card = container(
             column![
                 row![
-                    text("Session Input Metrics").size(15).font(theme::FONT_BOLD),
+                    text("Session Input Metrics")
+                        .size(15)
+                        .font(theme::FONT_BOLD),
                     Space::new().width(Length::Fill),
                     button(text("Reset Session").size(12))
                         .padding([6, 12])
@@ -443,7 +430,11 @@ impl DiagnosticsState {
                         text(total_chatter.to_string())
                             .size(18)
                             .font(theme::FONT_BOLD)
-                            .color(if total_chatter > 0 { theme::RED } else { theme::GREEN }),
+                            .color(if total_chatter > 0 {
+                                theme::RED
+                            } else {
+                                theme::GREEN
+                            }),
                     ]
                     .width(Length::FillPortion(1)),
                     column![
@@ -451,7 +442,11 @@ impl DiagnosticsState {
                         text(total_flutter.to_string())
                             .size(18)
                             .font(theme::FONT_BOLD)
-                            .color(if total_flutter > 0 { theme::YELLOW } else { theme::WHITE }),
+                            .color(if total_flutter > 0 {
+                                theme::YELLOW
+                            } else {
+                                theme::WHITE
+                            }),
                     ]
                     .width(Length::FillPortion(1)),
                     column![
@@ -468,7 +463,8 @@ impl DiagnosticsState {
                         .label("Audio beep alert on switch chatter (<15ms)")
                         .on_toggle(|v| Message::Diagnostics(DiagnosticsMessage::ToggleSound(v))),
                     Space::new().width(Length::Fill),
-                    muted("Global detection: Works in-game while playing osu! or any song.").size(12),
+                    muted("Global detection: Works in-game while playing osu! or any song.")
+                        .size(12),
                 ]
                 .align_y(Alignment::Center),
             ]
@@ -478,14 +474,14 @@ impl DiagnosticsState {
         .width(Length::Fill)
         .style(theme::card);
 
-        let mut events_col = column![
-            row![
-                text("Live Switch Event Timeline").size(14).font(theme::FONT_BOLD),
-                Space::new().width(Length::Fill),
-                muted(format!("{} recent events", self.event_log.len())).size(11),
-            ]
-            .align_y(Alignment::Center)
+        let mut events_col = column![row![
+            text("Live Switch Event Timeline")
+                .size(14)
+                .font(theme::FONT_BOLD),
+            Space::new().width(Length::Fill),
+            muted(format!("{} recent events", self.event_log.len())).size(11),
         ]
+        .align_y(Alignment::Center)]
         .spacing(6);
 
         if self.event_log.is_empty() {
@@ -512,13 +508,9 @@ impl DiagnosticsState {
             .width(Length::Fill)
             .style(theme::card);
 
-        column![
-            row![card_k1, card_k2].spacing(14),
-            summary_card,
-            event_card
-        ]
-        .spacing(14)
-        .into()
+        column![row![card_k1, card_k2].spacing(14), summary_card, event_card]
+            .spacing(14)
+            .into()
     }
 
     fn view_com_protocol<'a>(&'a self, app: &'a App) -> Element<'a, Message> {
@@ -534,36 +526,73 @@ impl DiagnosticsState {
 
         let com_status_card = container(
             column![
-                text("Serial & IPC Connection Status").size(16).font(theme::FONT_BOLD),
+                text("Serial & IPC Connection Status")
+                    .size(16)
+                    .font(theme::FONT_BOLD),
                 row![
                     muted("Daemon IPC Transport:").width(200),
-                    text(if app.daemon_online { "Online (Restricted User Pipe)" } else { "Offline" }).size(13),
-                ].spacing(8),
+                    text(if app.daemon_online {
+                        "Online (Restricted User Pipe)"
+                    } else {
+                        "Offline"
+                    })
+                    .size(13),
+                ]
+                .spacing(8),
                 row![
                     muted("Device USB Connection:").width(200),
-                    text(if app.device_connected { "Connected (USB CDC ACM 115200 8N1)" } else { "Disconnected" }).size(13),
-                ].spacing(8),
+                    text(if app.device_connected {
+                        "Connected (USB CDC ACM 115200 8N1)"
+                    } else {
+                        "Disconnected"
+                    })
+                    .size(13),
+                ]
+                .spacing(8),
                 row![
                     muted("Device ID / Serial:").width(200),
-                    text(info.map(|i| i.device_id.as_str()).filter(|s| !s.is_empty()).unwrap_or("—")).size(13),
-                ].spacing(8),
+                    text(
+                        info.map(|i| i.device_id.as_str())
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or("—")
+                    )
+                    .size(13),
+                ]
+                .spacing(8),
                 row![
                     muted("Board Profile:").width(200),
-                    text(info.map(|i| i.board_profile.as_str()).filter(|s| !s.is_empty()).unwrap_or("—")).size(13),
-                ].spacing(8),
+                    text(
+                        info.map(|i| i.board_profile.as_str())
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or("—")
+                    )
+                    .size(13),
+                ]
+                .spacing(8),
                 row![
                     muted("Firmware Version:").width(200),
-                    text(info.map(|i| i.firmware_version.as_str()).filter(|s| !s.is_empty()).unwrap_or("—")).size(13),
-                ].spacing(8),
+                    text(
+                        info.map(|i| i.firmware_version.as_str())
+                            .filter(|s| !s.is_empty())
+                            .unwrap_or("—")
+                    )
+                    .size(13),
+                ]
+                .spacing(8),
                 row![
                     muted("Daemon Round-Trip Ping:").width(200),
-                    text(ping_text).size(13).font(theme::FONT_BOLD).color(theme::GREEN),
+                    text(ping_text)
+                        .size(13)
+                        .font(theme::FONT_BOLD)
+                        .color(theme::GREEN),
                     Space::new().width(12),
                     button(text("Test Ping").size(12))
                         .padding([4, 10])
                         .style(theme::secondary)
                         .on_press(Message::Diagnostics(DiagnosticsMessage::PingDaemon)),
-                ].spacing(8).align_y(Alignment::Center),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center),
             ]
             .spacing(10),
         )
@@ -605,31 +634,44 @@ impl DiagnosticsState {
         let latency_card = if let Some(lat) = &app.latency {
             container(
                 column![
-                    text("Pad Hardware Latency Telemetry").size(15).font(theme::FONT_BOLD),
+                    text("Pad Hardware Latency Telemetry")
+                        .size(15)
+                        .font(theme::FONT_BOLD),
                     row![
                         column![
                             caption("P50 LATENCY"),
-                            text(format!("{:.1} µs", lat.p50_us)).size(16).font(theme::FONT_BOLD),
-                        ].width(Length::FillPortion(1)),
+                            text(format!("{:.1} µs", lat.p50_us))
+                                .size(16)
+                                .font(theme::FONT_BOLD),
+                        ]
+                        .width(Length::FillPortion(1)),
                         column![
                             caption("P99 LATENCY"),
-                            text(format!("{:.1} µs", lat.p99_us)).size(16).font(theme::FONT_BOLD),
-                        ].width(Length::FillPortion(1)),
+                            text(format!("{:.1} µs", lat.p99_us))
+                                .size(16)
+                                .font(theme::FONT_BOLD),
+                        ]
+                        .width(Length::FillPortion(1)),
                         column![
                             caption("P99.9 LATENCY"),
-                            text(format!("{:.1} µs", lat.p999_us)).size(16).font(theme::FONT_BOLD),
-                        ].width(Length::FillPortion(1)),
+                            text(format!("{:.1} µs", lat.p999_us))
+                                .size(16)
+                                .font(theme::FONT_BOLD),
+                        ]
+                        .width(Length::FillPortion(1)),
                         column![
                             caption("SAMPLES"),
-                            text(lat.samples.to_string()).size(16).font(theme::FONT_BOLD),
-                        ].width(Length::FillPortion(1)),
-                    ].spacing(12),
-                    row![
-                        button(text("Reset Latency Benchmarks").size(12))
-                            .padding([6, 12])
-                            .style(theme::secondary)
-                            .on_press(Message::ResetLatency),
+                            text(lat.samples.to_string())
+                                .size(16)
+                                .font(theme::FONT_BOLD),
+                        ]
+                        .width(Length::FillPortion(1)),
                     ]
+                    .spacing(12),
+                    row![button(text("Reset Latency Benchmarks").size(12))
+                        .padding([6, 12])
+                        .style(theme::secondary)
+                        .on_press(Message::ResetLatency),]
                 ]
                 .spacing(10),
             )
@@ -649,7 +691,9 @@ impl DiagnosticsState {
             .style(theme::card)
         };
 
-        column![com_status_card, com02_card, latency_card].spacing(14).into()
+        column![com_status_card, com02_card, latency_card]
+            .spacing(14)
+            .into()
     }
 
     fn view_display_screen<'a>(&'a self, app: &'a App) -> Element<'a, Message> {
@@ -661,7 +705,9 @@ impl DiagnosticsState {
                 } else {
                     theme::secondary
                 })
-                .on_press(Message::Diagnostics(DiagnosticsMessage::TestBrightness(val)))
+                .on_press(Message::Diagnostics(DiagnosticsMessage::TestBrightness(
+                    val,
+                )))
         };
 
         let brightness_card = container(
@@ -702,7 +748,9 @@ impl DiagnosticsState {
                 } else {
                     theme::secondary
                 })
-                .on_press(Message::Diagnostics(DiagnosticsMessage::SelectDisplayPattern(idx)))
+                .on_press(Message::Diagnostics(
+                    DiagnosticsMessage::SelectDisplayPattern(idx),
+                ))
                 .into()
         }))
         .spacing(8);
@@ -710,13 +758,24 @@ impl DiagnosticsState {
         let preview_box = if let Some(c) = pattern_colors[self.test_pattern_index].1 {
             container(
                 column![
-                    text(format!("Screen Color: {}", pattern_colors[self.test_pattern_index].0))
-                        .size(14)
-                        .font(theme::FONT_BOLD)
-                        .color(if c == theme::WHITE { theme::BG } else { theme::WHITE }),
+                    text(format!(
+                        "Screen Color: {}",
+                        pattern_colors[self.test_pattern_index].0
+                    ))
+                    .size(14)
+                    .font(theme::FONT_BOLD)
+                    .color(if c == theme::WHITE {
+                        theme::BG
+                    } else {
+                        theme::WHITE
+                    }),
                     text("Verify that pixels and ST7789 colors are displayed uniformly.")
                         .size(11)
-                        .color(if c == theme::WHITE { theme::BG } else { theme::MUTED }),
+                        .color(if c == theme::WHITE {
+                            theme::BG
+                        } else {
+                            theme::MUTED
+                        }),
                 ]
                 .align_x(Alignment::Center)
                 .spacing(6),
@@ -737,8 +796,13 @@ impl DiagnosticsState {
         } else {
             container(
                 column![
-                    text("OPad Screen Simulator").size(16).font(theme::FONT_BOLD).color(theme::PINK),
-                    text("320x240 ST7789 IPS Display").size(12).color(theme::MUTED),
+                    text("OPad Screen Simulator")
+                        .size(16)
+                        .font(theme::FONT_BOLD)
+                        .color(theme::PINK),
+                    text("320x240 ST7789 IPS Display")
+                        .size(12)
+                        .color(theme::MUTED),
                     Space::new().height(12),
                     row![
                         container(text(format!("K1: {}", app.counters.lifetime_key1)).size(13))
@@ -747,7 +811,8 @@ impl DiagnosticsState {
                         container(text(format!("K2: {}", app.counters.lifetime_key2)).size(13))
                             .padding(8)
                             .style(theme::outlined_card),
-                    ].spacing(10),
+                    ]
+                    .spacing(10),
                 ]
                 .align_x(Alignment::Center)
                 .spacing(4),
@@ -786,7 +851,11 @@ impl DiagnosticsState {
     fn view_export_bundle<'a>(&'a self, app: &'a App) -> Element<'a, Message> {
         let bundle_json = generate_diagnostic_bundle(app, self);
 
-        let preview_snippet: String = bundle_json.lines().take(22).collect::<Vec<&str>>().join("\n");
+        let preview_snippet: String = bundle_json
+            .lines()
+            .take(22)
+            .collect::<Vec<&str>>()
+            .join("\n");
 
         let export_card = container(
             column![

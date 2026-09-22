@@ -242,7 +242,10 @@ pub enum Message {
     SaveDiagnosticBundle,
     DiagnosticBundleSaved(Result<String, String>),
     DiagnosticsPoll,
-    DiagnosticsKeyEvent { key: iced::keyboard::Key, is_down: bool },
+    DiagnosticsKeyEvent {
+        key: iced::keyboard::Key,
+        is_down: bool,
+    },
     // Backup
     ExportBackup,
     ExportBackupReceived(Result<IpcResponse, String>),
@@ -1217,7 +1220,10 @@ impl App {
             }
             Message::SaveDiagnosticBundle => {
                 let bundle = diagnostics::generate_diagnostic_bundle(self, &self.diagnostics);
-                return Task::perform(save_diagnostic_dialog(bundle), Message::DiagnosticBundleSaved);
+                return Task::perform(
+                    save_diagnostic_dialog(bundle),
+                    Message::DiagnosticBundleSaved,
+                );
             }
             Message::DiagnosticBundleSaved(res) => match res {
                 Ok(path) => self.banner = Some(format!("Saved diagnostic report to {}", path)),
@@ -1487,23 +1493,24 @@ impl App {
             subscriptions.push(self.designer.subscription().map(Message::Designer));
         }
         if self.window.is_some() && self.page == Page::Diagnostics {
-            subscriptions.push(
-                iced::event::listen().filter_map(|event| {
-                    if let iced::Event::Keyboard(key_event) = event {
-                        match key_event {
-                            iced::keyboard::Event::KeyPressed { key, .. } => {
-                                Some(Message::DiagnosticsKeyEvent { key, is_down: true })
-                            }
-                            iced::keyboard::Event::KeyReleased { key, .. } => {
-                                Some(Message::DiagnosticsKeyEvent { key, is_down: false })
-                            }
-                            _ => None,
+            subscriptions.push(iced::event::listen().filter_map(|event| {
+                if let iced::Event::Keyboard(key_event) = event {
+                    match key_event {
+                        iced::keyboard::Event::KeyPressed { key, .. } => {
+                            Some(Message::DiagnosticsKeyEvent { key, is_down: true })
                         }
-                    } else {
-                        None
+                        iced::keyboard::Event::KeyReleased { key, .. } => {
+                            Some(Message::DiagnosticsKeyEvent {
+                                key,
+                                is_down: false,
+                            })
+                        }
+                        _ => None,
                     }
-                })
-            );
+                } else {
+                    None
+                }
+            }));
             #[cfg(windows)]
             subscriptions.push(
                 iced::time::every(Duration::from_millis(4)).map(|_| Message::DiagnosticsPoll),

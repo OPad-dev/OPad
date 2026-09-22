@@ -155,8 +155,8 @@ async fn main() -> Result<()> {
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
     // Launch and supervise tosu, then follow its WebSocket
-    let tosu_log_path = opad_model::paths::tosu_log_path()
-        .context("Cannot resolve where to keep the tosu log")?;
+    let tosu_log_path =
+        opad_model::paths::tosu_log_path().context("Cannot resolve where to keep the tosu log")?;
 
     if tosu_log_path.is_file() {
         if let Ok(content) = std::fs::read_to_string(&tosu_log_path) {

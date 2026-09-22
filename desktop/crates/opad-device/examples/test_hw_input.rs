@@ -120,12 +120,9 @@ fn main() {
 
     let sound_enabled = !args.iter().any(|a| a == "--no-beep" || a == "--silent");
 
-    let positional: Vec<&String> = args
-        .iter()
-        .filter(|a| !a.starts_with('-'))
-        .collect();
+    let positional: Vec<&String> = args.iter().filter(|a| !a.starts_with('-')).collect();
 
-    let (k1_char, k1_vk) = if positional.len() > 0 {
+    let (k1_char, k1_vk) = if !positional.is_empty() {
         parse_key_arg(positional[0]).unwrap_or(('Z', 0x5A))
     } else {
         ('Z', 0x5A)
@@ -145,8 +142,18 @@ fn main() {
     println!("==================================================================");
     println!("        OPad In-Game Hardware Input & Switch Chatter Tester       ");
     println!("==================================================================");
-    println!("Monitoring Keys: '{}' (0x{:02X}) and '{}' (0x{:02X}) globally", k1_char, k1_vk, k2_char, k2_vk);
-    println!("Audio Alert:     {}", if sound_enabled { "ENABLED (short beep on switch chatter)" } else { "DISABLED" });
+    println!(
+        "Monitoring Keys: '{}' (0x{:02X}) and '{}' (0x{:02X}) globally",
+        k1_char, k1_vk, k2_char, k2_vk
+    );
+    println!(
+        "Audio Alert:     {}",
+        if sound_enabled {
+            "ENABLED (short beep on switch chatter)"
+        } else {
+            "DISABLED"
+        }
+    );
     println!("In-Game Exit:    Press [F12] or [Ctrl+C] at any time to finish & see report.");
     println!("                 (Escape is safe to use in-game - it will NOT close this tool)\n");
     println!("Launch osu!, play your song/map normally, and return here when done!\n");
@@ -306,7 +313,12 @@ fn main() {
     let secs = elapsed.as_secs() % 60;
 
     println!("\n\n========================= PLAY SESSION SUMMARY =========================");
-    println!("Session Duration:      {}m {:02}s ({:.1} total seconds)", mins, secs, elapsed.as_secs_f64());
+    println!(
+        "Session Duration:      {}m {:02}s ({:.1} total seconds)",
+        mins,
+        secs,
+        elapsed.as_secs_f64()
+    );
     println!("Total Registered Taps: {}", total_taps);
     println!("  - {}: {:4} taps", k1.name, k1.press_count);
     println!("  - {}: {:4} taps", k2.name, k2.press_count);
@@ -315,18 +327,27 @@ fn main() {
     println!(
         "  - Definite Chatter (< 15ms):   {} events ({:.2}%)",
         total_chatter,
-        if total_taps > 0 { (total_chatter as f64 / total_taps as f64) * 100.0 } else { 0.0 }
+        if total_taps > 0 {
+            (total_chatter as f64 / total_taps as f64) * 100.0
+        } else {
+            0.0
+        }
     );
     println!(
         "  - Rapid Flutter (15ms - 35ms): {} events ({:.2}%)",
         total_flutter,
-        if total_taps > 0 { (total_flutter as f64 / total_taps as f64) * 100.0 } else { 0.0 }
+        if total_taps > 0 {
+            (total_flutter as f64 / total_taps as f64) * 100.0
+        } else {
+            0.0
+        }
     );
     println!(
         "  - Clean Alternation (> 35ms):  {} events ({:.2}%)",
         total_taps.saturating_sub(total_chatter + total_flutter),
         if total_taps > 0 {
-            (total_taps.saturating_sub(total_chatter + total_flutter) as f64 / total_taps as f64) * 100.0
+            (total_taps.saturating_sub(total_chatter + total_flutter) as f64 / total_taps as f64)
+                * 100.0
         } else {
             0.0
         }
@@ -347,7 +368,10 @@ fn main() {
     if simultaneous_passes > 0 {
         println!();
         println!("Anti-Ghosting (HW-03):");
-        println!("  - Simultaneous Presses: {} clean dual-key events registered without drop", simultaneous_passes);
+        println!(
+            "  - Simultaneous Presses: {} clean dual-key events registered without drop",
+            simultaneous_passes
+        );
     }
 
     println!("\n========================== DIAGNOSTIC VERDICT ==========================");
@@ -360,23 +384,39 @@ fn main() {
         };
         println!("  ⚠️  HARDWARE SWITCH CHATTER CONFIRMED!");
         println!("  The tool recorded {} switch bounces that occurred in under 15 ms (fastest: {:.2} ms).", total_chatter, min_delta);
-        println!("  Human fingers CANNOT physically press and re-press a mechanical switch in < 15 ms.");
+        println!(
+            "  Human fingers CANNOT physically press and re-press a mechanical switch in < 15 ms."
+        );
         println!("  This proves that your double-presses are genuine hardware contact chatter, NOT your fault.");
         println!();
         let recommended_debounce = ((min_delta + 3.0).ceil() as u32 * 1000).clamp(5000, 15000);
         println!("  Recommended Fix:");
-        println!("  - Increase the firmware debounce lockout to {} µs ({:.1} ms).", recommended_debounce, recommended_debounce as f64 / 1000.0);
+        println!(
+            "  - Increase the firmware debounce lockout to {} µs ({:.1} ms).",
+            recommended_debounce,
+            recommended_debounce as f64 / 1000.0
+        );
         println!("  - Because OPad uses eager debounce, increasing this setting adds ZERO input");
         println!("    latency to your initial keypress, while cleanly filtering out post-release bounce!");
     } else if total_flutter > 0 && total_taps >= 50 {
         println!("  🔍 BORDERLINE RE-PRESSES DETECTED (15ms - 35ms):");
-        println!("  Zero definite chatter (< 15 ms) was observed, but {} rapid flutters occurred.", total_flutter);
-        println!("  This usually happens when a finger twitches, vibrates near the actuation point, or");
+        println!(
+            "  Zero definite chatter (< 15 ms) was observed, but {} rapid flutters occurred.",
+            total_flutter
+        );
+        println!(
+            "  This usually happens when a finger twitches, vibrates near the actuation point, or"
+        );
         println!("  slides off the keycap. If you experience unexpected double-hits during fast streams,");
-        println!("  raising debounce lockout slightly to 6000-8000 µs can help stabilize the key feel.");
+        println!(
+            "  raising debounce lockout slightly to 6000-8000 µs can help stabilize the key feel."
+        );
     } else if total_taps >= 50 {
         println!("  ✅ CLEAN HARDWARE PASS - NO SWITCH CHATTER DETECTED!");
-        println!("  Across all {} taps, every single re-press was clean and well above 15 ms.", total_taps);
+        println!(
+            "  Across all {} taps, every single re-press was clean and well above 15 ms.",
+            total_taps
+        );
         println!("  Your mechanical switches and contact leaves are physically rock-solid.");
         println!("  Any missed notes or accidental double-taps experienced in-game are caused by");
         println!("  finger stamina/finger twitch/key release timing rather than hardware bounce.");

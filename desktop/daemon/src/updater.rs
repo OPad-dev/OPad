@@ -365,10 +365,7 @@ async fn install_app(
         s.app.ready_to_install = false;
         s.app.installed = Some(available.clone());
     }
-    info!(
-        "OPad {} applied; a restart is needed to run it",
-        available
-    );
+    info!("OPad {} applied; a restart is needed to run it", available);
     Ok(())
 }
 

@@ -155,7 +155,10 @@ fn resolve_espflash() -> PathBuf {
         }
     }
     if let Ok(userprofile) = std::env::var("USERPROFILE") {
-        let candidate = PathBuf::from(userprofile).join(".cargo").join("bin").join("espflash.exe");
+        let candidate = PathBuf::from(userprofile)
+            .join(".cargo")
+            .join("bin")
+            .join("espflash.exe");
         if candidate.is_file() {
             return candidate;
         }

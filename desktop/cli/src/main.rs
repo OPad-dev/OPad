@@ -112,8 +112,7 @@ async fn main() -> Result<()> {
         Ok((s, _)) => Some(s),
         Err(e) => {
             if !flashing {
-                return Err(e)
-                    .context("Failed to connect to opad-daemon. Is the daemon running?");
+                return Err(e).context("Failed to connect to opad-daemon. Is the daemon running?");
             }
             // Not necessarily "not running": a version-mismatched handshake
             // fails here too, and that daemon still holds the port. Say what
@@ -534,9 +533,9 @@ async fn main() -> Result<()> {
                     {
                         Some(p) => println!("✓ Flash succeeded! The pad came back on {}", p),
                         None => bail!(
-                        "Firmware was written, but the pad did not come back as the OPad app \
+                            "Firmware was written, but the pad did not come back as the OPad app \
                          within 15s. See docs/recovery.md."
-                    ),
+                        ),
                     }
                 }
                 Some(_) => {}

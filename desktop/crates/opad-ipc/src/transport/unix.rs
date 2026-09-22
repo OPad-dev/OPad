@@ -12,9 +12,7 @@ pub type IpcServerStream = tokio::net::UnixStream;
 /// Resolves the standard socket path, one directory per uid
 pub fn get_socket_path() -> PathBuf {
     if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
-        PathBuf::from(runtime_dir)
-            .join("opad")
-            .join("daemon.sock")
+        PathBuf::from(runtime_dir).join("opad").join("daemon.sock")
     } else {
         let uid = rustix::process::getuid().as_raw();
         PathBuf::from(format!("/tmp/opad-{}", uid)).join("daemon.sock")
