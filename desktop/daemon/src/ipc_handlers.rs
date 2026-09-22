@@ -17,6 +17,59 @@ use crate::runtime::{DaemonState, PendingOperations};
 use crate::sync::{perform_sync, DeviceLink};
 use crate::updater::{self, UpdateService};
 
+/// Resolves a pending takeover without asking when the pad has at least as many
+/// presses as this PC on both keys: the pad is taken over keeping its own
+/// counters, exactly as if the user had picked that, so nothing is lost. When
+/// this PC is ahead the prompt stays for the user. Returns whether it resolved.
+pub async fn take_over_if_pad_is_ahead<D: DeviceLink>(
+    state: &Arc<Mutex<DaemonState>>,
+    storage: &Arc<Mutex<Option<Storage>>>,
+    device: &D,
+    log_hub: &LogHub,
+    pending_ops: &Arc<Mutex<PendingOperations>>,
+) -> bool {
+    let (pending, st_pc) = {
+        let st = state.lock();
+        (st.pending_takeover.clone(), st.pc_counters.clone())
+    };
+    let Some(pending) = pending else {
+        return false;
+    };
+    // This PC's counters for this pad; none means it has never counted for it
+    let pc = storage
+        .lock()
+        .as_ref()
+        .and_then(|s| s.load_device_state(&pending.device_id).unwrap_or(None))
+        .or(st_pc.filter(|c| c.device_id == pending.device_id));
+    let pad = CounterState {
+        device_id: pending.device_id.clone(),
+        lifetime_key1: pending.device_key1,
+        lifetime_key2: pending.device_key2,
+        ..Default::default()
+    };
+    if crate::runtime::pc_is_ahead(pc.as_ref(), &pad) {
+        return false;
+    }
+    info!(
+        "Pad {} is paired with another installation but has at least this PC's presses; taking it over without asking",
+        pending.device_id
+    );
+    let resp = Box::pin(handle_ipc_request(
+        IpcRequest::ResolveTakeover {
+            take_over: true,
+            keep_device_counters: true,
+        },
+        state,
+        storage,
+        device,
+        log_hub,
+        pending_ops,
+        None,
+    ))
+    .await;
+    matches!(resp, IpcResponse::CountersRestored { .. })
+}
+
 pub async fn handle_ipc_request<D: DeviceLink>(
     req: IpcRequest,
     state: &Arc<Mutex<DaemonState>>,

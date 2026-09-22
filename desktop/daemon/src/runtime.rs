@@ -141,6 +141,10 @@ pub enum RuntimeEvent {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RuntimeAction {
+    /// The pad names another install as its owner. Take it over without a
+    /// prompt if that loses no presses (see [`pc_is_ahead`]); otherwise the
+    /// prompt stays up for the user.
+    TakeOverIfPadIsAhead,
     SendTimeSync,
     SendConfig(DeviceConfig),
     SaveDeviceConfig(DeviceConfig),
@@ -271,6 +275,10 @@ impl RuntimeController {
         self.state.install_id = install_id;
     }
 
+    fn pc_is_ahead_of_pad(&self) -> bool {
+        pc_is_ahead(self.state.pc_counters.as_ref(), &self.state.counters)
+    }
+
     fn ownership_of(&self, owner_id: &[u8]) -> Ownership {
         if self.state.install_id.is_none() {
             // No identity to compare against and none to write. Behave exactly
@@ -365,6 +373,7 @@ impl RuntimeController {
                             device_key2: self.state.counters.lifetime_key2,
                         });
                         self.state.foreign_pad = true;
+                        actions.push(RuntimeAction::TakeOverIfPadIsAhead);
                     }
                 }
 
@@ -386,6 +395,8 @@ impl RuntimeController {
                     } else if self.state.counters.counter_generation <= 1
                         && self.state.counters.lifetime_key1 < 1000
                         && self.state.counters.lifetime_key2 < 1000
+                        // Restoring only makes sense if it gives back presses
+                        && self.pc_is_ahead_of_pad()
                     {
                         let prev_id = self
                             .known_devices
@@ -761,6 +772,15 @@ impl RuntimeController {
 /// IPC handlers and `perform_sync` write to the shared `DaemonState` directly (config, layouts,
 /// counters, replacement choice). Pulling it in before the event and publishing the result under
 /// the same lock keeps those writes instead of overwriting them with a stale controller copy.
+/// Whether this PC holds more presses than the pad on either key, i.e. whether
+/// siding with the pad would lose any. Only then is the user asked; when the
+/// pad has at least as many on both keys its counters are simply kept.
+pub fn pc_is_ahead(pc: Option<&CounterState>, pad: &CounterState) -> bool {
+    pc.is_some_and(|pc| {
+        pc.lifetime_key1 > pad.lifetime_key1 || pc.lifetime_key2 > pad.lifetime_key2
+    })
+}
+
 pub fn apply_event(
     controller: &mut RuntimeController,
     shared: &Arc<Mutex<DaemonState>>,

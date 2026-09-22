@@ -513,6 +513,17 @@ async fn main() -> Result<()> {
                     RuntimeAction::SendLayout(screen, layout) => {
                         let _ = device_cmd.send(DeviceCommand::Layout(screen, layout)).await;
                     }
+                    RuntimeAction::TakeOverIfPadIsAhead => {
+                        let ds = daemon_state.clone();
+                        let stg = storage.clone();
+                        let dm = device_manager.clone();
+                        let hub = log_hub.clone();
+                        let po = pending_ops.clone();
+                        tokio::spawn(async move {
+                            ipc_handlers::take_over_if_pad_is_ahead(&ds, &stg, &*dm, &hub, &po)
+                                .await;
+                        });
+                    }
                     RuntimeAction::TriggerSync => {
                         let ds = daemon_state.clone();
                         let stg = storage.clone();

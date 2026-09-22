@@ -738,7 +738,8 @@ async fn test_reconcile_and_replacement_scenarios() {
         let mut controller = RuntimeController::new(
             DeviceConfig::default(),
             None,
-            CounterState::default(),
+            // The previous pad's counters, which a restore would bring back
+            counters("OSUPAD-OLD", 1, 5_000, 4_000),
             HashMap::new(),
             None,
             vec!["OSUPAD-OLD".to_string()],
@@ -1456,7 +1457,9 @@ async fn test_apply_event_keeps_ipc_changes() {
     let mut controller = RuntimeController::new(
         DeviceConfig::default(),
         None,
-        CounterState::default(),
+        // The previous pad's counters, so the replacement prompt below has
+        // something to offer
+        counters("OSUPAD-OLD", 1, 5_000, 4_000),
         HashMap::new(),
         None,
         vec!["OSUPAD-OLD".to_string()],
@@ -2588,4 +2591,114 @@ async fn a_known_pad_with_its_counters_is_not_flagged() {
         now,
     );
     assert!(!controller.state.nvs_restore_pending);
+}
+
+// ---------------------------------------------------------------------------
+// Prompts only when this PC would lose presses
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_pc_is_ahead_only_with_more_presses_on_a_key() {
+    use opad_daemon::runtime::pc_is_ahead;
+    let pad = counters("OSUPAD-X", 1, 100, 100);
+    assert!(
+        !pc_is_ahead(None, &pad),
+        "a PC that never counted is not ahead"
+    );
+    assert!(!pc_is_ahead(Some(&counters("OSUPAD-X", 1, 100, 100)), &pad));
+    assert!(!pc_is_ahead(Some(&counters("OSUPAD-X", 1, 50, 99)), &pad));
+    assert!(pc_is_ahead(Some(&counters("OSUPAD-X", 1, 101, 0)), &pad));
+    assert!(pc_is_ahead(Some(&counters("OSUPAD-X", 1, 0, 101)), &pad));
+}
+
+/// Sets up a pad owned by another install with `pad_k` presses, and this PC's
+/// stored counters for it at `pc_k`, then runs the automatic resolution.
+async fn foreign_pad_with(
+    pad_k: (u64, u64),
+    pc_k: (u64, u64),
+) -> (bool, DaemonState, MockDeviceLink) {
+    let id = uuid::Uuid::new_v4().to_string();
+    let other = uuid::Uuid::new_v4().to_string();
+    let info = pad("OSUPAD-SHARED");
+    let mut controller = ownership_controller(Some(&id), vec![info.device_id.clone()]);
+    let now = Instant::now();
+    controller.on_event(
+        RuntimeEvent::DeviceCounters(counters(&info.device_id, 2, pad_k.0, pad_k.1)),
+        now,
+    );
+    controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&other)), now);
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(info.clone(), None), now);
+    assert!(actions.contains(&RuntimeAction::TakeOverIfPadIsAhead));
+
+    let storage = Storage::open_in_memory().unwrap();
+    storage
+        .save_device_state(&info, &counters(&info.device_id, 2, pc_k.0, pc_k.1))
+        .unwrap();
+    let storage = Arc::new(Mutex::new(Some(storage)));
+    let device = MockDeviceLink::new(true);
+    let daemon_state = Arc::new(Mutex::new(controller.state.clone()));
+    let resolved = opad_daemon::ipc_handlers::take_over_if_pad_is_ahead(
+        &daemon_state,
+        &storage,
+        &device,
+        &LogHub::new(),
+        &Arc::new(Mutex::new(PendingOperations::default())),
+    )
+    .await;
+    let st = daemon_state.lock().clone();
+    (resolved, st, device)
+}
+
+#[tokio::test]
+async fn a_foreign_pad_with_more_presses_is_taken_over_without_asking() {
+    let (resolved, st, device) = foreign_pad_with((5_000, 4_000), (4_000, 4_000)).await;
+    assert!(resolved);
+    assert!(st.pending_takeover.is_none(), "no prompt");
+    assert!(!st.foreign_pad);
+    assert_eq!(
+        device.claimed_owners.lock().len(),
+        1,
+        "the pad now names this PC"
+    );
+    let synced = device.sent_syncs.lock();
+    let (target, force) = synced.last().expect("the pad's counters are written back");
+    assert!(*force);
+    assert_eq!((target.lifetime_key1, target.lifetime_key2), (5_000, 4_000));
+}
+
+#[tokio::test]
+async fn a_foreign_pad_behind_this_pc_still_asks() {
+    let (resolved, st, device) = foreign_pad_with((5_000, 4_000), (5_000, 4_001)).await;
+    assert!(!resolved);
+    assert!(st.pending_takeover.is_some(), "the user decides");
+    assert!(st.foreign_pad);
+    assert!(device.claimed_owners.lock().is_empty());
+    assert!(device.sent_syncs.lock().is_empty());
+}
+
+/// The replacement prompt ("restore counters from the previous pad?") follows
+/// the same rule: nothing to restore, nothing to ask.
+#[tokio::test]
+async fn a_new_pad_ahead_of_the_previous_one_is_not_asked_about() {
+    let now = Instant::now();
+    let mut controller = RuntimeController::new(
+        DeviceConfig::default(),
+        Some(pad_info("OSUPAD-OLD")),
+        counters("OSUPAD-OLD", 1, 10, 20),
+        HashMap::new(),
+        None,
+        vec!["OSUPAD-OLD".to_string()],
+        now,
+    );
+    let _ = controller.on_event(
+        RuntimeEvent::DeviceCounters(counters("OSUPAD-NEW", 1, 30, 40)),
+        now,
+    );
+    let actions = controller.on_event(
+        RuntimeEvent::DeviceConnected(pad_info("OSUPAD-NEW"), None),
+        now,
+    );
+    assert!(controller.state.pending_replacement.is_none());
+    assert!(controller.known_devices.contains("OSUPAD-NEW"));
+    assert!(actions.contains(&RuntimeAction::TriggerSync));
 }
