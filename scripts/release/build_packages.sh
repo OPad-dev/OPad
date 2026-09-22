@@ -26,6 +26,10 @@ else
     echo "✓ Bundled tosu already present in build/tosu"
 fi
 
+if [ ! -x "${REPO_ROOT}/build/espflash/espflash" ]; then
+    make -C "${REPO_ROOT}" espflash
+fi
+
 echo "Building release binaries..."
 make -C "${REPO_ROOT}" all
 echo "✓ Host release binaries ready"

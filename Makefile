@@ -45,7 +45,7 @@ TOSU_STANDALONE ?= 1
 TARGET_DIR ?= desktop/target/release
 BINS := opad-daemon opad-gui opadctl
 
-.PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage deb rpm packages notices tosu-source tosu-notices lvgl
+.PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage deb rpm packages notices tosu-source tosu-notices lvgl espflash
 
 # L-4: Build AppDir / AppImage
 appimage: all
@@ -147,6 +147,9 @@ install: all
 	install -d "$(DESTDIR)$(UDEVRULESDIR)"
 	install -m 644 packaging/linux/udev/70-opad.rules "$(DESTDIR)$(UDEVRULESDIR)/70-opad.rules"
 	install -d "$(DESTDIR)$(LIBDIR)/opad"
+	if [ -f "$(ESPFLASH_DIR)/espflash" ]; then \
+		install -Dm755 "$(ESPFLASH_DIR)/espflash" "$(DESTDIR)$(LIBDIR)/opad/bin/espflash"; \
+	fi
 	printf '%s\n' "$(INSTALL_ORIGIN)" > "$(DESTDIR)$(LIBDIR)/opad/install-origin"
 	chmod 644 "$(DESTDIR)$(LIBDIR)/opad/install-origin"
 	@if [ -d "packaging/linux/icons" ]; then \
@@ -225,6 +228,20 @@ uninstall-user:
 	@echo "✓ User uninstall complete."
 
 # B-2: Verification target
+# The espflash the packages bundle (lib/opad/bin/espflash), pinned and
+# checksummed: opadctl and the updater drive it, and a different version once
+# silently stopped resetting the S3 out of download mode.
+ESPFLASH_VERSION ?= 4.6.0
+ESPFLASH_SHA256 ?= c4fcfa32ddc3155608f003a230e6f3c184eff9641ec9cfa8eb54f1b515d403e7
+ESPFLASH_DIR ?= build/espflash
+espflash:
+	@mkdir -p "$(ESPFLASH_DIR)"
+	curl -fsSL -o "$(ESPFLASH_DIR)/espflash.zip" \
+		https://github.com/esp-rs/espflash/releases/download/v$(ESPFLASH_VERSION)/espflash-x86_64-unknown-linux-gnu.zip
+	echo "$(ESPFLASH_SHA256)  $(ESPFLASH_DIR)/espflash.zip" | sha256sum -c -
+	cd "$(ESPFLASH_DIR)" && unzip -o -q espflash.zip espflash && chmod 755 espflash && rm espflash.zip
+	@echo "✓ espflash $(ESPFLASH_VERSION) in $(ESPFLASH_DIR)"
+
 # LVGL for the Designer's live preview without ESP-IDF, at the version the
 # firmware pins in firmware/dependencies.lock. Build with
 # OPAD_LVGL_DIR=$(abspath $(LVGL_DIR)) to use it.

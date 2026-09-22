@@ -166,16 +166,18 @@ pub async fn enter_bootloader(
     Err(last_err.unwrap_or(FlashError::NoBootloader))
 }
 
+/// The espflash OPad ships (pinned in the Makefile's ESPFLASH_VERSION) before
+/// any other: next to the binary on Windows, `<prefix>/lib/opad/bin` beside
+/// `<prefix>/bin` on Linux (.deb, .rpm, make install and the AppImage's usr/).
 fn resolve_espflash() -> PathBuf {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let candidate = dir.join("espflash.exe");
-            if candidate.is_file() {
-                return candidate;
+            let mut candidates = vec![dir.join("espflash.exe"), dir.join("espflash")];
+            if let Some(prefix) = dir.parent() {
+                candidates.push(prefix.join("lib/opad/bin/espflash"));
             }
-            let candidate_unix = dir.join("espflash");
-            if candidate_unix.is_file() {
-                return candidate_unix;
+            if let Some(found) = candidates.into_iter().find(|c| c.is_file()) {
+                return found;
             }
         }
     }

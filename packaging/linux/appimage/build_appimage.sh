@@ -63,6 +63,15 @@ if [ -d "${REPO_ROOT}/build/tosu" ]; then
     # capabilities. opadctl setup and the GUI explain ptrace_scope instead.
 fi
 
+# The pinned espflash (make espflash); AppRun puts usr/lib/opad/bin on PATH
+if [ ! -x "${REPO_ROOT}/build/espflash/espflash" ]; then
+    make -C "${REPO_ROOT}" espflash
+fi
+install -Dm755 "${REPO_ROOT}/build/espflash/espflash" "${APPDIR}/usr/lib/opad/bin/espflash"
+
+# Bundle udev rules for helper installation
+cp "${REPO_ROOT}/packaging/linux/udev/70-opad.rules" "${APPDIR}/usr/lib/opad/70-opad.rules"
+
 echo "=== AppDir assembled at ${APPDIR} ==="
 
 if command -v appimagetool >/dev/null 2>&1; then

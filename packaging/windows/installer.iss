@@ -86,13 +86,13 @@ Name: "autostart"; Description: "Start OPad when I log in"; GroupDescription: "W
 Source: "{#SourceDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\{#MyAppDaemonName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceDir}\{#MyAppCliName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#SourceDir}\espflash.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#SourceDir}\espflash.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Install-origin marker identifying this installation as "windows" (§U-2a)
 Source: "install-origin"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Bundled tosu and LGPL-3.0 compliance files (§T-2, §T-3)
-Source: "{#TosuDir}\tosu.exe"; DestDir: "{app}\tosu"; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#TosuDir}\tosu.exe"; DestDir: "{app}\tosu"; Flags: ignoreversion
 Source: "{#TosuDir}\tosu.env"; DestDir: "{app}\tosu"; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#LicensesDir}\tosu\VERSION"; DestDir: "{app}\tosu"; Flags: ignoreversion
 Source: "{#LicensesDir}\tosu\NOTICE"; DestDir: "{app}\tosu"; Flags: ignoreversion
