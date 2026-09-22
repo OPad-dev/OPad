@@ -14,7 +14,6 @@
 
 static const char *TAG = "usb_cdc";
 static volatile bool s_cdc_connected = false;
-static bool s_prev_rts_state = false;
 static volatile bool s_download_mode_armed = false;
 static volatile bool s_need_bootloader_reboot = false;
 static TaskHandle_t s_cdc_task = NULL;
@@ -251,16 +250,11 @@ void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts)
     if (s_download_mode_armed && !dtr) {
         ESP_LOGI(TAG, "Port closed after 1200 baud touch, entering bootloader...");
         schedule_bootloader_reboot();
-        return;
     }
 
-    // 2. Standard Espressif CDC-ACM bootloader reset trigger:
-    // When RTS falls from HIGH to LOW while DTR is HIGH (classic esptool pattern)
-    if (!rts && s_prev_rts_state && dtr) {
-        ESP_LOGI(TAG, "CDC DTR/RTS bootloader trigger detected, scheduling download mode...");
-        schedule_bootloader_reboot();
-    }
-    s_prev_rts_state = rts;
+    // No reset on the esptool RTS/DTR pattern: ModemManager and generic serial
+    // probes toggle those lines when they open any tty, and each rebooted the
+    // pad into download mode. The command and the 1200-baud touch remain.
 }
 
 void tud_cdc_line_coding_cb(uint8_t itf, cdc_line_coding_t const* p_line_coding)

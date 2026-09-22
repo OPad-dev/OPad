@@ -120,10 +120,11 @@ The device supports two non-contact methods to enter the ESP32-S3 ROM bootloader
    - The firmware calls `esp_restart()` with ROM download mode flags set, immediately re-enumerating as an Espressif USB JTAG/serial DFU device (`VID: 0x303A, PID: 0x1001`).
 2. **1200-Baud Touch (Fallback)**:
    - Setting serial line baud rate to 1200 baud arms download mode; the firmware reboots when DTR drops, i.e. when the host closes the port.
-3. **DTR/RTS (the esptool pattern)**:
-   - RTS falling while DTR stays high. The classic Espressif CDC-ACM trigger, and the last of the three `osupadctl` tries.
+The esptool DTR/RTS pattern (RTS falling while DTR stays high) is deliberately
+**not** a trigger: ModemManager and other serial probes produce it when they open
+any tty, and each one used to reboot the pad into download mode.
 
-`osupadctl` tries all three in that order, setting DTR and RTS explicitly rather
+`osupadctl` tries both in that order, setting DTR and RTS explicitly rather
 than relying on what the platform does at open — Linux asserts DTR when a tty is
 opened and Windows does not, so an implicit sequence means different things on
 the two platforms (§W1-3).

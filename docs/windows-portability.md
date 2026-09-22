@@ -151,9 +151,9 @@ platform any more. Three things are Windows-specific:
 1. **Line state is set explicitly.** Linux asserts DTR when a tty is opened;
    on Windows `serialport`'s DCB sets `fDtrControl = Disable` and leaves DTR
    low. The old code inherited whichever the platform did. Bootloader entry is
-   now an explicit ladder of the three triggers the firmware accepts — the
-   plain-text `BOOTLOADER` command, the 1200-baud touch, and the esptool
-   DTR/RTS pattern — each setting DTR and RTS by hand.
+   now an explicit ladder of the two triggers the firmware accepts — the
+   plain-text `BOOTLOADER` command and the 1200-baud touch — each setting DTR
+   and RTS by hand.
 2. **The daemon releases the port first**, over IPC (`PrepareFlash`), rather
    than by stopping a systemd unit. Exclusive handles make this mandatory.
 3. **`reset_to_app` retries its open** for up to 3 s, because Windows can still

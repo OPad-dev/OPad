@@ -31,7 +31,7 @@ pub enum FlashError {
     NoDevice,
     #[error("{0} could not be opened. On Windows the port is exclusive: close anything else using it (a serial monitor, another opad-daemon) first. ({1})")]
     PortBusy(String, String),
-    #[error("The pad did not re-enumerate as the ROM bootloader (303a:1001) after all three triggers. See docs/recovery.md for the manual BOOT+RESET sequence.")]
+    #[error("The pad did not re-enumerate as the ROM bootloader (303a:1001) after every trigger. See docs/recovery.md for the manual BOOT+RESET sequence.")]
     NoBootloader,
     #[error("Could not run espflash ({0}). Install espflash, or flash by hand as docs/recovery.md describes.")]
     EspflashMissing(String),
@@ -66,15 +66,11 @@ pub enum BootTrigger {
     /// 1200-baud touch: the firmware arms download mode on the line-coding
     /// change and fires when DTR drops, i.e. when the port is closed.
     BaudTouch,
-    /// The classic esptool pattern: RTS falls while DTR stays high.
-    DtrRts,
 }
 
-pub const BOOT_TRIGGERS: [BootTrigger; 3] = [
-    BootTrigger::Command,
-    BootTrigger::BaudTouch,
-    BootTrigger::DtrRts,
-];
+/// The firmware ignores the esptool RTS/DTR pattern: serial probes such as
+/// ModemManager produce it when opening any port.
+pub const BOOT_TRIGGERS: [BootTrigger; 2] = [BootTrigger::Command, BootTrigger::BaudTouch];
 
 fn pulse_trigger(path: &str, trigger: BootTrigger) -> Result<(), FlashError> {
     let baud = match trigger {
@@ -97,13 +93,6 @@ fn pulse_trigger(path: &str, trigger: BootTrigger) -> Result<(), FlashError> {
             // Opening at 1200 baud is the whole trigger; dropping the handle
             // below clears DTR and fires it.
             let _ = sp.write_data_terminal_ready(true);
-        }
-        BootTrigger::DtrRts => {
-            let _ = sp.write_data_terminal_ready(true);
-            let _ = sp.write_request_to_send(true);
-            std::thread::sleep(Duration::from_millis(50));
-            let _ = sp.write_request_to_send(false);
-            std::thread::sleep(Duration::from_millis(50));
         }
     }
     drop(sp);
