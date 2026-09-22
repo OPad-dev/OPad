@@ -21,6 +21,6 @@ pub use unix::{
 mod windows;
 #[cfg(windows)]
 pub use windows::{
-    connect, create_listener, get_socket_path, pipe_security_sddl, IpcListener, IpcServerStream,
-    IpcStream,
+    connect, create_listener, create_private_pipe, get_socket_path, pipe_security_sddl,
+    IpcListener, IpcServerStream, IpcStream,
 };
