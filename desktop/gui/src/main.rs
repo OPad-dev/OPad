@@ -37,6 +37,7 @@ pub fn parse_page_arg() -> Option<Page> {
                 "device" => Some(Page::Device),
                 "monitor" | "logs" => Some(Page::Logs),
                 "diagnostics" | "test" | "testing" => Some(Page::Diagnostics),
+                "about" | "license" | "licenses" => Some(Page::About),
                 _ => None,
             };
         }
@@ -53,6 +54,7 @@ pub fn main() -> iced::Result {
         Page::Device => "device",
         Page::Logs => "logs",
         Page::Diagnostics => "diagnostics",
+        Page::About => "about",
     });
 
     if !single_instance::claim(page_str) {
@@ -85,27 +87,30 @@ pub enum Page {
     Device,
     Logs,
     Diagnostics,
+    About,
 }
 
 impl Page {
     #[allow(non_upper_case_globals)]
     pub const Monitor: Page = Page::Logs;
 
-    pub const ALL: [(Page, &'static str); 5] = [
+    pub const ALL: [(Page, &'static str); 6] = [
         (Page::Dashboard, "Dashboard"),
         (Page::Designer, "Designer"),
         (Page::Settings, "Settings"),
         (Page::Device, "Device"),
         (Page::Logs, "Logs"),
+        (Page::About, "About"),
     ];
 
-    pub const ALL_WITH_DIAGNOSTICS: [(Page, &'static str); 6] = [
+    pub const ALL_WITH_DIAGNOSTICS: [(Page, &'static str); 7] = [
         (Page::Dashboard, "Dashboard"),
         (Page::Designer, "Designer"),
         (Page::Settings, "Settings"),
         (Page::Device, "Device"),
         (Page::Logs, "Logs"),
         (Page::Diagnostics, "Diagnostics"),
+        (Page::About, "About"),
     ];
 }
 
@@ -1491,6 +1496,7 @@ impl App {
                         "settings" => self.page = Page::Settings,
                         "designer" => self.page = Page::Designer,
                         "dashboard" => self.page = Page::Dashboard,
+                        "about" => self.page = Page::About,
                         _ => {}
                     }
                 }
@@ -1695,6 +1701,7 @@ impl App {
             Page::Device => pages::device(self),
             Page::Logs => pages::logs(self),
             Page::Diagnostics => self.diagnostics.view(self),
+            Page::About => pages::about(self),
         };
 
         let mut main = column![]

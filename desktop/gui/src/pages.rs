@@ -1266,3 +1266,116 @@ pub fn monitor(app: &App) -> Element<'_, Message> {
 }
 
 pub use monitor as logs;
+
+pub fn about<'a>(_app: &'a App) -> Element<'a, Message> {
+    let title_section = column![
+        row![
+            text("OPad")
+                .size(28)
+                .font(theme::FONT_BOLD)
+                .color(theme::PINK),
+            text(format!("v{}", env!("CARGO_PKG_VERSION")))
+                .size(16)
+                .font(theme::FONT_BOLD)
+                .color(theme::MUTED),
+        ]
+        .spacing(12)
+        .align_y(Alignment::Center),
+        muted("Low-latency ESP32-S3 rhythm gaming keypad manager, telemetry HUD, and tray applet for osu!"),
+        text("Developed by GFerreiroS <info@gferreiro.com>").size(13).color(theme::MUTED),
+        text("Repository: https://github.com/OPad-dev/OPad").size(13).color(theme::CYAN),
+    ]
+    .spacing(6);
+
+    let system_info = card(
+        column![
+            text("System & Hardware").size(16).font(theme::FONT_BOLD),
+            row![
+                text("Hardware Target:")
+                    .size(13)
+                    .width(Length::FillPortion(2)),
+                text("ESP32-S3 (Waveshare Touch LCD 2)")
+                    .size(13)
+                    .color(theme::WHITE)
+                    .width(Length::FillPortion(3)),
+            ],
+            row![
+                text("Desktop Architecture:")
+                    .size(13)
+                    .width(Length::FillPortion(2)),
+                text("Rust, iced, tokio, prost")
+                    .size(13)
+                    .color(theme::WHITE)
+                    .width(Length::FillPortion(3)),
+            ],
+            row![
+                text("Bundled tosu:")
+                    .size(13)
+                    .width(Length::FillPortion(2)),
+                text("v4.26.2 (reads osu! memory for the HUD)")
+                    .size(13)
+                    .color(theme::WHITE)
+                    .width(Length::FillPortion(3)),
+            ],
+        ]
+        .spacing(8),
+    );
+
+    // Each line is a component actually shipped, attributed as its own
+    // licence file does; the full texts are in the files named at the bottom
+    let credit = |name: &'a str, detail: &'a str| {
+        column![text(name).size(14).font(theme::FONT_BOLD), muted(detail)].spacing(2)
+    };
+    let licenses_section = card(
+        column![
+            text("Open source licences").size(16).font(theme::FONT_BOLD),
+            credit(
+                "OPad (app and firmware)",
+                "MIT License. Copyright (c) 2026 GFerreiroS."
+            ),
+            credit(
+                "tosu (bundled osu! memory reader)",
+                "LGPL-3.0-only. Mikhail Babynichev and the tosu contributors. \
+                 Source: https://github.com/KotRikD/tosu (the exact version is \
+                 published with each OPad release). You may replace it: Settings → tosu."
+            ),
+            credit(
+                "Node.js 24 (inside the bundled tosu)",
+                "MIT License, with the licences of what Node embeds (OpenSSL, ICU, \
+                 libuv, V8, ...)."
+            ),
+            credit(
+                "Rust crates (this app)",
+                "MIT, Apache-2.0, BSD, ISC, MPL-2.0, Zlib and others; one entry per crate \
+                 with its licence text."
+            ),
+            credit(
+                "Montserrat font",
+                "SIL Open Font License 1.1. Copyright 2011 The Montserrat Project Authors."
+            ),
+            credit(
+                "Firmware: ESP-IDF, TinyUSB, FreeRTOS, LVGL, Nanopb",
+                "Apache-2.0 (ESP-IDF, esp_tinyusb, esp_lvgl_port, Espressif Systems); \
+                 MIT (TinyUSB, hathach; FreeRTOS, Amazon; LVGL, LVGL Kft); \
+                 Zlib (Nanopb, Petteri Aimonen)."
+            ),
+            muted(
+                "Full texts: THIRD_PARTY_NOTICES.html next to the app, \
+                 tosu/THIRD_PARTY_NOTICES.txt, and FIRMWARE_THIRD_PARTY_NOTICES.md \
+                 with each release."
+            ),
+        ]
+        .spacing(14),
+    );
+
+    scrollable(
+        column![
+            heading("About & Licenses"),
+            title_section,
+            system_info,
+            licenses_section,
+        ]
+        .spacing(16),
+    )
+    .into()
+}

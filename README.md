@@ -28,7 +28,7 @@ The keypad functions as a standalone 1000 Hz USB HID keyboard out of the box wit
                                 | (WebSocket v2)
                                 v
 +--------------------+   +-------------------------+
-|     osupad-gui     |   |      osupad-daemon      |
+|      opad-gui      |   |       opad-daemon       |
 |     (Rust/iced)    |<->|         (Rust)          |
 |  - System Tray     |IPC|  - State Machine        |
 |  - Layout Designer |   |  - SQLite Storage       |
@@ -93,9 +93,9 @@ cd desktop
 cargo build --release
 ```
 The compiled binaries are produced in `desktop/target/release/`:
-- `osupad-daemon`: Background service.
-- `osupad-gui`: Graphical configuration, layout designer, and system tray.
-- `osupadctl`: Command-line management tool.
+- `opad-daemon`: Background service.
+- `opad-gui`: Graphical configuration, layout designer, and system tray.
+- `opadctl`: Command-line management tool.
 
 ### 3. Firmware Build (ESP-IDF v5.5.2)
 ```bash
@@ -108,18 +108,18 @@ idf.py build
 
 ## ⚡ Flashing the Firmware
 
-### Option A: Via `osupadctl` (Recommended)
-`osupadctl` drives `espflash` directly and needs no shell script and no ESP-IDF
+### Option A: Via `opadctl` (Recommended)
+`opadctl` drives `espflash` directly and needs no shell script and no ESP-IDF
 toolchain. It asks the daemon to release the serial port first, reboots the pad
 into the ROM download bootloader hands-free, writes the image and reboots back
 into the app — on Linux and on Windows, with the app running:
 
 ```bash
 # Update the app image only (ota_0 at 0x20000)
-osupadctl flash firmware/build/osupad-firmware.bin
+opadctl flash firmware/build/opad-firmware.bin
 
 # Recovery flash: bootloader + partition table + OTA data + app
-osupadctl flash --full firmware/build
+opadctl flash --full firmware/build
 ```
 
 It also works with no daemon running at all, which is the state a recovery
@@ -144,9 +144,9 @@ If the pad will not enter download mode or has to be returned to stock, see
 WinUSB, no Zadig, no install. The software below is for configuring it, the
 telemetry HUD and the lifetime counters.
 
-1. Download `osupad-setup-<version>.exe` from the releases page and run it.
-2. It installs the daemon, the GUI and `osupadctl`, bundles tosu, and sets both
-   to start at login. There is nothing else to do.
+1. Download `opad-setup-<version>.exe` from the GitHub Releases page and run it.
+2. It installs the daemon, the GUI and `opadctl`, bundles tosu, and configures
+   both to start at login. There is nothing else to do.
 
 > **SmartScreen will warn you.** The installer is **not code-signed** yet:
 > OPad is applying to SignPath Foundation for free OSS signing, which
@@ -156,7 +156,7 @@ telemetry HUD and the lifetime counters.
 > it than trust the dialog.
 
 Uninstall from Settings → Apps. It removes everything it installed, including
-the two `Run` registry values, and asks before it touches your `osupad.db` —
+the two `Run` registry values, and asks before it touches your `opad.db` —
 so a reinstall keeps your lifetime counters unless you say otherwise.
 
 **To reset a pad completely, or hand it to someone else**, see
@@ -168,58 +168,95 @@ the pad's lifetime counters along with the owner record.
 
 ## 🚀 Linux Setup & Installation
 
-### 1. Udev Rules
-Allow non-root user access to USB CDC and ROM bootloader devices:
+### Option A: Pre-built Packages (Recommended)
+
+Pre-built packages are on the GitHub Releases page. The `.deb` and `.rpm` set
+up everything: the udev rule, the daemon's systemd user service, tray autostart,
+the bundled `espflash`, and the ptrace capability tosu needs to read osu!'s
+memory (see [docs/troubleshooting.md](docs/troubleshooting.md) §2).
+
+#### Debian / Ubuntu / Pop!_OS (`.deb`):
+```bash
+sudo apt install ./opad_<version>_amd64.deb
+# Or via dpkg:
+sudo dpkg -i opad_<version>_amd64.deb
+```
+
+#### Fedora / RHEL / openSUSE (`.rpm`):
+```bash
+sudo dnf install ./opad-<version>.x86_64.rpm
+```
+
+#### Standalone AppImage:
+```bash
+chmod +x opad-x86_64.AppImage
+./opad-x86_64.AppImage
+```
+The AppImage installs nothing system-wide. On first run it offers to install
+the udev rule (it asks for your password), or run
+`./opad-x86_64.AppImage install-udev` yourself. It cannot give tosu the ptrace
+capability; `opadctl setup` and the Diagnostics page explain the alternative.
+
+#### Arch Linux:
+The repository's `PKGBUILD` builds from source (tosu runs on the system
+`nodejs`, so see troubleshooting §2 about ptrace):
+```bash
+makepkg -si
+```
+
+---
+
+### Option B: Installing From Source
+
+#### 1. System-wide Install:
+```bash
+make
+sudo make install
+```
+
+#### 2. User-local Install (`~/.local`):
+```bash
+make
+make install-user
+systemctl --user daemon-reload
+systemctl --user enable --now opad-daemon.service
+```
+
+#### 3. Manual Udev Rules:
+If not installing from package, allow non-root user access to USB CDC and ROM bootloader devices:
 ```bash
 sudo cp packaging/linux/udev/70-opad.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
-### 2. Systemd User Service (Daemon)
-Run the headless daemon automatically in your user session:
-```bash
-mkdir -p ~/.config/systemd/user/
-cp packaging/linux/systemd-user/osupad-daemon.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now osupad-daemon.service
-```
-
-### 3. Desktop Application & Autostart
-```bash
-mkdir -p ~/.local/share/applications ~/.config/autostart
-cp packaging/linux/desktop/osupad-gui.desktop ~/.local/share/applications/
-# For background tray autostart on login:
-cp packaging/linux/desktop/osupad-gui.desktop ~/.config/autostart/
-```
-
 ---
 
-## 💻 CLI Quick Reference (`osupadctl`)
+## 💻 CLI Quick Reference (`opadctl`)
 
 ```bash
 # Check device, daemon, and tosu state
-osupadctl status
+opadctl status
 
 # Trigger safe reconciliation
-osupadctl sync
+opadctl sync
 
 # Export portable JSON backup
-osupadctl export backup.json
+opadctl export backup.json
 
 # Import validated backup
-osupadctl import backup.json
+opadctl import backup.json
 
 # Flash firmware image directly over USB
-osupadctl flash firmware/build/osupad-firmware.bin
+opadctl flash firmware/build/opad-firmware.bin
 
 # Recovery flash (bootloader, partition table, OTA data and app)
-osupadctl flash --full firmware/build
+opadctl flash --full firmware/build
 
 # Reboot the pad into the ROM download bootloader and leave it there
-osupadctl bootloader
+opadctl bootloader
 
 # Stream real-time diagnostic logs
-osupadctl monitor
+opadctl monitor
 ```
 
 ---
@@ -248,7 +285,7 @@ OPad bundles or interacts with the following third-party software:
 - **Author**: Mikhail Babynichev and the tosu contributors
 - **License**: [GNU Lesser General Public License v3.0 (LGPL-3.0)](licenses/tosu/LICENSE)
 - **Redistribution Notice**: See [licenses/tosu/NOTICE](licenses/tosu/NOTICE)
-- **User Replacement Rights**: Under the terms of LGPL-3.0, users are entitled to replace the bundled tosu binary with their own version. You can point the `OSUPAD_TOSU_PATH` environment variable to a custom tosu executable, or configure an external path in the OPad desktop GUI (**Settings → tosu**).
+- **User Replacement Rights**: Under the terms of LGPL-3.0, users are entitled to replace the bundled tosu binary with their own version. You can point the `OPAD_TOSU_PATH` (or legacy `OSUPAD_TOSU_PATH`) environment variable to a custom tosu executable, or configure an external path in the OPad desktop GUI (**Settings → tosu**).
 
 ---
 
