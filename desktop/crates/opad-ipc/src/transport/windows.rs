@@ -139,6 +139,14 @@ pub fn pipe_security_sddl() -> Result<String, IpcError> {
     Ok(format!("D:P(A;;GA;;;SY)(A;;GA;;;{})", sid))
 }
 
+/// A named pipe instance only the current user and SYSTEM can open, for other
+/// pipes the app owns (the GUI's single-instance pipe) to get the same DACL
+/// as the daemon's.
+pub fn create_private_pipe(addr: &OsStr, first: bool) -> Result<NamedPipeServer, IpcError> {
+    let sddl = wide(&pipe_security_sddl()?);
+    create_instance(addr, &sddl, first)
+}
+
 fn create_instance(
     addr: &OsStr,
     security: &[u16],

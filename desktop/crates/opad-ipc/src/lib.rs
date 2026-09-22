@@ -10,11 +10,11 @@ use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 mod transport;
-#[cfg(windows)]
-pub use transport::pipe_security_sddl;
 pub use transport::{
     connect, create_listener, get_socket_path, IpcListener, IpcServerStream, IpcStream,
 };
+#[cfg(windows)]
+pub use transport::{create_private_pipe, pipe_security_sddl};
 
 pub const IPC_PROTOCOL_VERSION: u32 = 1;
 pub const MAX_REQUEST_FRAME_SIZE: usize = 1024 * 1024; // 1 MiB cap (§P2-6)

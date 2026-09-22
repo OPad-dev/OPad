@@ -146,6 +146,18 @@ mod platform {
         true
     }
 
+    /// Only this user (and SYSTEM) may open it, like the daemon's pipe: any
+    /// process on the machine could otherwise send the running GUI requests
+    fn create_pipe_instance(
+        pipe_name: &str,
+        first: bool,
+    ) -> std::io::Result<tokio::net::windows::named_pipe::NamedPipeServer> {
+        opad_ipc::create_private_pipe(std::ffi::OsStr::new(pipe_name), first).map_err(|e| match e {
+            opad_ipc::IpcError::Io(io) => io,
+            other => std::io::Error::other(other.to_string()),
+        })
+    }
+
     /// Emits once per "show" request from another launch with optional target page name
     pub fn show_requests() -> impl futures_util::Stream<Item = Option<String>> {
         iced::stream::channel(
@@ -157,10 +169,7 @@ mod platform {
                     return std::future::pending().await;
                 };
 
-                let mut server = match tokio::net::windows::named_pipe::ServerOptions::new()
-                    .first_pipe_instance(true)
-                    .create(pipe_name)
-                {
+                let mut server = match create_pipe_instance(pipe_name, true) {
                     Ok(s) => s,
                     Err(e) => {
                         tracing::warn!("Single-instance named pipe unavailable: {e}");
@@ -181,9 +190,7 @@ mod platform {
                         let _ = output.send(target).await;
                     }
 
-                    server = match tokio::net::windows::named_pipe::ServerOptions::new()
-                        .create(pipe_name)
-                    {
+                    server = match create_pipe_instance(pipe_name, false) {
                         Ok(s) => s,
                         Err(e) => {
                             tracing::warn!("Failed to recreate single-instance pipe: {e}");
