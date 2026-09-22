@@ -1,0 +1,13 @@
+LicenseRef-Unknown-ThirdParty
+
+The file carrying this identifier was obtained from a third party whose
+identity, and the licence under which the file may be used, are unknown.
+
+It is not covered by the MIT licence of this repository, and no rights to it
+are granted by the OPad project. It is kept only because the project has not
+yet replaced it. Builds that must contain only licensed material can leave it
+out: for the firmware easter-egg animation, set
+CONFIG_OPAD_DISABLE_MEME_ANIMATION=y.
+
+If you are the rights holder and want it removed or credited, open an issue at
+https://github.com/OPad-dev/OPad/issues.

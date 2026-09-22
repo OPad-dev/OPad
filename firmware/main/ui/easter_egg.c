@@ -1,6 +1,9 @@
 #include "easter_egg.h"
-#include "easter_egg_gif.h"
 #include "lvgl.h"
+#include "sdkconfig.h"
+#ifndef CONFIG_OPAD_DISABLE_MEME_ANIMATION
+#include "easter_egg_gif.h"
+#endif
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 
@@ -16,6 +19,7 @@ static bool s_is_active = false;
 
 void easter_egg_init(void)
 {
+#ifndef CONFIG_OPAD_DISABLE_MEME_ANIMATION  // the procedural animation needs no decode pool
     // Try to allocate PSRAM pool for LVGL if PSRAM hardware is present
     void *psram_pool = heap_caps_malloc(512 * 1024, MALLOC_CAP_SPIRAM);
     if (psram_pool) {
@@ -24,6 +28,7 @@ void easter_egg_init(void)
     } else {
         ESP_LOGI(TAG, "PSRAM not available or internal; using LVGL internal pool");
     }
+#endif
 }
 
 bool easter_egg_is_active(void)
@@ -69,7 +74,12 @@ static void easter_egg_anim_cb(void *var, int32_t val)
     if (opa < 0) opa = 0;
     if (opa > 255) opa = 255;
 
+#ifdef CONFIG_OPAD_DISABLE_MEME_ANIMATION
+    // Label at 48 px shown at up to twice that: 256 is 1x in LVGL transforms
+    lv_obj_set_style_transform_scale(obj, (2 * 256 * scale) / SCALE_100_PCT, 0);
+#else
     lv_image_set_scale(obj, (uint32_t)scale);
+#endif
     lv_obj_set_style_opa(obj, (lv_opa_t)opa, 0);
     lv_obj_set_style_image_opa(obj, (lv_opa_t)opa, 0);
 }
@@ -94,6 +104,23 @@ void easter_egg_trigger(void)
 
     ESP_LOGI(TAG, "Triggering freaky 67 easter egg animation!");
     lv_obj_t *top_layer = lv_layer_top();
+#ifdef CONFIG_OPAD_DISABLE_MEME_ANIMATION
+    // Procedural stand-in: a "67" that grows in, holds and fades out on the
+    // same timeline as the GIF
+    s_gif_obj = lv_label_create(top_layer);
+    if (!s_gif_obj) {
+        ESP_LOGE(TAG, "Failed to create easter egg label");
+        return;
+    }
+    lv_label_set_text(s_gif_obj, "67");
+    lv_obj_set_style_text_font(s_gif_obj, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_color(s_gif_obj, lv_color_hex(0xE583A3), 0);
+    lv_obj_align(s_gif_obj, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_transform_pivot_x(s_gif_obj, lv_pct(50), 0);
+    lv_obj_set_style_transform_pivot_y(s_gif_obj, lv_pct(50), 0);
+    lv_obj_set_style_transform_scale(s_gif_obj, (2 * 256 * SCALE_70_PCT) / SCALE_100_PCT, 0);
+    lv_obj_set_style_opa(s_gif_obj, 0, 0);
+#else
     s_gif_obj = lv_gif_create(top_layer);
     if (!s_gif_obj) {
         ESP_LOGE(TAG, "Failed to create GIF object");
@@ -118,6 +145,7 @@ void easter_egg_trigger(void)
     lv_image_set_scale(s_gif_obj, SCALE_70_PCT);
     lv_obj_set_style_opa(s_gif_obj, 0, 0);
     lv_obj_set_style_image_opa(s_gif_obj, 0, 0);
+#endif
 
     lv_anim_t a;
     lv_anim_init(&a);

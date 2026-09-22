@@ -1,0 +1,43 @@
+# Licensing of every file in the repository, in REUSE form (https://reuse.software).
+# Files without an SPDX header of their own take the first matching entry
+# below; a file's own header wins ("closest").
+version = 1
+SPDX-PackageName = "OPad"
+SPDX-PackageSupplier = "GFerreiroS <info@gferreiro.com>"
+SPDX-PackageDownloadLocation = "https://github.com/OPad-dev/OPad"
+
+# Everything OPad wrote: firmware, desktop, protocol, hardware, docs, packaging
+[[annotations]]
+path = "**"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 GFerreiroS <info@gferreiro.com>"
+SPDX-License-Identifier = "MIT"
+
+# Montserrat, bundled with the desktop GUI
+[[annotations]]
+path = "desktop/gui/assets/fonts/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2011 The Montserrat Project Authors (https://github.com/JulietaUla/Montserrat)"
+SPDX-License-Identifier = "OFL-1.1"
+
+# Nanopb runtime, vendored into the firmware
+[[annotations]]
+path = "firmware/main/protocol/nanopb/**"
+precedence = "override"
+SPDX-FileCopyrightText = "2011 Petteri Aimonen <jpa at nanopb.mail.kapsi.fi>"
+SPDX-License-Identifier = "Zlib"
+
+# tosu's licence, notices and version, redistributed with its binary
+[[annotations]]
+path = "licenses/tosu/**"
+precedence = "override"
+SPDX-FileCopyrightText = "Mikhail Babynichev and the tosu contributors"
+SPDX-License-Identifier = "LGPL-3.0-only"
+
+# Third-party meme GIF of unknown origin and licence; see the file's header and
+# CONFIG_OPAD_DISABLE_MEME_ANIMATION, which builds the firmware without it
+[[annotations]]
+path = "firmware/main/ui/easter_egg_gif.h"
+precedence = "override"
+SPDX-FileCopyrightText = "Unknown third party"
+SPDX-License-Identifier = "LicenseRef-Unknown-ThirdParty"

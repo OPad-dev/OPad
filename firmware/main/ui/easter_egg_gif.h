@@ -1,3 +1,10 @@
+// SPDX-FileCopyrightText: Unknown (third-party meme GIF, "freaky 67")
+// SPDX-License-Identifier: LicenseRef-Unknown-ThirdParty
+//
+// Provenance: converted to this byte array from freaky_67_14f.gif (a meme
+// animation found online) in commit 470a9d5. Its author, source and licence
+// are unknown; it is NOT covered by the repository's MIT licence. Build with
+// CONFIG_OPAD_DISABLE_MEME_ANIMATION=y to leave it out of the firmware.
 #pragma once
 #include "lvgl.h"
 

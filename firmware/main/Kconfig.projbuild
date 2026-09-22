@@ -1,3 +1,16 @@
+menu "OPad"
+
+    config OPAD_DISABLE_MEME_ANIMATION
+        bool "Build without the third-party easter-egg GIF"
+        default n
+        help
+            The FREAKY67 easter egg plays a GIF converted from a meme of unknown
+            origin and licence (main/ui/easter_egg_gif.h). With this set, the
+            GIF is not compiled in and the easter egg draws a plain animated
+            "67" instead, so the image contains only licensed material.
+
+endmenu
+
 menu "OPad Testing and Benchmark"
 
     config OSUPAD_TEST_FAIL_LCD

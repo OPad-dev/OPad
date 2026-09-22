@@ -27,6 +27,8 @@ whose licence is unknown; see `REUSE.toml`. Builds with
 ---
 
 
+<!-- REUSE-IgnoreStart: the licence texts below quote other projects' SPDX tags -->
+
 ## Apache License 2.0
 
 ESP-IDF, esp_tinyusb and esp_lvgl_port, copyright Espressif Systems (Shanghai) CO LTD and their contributors.
@@ -1891,3 +1893,5 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
 OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 SUCH DAMAGE.
 ```
+
+<!-- REUSE-IgnoreEnd -->
