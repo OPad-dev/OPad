@@ -1309,9 +1309,7 @@ pub fn about<'a>(_app: &'a App) -> Element<'a, Message> {
                     .width(Length::FillPortion(3)),
             ],
             row![
-                text("Bundled tosu:")
-                    .size(13)
-                    .width(Length::FillPortion(2)),
+                text("Bundled tosu:").size(13).width(Length::FillPortion(2)),
                 text("v4.26.2 (reads osu! memory for the HUD)")
                     .size(13)
                     .color(theme::WHITE)
