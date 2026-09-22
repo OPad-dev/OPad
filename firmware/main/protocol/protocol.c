@@ -76,6 +76,8 @@ static esp_err_t send_envelope(const osupad_DeviceToHost *msg)
 {
     uint8_t tx_buf[1024];
     size_t tx_len = 0;
+    _Static_assert(sizeof(tx_buf) <= CONFIG_TINYUSB_CDC_TX_BUFSIZE,
+                   "a whole frame must fit the CDC TX FIFO to be sent atomically");
 
     esp_err_t err = protocol_encode_device_message(msg, tx_buf, sizeof(tx_buf), &tx_len);
     if (err != ESP_OK) {
@@ -85,7 +87,7 @@ static esp_err_t send_envelope(const osupad_DeviceToHost *msg)
     size_t written = usb_cdc_write(tx_buf, tx_len);
     if (written < tx_len) {
         diag_record(DIAG_EVENT_CDC_WRITE_DROPPED, 2 /* WARN */, (uint32_t)tx_len, (uint32_t)(tx_len - written));
-        ESP_LOGW(TAG, "CDC TX dropped bytes (%zu / %zu)", written, tx_len);
+        ESP_LOGW(TAG, "CDC TX frame dropped (%zu bytes, FIFO full)", tx_len);
         return ESP_FAIL;
     }
 

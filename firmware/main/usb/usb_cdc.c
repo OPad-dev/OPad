@@ -40,34 +40,32 @@ bool usb_cdc_is_connected(void)
     return s_cdc_connected && tud_cdc_n_connected(0);
 }
 
+// How long a sender (the protocol task on core 1) may wait for FIFO room
+#define CDC_TX_WAIT_MS 20
+
+/*
+ * All-or-nothing: a frame is queued only once the TX FIFO has room for the whole
+ * of it. A partial write would leave the host holding a header whose payload
+ * never arrives, and every frame after it would be misparsed.
+ */
 size_t usb_cdc_write(const uint8_t *data, size_t len)
 {
-    if (!tud_ready()) {
+    if (!tud_ready() || len == 0 || len > CONFIG_TINYUSB_CDC_TX_BUFSIZE) {
         return 0;
     }
 
-    size_t total_written = 0;
-    while (total_written < len) {
-        uint32_t avail = tud_cdc_n_write_available(0);
-        if (avail == 0) {
-            tud_cdc_n_write_flush(0);
-            break;
+    TickType_t deadline = xTaskGetTickCount() + pdMS_TO_TICKS(CDC_TX_WAIT_MS);
+    while (tud_cdc_n_write_available(0) < len) {
+        tud_cdc_n_write_flush(0);
+        if (!tud_cdc_n_connected(0) || (int32_t)(xTaskGetTickCount() - deadline) >= 0) {
+            return 0;
         }
-
-        uint32_t chunk = len - total_written;
-        if (chunk > avail) {
-            chunk = avail;
-        }
-
-        uint32_t written = tud_cdc_n_write(0, data + total_written, chunk);
-        if (written == 0) {
-            break;
-        }
-        total_written += written;
+        vTaskDelay(1);
     }
 
+    uint32_t written = tud_cdc_n_write(0, data, len);
     tud_cdc_n_write_flush(0);
-    return total_written;
+    return written;
 }
 
 void usb_cdc_flush(void)

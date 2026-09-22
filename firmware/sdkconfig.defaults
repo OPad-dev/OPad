@@ -13,6 +13,8 @@ CONFIG_TINYUSB_CDC_ENABLED=y
 CONFIG_TINYUSB_HID_ENABLED=y
 CONFIG_TINYUSB_HID_COUNT=1
 CONFIG_TINYUSB_CDC_COUNT=1
+# Room for the largest device frame, so frames are queued whole (usb_cdc_write)
+CONFIG_TINYUSB_CDC_TX_BUFSIZE=2048
 
 # High stack sizes for tasks
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

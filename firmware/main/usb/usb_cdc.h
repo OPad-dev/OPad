@@ -20,10 +20,11 @@ esp_err_t usb_cdc_init(void);
 bool usb_cdc_is_connected(void);
 
 /**
- * @brief Write bytes to the USB CDC interface.
+ * @brief Queue one whole frame on the USB CDC interface, or none of it.
+ * Waits briefly for FIFO room; call only from the protocol task.
  * @param data Data buffer to transmit
  * @param len Length in bytes
- * @return Number of bytes successfully queued/written
+ * @return len when queued, 0 when the frame was dropped
  */
 size_t usb_cdc_write(const uint8_t *data, size_t len);
 
