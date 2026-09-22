@@ -64,6 +64,22 @@ esp_err_t counters_sync_from_host(uint32_t generation, uint64_t k1, uint64_t k2,
 esp_err_t counters_checkpoint(bool force);
 
 /**
+ * @brief True when the RAM counters differ from the last NVS checkpoint.
+ */
+bool counters_is_dirty(void);
+
+/**
+ * @brief Ask the runtime task to checkpoint soon (e.g. on USB suspend).
+ * Safe from any task; does no flash I/O itself.
+ */
+void counters_request_checkpoint(void);
+
+/**
+ * @brief Consume a pending counters_request_checkpoint(). Runtime task only.
+ */
+bool counters_take_checkpoint_request(void);
+
+/**
  * @brief Reset counters to initial state (generation incremented, counts zeroed).
  */
 esp_err_t counters_reset(void);

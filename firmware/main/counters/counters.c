@@ -5,6 +5,9 @@
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include <stdatomic.h>
 #include <string.h>
 
 static const char *TAG = "counters";
@@ -16,6 +19,21 @@ static uint64_t s_last_saved_key2 = 0;
 static bool s_initialized = false;
 static bool s_counters_nvs_ok = false;
 static uint32_t s_nvs_writes = 0;
+// Serialises checkpoint/sync/reset between the runtime and protocol tasks
+static SemaphoreHandle_t s_lock = NULL;
+static atomic_bool s_checkpoint_requested = false;
+
+/*
+ * Move the RAM counters from `from` to `to` by adding the difference rather
+ * than storing `to`: presses the key ISR counts after `from` was read survive.
+ * Unsigned wrap-around makes this work for decreases (forced sync, reset) too.
+ */
+static void rebase_lifetime_presses(const counters_snapshot_t *from, uint64_t to_k1, uint64_t to_k2)
+{
+    keypad_add_lifetime_presses(to_k1 - from->lifetime_key1, to_k2 - from->lifetime_key2);
+}
+
+static esp_err_t checkpoint_locked(bool force);
 
 bool counters_is_nvs_ok(void)
 {
@@ -67,6 +85,10 @@ esp_err_t counters_init(void)
         ESP_LOGE(TAG, "Failed to open NVS namespace '%s': %s (continuing with RAM counters)", NVS_NAMESPACE, esp_err_to_name(err));
         s_counters_nvs_ok = false;
         return err;
+    }
+
+    if (!s_lock) {
+        s_lock = xSemaphoreCreateMutex();
     }
 
     err = nvs_get_u32(handle, "generation", &s_generation);
@@ -143,24 +165,46 @@ esp_err_t counters_sync_from_host(uint32_t generation, uint64_t k1, uint64_t k2,
         return ESP_ERR_NOT_SUPPORTED;
     }
 
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+
     // Monotonicity / generation validation unless forced
     counters_snapshot_t current;
     counters_get(&current);
 
     if (!counters_validate_sync_acceptance(current.generation, current.lifetime_key1, current.lifetime_key2,
                                            generation, k1, k2, force, err_msg, err_msg_len)) {
+        xSemaphoreGive(s_lock);
         ESP_LOGW(TAG, "Rejected sync: %s", err_msg ? err_msg : "invalid");
         return ESP_ERR_INVALID_ARG;
     }
 
     s_generation = generation;
-    keypad_set_lifetime_presses(k1, k2);
+    rebase_lifetime_presses(&current, k1, k2);
 
     if (err_msg && err_msg_len > 0) {
         err_msg[0] = '\0';
     }
 
-    return counters_checkpoint(true);
+    esp_err_t err = checkpoint_locked(true);
+    xSemaphoreGive(s_lock);
+    return err;
+}
+
+bool counters_is_dirty(void)
+{
+    uint64_t k1 = 0, k2 = 0;
+    keypad_get_lifetime_presses(&k1, &k2);
+    return k1 != s_last_saved_key1 || k2 != s_last_saved_key2;
+}
+
+void counters_request_checkpoint(void)
+{
+    atomic_store(&s_checkpoint_requested, true);
+}
+
+bool counters_take_checkpoint_request(void)
+{
+    return atomic_exchange(&s_checkpoint_requested, false);
 }
 
 esp_err_t counters_checkpoint(bool force)
@@ -168,6 +212,15 @@ esp_err_t counters_checkpoint(bool force)
     if (!s_initialized || !s_counters_nvs_ok) {
         return ESP_OK; // Silently skip write if uninitialized or NVS failed
     }
+
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    esp_err_t err = checkpoint_locked(force);
+    xSemaphoreGive(s_lock);
+    return err;
+}
+
+static esp_err_t checkpoint_locked(bool force)
+{
 
     // STRICT SPEC INVARIANT: Zero flash writes during gameplay and cooldown
     if (runtime_get_state() != OSUPAD_STATE_IDLE) {
@@ -215,8 +268,12 @@ esp_err_t counters_reset(void)
         return ESP_ERR_NOT_SUPPORTED;
     }
 
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    counters_snapshot_t current;
+    counters_get(&current);
     s_generation++;
-    keypad_set_lifetime_presses(0, 0);
-
-    return counters_checkpoint(true);
+    rebase_lifetime_presses(&current, 0, 0);
+    esp_err_t err = checkpoint_locked(true);
+    xSemaphoreGive(s_lock);
+    return err;
 }

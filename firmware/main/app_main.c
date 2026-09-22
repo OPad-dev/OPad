@@ -36,6 +36,8 @@ static void usb_event_handler(tinyusb_event_t *event, void *arg)
 #ifdef CONFIG_TINYUSB_SUSPEND_CALLBACK
     case TINYUSB_EVENT_SUSPENDED:
         diag_record(DIAG_EVENT_HID_SUSPENDED, 1 /* INFO */, 0, 0);
+        // TinyUSB task, core 0: no NVS here, the runtime task writes
+        counters_request_checkpoint();
         break;
 #endif
     default:

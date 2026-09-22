@@ -32,8 +32,8 @@ static volatile bool s_config_staged = false;
 
 static volatile bool s_key_state[KEY_ID_COUNT] = {false, false};
 static volatile int64_t s_last_transition_us[KEY_ID_COUNT] = {0, 0};
-static volatile int64_t s_key1_last_press_us = 0;
-static volatile int64_t s_key2_last_press_us = 0;
+static atomic_llong s_key1_last_press_us = 0;
+static atomic_llong s_key2_last_press_us = 0;
 
 static atomic_uint_least64_t s_key1_lifetime_presses = 0;
 static atomic_uint_least64_t s_key2_lifetime_presses = 0;
@@ -72,11 +72,11 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
             if (key_index == 0) {
                 atomic_fetch_add_explicit(&s_key1_lifetime_presses, 1, memory_order_relaxed);
                 atomic_fetch_add_explicit(&s_key1_map_presses, 1, memory_order_relaxed);
-                s_key1_last_press_us = now;
+                atomic_store_explicit(&s_key1_last_press_us, now, memory_order_relaxed);
             } else {
                 atomic_fetch_add_explicit(&s_key2_lifetime_presses, 1, memory_order_relaxed);
                 atomic_fetch_add_explicit(&s_key2_map_presses, 1, memory_order_relaxed);
-                s_key2_last_press_us = now;
+                atomic_store_explicit(&s_key2_last_press_us, now, memory_order_relaxed);
             }
         }
 
@@ -167,11 +167,11 @@ static void keypad_task(void *pvParameters)
                         if (i == 0) {
                             atomic_fetch_add_explicit(&s_key1_lifetime_presses, 1, memory_order_relaxed);
                             atomic_fetch_add_explicit(&s_key1_map_presses, 1, memory_order_relaxed);
-                            s_key1_last_press_us = now_us;
+                            atomic_store_explicit(&s_key1_last_press_us, now_us, memory_order_relaxed);
                         } else {
                             atomic_fetch_add_explicit(&s_key2_lifetime_presses, 1, memory_order_relaxed);
                             atomic_fetch_add_explicit(&s_key2_map_presses, 1, memory_order_relaxed);
-                            s_key2_last_press_us = now_us;
+                            atomic_store_explicit(&s_key2_last_press_us, now_us, memory_order_relaxed);
                         }
                     }
                 }
@@ -374,8 +374,8 @@ void keypad_reset_map_presses(void)
 
 int64_t keypad_get_last_press_us(keypad_key_id_t key_id)
 {
-    if (key_id == KEY_ID_1) return s_key1_last_press_us;
-    if (key_id == KEY_ID_2) return s_key2_last_press_us;
+    if (key_id == KEY_ID_1) return atomic_load_explicit(&s_key1_last_press_us, memory_order_relaxed);
+    if (key_id == KEY_ID_2) return atomic_load_explicit(&s_key2_last_press_us, memory_order_relaxed);
     return 0;
 }
 

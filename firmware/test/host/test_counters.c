@@ -4,11 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-// Pure function extracted from firmware counters.c
-bool counters_validate_sync_acceptance(
-    uint32_t current_gen, uint64_t current_k1, uint64_t current_k2,
-    uint32_t host_gen, uint64_t host_k1, uint64_t host_k2,
-    bool force, char *err_msg, size_t err_msg_len);
+#include "counter_sync_rules.h"
 
 static void test_stale_generation_rejected(void)
 {
@@ -69,6 +65,20 @@ static void test_force_bypasses_validation(void)
     printf("✓ test_force_bypasses_validation passed\n");
 }
 
+static void test_checkpoint_waits_for_quiet_keys(void)
+{
+    const int64_t s = 1000000;
+    // Nothing changed: never write
+    assert(!counters_checkpoint_due(false, 1000 * s, 0, 0));
+    // Pressed 10 s ago, written 20 s ago: wait
+    assert(!counters_checkpoint_due(true, 100 * s, 90 * s, 80 * s));
+    // 30 s of quiet: write
+    assert(counters_checkpoint_due(true, 120 * s, 90 * s, 80 * s));
+    // Keys never quiet, but the last write is 5 min old: write anyway
+    assert(counters_checkpoint_due(true, 400 * s, 399 * s, 100 * s));
+    printf("✓ test_checkpoint_waits_for_quiet_keys passed\n");
+}
+
 int main(void)
 {
     test_stale_generation_rejected();
@@ -76,6 +86,7 @@ int main(void)
     test_monotonic_same_generation_accepted();
     test_generation_bump_accepted();
     test_force_bypasses_validation();
+    test_checkpoint_waits_for_quiet_keys();
     printf("All counter sync unit tests passed successfully!\n");
     return 0;
 }

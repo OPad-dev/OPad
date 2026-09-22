@@ -22,3 +22,13 @@ bool counters_validate_sync_acceptance(
     }
     return true;
 }
+
+bool counters_checkpoint_due(bool dirty, int64_t now_us, int64_t last_press_us,
+                             int64_t last_checkpoint_us)
+{
+    if (!dirty) {
+        return false;
+    }
+    return (now_us - last_press_us) >= COUNTERS_CHECKPOINT_QUIET_US ||
+           (now_us - last_checkpoint_us) >= COUNTERS_CHECKPOINT_MAX_AGE_US;
+}

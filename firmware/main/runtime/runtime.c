@@ -1,5 +1,7 @@
 #include "runtime.h"
 #include "counters/counters.h"
+#include "counters/counter_sync_rules.h"
+#include "input/keypad.h"
 #include "config/device_config.h"
 #include "ui/ui_store.h"
 #include "freertos/FreeRTOS.h"
@@ -20,7 +22,6 @@ static atomic_llong s_last_gameplay_us = ATOMIC_VAR_INIT(0);
 static const int64_t COOLDOWN_DURATION_US = 5000000; // 5 seconds
 // Host streams gameplay at >=1 Hz; leave PLAYING if it stops (daemon/tosu died)
 static const int64_t GAMEPLAY_TIMEOUT_US = 3000000; // 3 seconds
-static const int64_t IDLE_CHECKPOINT_INTERVAL_US = 300000000; // 5 minutes
 
 static void runtime_supervisor_task(void *pvParameters)
 {
@@ -51,7 +52,13 @@ static void runtime_supervisor_task(void *pvParameters)
         } else if (current == OSUPAD_STATE_IDLE) {
             device_config_flush();
             ui_store_flush_dirty();
-            if ((now - s_last_checkpoint_us) >= IDLE_CHECKPOINT_INTERVAL_US) {
+            int64_t k1 = keypad_get_last_press_us(KEY_ID_1);
+            int64_t k2 = keypad_get_last_press_us(KEY_ID_2);
+            int64_t last_press = k1 > k2 ? k1 : k2;
+            // Host suspend (PC sleeping, possibly losing power) writes at once
+            bool requested = counters_take_checkpoint_request();
+            if (requested ||
+                counters_checkpoint_due(counters_is_dirty(), now, last_press, s_last_checkpoint_us)) {
                 counters_checkpoint(false);
                 s_last_checkpoint_us = now;
             }
