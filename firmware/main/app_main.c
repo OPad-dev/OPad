@@ -17,6 +17,7 @@
 #include "ui/ui.h"
 #include "runtime/runtime.h"
 #include "soc/rtc_cntl_reg.h"
+#include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "diag/diag.h"
 
@@ -94,6 +95,14 @@ void app_main(void)
 
     ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
     ESP_LOGI(TAG, "TinyUSB stack installed successfully (HID operational)");
+
+    // The keypad works, so this image is good: cancel a pending OTA rollback
+    esp_ota_img_states_t ota_state;
+    if (esp_ota_get_state_partition(esp_ota_get_running_partition(), &ota_state) == ESP_OK &&
+        ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
+        esp_ota_mark_app_valid_cancel_rollback();
+        ESP_LOGI(TAG, "OTA image marked valid");
+    }
 
     // Step ii complete: HID is now fully operational! Everything below is NON-FATAL.
 

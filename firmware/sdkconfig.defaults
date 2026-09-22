@@ -1,5 +1,8 @@
 # ESP32-S3 Native USB and TinyUSB Configuration
 CONFIG_IDF_TARGET="esp32s3"
+
+# Release builds: -O2
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
 CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
@@ -15,6 +18,8 @@ CONFIG_TINYUSB_HID_COUNT=1
 CONFIG_TINYUSB_CDC_COUNT=1
 # Room for the largest device frame, so frames are queued whole (usb_cdc_write)
 CONFIG_TINYUSB_CDC_TX_BUFSIZE=2048
+# TINYUSB_EVENT_SUSPENDED reaches usb_event_handler (checkpoints counters)
+CONFIG_TINYUSB_SUSPEND_CALLBACK=y
 
 # High stack sizes for tasks
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
@@ -76,5 +81,8 @@ CONFIG_LV_MEM_SIZE_KILOBYTES=160
 # at its original size, so lifetime counters and owner_id survive the change.
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+# An OTA image that never reaches esp_ota_mark_app_valid_cancel_rollback()
+# (app_main, once HID is up) is rolled back by the bootloader on the next reset
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 # CONFIG_LV_BUILD_EXAMPLES is not set
 # CONFIG_LV_BUILD_DEMOS is not set
