@@ -34,8 +34,7 @@ precedence = "override"
 SPDX-FileCopyrightText = "Mikhail Babynichev and the tosu contributors"
 SPDX-License-Identifier = "LGPL-3.0-only"
 
-# Third-party meme GIF of unknown origin and licence; see the file's header and
-# CONFIG_OPAD_DISABLE_MEME_ANIMATION, which builds the firmware without it
+# Third-party meme GIF of unknown origin and licence; see the file's header
 [[annotations]]
 path = "firmware/main/ui/easter_egg_gif.h"
 precedence = "override"

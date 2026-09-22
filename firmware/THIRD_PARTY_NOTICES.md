@@ -21,8 +21,8 @@ GCC's `libgcc` and `libstdc++` are also linked; they are covered by the GCC
 Runtime Library Exception, which places no conditions on the firmware.
 
 The easter-egg animation (`main/ui/easter_egg_gif.h`) is a third-party image
-whose licence is unknown; see `REUSE.toml`. Builds with
-`CONFIG_OPAD_DISABLE_MEME_ANIMATION=y` do not contain it.
+whose licence is unknown; see `REUSE.toml`. It will be replaced if its rights
+holder objects.
 
 ---
 
