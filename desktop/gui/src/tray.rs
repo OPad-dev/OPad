@@ -132,19 +132,39 @@ impl TrayViewModel {
         };
         items.push(MenuItemModel::Disabled(pad_status_str.to_string()));
 
-        // 3. Counter line
+        // 3. Firmware (hidden when unknown or device disconnected)
+        if s.daemon_online && s.device_connected {
+            if let Some(fw) = &s.firmware_version {
+                if !fw.is_empty() {
+                    items.push(MenuItemModel::Disabled(format!("Firmware: {fw}")));
+                }
+            }
+        }
+
+        // 4. Counters
         items.push(MenuItemModel::Disabled(format!(
-            "Total Taps: {}",
-            s.total_presses
+            "Key 1: {}",
+            crate::pages::grouped(s.key1_presses)
+        )));
+        items.push(MenuItemModel::Disabled(format!(
+            "Key 2: {}",
+            crate::pages::grouped(s.key2_presses)
         )));
 
-        // 4. tosu status
-        let tosu_status_str = if s.tosu_connected {
-            "tosu: Active"
+        // 5. Last sync
+        let sync_str = if s.last_sync_error.is_some() {
+            "Last sync: Sync failed".to_string()
+        } else if let Some(sync_time) = &s.last_sync_time {
+            let display_time = if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(sync_time) {
+                parsed.format("%H:%M").to_string()
+            } else {
+                sync_time.clone()
+            };
+            format!("Last sync: {display_time}")
         } else {
-            "tosu: Offline"
+            "Last sync: Never".to_string()
         };
-        items.push(MenuItemModel::Disabled(tosu_status_str.to_string()));
+        items.push(MenuItemModel::Disabled(sync_str));
 
         items.push(MenuItemModel::Separator);
 
