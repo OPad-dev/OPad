@@ -985,7 +985,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 let mut st = state.lock().unwrap();
                 st.device_connected = false;
             }
-            let port = opad_device::find_target_port();
+            let port = device.port().or_else(opad_device::find_target_port);
             IpcResponse::ReadyForFlash { port }
         }
 

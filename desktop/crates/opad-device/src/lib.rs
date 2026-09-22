@@ -9,15 +9,20 @@ pub use opad_protocol::proto;
 use opad_protocol::proto::{host_to_device, DeviceToHost, HostToDevice};
 use opad_protocol::{decode_device_message, encode_host_message};
 use serialport::SerialPortType;
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, info, warn};
 
 pub const ESPRESSIF_VID: u16 = 0x303A;
+/// pid.codes open-source VID, the other one an OPad may enumerate under
+pub const PIDCODES_VID: u16 = 0x1209;
+/// Every pad's USB serial number and HelloAck device_id start with this
+pub const DEVICE_ID_PREFIX: &str = "OSUPAD-";
 /// USB PID of the OPad application firmware (TinyUSB composite device)
 pub const OSUPAD_APP_PID: u16 = 0x4001;
 /// USB PID of the ESP32-S3 ROM download bootloader (USB-Serial-JTAG)
@@ -104,6 +109,15 @@ const RECONNECT_SETTLE_INTERVAL: Duration = Duration::from_millis(300);
 /// and re-handshake rather than wait for a length that will never arrive.
 const STALE_PARTIAL_FRAME: Duration = Duration::from_millis(500);
 
+/// Read timeout while probing a port that might be a pad (tier 2)
+const PROBE_READ_TIMEOUT: Duration = Duration::from_millis(150);
+/// How long a probed port gets to answer Hello with a HelloAck
+const PROBE_ANSWER_WINDOW: Duration = Duration::from_millis(450);
+/// A port with an OPad VID but no identifying strings is probed again this
+/// often (the pad may have been booting). Other unknown ports are probed once
+/// per appearance: opening a stranger's port can reset it (Arduino-style boards).
+const PROBE_RETRY_KNOWN_VID: Duration = Duration::from_secs(5);
+
 pub struct DeviceManager {
     cmd_tx: mpsc::Sender<HostToDevice>,
     event_tx: broadcast::Sender<DeviceEvent>,
@@ -111,6 +125,8 @@ pub struct DeviceManager {
     is_paused: Arc<AtomicBool>,
     is_port_open: Arc<AtomicBool>,
     seq_counter: Arc<AtomicU32>,
+    /// Port of the pad last handshaken with, for flashing without re-discovery
+    last_port: Arc<Mutex<Option<String>>>,
 }
 
 impl DeviceManager {
@@ -121,6 +137,7 @@ impl DeviceManager {
         let is_paused = Arc::new(AtomicBool::new(false));
         let is_port_open = Arc::new(AtomicBool::new(false));
         let seq_counter = Arc::new(AtomicU32::new(1));
+        let last_port = Arc::new(Mutex::new(None));
         tokio::spawn(async move { while cmd_rx.recv().await.is_some() {} });
         (
             Self {
@@ -130,6 +147,7 @@ impl DeviceManager {
                 is_paused,
                 is_port_open,
                 seq_counter,
+                last_port,
             },
             event_rx,
         )
@@ -147,6 +165,8 @@ impl DeviceManager {
         let is_port_open = Arc::new(AtomicBool::new(false));
         let is_open_clone = is_port_open.clone();
         let event_tx_clone = event_tx.clone();
+        let last_port = Arc::new(Mutex::new(None));
+        let last_port_clone = last_port.clone();
 
         // Spawn background worker managing the serial port lifecycle
         tokio::task::spawn_blocking(move || {
@@ -154,6 +174,7 @@ impl DeviceManager {
             // Last open failure, so a port that keeps refusing is reported once
             // rather than on every retry. Cleared when the pad goes away.
             let mut last_open_error: Option<String> = None;
+            let mut probes = ProbeHistory::default();
 
             loop {
                 if is_paused_clone.load(Ordering::SeqCst) {
@@ -162,7 +183,7 @@ impl DeviceManager {
                 }
 
                 // Discover target serial port
-                let port_path = match find_target_port() {
+                let port_path = match discover_port(&mut probes) {
                     Some(p) => p,
                     None => {
                         debug!("Searching for OPad ESP32-S3 USB port...");
@@ -204,9 +225,10 @@ impl DeviceManager {
                     }
                 };
 
+                // Connected only once the pad answers Hello with its identity:
+                // an open port proves nothing about what is on the other end
                 is_open_clone.store(true, Ordering::SeqCst);
-                is_conn_clone.store(true, Ordering::SeqCst);
-                info!("Connected to OPad on {}", port_path);
+                debug!("Opened {}; waiting for HelloAck", port_path);
 
                 let mut raw_buf = [0u8; 1024];
                 let mut last_hello = Instant::now() - Duration::from_secs(10);
@@ -234,14 +256,7 @@ impl DeviceManager {
                     // Periodic Hello retry until HelloAck is received (§6.1)
                     if !has_hello_ack && last_hello.elapsed() >= Duration::from_millis(800) {
                         last_hello = Instant::now();
-                        let hello_msg = HostToDevice {
-                            sequence_number: 1,
-                            payload: Some(host_to_device::Payload::Hello(proto::Hello {
-                                protocol_version: 1,
-                                client_version: "1.0.0".to_string(),
-                            })),
-                        };
-                        if let Ok(encoded) = encode_host_message(&hello_msg) {
+                        if let Ok(encoded) = encode_host_message(&hello_message()) {
                             let _ = port.write_all(&encoded);
                         }
                     }
@@ -265,10 +280,28 @@ impl DeviceManager {
                             loop {
                                 match decode_device_message(&mut read_buf) {
                                     Ok(Some(msg)) => {
-                                        if let Some(proto::device_to_host::Payload::HelloAck(_)) =
+                                        if let Some(proto::device_to_host::Payload::HelloAck(ack)) =
                                             &msg.payload
                                         {
+                                            if !is_opad_device_id(&ack.device_id) {
+                                                warn!(
+                                                    "{} answered Hello as {:?}, not an OPad; ignoring it",
+                                                    port_path, ack.device_id
+                                                );
+                                                continue;
+                                            }
                                             has_hello_ack = true;
+                                            if !is_conn_clone.swap(true, Ordering::SeqCst) {
+                                                info!(
+                                                    "Connected to OPad {} on {}",
+                                                    ack.device_id, port_path
+                                                );
+                                                *last_port_clone.lock().unwrap() =
+                                                    Some(port_path.clone());
+                                            }
+                                        } else if !has_hello_ack {
+                                            // Nothing is trusted before the handshake
+                                            continue;
                                         }
                                         handle_device_message(&msg, &event_tx_clone);
                                     }
@@ -296,6 +329,7 @@ impl DeviceManager {
                 drop(port);
                 is_open_clone.store(false, Ordering::SeqCst);
                 is_conn_clone.store(false, Ordering::SeqCst);
+
                 // Drain any pending commands on disconnect so they are never replayed to a new connection
                 while cmd_rx.try_recv().is_ok() {}
                 let _ = event_tx_clone.send(DeviceEvent::Disconnected);
@@ -312,6 +346,7 @@ impl DeviceManager {
                 is_paused,
                 is_port_open,
                 seq_counter,
+                last_port,
             },
             event_rx,
         )
@@ -343,6 +378,13 @@ impl DeviceManager {
 
     pub fn is_connected(&self) -> bool {
         self.is_connected.load(Ordering::SeqCst)
+    }
+
+    /// Serial port of the pad this manager last completed a handshake with.
+    /// Kept across pause/disconnect so a flasher can find the pad even where
+    /// the port carries no identifying strings (tier-2 discovery).
+    pub fn port(&self) -> Option<String> {
+        self.last_port.lock().unwrap().clone()
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<DeviceEvent> {
@@ -733,12 +775,161 @@ fn open_error_hint(e: &serialport::Error) -> &'static str {
     }
 }
 
-/// Finds the serial port of the OPad running its application firmware.
-///
-/// Deliberately ignores the ROM bootloader (303a:1001): opening that port
-/// toggles DTR/RTS, which resets the chip out of download mode mid-flash.
+pub fn is_opad_device_id(id: &str) -> bool {
+    id.starts_with(DEVICE_ID_PREFIX)
+}
+
+/// What a port's USB descriptor strings say about it.
+#[derive(Debug, PartialEq, Eq)]
+enum PortClass {
+    /// OPad VID and an OPad product or serial string (tier 1)
+    Opad,
+    /// Worth a Hello probe: OPad VID without strings, or no USB info at all
+    Probe { known_vid: bool },
+    /// Something else, identified as such, or a port never to be touched
+    Skip,
+}
+
+fn is_system_port(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    upper == "COM1" || upper == "COM2" || name.starts_with("/dev/ttyS")
+}
+
+fn classify_port(name: &str, port_type: &SerialPortType) -> PortClass {
+    if is_system_port(name) {
+        return PortClass::Skip;
+    }
+    match port_type {
+        SerialPortType::UsbPort(info) => {
+            // The ROM bootloader: opening it toggles DTR/RTS, which resets the
+            // chip out of download mode mid-flash
+            if info.vid == ESPRESSIF_VID && info.pid == ESP_ROM_BOOTLOADER_PID {
+                return PortClass::Skip;
+            }
+            let known_vid = info.vid == ESPRESSIF_VID || info.vid == PIDCODES_VID;
+            let product_says = info.product.as_deref().map(|p| p.contains("OPad"));
+            let serial_says = info.serial_number.as_deref().map(is_opad_device_id);
+            if known_vid && (product_says == Some(true) || serial_says == Some(true)) {
+                PortClass::Opad
+            } else if product_says.is_none() && serial_says.is_none() {
+                // Windows often reports neither string for composite devices
+                PortClass::Probe { known_vid }
+            } else {
+                PortClass::Skip
+            }
+        }
+        // Linux ports whose sysfs parent could not be read
+        SerialPortType::Unknown => PortClass::Probe { known_vid: false },
+        SerialPortType::BluetoothPort | SerialPortType::PciPort => PortClass::Skip,
+    }
+}
+
+/// Finds the serial port of the OPad running its application firmware from
+/// its USB descriptors alone (tier 1). Never opens a port, so it is safe to
+/// call while the daemon holds the pad; it can miss a pad whose strings the
+/// platform does not report, which [`DeviceManager::port`] covers.
 pub fn find_target_port() -> Option<String> {
-    find_usb_port(ESPRESSIF_VID, OSUPAD_APP_PID)
+    serialport::available_ports()
+        .ok()?
+        .into_iter()
+        .find(|p| classify_port(&p.port_name, &p.port_type) == PortClass::Opad)
+        .map(|p| p.port_name)
+}
+
+/// When each tier-2 candidate was last probed, so ports are not hammered.
+#[derive(Default)]
+struct ProbeHistory {
+    last_probe: HashMap<String, Instant>,
+}
+
+impl ProbeHistory {
+    fn due(&self, name: &str, known_vid: bool) -> bool {
+        match self.last_probe.get(name) {
+            None => true,
+            Some(t) => known_vid && t.elapsed() >= PROBE_RETRY_KNOWN_VID,
+        }
+    }
+}
+
+/// Tier 1, then tier 2: ports that might be a pad are opened and sent Hello,
+/// and only one that answers with an OSUPAD- device_id is returned.
+fn discover_port(probes: &mut ProbeHistory) -> Option<String> {
+    let ports = serialport::available_ports().ok()?;
+    // Forget ports that went away, so a replugged one is probed afresh
+    probes
+        .last_probe
+        .retain(|name, _| ports.iter().any(|p| &p.port_name == name));
+
+    let mut candidates = Vec::new();
+    for p in &ports {
+        match classify_port(&p.port_name, &p.port_type) {
+            PortClass::Opad => return Some(p.port_name.clone()),
+            PortClass::Probe { known_vid } if probes.due(&p.port_name, known_vid) => {
+                candidates.push(p.port_name.clone())
+            }
+            _ => {}
+        }
+    }
+    for name in candidates {
+        probes.last_probe.insert(name.clone(), Instant::now());
+        if probe_port(&name) {
+            info!("{} answered Hello as an OPad", name);
+            return Some(name);
+        }
+    }
+    None
+}
+
+/// Opens `path`, sends a framed Hello and waits briefly for a HelloAck whose
+/// device_id marks it as an OPad.
+fn probe_port(path: &str) -> bool {
+    let Ok(mut port) = serialport::new(path, 115200)
+        .timeout(PROBE_READ_TIMEOUT)
+        .open()
+    else {
+        return false;
+    };
+    let _ = port.write_data_terminal_ready(true);
+    let _ = port.write_request_to_send(true);
+    let Ok(hello) = encode_host_message(&hello_message()) else {
+        return false;
+    };
+    if port.write_all(&hello).is_err() {
+        return false;
+    }
+
+    let deadline = Instant::now() + PROBE_ANSWER_WINDOW;
+    let mut buf = BytesMut::with_capacity(1024);
+    let mut raw = [0u8; 512];
+    while Instant::now() < deadline {
+        match port.read(&mut raw) {
+            Ok(n) if n > 0 => buf.extend_from_slice(&raw[..n]),
+            Ok(_) => {}
+            Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
+            Err(_) => return false,
+        }
+        loop {
+            match decode_device_message(&mut buf) {
+                Ok(Some(DeviceToHost {
+                    payload: Some(proto::device_to_host::Payload::HelloAck(ack)),
+                    ..
+                })) => return is_opad_device_id(&ack.device_id),
+                Ok(Some(_)) | Err(_) => continue,
+                Ok(None) => break,
+            }
+        }
+    }
+    false
+}
+
+fn hello_message() -> HostToDevice {
+    HostToDevice {
+        sequence_number: 1,
+        payload: Some(host_to_device::Payload::Hello(proto::Hello {
+            protocol_version: 1,
+            client_version: "1.0.0".to_string(),
+        })),
+    }
 }
 
 /// Finds the serial port of the ESP32-S3 ROM download bootloader.
@@ -757,10 +948,12 @@ fn find_usb_port(vid: u16, pid: u16) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        fit_nanopb_string, handle_device_message, proto, DeviceEvent, PORT_SCAN_INTERVAL,
+        classify_port, fit_nanopb_string, handle_device_message, is_opad_device_id, proto,
+        DeviceEvent, PortClass, ProbeHistory, PORT_SCAN_INTERVAL, PROBE_RETRY_KNOWN_VID,
         RECONNECT_SETTLE_INTERVAL,
     };
-    use std::time::Duration;
+    use serialport::SerialPortType;
+    use std::time::{Duration, Instant};
 
     /// §W1-2 acceptance: with the daemon already running, plugging the pad in
     /// connects within 2 s. The worst case is a plug landing just after a scan
@@ -821,6 +1014,70 @@ mod tests {
         assert!(
             matches!(rx.try_recv(), Ok(DeviceEvent::Ownership { owner_id }) if owner_id.is_empty())
         );
+    }
+
+    fn usb(vid: u16, pid: u16, product: Option<&str>, serial: Option<&str>) -> SerialPortType {
+        SerialPortType::UsbPort(serialport::UsbPortInfo {
+            vid,
+            pid,
+            serial_number: serial.map(str::to_string),
+            manufacturer: None,
+            product: product.map(str::to_string),
+        })
+    }
+
+    #[test]
+    fn tier_one_needs_an_opad_vid_and_an_opad_string() {
+        let by_product = usb(0x303A, 0x4001, Some("OPad ESP32-S3"), None);
+        assert_eq!(classify_port("/dev/ttyACM0", &by_product), PortClass::Opad);
+        let by_serial = usb(0x1209, 0x1234, None, Some("OSUPAD-A1B2C3D4E5F6"));
+        assert_eq!(classify_port("COM7", &by_serial), PortClass::Opad);
+        // Another Espressif board that names itself
+        let other = usb(0x303A, 0x4001, Some("TinyUSB CDC"), Some("123456"));
+        assert_eq!(classify_port("/dev/ttyACM1", &other), PortClass::Skip);
+        // Right strings, foreign VID
+        let foreign = usb(0x2341, 0x0043, Some("OPad"), None);
+        assert_eq!(classify_port("/dev/ttyACM2", &foreign), PortClass::Skip);
+    }
+
+    #[test]
+    fn ports_without_strings_are_probed_and_system_ports_never() {
+        let bare = usb(0x303A, 0x4001, None, None);
+        assert_eq!(
+            classify_port("COM5", &bare),
+            PortClass::Probe { known_vid: true }
+        );
+        assert_eq!(
+            classify_port("/dev/ttyUSB0", &SerialPortType::Unknown),
+            PortClass::Probe { known_vid: false }
+        );
+        for name in ["COM1", "com2", "/dev/ttyS0", "/dev/ttyS12"] {
+            assert_eq!(
+                classify_port(name, &SerialPortType::Unknown),
+                PortClass::Skip
+            );
+        }
+        // The ROM bootloader is never opened by discovery
+        let rom = usb(0x303A, 0x1001, None, None);
+        assert_eq!(classify_port("/dev/ttyACM0", &rom), PortClass::Skip);
+    }
+
+    #[test]
+    fn unknown_ports_are_probed_once_known_vid_ports_again_later() {
+        let mut h = ProbeHistory::default();
+        assert!(h.due("COM9", false));
+        h.last_probe.insert("COM9".into(), Instant::now());
+        assert!(!h.due("COM9", false));
+        h.last_probe
+            .insert("COM5".into(), Instant::now() - PROBE_RETRY_KNOWN_VID);
+        assert!(h.due("COM5", true));
+    }
+
+    #[test]
+    fn device_ids_are_recognised_by_prefix() {
+        assert!(is_opad_device_id("OSUPAD-0011223344AA"));
+        assert!(!is_opad_device_id("osupad-0011"));
+        assert!(!is_opad_device_id(""));
     }
 
     #[test]

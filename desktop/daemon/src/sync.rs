@@ -45,6 +45,10 @@ pub trait DeviceLink: Send + Sync {
     async fn pause_and_release(&self, timeout: Duration) -> bool;
     fn resume(&self);
     fn is_connected(&self) -> bool;
+    /// Serial port of the pad last handshaken with, when known
+    fn port(&self) -> Option<String> {
+        None
+    }
 }
 
 impl DeviceLink for DeviceManager {
@@ -117,6 +121,10 @@ impl DeviceLink for DeviceManager {
 
     async fn pause_and_release(&self, timeout: Duration) -> bool {
         self.pause_and_release(timeout).await
+    }
+
+    fn port(&self) -> Option<String> {
+        DeviceManager::port(self)
     }
 
     fn resume(&self) {

@@ -242,7 +242,7 @@ async fn flash_and_verify<D: DeviceLink>(
         return Err(FirmwareUpdateError::PortNotReleased);
     }
     state.lock().unwrap().device_connected = false;
-    let app_port = opad_device::find_target_port();
+    let app_port = device.port().or_else(opad_device::find_target_port);
 
     // Step 5. The app partition and nothing else.
     let images = [(APP_PARTITION_OFFSET, image.to_path_buf())];
