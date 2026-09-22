@@ -13,6 +13,8 @@ build/
 managed_components/
 **/managed_components/
 **/dependencies.lock
+# The firmware's resolved component versions are pinned, so builds are repeatable
+!firmware/dependencies.lock
 **/sdkconfig
 **/sdkconfig.old
 !**/sdkconfig.defaults

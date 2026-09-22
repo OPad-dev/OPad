@@ -12,7 +12,17 @@ fn main() {
             .canonicalize()
             .expect("firmware directory"),
     );
-    let lvgl = firmware.join("managed_components/lvgl__lvgl");
+    // ESP-IDF's managed component, or a checkout of the same version from
+    // `make lvgl` (builds without ESP-IDF, e.g. release CI)
+    println!("cargo:rerun-if-env-changed=OPAD_LVGL_DIR");
+    println!("cargo:rerun-if-env-changed=OPAD_REQUIRE_UI_PREVIEW");
+    println!(
+        "cargo:rerun-if-changed={}",
+        firmware.join("managed_components").display()
+    );
+    let lvgl = std::env::var_os("OPAD_LVGL_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| firmware.join("managed_components/lvgl__lvgl"));
     let ui_core = firmware.join("main/ui/core");
     let sdkconfig = if firmware.join("sdkconfig").exists() {
         firmware.join("sdkconfig")
@@ -20,6 +30,14 @@ fn main() {
         firmware.join("sdkconfig.defaults")
     };
     if !lvgl.exists() || !sdkconfig.exists() {
+        // Release builds must not ship a Designer that cannot draw
+        if std::env::var_os("OPAD_REQUIRE_UI_PREVIEW").is_some_and(|v| v == "1") {
+            panic!(
+                "OPAD_REQUIRE_UI_PREVIEW=1 but LVGL is not at {} (or no sdkconfig). \
+                 Run `make lvgl` and set OPAD_LVGL_DIR=build/lvgl, or `idf.py reconfigure` in firmware/.",
+                lvgl.display()
+            );
+        }
         println!(
             "cargo:warning=LVGL sources or sdkconfig not found in {}. Compiling opad-ui-preview in stub mode.",
             firmware.display()

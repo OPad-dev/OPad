@@ -45,7 +45,7 @@ TOSU_STANDALONE ?= 1
 TARGET_DIR ?= desktop/target/release
 BINS := opad-daemon opad-gui opadctl
 
-.PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage deb rpm packages notices tosu-source tosu-notices
+.PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage deb rpm packages notices tosu-source tosu-notices lvgl
 
 # L-4: Build AppDir / AppImage
 appimage: all
@@ -225,6 +225,19 @@ uninstall-user:
 	@echo "✓ User uninstall complete."
 
 # B-2: Verification target
+# LVGL for the Designer's live preview without ESP-IDF, at the version the
+# firmware pins in firmware/dependencies.lock. Build with
+# OPAD_LVGL_DIR=$(abspath $(LVGL_DIR)) to use it.
+LVGL_VERSION := $(shell sed -n '/^  lvgl\/lvgl:/,/^    version:/s/^    version: //p' firmware/dependencies.lock)
+LVGL_DIR ?= build/lvgl
+lvgl:
+	@test -n "$(LVGL_VERSION)" || { echo "No lvgl/lvgl version in firmware/dependencies.lock" >&2; exit 1; }
+	@if [ -d "$(LVGL_DIR)" ]; then \
+		echo "LVGL already at $(LVGL_DIR)"; \
+	else \
+		git clone --depth 1 --branch v$(LVGL_VERSION) https://github.com/lvgl/lvgl.git "$(LVGL_DIR)"; \
+	fi
+
 # Licences of every Rust crate in the shipped binaries (desktop/about.toml).
 # Needs cargo-about: cargo install cargo-about --locked --features cli
 NOTICES_OUT ?= dist/THIRD_PARTY_NOTICES.html
