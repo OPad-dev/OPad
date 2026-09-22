@@ -282,6 +282,55 @@ pub fn find_tosu_binary() -> Option<PathBuf> {
     paths::bundled_tosu_binary().ok().filter(|p| p.is_file())
 }
 
+/// Starts tosu for the GUI's "Start tosu" button, detached: it keeps running
+/// after the GUI exits, in its own process group so closing the GUI's terminal
+/// or session scope does not signal it. Output goes to the usual tosu log.
+/// The daemon's supervisor ([`spawn_tosu_supervisor`]) is what normally runs
+/// tosu; this is the manual path when no daemon is managing it.
+pub fn launch_tosu_process(override_path: Option<&Path>) -> Result<(), String> {
+    let bin = override_path
+        .map(Path::to_path_buf)
+        .or_else(find_tosu_binary)
+        .ok_or_else(|| {
+            "tosu executable not found (no bundled copy or system install)".to_string()
+        })?;
+    let log_path =
+        paths::tosu_log_path().map_err(|e| format!("Cannot resolve tosu log path: {e}"))?;
+    if let Some(dir) = log_path.parent() {
+        std::fs::create_dir_all(dir)
+            .map_err(|e| format!("Cannot create {}: {e}", dir.display()))?;
+    }
+    disable_dashboard_autostart(&bin);
+
+    let log = std::fs::File::create(&log_path)
+        .map_err(|e| format!("Cannot open {}: {e}", log_path.display()))?;
+    let log_err = log
+        .try_clone()
+        .map_err(|e| format!("Cannot open {}: {e}", log_path.display()))?;
+    let mut cmd = std::process::Command::new(&bin);
+    cmd.env("OPEN_DASHBOARD_ON_STARTUP", "false")
+        .stdin(Stdio::null())
+        .stdout(log)
+        .stderr(log_err);
+    if let Some(dir) = bin.parent() {
+        cmd.current_dir(dir);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    // The Child is dropped, not killed: std never kills on drop
+    cmd.spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Failed to launch tosu from {}: {e}", bin.display()))
+}
+
 /// Why tosu may be unable to read osu!'s memory on Linux, and what fixes it.
 ///
 /// Yama (`/proc/sys/kernel/yama/ptrace_scope` > 0) lets a process read only its
@@ -514,6 +563,28 @@ fn tosu_config_dir(bin: &Path) -> Option<PathBuf> {
     }
 }
 
+/// Keeps tosu from opening its web dashboard in a browser when it starts. Its
+/// tosu.env wins over the OPEN_DASHBOARD_ON_STARTUP environment variable, so
+/// the file is what has to say false.
+fn disable_dashboard_autostart(bin: &Path) {
+    let Some(dir) = tosu_config_dir(bin) else {
+        return;
+    };
+    let _ = std::fs::create_dir_all(&dir);
+    let env_file = dir.join("tosu.env");
+    if let Ok(content) = std::fs::read_to_string(&env_file) {
+        if content.contains("OPEN_DASHBOARD_ON_STARTUP=true") {
+            let updated = content.replace(
+                "OPEN_DASHBOARD_ON_STARTUP=true",
+                "OPEN_DASHBOARD_ON_STARTUP=false",
+            );
+            let _ = std::fs::write(&env_file, updated);
+        }
+    } else {
+        let _ = std::fs::write(&env_file, "OPEN_DASHBOARD_ON_STARTUP=false\n");
+    }
+}
+
 fn launch_tosu(
     bin: &Path,
     log_path: &Path,
@@ -522,24 +593,7 @@ fn launch_tosu(
     if let Some(dir) = log_path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    // Prevent tosu from ever auto-opening the web dashboard on launch. Its
-    // tosu.env wins over the environment variable below, so the file is what
-    // has to say false.
-    if let Some(dir) = tosu_config_dir(bin) {
-        let _ = std::fs::create_dir_all(&dir);
-        let env_file = dir.join("tosu.env");
-        if let Ok(content) = std::fs::read_to_string(&env_file) {
-            if content.contains("OPEN_DASHBOARD_ON_STARTUP=true") {
-                let updated = content.replace(
-                    "OPEN_DASHBOARD_ON_STARTUP=true",
-                    "OPEN_DASHBOARD_ON_STARTUP=false",
-                );
-                let _ = std::fs::write(&env_file, updated);
-            }
-        } else {
-            let _ = std::fs::write(&env_file, "OPEN_DASHBOARD_ON_STARTUP=false\n");
-        }
-    }
+    disable_dashboard_autostart(bin);
 
     let mut cmd = tokio::process::Command::new(bin);
     cmd.env("OPEN_DASHBOARD_ON_STARTUP", "false");
@@ -721,5 +775,36 @@ mod tests {
             endpoint_socket_addr(DEFAULT_TOSU_ENDPOINT),
             "127.0.0.1:24050"
         );
+    }
+
+    /// The GUI's "Start tosu" used to drop a kill_on_drop child, which killed
+    /// tosu the moment it was launched. A stand-in tosu that writes a file
+    /// after a short sleep must get to write it.
+    #[cfg(unix)]
+    #[test]
+    fn a_manually_launched_tosu_outlives_the_launch_call() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("opad-tosu-launch-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // Keep the real tosu log and tosu.env out of this
+        std::env::set_var("XDG_STATE_HOME", dir.join("state"));
+        std::env::set_var("XDG_CONFIG_HOME", dir.join("config"));
+        let marker = dir.join("still-running");
+        let bin = dir.join("tosu");
+        std::fs::write(
+            &bin,
+            format!("#!/bin/sh\nsleep 0.3\ntouch '{}'\n", marker.display()),
+        )
+        .unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        launch_tosu_process(Some(&bin)).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !marker.exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let survived = marker.exists();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(survived, "tosu was killed when the launcher returned");
     }
 }

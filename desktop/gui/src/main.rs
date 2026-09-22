@@ -2628,62 +2628,18 @@ async fn start_daemon_process() -> Result<(), String> {
 }
 
 async fn start_tosu_process(override_path: Option<std::path::PathBuf>) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || {
-        let bin = override_path
-            .or_else(opad_tosu::find_tosu_binary)
-            .ok_or_else(|| {
-                "tosu executable not found (no bundled copy or system install)".to_string()
-            })?;
-
-        // Prevent opening browser window on startup
-        if let Some(dir) = bin.parent() {
-            let env_file = dir.join("tosu.env");
-            if let Ok(content) = std::fs::read_to_string(&env_file) {
-                if content.contains("OPEN_DASHBOARD_ON_STARTUP=true") {
-                    let updated = content.replace(
-                        "OPEN_DASHBOARD_ON_STARTUP=true",
-                        "OPEN_DASHBOARD_ON_STARTUP=false",
-                    );
-                    let _ = std::fs::write(&env_file, updated);
-                }
-            } else {
-                let _ = std::fs::write(&env_file, "OPEN_DASHBOARD_ON_STARTUP=false\n");
-            }
-        }
-
-        let mut cmd = std::process::Command::new(&bin);
-        cmd.env("OPEN_DASHBOARD_ON_STARTUP", "false");
-        cmd.stdin(std::process::Stdio::null());
-        cmd.stdout(std::process::Stdio::null());
-        cmd.stderr(std::process::Stdio::null());
-        if let Some(dir) = bin.parent() {
-            cmd.current_dir(dir);
-        }
-
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            cmd.process_group(0);
-        }
-
-        cmd.spawn()
-            .map_err(|e| format!("Failed to launch tosu from {}: {}", bin.display(), e))?;
-        Ok(())
-    })
-    .await
-    .map_err(|e| format!("Failed to run tosu spawn task: {}", e))?
+    tokio::task::spawn_blocking(move || opad_tosu::launch_tosu_process(override_path.as_deref()))
+        .await
+        .map_err(|e| format!("Failed to run tosu spawn task: {}", e))?
 }
 
 pub fn tosu_source_status(override_path: Option<&std::path::Path>) -> String {
     if let Some(p) = override_path {
         return format!("Custom ({})", p.display());
     }
-    if let Some(p) = std::env::var_os("OSUPAD_TOSU_PATH") {
+    if let Some(p) =
+        std::env::var_os("OPAD_TOSU_PATH").or_else(|| std::env::var_os("OSUPAD_TOSU_PATH"))
+    {
         return format!("Custom ({})", std::path::Path::new(&p).display());
     }
     let home_install = dirs::home_dir().map(|h| {
