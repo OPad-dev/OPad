@@ -107,6 +107,11 @@ const RECONNECT_SETTLE_INTERVAL: Duration = Duration::from_millis(300);
 /// The pad queues each frame whole (usb_cdc_write), so bytes that stay an
 /// incomplete frame this long are a false start or a torn stream: drop them
 /// and re-handshake rather than wait for a length that will never arrive.
+/// Read timeout of the worker's port. The worker alternates between sending
+/// queued commands and a blocking read, so this bounds how long a command (the
+/// HUD's telemetry) waits behind a quiet line.
+const WORKER_READ_TIMEOUT: Duration = Duration::from_millis(10);
+
 const STALE_PARTIAL_FRAME: Duration = Duration::from_millis(500);
 
 /// Read timeout while probing a port that might be a pad (tier 2)
@@ -196,8 +201,7 @@ impl DeviceManager {
                 if last_open_error.is_none() {
                     info!("Opening OPad serial port at {}", port_path);
                 }
-                let port_builder =
-                    serialport::new(&port_path, 115200).timeout(Duration::from_millis(100));
+                let port_builder = serialport::new(&port_path, 115200).timeout(WORKER_READ_TIMEOUT);
 
                 let mut port = match port_builder.open() {
                     Ok(mut p) => {
@@ -322,8 +326,8 @@ impl DeviceManager {
                             break;
                         }
                     }
-
-                    std::thread::sleep(Duration::from_millis(5));
+                    // No sleep: the read timeout paces an idle loop, and a busy
+                    // line is drained without added delay
                 }
 
                 drop(port);
