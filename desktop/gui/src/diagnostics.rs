@@ -45,19 +45,70 @@ pub fn play_chatter_beep() {
     });
 }
 
+/// 40 ms of a 1760 Hz sine as a 16-bit mono WAV, the same tone as Windows' Beep
+#[cfg(target_os = "linux")]
+fn chatter_beep_wav() -> Vec<u8> {
+    const RATE: u32 = 44_100;
+    let samples: Vec<i16> = (0..RATE * 40 / 1000)
+        .map(|n| {
+            let t = n as f32 / RATE as f32;
+            (0.2 * i16::MAX as f32 * (2.0 * std::f32::consts::PI * 1760.0 * t).sin()) as i16
+        })
+        .collect();
+    let data_len = (samples.len() * 2) as u32;
+    let mut wav = Vec::with_capacity(44 + data_len as usize);
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16u32.to_le_bytes()); // fmt chunk size
+    wav.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    wav.extend_from_slice(&1u16.to_le_bytes()); // mono
+    wav.extend_from_slice(&RATE.to_le_bytes());
+    wav.extend_from_slice(&(RATE * 2).to_le_bytes()); // byte rate
+    wav.extend_from_slice(&2u16.to_le_bytes()); // block align
+    wav.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_len.to_le_bytes());
+    for s in samples {
+        wav.extend_from_slice(&s.to_le_bytes());
+    }
+    wav
+}
+
+/// Plays the beep through the desktop's own player (PipeWire, PulseAudio or
+/// ALSA's aplay, whichever exists) rather than linking an audio library: a
+/// linked libasound made opad-gui refuse to start on systems without it, the
+/// AppImage included, for the sake of a diagnostic beep.
 #[cfg(target_os = "linux")]
 pub fn play_chatter_beep() {
     std::thread::spawn(|| {
-        use rodio::Source as _;
-        if let Ok(handle) = rodio::DeviceSinkBuilder::open_default_sink() {
-            let source = rodio::source::SineWave::new(1760.0)
-                .take_duration(Duration::from_millis(40))
-                .amplify(0.20);
-            handle.mixer().add(source);
-            std::thread::sleep(Duration::from_millis(45));
-            return;
+        static WAV: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
+        let wav = WAV.get_or_init(|| {
+            let dir = std::env::var_os("XDG_RUNTIME_DIR")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(std::env::temp_dir);
+            let path = dir.join("opad-chatter-beep.wav");
+            std::fs::write(&path, chatter_beep_wav()).ok().map(|_| path)
+        });
+        if let Some(path) = wav {
+            for player in ["pw-play", "paplay", "aplay"] {
+                let mut cmd = std::process::Command::new(player);
+                if player == "aplay" {
+                    cmd.arg("-q");
+                }
+                let spawned = cmd
+                    .arg(path)
+                    .stdin(std::process::Stdio::null())
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .spawn();
+                if let Ok(mut child) = spawned {
+                    let _ = child.wait();
+                    return;
+                }
+            }
         }
-        // Fallback: terminal ASCII bell
+        // No player: the terminal bell, if there is a terminal
         print!("\x07");
         let _ = std::io::Write::flush(&mut std::io::stdout());
     });
@@ -1236,4 +1287,21 @@ pub fn generate_diagnostic_bundle(app: &App, diag: &DiagnosticsState) -> String 
     });
 
     serde_json::to_string_pretty(&bundle).unwrap_or_else(|e| format!("{{\"error\": \"{}\"}}", e))
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod beep_tests {
+    #[test]
+    fn the_chatter_beep_is_a_well_formed_40ms_wav() {
+        let wav = super::chatter_beep_wav();
+        let u32_at = |i: usize| u32::from_le_bytes(wav[i..i + 4].try_into().unwrap());
+        assert_eq!(&wav[0..4], b"RIFF");
+        assert_eq!(&wav[8..16], b"WAVEfmt ");
+        assert_eq!(u32_at(4) as usize, wav.len() - 8);
+        assert_eq!(u32_at(24), 44_100);
+        assert_eq!(&wav[36..40], b"data");
+        // 40 ms of 16-bit mono at 44.1 kHz
+        assert_eq!(u32_at(40), 1764 * 2);
+        assert_eq!(wav.len(), 44 + 1764 * 2);
+    }
 }

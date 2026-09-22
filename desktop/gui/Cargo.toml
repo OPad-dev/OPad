@@ -30,7 +30,6 @@ futures-util = { workspace = true, features = ["sink"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 ksni = "0.3"
 evdev = "0.13"
-rodio = { version = "0.22", default-features = false, features = ["playback"] }
 zbus = { version = "5.19", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
@@ -51,7 +50,7 @@ license-file = ["../../packaging/linux/deb/copyright", "0"]
 extended-description = "Low-latency ESP32-S3 keypad manager, telemetry HUD, and tray applet for osu!"
 section = "games"
 priority = "optional"
-depends = "$auto, libvulkan1, libwayland-client0, libx11-6, libxcursor1, libxkbcommon0, libxi6, libdbus-1-3, libasound2t64 | libasound2"
+depends = "$auto, libvulkan1, libwayland-client0, libx11-6, libxcursor1, libxkbcommon0, libxi6, libdbus-1-3"
 maintainer-scripts = "../../packaging/linux/deb"
 assets = [
     ["../target/release/opad-daemon", "usr/bin/opad-daemon", "755"],
@@ -128,5 +127,3 @@ libXcursor = "*"
 libxkbcommon = "*"
 libXi = "*"
 dbus-libs = "*"
-# The Diagnostics chatter beep (rodio) links libasound
-alsa-lib = "*"

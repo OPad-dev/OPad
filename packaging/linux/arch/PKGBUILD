@@ -24,7 +24,6 @@ depends=(
     'libxi'
     'libxrandr'
     'dbus'
-    'alsa-lib'
     'nodejs'
 )
 optdepends=(
