@@ -83,6 +83,9 @@ fi
     -o "${DIST_DIR}/THIRD_PARTY_NOTICES.html")
 echo "✓ THIRD_PARTY_NOTICES.html generated"
 
+# LGPL-3.0: the bundled tosu's corresponding source ships with every release
+make -C "${REPO_ROOT}" tosu-source   # -> dist/tosu-<version>-source.tar.gz
+
 # Create tarball archive for Linux distribution. The version comes from the
 # workspace rather than a literal: it reads 1.0.0-rc until W4 passes (§0), and a
 # tarball claiming 1.0.0 while the binaries inside report 1.0.0-rc is the kind of

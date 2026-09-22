@@ -44,7 +44,7 @@ TOSU_STANDALONE ?= 1
 TARGET_DIR ?= desktop/target/release
 BINS := opad-daemon opad-gui opadctl
 
-.PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage deb rpm packages notices
+.PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage deb rpm packages notices tosu-source tosu-notices
 
 # L-4: Build AppDir / AppImage
 appimage: all
@@ -93,7 +93,31 @@ endif
 	install -m 644 licenses/tosu/VERSION $(TOSU_BUILD_DIR)/VERSION
 	install -m 644 licenses/tosu/NOTICE $(TOSU_BUILD_DIR)/NOTICE
 	install -m 644 licenses/tosu/LICENSE $(TOSU_BUILD_DIR)/LICENSE
+	install -m 644 licenses/tosu/THIRD_PARTY_NOTICES.txt $(TOSU_BUILD_DIR)/THIRD_PARTY_NOTICES.txt
 	@echo "✓ tosu built successfully in $(TOSU_BUILD_DIR)"
+
+# LGPL-3.0 corresponding source for the bundled tosu: upstream's tree at the
+# exact tag we build, lockfile included, published with every release.
+TOSU_SOURCE_TARBALL ?= dist/tosu-$(TOSU_VERSION:v%=%)-source.tar.gz
+tosu-source:
+	@if [ ! -d "$(TOSU_SRC_DIR)" ]; then \
+		git clone --depth 1 --branch $(TOSU_VERSION) $(TOSU_REPO) $(TOSU_SRC_DIR); \
+	fi
+	@test "$$(git -C $(TOSU_SRC_DIR) describe --tags --exact-match)" = "$(TOSU_VERSION)" || \
+		{ echo "$(TOSU_SRC_DIR) is not at $(TOSU_VERSION)" >&2; exit 1; }
+	@mkdir -p "$(dir $(TOSU_SOURCE_TARBALL))"
+	git -C $(TOSU_SRC_DIR) archive --format=tar.gz --prefix=tosu-$(TOSU_VERSION:v%=%)/ \
+		-o "$(abspath $(TOSU_SOURCE_TARBALL))" $(TOSU_VERSION)
+	@echo "✓ $(TOSU_SOURCE_TARBALL)"
+
+# Regenerate licenses/tosu/THIRD_PARTY_NOTICES.txt after a TOSU_VERSION bump:
+# tosu's npm production dependencies plus the Node 24 runtime's LICENSE (which
+# covers the OpenSSL, ICU, libuv and V8 it embeds). Needs the network.
+tosu-notices:
+	cd $(TOSU_SRC_DIR) && $(PNPM) install --frozen-lockfile
+	curl -fsSL -o build/node24-LICENSE https://raw.githubusercontent.com/nodejs/node/v24.x/LICENSE
+	python3 scripts/release/tosu_notices.py --src $(TOSU_SRC_DIR) --node-license build/node24-LICENSE \
+		--version $(TOSU_VERSION:v%=%) --out licenses/tosu/THIRD_PARTY_NOTICES.txt
 
 # B-2: Build firmware with ESP-IDF, cleanly skipped if absent
 firmware:
@@ -133,6 +157,7 @@ install: all
 		install -m 644 licenses/tosu/VERSION "$(DESTDIR)$(LIBDIR)/opad/tosu/VERSION"; \
 		install -m 644 licenses/tosu/NOTICE "$(DESTDIR)$(LIBDIR)/opad/tosu/NOTICE"; \
 		install -m 644 licenses/tosu/LICENSE "$(DESTDIR)$(LIBDIR)/opad/tosu/LICENSE"; \
+		install -m 644 licenses/tosu/THIRD_PARTY_NOTICES.txt "$(DESTDIR)$(LIBDIR)/opad/tosu/THIRD_PARTY_NOTICES.txt"; \
 	fi
 
 # B-2: Install into ~/.local layout (replaces install.sh)
@@ -161,6 +186,7 @@ install-user: all
 		install -m 644 licenses/tosu/VERSION "$(LIBDIR_USER)/opad/tosu/VERSION"; \
 		install -m 644 licenses/tosu/NOTICE "$(LIBDIR_USER)/opad/tosu/NOTICE"; \
 		install -m 644 licenses/tosu/LICENSE "$(LIBDIR_USER)/opad/tosu/LICENSE"; \
+		install -m 644 licenses/tosu/THIRD_PARTY_NOTICES.txt "$(LIBDIR_USER)/opad/tosu/THIRD_PARTY_NOTICES.txt"; \
 	fi
 	@echo ""
 	@echo "=== User installation finished ==="

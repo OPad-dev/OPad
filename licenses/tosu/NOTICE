@@ -13,7 +13,11 @@ Obtained:  https://github.com/KotRikD/tosu/releases/tag/v4.26.2
 The full licence text is in LICENSE next to this file.
 
 Corresponding source for this exact version is published alongside the
-OPad release this binary came from, under the upstream tag above.
+OPad release this binary came from as tosu-4.26.2-source.tar.gz, upstream's
+tree at the tag above (`make tosu-source`).
+
+THIRD_PARTY_NOTICES.txt lists what the binary contains besides tosu itself:
+its npm production dependencies and the embedded Node.js 24 runtime.
 
 LGPL-3.0 gives you the right to replace this component with your own
 version. Point the $OSUPAD_TOSU_PATH environment variable at your own
