@@ -1,23 +1,46 @@
 # OPad USB CDC Framing & Protocol
 
 ## 1. Framing Specification (§23)
-USB CDC is a streaming byte-oriented transport. Each protobuf-encoded envelope is
-prefixed with a 2-byte start marker and a 2-byte little-endian payload length:
+USB CDC is a streaming byte-oriented transport. Each protobuf-encoded envelope
+is prefixed with a 4-byte header, in one of two framings:
 
 ```text
-+------+------+---------------------+--------------------------------+
-| 0xAA | 0x55 | Length (uint16-LE)  | Protobuf Envelope (N bytes)    |
-+------+------+---------------------+--------------------------------+
+marked (current):  | 0xAA | 0x55 | length (uint16-LE) | protobuf envelope |
+legacy:            |     length (uint32-LE)            | protobuf envelope |
 ```
+
+### Mixed versions
+
+The app and the pad firmware are updated independently, so both sides speak
+both framings:
+
+- **The pad** parses either framing and answers in the framing of the last
+  valid frame the host sent. It sends nothing, not even log batches, until the
+  host has sent a frame on the current connection, and it forgets the host's
+  framing when the port closes (DTR drops). An app from before the marker
+  therefore only ever sees legacy frames.
+- **The app** sends Hello alternately in the marked and legacy framing, every
+  400 ms, until a HelloAck arrives. From then on it sends and parses only the
+  framing that HelloAck came in. Firmware from before the marker reads a marked
+  Hello as an impossible length and discards it, then answers the legacy one.
+  After 10 unanswered Hellos the app closes and reopens the port, which resets
+  the pad's parser.
+
+The framings cannot be confused: a legacy header beginning `AA 55` would claim
+at least 0x55AA bytes, more than any frame may hold.
 
 ### Protocol Constraints:
 - Maximum frame size: **8192 bytes** (`PROTOCOL_MAX_FRAME_SIZE`), so N ≤ 8188.
 - **Resynchronisation.** Both parsers (`firmware/main/protocol/frame_parser.c`,
-  `opad-protocol`) slide forward one byte at a time until they see `AA 55`
-  followed by a length ≤ 8188. Stray bytes — ROM bootloader chatter, a
-  plain-text command, a dropped byte — cost at most the frame they land in.
+  `opad-protocol`) slide forward one byte at a time until they find a
+  plausible header: `AA 55` with a length ≤ 8188, or a legacy length of 2..8188
+  (its top two bytes zero). Stray bytes (ROM bootloader chatter, a plain-text
+  command, a dropped byte) cost at most the frame they land in. Junk that
+  happens to look like a legacy header can hold a parser until the stale-frame
+  timeout below; once the app knows the pad's framing it no longer considers
+  the other one at all.
 - The host skips a frame whose payload fails to decode by one byte and rescans,
-  in case the `AA 55` was a false start inside noise.
+  in case the header was a false start inside noise.
 - **Stale partial frames.** Frames are written whole on both sides, so a partial
   frame that sits for 500 ms is dropped: the pad simply discards it; the host
   discards it and re-sends `Hello`.

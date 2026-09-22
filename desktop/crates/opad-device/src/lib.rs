@@ -7,7 +7,9 @@ use opad_model::ui_source::SourceValue;
 use opad_model::{CounterState, DeviceConfig, DeviceInfo};
 pub use opad_protocol::proto;
 use opad_protocol::proto::{host_to_device, DeviceToHost, HostToDevice};
-use opad_protocol::{decode_device_message, encode_host_message};
+use opad_protocol::{
+    decode_device_message, decode_device_message_framed, encode_host_message_as, Framing,
+};
 use serialport::SerialPortType;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -121,6 +123,25 @@ const STALE_PARTIAL_FRAME: Duration = Duration::from_millis(500);
 const PROBE_READ_TIMEOUT: Duration = Duration::from_millis(150);
 /// How long a probed port gets to answer Hello with a HelloAck
 const PROBE_ANSWER_WINDOW: Duration = Duration::from_millis(450);
+
+/// Hello retry interval until the pad answers. Each retry switches framing:
+/// the marked one first, then the legacy one firmware before the AA 55 marker
+/// parses, so a pad of either age is found within one or two retries.
+const HELLO_RETRY: Duration = Duration::from_millis(400);
+
+/// Hellos in a row without an answer before the port is closed and reopened.
+/// Closing drops DTR, which resets the pad's frame parser whatever state a
+/// half-read frame left it in.
+const HELLOS_BEFORE_REOPEN: u32 = 10;
+
+/// Which framing the n-th unanswered Hello uses
+fn hello_framing(attempt: u32) -> Framing {
+    if attempt.is_multiple_of(2) {
+        Framing::Marked
+    } else {
+        Framing::Legacy
+    }
+}
 /// A port with an OPad VID but no identifying strings is probed again this
 /// often (the pad may have been booting). Other unknown ports are probed once
 /// per appearance: opening a stranger's port can reset it (Arduino-style boards).
@@ -247,6 +268,10 @@ impl DeviceManager {
                 let mut last_hello = Instant::now() - Duration::from_secs(10);
                 let mut has_hello_ack = false;
                 let mut partial_since: Option<Instant> = None;
+                // The pad's framing, from its HelloAck; frames go out in it and
+                // only it is parsed. Unknown until the first answer.
+                let mut framing: Option<Framing> = None;
+                let mut hellos_unanswered: u32 = 0;
 
                 // Inner communication loop
                 loop {
@@ -272,16 +297,23 @@ impl DeviceManager {
                     }
 
                     // Periodic Hello retry until HelloAck is received (§6.1)
-                    if !has_hello_ack && last_hello.elapsed() >= Duration::from_millis(800) {
+                    if !has_hello_ack && last_hello.elapsed() >= HELLO_RETRY {
+                        if framing.is_none() && hellos_unanswered >= HELLOS_BEFORE_REOPEN {
+                            debug!("No answer to Hello on {}; reopening it", port_path);
+                            break;
+                        }
                         last_hello = Instant::now();
-                        if let Ok(encoded) = encode_host_message(&hello_message()) {
+                        let hello_as = framing.unwrap_or(hello_framing(hellos_unanswered));
+                        hellos_unanswered += 1;
+                        if let Ok(encoded) = encode_host_message_as(&hello_message(), hello_as) {
                             let _ = port.write_all(&encoded);
                         }
                     }
 
                     // 1. Drain incoming command queue to transmit to device
                     while let Ok(cmd) = cmd_rx.try_recv() {
-                        if let Ok(encoded) = encode_host_message(&cmd) {
+                        let as_framing = framing.unwrap_or(Framing::Marked);
+                        if let Ok(encoded) = encode_host_message_as(&cmd, as_framing) {
                             if let Err(e) = port.write_all(&encoded) {
                                 warn!("Failed to write to device: {}", e);
                                 break;
@@ -296,8 +328,8 @@ impl DeviceManager {
 
                             // Parse all ready frames; a bad one is skipped, not fatal
                             loop {
-                                match decode_device_message(&mut read_buf) {
-                                    Ok(Some(msg)) => {
+                                match decode_device_message_framed(&mut read_buf, framing) {
+                                    Ok(Some((msg, msg_framing))) => {
                                         if let Some(proto::device_to_host::Payload::HelloAck(ack)) =
                                             &msg.payload
                                         {
@@ -309,6 +341,14 @@ impl DeviceManager {
                                                 continue;
                                             }
                                             has_hello_ack = true;
+                                            hellos_unanswered = 0;
+                                            if framing.is_none() {
+                                                debug!(
+                                                    "{} speaks {:?} framing",
+                                                    port_path, msg_framing
+                                                );
+                                                framing = Some(msg_framing);
+                                            }
                                             if !is_conn_clone.swap(true, Ordering::SeqCst) {
                                                 info!(
                                                     "Connected to OPad {} on {}",
@@ -346,11 +386,15 @@ impl DeviceManager {
 
                 drop(port);
                 is_open_clone.store(false, Ordering::SeqCst);
-                is_conn_clone.store(false, Ordering::SeqCst);
+                let was_connected = is_conn_clone.swap(false, Ordering::SeqCst);
 
                 // Drain any pending commands on disconnect so they are never replayed to a new connection
                 while cmd_rx.try_recv().is_ok() {}
-                let _ = event_tx_clone.send(DeviceEvent::Disconnected);
+                // A port that never answered Hello was never a connection
+                // (pause() reports its own disconnect)
+                if was_connected {
+                    let _ = event_tx_clone.send(DeviceEvent::Disconnected);
+                }
                 read_buf.clear();
                 std::thread::sleep(RECONNECT_SETTLE_INTERVAL);
             }
@@ -917,17 +961,28 @@ fn probe_port(path: &str) -> bool {
     };
     let _ = port.write_data_terminal_ready(true);
     let _ = port.write_request_to_send(true);
-    let Ok(hello) = encode_host_message(&hello_message()) else {
-        return false;
+    let send_hello = |port: &mut Box<dyn serialport::SerialPort>, framing| {
+        encode_host_message_as(&hello_message(), framing)
+            .map(|hello| port.write_all(&hello).is_ok())
+            .unwrap_or(false)
     };
-    if port.write_all(&hello).is_err() {
+    // Marked first; a pad from before the marker gets a legacy Hello halfway
+    if !send_hello(&mut port, Framing::Marked) {
         return false;
     }
 
-    let deadline = Instant::now() + PROBE_ANSWER_WINDOW;
+    let start = Instant::now();
+    let deadline = start + PROBE_ANSWER_WINDOW;
+    let mut sent_legacy = false;
     let mut buf = BytesMut::with_capacity(1024);
     let mut raw = [0u8; 512];
     while Instant::now() < deadline {
+        if !sent_legacy && start.elapsed() >= PROBE_ANSWER_WINDOW / 2 {
+            sent_legacy = true;
+            if !send_hello(&mut port, Framing::Legacy) {
+                return false;
+            }
+        }
         match port.read(&mut raw) {
             Ok(n) if n > 0 => buf.extend_from_slice(&raw[..n]),
             Ok(_) => {}
@@ -1225,6 +1280,21 @@ mod tests {
         h.last_probe
             .insert("COM5".into(), Instant::now() - PROBE_RETRY_KNOWN_VID);
         assert!(h.due("COM5", true));
+    }
+
+    #[test]
+    fn unanswered_hellos_alternate_marked_and_legacy_framing() {
+        use opad_protocol::Framing;
+        let seq: Vec<_> = (0..4).map(super::hello_framing).collect();
+        assert_eq!(
+            seq,
+            [
+                Framing::Marked,
+                Framing::Legacy,
+                Framing::Marked,
+                Framing::Legacy
+            ]
+        );
     }
 
     #[test]

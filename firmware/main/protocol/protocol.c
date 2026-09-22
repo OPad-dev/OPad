@@ -29,6 +29,12 @@ static frame_parser_t s_parser;
 // that swallow the real frames behind it
 #define RX_STALE_US 500000
 static int64_t s_last_rx_us = 0;
+// Framing of the host on the other end, taken from its last valid frame, so a
+// host that predates the AA 55 marker is answered in the framing it parses.
+// Until the host has sent anything we do not know, and send nothing: an
+// unsolicited frame in the wrong framing would desynchronise an old host.
+static volatile bool s_host_framing_known = false;
+static volatile frame_format_t s_host_framing = FRAME_FORMAT_MARKED;
 static uint32_t s_out_sequence = 1;
 
 static void get_device_mac_string(char *buf, size_t max_len)
@@ -55,7 +61,7 @@ esp_err_t protocol_encode_device_message(const osupad_DeviceToHost *msg, uint8_t
         return ESP_FAIL;
     }
 
-    frame_write_header(out_buf, (uint16_t)stream.bytes_written);
+    frame_write_header(out_buf, (uint16_t)stream.bytes_written, s_host_framing);
     *out_len = FRAME_HEADER_SIZE + stream.bytes_written;
     return ESP_OK;
 }
@@ -78,6 +84,10 @@ bool protocol_decode_host_message(const uint8_t *payload, size_t payload_len, os
 
 static esp_err_t send_envelope(const osupad_DeviceToHost *msg)
 {
+    if (!s_host_framing_known) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     uint8_t tx_buf[1024];
     size_t tx_len = 0;
     _Static_assert(sizeof(tx_buf) <= CONFIG_TINYUSB_CDC_TX_BUFSIZE,
@@ -300,7 +310,7 @@ esp_err_t protocol_send_log_batch(void)
 
 void protocol_drain_diag_logs(void)
 {
-    if (!usb_cdc_is_connected()) {
+    if (!usb_cdc_is_connected() || !s_host_framing_known) {
         return;
     }
     if (runtime_get_state() != OSUPAD_STATE_IDLE) {
@@ -558,6 +568,8 @@ static void on_frame_received(const uint8_t *payload, size_t payload_len, void *
     static osupad_HostToDevice msg;
     msg = (osupad_HostToDevice)osupad_HostToDevice_init_zero;
     if (protocol_decode_host_message(payload, payload_len, &msg)) {
+        s_host_framing = s_parser.last_format;
+        s_host_framing_known = true;
         handle_host_message(&msg);
     }
 }
@@ -582,9 +594,14 @@ void protocol_feed_cdc_bytes(const uint8_t *data, size_t len)
 void protocol_reset_rx(void)
 {
     frame_parser_reset(&s_parser);
+    // Called when the host closes the port: the next one may frame differently
+    s_host_framing_known = false;
 }
 
 bool protocol_rx_idle(void)
 {
+    if (!frame_parser_is_idle(&s_parser) && (esp_timer_get_time() - s_last_rx_us) > RX_STALE_US) {
+        frame_parser_reset(&s_parser);
+    }
     return frame_parser_is_idle(&s_parser);
 }

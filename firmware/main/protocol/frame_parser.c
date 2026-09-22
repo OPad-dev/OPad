@@ -8,6 +8,7 @@ void frame_parser_init(frame_parser_t *parser)
     parser->overflow_count = 0;
     parser->oversized_count = 0;
     parser->resync_bytes = 0;
+    parser->last_format = FRAME_FORMAT_MARKED;
 }
 
 void frame_parser_reset(frame_parser_t *parser)
@@ -21,8 +22,16 @@ bool frame_parser_is_idle(const frame_parser_t *parser)
     return parser ? (parser->rx_len == 0) : true;
 }
 
-void frame_write_header(uint8_t out[FRAME_HEADER_SIZE], uint16_t payload_len)
+void frame_write_header(uint8_t out[FRAME_HEADER_SIZE], uint16_t payload_len,
+                        frame_format_t format)
 {
+    if (format == FRAME_FORMAT_LEGACY) {
+        out[0] = (uint8_t)(payload_len & 0xFF);
+        out[1] = (uint8_t)(payload_len >> 8);
+        out[2] = 0;
+        out[3] = 0;
+        return;
+    }
     out[0] = FRAME_MAGIC_0;
     out[1] = FRAME_MAGIC_1;
     out[2] = (uint8_t)(payload_len & 0xFF);
@@ -58,39 +67,40 @@ void frame_parser_feed(frame_parser_t *parser, const uint8_t *data, size_t len,
     parser->rx_len += len;
 
     while (parser->rx_len > 0) {
-        if (parser->rx_buf[0] != FRAME_MAGIC_0) {
-            // Skip straight to the next candidate start byte
-            const uint8_t *next = memchr(parser->rx_buf + 1, FRAME_MAGIC_0, parser->rx_len - 1);
-            size_t skip = next ? (size_t)(next - parser->rx_buf) : parser->rx_len;
-            parser->resync_bytes += skip;
-            drop_front(parser, skip);
-            continue;
-        }
-        if (parser->rx_len < 2) {
-            break;
-        }
-        if (parser->rx_buf[1] != FRAME_MAGIC_1) {
-            parser->resync_bytes++;
-            drop_front(parser, 1);
-            continue;
-        }
+        // Both framings need the whole 4-byte header to be told apart
         if (parser->rx_len < FRAME_HEADER_SIZE) {
             break;
         }
+        const uint8_t *b = parser->rx_buf;
 
-        size_t expected_len = (size_t)parser->rx_buf[2] | ((size_t)parser->rx_buf[3] << 8);
-        if (expected_len > FRAME_MAX_PAYLOAD) {
-            // Not a real header: slide past its first byte and keep looking
-            parser->oversized_count++;
-            parser->resync_bytes++;
-            drop_front(parser, 1);
-            continue;
+        frame_format_t format;
+        size_t expected_len;
+        if (b[0] == FRAME_MAGIC_0 && b[1] == FRAME_MAGIC_1) {
+            format = FRAME_FORMAT_MARKED;
+            expected_len = (size_t)b[2] | ((size_t)b[3] << 8);
+            if (expected_len > FRAME_MAX_PAYLOAD) {
+                // Not a real header: slide past its first byte and keep looking
+                parser->oversized_count++;
+                parser->resync_bytes++;
+                drop_front(parser, 1);
+                continue;
+            }
+        } else {
+            format = FRAME_FORMAT_LEGACY;
+            expected_len = (size_t)b[0] | ((size_t)b[1] << 8);
+            if (b[2] != 0 || b[3] != 0 || expected_len < FRAME_LEGACY_MIN_PAYLOAD ||
+                expected_len > FRAME_MAX_PAYLOAD) {
+                parser->resync_bytes++;
+                drop_front(parser, 1);
+                continue;
+            }
         }
 
         if (parser->rx_len < FRAME_HEADER_SIZE + expected_len) {
             break;
         }
 
+        parser->last_format = format;
         if (handler) {
             handler(parser->rx_buf + FRAME_HEADER_SIZE, expected_len, user_data);
         }
