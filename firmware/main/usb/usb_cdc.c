@@ -150,8 +150,9 @@ static void reboot_to_rom_download(void)
  * command is the entire read, optionally followed by \r/\n, and arrives between
  * protocol frames. Searching the stream for the text instead would fire whenever
  * a protobuf payload (e.g. a song title) happened to contain it. At a frame
- * boundary those bytes would decode as an oversized length prefix, so a valid frame can
- * never be mistaken for a command.
+ * boundary the parser discards bytes that do not start with the frame magic
+ * (0xAA 0x55), so a valid frame can never be mistaken for a command and a
+ * command leaves the parser idle.
  */
 static bool is_text_command(const uint8_t *buf, size_t len, const char *cmd)
 {

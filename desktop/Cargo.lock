@@ -3846,7 +3846,6 @@ dependencies = [
 name = "opad-protocol"
 version = "1.0.0-rc"
 dependencies = [
- "byteorder",
  "bytes",
  "opad-model",
  "prost",

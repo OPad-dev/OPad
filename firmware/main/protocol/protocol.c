@@ -24,6 +24,11 @@
 static const char *TAG = "protocol";
 
 static frame_parser_t s_parser;
+// Host frames are written in one go, so a partial frame that sits this long is
+// a false start (stray AA 55 + length): drop it rather than wait for bytes
+// that swallow the real frames behind it
+#define RX_STALE_US 500000
+static int64_t s_last_rx_us = 0;
 static uint32_t s_out_sequence = 1;
 
 static void get_device_mac_string(char *buf, size_t max_len)
@@ -36,23 +41,22 @@ static void get_device_mac_string(char *buf, size_t max_len)
 
 esp_err_t protocol_encode_device_message(const osupad_DeviceToHost *msg, uint8_t *out_buf, size_t max_len, size_t *out_len)
 {
-    if (!msg || !out_buf || !out_len || max_len < 5) {
+    if (!msg || !out_buf || !out_len || max_len <= FRAME_HEADER_SIZE) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    pb_ostream_t stream = pb_ostream_from_buffer(out_buf + 4, max_len - 4);
+    size_t room = max_len - FRAME_HEADER_SIZE;
+    if (room > FRAME_MAX_PAYLOAD) {
+        room = FRAME_MAX_PAYLOAD;
+    }
+    pb_ostream_t stream = pb_ostream_from_buffer(out_buf + FRAME_HEADER_SIZE, room);
     if (!pb_encode(&stream, osupad_DeviceToHost_fields, msg)) {
         ESP_LOGE(TAG, "NanoPB encode failed: %s", PB_GET_ERROR(&stream));
         return ESP_FAIL;
     }
 
-    uint32_t payload_len = (uint32_t)stream.bytes_written;
-    out_buf[0] = (uint8_t)(payload_len & 0xFF);
-    out_buf[1] = (uint8_t)((payload_len >> 8) & 0xFF);
-    out_buf[2] = (uint8_t)((payload_len >> 16) & 0xFF);
-    out_buf[3] = (uint8_t)((payload_len >> 24) & 0xFF);
-
-    *out_len = 4 + payload_len;
+    frame_write_header(out_buf, (uint16_t)stream.bytes_written);
+    *out_len = FRAME_HEADER_SIZE + stream.bytes_written;
     return ESP_OK;
 }
 
@@ -560,11 +564,18 @@ static void on_frame_received(const uint8_t *payload, size_t payload_len, void *
 
 void protocol_feed_cdc_bytes(const uint8_t *data, size_t len)
 {
+    int64_t now = esp_timer_get_time();
+    if (!frame_parser_is_idle(&s_parser) && (now - s_last_rx_us) > RX_STALE_US) {
+        ESP_LOGW(TAG, "Dropping stale partial frame (%u bytes)", (unsigned)s_parser.rx_len);
+        frame_parser_reset(&s_parser);
+    }
+    s_last_rx_us = now;
+
     uint32_t prev_oversized = s_parser.oversized_count;
     frame_parser_feed(&s_parser, data, len, on_frame_received, NULL);
     if (s_parser.oversized_count > prev_oversized) {
-        diag_record(DIAG_EVENT_FRAME_TOO_LARGE, 3 /* ERROR */, 0, 0);
-        ESP_LOGE(TAG, "Frame length exceeds max allowed, dropped buffer");
+        diag_record(DIAG_EVENT_FRAME_TOO_LARGE, 2 /* WARN */, 0, 0);
+        ESP_LOGW(TAG, "Header with an impossible length skipped (resync)");
     }
 }
 

@@ -1,18 +1,29 @@
 # OPad USB CDC Framing & Protocol
 
 ## 1. Framing Specification (§23)
-USB CDC is a streaming byte-oriented transport. Framing is achieved by prepending each protobuf-encoded envelope with a 4-byte little-endian length prefix:
+USB CDC is a streaming byte-oriented transport. Each protobuf-encoded envelope is
+prefixed with a 2-byte start marker and a 2-byte little-endian payload length:
 
 ```text
-+------------------------------------+--------------------------------+
-| Length Prefix (4 bytes, uint32-LE) | Protobuf Envelope (N bytes)    |
-+------------------------------------+--------------------------------+
++------+------+---------------------+--------------------------------+
+| 0xAA | 0x55 | Length (uint16-LE)  | Protobuf Envelope (N bytes)    |
++------+------+---------------------+--------------------------------+
 ```
 
 ### Protocol Constraints:
-- Maximum frame size: **8192 bytes** (`PROTOCOL_MAX_FRAME_SIZE`).
-- Messages exceeding 8192 bytes are safely dropped by the stream parser without crashing or dynamic allocation.
-- Disconnections or serial port resets discard any partial buffer and re-synchronize on the next valid length-delimited boundary.
+- Maximum frame size: **8192 bytes** (`PROTOCOL_MAX_FRAME_SIZE`), so N ≤ 8188.
+- **Resynchronisation.** Both parsers (`firmware/main/protocol/frame_parser.c`,
+  `opad-protocol`) slide forward one byte at a time until they see `AA 55`
+  followed by a length ≤ 8188. Stray bytes — ROM bootloader chatter, a
+  plain-text command, a dropped byte — cost at most the frame they land in.
+- The host skips a frame whose payload fails to decode by one byte and rescans,
+  in case the `AA 55` was a false start inside noise.
+- **Stale partial frames.** Frames are written whole on both sides, so a partial
+  frame that sits for 500 ms is dropped: the pad simply discards it; the host
+  discards it and re-sends `Hello`.
+- The pad queues a device frame only when the whole of it fits the CDC TX FIFO;
+  otherwise it drops the frame and records `DIAG_EVENT_CDC_WRITE_DROPPED`.
+- Disconnections or serial port resets discard any partial buffer.
 
 ---
 

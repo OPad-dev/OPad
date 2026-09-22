@@ -99,6 +99,11 @@ const PORT_OPEN_RETRY_INTERVAL: Duration = Duration::from_millis(1500);
 /// inside the same acceptance window.
 const RECONNECT_SETTLE_INTERVAL: Duration = Duration::from_millis(300);
 
+/// The pad queues each frame whole (usb_cdc_write), so bytes that stay an
+/// incomplete frame this long are a false start or a torn stream: drop them
+/// and re-handshake rather than wait for a length that will never arrive.
+const STALE_PARTIAL_FRAME: Duration = Duration::from_millis(500);
+
 pub struct DeviceManager {
     cmd_tx: mpsc::Sender<HostToDevice>,
     event_tx: broadcast::Sender<DeviceEvent>,
@@ -206,12 +211,24 @@ impl DeviceManager {
                 let mut raw_buf = [0u8; 1024];
                 let mut last_hello = Instant::now() - Duration::from_secs(10);
                 let mut has_hello_ack = false;
+                let mut partial_since: Option<Instant> = None;
 
                 // Inner communication loop
                 loop {
                     if is_paused_clone.load(Ordering::SeqCst) {
                         info!("Pause requested; releasing serial port on {}", port_path);
                         break;
+                    }
+
+                    if partial_since.is_some_and(|t| t.elapsed() >= STALE_PARTIAL_FRAME) {
+                        warn!(
+                            "Dropping {} bytes of an incomplete frame; re-sending Hello",
+                            read_buf.len()
+                        );
+                        read_buf.clear();
+                        partial_since = None;
+                        has_hello_ack = false;
+                        last_hello = Instant::now() - Duration::from_secs(10);
                     }
 
                     // Periodic Hello retry until HelloAck is received (§6.1)
@@ -244,14 +261,25 @@ impl DeviceManager {
                         Ok(n) if n > 0 => {
                             read_buf.extend_from_slice(&raw_buf[..n]);
 
-                            // Parse all ready frames
-                            while let Ok(Some(msg)) = decode_device_message(&mut read_buf) {
-                                if let Some(proto::device_to_host::Payload::HelloAck(_)) =
-                                    &msg.payload
-                                {
-                                    has_hello_ack = true;
+                            // Parse all ready frames; a bad one is skipped, not fatal
+                            loop {
+                                match decode_device_message(&mut read_buf) {
+                                    Ok(Some(msg)) => {
+                                        if let Some(proto::device_to_host::Payload::HelloAck(_)) =
+                                            &msg.payload
+                                        {
+                                            has_hello_ack = true;
+                                        }
+                                        handle_device_message(&msg, &event_tx_clone);
+                                    }
+                                    Ok(None) => break,
+                                    Err(e) => debug!("Skipping undecodable frame: {}", e),
                                 }
-                                handle_device_message(&msg, &event_tx_clone);
+                            }
+                            if read_buf.is_empty() {
+                                partial_since = None;
+                            } else if partial_since.is_none() {
+                                partial_since = Some(Instant::now());
                             }
                         }
                         Ok(_) => {}
