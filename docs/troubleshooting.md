@@ -81,14 +81,13 @@ sudo sysctl --system
 
 ---
 
-### tosu needs glibc 2.38 or newer
-OPad itself (the keypad, daemon, counters and GUI) runs on any distribution
-with glibc 2.31 or newer: Ubuntu 20.04, Debian 11 and later. The bundled
-**tosu 4.26.2** does not: at startup it loads its prebuilt pp calculator
-(`@tosuapp/lazer-calculator`), which needs **glibc 2.38**. On Ubuntu 22.04,
-Debian 12 and older, tosu exits immediately and the pad shows no live gameplay
-data; everything else works. Ubuntu 24.04, Debian 13, Fedora 39 and newer are
-fine. This comes from upstream tosu's prebuilt binary, not from OPad.
+### tosu exits at once with a `GLIBC_2.xx not found` error
+Upstream tosu's prebuilt pp calculator (`@tosuapp/lazer-calculator`) needs
+glibc 2.38, so an upstream tosu build fails to start on Ubuntu 22.04, Debian 12
+and RHEL 9. OPad's release packages rebuild it (and tosu's own native addon)
+for glibc 2.28, so the bundled tosu runs on every supported distribution. You
+will only see this with a tosu built another way: your own (`OPAD_TOSU_PATH`),
+or `make tosu TOSU_PORTABLE=0`.
 
 ## 3. USB Permissions & Serial Port Access (Linux)
 

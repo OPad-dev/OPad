@@ -175,10 +175,9 @@ up everything: the udev rule, the daemon's systemd user service, tray autostart,
 the bundled `espflash`, and the ptrace capability tosu needs to read osu!'s
 memory (see [docs/troubleshooting.md](docs/troubleshooting.md) §2).
 
-OPad runs on glibc 2.31 or newer (Ubuntu 20.04, Debian 11, and later). The
-bundled tosu, which feeds the pad's live gameplay screen, needs glibc 2.38
-(Ubuntu 24.04, Debian 13, Fedora 39, and later); see
-[troubleshooting §2](docs/troubleshooting.md).
+Supported: every Ubuntu LTS and Debian release in support (Ubuntu 22.04, 24.04,
+26.04; Debian 12, 13), RHEL / AlmaLinux / Rocky 9 and 10, current Fedora and
+Arch. The release packages, bundled tosu included, need glibc 2.28 or newer.
 
 #### Debian / Ubuntu / Pop!_OS (`.deb`):
 ```bash

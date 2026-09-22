@@ -12,7 +12,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DIST="${REPO_ROOT}/dist"
 IMAGES=("$@")
-[ ${#IMAGES[@]} -gt 0 ] || IMAGES=(ubuntu:20.04 ubuntu:22.04 ubuntu:24.04 debian:12 debian:13 fedora:43)
+[ ${#IMAGES[@]} -gt 0 ] || IMAGES=(ubuntu:22.04 ubuntu:24.04 debian:12 debian:13 rockylinux:9 fedora:43)
 
 INNER='
 set -u
@@ -41,17 +41,18 @@ for f in /etc/xdg/autostart/opad-gui.desktop /usr/lib/udev/rules.d/70-opad.rules
          /usr/lib/systemd/user/opad-daemon.service /usr/lib/opad/tosu/THIRD_PARTY_NOTICES.txt; do
   [ -f "$f" ] || fail "missing $f"
 done
+export HOME=/root
+# Before the daemon, whose supervisor would start its own tosu on the port.
+# tosu must still be running (serving its dashboard) when the timeout ends it
+timeout 8 /usr/lib/opad/tosu/tosu >/tmp/tosu.log 2>&1; rc=$?
+[ $rc -eq 124 ] && sed "s/\x1b\[[0-9;]*m//g" /tmp/tosu.log | grep -q "Dashboard server started" \
+  || fail "tosu did not start (exit $rc): $(sed "s/\x1b\[[0-9;]*m//g" /tmp/tosu.log | tail -3)"
 export HOME=/root XDG_RUNTIME_DIR=/tmp/xdg; mkdir -p -m 700 $XDG_RUNTIME_DIR
 opad-daemon >/tmp/daemon.log 2>&1 &
 sleep 3
 opadctl status 2>&1 | grep -q "Daemon Mode" || fail "daemon did not answer opadctl status"
-kill %1 2>/dev/null; sleep 1
 grep -qi panic /tmp/daemon.log && fail "daemon panicked"
-timeout 8 /usr/lib/opad/tosu/tosu >/tmp/tosu.log 2>&1; rc=$?
-if [ $rc -ne 124 ]; then
-  echo "tosu exited $rc: $(grep -m1 -E "Error:" /tmp/tosu.log)"
-  echo "NOTE: tosu cannot run here (its prebuilt pp calculator needs glibc 2.38)"
-fi
+kill %1 2>/dev/null; sleep 1
 $REMOVE >/dev/null 2>&1 || fail "remove"
 [ $FAILED -eq 0 ] && echo "PASS" || exit 1
 '
