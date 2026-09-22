@@ -97,9 +97,13 @@ Source: "{#TosuDir}\tosu.env"; DestDir: "{app}\tosu"; Flags: ignoreversion skipi
 Source: "{#LicensesDir}\tosu\VERSION"; DestDir: "{app}\tosu"; Flags: ignoreversion
 Source: "{#LicensesDir}\tosu\NOTICE"; DestDir: "{app}\tosu"; Flags: ignoreversion
 Source: "{#LicensesDir}\tosu\LICENSE"; DestDir: "{app}\tosu"; Flags: ignoreversion
+Source: "{#LicensesDir}\tosu\THIRD_PARTY_NOTICES.txt"; DestDir: "{app}\tosu"; Flags: ignoreversion
 
 ; Top-level application license
 Source: "..\..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
+; Licences of the Rust crates in the binaries: make notices, or cargo about
+; generate about.hbs in desktop/ (the release workflow does this)
+Source: "..\..\dist\THIRD_PARTY_NOTICES.html"; DestDir: "{app}"; Flags: ignoreversion
 ; Montserrat fonts embedded in opad-gui.exe (SIL OFL 1.1)
 Source: "..\..\desktop\gui\assets\fonts\Montserrat-OFL.txt"; DestDir: "{app}"; Flags: ignoreversion
 

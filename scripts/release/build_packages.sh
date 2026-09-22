@@ -30,9 +30,16 @@ if [ ! -x "${REPO_ROOT}/build/espflash/espflash" ]; then
     make -C "${REPO_ROOT}" espflash
 fi
 
-echo "Building release binaries..."
-make -C "${REPO_ROOT}" all
-echo "✓ Host release binaries ready"
+# OPAD_PREBUILT=1: desktop/target/release already holds the binaries (the
+# release workflow builds them against glibc 2.31 with zigbuild); rebuilding
+# here would replace them with ones linked against this host's glibc
+if [ "${OPAD_PREBUILT:-0}" = "1" ]; then
+    echo "✓ Using prebuilt release binaries (OPAD_PREBUILT=1)"
+else
+    echo "Building release binaries..."
+    make -C "${REPO_ROOT}" all
+    echo "✓ Host release binaries ready"
+fi
 
 # Ensure templated systemd user units have @BINDIR@ replaced with /usr/bin (§L-1)
 sed 's|@BINDIR@|/usr/bin|g' "${REPO_ROOT}/packaging/linux/systemd-user/opad-daemon.service.in" > "${REPO_ROOT}/packaging/linux/deb/opad-daemon.service"

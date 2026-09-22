@@ -1,0 +1,258 @@
+name: Release
+
+# Builds everything a release publishes from a v* tag: firmware, Linux
+# packages (.deb, .rpm, AppImage, tarball) linked against glibc <= 2.31, the
+# Windows installer, third-party notices and tosu's corresponding source.
+# The manifest is signed offline (scripts/release/build_release.sh); this
+# workflow never sees the signing key.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  ESPFLASH_VERSION: "4.6.0"
+  ESPFLASH_WINDOWS_SHA256: "b2cb4656b067716fe2b3794cf0604b461b2476d06dee7f481704cb6c8495b11c"
+  APPIMAGETOOL_VERSION: "1.9.1"
+  APPIMAGETOOL_SHA256: "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
+  TOSU_VERSION: "v4.26.2"
+  # The Designer must draw with the firmware's real LVGL, never the stub
+  OPAD_REQUIRE_UI_PREVIEW: "1"
+
+jobs:
+  build-firmware:
+    name: Firmware (ESP-IDF)
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v5.5.2
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build firmware
+        shell: bash
+        run: |
+          . /opt/esp/idf/export.sh
+          cd firmware
+          idf.py set-target esp32s3 build
+
+      - name: Stage firmware artifacts
+        shell: bash
+        run: |
+          mkdir -p staging
+          cp firmware/build/opad-firmware.bin staging/
+          cp firmware/build/bootloader/bootloader.bin staging/
+          cp firmware/build/partition_table/partition-table.bin staging/
+          cp firmware/build/ota_data_initial.bin staging/
+          cp firmware/THIRD_PARTY_NOTICES.md staging/FIRMWARE_THIRD_PARTY_NOTICES.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: staging/*
+
+  build-linux:
+    name: Linux packages (glibc <= 2.31)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libasound2-dev libudev-dev libx11-dev \
+            libxkbcommon-dev libwayland-dev libfontconfig1-dev libdbus-1-dev \
+            binutils rpm file unzip
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo tools
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb,cargo-generate-rpm,cargo-zigbuild,cargo-about
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.13.0
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install appimagetool (pinned)
+        run: |
+          curl -fsSL -o /usr/local/bin/appimagetool \
+            "https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-x86_64.AppImage"
+          echo "${APPIMAGETOOL_SHA256}  /usr/local/bin/appimagetool" | sha256sum -c -
+          chmod +x /usr/local/bin/appimagetool
+          # No FUSE on the runner
+          echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
+
+      - name: Build bundled tosu
+        run: make tosu
+
+      - name: Fetch LVGL for the Designer preview
+        run: |
+          make lvgl
+          echo "OPAD_LVGL_DIR=$PWD/build/lvgl" >> "$GITHUB_ENV"
+
+      - name: Build release binaries against glibc 2.31
+        run: |
+          cargo zigbuild --release --locked --bins \
+            --manifest-path desktop/Cargo.toml --target x86_64-unknown-linux-gnu.2.31
+          mkdir -p desktop/target/release
+          cp desktop/target/x86_64-unknown-linux-gnu/release/{opad-daemon,opad-gui,opadctl} desktop/target/release/
+
+      # Upstream's Linux espflash needs glibc 2.34; build the same version here
+      - name: Build espflash against glibc 2.31
+        run: |
+          git clone --depth 1 --branch "v${ESPFLASH_VERSION}" https://github.com/esp-rs/espflash.git build/espflash-src
+          (cd build/espflash-src && cargo zigbuild --release --locked -p espflash \
+            --target x86_64-unknown-linux-gnu.2.31)
+          mkdir -p build/espflash
+          install -m 755 build/espflash-src/target/x86_64-unknown-linux-gnu/release/espflash build/espflash/espflash
+
+      - name: Assert glibc <= 2.31
+        run: |
+          for bin in desktop/target/release/opad-daemon desktop/target/release/opad-gui \
+                     desktop/target/release/opadctl build/espflash/espflash; do
+            max_ver=$(objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -n 1)
+            echo "$bin: $max_ver"
+            if dpkg --compare-versions "${max_ver#GLIBC_}" gt "2.31"; then
+              echo "ERROR: $bin needs $max_ver, above glibc 2.31" >&2
+              exit 1
+            fi
+          done
+
+      - name: Build packages
+        env:
+          OPAD_PREBUILT: "1"
+        run: ./scripts/release/build_packages.sh
+
+      - name: Third-party notices and tosu source
+        run: |
+          make notices
+          make tosu-source
+
+      - name: Stage Linux artifacts
+        run: |
+          ls dist/*.deb dist/*.rpm dist/*.AppImage  # fail if any is missing
+          VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' desktop/Cargo.toml | head -n 1)"
+          mkdir -p staging/tar/bin
+          cp desktop/target/release/{opad-daemon,opad-gui,opadctl} staging/tar/bin/
+          cp README.md LICENSE dist/THIRD_PARTY_NOTICES.html staging/tar/
+          tar -czf "dist/opad-linux-x86_64-${VERSION}.tar.gz" -C staging/tar .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.AppImage
+            dist/*.tar.gz
+            dist/THIRD_PARTY_NOTICES.html
+
+  build-windows:
+    name: Windows installer
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Build bundled tosu (tosu.exe)
+        shell: bash
+        run: |
+          git clone --depth 1 --branch "${TOSU_VERSION}" https://github.com/KotRikD/tosu.git build/tosu-src
+          (cd build/tosu-src && pnpm install --frozen-lockfile && pnpm --filter tosu run compile:win)
+          mkdir -p build/tosu
+          cp build/tosu-src/packages/tosu/dist/tosu.exe build/tosu/
+
+      - name: Fetch LVGL for the Designer preview
+        shell: bash
+        run: |
+          ver=$(sed -n '/^  lvgl\/lvgl:/,/^    version:/s/^    version: //p' firmware/dependencies.lock)
+          git clone --depth 1 --branch "v${ver}" https://github.com/lvgl/lvgl.git build/lvgl
+          echo "OPAD_LVGL_DIR=$(cygpath -w "$PWD/build/lvgl")" >> "$GITHUB_ENV"
+
+      - name: Build release binaries
+        run: cargo build --release --locked --bins --manifest-path desktop/Cargo.toml
+
+      - name: Install cargo-about
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+
+      - name: Third-party notices
+        shell: bash
+        run: |
+          mkdir -p dist
+          (cd desktop && cargo about generate --offline --fail about.hbs -o ../dist/THIRD_PARTY_NOTICES.html)
+
+      - name: Fetch espflash (pinned, checksummed)
+        shell: bash
+        run: |
+          curl -fsSL -o espflash.zip \
+            "https://github.com/esp-rs/espflash/releases/download/v${ESPFLASH_VERSION}/espflash-x86_64-pc-windows-msvc.zip"
+          echo "${ESPFLASH_WINDOWS_SHA256}  espflash.zip" | sha256sum -c -
+          unzip -o espflash.zip espflash.exe -d desktop/target/release
+
+      - name: Build installer
+        shell: bash
+        run: |
+          iscc packaging/windows/installer.iss
+          cp build/installer/opad-setup.exe dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.exe
+
+  publish:
+    name: Publish GitHub release
+    needs: [build-firmware, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: staging
+
+      - name: Collect artifacts and checksums
+        run: |
+          mkdir -p dist
+          find staging -type f -exec cp {} dist/ \;
+          cd dist
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
