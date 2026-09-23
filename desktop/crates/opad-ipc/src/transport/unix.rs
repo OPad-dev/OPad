@@ -11,7 +11,13 @@ pub type IpcServerStream = tokio::net::UnixStream;
 
 /// Resolves the standard socket path, one directory per uid
 pub fn get_socket_path() -> PathBuf {
-    if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+    socket_path_from(std::env::var("XDG_RUNTIME_DIR").ok())
+}
+
+/// An empty `XDG_RUNTIME_DIR` counts as unset: joined as-is it would give a
+/// CWD-relative path that differs between daemon and GUI.
+fn socket_path_from(xdg_runtime_dir: Option<String>) -> PathBuf {
+    if let Some(runtime_dir) = xdg_runtime_dir.filter(|v| !v.is_empty()) {
         PathBuf::from(runtime_dir).join("opad").join("daemon.sock")
     } else {
         let uid = rustix::process::getuid().as_raw();
@@ -98,4 +104,21 @@ pub fn create_listener<P: AsRef<Path>>(path: P) -> Result<IpcListener, IpcError>
     let inner = tokio::net::UnixListener::bind(p)?;
     let _ = std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o600));
     Ok(IpcListener { inner })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::socket_path_from;
+    use std::path::PathBuf;
+
+    #[test]
+    fn an_empty_xdg_runtime_dir_is_treated_as_unset() {
+        assert_eq!(
+            socket_path_from(Some("/run/user/1000".into())),
+            PathBuf::from("/run/user/1000/opad/daemon.sock")
+        );
+        let unset = socket_path_from(None);
+        assert!(unset.is_absolute());
+        assert_eq!(socket_path_from(Some(String::new())), unset);
+    }
 }

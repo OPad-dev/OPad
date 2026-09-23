@@ -11,7 +11,7 @@ Findings are ranked most severe first.
 
 ---
 
-## 1. `Instant::now() - Duration::from_secs(10)` panics early after boot on Windows — `open`
+## 1. `Instant::now() - Duration::from_secs(10)` panics early after boot on Windows — `fixed` (untested on Windows)
 
 **File:** `desktop/crates/opad-device/src/lib.rs:268` (also lines 291 and 296)
 **Category:** correctness
@@ -44,7 +44,7 @@ The "reopen the port after `HELLOS_BEFORE_REOPEN` unanswered Hellos" fallback is
 
 **Suggested fix:** Apply the reopen threshold regardless of whether framing is known.
 
-## 4. `locate_pad` ignores `device_id` whenever the platform reports any serial — `open`
+## 4. `locate_pad` ignores `device_id` whenever the platform reports any serial — `fixed`
 
 **File:** `desktop/crates/opad-device/src/lib.rs:1086`
 **Category:** correctness
@@ -77,7 +77,7 @@ When a boot trigger fires but the bootloader port is not matched within the 3 s 
 
 **Suggested fix:** Re-check for the pad's bootloader port before/after the wait and prefer `NoBootloader` (or a fresh `pick`) over the openability error.
 
-## 7. Empty `XDG_RUNTIME_DIR` yields a CWD-relative socket path — `open`
+## 7. Empty `XDG_RUNTIME_DIR` yields a CWD-relative socket path — `fixed`
 
 **File:** `desktop/crates/opad-ipc/src/transport/unix.rs:14`
 **Category:** correctness

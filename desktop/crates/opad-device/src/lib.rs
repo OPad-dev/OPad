@@ -314,7 +314,9 @@ impl DeviceManager {
                 debug!("Opened {}; waiting for HelloAck", port_path);
 
                 let mut raw_buf = [0u8; 1024];
-                let mut last_hello = Instant::now() - Duration::from_secs(10);
+                // None = send a Hello now. Never a backdated Instant: on Windows
+                // `Instant::now() - d` panics during the first `d` after boot.
+                let mut last_hello: Option<Instant> = None;
                 let mut has_hello_ack = false;
                 let mut partial_since: Option<Instant> = None;
                 // The pad's framing, from its HelloAck; frames go out in it and
@@ -339,16 +341,16 @@ impl DeviceManager {
                         read_buf.clear();
                         partial_since = None;
                         has_hello_ack = false;
-                        last_hello = Instant::now() - Duration::from_secs(10);
+                        last_hello = None;
                     }
 
                     if rehello_clone.swap(false, Ordering::SeqCst) {
                         has_hello_ack = false;
-                        last_hello = Instant::now() - Duration::from_secs(10);
+                        last_hello = None;
                     }
 
                     // Periodic Hello retry until HelloAck is received (§6.1)
-                    if !has_hello_ack && last_hello.elapsed() >= HELLO_RETRY {
+                    if !has_hello_ack && last_hello.is_none_or(|t| t.elapsed() >= HELLO_RETRY) {
                         let connected = is_conn_clone.load(Ordering::SeqCst);
                         match hello_due(hellos_unanswered, connected, held) {
                             HelloDue::Send => {}
@@ -372,7 +374,7 @@ impl DeviceManager {
                                 break;
                             }
                         }
-                        last_hello = Instant::now();
+                        last_hello = Some(Instant::now());
                         let hello_as = framing.unwrap_or(hello_framing(hellos_unanswered));
                         hellos_unanswered += 1;
                         if let Ok(encoded) = encode_host_message_as(&hello_message(), hello_as) {
@@ -1167,15 +1169,21 @@ pub fn locate_pad(app_port: &str, device_id: Option<&str>) -> PadLocation {
                 _ => None,
             })
     });
-    let mac = serial
-        .as_deref()
-        .or(device_id)
-        .and_then(|s| s.strip_prefix(DEVICE_ID_PREFIX))
-        .and_then(normalize_mac);
     PadLocation {
-        mac,
+        mac: pad_mac(serial.as_deref(), device_id),
         usb_path: usb_path_of(app_port),
     }
+}
+
+/// The pad's MAC from its `OSUPAD-` USB serial, else from the HelloAck
+/// `device_id`. A serial that is not an `OSUPAD-` string (Windows can report a
+/// composite-device instance id) does not hide the `device_id`.
+fn pad_mac(serial: Option<&str>, device_id: Option<&str>) -> Option<String> {
+    let mac_of = |id: Option<&str>| {
+        id.and_then(|s| s.strip_prefix(DEVICE_ID_PREFIX))
+            .and_then(normalize_mac)
+    };
+    mac_of(serial).or_else(|| mac_of(device_id))
 }
 
 /// Every connected ESP ROM bootloader (303a:1001) port.
@@ -1243,7 +1251,7 @@ pub fn select_bootloader_port(
 mod tests {
     use super::{
         accept_frame, classify_port, fit_nanopb_string, handle_device_message, hello_due,
-        is_opad_device_id, normalize_mac, proto, select_bootloader_port, BootloaderMatch,
+        is_opad_device_id, normalize_mac, pad_mac, proto, select_bootloader_port, BootloaderMatch,
         BootloaderPort, DeviceEvent, HelloDue, PadLocation, PortClass, ProbeHistory,
         HELLOS_BEFORE_REOPEN, PORT_SCAN_INTERVAL, PROBE_RETRY_KNOWN_VID, RECONNECT_SETTLE_INTERVAL,
     };
@@ -1396,9 +1404,11 @@ mod tests {
         assert!(h.due("COM9", false));
         h.last_probe.insert("COM9".into(), Instant::now());
         assert!(!h.due("COM9", false));
-        h.last_probe
-            .insert("COM5".into(), Instant::now() - PROBE_RETRY_KNOWN_VID);
-        assert!(h.due("COM5", true));
+        // checked_sub: a backdated Instant can underflow soon after boot
+        if let Some(then) = Instant::now().checked_sub(PROBE_RETRY_KNOWN_VID) {
+            h.last_probe.insert("COM5".into(), then);
+            assert!(h.due("COM5", true));
+        }
     }
 
     #[test]
@@ -1487,6 +1497,27 @@ mod tests {
             Some("3CDC75701678")
         );
         assert_eq!(normalize_mac("123456"), None);
+    }
+
+    #[test]
+    fn the_mac_falls_back_to_device_id_when_the_serial_is_not_an_opad_one() {
+        let id = Some("OSUPAD-3CDC75701678");
+        // Windows composite-device instance id as the serial
+        assert_eq!(
+            pad_mac(Some("7&2ABC&0&0000"), id).as_deref(),
+            Some("3CDC75701678")
+        );
+        assert_eq!(
+            pad_mac(Some("OSUPAD-nothex"), id).as_deref(),
+            Some("3CDC75701678")
+        );
+        assert_eq!(pad_mac(None, id).as_deref(), Some("3CDC75701678"));
+        // The USB serial still wins when it identifies the pad
+        assert_eq!(
+            pad_mac(Some("OSUPAD-AABBCCDDEEFF"), id).as_deref(),
+            Some("AABBCCDDEEFF")
+        );
+        assert_eq!(pad_mac(Some("7&2ABC&0&0000"), None), None);
     }
 
     #[test]

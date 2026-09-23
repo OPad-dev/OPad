@@ -190,9 +190,9 @@ Files: `firmware/main/ui/ui_port.c` (~87), `firmware/main/ui/ui_store.c` (~126)
 
 ### S5 — `opad-device` platform bugs ▸ DD#1, DD#4, DD#7
 Files: `desktop/crates/opad-device/src/lib.rs` (~268, ~291, ~296, ~1086), `desktop/crates/opad-ipc/src/transport/unix.rs` (~14)
-- [ ] 🪟 Replace every `Instant::now() - Duration::from_secs(10)` with `Option<Instant>` (`None` = "send Hello now") or `checked_sub`. Grep for other `Instant - Duration` in the crate.
-- [ ] `locate_pad`: try `serial.and_then(|s| s.strip_prefix("OSUPAD-"))`, then fall back to `device_id` when that yields None (not only when serial is absent).
-- [ ] `get_socket_path`: `std::env::var("XDG_RUNTIME_DIR").ok().filter(|v| !v.is_empty())`.
+- [x] 🪟 Replace every `Instant::now() - Duration::from_secs(10)` with `Option<Instant>` (`None` = "send Hello now") or `checked_sub`. Grep for other `Instant - Duration` in the crate.
+- [x] `locate_pad`: try `serial.and_then(|s| s.strip_prefix("OSUPAD-"))`, then fall back to `device_id` when that yields None (not only when serial is absent).
+- [x] `get_socket_path`: `std::env::var("XDG_RUNTIME_DIR").ok().filter(|v| !v.is_empty())`.
 - Verify: `make check`; unit tests for `locate_pad` with a non-OSUPAD serial and for the empty-var case.
 
 ### S6 — Updater correctness ▸ DU#1, DU#2, DU#3, DU#4, DU#5, DU#6, DU#8
@@ -361,5 +361,6 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  O8  06d0533  Claude Opus  DA#3 DA#5 fixed; protocol check first in DeviceConnected (not connected, config not adopted, HelloAck counters rolled back, incompatible cleared on disconnect, no HostStatus to an unconnected pad); failed sync leaves pad-reported counters in memory, SQLite keeps reconciled row; manual v2-pad test pending
 2026-09-24  O9  dbc2990  Claude Opus  DD#2 DD#3 fixed; frames dispatched while connected with known framing (re-Hello no longer drops acks), unanswered Hellos reopen once while held connected then Disconnected, regardless of framing; commands held until framing known; pure hello_due/accept_frame unit-tested; manual rehandshake-during-sync + replug test pending
 2026-09-24  O10  9f29000  Claude Opus  DD#5 DD#6 fixed (untested on Windows); accept returns the connected client even if the replacement instance fails (lazy recreate), cancel returns the instance to `next`, connect error replenishes; enter_bootloader re-picks after a fired trigger and reports NoBootloader, not PortBusy, when the app port vanished; opad-ipc/opad-device check + clippy clean for x86_64-pc-windows-gnu (full workspace blocked by missing mingw gcc for ring); VM run pending
-2026-09-24  O11  (this commit)  Claude Opus  DM#1 DM#4 fixed; paused/stopped watch channels, pause() awaits kill+reap (10 s cap, logged), mid-launch pause killed/skipped, pause stop skips backoff and resume resets it + wakes the loop at once; fake-child (sleep) test on Linux; manual app update with tosu running pending (Linux + Windows VM)
+2026-09-24  O11  8e9f92e  Claude Opus  DM#1 DM#4 fixed; paused/stopped watch channels, pause() awaits kill+reap (10 s cap, logged), mid-launch pause killed/skipped, pause stop skips backoff and resume resets it + wakes the loop at once; fake-child (sleep) test on Linux; manual app update with tosu running pending (Linux + Windows VM)
+2026-09-24  S5  (this commit)  Claude Opus (Sonnet list)  DD#1 DD#4 DD#7 fixed; worker's last_hello is Option<Instant> (None = Hello now), test backdating uses checked_sub; pad_mac tries the OSUPAD- serial then device_id; empty XDG_RUNTIME_DIR treated as unset; DD#1 untested on Windows (opad-device/opad-ipc cargo check for windows-gnu clean)
 ```
