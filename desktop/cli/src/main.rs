@@ -5,6 +5,8 @@ use opad_ipc::{send_request, IpcRequest, IpcResponse, IpcStream};
 use opad_model::JsonBackup;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Parser)]
@@ -488,11 +490,19 @@ async fn main() -> Result<()> {
             }
 
             let app_port = prepare_flash(stream.as_mut(), port).await?;
-            // Always hand the port back to the daemon, even if flashing failed
+            let interrupt = resume_on_interrupt(stream.is_some());
             let result =
                 flash::flash(&images, app_port.as_deref(), None, &|m| println!("{m}")).await;
-            let finish_resp = finish_flash(stream.as_mut()).await;
+            // Always hand the port back to the daemon. After a failure the pad
+            // is not coming back as the app, so resume without the 15 s
+            // verification wait and show the real error straight away.
+            if result.is_err() {
+                resume_device(stream.as_mut()).await;
+                release(&interrupt);
+            }
             result?;
+            let finish_resp = finish_flash(stream.as_mut()).await;
+            release(&interrupt);
 
             match finish_resp {
                 Some(IpcResponse::FlashFinished {
@@ -537,10 +547,14 @@ async fn main() -> Result<()> {
 
         Commands::Bootloader { port } => {
             let app_port = prepare_flash(stream.as_mut(), port).await?;
+            let interrupt = resume_on_interrupt(stream.is_some());
             let result = flash::enter_bootloader(app_port.as_deref(), None).await;
             // The daemon only opens the app port (303a:4001), so resuming now cannot
-            // interfere with the bootloader; it reconnects once the app is flashed
-            let _ = finish_flash(stream.as_mut()).await;
+            // interfere with the bootloader; it reconnects once the app is flashed.
+            // No FinishFlash: the pad is meant to stay in the bootloader, so a
+            // wait for it to come back as the app could only time out.
+            resume_device(stream.as_mut()).await;
+            release(&interrupt);
             let boot_port = result?;
             println!("✓ Device is in ROM download mode on {}", boot_port);
         }
@@ -727,6 +741,74 @@ async fn finish_flash(stream: Option<&mut IpcStream>) -> Option<IpcResponse> {
     let stream = stream?;
     println!("Resuming daemon device communication and verifying new firmware...");
     send_request(stream, &IpcRequest::FinishFlash).await.ok()
+}
+
+/// Hand the port back without verifying: the pad is not expected back as the
+/// app (left in the bootloader, or the flash failed). An older daemon does not
+/// know ResumeDevice and closes the connection; FinishFlash on a new one
+/// resumes it too, and its reply (the verification) is not waited for.
+async fn resume_device(stream: Option<&mut IpcStream>) {
+    let Some(stream) = stream else {
+        return;
+    };
+    match send_request(stream, &IpcRequest::ResumeDevice).await {
+        Ok(IpcResponse::DeviceResumed) => {}
+        Ok(other) => println!("⚠ Unexpected response from daemon to ResumeDevice: {other:?}"),
+        Err(_) => resume_with_finish_flash().await,
+    }
+}
+
+async fn resume_with_finish_flash() {
+    match opad_ipc::connect_and_handshake().await {
+        Ok((mut stream, _)) => {
+            // The daemon resumes as soon as it reads FinishFlash; the rest of
+            // the reply is the reconnect wait this caller does not want
+            let _ = tokio::time::timeout(
+                Duration::from_secs(2),
+                send_request(&mut stream, &IpcRequest::FinishFlash),
+            )
+            .await;
+        }
+        Err(e) => println!(
+            "⚠ Could not hand the pad back to opad-daemon ({e}); restart the daemon if the pad stays disconnected"
+        ),
+    }
+}
+
+/// While the daemon has the pad paused for us: on Ctrl-C, hand it back
+/// before exiting, instead of leaving it paused. (A newer daemon also resumes
+/// by itself when this process's connection drops; this covers older ones and
+/// says what is happening.) Clear the returned flag once the pad is handed
+/// back. The watcher stays installed, because a SIGINT handler outlives its
+/// task: Ctrl-C keeps exiting the process afterwards, just without a resume.
+fn resume_on_interrupt(daemon_paused: bool) -> Option<Arc<AtomicBool>> {
+    if !daemon_paused {
+        return None;
+    }
+    let paused = Arc::new(AtomicBool::new(true));
+    let watching = paused.clone();
+    tokio::spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            if watching.load(Ordering::SeqCst) {
+                eprintln!("Interrupted; handing the pad back to opad-daemon...");
+                match opad_ipc::connect_and_handshake().await {
+                    Ok((mut stream, _)) => resume_device(Some(&mut stream)).await,
+                    Err(e) => eprintln!(
+                        "⚠ Could not reach opad-daemon ({e}); restart it if the pad stays disconnected"
+                    ),
+                }
+            }
+            std::process::exit(130);
+        }
+    });
+    Some(paused)
+}
+
+/// The pad is back with the daemon: Ctrl-C no longer needs to resume it
+fn release(interrupt: &Option<Arc<AtomicBool>>) {
+    if let Some(paused) = interrupt {
+        paused.store(false, Ordering::SeqCst);
+    }
 }
 
 /// Which images to write, and where. `full` is the recovery flash that

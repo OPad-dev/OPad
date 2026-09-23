@@ -501,3 +501,21 @@ fn log_filters_are_optional_on_the_wire() {
         other => panic!("{other:?}"),
     }
 }
+
+/// DC#2: ResumeDevice is a new unit variant; the existing flash requests keep
+/// their wire form, so older clients are unaffected
+#[test]
+fn flash_requests_keep_their_wire_form() {
+    assert_eq!(
+        serde_json::to_string(&IpcRequest::FinishFlash).unwrap(),
+        r#""FinishFlash""#
+    );
+    assert_eq!(
+        serde_json::to_string(&IpcRequest::ResumeDevice).unwrap(),
+        r#""ResumeDevice""#
+    );
+    assert!(matches!(
+        serde_json::from_str::<IpcResponse>(r#""DeviceResumed""#).unwrap(),
+        IpcResponse::DeviceResumed
+    ));
+}

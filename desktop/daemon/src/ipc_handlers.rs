@@ -1119,6 +1119,12 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
         }
 
+        IpcRequest::ResumeDevice => {
+            info!("Resuming device discovery (no post-flash verification requested)");
+            device.resume();
+            IpcResponse::DeviceResumed
+        }
+
         IpcRequest::DetectPin {
             key_id,
             timeout_ms,
@@ -1210,4 +1216,33 @@ pub async fn wait_for_layout_ack(
         .unwrap_or_else(|_| {
             IpcResponse::Error("The pad did not confirm the layout within 3s".to_string())
         })
+}
+
+/// What a request does to a flash pause the connection holds
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FlashStep {
+    Prepare,
+    Release,
+    Other,
+}
+
+impl FlashStep {
+    pub fn of(req: &IpcRequest) -> Self {
+        match req {
+            IpcRequest::PrepareFlash => FlashStep::Prepare,
+            IpcRequest::FinishFlash | IpcRequest::ResumeDevice => FlashStep::Release,
+            _ => FlashStep::Other,
+        }
+    }
+}
+
+/// Whether a connection holds the pad paused for a flash after this request.
+/// The daemon resumes the pad itself when such a connection drops (a killed
+/// or crashed `opadctl flash`), so the pad cannot stay paused until restart.
+pub fn holds_flash_pause(held: bool, step: FlashStep, resp: &IpcResponse) -> bool {
+    match step {
+        FlashStep::Prepare => held || matches!(resp, IpcResponse::ReadyForFlash { .. }),
+        FlashStep::Release => false,
+        FlashStep::Other => held,
+    }
 }

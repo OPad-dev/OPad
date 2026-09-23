@@ -3282,3 +3282,82 @@ fn idle_state(
         last_backup: None,
     }
 }
+
+/// DC#2: ResumeDevice hands the port back at once, with no reconnect wait
+#[tokio::test]
+async fn resume_device_resumes_without_waiting_for_the_pad() {
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    let device = MockDeviceLink::new(true);
+    let log_hub = LogHub::new();
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    let daemon_state = Arc::new(Mutex::new(idle_state(true, None, CounterState::default())));
+
+    let prepared = handle_ipc_request(
+        IpcRequest::PrepareFlash,
+        &daemon_state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+        None,
+    )
+    .await;
+    assert!(matches!(prepared, IpcResponse::ReadyForFlash { .. }));
+    assert!(!device.is_connected(), "paused for the flash");
+
+    let started = Instant::now();
+    let resumed = tokio::time::timeout(
+        Duration::from_secs(2),
+        handle_ipc_request(
+            IpcRequest::ResumeDevice,
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+            None,
+        ),
+    )
+    .await
+    .expect("ResumeDevice must not wait for a reconnect");
+    assert!(matches!(resumed, IpcResponse::DeviceResumed), "{resumed:?}");
+    assert!(device.is_connected(), "resumed");
+    assert!(started.elapsed() < Duration::from_secs(1));
+}
+
+/// DC#3: which connection holds a flash pause, so the daemon can resume the
+/// pad when that connection drops
+#[test]
+fn a_flash_pause_is_held_from_ready_for_flash_until_released() {
+    use opad_daemon::ipc_handlers::{holds_flash_pause, FlashStep};
+    let ready = IpcResponse::ReadyForFlash { port: None };
+    let rejected = IpcResponse::OperationRejected {
+        reason: "playing".into(),
+    };
+
+    assert_eq!(FlashStep::of(&IpcRequest::PrepareFlash), FlashStep::Prepare);
+    assert_eq!(FlashStep::of(&IpcRequest::FinishFlash), FlashStep::Release);
+    assert_eq!(FlashStep::of(&IpcRequest::ResumeDevice), FlashStep::Release);
+    assert_eq!(FlashStep::of(&IpcRequest::GetStatus), FlashStep::Other);
+
+    // Only a granted PrepareFlash takes the pause
+    assert!(holds_flash_pause(false, FlashStep::Prepare, &ready));
+    assert!(!holds_flash_pause(false, FlashStep::Prepare, &rejected));
+    // Other requests on the same connection keep it
+    assert!(holds_flash_pause(
+        true,
+        FlashStep::Other,
+        &IpcResponse::Error("x".into())
+    ));
+    // FinishFlash or ResumeDevice gives it back, whatever they answer
+    assert!(!holds_flash_pause(
+        true,
+        FlashStep::Release,
+        &IpcResponse::Error("did not reconnect".into())
+    ));
+    assert!(!holds_flash_pause(
+        true,
+        FlashStep::Release,
+        &IpcResponse::DeviceResumed
+    ));
+}

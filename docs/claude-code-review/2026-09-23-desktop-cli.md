@@ -22,7 +22,7 @@ In `monitor --follow`, `since_seq` is advanced to the daemon's global `latest_se
 
 **Suggested fix:** Advance to `entries.last().map(|e| e.seq)` instead of `latest_seq`.
 
-## 2. `opadctl bootloader` sends `FinishFlash` and waits 15 s for a reconnect that cannot happen — `open`
+## 2. `opadctl bootloader` sends `FinishFlash` and waits 15 s for a reconnect that cannot happen — `fixed`
 
 **File:** `desktop/cli/src/main.rs:554`
 **Category:** correctness
@@ -33,7 +33,7 @@ In `monitor --follow`, `since_seq` is advanced to the daemon's global `latest_se
 
 **Suggested fix:** The daemon needs a plain "resume, do not verify" request, or the CLI should only call `FinishFlash` when the pad is expected back as the app.
 
-## 3. CLI death between `PrepareFlash` and `FinishFlash` leaves the daemon paused forever — `open`
+## 3. CLI death between `PrepareFlash` and `FinishFlash` leaves the daemon paused forever — `fixed`
 
 **File:** `desktop/cli/src/main.rs:509`
 **Category:** correctness

@@ -116,6 +116,12 @@ pub enum IpcRequest {
     },
     PrepareFlash,
     FinishFlash,
+    /// Hands the serial port back after PrepareFlash without waiting for the
+    /// pad to return as the app: after `opadctl bootloader` (the pad stays in
+    /// ROM download mode) or a failed flash. Added after IPC v1 shipped, with
+    /// no version bump: an older daemon cannot parse it and closes the
+    /// connection, so clients fall back to FinishFlash on a new one.
+    ResumeDevice,
     ResetLatencyStats,
     /// Custom layouts saved in the daemon (None = the device's built-in default)
     GetLayouts,
@@ -307,6 +313,8 @@ pub enum IpcResponse {
         protocol_version: u32,
         compatible: bool,
     },
+    /// Answer to ResumeDevice: the daemon is looking for the pad again
+    DeviceResumed,
     FirmwareUpdateOffer(FirmwareOffer),
     /// The pad came back, and this is what it came back as (§U-3b)
     FirmwareUpdateFinished {

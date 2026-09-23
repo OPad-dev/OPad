@@ -261,7 +261,10 @@ async fn main() -> Result<()> {
                         let update_service = update_service.clone();
 
                         tokio::spawn(async move {
+                            // Set while this client has the pad paused for a flash
+                            let mut flash_pause = false;
                             while let Ok(req) = read_request(&mut stream).await {
+                                let step = ipc_handlers::FlashStep::of(&req);
                                 let resp = handle_ipc_request(
                                     req,
                                     &daemon_state,
@@ -272,9 +275,17 @@ async fn main() -> Result<()> {
                                     Some(&update_service),
                                 )
                                 .await;
+                                flash_pause =
+                                    ipc_handlers::holds_flash_pause(flash_pause, step, &resp);
                                 if send_response(&mut stream, &resp).await.is_err() {
                                     break;
                                 }
+                            }
+                            if flash_pause {
+                                warn!(
+                                    "The client that paused the pad for a flash disconnected without resuming it; resuming device discovery"
+                                );
+                                device_manager.resume();
                             }
                         });
                     }
