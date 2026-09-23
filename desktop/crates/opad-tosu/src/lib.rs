@@ -261,10 +261,10 @@ fn friendly_state(name: &str) -> String {
 /// always wins, and §T-2 forbids us from updating or overwriting one we did
 /// not install.
 pub fn find_tosu_binary() -> Option<PathBuf> {
-    if let Some(p) =
-        std::env::var_os("OPAD_TOSU_PATH").or_else(|| std::env::var_os("OSUPAD_TOSU_PATH"))
-    {
-        return Some(PathBuf::from(p)).filter(|p| p.is_file());
+    let overridden =
+        std::env::var_os("OPAD_TOSU_PATH").or_else(|| std::env::var_os("OSUPAD_TOSU_PATH"));
+    if let Some(p) = overridden.and_then(|p| usable_override(PathBuf::from(p))) {
+        return Some(p);
     }
     let home_install = dirs::home_dir().map(|h| h.join(".local/opt/tosu").join(paths::TOSU_BINARY));
     if let Some(p) = home_install.filter(|p| p.is_file()) {
@@ -279,6 +279,20 @@ pub fn find_tosu_binary() -> Option<PathBuf> {
         return Some(p);
     }
     paths::bundled_tosu_binary().ok().filter(|p| p.is_file())
+}
+
+/// The `$OPAD_TOSU_PATH` target if it is a file. A stale override (tosu moved
+/// or uninstalled) is named in a warning and then ignored, so it neither hides
+/// the other candidates nor fails as if it were not set at all.
+fn usable_override(p: PathBuf) -> Option<PathBuf> {
+    if p.is_file() {
+        return Some(p);
+    }
+    warn!(
+        "$OPAD_TOSU_PATH points at {}, which is not a file; looking for tosu elsewhere",
+        p.display()
+    );
+    None
 }
 
 /// Starts tosu for the GUI's "Start tosu" button, detached: it keeps running
@@ -466,23 +480,52 @@ impl TosuSupervisor {
 /// How long `pause()` waits for tosu to die before giving up on it
 const PAUSE_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Keeps a tosu process running for as long as the daemon runs.
-///
-/// Does nothing while something already listens on tosu's port (e.g. a tosu the
-/// user started by hand). Otherwise launches tosu and restarts it with backoff
+/// Removes terminal escape sequences from a tosu log line: CSI (`ESC [`
+/// parameters, intermediates, then a final byte in `0x40..=0x7E`), OSC
+/// (`ESC ]` up to `BEL` or `ESC \`, e.g. a window title or hyperlink), and
+/// the short `ESC` + intermediates + final forms such as `ESC ( B`.
 pub fn strip_ansi(s: &str) -> String {
+    enum State {
+        Text,
+        Esc,
+        EscIntermediate,
+        Csi,
+        Osc,
+        OscEsc,
+    }
     let mut out = String::with_capacity(s.len());
-    let mut in_escape = false;
+    let mut state = State::Text;
     for c in s.chars() {
-        if c == '\x1b' {
-            in_escape = true;
-        } else if in_escape {
-            if c.is_ascii_alphabetic() {
-                in_escape = false;
+        state = match state {
+            State::Text if c == '\x1b' => State::Esc,
+            State::Text => {
+                out.push(c);
+                State::Text
             }
-        } else {
-            out.push(c);
-        }
+            State::Esc => match c {
+                '[' => State::Csi,
+                ']' => State::Osc,
+                '\x20'..='\x2f' => State::EscIntermediate,
+                _ => State::Text,
+            },
+            State::EscIntermediate => match c {
+                '\x20'..='\x2f' => State::EscIntermediate,
+                _ => State::Text,
+            },
+            State::Csi => match c {
+                '\x40'..='\x7e' => State::Text,
+                _ => State::Csi,
+            },
+            State::Osc => match c {
+                '\x07' => State::Text,
+                '\x1b' => State::OscEsc,
+                _ => State::Osc,
+            },
+            State::OscEsc => match c {
+                '\\' => State::Text,
+                _ => State::Osc,
+            },
+        };
     }
     out
 }
@@ -546,7 +589,7 @@ async fn supervise(
         let Some(bin) = find_bin() else {
             if !warned_missing {
                 warn!(
-                    "tosu binary not found: no $OPAD_TOSU_PATH, none on $PATH, and no bundled copy"
+                    "tosu binary not found: none at $OPAD_TOSU_PATH (if set), in ~/.local/opt/tosu, on $PATH, or bundled"
                 );
                 warned_missing = true;
             }
@@ -736,6 +779,41 @@ fn endpoint_socket_addr(endpoint: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_missing_tosu_override_falls_through() {
+        let dir = tempfile::tempdir().unwrap();
+        let present = dir.path().join("tosu");
+        std::fs::write(&present, b"").unwrap();
+        assert_eq!(usable_override(present.clone()), Some(present));
+        assert_eq!(usable_override(dir.path().join("uninstalled")), None);
+        assert_eq!(usable_override(dir.path().to_path_buf()), None);
+    }
+
+    #[test]
+    fn escape_sequences_are_stripped_whole() {
+        // chalk colours and bold
+        assert_eq!(strip_ansi("\x1b[31mred\x1b[39m plain"), "red plain");
+        assert_eq!(strip_ansi("\x1b[1;38;5;208m[tosu]\x1b[0m ok"), "[tosu] ok");
+        // ora: hide cursor, clear line, column 1, show cursor
+        assert_eq!(
+            strip_ansi("\x1b[?25l\x1b[2K\x1b[1G⠋ Loading\x1b[?25h"),
+            "⠋ Loading"
+        );
+        // OSC window title ended by BEL: nothing of it leaks
+        assert_eq!(
+            strip_ansi("\x1b]0;tosu v4\x07Server started"),
+            "Server started"
+        );
+        // OSC 8 hyperlink ended by ST (ESC \)
+        assert_eq!(
+            strip_ansi("see \x1b]8;;https://tosu.app\x1b\\docs\x1b]8;;\x1b\\ now"),
+            "see docs now"
+        );
+        // Charset selection: ESC + intermediate + final
+        assert_eq!(strip_ansi("\x1b(Bplain"), "plain");
+        assert_eq!(strip_ansi("no escapes"), "no escapes");
+    }
 
     // Trimmed from a real tosu v4.26.2 /websocket/v2 frame with osu!lazer playing
     const PLAYING_FRAME: &str = r#"{

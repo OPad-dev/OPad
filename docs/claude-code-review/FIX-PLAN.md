@@ -215,9 +215,9 @@ Files: `desktop/daemon/src/updater.rs` (~343, ~390), `desktop/daemon/src/ipc_han
 
 ### S8 — Model/tosu correctness ▸ DM#2, DM#5, DM#7
 Files: `desktop/crates/opad-model/src/lib.rs` (~428–451), `desktop/crates/opad-tosu/src/lib.rs` (~268, ~460)
-- [ ] `JsonBackup::validate`: build the `DeviceConfig` and delegate to `DeviceConfig::validate()`; remove the duplicated range checks. Test: `"0x00"` key rejected.
-- [ ] `find_tosu_binary`: if `$OPAD_TOSU_PATH` is set but missing, log a warning naming the bad path and fall through to PATH/bundled candidates.
-- [ ] `strip_ansi`: proper CSI (`ESC [` … final byte `0x40..=0x7E`) and OSC (`ESC ]` … `BEL` or `ESC \`) handling. Tests with chalk/ora-style sequences.
+- [x] `JsonBackup::validate`: build the `DeviceConfig` and delegate to `DeviceConfig::validate()`; remove the duplicated range checks. Test: `"0x00"` key rejected.
+- [x] `find_tosu_binary`: if `$OPAD_TOSU_PATH` is set but missing, log a warning naming the bad path and fall through to PATH/bundled candidates.
+- [x] `strip_ansi`: proper CSI (`ESC [` … final byte `0x40..=0x7E`) and OSC (`ESC ]` … `BEL` or `ESC \`) handling. Tests with chalk/ora-style sequences.
 - Verify: `make check`.
 
 ### S9 — GUI main/designer bugs ▸ DG#1, DG#2, DG#4, DG#5, DG#7
@@ -364,5 +364,6 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  O11  8e9f92e  Claude Opus  DM#1 DM#4 fixed; paused/stopped watch channels, pause() awaits kill+reap (10 s cap, logged), mid-launch pause killed/skipped, pause stop skips backoff and resume resets it + wakes the loop at once; fake-child (sleep) test on Linux; manual app update with tosu running pending (Linux + Windows VM)
 2026-09-24  S5  a7e3815  Claude Opus (Sonnet list)  DD#1 DD#4 DD#7 fixed; worker's last_hello is Option<Instant> (None = Hello now), test backdating uses checked_sub; pad_mac tries the OSUPAD- serial then device_id; empty XDG_RUNTIME_DIR treated as unset; DD#1 untested on Windows (opad-device/opad-ipc cargo check for windows-gnu clean)
 2026-09-24  S6  e3f95c3  Claude Opus (Sonnet list)  DU#1 DU#2 DU#3 DU#4 DU#5 DU#6 DU#8 fixed; fetch_manifest(have_cached) sends If-None-Match only while the worker holds a manifest; tosu binary swapped before VERSION/NOTICE (atomic); .AppImage -> linux-x86_64/Binary; artifact hashed in memory (temp dir gone); tosu plan uses is_newer (no downgrade, v-prefix cosmetic); semver pre-release compare (numeric runs numeric, +build ignored); write_atomic shared by tosu + daemon backup, stage_bytes shares its helpers
-2026-09-24  S7  (this commit)  Claude Opus (Sonnet list)  DA#7 DA#8 fixed; AppImage replace falls back to copy+chmod+sync+rename beside $APPIMAGE on EXDEV, apply step (pkexec/tar) in spawn_blocking; pending_device_push is Option<PendingCounterReset{device_id}>, honoured by perform_sync (zeroed counters above the pad's generation, force_restore, cleared on success, kept for a different pad); manual AppImage-on-other-fs test pending
+2026-09-24  S7  34f68a7  Claude Opus (Sonnet list)  DA#7 DA#8 fixed; AppImage replace falls back to copy+chmod+sync+rename beside $APPIMAGE on EXDEV, apply step (pkexec/tar) in spawn_blocking; pending_device_push is Option<PendingCounterReset{device_id}>, honoured by perform_sync (zeroed counters above the pad's generation, force_restore, cleared on success, kept for a different pad); manual AppImage-on-other-fs test pending
+2026-09-24  S8  (this commit)  Claude Opus (Sonnet list)  DM#2 DM#5 DM#7 fixed; JsonBackup::validate builds the DeviceConfig and delegates to DeviceConfig::validate (0x00/0xFFFF keys rejected, duplicate ranges gone); stale $OPAD_TOSU_PATH warned by path and falls through to home/PATH/bundled; strip_ansi is a CSI/OSC/ESC-intermediate state machine; stray supervisor doc comment above strip_ansi replaced
 ```

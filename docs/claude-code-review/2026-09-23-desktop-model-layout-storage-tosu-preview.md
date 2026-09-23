@@ -22,7 +22,7 @@ Findings are ranked most severe first.
 
 **Suggested fix:** Replace `drop(child)` with `child.kill().await` and signal completion via a `tokio::sync::Notify`/`watch` that `pause()` awaits, instead of a fixed sleep.
 
-## 2. `JsonBackup::validate` accepts HID usages the firmware rejects — `open`
+## 2. `JsonBackup::validate` accepts HID usages the firmware rejects — `fixed`
 
 **File:** `desktop/crates/opad-model/src/lib.rs:451`
 **Category:** correctness
@@ -55,7 +55,7 @@ After a `pause()` kill, the supervisor treats the stop as a crash and doubles th
 
 **Suggested fix:** Skip the backoff computation when the break was caused by `paused`, or reset backoff on `resume`.
 
-## 5. Missing `$OPAD_TOSU_PATH` target gives no fallback and a misleading warning — `open`
+## 5. Missing `$OPAD_TOSU_PATH` target gives no fallback and a misleading warning — `fixed`
 
 **File:** `desktop/crates/opad-tosu/src/lib.rs:268`
 **Category:** correctness
@@ -77,7 +77,7 @@ Stub mode emits `rerun-if-changed` only for `managed_components` and `preview_st
 
 **Suggested fix:** Move the `ui_core` `rerun-if-changed` (line 97) above the stub early-return.
 
-## 7. `strip_ansi` ends escape sequences at the first ASCII letter — `open`
+## 7. `strip_ansi` ends escape sequences at the first ASCII letter — `fixed`
 
 **File:** `desktop/crates/opad-tosu/src/lib.rs:460`
 **Category:** correctness

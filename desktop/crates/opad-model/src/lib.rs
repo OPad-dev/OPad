@@ -425,36 +425,24 @@ impl JsonBackup {
         if self.exported_at > chrono::Utc::now() + chrono::Duration::days(1) {
             return Err("Backup timestamp is in the future".to_string());
         }
-        if self.config.debounce_us < 500 || self.config.debounce_us > 20000 {
-            return Err(format!(
-                "Debounce lockout must be between 500 and 20000 µs (got {})",
-                self.config.debounce_us
-            ));
+        let key1_hid_usage = char_to_hid_usage(&self.config.key1)
+            .ok_or_else(|| format!("Invalid key1 mapping: {}", self.config.key1))?;
+        let key2_hid_usage = char_to_hid_usage(&self.config.key2)
+            .ok_or_else(|| format!("Invalid key2 mapping: {}", self.config.key2))?;
+        // The config the import would apply must pass the same rules as any
+        // other config (and the firmware's): one set of ranges, not two
+        DeviceConfig {
+            key1_hid_usage,
+            key2_hid_usage,
+            debounce_us: self.config.debounce_us,
+            brightness: self.config.brightness,
+            display_sleep_seconds: self.config.display_sleep_seconds,
+            gameplay_display_hz: self.config.gameplay_display_hz,
+            key1_gpio: self.config.key1_gpio,
+            key2_gpio: self.config.key2_gpio,
+            ..DeviceConfig::default()
         }
-        if self.config.brightness > 100 {
-            return Err("Brightness must be between 0 and 100".to_string());
-        }
-        if self.config.display_sleep_seconds != 0
-            && (self.config.display_sleep_seconds < 10 || self.config.display_sleep_seconds > 86400)
-        {
-            return Err(format!(
-                "Display sleep must be 0 or 10..=86400 seconds (got {})",
-                self.config.display_sleep_seconds
-            ));
-        }
-        if self.config.gameplay_display_hz < 1 || self.config.gameplay_display_hz > 30 {
-            return Err(format!(
-                "Gameplay display Hz must be between 1 and 30 (got {})",
-                self.config.gameplay_display_hz
-            ));
-        }
-        if char_to_hid_usage(&self.config.key1).is_none() {
-            return Err(format!("Invalid key1 mapping: {}", self.config.key1));
-        }
-        if char_to_hid_usage(&self.config.key2).is_none() {
-            return Err(format!("Invalid key2 mapping: {}", self.config.key2));
-        }
-        validate_key_gpios(self.config.key1_gpio, self.config.key2_gpio)
+        .validate()
     }
 }
 
@@ -575,6 +563,27 @@ mod tests {
         let b: JsonBackup = serde_json::from_value(json).unwrap();
         assert_eq!((b.config.key1_gpio, b.config.key2_gpio), (14, 9));
         assert!(b.validate().is_ok());
+    }
+
+    #[test]
+    fn test_backup_keys_outside_the_firmware_range_are_rejected() {
+        // char_to_hid_usage parses any hex; only 0x04..=0xE7 is a usable key
+        for key in ["0x00", "0x03", "0xE8", "0xFFFF"] {
+            let mut b = valid_backup();
+            b.config.key1 = key.to_string();
+            assert!(b.validate().is_err(), "key1 {key} accepted");
+            let mut b = valid_backup();
+            b.config.key2 = key.to_string();
+            assert!(b.validate().is_err(), "key2 {key} accepted");
+        }
+        let mut b = valid_backup();
+        b.config.key1 = "0x04".to_string();
+        b.config.key2 = "0xE7".to_string();
+        assert!(b.validate().is_ok());
+
+        let mut b = valid_backup();
+        b.config.brightness = 101;
+        assert!(b.validate().is_err());
     }
 
     #[test]
