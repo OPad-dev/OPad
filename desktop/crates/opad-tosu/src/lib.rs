@@ -4,7 +4,6 @@ use opad_model::ui_source::{self as src, SourceValue};
 use opad_model::GameplayTelemetry;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use thiserror::Error;
@@ -418,33 +417,54 @@ pub fn ptrace_access() -> PtraceAccess {
 /// Swapping the binary needs it held down: on Windows the file cannot be
 /// replaced while it is running, and on every platform a tosu started from the
 /// old inode would keep running after the swap and hide the update (§U-1).
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct TosuSupervisor {
-    paused: Arc<AtomicBool>,
+    paused: Arc<watch::Sender<bool>>,
+    /// True while the supervisor has no tosu child: not yet launched, exited,
+    /// or killed and reaped. `pause()` waits on it.
+    stopped: Arc<watch::Sender<bool>>,
+}
+
+impl Default for TosuSupervisor {
+    fn default() -> Self {
+        Self {
+            paused: Arc::new(watch::channel(false).0),
+            stopped: Arc::new(watch::channel(true).0),
+        }
+    }
 }
 
 impl TosuSupervisor {
     /// Kills the running tosu and stops the supervisor relaunching it.
     ///
-    /// Returns once the child is actually gone, so the caller may replace the
-    /// binary immediately afterwards.
+    /// Returns once the child is actually gone (killed and reaped), so the
+    /// caller may replace the binary immediately afterwards. A child that
+    /// somehow outlives [`PAUSE_TIMEOUT`] is logged and not waited on further.
     pub async fn pause(&self) {
-        self.paused.store(true, Ordering::SeqCst);
-        // The supervisor drops its child on the next poll of the pause flag;
-        // kill_on_drop makes that a real kill. One poll interval covers it.
-        tokio::time::sleep(PAUSE_POLL_INTERVAL * 2).await;
+        self.paused.send_replace(true);
+        let mut stopped = self.stopped.subscribe();
+        if tokio::time::timeout(PAUSE_TIMEOUT, stopped.wait_for(|s| *s))
+            .await
+            .is_err()
+        {
+            warn!(
+                "tosu did not stop within {:?} of being paused; the update continues anyway",
+                PAUSE_TIMEOUT
+            );
+        }
     }
 
     pub fn resume(&self) {
-        self.paused.store(false, Ordering::SeqCst);
+        self.paused.send_replace(false);
     }
 
     pub fn is_paused(&self) -> bool {
-        self.paused.load(Ordering::SeqCst)
+        *self.paused.borrow()
     }
 }
 
-const PAUSE_POLL_INTERVAL: Duration = Duration::from_millis(250);
+/// How long `pause()` waits for tosu to die before giving up on it
+const PAUSE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Keeps a tosu process running for as long as the daemon runs.
 ///
@@ -480,77 +500,116 @@ pub fn spawn_tosu_supervisor(
     line_cb: Option<LogLineCallback>,
 ) -> TosuSupervisor {
     let supervisor = TosuSupervisor::default();
-    let paused = supervisor.paused.clone();
-
-    tokio::spawn(async move {
-        let addr = endpoint_socket_addr(&normalize_endpoint(&endpoint));
-        let mut backoff = Duration::from_secs(5);
-        let mut warned_missing = false;
-
-        loop {
-            if paused.load(Ordering::SeqCst) {
-                tokio::time::sleep(PAUSE_POLL_INTERVAL).await;
-                continue;
-            }
-
-            if TcpStream::connect(&addr).await.is_ok() {
-                tokio::time::sleep(Duration::from_secs(5)).await;
-                continue;
-            }
-
-            let Some(bin) = find_tosu_binary() else {
-                if !warned_missing {
-                    warn!(
-                        "tosu binary not found: no $OPAD_TOSU_PATH, none on $PATH, and no bundled copy"
-                    );
-                    warned_missing = true;
-                }
-                tokio::time::sleep(Duration::from_secs(30)).await;
-                continue;
-            };
-            warned_missing = false;
-
-            match launch_tosu(&bin, &log_path, line_cb.clone()) {
-                Ok(mut child) => {
-                    info!(
-                        "Launched tosu (pid {:?}) from {}",
-                        child.id(),
-                        bin.display()
-                    );
-                    let started = Instant::now();
-                    loop {
-                        tokio::select! {
-                            result = child.wait() => {
-                                match result {
-                                    Ok(status) => warn!("tosu exited with {}", status),
-                                    Err(e) => warn!("Failed waiting for tosu: {}", e),
-                                }
-                                break;
-                            }
-                            _ = tokio::time::sleep(PAUSE_POLL_INTERVAL) => {
-                                if paused.load(Ordering::SeqCst) {
-                                    // kill_on_drop turns this into a real kill,
-                                    // freeing the binary for a swap (§U-1)
-                                    info!("Stopping tosu for an update");
-                                    drop(child);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    backoff = if started.elapsed() > Duration::from_secs(60) {
-                        Duration::from_secs(5)
-                    } else {
-                        (backoff * 2).min(Duration::from_secs(60))
-                    };
-                }
-                Err(e) => warn!("Failed to launch tosu from {}: {}", bin.display(), e),
-            }
-            tokio::time::sleep(backoff).await;
-        }
-    });
-
+    let addr = endpoint_socket_addr(&normalize_endpoint(&endpoint));
+    tokio::spawn(supervise(
+        supervisor.clone(),
+        addr,
+        find_tosu_binary,
+        move |bin| launch_tosu(bin, &log_path, line_cb.clone()),
+    ));
     supervisor
+}
+
+const INITIAL_BACKOFF: Duration = Duration::from_secs(5);
+
+async fn until_paused(paused: &mut watch::Receiver<bool>) {
+    let _ = paused.wait_for(|p| *p).await;
+}
+
+/// The supervisor loop, with the binary lookup and the launch passed in so a
+/// test can run it on a stand-in child
+async fn supervise(
+    supervisor: TosuSupervisor,
+    addr: String,
+    find_bin: impl Fn() -> Option<PathBuf>,
+    launch: impl Fn(&Path) -> std::io::Result<tokio::process::Child>,
+) {
+    let mut paused = supervisor.paused.subscribe();
+    let mut backoff = INITIAL_BACKOFF;
+    let mut warned_missing = false;
+
+    loop {
+        if *paused.borrow_and_update() {
+            // Wakes on resume() rather than polling. A pause is not a crash,
+            // so whatever the backoff had grown to starts over.
+            if paused.wait_for(|p| !*p).await.is_err() {
+                return;
+            }
+            backoff = INITIAL_BACKOFF;
+        }
+
+        if TcpStream::connect(&addr).await.is_ok() {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            continue;
+        }
+
+        let Some(bin) = find_bin() else {
+            if !warned_missing {
+                warn!(
+                    "tosu binary not found: no $OPAD_TOSU_PATH, none on $PATH, and no bundled copy"
+                );
+                warned_missing = true;
+            }
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            continue;
+        };
+        warned_missing = false;
+
+        // Marked running *before* the pause flag is read again, so a pause()
+        // landing now either stops this launch or waits for its child
+        supervisor.stopped.send_replace(false);
+        if *paused.borrow_and_update() {
+            supervisor.stopped.send_replace(true);
+            continue;
+        }
+
+        match launch(&bin) {
+            Ok(mut child) => {
+                info!(
+                    "Launched tosu (pid {:?}) from {}",
+                    child.id(),
+                    bin.display()
+                );
+                let started = Instant::now();
+                let stopped_for_pause = tokio::select! {
+                    result = child.wait() => {
+                        match result {
+                            Ok(status) => warn!("tosu exited with {}", status),
+                            Err(e) => warn!("Failed waiting for tosu: {}", e),
+                        }
+                        false
+                    }
+                    _ = until_paused(&mut paused) => {
+                        // Killed and reaped before pause() is told, freeing
+                        // the binary for a swap (§U-1)
+                        info!("Stopping tosu for an update");
+                        if let Err(e) = child.kill().await {
+                            warn!("Failed to stop tosu: {}", e);
+                        }
+                        true
+                    }
+                };
+                supervisor.stopped.send_replace(true);
+                if stopped_for_pause {
+                    continue;
+                }
+                backoff = if started.elapsed() > Duration::from_secs(60) {
+                    INITIAL_BACKOFF
+                } else {
+                    (backoff * 2).min(Duration::from_secs(60))
+                };
+            }
+            Err(e) => {
+                supervisor.stopped.send_replace(true);
+                warn!("Failed to launch tosu from {}: {}", bin.display(), e);
+            }
+        }
+        // A pause during the backoff needs no waiting: nothing is running
+        tokio::select! {
+            _ = tokio::time::sleep(backoff) => {}
+            _ = until_paused(&mut paused) => {}
+        }
+    }
 }
 
 /// Where tosu reads its `tosu.env`: `$XDG_CONFIG_HOME/tosu` on Linux, next to
@@ -806,5 +865,76 @@ mod tests {
         let survived = marker.exists();
         let _ = std::fs::remove_dir_all(&dir);
         assert!(survived, "tosu was killed when the launcher returned");
+    }
+
+    /// DM#1 + DM#4: pause() returns only once the child is gone, and resume()
+    /// relaunches at once instead of after a crash backoff
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn pause_waits_for_the_child_and_resume_relaunches_promptly() {
+        use std::sync::Mutex;
+
+        // A port nothing listens on, so the supervisor launches. Not a freed
+        // ephemeral one: other tests' listeners (or a TCP self-connect) can
+        // land on that and look like a running tosu.
+        let addr = "127.0.0.1:1".to_string();
+        let pids = Arc::new(Mutex::new(Vec::<u32>::new()));
+        let launched = pids.clone();
+        let supervisor = TosuSupervisor::default();
+        tokio::spawn(supervise(
+            supervisor.clone(),
+            addr,
+            || Some(PathBuf::from("sleep")),
+            move |bin| {
+                let child = tokio::process::Command::new(bin)
+                    .arg("30")
+                    .kill_on_drop(true)
+                    .spawn()?;
+                launched.lock().unwrap().push(child.id().unwrap());
+                Ok(child)
+            },
+        ));
+        let alive = |pid: u32| std::path::Path::new(&format!("/proc/{pid}")).exists();
+        let launches_reach = |n: usize| {
+            let pids = pids.clone();
+            async move {
+                tokio::time::timeout(Duration::from_secs(2), async {
+                    while pids.lock().unwrap().len() < n {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                })
+                .await
+                .is_ok()
+            }
+        };
+
+        assert!(launches_reach(1).await, "first launch");
+        let first = pids.lock().unwrap()[0];
+        assert!(alive(first));
+
+        supervisor.pause().await;
+        assert!(
+            !alive(first),
+            "pause() returned with the child still running"
+        );
+
+        // Nothing is relaunched while paused
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        assert_eq!(pids.lock().unwrap().len(), 1);
+
+        // Well inside INITIAL_BACKOFF: a pause stop is not treated as a crash
+        supervisor.resume();
+        assert!(
+            launches_reach(2).await,
+            "resume() did not relaunch promptly"
+        );
+
+        // Pausing again works the same, and an idle supervisor pauses at once
+        supervisor.pause().await;
+        let second = pids.lock().unwrap()[1];
+        assert!(!alive(second));
+        tokio::time::timeout(Duration::from_millis(100), supervisor.pause())
+            .await
+            .expect("pausing with nothing running must not wait");
     }
 }

@@ -11,7 +11,7 @@ Findings are ranked most severe first.
 
 ---
 
-## 1. `TosuSupervisor::pause()` never observes the child exit — `open`
+## 1. `TosuSupervisor::pause()` never observes the child exit — `fixed`
 
 **File:** `desktop/crates/opad-tosu/src/lib.rs:435`
 **Category:** correctness
@@ -44,7 +44,7 @@ Findings are ranked most severe first.
 
 **Suggested fix:** Use `f.pad("TOSU")` in the `Display` impls.
 
-## 4. A `pause()` kill is treated as a crash and doubles the relaunch backoff — `open`
+## 4. A `pause()` kill is treated as a crash and doubles the relaunch backoff — `fixed`
 
 **File:** `desktop/crates/opad-tosu/src/lib.rs:541`
 **Category:** correctness
