@@ -143,16 +143,33 @@ pub async fn enter_bootloader(
 
     info!("Rebooting {} into the ROM download bootloader", app_port);
     let mut last_err = None;
+    let mut fired = false;
     for trigger in BOOT_TRIGGERS {
+        // An earlier trigger may have landed after its window closed (on
+        // Windows the first bootloader enumeration waits on a driver install)
+        if fired {
+            if let Some(p) = pick(&pad, &preexisting)? {
+                return Ok(p);
+            }
+        }
         // The pad may still be re-enumerating from the previous attempt
         if let Err(e) = wait_until_openable(app_port, Duration::from_secs(2)).await {
-            last_err = Some(e);
+            if fired {
+                if let Some(p) = pick(&pad, &preexisting)? {
+                    return Ok(p);
+                }
+            }
+            last_err = Some(unusable_app_port_error(e, fired, port_present(app_port)));
             continue;
         }
         if let Err(e) = pulse_trigger(app_port, trigger) {
-            last_err = Some(e);
+            last_err = Some(unusable_app_port_error(e, fired, port_present(app_port)));
             continue;
         }
+        fired = true;
+        // A trigger that went out and missed is a bootloader problem, whatever
+        // stopped an earlier one
+        last_err = None;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
         while tokio::time::Instant::now() < deadline {
             if let Some(p) = pick(&pad, &preexisting)? {
@@ -162,8 +179,32 @@ pub async fn enter_bootloader(
         }
         debug!("The {:?} trigger did not take", trigger);
     }
+    if fired {
+        if let Some(p) = pick(&pad, &preexisting)? {
+            return Ok(p);
+        }
+    }
 
     Err(last_err.unwrap_or(FlashError::NoBootloader))
+}
+
+/// What to report when `app_port` could not be used for the next trigger.
+/// After a trigger has fired, a vanished app port means the pad left the app,
+/// most likely for download mode on a port not matched yet: "close anything
+/// else using it" would send the user after the wrong problem.
+fn unusable_app_port_error(err: FlashError, fired: bool, app_port_present: bool) -> FlashError {
+    if fired && !app_port_present {
+        FlashError::NoBootloader
+    } else {
+        err
+    }
+}
+
+fn port_present(path: &str) -> bool {
+    serialport::available_ports()
+        .map(|ports| ports.iter().any(|p| p.port_name == path))
+        // Unknown: keep whatever error the port itself gave
+        .unwrap_or(true)
 }
 
 /// The espflash OPad ships (pinned in the Makefile's ESPFLASH_VERSION) before
@@ -493,6 +534,25 @@ mod tests {
         h[0] = 0xE9;
         h[12] = 0x09;
         h
+    }
+
+    /// DD#6: a pad that left the app after a trigger is not blamed on a busy port
+    #[test]
+    fn a_vanished_app_port_after_a_trigger_is_a_bootloader_miss() {
+        let busy = || FlashError::PortBusy("COM5".into(), "not found".into());
+        assert!(matches!(
+            unusable_app_port_error(busy(), true, false),
+            FlashError::NoBootloader
+        ));
+        // Before any trigger, or with the port still there, it really is busy
+        assert!(matches!(
+            unusable_app_port_error(busy(), false, false),
+            FlashError::PortBusy(..)
+        ));
+        assert!(matches!(
+            unusable_app_port_error(busy(), true, true),
+            FlashError::PortBusy(..)
+        ));
     }
 
     #[test]

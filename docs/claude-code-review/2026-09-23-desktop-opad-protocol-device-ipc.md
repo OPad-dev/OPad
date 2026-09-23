@@ -55,7 +55,7 @@ The "reopen the port after `HELLOS_BEFORE_REOPEN` unanswered Hellos" fallback is
 
 **Suggested fix:** Apply `strip_prefix` to the serial and fall back to `device_id` when that yields None.
 
-## 5. Windows `IpcListener::accept` drops a connected client if the replacement instance fails — `open`
+## 5. Windows `IpcListener::accept` drops a connected client if the replacement instance fails — `fixed` (untested on Windows)
 
 **File:** `desktop/crates/opad-ipc/src/transport/windows.rs:105`
 **Category:** correctness
@@ -66,7 +66,7 @@ The "reopen the port after `HELLOS_BEFORE_REOPEN` unanswered Hellos" fallback is
 
 **Suggested fix:** Return the connected `server` regardless of replacement outcome (log the failure, recreate lazily on the next accept), and recreate the pending instance in the error path.
 
-## 6. Bootloader-port miss is reported as `PortBusy` while the pad sits in download mode — `open`
+## 6. Bootloader-port miss is reported as `PortBusy` while the pad sits in download mode — `fixed` (untested on Windows)
 
 **File:** `desktop/crates/opad-device/src/flash.rs:148`
 **Category:** correctness

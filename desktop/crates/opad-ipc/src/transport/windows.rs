@@ -99,13 +99,62 @@ impl IpcListener {
             Some(s) => s,
             None => create_instance(&self.addr, &self.security, false)?,
         };
-        server.connect().await?;
+        // If this future is dropped mid-wait the unconnected instance goes back
+        // into `next`, so the pipe name keeps a listener (`connect` is cancel
+        // safe: no connection is lost by dropping it).
+        let mut pending = PendingInstance {
+            slot: &self.next,
+            server: Some(server),
+        };
+        let connected = pending.server.as_ref().expect("set above").connect().await;
+        let server = pending.server.take().expect("set above");
+        drop(pending);
+
+        if let Err(e) = connected {
+            // This instance is spent; keep the name listening for the next client
+            drop(server);
+            self.replenish();
+            return Err(e.into());
+        }
 
         // This instance now belongs to the client; the name needs another one.
-        let next = create_instance(&self.addr, &self.security, false)?;
-        *self.next.lock().expect("pipe instance mutex") = Some(next);
-
+        // Failing to make it must not cost the client that just connected: the
+        // next accept() creates one lazily.
+        self.replenish();
         Ok(server)
+    }
+
+    /// Makes sure an unconnected instance is waiting under the pipe name
+    fn replenish(&self) {
+        let mut next = self.next.lock().expect("pipe instance mutex");
+        if next.is_some() {
+            return;
+        }
+        match create_instance(&self.addr, &self.security, false) {
+            Ok(instance) => *next = Some(instance),
+            Err(e) => tracing::warn!(
+                "Could not create the next IPC pipe instance ({}); retrying on the next accept",
+                e
+            ),
+        }
+    }
+}
+
+/// An instance waiting for a client, handed back to the listener if the wait
+/// is abandoned
+struct PendingInstance<'a> {
+    slot: &'a Mutex<Option<NamedPipeServer>>,
+    server: Option<NamedPipeServer>,
+}
+
+impl Drop for PendingInstance<'_> {
+    fn drop(&mut self) {
+        if let Some(server) = self.server.take() {
+            let mut next = self.slot.lock().expect("pipe instance mutex");
+            if next.is_none() {
+                *next = Some(server);
+            }
+        }
     }
 }
 
