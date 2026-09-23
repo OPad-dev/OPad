@@ -90,9 +90,9 @@ Files: `firmware/main/protocol/protocol.c` (~551), `firmware/main/input/keypad.c
 
 ### O3 — HID report pending races ▸ FU#2, FU#6
 Files: `firmware/main/usb/usb_hid.c` (~89, ~110)
-- [ ] `usb_hid_set_touch_retry` must not blindly clear `s_report_pending`. Use the same CAS/exchange discipline as the keypad path: only clear a pending flag that this call itself observed and satisfied, or make the submit path a single helper both callers use (`try_submit_or_mark_pending`).
-- [ ] `s_pending_edge_us`: only arm it if `s_report_pending` is still `true` after the failed submit (re-check with an atomic load / CAS on the pending flag); if `complete_cb` already delivered, drop the edge instead of leaking it into the next report.
-- [ ] Document the ownership: which tasks/cores touch `s_report_pending`, `s_pending_edge_us`, `s_key*_pressed`.
+- [x] `usb_hid_set_touch_retry` must not blindly clear `s_report_pending`. Use the same CAS/exchange discipline as the keypad path: only clear a pending flag that this call itself observed and satisfied, or make the submit path a single helper both callers use (`try_submit_or_mark_pending`).
+- [x] `s_pending_edge_us`: only arm it if `s_report_pending` is still `true` after the failed submit (re-check with an atomic load / CAS on the pending flag); if `complete_cb` already delivered, drop the edge instead of leaking it into the next report.
+- [x] Document the ownership: which tasks/cores touch `s_report_pending`, `s_pending_edge_us`, `s_key*_pressed`.
 - Verify: `make firmware`; bench with `scripts/bench_latency.sh` for outliers; play a map with touch retry active, watch for stuck/missed keys and latency outliers in diag.
 
 ### O4 — Keycode/config application path ▸ FU#3, FU#4, FU#5
@@ -348,5 +348,6 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 
 ```
 2026-09-24  O1  aa05333  Claude Opus  FP#1 FP#2 fixed; parser locks to the first recognised frame's framing; pad test pending
-2026-09-24  O2  (this commit)  Claude Opus  FP#3 FB#2 FU#7 fixed; pin scan is a keypad-task state machine, timeout clamped to 30 s; pad test pending
+2026-09-24  O2  abe93c6  Claude Opus  FP#3 FB#2 FU#7 fixed; pin scan is a keypad-task state machine, timeout clamped to 30 s; pad test pending
+2026-09-24  O3  (this commit)  Claude Opus  FU#2 FU#6 fixed; pending flag replaced by change/sent sequence numbers; bench + pad test pending
 ```

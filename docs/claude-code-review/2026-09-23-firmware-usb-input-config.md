@@ -20,7 +20,7 @@ GPIO8 is the module-ID ADC pin (100k/10k divider to GND per `board.c:212`) yet i
 
 **Failure scenario:** MX or HE module attached → host sends `detect_pin` → `keypad_detect_pressed_pin` enables pull-ups on `SCAN_PINS`; the 10k to GND on GPIO8 overrides the ~45k internal pull-up so `gpio_get_level(8) == 0` immediately → returns 8 before the user touches a switch; the host then persists `key_gpio = 8` (validate accepts it) → that key reads permanently pressed and the pad is stuck until reflash/reconfig.
 
-## 2. Touch-retry submit clears a pending flag set by the keypad task — `open`
+## 2. Touch-retry submit clears a pending flag set by the keypad task — `fixed`
 
 **File:** `firmware/main/usb/usb_hid.c:89`
 **Category:** correctness
@@ -58,7 +58,7 @@ GPIO8 is the module-ID ADC pin (100k/10k divider to GND per `board.c:212`) yet i
 
 **Suggested fix:** `device_config_get(&dev_cfg)` here, or apply only brightness/sleep.
 
-## 6. `s_pending_edge_us` armed after the state was already delivered — `open`
+## 6. `s_pending_edge_us` armed after the state was already delivered — `fixed`
 
 **File:** `firmware/main/usb/usb_hid.c:110`
 **Category:** correctness
