@@ -459,7 +459,11 @@ fn copy_replace(staged: &std::path::Path, target: &std::path::Path) -> std::io::
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))?;
         }
-        std::fs::File::open(&tmp)?.sync_all()?;
+        // Opened for writing: Windows refuses FlushFileBuffers on a read-only handle
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&tmp)?
+            .sync_all()?;
         std::fs::rename(&tmp, target)
     })();
     if result.is_err() {

@@ -11,7 +11,7 @@ Findings are ranked most severe first.
 
 ---
 
-## 1. `Instant::now() - Duration::from_secs(10)` panics early after boot on Windows — `fixed` (untested on Windows)
+## 1. `Instant::now() - Duration::from_secs(10)` panics early after boot on Windows — `fixed` (daemon's serial worker built and run on the Windows VM; the <10 s-after-boot condition itself not reproduced)
 
 **File:** `desktop/crates/opad-device/src/lib.rs:268` (also lines 291 and 296)
 **Category:** correctness

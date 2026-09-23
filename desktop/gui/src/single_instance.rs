@@ -306,6 +306,49 @@ mod platform {
             },
         )
     }
+
+    /// DG#6: the pipe listens as soon as claim() returns, before iced (or any
+    /// subscription) exists, and keeps a listener between clients
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn next_request(rx: &mut UnboundedReceiver<Option<String>>) -> Option<Option<String>> {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while std::time::Instant::now() < deadline {
+                if let Ok(r) = rx.try_recv() {
+                    return Some(r);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            None
+        }
+
+        #[test]
+        fn later_launches_reach_the_first_before_iced_starts() {
+            assert!(claim(None), "the first launch is the instance");
+            let mut rx = REQUESTS
+                .lock()
+                .unwrap()
+                .take()
+                .expect("claim() started the pipe");
+
+            // Back to back, as a double-click launches them
+            for page in [Some("logs"), None, Some("diagnostics")] {
+                let started = std::time::Instant::now();
+                assert!(!claim(page), "a later launch hands off and exits");
+                assert!(
+                    started.elapsed() < HANDOFF_TIMEOUT,
+                    "handed off without retrying out"
+                );
+                assert_eq!(
+                    next_request(&mut rx),
+                    Some(page.map(str::to_string)),
+                    "{page:?} reached the running instance"
+                );
+            }
+        }
+    }
 }
 
 /// `"show logs\n"` → `Some("logs")`; a bare `"show"` → `None`

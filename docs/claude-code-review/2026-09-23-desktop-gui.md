@@ -61,7 +61,7 @@ The tray stream probes for `org.kde.StatusNotifierWatcher` exactly once (2 s tim
 
 **Suggested fix:** Carry (screen, layout) through `apply_layout` into `Applied`.
 
-## 6. Windows single-instance pipe is created lazily; a second launch can exit silently — `fixed` (untested on Windows)
+## 6. Windows single-instance pipe is created lazily; a second launch can exit silently — `fixed` (tested on the Windows VM at the pipe level: back-to-back handoffs before iced starts; the GUI window itself not launched)
 
 **File:** `desktop/gui/src/single_instance.rs:133`
 **Category:** correctness
