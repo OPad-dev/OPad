@@ -110,9 +110,9 @@ Files: `firmware/main/ui/ui_store.c/.h`, `firmware/main/runtime/runtime.c` (~49,
 
 ### O6 — Headless-mode UI guards ▸ FI#1, FI#6
 Files: `firmware/main/protocol/protocol.c` (~522), `firmware/main/ui/ui.h` (~30), `firmware/main/ui/ui_port.c` (~229, ~338)
-- [ ] `protocol.c` data_update source 67 → call `ui_trigger_easter_egg()` (which has the `s_ui_ok` guard), not `easter_egg_trigger()`.
-- [ ] Make `ui_lock()` return `bool` (false when `!s_ui_ok`) and have every caller skip the LVGL work when it returns false; or audit every `ui_lock()` caller and guard each. Pick one and apply consistently.
-- [ ] `ui_init`: if `s_screens[UI_SCREEN_IDLE] == NULL` after `rebuild_screen`, return `ESP_ERR_NO_MEM` (headless fallback) instead of `lv_screen_load(NULL)`.
+- [x] `protocol.c` data_update source 67 → call `ui_trigger_easter_egg()` (which has the `s_ui_ok` guard), not `easter_egg_trigger()`.
+- [x] Make `ui_lock()` return `bool` (false when `!s_ui_ok`) and have every caller skip the LVGL work when it returns false; or audit every `ui_lock()` caller and guard each. Pick one and apply consistently.
+- [x] `ui_init`: if `s_screens[UI_SCREEN_IDLE] == NULL` after `rebuild_screen`, return `ESP_ERR_NO_MEM` (headless fallback) instead of `lv_screen_load(NULL)`.
 - Verify: `make firmware`; force headless (disconnect LCD or stub `board_display_init` to fail) and send the easter-egg trigger (`scripts/trigger_easter_egg.py`) → no panic.
 
 ### O7 — Daemon foreign-pad guards ▸ DA#1, DA#2, DA#4, DA#6
@@ -351,5 +351,6 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  O2  abe93c6  Claude Opus  FP#3 FB#2 FU#7 fixed; pin scan is a keypad-task state machine, timeout clamped to 30 s; pad test pending
 2026-09-24  O3  240d115  Claude Opus  FU#2 FU#6 fixed; pending flag replaced by change/sent sequence numbers; bench + pad test pending
 2026-09-24  O4  ec05977  Claude Opus  FU#3 FU#4 FU#5 fixed; all runtime keypad config goes through the keypad task; pad test pending
-2026-09-24  O5  (this commit)  Claude Opus  FI#4 FI#5 fixed; mutex over pending layouts + layout NVS writes, failed flush kept and retried every 10 s; no host test (NVS/FreeRTOS-bound), pad test pending
+2026-09-24  O5  65e343a  Claude Opus  FI#4 FI#5 fixed; mutex over pending layouts + layout NVS writes, failed flush kept and retried every 10 s; no host test (NVS/FreeRTOS-bound), pad test pending
+2026-09-24  O6  (this commit)  Claude Opus  FI#1 FI#6 fixed; ui_lock() returns bool, data_update skipped headless, NULL idle screen -> ESP_ERR_NO_MEM; headless pad test pending
 ```

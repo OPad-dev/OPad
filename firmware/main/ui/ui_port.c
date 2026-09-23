@@ -225,6 +225,12 @@ esp_err_t ui_init(void)
         }
         rebuild_screen(s);
     }
+    if (s_screens[UI_SCREEN_IDLE] == NULL) {
+        // Out of LVGL memory: fall back to headless rather than load a NULL screen
+        lvgl_port_unlock();
+        ESP_LOGE(TAG, "Idle screen could not be built");
+        return ESP_ERR_NO_MEM;
+    }
     s_active_screen = UI_SCREEN_IDLE;
     lv_screen_load(s_screens[UI_SCREEN_IDLE]);
     lv_timer_create(pad_timer_cb, PAD_TIMER_PERIOD_MS, NULL);
@@ -285,10 +291,11 @@ void ui_set_tosu_connected(bool connected)
     lvgl_port_unlock();
 }
 
-void ui_lock(void)
+bool ui_lock(void)
 {
-    if (!s_ui_ok) return;
+    if (!s_ui_ok) return false;
     lvgl_port_lock(0);
+    return true;
 }
 
 void ui_unlock(void)

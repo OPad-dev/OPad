@@ -9,7 +9,6 @@
 #include "counters/counters.h"
 #include "ui/ui.h"
 #include "ui/ui_store.h"
-#include "ui/easter_egg.h"
 #include "runtime/runtime.h"
 #include "input/latency_stats.h"
 #include "esp_mac.h"
@@ -530,11 +529,13 @@ static void handle_host_message(const osupad_HostToDevice *msg)
 
     case osupad_HostToDevice_data_update_tag: {
         const osupad_DataUpdate *du = &msg->payload.data_update;
-        ui_lock();
+        if (!ui_lock()) {
+            break; // headless: nothing to show it on
+        }
         for (pb_size_t i = 0; i < du->values_count; i++) {
             const osupad_DataValue *v = &du->values[i];
             if (v->source == 67) {
-                easter_egg_trigger();
+                ui_trigger_easter_egg(); // the LVGL lock is recursive
                 continue;
             }
             if (v->source > UINT8_MAX) {

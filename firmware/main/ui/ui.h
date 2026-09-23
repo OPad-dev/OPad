@@ -26,8 +26,12 @@ bool ui_is_asleep(void);
 /** tosu connection state reported by the host. Clears tosu-derived values on disconnect. */
 void ui_set_tosu_connected(bool connected);
 
-/** Hold the LVGL lock around a batch of ui_data_* calls (ui/core/ui_core.h). */
-void ui_lock(void);
+/**
+ * Hold the LVGL lock around a batch of ui_data_* calls (ui/core/ui_core.h).
+ * Returns false, taking nothing, when the UI is not running (headless): skip
+ * the batch then, and do not call ui_unlock.
+ */
+bool ui_lock(void);
 void ui_unlock(void);
 
 /** Update data sources from the protocol task (takes the LVGL lock). */

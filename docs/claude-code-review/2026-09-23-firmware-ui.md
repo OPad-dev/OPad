@@ -11,7 +11,7 @@ Findings are ranked most severe first.
 
 ---
 
-## 1. `data_update` source 67 calls `easter_egg_trigger()` directly, bypassing the `s_ui_ok` guard — `open`
+## 1. `data_update` source 67 calls `easter_egg_trigger()` directly, bypassing the `s_ui_ok` guard — `fixed`
 
 **File:** `firmware/main/protocol/protocol.c:522`
 **Category:** correctness
@@ -66,7 +66,7 @@ KPS ring uses unsigned subtraction (`total - oldest`) and treats 0 as an "unfill
 
 **Suggested fix:** Guard with a small mutex or make the masks atomic and copy under it.
 
-## 6. `ui_init()` calls `lv_screen_load()` on a possibly-NULL screen — `open`
+## 6. `ui_init()` calls `lv_screen_load()` on a possibly-NULL screen — `fixed`
 
 **File:** `firmware/main/ui/ui_port.c:229`
 **Category:** correctness
