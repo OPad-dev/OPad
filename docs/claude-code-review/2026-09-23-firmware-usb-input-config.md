@@ -29,7 +29,7 @@ GPIO8 is the module-ID ADC pin (100k/10k divider to GND per `board.c:212`) yet i
 
 **Failure scenario:** Core 1: `submit_current_state()` reads key state and claims the EP (success). Core 0 (truly parallel): key1 pressed → `s_key1_pressed = true`, `s_report_pending = true`, submit fails (EP busy). Core 1: `atomic_store(pending, false)`. `tud_hid_report_complete_cb` sees `pending == false` and does not resend → the key1 press (or release) is never delivered until the next unrelated key event: missed hit or stuck key during gameplay.
 
-## 3. Disabled input still reports an HE module's analog level as a held key — `open`
+## 3. Disabled input still reports an HE module's analog level as a held key — `fixed`
 
 **File:** `firmware/main/input/keypad.c:292`
 **Category:** correctness
@@ -38,7 +38,7 @@ GPIO8 is the module-ID ADC pin (100k/10k divider to GND per `board.c:212`) yet i
 
 **Failure scenario:** HE module detected → `app_main` disables input → `keypad_init` reads `board_key1_read() == true` (Hall output ~1.06 V / analog level below VIH) → `s_key_state[0] = true` → `keypad_task` step 2 sees `current != reported_state` → `s_callback` submits a HID report with key1 down that is never released (ISR ignored) → host sees `z` held forever; same via step 3 re-read after a pin move.
 
-## 4. `device_config_apply` bypasses the keypad's stage-until-released keycode logic — `open`
+## 4. `device_config_apply` bypasses the keypad's stage-until-released keycode logic — `fixed`
 
 **File:** `firmware/main/config/device_config.c:128`
 **Category:** correctness
@@ -47,7 +47,7 @@ GPIO8 is the module-ID ADC pin (100k/10k divider to GND per `board.c:212`) yet i
 
 **Failure scenario:** Host sends `config_set` changing key1 `z` → `a` while key1 is held: `keypad_set_config` stages it (key pressed) but line 128 changes `s_key1_code` immediately; the next report (key2 press or touch retry) is built with `a` → host sees `z` released and `a` pressed without any physical change; when key1 is finally released the staged config applies again. Also redundant: `keypad_set_config` already calls `usb_hid_set_keycodes` on apply (same redundancy at `app_main.c:101`).
 
-## 5. Stale `dev_cfg` snapshot re-applied after the protocol task may have updated config — `open`
+## 5. Stale `dev_cfg` snapshot re-applied after the protocol task may have updated config — `fixed`
 
 **File:** `firmware/main/app_main.c:194`
 **Category:** correctness

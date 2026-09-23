@@ -97,9 +97,9 @@ Files: `firmware/main/usb/usb_hid.c` (~89, ~110)
 
 ### O4 — Keycode/config application path ▸ FU#3, FU#4, FU#5
 Files: `firmware/main/input/keypad.c` (~292), `firmware/main/config/device_config.c` (~128), `firmware/main/app_main.c` (~101, ~194)
-- [ ] `keypad_set_input_enabled(false)` must also stop `keypad_task` from reporting sampled levels: when disabled, force reported state = released (send one release report if anything was down) and skip steps 2/3 re-reads. HE module must never produce a held key.
-- [ ] Remove the direct `usb_hid_set_keycodes` call from `device_config_apply` (and the redundant one at `app_main.c:~101`); keycodes are applied **only** by the keypad task's staged apply.
-- [ ] `app_main.c:~194`: re-read the current config with `device_config_get()` before applying, or apply only brightness/sleep there. Do not push the stale snapshot.
+- [x] `keypad_set_input_enabled(false)` must also stop `keypad_task` from reporting sampled levels: when disabled, force reported state = released (send one release report if anything was down) and skip steps 2/3 re-reads. HE module must never produce a held key.
+- [x] Remove the direct `usb_hid_set_keycodes` call from `device_config_apply` (and the redundant one at `app_main.c:~101`); keycodes are applied **only** by the keypad task's staged apply.
+- [x] `app_main.c:~194`: re-read the current config with `device_config_get()` before applying, or apply only brightness/sleep there. Do not push the stale snapshot.
 - Verify: `make firmware`; pad with HE module → no key reports; change key1 while holding key1 from the app → no phantom press/release; connect app during boot and push config → pad keeps the new config.
 
 ### O5 — `ui_store` shared state and dirty-bit ▸ FI#4, FI#5
@@ -349,5 +349,6 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 ```
 2026-09-24  O1  aa05333  Claude Opus  FP#1 FP#2 fixed; parser locks to the first recognised frame's framing; pad test pending
 2026-09-24  O2  abe93c6  Claude Opus  FP#3 FB#2 FU#7 fixed; pin scan is a keypad-task state machine, timeout clamped to 30 s; pad test pending
-2026-09-24  O3  (this commit)  Claude Opus  FU#2 FU#6 fixed; pending flag replaced by change/sent sequence numbers; bench + pad test pending
+2026-09-24  O3  240d115  Claude Opus  FU#2 FU#6 fixed; pending flag replaced by change/sent sequence numbers; bench + pad test pending
+2026-09-24  O4  (this commit)  Claude Opus  FU#3 FU#4 FU#5 fixed; all runtime keypad config goes through the keypad task; pad test pending
 ```

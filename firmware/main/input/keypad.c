@@ -30,8 +30,6 @@ static keypad_config_t s_config = {
 
 static keypad_config_t s_staged_config;
 static volatile bool s_config_staged = false;
-// The keypad task is moving the key pins; s_config is committed once that succeeds
-static bool s_pins_moving = false;
 
 // Pin detection requests, served by the keypad task (the one task that may
 // touch key GPIOs). Guarded by s_keypad_spinlock.
@@ -103,6 +101,16 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
         }
     }
     portEXIT_CRITICAL_ISR(&s_keypad_spinlock);
+}
+
+// Pin level as a pressed state, or released while input is off: an HE module's
+// analog outputs read as pressed and would hold a key down forever
+static bool read_key_level(int key_index)
+{
+    if (!s_input_enabled) {
+        return false;
+    }
+    return key_index == 0 ? board_key1_read() : board_key2_read();
 }
 
 static const uint8_t SCAN_PINS[] = {2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 21};
@@ -276,7 +284,13 @@ static void keypad_task(void *pvParameters)
             }
             portEXIT_CRITICAL(&s_keypad_spinlock);
 
-            if (need_resample) {
+            if (need_resample && !s_input_enabled) {
+                // An edge that slipped in as input was turned off: forget it
+                portENTER_CRITICAL(&s_keypad_spinlock);
+                debounce_init(&s_key_debounce[i], false);
+                s_key_state[i] = false;
+                portEXIT_CRITICAL(&s_keypad_spinlock);
+            } else if (need_resample) {
                 bool pin_level = (i == 0) ? board_key1_read() : board_key2_read();
                 portENTER_CRITICAL(&s_keypad_spinlock);
                 debounce_action_t action = debounce_step(
@@ -316,7 +330,9 @@ static void keypad_task(void *pvParameters)
             int64_t edge_us;
 
             portENTER_CRITICAL(&s_keypad_spinlock);
-            current = s_key_state[i];
+            // Input off: report released whatever the pin reads (sends one
+            // release if a key was down)
+            current = s_input_enabled && s_key_state[i];
             edge_us = s_last_transition_us[i];
             portEXIT_CRITICAL(&s_keypad_spinlock);
 
@@ -351,9 +367,7 @@ static void keypad_task(void *pvParameters)
                         s_staged_config.key2_gpio != s_config.key2_gpio;
             applied = s_staged_config;
             previous = s_config;
-            if (move_pins) {
-                s_pins_moving = true;
-            } else {
+            if (!move_pins) {
                 s_config = applied;
                 usb_hid_set_keycodes(applied.keycode1, applied.keycode2);
             }
@@ -381,11 +395,10 @@ static void keypad_task(void *pvParameters)
             }
             portENTER_CRITICAL(&s_keypad_spinlock);
             s_config = applied;
-            s_pins_moving = false;
             usb_hid_set_keycodes(applied.keycode1, applied.keycode2);
             portEXIT_CRITICAL(&s_keypad_spinlock);
             // Start debouncing from the new pins; a switch already held down is reported
-            bool levels[KEY_ID_COUNT] = {board_key1_read(), board_key2_read()};
+            bool levels[KEY_ID_COUNT] = {read_key_level(0), read_key_level(1)};
             portENTER_CRITICAL(&s_keypad_spinlock);
             for (int i = 0; i < KEY_ID_COUNT; i++) {
                 debounce_init(&s_key_debounce[i], levels[i]);
@@ -442,8 +455,8 @@ esp_err_t keypad_init(const keypad_config_t *config)
 #endif
 
     // Initial state read
-    bool k1_init = board_key1_read();
-    bool k2_init = board_key2_read();
+    bool k1_init = read_key_level(0);
+    bool k2_init = read_key_level(1);
     debounce_init(&s_key_debounce[0], k1_init);
     debounce_init(&s_key_debounce[1], k2_init);
     s_key_state[0] = k1_init;
@@ -555,25 +568,14 @@ void keypad_set_config(const keypad_config_t *config)
         return;
     }
 
-    bool pins_changed;
-    bool staged;
+    // Applied by the keypad task once both keys are released and reported so:
+    // new keycodes never land in a report while a key is held, and pin moves
+    // stay with the only task touching key GPIOs
     portENTER_CRITICAL(&s_keypad_spinlock);
-    pins_changed = clamped.key1_gpio != s_config.key1_gpio || clamped.key2_gpio != s_config.key2_gpio;
-    if (!pins_changed && !s_pins_moving && !s_key_state[0] && !s_key_state[1]) {
-        s_config = clamped;
-        usb_hid_set_keycodes(clamped.keycode1, clamped.keycode2);
-        s_config_staged = false;
-    } else {
-        // Pin moves always go through the keypad task, the only task touching key GPIOs
-        s_staged_config = clamped;
-        s_config_staged = true;
-    }
-    staged = s_config_staged;
+    s_staged_config = clamped;
+    s_config_staged = true;
     portEXIT_CRITICAL(&s_keypad_spinlock);
-
-    if (staged) {
-        xTaskNotifyGive(s_input_task_handle);
-    }
+    xTaskNotifyGive(s_input_task_handle);
 }
 
 void keypad_get_config(keypad_config_t *out_config)
@@ -617,4 +619,17 @@ bool keypad_detect_pin_result(uint32_t id, int *out_pin)
 void keypad_set_input_enabled(bool enabled)
 {
     s_input_enabled = enabled;
+    if (s_input_task_handle == NULL) {
+        return; // keypad_init reads the pins with this in effect
+    }
+    // Start again from the pins as they read now (released when off)
+    bool levels[KEY_ID_COUNT] = {read_key_level(0), read_key_level(1)};
+    portENTER_CRITICAL(&s_keypad_spinlock);
+    for (int i = 0; i < KEY_ID_COUNT; i++) {
+        debounce_init(&s_key_debounce[i], levels[i]);
+        s_key_state[i] = levels[i];
+        s_last_transition_us[i] = esp_timer_get_time();
+    }
+    portEXIT_CRITICAL(&s_keypad_spinlock);
+    xTaskNotifyGive(s_input_task_handle);
 }

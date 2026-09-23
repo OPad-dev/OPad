@@ -124,8 +124,8 @@ void device_config_apply(const device_config_data_t *cfg)
         .key1_gpio = (uint8_t)cfg->key1_gpio,
         .key2_gpio = (uint8_t)cfg->key2_gpio,
     };
+    // Keycodes reach usb_hid through the keypad, never while a key is held
     keypad_set_config(&k_cfg);
-    usb_hid_set_keycodes(k_cfg.keycode1, k_cfg.keycode2);
 
     // Apply brightness and sleep to board and UI
     board_backlight_set((uint8_t)cfg->brightness);

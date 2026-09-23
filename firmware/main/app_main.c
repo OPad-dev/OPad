@@ -107,7 +107,6 @@ void app_main(void)
 
     // 4. Initialize USB HID Subsystem and install TinyUSB stack (FATAL if fails)
     ESP_ERROR_CHECK(usb_hid_init());
-    usb_hid_set_keycodes(k_cfg.keycode1, k_cfg.keycode2);
 
     ESP_LOGI(TAG, "Configuring TinyUSB Composite Stack (HID 1000Hz + CDC-ACM)...");
     usb_descriptors_init();
@@ -199,8 +198,13 @@ void app_main(void)
         ui_show_notice("Hall Effect module needs firmware v2.\nKeys are disabled.");
     }
 
-    // Apply brightness and sleep timeout to display & UI
-    device_config_apply(&dev_cfg);
+    // Apply brightness and sleep timeout to display & UI. Read again: the host
+    // may have sent a config since dev_cfg was taken, and the keypad already
+    // has whatever is current
+    device_config_get(&dev_cfg);
+    board_backlight_set((uint8_t)dev_cfg.brightness);
+    ui_set_brightness((uint8_t)dev_cfg.brightness);
+    ui_set_sleep_timeout(dev_cfg.sleep_s);
 
     // 8. Capacitive Touchscreen Quick Retry (core 1, NON-FATAL)
     err = touch_retry_init();
