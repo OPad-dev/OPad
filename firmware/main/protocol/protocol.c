@@ -33,8 +33,9 @@ static int64_t s_last_rx_us = 0;
 // host that predates the AA 55 marker is answered in the framing it parses.
 // Until the host has sent anything we do not know, and send nothing: an
 // unsolicited frame in the wrong framing would desynchronise an old host.
-static volatile bool s_host_framing_known = false;
-static volatile frame_format_t s_host_framing = FRAME_FORMAT_MARKED;
+// Protocol state is owned by the CDC task.
+static bool s_host_framing_known = false;
+static frame_format_t s_host_framing = FRAME_FORMAT_MARKED;
 static uint32_t s_out_sequence = 1;
 
 static void get_device_mac_string(char *buf, size_t max_len)

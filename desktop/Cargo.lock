@@ -3920,8 +3920,6 @@ dependencies = [
 name = "opad-ipc"
 version = "1.0.0-rc"
 dependencies = [
- "byteorder",
- "bytes",
  "opad-layout",
  "opad-model",
  "rustix 0.38.44",

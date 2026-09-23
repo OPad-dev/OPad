@@ -66,6 +66,15 @@ impl Http {
             .await
             .map_err(|e| UpdateError::Http(format!("GET {url}: {e}")))?;
 
+        // Verify the final URL (after redirects) is HTTPS
+        if resp.url().scheme() != "https" {
+            return Err(UpdateError::Http(format!(
+                "GET {}: requires HTTPS but got {}",
+                resp.url(),
+                resp.url().scheme()
+            )));
+        }
+
         if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
             return Ok(Fetched::NotModified);
         }

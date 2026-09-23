@@ -14,8 +14,6 @@ thiserror.workspace = true
 tracing.workspace = true
 opad-model = { path = "../opad-model" }
 opad-layout = { path = "../opad-layout" }
-bytes.workspace = true
-byteorder.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 rustix = { version = "0.38", features = ["process", "fs"] }

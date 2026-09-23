@@ -26,11 +26,6 @@ void easter_egg_init(void)
     }
 }
 
-bool easter_egg_is_active(void)
-{
-    return s_is_active;
-}
-
 static void easter_egg_anim_cb(void *var, int32_t val)
 {
     lv_obj_t *obj = (lv_obj_t *)var;
@@ -71,7 +66,6 @@ static void easter_egg_anim_cb(void *var, int32_t val)
 
     lv_image_set_scale(obj, (uint32_t)scale);
     lv_obj_set_style_opa(obj, (lv_opa_t)opa, 0);
-    lv_obj_set_style_image_opa(obj, (lv_opa_t)opa, 0);
 }
 
 static void easter_egg_anim_completed_cb(lv_anim_t *a)
@@ -117,7 +111,6 @@ void easter_egg_trigger(void)
     // Start at 70% scale and completely transparent
     lv_image_set_scale(s_gif_obj, SCALE_70_PCT);
     lv_obj_set_style_opa(s_gif_obj, 0, 0);
-    lv_obj_set_style_image_opa(s_gif_obj, 0, 0);
 
     lv_anim_t a;
     lv_anim_init(&a);

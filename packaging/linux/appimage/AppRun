@@ -3,7 +3,7 @@ set -e
 
 HERE="$(dirname "$(readlink -f "$0")")"
 export PATH="${HERE}/usr/bin:${HERE}/usr/lib/opad/bin:${PATH}"
-export LD_LIBRARY_PATH="${HERE}/usr/lib:${HERE}/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="${HERE}/usr/lib:${HERE}/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
 # `OPad.AppImage install-udev`: install the pad's udev rule as root. The rule
 # goes in on stdin because root cannot read this user's FUSE mount.

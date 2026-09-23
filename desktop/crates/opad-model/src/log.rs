@@ -12,12 +12,12 @@ pub enum LogSource {
 
 impl std::fmt::Display for LogSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Host => write!(f, "DAEMON"),
-            Self::Esp => write!(f, "DEVICE"),
-            Self::Program => write!(f, "PROGRAM"),
-            Self::Tosu => write!(f, "TOSU"),
-        }
+        f.pad(match self {
+            Self::Host => "DAEMON",
+            Self::Esp => "DEVICE",
+            Self::Program => "PROGRAM",
+            Self::Tosu => "TOSU",
+        })
     }
 }
 
@@ -32,12 +32,12 @@ pub enum LogLevel {
 
 impl std::fmt::Display for LogLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Debug => write!(f, "DEBUG"),
-            Self::Info => write!(f, "INFO"),
-            Self::Warn => write!(f, "WARN"),
-            Self::Error => write!(f, "ERROR"),
-        }
+        f.pad(match self {
+            Self::Debug => "DEBUG",
+            Self::Info => "INFO",
+            Self::Warn => "WARN",
+            Self::Error => "ERROR",
+        })
     }
 }
 
@@ -78,5 +78,26 @@ impl LogEntry {
             self.level,
             self.message
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_log_source_padding() {
+        assert_eq!(format!("[{:<7}]", LogSource::Tosu), "[TOSU   ]");
+        assert_eq!(format!("[{:<7}]", LogSource::Host), "[DAEMON ]");
+        assert_eq!(format!("[{:<7}]", LogSource::Esp), "[DEVICE ]");
+        assert_eq!(format!("[{:<7}]", LogSource::Program), "[PROGRAM]");
+    }
+
+    #[test]
+    fn test_log_level_padding() {
+        assert_eq!(format!("[{:<5}]", LogLevel::Debug), "[DEBUG]");
+        assert_eq!(format!("[{:<5}]", LogLevel::Info), "[INFO ]");
+        assert_eq!(format!("[{:<5}]", LogLevel::Warn), "[WARN ]");
+        assert_eq!(format!("[{:<5}]", LogLevel::Error), "[ERROR]");
     }
 }

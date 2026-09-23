@@ -95,15 +95,12 @@ pub fn daemon_log_path() -> Result<PathBuf, PathError> {
 /// distro packages can be installed under. Windows has no such split: the
 /// installer puts everything in one directory.
 pub fn install_lib_dir() -> Result<PathBuf, PathError> {
-    let exe = std::env::current_exe()?;
-    let bin_dir = exe.parent().ok_or(PathError::NoInstallDirectory)?;
-
-    if cfg!(windows) {
-        Ok(bin_dir.to_path_buf())
+    let prefix = install_prefix()?;
+    Ok(if cfg!(windows) {
+        prefix
     } else {
-        let prefix = bin_dir.parent().ok_or(PathError::NoInstallDirectory)?;
-        Ok(prefix.join("lib").join("opad"))
-    }
+        prefix.join("lib").join("opad")
+    })
 }
 
 /// The prefix this install lives under: `/usr` or `~/.local` on Unix, the

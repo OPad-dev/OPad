@@ -240,7 +240,6 @@ static void build_keycard(lv_obj_t *scr, const ui_widget_t *w)
     lv_obj_remove_style_all(count);
     lv_obj_set_style_text_font(count, widget_font(w), 0);
     lv_obj_align(count, LV_ALIGN_CENTER, 0, w->h >= 48 ? 8 : 0);
-    lv_obj_set_user_data(count, card);
     if (w->source != UI_SRC_NONE) {
         lv_subject_add_observer_obj(ui_data_subject(w->source), count_observer_cb, count, (void *)w);
     }

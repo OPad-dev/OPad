@@ -19,7 +19,6 @@ pub use transport::{create_private_pipe, pipe_security_sddl};
 pub const IPC_PROTOCOL_VERSION: u32 = 1;
 pub const MAX_REQUEST_FRAME_SIZE: usize = 1024 * 1024; // 1 MiB cap (§P2-6)
 pub const MAX_RESPONSE_FRAME_SIZE: usize = 8 * 1024 * 1024; // 8 MiB cap (§P2-6)
-pub const MAX_IPC_FRAME_SIZE: usize = MAX_REQUEST_FRAME_SIZE;
 
 #[derive(Debug, Error)]
 pub enum IpcError {

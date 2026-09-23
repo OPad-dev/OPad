@@ -42,6 +42,7 @@ fn main() {
             "cargo:warning=LVGL sources or sdkconfig not found in {}. Compiling opad-ui-preview in stub mode.",
             firmware.display()
         );
+        println!("cargo:rerun-if-changed={}", ui_core.display());
         let mut build = cc::Build::new();
         build
             .include(&ui_core)
@@ -94,7 +95,6 @@ fn main() {
     build.compile("osupad_ui_lvgl");
 
     println!("cargo:rerun-if-changed={}", sdkconfig.display());
-    println!("cargo:rerun-if-changed={}", ui_core.display());
     println!("cargo:rerun-if-changed=csrc/preview.c");
 }
 
