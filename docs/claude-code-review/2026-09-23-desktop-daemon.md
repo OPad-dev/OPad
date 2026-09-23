@@ -29,7 +29,7 @@ No IPC handler (`ForceSync`, `UpdateConfig`, `SetLayout`/`ResetLayout`, `ResetCo
 
 **Failure scenario:** User answers the takeover prompt with "leave it alone" (`ResolveTakeover take_over = false`): `pending_takeover` is cleared but `foreign_pad` stays true. `GetStatus` now looks like an ordinary connected pad. The GUI/CLI issues `ForceSync` (or `UpdateConfig` / `SetLayout`) → `perform_sync` writes the foreign pad's counters to SQLite and pushes `CounterSync`/config/layout to a pad the user just said to leave untouched.
 
-## 3. Incompatible-protocol pad is adopted as connected before the version check — `open`
+## 3. Incompatible-protocol pad is adopted as connected before the version check — `fixed`
 
 **File:** `desktop/daemon/src/runtime.rs:326`
 **Category:** correctness
@@ -47,7 +47,7 @@ On `DeviceConnected` the pad's config is adopted and persisted, and `device_conn
 
 **Failure scenario:** GUI sends `InstallFirmwareUpdate` while IDLE. The user starts a map during the sync/download (mode → PLAYING, `SetStorageWritesAllowed(false)`). `install()` proceeds to `pause_and_release` and `flash::flash`: the pad is rebooted mid-map (P1-3 / §U-0.1 violation) and the keyboard goes away during play. The updater's `tick()` explicitly re-reads mode for exactly this reason; the firmware path does not.
 
-## 5. On sync failure the in-memory counters are overwritten with values the pad rejected — `open`
+## 5. On sync failure the in-memory counters are overwritten with values the pad rejected — `fixed`
 
 **File:** `desktop/daemon/src/sync.rs:340`
 **Category:** correctness

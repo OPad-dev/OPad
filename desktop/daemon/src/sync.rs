@@ -343,9 +343,11 @@ pub async fn perform_sync<D: DeviceLink>(
             "State synchronization failed after 3 attempts: {}",
             last_error_msg
         );
-        let mut st = state.lock();
-        st.last_sync_error = Some(format!("Counter sync failed: {}", last_error_msg));
-        st.counters = reconciled; // Keep SQLite as reconciled (§P1-1)
+        // SQLite keeps the reconciled row (§P1-1), but the in-memory counters
+        // stay what the pad last reported: it rejected the reconciled values,
+        // so showing them as the pad's (counters_source = Device) would be
+        // wrong until its next report.
+        state.lock().last_sync_error = Some(format!("Counter sync failed: {}", last_error_msg));
         return Err(last_error_msg);
     }
 

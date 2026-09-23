@@ -220,6 +220,9 @@ pub struct RuntimeController {
     /// The owner the *currently connecting* pad reported. Overwritten by every
     /// HelloAck and cleared on disconnect, so it can never be the last pad's.
     reported_owner: Option<Vec<u8>>,
+    /// `state.counters` as they were when the connecting pad's HelloAck began,
+    /// so a pad that turns out to be incompatible leaves no trace in them
+    pre_hello_counters: Option<CounterState>,
 }
 
 impl RuntimeController {
@@ -287,6 +290,7 @@ impl RuntimeController {
             known_devices: known,
             has_initial_db_entry,
             reported_owner: None,
+            pre_hello_counters: None,
         }
     }
 
@@ -321,6 +325,30 @@ impl RuntimeController {
 
         match event {
             RuntimeEvent::DeviceConnected(info, dev_cfg) => {
+                // Checked before anything else: a pad speaking another protocol
+                // is not adopted in any way. Its config is not saved, it is not
+                // "connected" (so Tick neither polls nor syncs it), and the
+                // counters its HelloAck just wrote into the state are put back.
+                let pre_hello_counters = self.pre_hello_counters.take();
+                if info.protocol_version != 1 {
+                    warn!(
+                        "{} speaks protocol {}; leaving it alone until its firmware or this app is updated",
+                        info.device_id, info.protocol_version
+                    );
+                    self.state.incompatible = Some(IncompatibleDevice {
+                        firmware_version: info.firmware_version.clone(),
+                        protocol_version: info.protocol_version,
+                    });
+                    self.state.device_connected = false;
+                    self.state.counters_source = CounterSource::Pc;
+                    self.state.esp_counters = None;
+                    if let Some(c) = pre_hello_counters {
+                        self.state.counters = c;
+                    }
+                    self.reported_owner = None;
+                    return actions;
+                }
+                self.state.incompatible = None;
                 self.state.device_connected = true;
                 self.state.counters_source = CounterSource::Device;
 
@@ -358,14 +386,6 @@ impl RuntimeController {
                     actions.push(RuntimeAction::SaveDeviceConfig(adopted));
                 }
 
-                if info.protocol_version != 1 {
-                    self.state.incompatible = Some(IncompatibleDevice {
-                        firmware_version: info.firmware_version.clone(),
-                        protocol_version: info.protocol_version,
-                    });
-                    return actions;
-                }
-                self.state.incompatible = None;
                 self.state.device_info = Some(info.clone());
                 self.state.esp_counters = Some(self.state.counters.clone());
 
@@ -481,6 +501,9 @@ impl RuntimeController {
                 // Recorded, not judged. The decision belongs in the connect
                 // arm, where the pad's identity and counters are also known.
                 self.reported_owner = Some(owner_id);
+                // The first event of a HelloAck, so the counters are still the
+                // ones from before this pad spoke
+                self.pre_hello_counters = Some(self.state.counters.clone());
             }
 
             RuntimeEvent::DeviceDisconnected => {
@@ -489,6 +512,8 @@ impl RuntimeController {
                 self.state.esp_counters = None;
                 // Never carry one pad's owner into the next pad's connect
                 self.reported_owner = None;
+                self.pre_hello_counters = None;
+                self.state.incompatible = None;
                 self.state.pending_takeover = None;
                 self.state.foreign_pad = false;
             }
@@ -580,7 +605,7 @@ impl RuntimeController {
                         actions.push(RuntimeAction::SetStorageWritesAllowed(false));
                     }
 
-                    if new_attempt {
+                    if new_attempt && self.state.device_connected {
                         actions.push(RuntimeAction::SendHostStatus {
                             tosu_connected: true,
                             is_playing: true,
@@ -598,11 +623,13 @@ impl RuntimeController {
                     self.state.mode = RuntimeMode::Cooldown;
                     self.cooldown_deadline = Some(now + COOLDOWN_DURATION);
                     actions.push(RuntimeAction::SetStorageWritesAllowed(false));
-                    actions.push(RuntimeAction::SendHostStatus {
-                        tosu_connected: true,
-                        is_playing: false,
-                        play_id: self.play_id,
-                    });
+                    if self.state.device_connected {
+                        actions.push(RuntimeAction::SendHostStatus {
+                            tosu_connected: true,
+                            is_playing: false,
+                            play_id: self.play_id,
+                        });
+                    }
                 }
             }
 
@@ -619,11 +646,13 @@ impl RuntimeController {
                 if !connected {
                     self.data_sync.clear();
                 }
-                actions.push(RuntimeAction::SendHostStatus {
-                    tosu_connected: connected,
-                    is_playing: false,
-                    play_id: self.play_id,
-                });
+                if self.state.device_connected {
+                    actions.push(RuntimeAction::SendHostStatus {
+                        tosu_connected: connected,
+                        is_playing: false,
+                        play_id: self.play_id,
+                    });
+                }
                 self.last_host_status = now;
             }
 

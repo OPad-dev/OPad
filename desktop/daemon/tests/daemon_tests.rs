@@ -2987,3 +2987,141 @@ async fn taking_over_pushes_the_layouts_held_back_on_connect() {
     sent.sort_by_key(|s| s.to_wire());
     assert_eq!(sent, vec![Screen::Idle, Screen::Playing]);
 }
+
+/// DA#3: a pad speaking another protocol is not adopted in any way
+#[test]
+fn an_incompatible_pad_is_not_adopted() {
+    let now = Instant::now();
+    let ours = counters("OSUPAD-OURS", 3, 500, 600);
+    let mut controller = RuntimeController::new(
+        DeviceConfig::default(),
+        Some(pad_info("OSUPAD-OURS")),
+        ours.clone(),
+        HashMap::new(),
+        None,
+        vec!["OSUPAD-OURS".to_string()],
+        now,
+    );
+    let config_before = controller.state.config.clone();
+    let mut v2 = pad_info("OSUPAD-V2");
+    v2.protocol_version = 2;
+    let v2_config = DeviceConfig {
+        brightness: config_before.brightness.saturating_sub(10).max(1),
+        ..DeviceConfig::default()
+    };
+
+    let mut actions = Vec::new();
+    actions.extend(controller.on_event(RuntimeEvent::DeviceOwnership(Vec::new()), now));
+    actions.extend(controller.on_event(
+        RuntimeEvent::DeviceCounters(counters("OSUPAD-V2", 1, 7, 8)),
+        now,
+    ));
+    actions.extend(controller.on_event(RuntimeEvent::DeviceConnected(v2, Some(v2_config)), now));
+    assert!(actions.is_empty(), "nothing is sent or saved: {actions:?}");
+
+    let st = &controller.state;
+    assert!(!st.device_connected);
+    assert_eq!(st.counters_source, CounterSource::Pc);
+    assert_eq!(st.config, config_before, "its config is not adopted");
+    assert_eq!(st.counters, ours, "its counters leave no trace");
+    assert!(st.esp_counters.is_none());
+    assert_eq!(
+        st.device_info.as_ref().map(|i| i.device_id.as_str()),
+        Some("OSUPAD-OURS")
+    );
+    assert_eq!(
+        st.incompatible.as_ref().map(|i| i.protocol_version),
+        Some(2)
+    );
+
+    // Neither polled, heartbeated nor synced, however long it stays plugged in
+    for secs in [1, 2, 301, 601] {
+        let t = now + Duration::from_secs(secs);
+        let actions = controller.on_event(RuntimeEvent::Tick(t), t);
+        assert!(
+            !actions.iter().any(|a| matches!(
+                a,
+                RuntimeAction::RequestDeviceStatus
+                    | RuntimeAction::SendHostStatus { .. }
+                    | RuntimeAction::TriggerSync
+                    | RuntimeAction::SendTimeSync
+            )),
+            "{secs}s: {actions:?}"
+        );
+    }
+    let actions = controller.on_event(RuntimeEvent::TosuConnectionChanged(true), now);
+    assert!(actions.is_empty(), "{actions:?}");
+
+    controller.on_event(RuntimeEvent::DeviceDisconnected, now);
+    assert!(controller.state.incompatible.is_none());
+}
+
+/// DA#5: counters the pad rejected are not presented as the pad's
+#[tokio::test]
+async fn a_failed_sync_leaves_the_pads_counters_in_memory() {
+    let info = pad_info("OSUPAD-REJECT");
+    let pc = counters("OSUPAD-REJECT", 1, 100, 200);
+    let on_pad = counters("OSUPAD-REJECT", 1, 10, 20);
+    let storage = Storage::open_in_memory().unwrap();
+    storage.save_device_state(&info, &pc).unwrap();
+    let storage = Arc::new(Mutex::new(Some(storage)));
+
+    let now = Instant::now();
+    let mut controller = RuntimeController::new(
+        DeviceConfig::default(),
+        Some(info.clone()),
+        pc.clone(),
+        HashMap::new(),
+        None,
+        vec![info.device_id.clone()],
+        now,
+    );
+    controller.state.device_connected = true;
+    controller.state.counters = on_pad.clone();
+    controller.state.esp_counters = Some(on_pad.clone());
+    controller.state.counters_source = CounterSource::Device;
+    let daemon_state = Arc::new(Mutex::new(controller.state.clone()));
+
+    let device = MockDeviceLink::new(true);
+    *device.sync_response.lock() = Some(Err("rejected".to_string()));
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    let res = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
+    assert!(res.is_err());
+    let (sent, _) = device.sent_syncs.lock()[0].clone();
+    assert_eq!((sent.lifetime_key1, sent.lifetime_key2), (100, 200));
+
+    {
+        let st = daemon_state.lock();
+        assert_eq!(st.counters, on_pad, "not the reconciled values");
+        assert_eq!(st.esp_counters.as_ref(), Some(&on_pad));
+        assert!(st.last_sync_error.is_some());
+    }
+    let stored = storage
+        .lock()
+        .as_ref()
+        .unwrap()
+        .load_device_state(&info.device_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (stored.lifetime_key1, stored.lifetime_key2),
+        (100, 200),
+        "SQLite keeps the reconciled row"
+    );
+
+    // The failure event, carrying the shared counters as main.rs now does
+    let counters_now = daemon_state.lock().counters.clone();
+    opad_daemon::runtime::apply_event(
+        &mut controller,
+        &daemon_state,
+        &pending_ops,
+        RuntimeEvent::SyncCompleted {
+            success: false,
+            counters: counters_now,
+            time_str: None,
+            error: Some("rejected".into()),
+        },
+        now,
+    );
+    assert_eq!(daemon_state.lock().counters, on_pad);
+}

@@ -392,7 +392,9 @@ async fn main() -> Result<()> {
                     },
                     Err(e) => RuntimeEvent::SyncCompleted {
                         success: false,
-                        counters: controller.state.counters.clone(),
+                        // Unchanged by the failed sync; the shared state, not
+                        // the controller's copy from the previous event
+                        counters: daemon_state.lock().counters.clone(),
                         time_str: None,
                         error: Some(e),
                     },
