@@ -32,7 +32,7 @@ Findings are ranked most severe first.
 
 **Suggested fix:** Keep a separate local seq counter or only advance the cursor from the daemon's `latest_seq`.
 
-## 3. Tray watcher is probed exactly once; a late watcher is never used — `open`
+## 3. Tray watcher is probed exactly once; a late watcher is never used — `fixed`
 
 **File:** `desktop/gui/src/tray.rs:328`
 **Category:** correctness
@@ -61,7 +61,7 @@ The tray stream probes for `org.kde.StatusNotifierWatcher` exactly once (2 s tim
 
 **Suggested fix:** Carry (screen, layout) through `apply_layout` into `Applied`.
 
-## 6. Windows single-instance pipe is created lazily; a second launch can exit silently — `open`
+## 6. Windows single-instance pipe is created lazily; a second launch can exit silently — `fixed` (untested on Windows)
 
 **File:** `desktop/gui/src/single_instance.rs:133`
 **Category:** correctness
@@ -79,7 +79,7 @@ On Windows the single-instance pipe is created lazily inside the `show_requests`
 
 **Failure scenario:** Launch `opad-gui` normally; the Linux tray stream can take up to ~4 s (2 s watcher probe + 2 s spawn timeout). User closes the window at t = 1.5 s: `tray_available` is `None`, `!= Some(true)` is true, `iced::exit()` runs and the app is gone even though the tray icon would have appeared a moment later. The fallback timer at 2 s then also flips it to `Some(false)` until `Started` arrives, extending the window in which close == quit.
 
-## 8. Unconditional unlink of `gui.sock` lets two simultaneous launches both become "the" instance — `open`
+## 8. Unconditional unlink of `gui.sock` lets two simultaneous launches both become "the" instance — `fixed`
 
 **File:** `desktop/gui/src/single_instance.rs:34`
 **Category:** correctness

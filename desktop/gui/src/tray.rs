@@ -305,6 +305,19 @@ async fn check_status_notifier_watcher() -> bool {
     proxy.name_has_owner(well_known).await.unwrap_or(false)
 }
 
+/// How long to wait before probing for a tray host again, `since_start` into
+/// the retries: often at first (a login autostart can beat the AppIndicator
+/// extension or SNI host by a few seconds), then rarely, for a host
+/// installed or enabled later in the session.
+#[cfg(any(target_os = "linux", test))]
+fn tray_retry_delay(since_start: std::time::Duration) -> std::time::Duration {
+    if since_start < std::time::Duration::from_secs(60) {
+        std::time::Duration::from_secs(5)
+    } else {
+        std::time::Duration::from_secs(30)
+    }
+}
+
 #[cfg(target_os = "linux")]
 pub fn stream() -> impl futures_util::Stream<Item = TrayEvent> {
     use ksni::TrayMethods;
@@ -312,42 +325,54 @@ pub fn stream() -> impl futures_util::Stream<Item = TrayEvent> {
         20,
         |mut output: iced::futures::channel::mpsc::Sender<TrayEvent>| async move {
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<TrayAction>();
-            let tray = linux::OpadTray {
-                tx,
-                status: TrayStatus::default(),
+            let started = std::time::Instant::now();
+            let mut reported_unavailable = false;
+
+            // Probed until a host appears, not once: Unavailable is reported
+            // the first time only, and Started whenever the tray comes up
+            let handle = loop {
+                // 2-second timeout to check if a StatusNotifierItem host is present on GNOME Shell / desktop
+                let watcher_available = tokio::time::timeout(
+                    std::time::Duration::from_secs(2),
+                    check_status_notifier_watcher(),
+                )
+                .await
+                .unwrap_or(false);
+
+                let failure = if watcher_available {
+                    let tray = linux::OpadTray {
+                        tx: tx.clone(),
+                        status: TrayStatus::default(),
+                    };
+                    match tokio::time::timeout(std::time::Duration::from_secs(2), tray.spawn())
+                        .await
+                    {
+                        Ok(Ok(handle)) => break handle,
+                        Ok(Err(e)) => format!("System tray spawn failed: {e}"),
+                        Err(_) => "System tray spawn timed out after 2 seconds".to_string(),
+                    }
+                } else {
+                    "No StatusNotifierWatcher host found on DBus within 2 seconds (e.g. GNOME Shell without AppIndicator extension)".to_string()
+                };
+
+                if !reported_unavailable {
+                    tracing::warn!("{failure}; marking tray unavailable and retrying");
+                    let _ = output.send(TrayEvent::Unavailable).await;
+                    reported_unavailable = true;
+                } else {
+                    tracing::debug!("{failure}; retrying");
+                }
+                tokio::time::sleep(tray_retry_delay(started.elapsed())).await;
             };
 
-            // 2-second timeout to check if a StatusNotifierItem host is present on GNOME Shell / desktop
-            let watcher_available = tokio::time::timeout(
-                std::time::Duration::from_secs(2),
-                check_status_notifier_watcher(),
-            )
-            .await
-            .unwrap_or(false);
-
-            if !watcher_available {
-                tracing::warn!("No StatusNotifierWatcher host found on DBus within 2 seconds (e.g. GNOME Shell without AppIndicator extension); marking tray unavailable");
-                let _ = output.send(TrayEvent::Unavailable).await;
-                return;
+            if reported_unavailable {
+                tracing::info!("A system tray host appeared; the tray icon is up");
             }
-
-            match tokio::time::timeout(std::time::Duration::from_secs(2), tray.spawn()).await {
-                Ok(Ok(handle)) => {
-                    let _ = output
-                        .send(TrayEvent::Started(TrayHandle { inner: handle }))
-                        .await;
-                    while let Some(action) = rx.recv().await {
-                        let _ = output.send(TrayEvent::Action(action)).await;
-                    }
-                }
-                Ok(Err(e)) => {
-                    tracing::warn!("System tray spawn failed: {e}");
-                    let _ = output.send(TrayEvent::Unavailable).await;
-                }
-                Err(_) => {
-                    tracing::warn!("System tray spawn timed out after 2 seconds");
-                    let _ = output.send(TrayEvent::Unavailable).await;
-                }
+            let _ = output
+                .send(TrayEvent::Started(TrayHandle { inner: handle }))
+                .await;
+            while let Some(action) = rx.recv().await {
+                let _ = output.send(TrayEvent::Action(action)).await;
             }
         },
     )
@@ -598,6 +623,24 @@ pub fn update(_handle: &TrayHandle, _status: TrayStatus) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_missing_tray_is_retried_often_at_first_then_rarely() {
+        use std::time::Duration;
+        assert_eq!(tray_retry_delay(Duration::ZERO), Duration::from_secs(5));
+        assert_eq!(
+            tray_retry_delay(Duration::from_secs(59)),
+            Duration::from_secs(5)
+        );
+        assert_eq!(
+            tray_retry_delay(Duration::from_secs(60)),
+            Duration::from_secs(30)
+        );
+        assert_eq!(
+            tray_retry_delay(Duration::from_secs(3600)),
+            Duration::from_secs(30)
+        );
+    }
 
     #[test]
     fn test_tray_view_model_offline() {

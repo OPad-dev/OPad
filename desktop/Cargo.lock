@@ -3908,6 +3908,7 @@ dependencies = [
  "rfd",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing",
  "tray-icon",

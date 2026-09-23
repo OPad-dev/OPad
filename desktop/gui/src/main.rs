@@ -188,6 +188,10 @@ pub struct App {
     /// The window was closed while the tray was still being probed: it is
     /// hidden for now, and the app exits if the probe finds no tray
     exit_if_no_tray: bool,
+    /// Started with --tray, but the window was opened because no tray was
+    /// found: a tray that turns up later hides it again
+    start_hidden: bool,
+    fallback_window: bool,
 
     // Daemon state
     pub daemon_online: bool,
@@ -395,6 +399,8 @@ impl App {
             tray: None,
             tray_available: None,
             exit_if_no_tray: false,
+            start_hidden,
+            fallback_window: false,
             daemon_online: false,
             daemon_spawn_attempted: false,
             device_connected: false,
@@ -477,9 +483,19 @@ impl App {
         "OPad".to_string()
     }
 
+    /// Opens the window because there is no tray to live in. A --tray start
+    /// hides it again if a tray turns up later.
+    fn open_fallback_window(&mut self) -> Task<Message> {
+        let task = self.open_window();
+        self.fallback_window = self.start_hidden;
+        task
+    }
+
     fn open_window(&mut self) -> Task<Message> {
-        // Shown again (e.g. by a second launch): closing decides anew
+        // Shown again (e.g. by a second launch): closing decides anew, and
+        // the window is the user's now, not a stand-in for a missing tray
         self.exit_if_no_tray = false;
+        self.fallback_window = false;
         if let Some(id) = self.window {
             return window::gain_focus(id);
         }
@@ -1503,13 +1519,16 @@ impl App {
                     tracing::warn!("Tray host not detected within 2 seconds; falling back to standard window lifecycle");
                     self.tray_available = Some(false);
                     if self.exit_if_no_tray {
-                        return iced::exit();
+                        // Closed during the probe: the tray stream's own
+                        // verdict (Started or Unavailable, a few seconds at
+                        // most) decides between hiding and exiting
+                        return Task::none();
                     }
                     if self.banner.is_none() {
                         self.banner = Some(NO_TRAY_BANNER.into());
                     }
                     if self.window.is_none() {
-                        return self.open_window();
+                        return self.open_fallback_window();
                     }
                 }
             }
@@ -1549,11 +1568,22 @@ impl App {
                     self.tray = Some(handle);
                     self.tray_available = Some(true);
                     self.exit_if_no_tray = false;
+                    // A late tray (retried in tray::stream): a --tray start
+                    // goes back to living there
+                    let hide = if self.fallback_window {
+                        self.fallback_window = false;
+                        self.window.take().map(window::close)
+                    } else {
+                        None
+                    };
                     // The tray can come up after the 2 s fallback already fired
                     if self.banner.as_deref() == Some(NO_TRAY_BANNER) {
                         self.banner = None;
                     }
                     self.update_tray();
+                    if let Some(hide) = hide {
+                        return hide;
+                    }
                 }
                 tray::TrayEvent::Unavailable => {
                     self.tray_available = Some(false);
@@ -1564,7 +1594,7 @@ impl App {
                         self.banner = Some(NO_TRAY_BANNER.into());
                     }
                     if self.window.is_none() {
-                        return self.open_window();
+                        return self.open_fallback_window();
                     }
                 }
                 tray::TrayEvent::Action(tray::TrayAction::ShowWindow) => return self.open_window(),
