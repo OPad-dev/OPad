@@ -3361,3 +3361,105 @@ fn a_flash_pause_is_held_from_ready_for_flash_until_released() {
         &IpcResponse::DeviceResumed
     ));
 }
+
+/// One connection served by the daemon's real connection loop, over an
+/// in-memory stream, with the mock pad
+fn serve(device: Arc<MockDeviceLink>) -> (tokio::io::DuplexStream, tokio::task::JoinHandle<()>) {
+    let (client, mut server) = tokio::io::duplex(64 * 1024);
+    let task = tokio::spawn(async move {
+        let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+        let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+        let state = Arc::new(Mutex::new(idle_state(true, None, CounterState::default())));
+        opad_daemon::ipc_handlers::serve_connection(
+            &mut server,
+            &state,
+            &storage,
+            &*device,
+            &LogHub::new(),
+            &pending_ops,
+            None,
+        )
+        .await;
+    });
+    (client, task)
+}
+
+fn handshake(version: &str) -> IpcRequest {
+    IpcRequest::Handshake {
+        client_protocol: IPC_PROTOCOL_VERSION,
+        client_version: version.to_string(),
+    }
+}
+
+/// A request before any handshake is refused, and the connection closed
+/// before it could do anything to the pad
+#[tokio::test]
+async fn requests_before_a_handshake_are_refused() {
+    let device = Arc::new(MockDeviceLink::new(true));
+    let (mut client, task) = serve(device.clone());
+
+    let resp = opad_ipc::send_request(&mut client, &IpcRequest::PrepareFlash)
+        .await
+        .unwrap();
+    assert!(
+        matches!(&resp, IpcResponse::Error(e) if e.contains("Handshake required")),
+        "{resp:?}"
+    );
+    task.await.unwrap();
+    assert!(opad_ipc::send_request(&mut client, &IpcRequest::GetStatus)
+        .await
+        .is_err());
+    assert!(device.is_connected(), "the pad was never paused");
+}
+
+/// A rejected handshake ends the connection: the client cannot ignore the
+/// rejection and carry on
+#[tokio::test]
+async fn a_rejected_handshake_closes_the_connection() {
+    let device = Arc::new(MockDeviceLink::new(true));
+    let (mut client, task) = serve(device.clone());
+
+    let resp = opad_ipc::send_request(&mut client, &handshake("0.0.1-other"))
+        .await
+        .unwrap();
+    assert!(
+        matches!(resp, IpcResponse::HandshakeRejected { .. }),
+        "{resp:?}"
+    );
+    task.await.unwrap();
+    assert!(
+        opad_ipc::send_request(&mut client, &IpcRequest::PrepareFlash)
+            .await
+            .is_err()
+    );
+    assert!(device.is_connected(), "the pad was never paused");
+}
+
+/// After a good handshake requests are served; a client that paused the pad
+/// for a flash and vanished gets it resumed (DC#3, through the real loop)
+#[tokio::test]
+async fn a_handshaken_client_is_served_and_its_flash_pause_released_on_drop() {
+    let device = Arc::new(MockDeviceLink::new(true));
+    let (mut client, task) = serve(device.clone());
+
+    let resp = opad_ipc::send_request(&mut client, &handshake(env!("CARGO_PKG_VERSION")))
+        .await
+        .unwrap();
+    assert!(matches!(resp, IpcResponse::HandshakeAck { .. }), "{resp:?}");
+    let resp = opad_ipc::send_request(&mut client, &IpcRequest::GetStatus)
+        .await
+        .unwrap();
+    assert!(matches!(resp, IpcResponse::Status { .. }), "{resp:?}");
+    let resp = opad_ipc::send_request(&mut client, &IpcRequest::PrepareFlash)
+        .await
+        .unwrap();
+    assert!(
+        matches!(resp, IpcResponse::ReadyForFlash { .. }),
+        "{resp:?}"
+    );
+    assert!(!device.is_connected(), "paused for the flash");
+
+    drop(client);
+    task.await.unwrap();
+    assert!(device.is_connected(), "resumed when the client left");
+}

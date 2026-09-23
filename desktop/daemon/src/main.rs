@@ -11,7 +11,7 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
 use opad_device::{DeviceEvent, DeviceManager};
-use opad_ipc::{create_listener, get_socket_path, read_request, send_response};
+use opad_ipc::{create_listener, get_socket_path};
 use opad_layout::{Layout, Screen};
 use opad_model::{CounterState, DeviceConfig, LogSource, RuntimeMode};
 use opad_storage::Storage;
@@ -29,7 +29,6 @@ pub mod telemetry;
 pub mod updater;
 
 use device_actor::DeviceCommand;
-use ipc_handlers::handle_ipc_request;
 use log_hub::{LogHub, LogHubLayer};
 use runtime::{apply_event, PendingOperations, RuntimeAction, RuntimeController, RuntimeEvent};
 use sync::perform_sync;
@@ -261,32 +260,16 @@ async fn main() -> Result<()> {
                         let update_service = update_service.clone();
 
                         tokio::spawn(async move {
-                            // Set while this client has the pad paused for a flash
-                            let mut flash_pause = false;
-                            while let Ok(req) = read_request(&mut stream).await {
-                                let step = ipc_handlers::FlashStep::of(&req);
-                                let resp = handle_ipc_request(
-                                    req,
-                                    &daemon_state,
-                                    &storage,
-                                    &*device_manager,
-                                    &log_hub,
-                                    &pending_ops,
-                                    Some(&update_service),
-                                )
-                                .await;
-                                flash_pause =
-                                    ipc_handlers::holds_flash_pause(flash_pause, step, &resp);
-                                if send_response(&mut stream, &resp).await.is_err() {
-                                    break;
-                                }
-                            }
-                            if flash_pause {
-                                warn!(
-                                    "The client that paused the pad for a flash disconnected without resuming it; resuming device discovery"
-                                );
-                                device_manager.resume();
-                            }
+                            ipc_handlers::serve_connection(
+                                &mut stream,
+                                &daemon_state,
+                                &storage,
+                                &*device_manager,
+                                &log_hub,
+                                &pending_ops,
+                                Some(&update_service),
+                            )
+                            .await;
                         });
                     }
                     Err(e) => {
@@ -593,6 +576,7 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ipc_handlers::handle_ipc_request;
     use crate::runtime::DaemonState;
     use opad_ipc::{IpcRequest, IpcResponse};
     use opad_model::{CounterSource, DeviceInfo};

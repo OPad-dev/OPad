@@ -5,7 +5,8 @@ use tracing::{info, warn};
 
 use opad_device::DeviceEvent;
 use opad_ipc::{
-    CurrentBackupState, IpcRequest, IpcResponse, UpdateComponent, IPC_PROTOCOL_VERSION,
+    read_request, send_response, CurrentBackupState, IpcRequest, IpcResponse, IpcTransport,
+    UpdateComponent, IPC_PROTOCOL_VERSION,
 };
 use opad_layout::Screen;
 use opad_model::{char_to_hid_usage, CounterState, DeviceConfig, DeviceInfo, RuntimeMode};
@@ -1244,5 +1245,61 @@ pub fn holds_flash_pause(held: bool, step: FlashStep, resp: &IpcResponse) -> boo
         FlashStep::Prepare => held || matches!(resp, IpcResponse::ReadyForFlash { .. }),
         FlashStep::Release => false,
         FlashStep::Other => held,
+    }
+}
+
+/// The answer to anything but a Handshake on a connection that has not
+/// completed one. The handshake is where a mismatched client (another IPC
+/// protocol, or a GUI newer than the running daemon after an update) is
+/// turned away; without this gate it could skip it, or ignore the rejection,
+/// and still pause the pad or rewrite config.
+pub fn refuse_before_handshake(handshaken: bool, req: &IpcRequest) -> Option<IpcResponse> {
+    (!handshaken && !matches!(req, IpcRequest::Handshake { .. })).then(|| {
+        IpcResponse::Error(
+            "Handshake required: complete a successful Handshake before any other request"
+                .to_string(),
+        )
+    })
+}
+
+/// Serves one IPC connection until the client leaves.
+///
+/// Nothing but a Handshake is served until one succeeds; a request before
+/// that is refused and a rejected Handshake is answered, and in both cases
+/// the connection is then closed. A pad paused for a flash by this connection
+/// is resumed if the client leaves without handing it back.
+pub async fn serve_connection<S: IpcTransport + ?Sized, D: DeviceLink>(
+    stream: &mut S,
+    state: &Arc<Mutex<DaemonState>>,
+    storage: &Arc<Mutex<Option<Storage>>>,
+    device: &D,
+    log_hub: &LogHub,
+    pending_ops: &Arc<Mutex<PendingOperations>>,
+    updates: Option<&UpdateService>,
+) {
+    let mut handshaken = false;
+    // Set while this client has the pad paused for a flash
+    let mut flash_pause = false;
+    while let Ok(req) = read_request(stream).await {
+        if let Some(refused) = refuse_before_handshake(handshaken, &req) {
+            warn!("IPC request before a successful handshake; closing the connection");
+            let _ = send_response(stream, &refused).await;
+            break;
+        }
+        let step = FlashStep::of(&req);
+        let resp =
+            handle_ipc_request(req, state, storage, device, log_hub, pending_ops, updates).await;
+        flash_pause = holds_flash_pause(flash_pause, step, &resp);
+        let rejected = matches!(resp, IpcResponse::HandshakeRejected { .. });
+        handshaken |= matches!(resp, IpcResponse::HandshakeAck { .. });
+        if send_response(stream, &resp).await.is_err() || rejected {
+            break;
+        }
+    }
+    if flash_pause {
+        warn!(
+            "The client that paused the pad for a flash disconnected without resuming it; resuming device discovery"
+        );
+        device.resume();
     }
 }
