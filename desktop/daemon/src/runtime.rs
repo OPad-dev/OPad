@@ -116,11 +116,27 @@ pub struct PendingTakeover {
     pub device_key2: u64,
 }
 
+/// A ResetCounters that has not reached the pad yet. The next successful
+/// sync with that pad pushes zeroed counters with `force_restore`, so the
+/// counters the pad reports on connect cannot undo the reset.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingCounterReset {
+    /// The pad the reset was made for. `None` when no pad was known yet: it
+    /// then applies to the first pad synced.
+    pub device_id: Option<String>,
+}
+
+impl PendingCounterReset {
+    pub fn applies_to(&self, device_id: &str) -> bool {
+        self.device_id.as_deref().is_none_or(|id| id == device_id)
+    }
+}
+
 #[derive(Default, Clone, Debug)]
 pub struct PendingOperations {
     pub pending_config: Option<DeviceConfig>,
     pub pending_layouts: Vec<(Screen, Option<Layout>)>,
-    pub pending_device_push: bool,
+    pub pending_device_push: Option<PendingCounterReset>,
     pub pending_last_seen: Option<String>,
 }
 

@@ -13,7 +13,7 @@ use opad_storage::Storage;
 
 use crate::identity;
 use crate::log_hub::LogHub;
-use crate::runtime::{DaemonState, PendingOperations};
+use crate::runtime::{DaemonState, PendingCounterReset, PendingOperations};
 use crate::sync::{perform_sync, DeviceLink};
 use crate::updater::{self, UpdateService};
 
@@ -440,7 +440,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 };
             }
 
-            let updated = {
+            let (updated, target) = {
                 let mut st = state.lock();
                 st.counters.counter_generation = st.counters.counter_generation.saturating_add(1);
                 st.counters.lifetime_key1 = 0;
@@ -451,16 +451,19 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     if let Some(s) = storage.lock().as_ref() {
                         let _ = s.save_device_state(info, &updated);
                     }
-                } else {
-                    pending_ops.lock().pending_device_push = true;
                 }
-                updated
+                (
+                    updated,
+                    st.device_info.as_ref().map(|i| i.device_id.clone()),
+                )
             };
 
             if state.lock().device_connected {
                 let _ = device.send_counter_sync(&updated, true).await;
             } else {
-                pending_ops.lock().pending_device_push = true;
+                // Honoured by the next sync with this pad (perform_sync)
+                pending_ops.lock().pending_device_push =
+                    Some(PendingCounterReset { device_id: target });
             }
             info!("Lifetime counters reset with incremented generation");
             IpcResponse::CountersReset { counters: updated }

@@ -339,7 +339,15 @@ async fn install_app(
     opad_update::download::stage_bytes(&target, &bytes, &artifact.sha256, &artifact.url)?
         .install_to(&target)?;
 
-    let applied = apply_downloaded(policy, origin, &target);
+    // Blocking, and a package manager can sit on a polkit prompt for minutes:
+    // off the runtime's worker threads
+    let applied = {
+        let target = target.clone();
+        tokio::task::spawn_blocking(move || apply_downloaded(policy, origin, &target))
+            .await
+            .map_err(|e| UpdateError::Io(std::io::Error::other(format!("apply step: {e}"))))
+            .and_then(|r| r)
+    };
 
     // A .deb or an installer is worth tens of megabytes and has done its job.
     // Leaving it behind would put it on §W2-3's list of things to clean up for
@@ -392,7 +400,7 @@ fn apply_downloaded(
                         "$APPIMAGE is not set, so there is no AppImage to replace",
                     ))
                 })?;
-            std::fs::rename(file, &current)?;
+            replace_file(file, &current)?;
             Ok(())
         }
         _ => {
@@ -414,6 +422,50 @@ fn apply_downloaded(
             Ok(())
         }
     }
+}
+
+/// Moves `staged` over `target`. The staged file sits in the state directory,
+/// and `$APPIMAGE` can be on another filesystem (`/opt`, a second drive),
+/// where rename fails with EXDEV. Then the bytes are copied to a temporary
+/// file beside the target, made executable, synced and renamed there, so
+/// the target is still replaced in one step. `staged` is only read here; the
+/// caller removes it once this has returned.
+fn replace_file(staged: &std::path::Path, target: &std::path::Path) -> std::io::Result<()> {
+    match std::fs::rename(staged, target) {
+        Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
+            debug!(
+                "{} is on another filesystem; copying the update into place",
+                target.display()
+            );
+            copy_replace(staged, target)
+        }
+        other => other,
+    }
+}
+
+fn copy_replace(staged: &std::path::Path, target: &std::path::Path) -> std::io::Result<()> {
+    let dir = target.parent().ok_or_else(|| {
+        std::io::Error::other(format!("{} has no parent directory", target.display()))
+    })?;
+    let name = target
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "opad-update".to_string());
+    let tmp = dir.join(format!(".{name}.incoming"));
+    let result = (|| {
+        std::fs::copy(staged, &tmp)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))?;
+        }
+        std::fs::File::open(&tmp)?.sync_all()?;
+        std::fs::rename(&tmp, target)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
 }
 
 async fn update_tosu(
@@ -543,5 +595,59 @@ fn write_json<T: serde::Serialize>(storage: &Arc<Mutex<Option<Storage>>>, key: &
                 debug!("Could not persist {}: {}", key, e);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{copy_replace, replace_file};
+
+    #[test]
+    fn a_staged_update_replaces_the_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let staged = dir.path().join("staged.AppImage");
+        let target = dir.path().join("opad.AppImage");
+        std::fs::write(&staged, b"new").unwrap();
+        std::fs::write(&target, b"old").unwrap();
+        replace_file(&staged, &target).unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"new");
+    }
+
+    /// The EXDEV fallback: rename cannot be made to cross a filesystem in a
+    /// test, so the copy path is exercised directly.
+    #[test]
+    fn the_cross_filesystem_fallback_copies_and_keeps_the_staged_file() {
+        let staging = tempfile::tempdir().unwrap();
+        let install = tempfile::tempdir().unwrap();
+        let staged = staging.path().join("opad-x86_64.AppImage");
+        let target = install.path().join("OPad.AppImage");
+        std::fs::write(&staged, b"new").unwrap();
+        std::fs::write(&target, b"old").unwrap();
+
+        copy_replace(&staged, &target).unwrap();
+
+        assert_eq!(std::fs::read(&target).unwrap(), b"new");
+        assert!(staged.exists(), "the caller removes the staged file");
+        assert_eq!(
+            std::fs::read_dir(install.path()).unwrap().count(),
+            1,
+            "no temporary file is left beside the target"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(&target).unwrap().permissions().mode();
+            assert_eq!(mode & 0o111, 0o111, "the AppImage must stay executable");
+        }
+    }
+
+    #[test]
+    fn a_failed_copy_leaves_the_old_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("OPad.AppImage");
+        std::fs::write(&target, b"old").unwrap();
+        assert!(copy_replace(&dir.path().join("missing"), &target).is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"old");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 }

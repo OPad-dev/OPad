@@ -242,6 +242,22 @@ pub async fn perform_sync<D: DeviceLink>(
     // Reconcile (§13)
     let mut reconciled = reconcile_counters(&stored_counters, &in_memory_counters);
 
+    // A reset made while the pad was away is the user's intent and wins over
+    // whatever the pad reported on connect, however it reconciles.
+    let pending_reset = pending_ops
+        .lock()
+        .pending_device_push
+        .clone()
+        .filter(|r| r.applies_to(&info.device_id));
+    if pending_reset.is_some() {
+        reconciled = counter_reset(&info.device_id, &reconciled, &in_memory_counters);
+        info!(
+            "Applying the counter reset made while the pad was disconnected (gen={})",
+            reconciled.counter_generation
+        );
+    }
+    let force_restore = pending_reset.is_some();
+
     // Save reconciled state to SQLite (blocked by the write guard if a map started)
     {
         if let Some(s) = storage.lock().as_ref() {
@@ -257,7 +273,7 @@ pub async fn perform_sync<D: DeviceLink>(
 
     for attempt in 0..3 {
         let mut resp_events = device.subscribe();
-        match device.send_counter_sync(&reconciled, false).await {
+        match device.send_counter_sync(&reconciled, force_restore).await {
             Ok(seq) => {
                 let wait_resp = tokio::time::timeout(Duration::from_secs(2), async {
                     loop {
@@ -365,6 +381,10 @@ pub async fn perform_sync<D: DeviceLink>(
     // Drain pending operations (§P1-3)
     let (pending_cfg, pending_layouts, pending_seen) = {
         let mut p = pending_ops.lock();
+        // Only the reset this sync delivered: one queued meanwhile stays
+        if pending_reset.is_some() && p.pending_device_push == pending_reset {
+            p.pending_device_push = None;
+        }
         (
             p.pending_config.take(),
             std::mem::take(&mut p.pending_layouts),
@@ -418,4 +438,24 @@ pub async fn perform_sync<D: DeviceLink>(
 
     info!("Synchronization completed successfully");
     Ok(reconciled)
+}
+
+/// Zeroed counters in a generation above both what reconciliation chose and
+/// what the pad reported, so the pad cannot out-rank the reset. A stored reset
+/// row that already out-ranks the pad keeps its generation.
+fn counter_reset(
+    device_id: &str,
+    reconciled: &CounterState,
+    device: &CounterState,
+) -> CounterState {
+    CounterState {
+        device_id: device_id.to_string(),
+        counter_generation: reconciled
+            .counter_generation
+            .max(device.counter_generation.saturating_add(1)),
+        lifetime_key1: 0,
+        lifetime_key2: 0,
+        map_key1: 0,
+        map_key2: 0,
+    }
 }

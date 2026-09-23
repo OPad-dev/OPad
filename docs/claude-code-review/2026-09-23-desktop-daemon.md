@@ -65,7 +65,7 @@ After a successful takeover only the suppressed config is re-sent; the custom la
 
 **Failure scenario:** Foreign pad connects with custom Idle/Playing layouts stored on this PC; `SendLayout` is skipped at connect. User accepts the takeover: `send_config` goes out, `foreign_pad = false`, but the pad keeps its default layouts until it is physically re-plugged. The comment says "the config we suppressed while it was foreign goes out" but layouts were suppressed under the same condition.
 
-## 7. AppImage self-replace uses cross-filesystem `rename`; package install blocks a tokio worker — `open`
+## 7. AppImage self-replace uses cross-filesystem `rename`; package install blocks a tokio worker — `fixed`
 
 **File:** `desktop/daemon/src/updater.rs:390`
 **Category:** correctness / efficiency
@@ -76,7 +76,7 @@ AppImage self-replacement uses `std::fs::rename` from the state directory to `$A
 
 **Suggested fix:** Copy+rename (or `fs::copy` then set permissions) when `rename` fails with `EXDEV`; use `tokio::process::Command` or `spawn_blocking` for the package manager call.
 
-## 8. `pending_device_push` is written but never read — `open` (confirmed)
+## 8. `pending_device_push` is written but never read — `fixed` (confirmed)
 
 **File:** `desktop/daemon/src/ipc_handlers.rs:430`
 **Category:** correctness

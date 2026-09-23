@@ -3125,3 +3125,160 @@ async fn a_failed_sync_leaves_the_pads_counters_in_memory() {
     );
     assert_eq!(daemon_state.lock().counters, on_pad);
 }
+
+/// DA#8: a ResetCounters made while no pad is connected is pushed, forced, by
+/// the next sync, even though the pad reported its old counters on connect.
+#[tokio::test]
+async fn a_counter_reset_while_disconnected_survives_the_next_connect() {
+    for known_pad in [false, true] {
+        let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+        let device = MockDeviceLink::new(false);
+        let log_hub = LogHub::new();
+        let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+        let info = DeviceInfo {
+            device_id: "OSUPAD-RESET".to_string(),
+            board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+            firmware_version: "1.0.0".to_string(),
+            protocol_version: 1,
+            running_partition: None,
+        };
+        let pad_counters = CounterState {
+            device_id: info.device_id.clone(),
+            counter_generation: 3,
+            lifetime_key1: 1000,
+            lifetime_key2: 2000,
+            map_key1: 0,
+            map_key2: 0,
+        };
+        let daemon_state = Arc::new(Mutex::new(idle_state(
+            false,
+            known_pad.then(|| info.clone()),
+            if known_pad {
+                pad_counters.clone()
+            } else {
+                CounterState::default()
+            },
+        )));
+
+        let resp = handle_ipc_request(
+            IpcRequest::ResetCounters { confirm: true },
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+            None,
+        )
+        .await;
+        assert!(
+            matches!(resp, IpcResponse::CountersReset { .. }),
+            "{resp:?}"
+        );
+        assert!(device.sent_syncs.lock().is_empty());
+        assert!(pending_ops.lock().pending_device_push.is_some());
+
+        // The pad connects and reports its old counters
+        {
+            let mut st = daemon_state.lock();
+            st.device_connected = true;
+            st.device_info = Some(info.clone());
+            st.counters = pad_counters.clone();
+        }
+        device.connected.store(true, Ordering::SeqCst);
+        *device.device_counters.lock() = Some(pad_counters.clone());
+
+        let synced = perform_sync(&daemon_state, &storage, &device, &pending_ops)
+            .await
+            .expect("sync");
+        assert_eq!(
+            (synced.lifetime_key1, synced.lifetime_key2),
+            (0, 0),
+            "known_pad={known_pad}"
+        );
+        assert!(synced.counter_generation > pad_counters.counter_generation);
+        let sent = device.sent_syncs.lock().clone();
+        assert!(sent.iter().all(|(_, force)| *force), "the reset is forced");
+        assert_eq!(
+            device
+                .device_counters
+                .lock()
+                .as_ref()
+                .map(|c| c.lifetime_key1),
+            Some(0)
+        );
+        assert!(pending_ops.lock().pending_device_push.is_none());
+
+        // Delivered once: the next sync is an ordinary one
+        let _ = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
+        assert!(!device.sent_syncs.lock().last().unwrap().1);
+    }
+}
+
+/// A reset queued for one pad is not applied to a different pad.
+#[tokio::test]
+async fn a_queued_counter_reset_is_kept_for_its_own_pad() {
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    let device = MockDeviceLink::new(true);
+    let other = CounterState {
+        device_id: "OSUPAD-OTHER".to_string(),
+        counter_generation: 1,
+        lifetime_key1: 50,
+        lifetime_key2: 60,
+        map_key1: 0,
+        map_key2: 0,
+    };
+    *device.device_counters.lock() = Some(other.clone());
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    pending_ops.lock().pending_device_push = Some(opad_daemon::runtime::PendingCounterReset {
+        device_id: Some("OSUPAD-RESET".to_string()),
+    });
+    let daemon_state = Arc::new(Mutex::new(idle_state(
+        true,
+        Some(DeviceInfo {
+            device_id: other.device_id.clone(),
+            board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+            firmware_version: "1.0.0".to_string(),
+            protocol_version: 1,
+            running_partition: None,
+        }),
+        other.clone(),
+    )));
+
+    let synced = perform_sync(&daemon_state, &storage, &device, &pending_ops)
+        .await
+        .expect("sync");
+    assert_eq!((synced.lifetime_key1, synced.lifetime_key2), (50, 60));
+    assert!(!device.sent_syncs.lock()[0].1);
+    assert!(pending_ops.lock().pending_device_push.is_some());
+}
+
+fn idle_state(
+    device_connected: bool,
+    device_info: Option<DeviceInfo>,
+    counters: CounterState,
+) -> DaemonState {
+    DaemonState {
+        mode: RuntimeMode::Idle,
+        device_connected,
+        device_info,
+        counters,
+        counters_source: CounterSource::Device,
+        pc_counters: None,
+        esp_counters: None,
+        config: DeviceConfig::default(),
+        last_sync_time: None,
+        last_sync_error: None,
+        storage_error: None,
+        tosu_connected: false,
+        latency: None,
+        pending_replacement: None,
+        install_id: None,
+        pending_takeover: None,
+        foreign_pad: false,
+        nvs_restore_pending: false,
+        incompatible: None,
+        ui_values: Vec::new(),
+        custom_layouts: HashMap::new(),
+        last_backup: None,
+    }
+}
