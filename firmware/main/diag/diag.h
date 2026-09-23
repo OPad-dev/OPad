@@ -19,7 +19,7 @@ enum {
     DIAG_EVENT_NVS_ERASED = 8,
     DIAG_EVENT_LCD_INIT_FAILED = 9,      // arg0 = esp_err
     DIAG_EVENT_DECODE_FAILED = 10,       // arg0 = error code
-    DIAG_EVENT_FRAME_TOO_LARGE = 11,     // arg0 = frame size
+    DIAG_EVENT_FRAME_TOO_LARGE = 11,     // CDC bytes dropped: arg0 = count, arg1 = DIAG_FRAME_DROP_*
     DIAG_EVENT_CONFIG_REJECTED = 12,     // arg0 = reason code
     DIAG_EVENT_COUNTER_SYNC_REJECTED = 13, // arg0 = reason code
     DIAG_EVENT_LAYOUT_REJECTED = 14,     // arg0 = screen_id
@@ -30,6 +30,12 @@ enum {
     DIAG_EVENT_CDC_WRITE_DROPPED = 19,   // arg0 = expected, arg1 = written
     DIAG_EVENT_BUFFER_OVERFLOW = 20,     // arg0 = dropped_count
     DIAG_EVENT_UNKNOWN_HOST_MSG = 21,    // arg0 = field tag
+};
+
+// DIAG_EVENT_FRAME_TOO_LARGE arg1: why the bytes were dropped
+enum {
+    DIAG_FRAME_DROP_RESYNC = 0,  // skipped looking for a frame start (junk, impossible length)
+    DIAG_FRAME_DROP_STALE = 1,   // partial frame the host stopped sending
 };
 
 typedef struct {

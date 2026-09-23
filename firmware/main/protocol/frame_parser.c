@@ -38,15 +38,6 @@ void frame_write_header(uint8_t out[FRAME_HEADER_SIZE], uint16_t payload_len,
     out[3] = (uint8_t)(payload_len >> 8);
 }
 
-static void drop_front(frame_parser_t *parser, size_t n)
-{
-    size_t remaining = parser->rx_len - n;
-    if (remaining > 0) {
-        memmove(parser->rx_buf, parser->rx_buf + n, remaining);
-    }
-    parser->rx_len = remaining;
-}
-
 void frame_parser_feed(frame_parser_t *parser, const uint8_t *data, size_t len,
                        frame_accept_t accept, frame_handler_t handler, void *user_data)
 {
@@ -66,12 +57,12 @@ void frame_parser_feed(frame_parser_t *parser, const uint8_t *data, size_t len,
     memcpy(parser->rx_buf + parser->rx_len, data, len);
     parser->rx_len += len;
 
-    while (parser->rx_len > 0) {
+    // Consumed bytes are skipped with a head index and compacted away once at
+    // the end, so sliding through junk costs one pass over it
+    size_t head = 0;
+    while (parser->rx_len - head >= FRAME_HEADER_SIZE) {
         // Both framings need the whole 4-byte header to be told apart
-        if (parser->rx_len < FRAME_HEADER_SIZE) {
-            break;
-        }
-        const uint8_t *b = parser->rx_buf;
+        const uint8_t *b = parser->rx_buf + head;
 
         frame_format_t format;
         size_t expected_len;
@@ -82,12 +73,17 @@ void frame_parser_feed(frame_parser_t *parser, const uint8_t *data, size_t len,
                 // Not a real header: slide past its first byte and keep looking
                 parser->oversized_count++;
                 parser->resync_bytes++;
-                drop_front(parser, 1);
+                head++;
                 continue;
             }
         } else if (accept == FRAME_ACCEPT_MARKED) {
-            parser->resync_bytes++;
-            drop_front(parser, 1);
+            // Only a magic byte can start a frame: jump to the next one, but no
+            // further than the last position with room for a whole header
+            size_t stop = parser->rx_len - (FRAME_HEADER_SIZE - 1);
+            const uint8_t *next = memchr(b + 1, FRAME_MAGIC_0, stop - (head + 1));
+            size_t to = next ? (size_t)(next - parser->rx_buf) : stop;
+            parser->resync_bytes += (uint32_t)(to - head);
+            head = to;
             continue;
         } else {
             // Locked to legacy, AA 55 lands here and claims >= 0x55AA bytes: slid past
@@ -96,19 +92,27 @@ void frame_parser_feed(frame_parser_t *parser, const uint8_t *data, size_t len,
             if (b[2] != 0 || b[3] != 0 || expected_len < FRAME_LEGACY_MIN_PAYLOAD ||
                 expected_len > FRAME_MAX_PAYLOAD) {
                 parser->resync_bytes++;
-                drop_front(parser, 1);
+                head++;
                 continue;
             }
         }
 
-        if (parser->rx_len < FRAME_HEADER_SIZE + expected_len) {
+        if (parser->rx_len - head < FRAME_HEADER_SIZE + expected_len) {
             break;
         }
 
         parser->last_format = format;
         if (handler) {
-            handler(parser->rx_buf + FRAME_HEADER_SIZE, expected_len, user_data);
+            handler(b + FRAME_HEADER_SIZE, expected_len, user_data);
         }
-        drop_front(parser, FRAME_HEADER_SIZE + expected_len);
+        head += FRAME_HEADER_SIZE + expected_len;
+    }
+
+    if (head > 0) {
+        size_t remaining = parser->rx_len - head;
+        if (remaining > 0) {
+            memmove(parser->rx_buf, parser->rx_buf + head, remaining);
+        }
+        parser->rx_len = remaining;
     }
 }

@@ -340,7 +340,10 @@ void protocol_drain_diag_logs(void)
     }
 }
 
-static void layout_from_proto(const osupad_SetLayout *in, ui_layout_t *out)
+// False if a widget holds a value that has no place in ui_layout_t: those are
+// clamped into ones the validator rejects where it checks the field, and fail
+// here where it does not
+static bool layout_from_proto(const osupad_SetLayout *in, ui_layout_t *out, char *err, size_t err_len)
 {
     memset(out, 0, sizeof(*out));
     out->background = in->background;
@@ -348,7 +351,6 @@ static void layout_from_proto(const osupad_SetLayout *in, ui_layout_t *out)
     for (int i = 0; i < out->count; i++) {
         const osupad_UiWidget *src = &in->widgets[i];
         ui_widget_t *w = &out->widgets[i];
-        // Out-of-range values are clamped into ones the validator rejects
         w->kind = src->kind > UINT8_MAX ? UINT8_MAX : src->kind;
         w->source = src->source > UINT8_MAX ? UINT8_MAX : src->source;
         w->font = src->font > UINT8_MAX ? UINT8_MAX : src->font;
@@ -362,10 +364,15 @@ static void layout_from_proto(const osupad_SetLayout *in, ui_layout_t *out)
         w->accent = src->accent;
         w->radius = src->radius > UINT8_MAX ? UINT8_MAX : src->radius;
         w->decimals = src->decimals > UINT8_MAX ? UINT8_MAX : src->decimals;
-        w->flags = src->flags > UINT8_MAX ? 0 : src->flags;
+        if (src->flags > UINT8_MAX) {
+            snprintf(err, err_len, "widget %d: unknown flags 0x%lx", i, (unsigned long)src->flags);
+            return false;
+        }
+        w->flags = (uint8_t)src->flags;
         strncpy(w->label, src->label, UI_LABEL_MAX - 1);
         strncpy(w->suffix, src->suffix, UI_SUFFIX_MAX - 1);
     }
+    return true;
 }
 
 // Last attempt id seen from the host; a new id means a new attempt
@@ -491,8 +498,8 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         static ui_layout_t layout;  // ~2 KB, protocol task only
         const osupad_SetLayout *sl = &msg->payload.set_layout;
         char err[64] = "";
-        layout_from_proto(sl, &layout);
-        bool ok = ui_set_layout((uint8_t)sl->screen, &layout, err, sizeof(err));
+        bool ok = layout_from_proto(sl, &layout, err, sizeof(err)) &&
+                  ui_set_layout((uint8_t)sl->screen, &layout, err, sizeof(err));
         if (ok) {
             if (runtime_get_state() != OSUPAD_STATE_IDLE) {
                 // Flash writes would stall the key core: apply in RAM now, deferred to IDLE
@@ -605,24 +612,33 @@ static void on_frame_received(const uint8_t *payload, size_t payload_len, void *
     }
 }
 
+// A partial frame the host stopped sending half a second ago will never complete
+static void expire_stale_partial(int64_t now)
+{
+    if (!frame_parser_is_idle(&s_parser) && (now - s_last_rx_us) > RX_STALE_US) {
+        ESP_LOGW(TAG, "Dropping stale partial frame (%u bytes)", (unsigned)s_parser.rx_len);
+        diag_record(DIAG_EVENT_FRAME_TOO_LARGE, 2 /* WARN */, (uint32_t)s_parser.rx_len,
+                    DIAG_FRAME_DROP_STALE);
+        frame_parser_reset(&s_parser);
+    }
+}
+
 void protocol_feed_cdc_bytes(const uint8_t *data, size_t len)
 {
     int64_t now = esp_timer_get_time();
-    if (!frame_parser_is_idle(&s_parser) && (now - s_last_rx_us) > RX_STALE_US) {
-        ESP_LOGW(TAG, "Dropping stale partial frame (%u bytes)", (unsigned)s_parser.rx_len);
-        frame_parser_reset(&s_parser);
-    }
+    expire_stale_partial(now);
     s_last_rx_us = now;
 
-    uint32_t prev_oversized = s_parser.oversized_count;
+    uint32_t prev_resync = s_parser.resync_bytes;
     frame_accept_t accept = FRAME_ACCEPT_ANY;
     if (s_host_framing_known) {
         accept = s_host_framing == FRAME_FORMAT_LEGACY ? FRAME_ACCEPT_LEGACY : FRAME_ACCEPT_MARKED;
     }
     frame_parser_feed(&s_parser, data, len, accept, on_frame_received, NULL);
-    if (s_parser.oversized_count > prev_oversized) {
-        diag_record(DIAG_EVENT_FRAME_TOO_LARGE, 2 /* WARN */, 0, 0);
-        ESP_LOGW(TAG, "Header with an impossible length skipped (resync)");
+    uint32_t skipped = s_parser.resync_bytes - prev_resync;
+    if (skipped > 0) {
+        diag_record(DIAG_EVENT_FRAME_TOO_LARGE, 2 /* WARN */, skipped, DIAG_FRAME_DROP_RESYNC);
+        ESP_LOGW(TAG, "Skipped %lu bytes looking for a frame (resync)", (unsigned long)skipped);
     }
 }
 
@@ -646,8 +662,6 @@ void protocol_poll_detect_pin(void)
 
 bool protocol_rx_idle(void)
 {
-    if (!frame_parser_is_idle(&s_parser) && (esp_timer_get_time() - s_last_rx_us) > RX_STALE_US) {
-        frame_parser_reset(&s_parser);
-    }
+    expire_stale_partial(esp_timer_get_time());
     return frame_parser_is_idle(&s_parser);
 }

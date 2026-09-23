@@ -301,6 +301,79 @@ static void test_unlocked_accepts_both_framings(void)
     printf("✓ test_unlocked_accepts_both_framings passed\n");
 }
 
+// 8 KB of bootloader chatter with false marked headers in it, fed as one
+// buffer and as 256-byte CDC reads: the marked frame after it is found
+static void fill_junk(uint8_t *buf, size_t len)
+{
+    static const uint8_t pattern[] = {
+        'E', 'S', 'P', '-', 'R', 'O', 'M', '\r', '\n',
+        0xAA, 0x12,
+        0xAA, 0x55, 0xFF, 0xFF,
+    };
+    for (size_t i = 0; i < len; i++) {
+        buf[i] = pattern[i % sizeof(pattern)];
+    }
+}
+
+static void test_resync_through_8k_of_junk(void)
+{
+    static const frame_accept_t modes[] = {FRAME_ACCEPT_ANY, FRAME_ACCEPT_MARKED};
+    static uint8_t junk[8192];
+    static uint8_t stream[PROTOCOL_MAX_FRAME_SIZE];
+    const uint8_t frame[] = {0xAA, 0x55, 0x02, 0x00, 'O', 'K'};
+    fill_junk(junk, sizeof(junk));
+
+    for (size_t m = 0; m < sizeof(modes) / sizeof(modes[0]); m++) {
+        // One buffer: as much junk as fits alongside the frame
+        frame_parser_t parser;
+        frame_parser_init(&parser);
+        test_context_t ctx = {0};
+        size_t junk_len = sizeof(stream) - sizeof(frame);
+        memcpy(stream, junk, junk_len);
+        memcpy(stream + junk_len, frame, sizeof(frame));
+        frame_parser_feed(&parser, stream, sizeof(stream), modes[m], test_handler, &ctx);
+        assert(ctx.call_count == 1 && ctx.last_len == 2);
+        assert(memcmp(ctx.last_payload, "OK", 2) == 0);
+        assert(parser.resync_bytes == junk_len);
+        assert(parser.overflow_count == 0);
+        assert(frame_parser_is_idle(&parser));
+
+        // CDC-sized reads: the buffer never fills, junk never forms a frame
+        frame_parser_init(&parser);
+        memset(&ctx, 0, sizeof(ctx));
+        for (size_t off = 0; off < sizeof(junk); off += 256) {
+            frame_parser_feed(&parser, junk + off, 256, modes[m], test_handler, &ctx);
+            assert(parser.rx_len < FRAME_HEADER_SIZE);
+        }
+        assert(ctx.call_count == 0);
+        frame_parser_feed(&parser, frame, sizeof(frame), modes[m], test_handler, &ctx);
+        assert(ctx.call_count == 1 && ctx.last_len == 2);
+        assert(memcmp(ctx.last_payload, "OK", 2) == 0);
+        assert(parser.resync_bytes == sizeof(junk));
+        assert(parser.overflow_count == 0);
+        assert(frame_parser_is_idle(&parser));
+    }
+
+    // Locked to legacy the junk is slid through the same way. A byte right
+    // before a legacy header always makes a plausible length with it, so the
+    // frame itself is found after the stale-partial reset, as on the pad.
+    frame_parser_t parser;
+    frame_parser_init(&parser);
+    test_context_t ctx = {0};
+    for (size_t off = 0; off < sizeof(junk); off += 256) {
+        frame_parser_feed(&parser, junk + off, 256, FRAME_ACCEPT_LEGACY, test_handler, &ctx);
+        assert(parser.rx_len < FRAME_HEADER_SIZE);
+    }
+    assert(ctx.call_count == 0);
+    assert(parser.resync_bytes == sizeof(junk) - parser.rx_len);
+    frame_parser_reset(&parser);
+    const uint8_t legacy[] = {0x02, 0x00, 0x00, 0x00, 'H', 'I'};
+    frame_parser_feed(&parser, legacy, sizeof(legacy), FRAME_ACCEPT_LEGACY, test_handler, &ctx);
+    assert(ctx.call_count == 1 && memcmp(ctx.last_payload, "HI", 2) == 0);
+
+    printf("✓ test_resync_through_8k_of_junk passed\n");
+}
+
 int main(void)
 {
     test_header_encoding();
@@ -316,6 +389,7 @@ int main(void)
     test_locked_marked_ignores_legacy_headers();
     test_locked_legacy_ignores_marked_headers();
     test_unlocked_accepts_both_framings();
+    test_resync_through_8k_of_junk();
     printf("All frame parser unit tests passed successfully!\n");
     return 0;
 }

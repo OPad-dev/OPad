@@ -43,7 +43,7 @@ The parser keeps accepting legacy headers even after the host is known to speak 
 
 **Suggested fix:** Clamp `timeout_ms` (e.g. ≤ 30000) and/or keep servicing RX while scanning.
 
-## 4. Byte-at-a-time resync memmoves the whole buffer: O(n²) — `open`
+## 4. Byte-at-a-time resync memmoves the whole buffer: O(n²) — `fixed`
 
 **File:** `firmware/main/protocol/frame_parser.c:140`
 **Category:** efficiency
@@ -54,7 +54,7 @@ Resync slides one byte at a time with `drop_front(parser, 1)`, which memmoves th
 
 **Suggested fix:** Scan with a head index (or `memchr` for `0xAA` / for `00 00` pairs) and compact once after the `while` loop; the removed `memchr` fast-path for `FRAME_MAGIC_0` was dropped without replacement.
 
-## 5. Legacy-branch resync bytes produce no diag event; stale-frame log is dead — `open`
+## 5. Legacy-branch resync bytes produce no diag event; stale-frame log is dead — `fixed`
 
 **File:** `firmware/main/protocol/protocol.c:588`
 **Category:** diagnostics
@@ -65,7 +65,7 @@ Only marked oversized headers raise `DIAG_EVENT_FRAME_TOO_LARGE`; bytes skipped 
 
 **Suggested fix:** Record `resync_bytes` deltas (e.g. `DIAG_EVENT_FRAME_TOO_LARGE` `arg1` or a new event) and put the stale log in the shared path.
 
-## 6. Stale-partial-frame expiry is implemented twice — `open`
+## 6. Stale-partial-frame expiry is implemented twice — `fixed`
 
 **File:** `firmware/main/protocol/protocol.c:603`
 **Category:** simplification
@@ -76,7 +76,7 @@ The stale-partial-frame expiry is implemented twice (`protocol_feed_cdc_bytes` l
 
 **Suggested fix:** A single static `expire_stale_partial(now)` helper containing the check, reset, log and diag, called from both entry points; or have `protocol_feed_cdc_bytes` call `protocol_rx_idle()`.
 
-## 7. `layout_from_proto` clamps out-of-range flags to a valid value — `open`
+## 7. `layout_from_proto` clamps out-of-range flags to a valid value — `fixed`
 
 **File:** `firmware/main/protocol/protocol.c:362`
 **Category:** correctness
@@ -86,6 +86,8 @@ The stale-partial-frame expiry is implemented twice (`protocol_feed_cdc_bytes` l
 **Failure scenario:** Host sends `UiWidget.flags = 0x100` (e.g. a future flag bit an older pad does not know) → `w->flags = 0`, `ui_set_layout` succeeds, `LayoutAck` says success, and the layout is persisted to flash without the requested flags; the host never learns the pad rejected part of the layout. Same pattern for `w`/`h` > `INT16_MAX` → 0.
 
 **Suggested fix:** Clamp to `UINT8_MAX` / a rejected sentinel like the other fields, or reject the frame explicitly.
+
+**Resolution:** `flags` is not checked by `ui_layout_validate`, so an out-of-range value now rejects the frame explicitly. The `w`/`h` part does not hold: they clamp to 0, which the validator rejects (`w <= 0 || h <= 0`).
 
 ## 8. `s_host_framing` declared `volatile` but only touched by one task — `fixed`
 

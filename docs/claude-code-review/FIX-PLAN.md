@@ -169,10 +169,10 @@ Files: `firmware/main/input/keypad.c` (`SCAN_PINS`, ~433), `firmware/main/config
 
 ### S2 — Frame parser resync + protocol hygiene ▸ FP#4, FP#5, FP#6, FP#7
 Files: `firmware/main/protocol/frame_parser.c`, `firmware/main/protocol/protocol.c` (~362, ~579–605), `firmware/test/host/test_frame_parser.c`
-- [ ] Resync: scan with a head index (or `memchr` for `0xAA` / `00 00` pairs) and compact **once** after the loop instead of `drop_front(parser, 1)` per byte. Same accept/reject results as before (O1's locked-framing rules included) — the tests from O1 must still pass. Add a test feeding 8 KB of junk and asserting the parser resyncs on the frame that follows.
-- [ ] Report resync: expose `resync_bytes` deltas and record them (e.g. `DIAG_EVENT_FRAME_TOO_LARGE` with `arg1`, or a new `DIAG_EVENT_FRAME_RESYNC`). Firmware only; no protocol change.
-- [ ] Single `static void expire_stale_partial(int64_t now)` holding the `RX_STALE_US` check, reset, log and diag; call it from both `protocol_feed_cdc_bytes` and `protocol_rx_idle`.
-- [ ] `layout_from_proto`: out-of-range `flags` → clamp to a **rejected** value (e.g. `UINT8_MAX` if the validator rejects it, otherwise reject the frame explicitly), consistent with the neighbouring `w`/`h` handling (fix those too if they clamp to 0).
+- [x] Resync: scan with a head index (or `memchr` for `0xAA` / `00 00` pairs) and compact **once** after the loop instead of `drop_front(parser, 1)` per byte. Same accept/reject results as before (O1's locked-framing rules included) — the tests from O1 must still pass. Add a test feeding 8 KB of junk and asserting the parser resyncs on the frame that follows.
+- [x] Report resync: expose `resync_bytes` deltas and record them (e.g. `DIAG_EVENT_FRAME_TOO_LARGE` with `arg1`, or a new `DIAG_EVENT_FRAME_RESYNC`). Firmware only; no protocol change.
+- [x] Single `static void expire_stale_partial(int64_t now)` holding the `RX_STALE_US` check, reset, log and diag; call it from both `protocol_feed_cdc_bytes` and `protocol_rx_idle`.
+- [x] `layout_from_proto`: out-of-range `flags` → clamp to a **rejected** value (e.g. `UINT8_MAX` if the validator rejects it, otherwise reject the frame explicitly), consistent with the neighbouring `w`/`h` handling (fix those too if they clamp to 0).
 - Verify: host tests, `make firmware`, send an oversized/junk stream to the pad and confirm the diag event appears in `opadctl`.
 
 ### S3 — Brightness/sleep ownership ▸ FI#2, FB#1
@@ -353,5 +353,6 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  O4  ec05977  Claude Opus  FU#3 FU#4 FU#5 fixed; all runtime keypad config goes through the keypad task; pad test pending
 2026-09-24  O5  65e343a  Claude Opus  FI#4 FI#5 fixed; mutex over pending layouts + layout NVS writes, failed flush kept and retried every 10 s; no host test (NVS/FreeRTOS-bound), pad test pending
 2026-09-24  O6  9f835c7  Claude Opus  FI#1 FI#6 fixed; ui_lock() returns bool, data_update skipped headless, NULL idle screen -> ESP_ERR_NO_MEM; headless pad test pending
-2026-09-24  S1  (this commit)  Claude Sonnet  FU#1 FU#8 fixed; GPIO8 dropped, one KEY_GPIO_ALLOWED list shared by keypad scan + validation, debug GPIO excluded via device_config_key_gpio_supported; desktop opad-model KEY_PINS still lists GPIO8 (out of firmware scope); pad test pending
+2026-09-24  S1  26f5159  Claude Sonnet  FU#1 FU#8 fixed; GPIO8 dropped, one KEY_GPIO_ALLOWED list shared by keypad scan + validation, debug GPIO excluded via device_config_key_gpio_supported; desktop opad-model KEY_PINS still lists GPIO8 (out of firmware scope); pad test pending
+2026-09-24  S2  (this commit)  Claude Opus (Sonnet list)  FP#4 FP#5 FP#6 FP#7 fixed; head-index resync + memchr in marked mode, resync/stale drops recorded as FRAME_TOO_LARGE (arg0 bytes, arg1 reason), SetLayout with flags > 255 rejected (w/h already rejected); pad junk-stream test pending
 ```
