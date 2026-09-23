@@ -33,7 +33,7 @@ use opad_update::firmware::{
     blockers, consent_text, is_ota_0, Blocker, FirmwareAction, Preconditions,
     TYPICAL_OUTAGE_SECONDS,
 };
-use opad_update::{may_update_now, ReleaseManifest, UpdateError};
+use opad_update::{may_update_now, DeferReason, ReleaseManifest, UpdateError};
 
 use crate::runtime::DaemonState;
 use crate::sync::DeviceLink;
@@ -50,9 +50,14 @@ pub fn offer(
     state: &Arc<Mutex<DaemonState>>,
     storage_available: bool,
 ) -> FirmwareOffer {
-    let (mode, device_info, connected) = {
+    let (mode, device_info, connected, guard) = {
         let st = state.lock();
-        (st.mode, st.device_info.clone(), st.device_connected)
+        (
+            st.mode,
+            st.device_info.clone(),
+            st.device_connected,
+            st.pad_guard(),
+        )
     };
     let installed = device_info.as_ref().map(|i| i.firmware_version.clone());
 
@@ -80,6 +85,9 @@ pub fn offer(
     .iter()
     .map(|b| capitalise(&b.to_string()))
     .collect();
+    if let Some(reason) = guard {
+        out.blockers.push(reason.to_string());
+    }
 
     let Some(manifest) = manifest else {
         return out;
@@ -132,6 +140,8 @@ pub enum FirmwareUpdateError {
     Flash(#[from] flash::FlashError),
     #[error("The serial port could not be released for the flash, so nothing was written")]
     PortNotReleased,
+    #[error("{0}, so nothing was flashed")]
+    NoLongerSafe(String),
     /// The dangerous one: the image is on the pad and the pad did not come back
     /// as expected. Never silently swallowed.
     #[error("The firmware was written, but the pad came back as {found}, not {expected}. See docs/recovery.md.")]
@@ -151,7 +161,7 @@ pub async fn install<D: DeviceLink>(
     pending_ops: &Arc<Mutex<crate::runtime::PendingOperations>>,
 ) -> Result<FirmwareUpdateOutcome, FirmwareUpdateError> {
     let storage_available = storage.lock().is_some();
-    let (mode, connected, installed, running_partition) = {
+    let (mode, connected, installed, running_partition, guard) = {
         let st = state.lock();
         (
             st.mode,
@@ -160,8 +170,16 @@ pub async fn install<D: DeviceLink>(
             st.device_info
                 .as_ref()
                 .and_then(|i| i.running_partition.clone()),
+            st.pad_guard(),
         )
     };
+
+    // A pad owned by another install is not ours to sync or flash (§W3-3)
+    if let Some(reason) = guard {
+        return Ok(FirmwareUpdateOutcome::Refused {
+            reasons: vec![reason.to_string()],
+        });
+    }
 
     // Everything cheap first. `counters_synced` is false here because the sync
     // has not happened yet — it is the one blocker this function is allowed to
@@ -227,11 +245,40 @@ pub async fn install<D: DeviceLink>(
         ))
     })?;
     staged.install_to(&target)?;
+
+    // The sync and the download took seconds, and a map may have started in
+    // them. Flashing reboots the pad and takes the keyboard away, so the
+    // checks from step 1 are made again at the last moment (§U-0.1).
+    if let Err(reason) = still_safe_to_flash(state) {
+        let _ = std::fs::remove_file(&target);
+        warn!("Firmware flash abandoned before writing anything: {reason}");
+        return Err(FirmwareUpdateError::NoLongerSafe(reason));
+    }
+
     let result = flash_and_verify(&target, &installed, &available, state, device).await;
     // The image is a megabyte and has done its job either way; §W2-3 should
     // not inherit it as something to clean up.
     let _ = std::fs::remove_file(&target);
     result
+}
+
+/// The step-1 conditions that can change while the image downloads
+fn still_safe_to_flash(state: &Arc<Mutex<DaemonState>>) -> Result<(), String> {
+    let st = state.lock();
+    match may_update_now(st.mode, true) {
+        Ok(()) => {}
+        Err(DeferReason::Playing | DeferReason::Cooldown) => {
+            return Err("A map started while the update was downloading".to_string())
+        }
+        Err(defer) => return Err(capitalise(&defer.to_string())),
+    }
+    if let Some(reason) = st.pad_guard() {
+        return Err(reason.to_string());
+    }
+    if !st.device_connected {
+        return Err("The pad disconnected".to_string());
+    }
+    Ok(())
 }
 
 async fn flash_and_verify<D: DeviceLink>(
@@ -417,6 +464,37 @@ mod tests {
         assert!(offer.available.is_none());
         assert!(offer.consent_text.is_none());
         assert!(offer.blockers.is_empty());
+    }
+
+    #[test]
+    fn the_last_moment_check_stops_a_flash_once_a_map_has_started() {
+        let st = state_with(RuntimeMode::Idle, true, "1.0.0");
+        assert!(still_safe_to_flash(&st).is_ok());
+        for mode in [RuntimeMode::Playing, RuntimeMode::Cooldown] {
+            st.lock().mode = mode;
+            let reason = still_safe_to_flash(&st).unwrap_err();
+            assert!(reason.contains("map started"), "{reason}");
+        }
+        st.lock().mode = RuntimeMode::Sync;
+        assert!(still_safe_to_flash(&st).is_err());
+        st.lock().mode = RuntimeMode::Idle;
+        st.lock().device_connected = false;
+        assert!(still_safe_to_flash(&st).is_err());
+    }
+
+    #[test]
+    fn a_foreign_pad_is_neither_offered_nor_flashed() {
+        let st = state_with(RuntimeMode::Idle, true, "1.0.0");
+        st.lock().foreign_pad = true;
+        assert!(still_safe_to_flash(&st)
+            .unwrap_err()
+            .contains("another install"));
+        let offer = offer(Some(&manifest("1.1.0")), &st, true);
+        assert!(
+            offer.blockers.iter().any(|b| b.contains("another install")),
+            "{:?}",
+            offer.blockers
+        );
     }
 
     #[test]

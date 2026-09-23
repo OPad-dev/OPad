@@ -576,6 +576,7 @@ impl App {
                         // Shown by `opadctl status`; a GUI surface for it is
                         // B's to add if it is wanted.
                         last_backup: _,
+                        foreign_pad: _,
                     }) => {
                         let was_offline = !self.daemon_online;
                         let device_just_connected = !self.device_connected && device_connected;

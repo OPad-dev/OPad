@@ -89,6 +89,7 @@ async fn test_ipc_roundtrip_requests() {
                             pending_takeover: None,
                             incompatible: None,
                             last_backup: Some("2026-09-17T00:00:00Z".to_string()),
+                            foreign_pad: false,
                         },
                         IpcRequest::PrepareFlash => IpcResponse::ReadyForFlash {
                             port: Some("/dev/ttyACM0".to_string()),

@@ -70,6 +70,15 @@ pub async fn take_over_if_pad_is_ahead<D: DeviceLink>(
     matches!(resp, IpcResponse::CountersRestored { .. })
 }
 
+/// The refusal every pad-writing handler returns while
+/// [`DaemonState::pad_guard`] says the connected pad must be left alone.
+fn refuse_if_pad_guarded(state: &Arc<Mutex<DaemonState>>) -> Option<IpcResponse> {
+    state
+        .lock()
+        .pad_guard()
+        .map(|reason| IpcResponse::Error(reason.to_string()))
+}
+
 pub async fn handle_ipc_request<D: DeviceLink>(
     req: IpcRequest,
     state: &Arc<Mutex<DaemonState>>,
@@ -157,6 +166,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 pending_takeover: takeover_prompt,
                 incompatible: st.incompatible.clone(),
                 last_backup: st.last_backup.clone(),
+                foreign_pad: st.foreign_pad,
             }
         }
 
@@ -169,6 +179,9 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::SetLayout { screen, layout } => {
+            if let Some(refused) = refuse_if_pad_guarded(state) {
+                return refused;
+            }
             if let Err(e) = layout.validate() {
                 return IpcResponse::OperationRejected {
                     reason: format!("Invalid layout: {}", e),
@@ -206,6 +219,9 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::ResetLayout { screen } => {
+            if let Some(refused) = refuse_if_pad_guarded(state) {
+                return refused;
+            }
             state.lock().custom_layouts.remove(&screen);
             if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
                 let _ = device.reset_layout(screen).await;
@@ -313,6 +329,9 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::UpdateConfig(new_config) => {
+            if let Some(refused) = refuse_if_pad_guarded(state) {
+                return refused;
+            }
             if let Err(e) = new_config.validate() {
                 return IpcResponse::OperationRejected {
                     reason: format!("Invalid configuration: {}", e),
@@ -372,6 +391,9 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::ForceSync => {
+            if let Some(refused) = refuse_if_pad_guarded(state) {
+                return refused;
+            }
             if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
                 return IpcResponse::OperationRejected {
                     reason: "Cannot force synchronization during gameplay or cooldown".to_string(),
@@ -394,6 +416,9 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::ResetCounters { confirm } => {
+            if let Some(refused) = refuse_if_pad_guarded(state) {
+                return refused;
+            }
             if !confirm {
                 return IpcResponse::OperationRejected {
                     reason: "ResetCounters requires explicit confirmation (--yes or modal confirm)"
@@ -442,6 +467,9 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::RestoreDeviceFromPc { confirm } => {
+            if let Some(refused) = refuse_if_pad_guarded(state) {
+                return refused;
+            }
             if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
                 return IpcResponse::OperationRejected {
                     reason: "Cannot restore counters during active gameplay or cooldown"
@@ -525,6 +553,9 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::ImportPcFromDevice { confirm } => {
+            if let Some(refused) = refuse_if_pad_guarded(state) {
+                return refused;
+            }
             if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
                 return IpcResponse::OperationRejected {
                     reason: "Cannot import counters during active gameplay or cooldown".to_string(),
@@ -703,9 +734,17 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
             let _ = device.send_counter_sync(&target, true).await;
             // The pad is ours now, so the config we suppressed while it was
-            // foreign goes out (§W3-3)
-            let config = { state.lock().config.clone() };
+            // foreign goes out (§W3-3)...
+            // ...and so do the custom layouts, held back on connect under the
+            // same condition
+            let (config, layouts) = {
+                let st = state.lock();
+                (st.config.clone(), st.custom_layouts.clone())
+            };
             let _ = device.send_config(&config).await;
+            for (screen, layout) in &layouts {
+                let _ = device.send_layout(*screen, layout).await;
+            }
             {
                 let mut st = state.lock();
                 st.foreign_pad = false;
@@ -860,6 +899,9 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::ImportBackup { backup, confirm } => {
+            if let Some(refused) = refuse_if_pad_guarded(state) {
+                return refused;
+            }
             if !confirm {
                 return IpcResponse::OperationRejected {
                     reason:

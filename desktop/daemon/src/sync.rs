@@ -163,14 +163,22 @@ pub async fn perform_sync<D: DeviceLink>(
         return Err(err_msg);
     }
 
-    let (info_opt, in_memory_counters, is_connected) = {
+    let (info_opt, in_memory_counters, is_connected, guard) = {
         let st = state.lock();
         (
             st.device_info.clone(),
             st.counters.clone(),
             st.device_connected,
+            st.pad_guard(),
         )
     };
+
+    // Every caller checks this before triggering a sync; it is repeated here
+    // because the takeover prompt can appear between the trigger and the run.
+    if let Some(reason) = guard {
+        warn!("perform_sync skipped: {}", reason);
+        return Err(reason.to_string());
+    }
 
     let Some(info) = info_opt else {
         return Ok(in_memory_counters);

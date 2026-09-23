@@ -252,6 +252,12 @@ pub enum IpcResponse {
         /// `None` means it never has — not that backups are off.
         #[serde(default)]
         last_backup: Option<String>,
+        /// The connected pad belongs to another installation and the daemon is
+        /// leaving it alone (§W3-3): it refuses syncs and pushes to it, and
+        /// clients should grey those actions out. Stays set after the user
+        /// answers "leave it alone", when `pending_takeover` is already gone.
+        #[serde(default)]
+        foreign_pad: bool,
     },
     ConfigUpdated {
         config: DeviceConfig,

@@ -27,6 +27,7 @@ struct MockDeviceLink {
     event_tx: broadcast::Sender<DeviceEvent>,
     connected: Arc<AtomicBool>,
     sent_configs: Arc<Mutex<Vec<DeviceConfig>>>,
+    sent_layouts: Arc<Mutex<Vec<Screen>>>,
     sent_syncs: Arc<Mutex<Vec<(CounterState, bool)>>>,
     sync_response: Arc<Mutex<Option<Result<(), String>>>>,
     sync_seq: Arc<AtomicU32>,
@@ -43,6 +44,7 @@ impl MockDeviceLink {
             event_tx,
             connected: Arc::new(AtomicBool::new(connected)),
             sent_configs: Arc::new(Mutex::new(Vec::new())),
+            sent_layouts: Arc::new(Mutex::new(Vec::new())),
             sent_syncs: Arc::new(Mutex::new(Vec::new())),
             sync_response: Arc::new(Mutex::new(Some(Ok(())))),
             sync_seq: Arc::new(AtomicU32::new(1)),
@@ -62,7 +64,8 @@ impl DeviceLink for MockDeviceLink {
         Ok(())
     }
 
-    async fn send_layout(&self, _screen: Screen, _layout: &Layout) -> Result<(), DeviceError> {
+    async fn send_layout(&self, screen: Screen, _layout: &Layout) -> Result<(), DeviceError> {
+        self.sent_layouts.lock().push(screen);
         Ok(())
     }
 
@@ -2701,4 +2704,286 @@ async fn a_new_pad_ahead_of_the_previous_one_is_not_asked_about() {
     assert!(controller.state.pending_replacement.is_none());
     assert!(controller.known_devices.contains("OSUPAD-NEW"));
     assert!(actions.contains(&RuntimeAction::TriggerSync));
+}
+
+/// A foreign pad after the user said "leave it alone": the prompt is gone but
+/// `foreign_pad` stays set.
+fn left_alone_foreign_pad() -> (RuntimeController, DeviceInfo) {
+    let info = pad("OSUPAD-THEIRS");
+    let mut controller = ownership_controller(
+        Some(&uuid::Uuid::new_v4().to_string()),
+        vec![info.device_id.clone()],
+    );
+    let now = Instant::now();
+    controller.on_event(
+        RuntimeEvent::DeviceCounters(counters(&info.device_id, 4, 700, 800)),
+        now,
+    );
+    controller.on_event(
+        RuntimeEvent::DeviceOwnership(owner_bytes(&uuid::Uuid::new_v4().to_string())),
+        now,
+    );
+    controller.on_event(RuntimeEvent::DeviceConnected(info.clone(), None), now);
+    controller.state.pending_takeover = None;
+    assert!(controller.state.foreign_pad);
+    (controller, info)
+}
+
+#[test]
+fn only_a_pad_with_no_open_question_may_be_touched() {
+    let (controller, _) = left_alone_foreign_pad();
+    let mut st = controller.state.clone();
+    assert!(!st.may_touch_pad(), "left alone");
+    st.foreign_pad = false;
+    assert!(st.may_touch_pad());
+    st.pending_takeover = Some(opad_daemon::runtime::PendingTakeover {
+        device_id: "OSUPAD-THEIRS".into(),
+        device_key1: 0,
+        device_key2: 0,
+    });
+    assert!(!st.may_touch_pad(), "takeover prompt open");
+    st.pending_takeover = None;
+    st.pending_replacement = Some("OSUPAD-OLD".into());
+    assert!(!st.may_touch_pad(), "replacement prompt open");
+}
+
+/// DA#1: playing a map on a foreign pad must not end in a sync or a backup.
+#[test]
+fn a_map_played_on_a_foreign_pad_ends_without_a_sync() {
+    let (mut controller, _) = left_alone_foreign_pad();
+    let now = Instant::now();
+    let play = |playing: bool| RuntimeEvent::TosuTelemetry {
+        is_playing: playing,
+        live_time_ms: 1000.0,
+        title: String::new(),
+        values: Vec::new(),
+    };
+    controller.on_event(play(true), now);
+    controller.on_event(play(false), now);
+    assert_eq!(controller.state.mode, RuntimeMode::Cooldown);
+
+    let after = now + COOLDOWN_DURATION + Duration::from_millis(1);
+    let actions = controller.on_event(RuntimeEvent::Tick(after), after);
+    assert!(
+        !actions.contains(&RuntimeAction::TriggerSync),
+        "{actions:?}"
+    );
+    assert!(actions.contains(&RuntimeAction::SetStorageWritesAllowed(true)));
+    assert_eq!(
+        controller.state.mode,
+        RuntimeMode::Idle,
+        "not stuck in SYNC"
+    );
+    assert!(
+        controller.backup_deadline.is_none(),
+        "no backup of its counters"
+    );
+
+    let later = after + Duration::from_secs(600);
+    let actions = controller.on_event(RuntimeEvent::Tick(later), later);
+    assert!(!actions.contains(&RuntimeAction::TriggerSync));
+    assert!(!actions.contains(&RuntimeAction::WriteAutoBackup));
+}
+
+/// The same pad once it is ours again syncs after the map as before.
+#[test]
+fn a_map_played_on_our_pad_still_ends_in_a_sync() {
+    let (mut controller, _) = left_alone_foreign_pad();
+    controller.state.foreign_pad = false;
+    let now = Instant::now();
+    let play = |playing: bool| RuntimeEvent::TosuTelemetry {
+        is_playing: playing,
+        live_time_ms: 1000.0,
+        title: String::new(),
+        values: Vec::new(),
+    };
+    controller.on_event(play(true), now);
+    controller.on_event(play(false), now);
+    let after = now + COOLDOWN_DURATION + Duration::from_millis(1);
+    let actions = controller.on_event(RuntimeEvent::Tick(after), after);
+    assert!(actions.contains(&RuntimeAction::TriggerSync));
+    assert_eq!(controller.state.mode, RuntimeMode::Sync);
+}
+
+/// DA#2: every handler that writes to the pad or syncs from it refuses while
+/// the pad is being left alone, and writes nothing on either side.
+#[tokio::test]
+async fn pad_writing_requests_are_refused_for_a_foreign_pad() {
+    let (controller, info) = left_alone_foreign_pad();
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    let device = MockDeviceLink::new(true);
+    let log_hub = LogHub::new();
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    let daemon_state = Arc::new(Mutex::new(controller.state.clone()));
+    let config_before = daemon_state.lock().config.clone();
+
+    let backup = opad_daemon::backup::current(&daemon_state, &storage).unwrap();
+    let layout = Layout {
+        background: 0,
+        widgets: Vec::new(),
+    };
+    let mut new_config = config_before.clone();
+    new_config.brightness = config_before.brightness.saturating_sub(1).max(1);
+
+    let requests = vec![
+        IpcRequest::ForceSync,
+        IpcRequest::UpdateConfig(new_config),
+        IpcRequest::SetLayout {
+            screen: Screen::Idle,
+            layout,
+        },
+        IpcRequest::ResetLayout {
+            screen: Screen::Idle,
+        },
+        IpcRequest::ResetCounters { confirm: true },
+        IpcRequest::RestoreDeviceFromPc { confirm: true },
+        IpcRequest::ImportPcFromDevice { confirm: true },
+        IpcRequest::ImportBackup {
+            backup,
+            confirm: true,
+        },
+    ];
+    for req in requests {
+        let label = format!("{req:?}");
+        let resp = handle_ipc_request(
+            req,
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+            None,
+        )
+        .await;
+        match resp {
+            IpcResponse::Error(reason) => {
+                assert!(reason.contains("another install"), "{label}: {reason}")
+            }
+            other => panic!("{label} was not refused: {other:?}"),
+        }
+    }
+
+    assert!(device.sent_syncs.lock().is_empty());
+    assert!(device.sent_configs.lock().is_empty());
+    assert!(device.sent_layouts.lock().is_empty());
+    let st = daemon_state.lock().clone();
+    assert_eq!(st.config, config_before);
+    assert_eq!(st.counters.lifetime_key1, 700, "counters untouched");
+    assert!(st.custom_layouts.is_empty());
+    assert!(
+        storage
+            .lock()
+            .as_ref()
+            .unwrap()
+            .load_device_state(&info.device_id)
+            .unwrap()
+            .is_none(),
+        "nothing saved under the foreign pad"
+    );
+    let pending = pending_ops.lock();
+    assert!(pending.pending_config.is_none() && pending.pending_layouts.is_empty());
+}
+
+/// A sync already queued when the pad turns out to be foreign still refuses.
+#[tokio::test]
+async fn perform_sync_refuses_a_foreign_pad() {
+    let (controller, info) = left_alone_foreign_pad();
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    let device = MockDeviceLink::new(true);
+    let daemon_state = Arc::new(Mutex::new(controller.state.clone()));
+    let res = perform_sync(
+        &daemon_state,
+        &storage,
+        &device,
+        &Arc::new(Mutex::new(PendingOperations::default())),
+    )
+    .await;
+    assert!(res.is_err());
+    assert!(device.sent_syncs.lock().is_empty());
+    assert!(storage
+        .lock()
+        .as_ref()
+        .unwrap()
+        .load_device_state(&info.device_id)
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
+async fn status_says_the_pad_is_foreign_after_the_prompt_is_answered() {
+    let (controller, _) = left_alone_foreign_pad();
+    let daemon_state = Arc::new(Mutex::new(controller.state.clone()));
+    let resp = handle_ipc_request(
+        IpcRequest::GetStatus,
+        &daemon_state,
+        &Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap()))),
+        &MockDeviceLink::new(true),
+        &LogHub::new(),
+        &Arc::new(Mutex::new(PendingOperations::default())),
+        None,
+    )
+    .await;
+    match resp {
+        IpcResponse::Status {
+            foreign_pad,
+            pending_takeover,
+            ..
+        } => {
+            assert!(foreign_pad);
+            assert!(pending_takeover.is_none());
+        }
+        other => panic!("expected Status, got {other:?}"),
+    }
+}
+
+/// DA#6: the layouts held back on connect go out with the config on takeover.
+#[tokio::test]
+async fn taking_over_pushes_the_layouts_held_back_on_connect() {
+    let id = uuid::Uuid::new_v4().to_string();
+    let info = pad("OSUPAD-THEIRS");
+    let mut controller = ownership_controller(Some(&id), vec![info.device_id.clone()]);
+    let layout = Layout {
+        background: 0,
+        widgets: Vec::new(),
+    };
+    controller
+        .state
+        .custom_layouts
+        .insert(Screen::Idle, layout.clone());
+    controller
+        .state
+        .custom_layouts
+        .insert(Screen::Playing, layout);
+    let now = Instant::now();
+    controller.on_event(
+        RuntimeEvent::DeviceOwnership(owner_bytes(&uuid::Uuid::new_v4().to_string())),
+        now,
+    );
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(info, None), now);
+    assert!(!actions
+        .iter()
+        .any(|a| matches!(a, RuntimeAction::SendLayout(..))));
+
+    let device = MockDeviceLink::new(true);
+    let daemon_state = Arc::new(Mutex::new(controller.state.clone()));
+    let resp = handle_ipc_request(
+        IpcRequest::ResolveTakeover {
+            take_over: true,
+            keep_device_counters: true,
+        },
+        &daemon_state,
+        &Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap()))),
+        &device,
+        &LogHub::new(),
+        &Arc::new(Mutex::new(PendingOperations::default())),
+        None,
+    )
+    .await;
+    assert!(
+        matches!(resp, IpcResponse::CountersRestored { .. }),
+        "{resp:?}"
+    );
+    let mut sent = device.sent_layouts.lock().clone();
+    sent.sort_by_key(|s| s.to_wire());
+    assert_eq!(sent, vec![Screen::Idle, Screen::Playing]);
 }

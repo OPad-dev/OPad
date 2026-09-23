@@ -69,6 +69,27 @@ pub struct DaemonState {
     pub nvs_restore_pending: bool,
 }
 
+impl DaemonState {
+    /// Why nothing may be pushed to or synced from the connected pad right now,
+    /// or `None` when it may. Every sync trigger and every IPC handler that
+    /// writes counters, config or layouts to the pad asks this one question, so
+    /// a pad owned by another install (§W3-3), or one waiting on the user's
+    /// replacement answer, is never written behind the prompt's back.
+    pub fn pad_guard(&self) -> Option<&'static str> {
+        if self.foreign_pad || self.pending_takeover.is_some() {
+            Some("Pad belongs to another install; resolve the takeover prompt first")
+        } else if self.pending_replacement.is_some() {
+            Some("A replacement pad is waiting on your answer; resolve that prompt first")
+        } else {
+            None
+        }
+    }
+
+    pub fn may_touch_pad(&self) -> bool {
+        self.pad_guard().is_none()
+    }
+}
+
 /// DIAG_EVENT_NVS_ERASED in firmware/main/diag/diag.h
 const DIAG_EVENT_NVS_ERASED: u32 = 8;
 
@@ -442,11 +463,10 @@ impl RuntimeController {
                 }
 
                 if self.state.storage_error.is_none()
-                    && self.state.pending_replacement.is_none()
                     // A pad owned by another install syncs nothing until the
                     // user answers: no counter may ever be written under the
                     // wrong owner (§W3-3).
-                    && self.state.pending_takeover.is_none()
+                    && self.state.may_touch_pad()
                     && self.state.mode == RuntimeMode::Idle
                 {
                     actions.push(RuntimeAction::TriggerSync);
@@ -503,10 +523,7 @@ impl RuntimeController {
                             "The pad reports its NVS was erased; restoring counters from this PC"
                         );
                         self.state.nvs_restore_pending = true;
-                        if self.state.mode == RuntimeMode::Idle
-                            && self.state.pending_takeover.is_none()
-                            && self.state.pending_replacement.is_none()
-                        {
+                        if self.state.mode == RuntimeMode::Idle && self.state.may_touch_pad() {
                             actions.push(RuntimeAction::TriggerSync);
                         }
                     }
@@ -614,7 +631,14 @@ impl RuntimeController {
                 // 1. Cooldown expiration -> SYNC
                 if self.state.mode == RuntimeMode::Cooldown {
                     if let Some(deadline) = self.cooldown_deadline {
-                        if now >= deadline {
+                        if now >= deadline && !self.state.may_touch_pad() {
+                            // Nothing is synced from a pad we are leaving
+                            // alone (§W3-3), and its counters are not ours to
+                            // back up.
+                            self.state.mode = RuntimeMode::Idle;
+                            self.cooldown_deadline = None;
+                            actions.push(RuntimeAction::SetStorageWritesAllowed(true));
+                        } else if now >= deadline {
                             self.state.mode = RuntimeMode::Sync;
                             self.cooldown_deadline = None;
                             // A play session just ended, so the sync that
@@ -678,7 +702,10 @@ impl RuntimeController {
                             }
                             None => true,
                         };
-                        if changed && self.state.storage_error.is_none() {
+                        if changed
+                            && self.state.storage_error.is_none()
+                            && self.state.may_touch_pad()
+                        {
                             actions.push(RuntimeAction::TriggerSync);
                         }
                     }
