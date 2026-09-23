@@ -9,7 +9,7 @@
 
 ---
 
-## 1. `build_release.sh` signs a manifest over a locally rebuilt `dist/` — `open`
+## 1. `build_release.sh` signs a manifest over a locally rebuilt `dist/` — `fixed`
 
 **File:** `scripts/release/build_release.sh:128`
 **Category:** correctness

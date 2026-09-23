@@ -3,8 +3,12 @@ name: Release
 # Builds everything a release publishes from a v* tag: firmware, Linux
 # packages (.deb, .rpm, AppImage, tarball) linked against glibc <= 2.31, the
 # Windows installer, third-party notices and tosu's corresponding source.
-# The manifest is signed offline (scripts/release/build_release.sh); this
-# workflow never sees the signing key.
+#
+# The release is left as a DRAFT. The manifest is signed offline, over these
+# exact files: scripts/release/sign_release.sh --tag <tag> downloads the
+# draft's assets, signs, uploads opad-manifest.json(.minisig) and starts
+# release-verify.yml, which checks every manifest artifact against the draft
+# and publishes it. This workflow never sees the signing key.
 
 on:
   push:
@@ -278,8 +282,19 @@ jobs:
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
 
-      - name: Create release
+      # A draft: nothing is public until the manifest signed over these files
+      # has been checked against them (release-verify.yml)
+      - name: Create draft release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
+          draft: true
           generate_release_notes: true
+
+      - name: Next step
+        run: |
+          {
+            echo "Draft release ${GITHUB_REF_NAME} created. On the signing machine run:"
+            echo ""
+            echo "    scripts/release/sign_release.sh --tag ${GITHUB_REF_NAME}"
+          } >> "$GITHUB_STEP_SUMMARY"

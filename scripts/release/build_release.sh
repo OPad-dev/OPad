@@ -4,6 +4,12 @@ set -euo pipefail
 # -----------------------------------------------------------------------------
 # Release build script for OPad v1.0 (Linux x86_64)
 # Builds ESP32-S3 firmware .bin, release host binaries, packages, and SHA256SUMS
+#
+# It does not sign. The manifest has to name the files users download, so it
+# is signed over what was published, by sign_release.sh: `--tag` for a
+# release.yml draft, or `--dist dist` for a dist/ built locally (run this,
+# then build_packages.sh, then sign). Nothing here deletes dist/, so packages
+# built into it earlier survive.
 # -----------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -14,7 +20,6 @@ echo "=========================================="
 echo "  OPad v1.0 Release Build                 "
 echo "=========================================="
 
-rm -rf "${DIST_DIR}"
 mkdir -p "${DIST_DIR}"
 
 # 1. Build Firmware (.bin)
@@ -112,27 +117,16 @@ echo "✓ Release archive created: dist/${ARCHIVE_NAME}"
 
 # 3. Generate SHA256SUMS
 echo ""
-echo "--- [3/4] Generating SHA256SUMS ---"
+echo "--- [3/3] Generating SHA256SUMS ---"
 cd "${DIST_DIR}"
-sha256sum * > SHA256SUMS
+# The manifest is not a checksummed artifact; sign_release.sh writes it later
+rm -f SHA256SUMS
+find . -maxdepth 1 -type f ! -name SHA256SUMS ! -name 'opad-manifest.json*' -printf '%P\n' | sort | xargs sha256sum > SHA256SUMS
 echo "✓ Checksums generated:"
 cat SHA256SUMS
-
-# 4. Generate and sign release manifest (§U-0.3)
-KEY_FILE="${HOME}/.config/opad/opad-manifest.key"
-BASE_URL="${BASE_URL:-https://github.com/OPad-dev/OPad/releases/latest/download}"
-FW_VER="${FIRMWARE_VERSION:-1.0.0}"
-if [ -f "${KEY_FILE}" ]; then
-    echo ""
-    echo "--- [4/4] Generating signed release manifest ---"
-    cargo run --manifest-path "${REPO_ROOT}/desktop/Cargo.toml" -p opad-update --bin opad-manifest -- \
-        --dist "${DIST_DIR}" \
-        --base-url "${BASE_URL}" \
-        --firmware-version "${FW_VER}"
-    echo "✓ Release manifest and signature created in dist/"
-else
-    echo "Note: Secret key not found at ${KEY_FILE}; skipping manifest signing."
-fi
+echo ""
+echo "Next: scripts/release/build_packages.sh (optional), then"
+echo "      scripts/release/sign_release.sh --dist ${DIST_DIR}"
 
 echo ""
 echo "=========================================="

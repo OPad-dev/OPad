@@ -1,0 +1,56 @@
+name: Release verify and publish
+
+# The last step of a release. release.yml builds every artifact and leaves a
+# DRAFT release; scripts/release/sign_release.sh downloads exactly those files,
+# signs the manifest over them offline (this workflow never sees the key),
+# uploads it and starts this workflow. Here every artifact the manifest names
+# is checked against the draft's files, and only then is the draft published.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag of the draft release, e.g. v1.0.0"
+        required: true
+      publish:
+        description: "Publish the draft when every check passes"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    name: Check the signed manifest against the draft's files
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      # The check script and the public key as of the released tag
+      - name: Checkout the tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Install minisign
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends minisign
+
+      - name: Download the draft's assets
+        run: |
+          test "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft -q .isDraft)" = true
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir release
+          ls -l release
+
+      - name: Every manifest artifact is published with its sha256
+        run: python3 scripts/release/check_manifest.py release --verify-signature
+
+      - name: SHA256SUMS matches the published files
+        run: (cd release && sha256sum -c SHA256SUMS)
+
+      - name: Publish the release
+        if: ${{ inputs.publish }}
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
