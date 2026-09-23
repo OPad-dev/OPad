@@ -29,8 +29,11 @@ static frame_parser_t s_parser;
 // that swallow the real frames behind it
 #define RX_STALE_US 500000
 static int64_t s_last_rx_us = 0;
-// Framing of the host on the other end, taken from its last valid frame, so a
-// host that predates the AA 55 marker is answered in the framing it parses.
+// Framing of the host on the other end, so a host that predates the AA 55
+// marker is answered in the framing it parses. Latched once per connection from
+// the first frame that decodes to a message we know, then the parser is locked
+// to it: a false header of the other framing inside a payload can no longer
+// capture the parser or flip our replies. Cleared only by protocol_reset_rx.
 // Until the host has sent anything we do not know, and send nothing: an
 // unsolicited frame in the wrong framing would desynchronise an old host.
 // Protocol state is owned by the CDC task.
@@ -569,8 +572,13 @@ static void on_frame_received(const uint8_t *payload, size_t payload_len, void *
     static osupad_HostToDevice msg;
     msg = (osupad_HostToDevice)osupad_HostToDevice_init_zero;
     if (protocol_decode_host_message(payload, payload_len, &msg)) {
-        s_host_framing = s_parser.last_format;
-        s_host_framing_known = true;
+        // nanopb accepts most varint garbage with no payload set: only a
+        // recognised message is evidence of the host's framing
+        if (!s_host_framing_known && msg.which_payload >= osupad_HostToDevice_hello_tag &&
+            msg.which_payload <= osupad_HostToDevice_detect_pin_tag) {
+            s_host_framing = s_parser.last_format;
+            s_host_framing_known = true;
+        }
         handle_host_message(&msg);
     }
 }
@@ -585,7 +593,11 @@ void protocol_feed_cdc_bytes(const uint8_t *data, size_t len)
     s_last_rx_us = now;
 
     uint32_t prev_oversized = s_parser.oversized_count;
-    frame_parser_feed(&s_parser, data, len, on_frame_received, NULL);
+    frame_accept_t accept = FRAME_ACCEPT_ANY;
+    if (s_host_framing_known) {
+        accept = s_host_framing == FRAME_FORMAT_LEGACY ? FRAME_ACCEPT_LEGACY : FRAME_ACCEPT_MARKED;
+    }
+    frame_parser_feed(&s_parser, data, len, accept, on_frame_received, NULL);
     if (s_parser.oversized_count > prev_oversized) {
         diag_record(DIAG_EVENT_FRAME_TOO_LARGE, 2 /* WARN */, 0, 0);
         ESP_LOGW(TAG, "Header with an impossible length skipped (resync)");

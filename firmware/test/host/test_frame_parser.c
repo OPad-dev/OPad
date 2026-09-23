@@ -38,7 +38,7 @@ static void test_single_frame(void)
         'O', 'S', 'U', '!'       // payload
     };
 
-    frame_parser_feed(&parser, frame, sizeof(frame), test_handler, &ctx);
+    frame_parser_feed(&parser, frame, sizeof(frame), FRAME_ACCEPT_ANY, test_handler, &ctx);
     assert(ctx.call_count == 1);
     assert(ctx.last_len == 4);
     assert(memcmp(ctx.last_payload, "OSU!", 4) == 0);
@@ -57,14 +57,14 @@ static void test_split_frame(void)
     uint8_t chunk2[] = { 0x55, 0x05, 0x00, 'H', 'E' };
     uint8_t chunk3[] = { 'L', 'L', 'O' };
 
-    frame_parser_feed(&parser, chunk1, sizeof(chunk1), test_handler, &ctx);
+    frame_parser_feed(&parser, chunk1, sizeof(chunk1), FRAME_ACCEPT_ANY, test_handler, &ctx);
     assert(ctx.call_count == 0);
     assert(!frame_parser_is_idle(&parser));
 
-    frame_parser_feed(&parser, chunk2, sizeof(chunk2), test_handler, &ctx);
+    frame_parser_feed(&parser, chunk2, sizeof(chunk2), FRAME_ACCEPT_ANY, test_handler, &ctx);
     assert(ctx.call_count == 0);
 
-    frame_parser_feed(&parser, chunk3, sizeof(chunk3), test_handler, &ctx);
+    frame_parser_feed(&parser, chunk3, sizeof(chunk3), FRAME_ACCEPT_ANY, test_handler, &ctx);
     assert(ctx.call_count == 1);
     assert(ctx.last_len == 5);
     assert(memcmp(ctx.last_payload, "HELLO", 5) == 0);
@@ -84,7 +84,7 @@ static void test_back_to_back_frames(void)
         0xAA, 0x55, 0x03, 0x00, 'T', 'W', 'O',
     };
 
-    frame_parser_feed(&parser, buffer, sizeof(buffer), test_handler, &ctx);
+    frame_parser_feed(&parser, buffer, sizeof(buffer), FRAME_ACCEPT_ANY, test_handler, &ctx);
     assert(ctx.call_count == 2);
     assert(ctx.last_len == 3);
     assert(memcmp(ctx.last_payload, "TWO", 3) == 0);
@@ -105,7 +105,7 @@ static void test_stray_bytes_are_skipped(void)
         0xAA, 0x12,
         0xAA, 0xAA, 0x55, 0x02, 0x00, 'O', 'K',
     };
-    frame_parser_feed(&parser, stream, sizeof(stream), test_handler, &ctx);
+    frame_parser_feed(&parser, stream, sizeof(stream), FRAME_ACCEPT_ANY, test_handler, &ctx);
     assert(ctx.call_count == 1);
     assert(ctx.last_len == 2);
     assert(memcmp(ctx.last_payload, "OK", 2) == 0);
@@ -122,11 +122,11 @@ static void test_stray_text_then_a_frame(void)
     test_context_t ctx = {0};
 
     const char *cmd = "FREAKY67\r\n";
-    frame_parser_feed(&parser, (const uint8_t *)cmd, strlen(cmd), test_handler, &ctx);
+    frame_parser_feed(&parser, (const uint8_t *)cmd, strlen(cmd), FRAME_ACCEPT_ANY, test_handler, &ctx);
     assert(ctx.call_count == 0);
 
     uint8_t frame[] = {0xAA, 0x55, 0x02, 0x00, 'O', 'K'};
-    frame_parser_feed(&parser, frame, sizeof(frame), test_handler, &ctx);
+    frame_parser_feed(&parser, frame, sizeof(frame), FRAME_ACCEPT_ANY, test_handler, &ctx);
     assert(ctx.call_count == 1);
     assert(memcmp(ctx.last_payload, "OK", 2) == 0);
     assert(frame_parser_is_idle(&parser));
@@ -142,7 +142,7 @@ static void test_legacy_frames_from_old_hosts(void)
 
     // [u32 LE length][payload], as hosts before the AA 55 marker send it
     uint8_t frame[] = {0x05, 0x00, 0x00, 0x00, 'H', 'E', 'L', 'L', 'O'};
-    frame_parser_feed(&parser, frame, sizeof(frame), test_handler, &ctx);
+    frame_parser_feed(&parser, frame, sizeof(frame), FRAME_ACCEPT_ANY, test_handler, &ctx);
     assert(ctx.call_count == 1);
     assert(ctx.last_len == 5);
     assert(memcmp(ctx.last_payload, "HELLO", 5) == 0);
@@ -154,14 +154,14 @@ static void test_legacy_frames_from_old_hosts(void)
     memset(big, 'x', sizeof(big));
     frame_write_header(big, 170, FRAME_FORMAT_LEGACY);
     assert(big[0] == 0xAA && big[1] == 0x00 && big[2] == 0 && big[3] == 0);
-    frame_parser_feed(&parser, big, sizeof(big), test_handler, &ctx);
+    frame_parser_feed(&parser, big, sizeof(big), FRAME_ACCEPT_ANY, test_handler, &ctx);
     assert(ctx.call_count == 2);
     assert(ctx.last_len == 170);
     assert(parser.last_format == FRAME_FORMAT_LEGACY);
 
     // And a marked frame right after switches the reported format back
     uint8_t marked[] = {0xAA, 0x55, 0x02, 0x00, 'O', 'K'};
-    frame_parser_feed(&parser, marked, sizeof(marked), test_handler, &ctx);
+    frame_parser_feed(&parser, marked, sizeof(marked), FRAME_ACCEPT_ANY, test_handler, &ctx);
     assert(ctx.call_count == 3);
     assert(parser.last_format == FRAME_FORMAT_MARKED);
 
@@ -188,7 +188,7 @@ static void test_oversized_frame_recovery(void)
         0xAA, 0x55, 0x02, 0x00, 'O', 'K',
     };
 
-    frame_parser_feed(&parser, stream, sizeof(stream), test_handler, &ctx);
+    frame_parser_feed(&parser, stream, sizeof(stream), FRAME_ACCEPT_ANY, test_handler, &ctx);
     assert(parser.oversized_count == 1);
     assert(ctx.call_count == 1);
     assert(ctx.last_len == 2);
@@ -209,7 +209,7 @@ static void test_buffer_overflow_recovery(void)
     memset(chunk1, 0x11, sizeof(chunk1));
     frame_write_header(chunk1, 8000, FRAME_FORMAT_MARKED);
 
-    frame_parser_feed(&parser, chunk1, sizeof(chunk1), test_handler, &ctx);
+    frame_parser_feed(&parser, chunk1, sizeof(chunk1), FRAME_ACCEPT_ANY, test_handler, &ctx);
     assert(parser.rx_len == 4000);
 
     // 4000 + 5000 > PROTOCOL_MAX_FRAME_SIZE: the partial frame is dropped and
@@ -218,7 +218,7 @@ static void test_buffer_overflow_recovery(void)
     memset(chunk2, 0xBB, sizeof(chunk2));
     uint8_t tail[] = {0xAA, 0x55, 0x02, 0x00, 'O', 'K'};
     memcpy(chunk2 + sizeof(chunk2) - sizeof(tail), tail, sizeof(tail));
-    frame_parser_feed(&parser, chunk2, sizeof(chunk2), test_handler, &ctx);
+    frame_parser_feed(&parser, chunk2, sizeof(chunk2), FRAME_ACCEPT_ANY, test_handler, &ctx);
 
     assert(parser.overflow_count == 1);
     assert(ctx.call_count == 1);
@@ -226,6 +226,79 @@ static void test_buffer_overflow_recovery(void)
     assert(frame_parser_is_idle(&parser));
 
     printf("✓ test_buffer_overflow_recovery passed\n");
+}
+
+// A marked host after lost bytes: 09 00 00 00 reads as a legacy header that
+// would swallow the next real frame
+static void test_locked_marked_ignores_legacy_headers(void)
+{
+    const uint8_t stream[] = {
+        0x09, 0x00, 0x00, 0x00,
+        0xAA, 0x55, 0x02, 0x00, 'O', 'K',
+        0xAA, 0x55, 0x02, 0x00, 'H', 'I',
+    };
+
+    frame_parser_t parser;
+    frame_parser_init(&parser);
+    test_context_t ctx = {0};
+    frame_parser_feed(&parser, stream, sizeof(stream), FRAME_ACCEPT_ANY, test_handler, &ctx);
+    assert(ctx.call_count == 1 && ctx.last_len == 9); // captured, both frames lost
+
+    frame_parser_init(&parser);
+    memset(&ctx, 0, sizeof(ctx));
+    frame_parser_feed(&parser, stream, sizeof(stream), FRAME_ACCEPT_MARKED, test_handler, &ctx);
+    assert(ctx.call_count == 2);
+    assert(ctx.last_len == 2 && memcmp(ctx.last_payload, "HI", 2) == 0);
+    assert(parser.resync_bytes == 4);
+    assert(parser.last_format == FRAME_FORMAT_MARKED);
+    assert(frame_parser_is_idle(&parser));
+
+    printf("✓ test_locked_marked_ignores_legacy_headers passed\n");
+}
+
+// A legacy host: a stray AA 55 00 00 is a zero-length marked frame to an
+// unlocked parser, and nothing to one locked to legacy
+static void test_locked_legacy_ignores_marked_headers(void)
+{
+    uint8_t stream[4 + 4 + 32];
+    const uint8_t stray[] = {0xAA, 0x55, 0x00, 0x00};
+    memcpy(stream, stray, sizeof(stray));
+    frame_write_header(stream + 4, 32, FRAME_FORMAT_LEGACY);
+    memset(stream + 8, 'x', 32);
+
+    frame_parser_t parser;
+    frame_parser_init(&parser);
+    test_context_t ctx = {0};
+    frame_parser_feed(&parser, stream, sizeof(stream), FRAME_ACCEPT_ANY, test_handler, &ctx);
+    assert(ctx.call_count == 2);
+
+    frame_parser_init(&parser);
+    memset(&ctx, 0, sizeof(ctx));
+    frame_parser_feed(&parser, stream, sizeof(stream), FRAME_ACCEPT_LEGACY, test_handler, &ctx);
+    assert(ctx.call_count == 1 && ctx.last_len == 32);
+    assert(parser.last_format == FRAME_FORMAT_LEGACY);
+    assert(parser.resync_bytes == 4);
+    assert(frame_parser_is_idle(&parser));
+
+    printf("✓ test_locked_legacy_ignores_marked_headers passed\n");
+}
+
+static void test_unlocked_accepts_both_framings(void)
+{
+    const uint8_t stream[] = {
+        0xAA, 0x55, 0x02, 0x00, 'O', 'K',
+        0x02, 0x00, 0x00, 0x00, 'H', 'I',
+    };
+    frame_parser_t parser;
+    frame_parser_init(&parser);
+    test_context_t ctx = {0};
+    frame_parser_feed(&parser, stream, 6, FRAME_ACCEPT_ANY, test_handler, &ctx);
+    assert(ctx.call_count == 1 && parser.last_format == FRAME_FORMAT_MARKED);
+    frame_parser_feed(&parser, stream + 6, 6, FRAME_ACCEPT_ANY, test_handler, &ctx);
+    assert(ctx.call_count == 2 && parser.last_format == FRAME_FORMAT_LEGACY);
+    assert(memcmp(ctx.last_payload, "HI", 2) == 0);
+
+    printf("✓ test_unlocked_accepts_both_framings passed\n");
 }
 
 int main(void)
@@ -240,6 +313,9 @@ int main(void)
     test_legacy_header_encoding();
     test_oversized_frame_recovery();
     test_buffer_overflow_recovery();
+    test_locked_marked_ignores_legacy_headers();
+    test_locked_legacy_ignores_marked_headers();
+    test_unlocked_accepts_both_framings();
     printf("All frame parser unit tests passed successfully!\n");
     return 0;
 }

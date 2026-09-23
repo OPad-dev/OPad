@@ -48,7 +48,7 @@ static void drop_front(frame_parser_t *parser, size_t n)
 }
 
 void frame_parser_feed(frame_parser_t *parser, const uint8_t *data, size_t len,
-                       frame_handler_t handler, void *user_data)
+                       frame_accept_t accept, frame_handler_t handler, void *user_data)
 {
     if (!parser || !data || len == 0) return;
 
@@ -75,7 +75,7 @@ void frame_parser_feed(frame_parser_t *parser, const uint8_t *data, size_t len,
 
         frame_format_t format;
         size_t expected_len;
-        if (b[0] == FRAME_MAGIC_0 && b[1] == FRAME_MAGIC_1) {
+        if (accept != FRAME_ACCEPT_LEGACY && b[0] == FRAME_MAGIC_0 && b[1] == FRAME_MAGIC_1) {
             format = FRAME_FORMAT_MARKED;
             expected_len = (size_t)b[2] | ((size_t)b[3] << 8);
             if (expected_len > FRAME_MAX_PAYLOAD) {
@@ -85,7 +85,12 @@ void frame_parser_feed(frame_parser_t *parser, const uint8_t *data, size_t len,
                 drop_front(parser, 1);
                 continue;
             }
+        } else if (accept == FRAME_ACCEPT_MARKED) {
+            parser->resync_bytes++;
+            drop_front(parser, 1);
+            continue;
         } else {
+            // Locked to legacy, AA 55 lands here and claims >= 0x55AA bytes: slid past
             format = FRAME_FORMAT_LEGACY;
             expected_len = (size_t)b[0] | ((size_t)b[1] << 8);
             if (b[2] != 0 || b[3] != 0 || expected_len < FRAME_LEGACY_MIN_PAYLOAD ||

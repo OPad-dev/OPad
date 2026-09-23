@@ -10,7 +10,7 @@ Findings are ranked most severe first.
 
 ---
 
-## 1. Legacy headers accepted after the host has locked to marked framing — `open`
+## 1. Legacy headers accepted after the host has locked to marked framing — `fixed`
 
 **File:** `firmware/main/protocol/frame_parser.c:143`
 **Category:** correctness
@@ -21,7 +21,7 @@ The parser keeps accepting legacy headers even after the host is known to speak 
 
 **Suggested fix:** The host side already locks via `accept: Option<Framing>` in `opad-protocol`; the firmware should pass `s_host_framing_known ? s_host_framing : any` into `frame_parser_feed` and reject the other framing's headers once locked.
 
-## 2. `s_host_framing` is re-latched on every accepted frame — `open`
+## 2. `s_host_framing` is re-latched on every accepted frame — `fixed`
 
 **File:** `firmware/main/protocol/protocol.c:571`
 **Category:** correctness
