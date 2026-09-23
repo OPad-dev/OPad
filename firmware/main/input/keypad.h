@@ -85,12 +85,20 @@ void keypad_set_config(const keypad_config_t *config);
 void keypad_get_config(keypad_config_t *out_config);
 
 /**
- * @brief Scan allowed key GPIO pins with pull-ups to detect which pin is pressed to GND.
- * @param timeout_ms Maximum time to wait in milliseconds.
+ * @brief Start scanning the allowed key GPIO pins (pulled up) for one pressed to GND.
+ * The scan runs on the keypad task and replaces one still running, which then
+ * never reports a result. Returns at once.
+ * @param timeout_ms How long to scan, in milliseconds.
  * @param exclude_gpio Pin number to ignore (e.g. key1 when detecting key2), or 0 for none.
- * @return Detected GPIO pin number (> 0), or -1 if timeout/none.
+ * @return Scan id for keypad_detect_pin_result, or 0 if it cannot run (before keypad_init).
  */
-int keypad_detect_pressed_pin(uint32_t timeout_ms, uint32_t exclude_gpio);
+uint32_t keypad_detect_pin_start(uint32_t timeout_ms, uint32_t exclude_gpio);
+
+/**
+ * @brief True once the scan `id` has finished; *out_pin is then the detected
+ * GPIO number (> 0), or -1 if none was pressed before the timeout.
+ */
+bool keypad_detect_pin_result(uint32_t id, int *out_pin);
 
 /**
  * @brief Turn key input off (edges ignored, no presses reported) or back on.

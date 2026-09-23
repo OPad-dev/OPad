@@ -86,6 +86,9 @@ esp_err_t protocol_send_log_batch(void);
  */
 void protocol_drain_diag_logs(void);
 
+/** Sends the DetectPinResult of a finished pin scan. CDC task, like the rest. */
+void protocol_poll_detect_pin(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -95,6 +95,15 @@ void app_main(void)
         keypad_set_input_enabled(false);
     }
     ESP_ERROR_CHECK(keypad_init(&k_cfg));
+    keypad_config_t armed;
+    keypad_get_config(&armed);
+    if (armed.key1_gpio != k_cfg.key1_gpio || armed.key2_gpio != k_cfg.key2_gpio) {
+        // keypad_init fell back to the default pins: the config the host is
+        // shown must name the pins the keys are really on
+        dev_cfg.key1_gpio = armed.key1_gpio;
+        dev_cfg.key2_gpio = armed.key2_gpio;
+        device_config_set(&dev_cfg);
+    }
 
     // 4. Initialize USB HID Subsystem and install TinyUSB stack (FATAL if fails)
     ESP_ERROR_CHECK(usb_hid_init());

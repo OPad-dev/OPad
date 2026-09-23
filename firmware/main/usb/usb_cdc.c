@@ -197,6 +197,7 @@ static void usb_cdc_task_poll(void)
         protocol_feed_cdc_bytes(rx_buf, count);
     }
 
+    protocol_poll_detect_pin();
     protocol_drain_diag_logs();
 }
 

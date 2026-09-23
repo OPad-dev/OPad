@@ -32,7 +32,7 @@ The parser keeps accepting legacy headers even after the host is known to speak 
 
 **Suggested fix:** Latch framing once per connection (first valid frame, or `Hello` only) and clear it only in `protocol_reset_rx`.
 
-## 3. `DetectPinRequest.timeout_ms` is unbounded and busy-loops the CDC task — `open`
+## 3. `DetectPinRequest.timeout_ms` is unbounded and busy-loops the CDC task — `fixed`
 
 **File:** `firmware/main/protocol/protocol.c:551`
 **Category:** correctness

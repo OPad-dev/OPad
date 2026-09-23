@@ -372,6 +372,16 @@ static void layout_from_proto(const osupad_SetLayout *in, ui_layout_t *out)
 // Last attempt id seen from the host; a new id means a new attempt
 static uint32_t s_play_id = 0;
 
+#define DETECT_PIN_DEFAULT_MS 10000
+// The host waits timeout + 2 s; the pad should never scan longer than a person would
+#define DETECT_PIN_MAX_MS 30000
+// Pin scan awaiting its answer (id 0: none)
+static struct {
+    uint32_t id;
+    uint32_t seq;
+    uint32_t key_id;
+} s_detect;
+
 static void handle_host_message(const osupad_HostToDevice *msg)
 {
     switch (msg->which_payload) {
@@ -551,11 +561,22 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         break;
 
     case osupad_HostToDevice_detect_pin_tag: {
+        // The scan runs on the keypad task; protocol_poll_detect_pin answers
+        // when it ends. A new request replaces one still scanning, whose
+        // host-side wait then times out, as it did when the host gave up.
         const osupad_DetectPinRequest *req = &msg->payload.detect_pin;
-        uint32_t timeout = req->timeout_ms > 0 ? req->timeout_ms : 10000;
-        int detected = keypad_detect_pressed_pin(timeout, req->exclude_gpio);
-        bool ok = (detected > 0);
-        protocol_send_detect_pin_resp(msg->sequence_number, req->key_id, ok ? (uint32_t)detected : 0, ok);
+        uint32_t timeout = req->timeout_ms > 0 ? req->timeout_ms : DETECT_PIN_DEFAULT_MS;
+        if (timeout > DETECT_PIN_MAX_MS) {
+            timeout = DETECT_PIN_MAX_MS;
+        }
+        uint32_t id = keypad_detect_pin_start(timeout, req->exclude_gpio);
+        if (id == 0) {
+            protocol_send_detect_pin_resp(msg->sequence_number, req->key_id, 0, false);
+            break;
+        }
+        s_detect.id = id;
+        s_detect.seq = msg->sequence_number;
+        s_detect.key_id = req->key_id;
         break;
     }
 
@@ -609,6 +630,17 @@ void protocol_reset_rx(void)
     frame_parser_reset(&s_parser);
     // Called when the host closes the port: the next one may frame differently
     s_host_framing_known = false;
+}
+
+void protocol_poll_detect_pin(void)
+{
+    int pin;
+    if (s_detect.id == 0 || !keypad_detect_pin_result(s_detect.id, &pin)) {
+        return;
+    }
+    bool ok = pin > 0;
+    protocol_send_detect_pin_resp(s_detect.seq, s_detect.key_id, ok ? (uint32_t)pin : 0, ok);
+    s_detect.id = 0;
 }
 
 bool protocol_rx_idle(void)

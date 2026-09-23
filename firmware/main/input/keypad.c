@@ -10,6 +10,7 @@
 #include <stdatomic.h>
 #include "input/latency_stats.h"
 #include "driver/gpio.h"
+#include "diag/diag.h"
 
 static const char *TAG = "keypad";
 
@@ -29,6 +30,16 @@ static keypad_config_t s_config = {
 
 static keypad_config_t s_staged_config;
 static volatile bool s_config_staged = false;
+// The keypad task is moving the key pins; s_config is committed once that succeeds
+static bool s_pins_moving = false;
+
+// Pin detection requests, served by the keypad task (the one task that may
+// touch key GPIOs). Guarded by s_keypad_spinlock.
+static uint32_t s_detect_req_id = 0;
+static uint32_t s_detect_req_timeout_ms;
+static uint32_t s_detect_req_exclude;
+static uint32_t s_detect_done_id = 0;
+static int s_detect_done_pin = -1;
 
 static volatile bool s_key_state[KEY_ID_COUNT] = {false, false};
 static volatile int64_t s_last_transition_us[KEY_ID_COUNT] = {0, 0};
@@ -94,12 +105,125 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
     portEXIT_CRITICAL_ISR(&s_keypad_spinlock);
 }
 
+static const uint8_t SCAN_PINS[] = {2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 21};
+#define DETECT_POLL_TICKS (pdMS_TO_TICKS(10) ? pdMS_TO_TICKS(10) : 1)
+// A pin must read LOW this long to count as pressed
+#define DETECT_CONFIRM_US 15000
+
+// A pin scan in progress. Stepped by the keypad task between key events, so
+// key reports keep flowing and the protocol task is never blocked by it.
+typedef struct {
+    bool active;
+    uint32_t id;
+    uint32_t exclude;
+    uint64_t pin_mask;     // pins this scan configured, released when it ends
+    int64_t deadline_us;
+    int candidate;         // pin seen LOW, waiting for it to stay LOW
+    int64_t candidate_since_us;
+} detect_scan_t;
+
+static void detect_scan_release(const detect_scan_t *scan)
+{
+    // The key pins may have moved onto a scanned pin meanwhile: leave those armed
+    portENTER_CRITICAL(&s_keypad_spinlock);
+    keypad_config_t cfg = s_config;
+    portEXIT_CRITICAL(&s_keypad_spinlock);
+    for (size_t i = 0; i < sizeof(SCAN_PINS); i++) {
+        if ((scan->pin_mask & (1ULL << SCAN_PINS[i])) &&
+            SCAN_PINS[i] != cfg.key1_gpio && SCAN_PINS[i] != cfg.key2_gpio) {
+            gpio_reset_pin(SCAN_PINS[i]);
+        }
+    }
+}
+
+static void detect_scan_step(detect_scan_t *scan)
+{
+    portENTER_CRITICAL(&s_keypad_spinlock);
+    uint32_t req_id = s_detect_req_id;
+    uint32_t timeout_ms = s_detect_req_timeout_ms;
+    uint32_t exclude = s_detect_req_exclude;
+    keypad_config_t cfg = s_config;
+    portEXIT_CRITICAL(&s_keypad_spinlock);
+
+    if (req_id != scan->id) {
+        // A new request replaces the running scan, which gets no result
+        if (scan->active) {
+            detect_scan_release(scan);
+        }
+        ESP_LOGI(TAG, "Starting interactive pin detection (timeout=%lu ms, exclude=GPIO%lu)",
+                 (unsigned long)timeout_ms, (unsigned long)exclude);
+        // Configure candidate pins with internal pull-ups. The active key pins are
+        // already pulled-up inputs, so they are scanned as they are: reconfiguring
+        // them here would turn their interrupts off mid-session.
+        uint64_t pin_mask = 0;
+        for (size_t i = 0; i < sizeof(SCAN_PINS); i++) {
+            uint8_t pin = SCAN_PINS[i];
+            if (pin != exclude && pin != cfg.key1_gpio && pin != cfg.key2_gpio) {
+                pin_mask |= (1ULL << pin);
+            }
+        }
+        gpio_config_t io_conf = {
+            .pin_bit_mask = pin_mask,
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = GPIO_PULLUP_ENABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
+        gpio_config(&io_conf);
+        esp_rom_delay_us(500);
+
+        *scan = (detect_scan_t){
+            .active = true,
+            .id = req_id,
+            .exclude = exclude,
+            .pin_mask = pin_mask,
+            .deadline_us = esp_timer_get_time() + (int64_t)timeout_ms * 1000,
+            .candidate = -1,
+        };
+    }
+    if (!scan->active) {
+        return;
+    }
+
+    int64_t now = esp_timer_get_time();
+    int detected_pin = -1;
+    if (scan->candidate >= 0) {
+        if (gpio_get_level(scan->candidate) != 0) {
+            scan->candidate = -1;
+        } else if (now - scan->candidate_since_us >= DETECT_CONFIRM_US) {
+            detected_pin = scan->candidate;
+            ESP_LOGI(TAG, "Pin detected: GPIO%d pulled LOW", detected_pin);
+        }
+    }
+    if (scan->candidate < 0) {
+        for (size_t i = 0; i < sizeof(SCAN_PINS); i++) {
+            uint8_t pin = SCAN_PINS[i];
+            if (pin != scan->exclude && gpio_get_level(pin) == 0) {
+                scan->candidate = pin;
+                scan->candidate_since_us = now;
+                break;
+            }
+        }
+    }
+
+    if (detected_pin < 0 && now < scan->deadline_us) {
+        return;
+    }
+    detect_scan_release(scan);
+    scan->active = false;
+    portENTER_CRITICAL(&s_keypad_spinlock);
+    s_detect_done_id = scan->id;
+    s_detect_done_pin = detected_pin;
+    portEXIT_CRITICAL(&s_keypad_spinlock);
+}
+
 static void keypad_task(void *pvParameters)
 {
     (void)pvParameters;
     ESP_LOGI(TAG, "Keypad high-priority processing task started on core %d", xPortGetCoreID());
 
     bool reported_state[KEY_ID_COUNT] = {false, false};
+    detect_scan_t scan = {0};
 
     while (1) {
         // Calculate wait timeout based on smallest remaining lockout
@@ -132,6 +256,10 @@ static void keypad_task(void *pvParameters)
                     wait_ticks = 1;
                 }
             }
+        }
+
+        if (scan.active && (wait_ticks == portMAX_DELAY || wait_ticks > DETECT_POLL_TICKS)) {
+            wait_ticks = DETECT_POLL_TICKS;
         }
 
         ulTaskNotifyTake(pdTRUE, wait_ticks);
@@ -215,14 +343,20 @@ static void keypad_task(void *pvParameters)
         // 3. If both keys are currently released, apply any staged config change
         bool move_pins = false;
         keypad_config_t applied;
+        keypad_config_t previous;
         portENTER_CRITICAL(&s_keypad_spinlock);
         if (s_config_staged && !s_key_state[0] && !s_key_state[1] &&
             !reported_state[0] && !reported_state[1]) {
             move_pins = s_staged_config.key1_gpio != s_config.key1_gpio ||
                         s_staged_config.key2_gpio != s_config.key2_gpio;
-            s_config = s_staged_config;
-            applied = s_config;
-            usb_hid_set_keycodes(s_config.keycode1, s_config.keycode2);
+            applied = s_staged_config;
+            previous = s_config;
+            if (move_pins) {
+                s_pins_moving = true;
+            } else {
+                s_config = applied;
+                usb_hid_set_keycodes(applied.keycode1, applied.keycode2);
+            }
             s_config_staged = false;
         }
         portEXIT_CRITICAL(&s_keypad_spinlock);
@@ -231,9 +365,25 @@ static void keypad_task(void *pvParameters)
             // gpio_config and ISR (de)registration cannot run inside the spinlock
             esp_err_t err = board_keys_set_gpio(applied.key1_gpio, applied.key2_gpio);
             if (err != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to move keys to GPIO%u/GPIO%u: %s",
-                         applied.key1_gpio, applied.key2_gpio, esp_err_to_name(err));
+                // Keep the whole previous config, and its pins armed, so what
+                // keypad_get_config reports is what the keys are really on
+                ESP_LOGE(TAG, "Failed to move keys to GPIO%u/GPIO%u (%s), staying on GPIO%u/GPIO%u",
+                         applied.key1_gpio, applied.key2_gpio, esp_err_to_name(err),
+                         previous.key1_gpio, previous.key2_gpio);
+                diag_record(DIAG_EVENT_CONFIG_REJECTED, 3 /* ERROR */, (uint32_t)err,
+                            ((uint32_t)applied.key1_gpio << 8) | applied.key2_gpio);
+                esp_err_t rearm = board_keys_set_gpio(previous.key1_gpio, previous.key2_gpio);
+                if (rearm != ESP_OK) {
+                    ESP_LOGE(TAG, "Re-arming GPIO%u/GPIO%u failed: %s",
+                             previous.key1_gpio, previous.key2_gpio, esp_err_to_name(rearm));
+                }
+                applied = previous;
             }
+            portENTER_CRITICAL(&s_keypad_spinlock);
+            s_config = applied;
+            s_pins_moving = false;
+            usb_hid_set_keycodes(applied.keycode1, applied.keycode2);
+            portEXIT_CRITICAL(&s_keypad_spinlock);
             // Start debouncing from the new pins; a switch already held down is reported
             bool levels[KEY_ID_COUNT] = {board_key1_read(), board_key2_read()};
             portENTER_CRITICAL(&s_keypad_spinlock);
@@ -247,6 +397,9 @@ static void keypad_task(void *pvParameters)
                 xTaskNotifyGive(s_input_task_handle);
             }
         }
+
+        // 4. Pin detection
+        detect_scan_step(&scan);
     }
 }
 
@@ -403,9 +556,10 @@ void keypad_set_config(const keypad_config_t *config)
     }
 
     bool pins_changed;
+    bool staged;
     portENTER_CRITICAL(&s_keypad_spinlock);
     pins_changed = clamped.key1_gpio != s_config.key1_gpio || clamped.key2_gpio != s_config.key2_gpio;
-    if (!pins_changed && !s_key_state[0] && !s_key_state[1]) {
+    if (!pins_changed && !s_pins_moving && !s_key_state[0] && !s_key_state[1]) {
         s_config = clamped;
         usb_hid_set_keycodes(clamped.keycode1, clamped.keycode2);
         s_config_staged = false;
@@ -414,9 +568,10 @@ void keypad_set_config(const keypad_config_t *config)
         s_staged_config = clamped;
         s_config_staged = true;
     }
+    staged = s_config_staged;
     portEXIT_CRITICAL(&s_keypad_spinlock);
 
-    if (pins_changed) {
+    if (staged) {
         xTaskNotifyGive(s_input_task_handle);
     }
 }
@@ -430,82 +585,34 @@ void keypad_get_config(keypad_config_t *out_config)
     }
 }
 
-static const uint8_t SCAN_PINS[] = {2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 21};
-
-int keypad_detect_pressed_pin(uint32_t timeout_ms, uint32_t exclude_gpio)
+uint32_t keypad_detect_pin_start(uint32_t timeout_ms, uint32_t exclude_gpio)
 {
-    ESP_LOGI(TAG, "Starting interactive pin detection (timeout=%lu ms, exclude=GPIO%lu)",
-             (unsigned long)timeout_ms, (unsigned long)exclude_gpio);
-
-    if (timeout_ms == 0) {
-        timeout_ms = 8000;
+    if (s_input_task_handle == NULL) {
+        return 0;
     }
-
     portENTER_CRITICAL(&s_keypad_spinlock);
-    keypad_config_t cfg = s_config;
+    uint32_t id = ++s_detect_req_id;
+    if (id == 0) {
+        id = ++s_detect_req_id; // 0 means "not started"
+    }
+    s_detect_req_timeout_ms = timeout_ms;
+    s_detect_req_exclude = exclude_gpio;
     portEXIT_CRITICAL(&s_keypad_spinlock);
-
-    // Configure candidate pins with internal pull-ups. The active key pins are
-    // already pulled-up inputs, so they are scanned as they are: reconfiguring
-    // them here would turn their interrupts off mid-session.
-    uint64_t pin_mask = 0;
-    for (size_t i = 0; i < sizeof(SCAN_PINS); i++) {
-        uint8_t pin = SCAN_PINS[i];
-        if (pin != exclude_gpio && pin != cfg.key1_gpio && pin != cfg.key2_gpio) {
-            pin_mask |= (1ULL << pin);
-        }
-    }
-
-    gpio_config_t io_conf = {
-        .pin_bit_mask = pin_mask,
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config(&io_conf);
-    esp_rom_delay_us(500);
-
-    int64_t deadline = esp_timer_get_time() + (int64_t)timeout_ms * 1000;
-    int detected_pin = -1;
-
-    while (esp_timer_get_time() < deadline) {
-        for (size_t i = 0; i < sizeof(SCAN_PINS); i++) {
-            uint8_t pin = SCAN_PINS[i];
-            if (pin == exclude_gpio) continue;
-            if (gpio_get_level(pin) == 0) {
-                // Confirm debounced LOW level (held for 15ms)
-                vTaskDelay(pdMS_TO_TICKS(15));
-                if (gpio_get_level(pin) == 0) {
-                    detected_pin = pin;
-                    ESP_LOGI(TAG, "Pin detected: GPIO%d pulled LOW", pin);
-                    break;
-                }
-            }
-        }
-        if (detected_pin >= 0) {
-            break;
-        }
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
-
-    // Release the scanned pins, then re-arm the active keys unconditionally
-    // (the config may have changed during the scan)
-    portENTER_CRITICAL(&s_keypad_spinlock);
-    cfg = s_config;
-    portEXIT_CRITICAL(&s_keypad_spinlock);
-
-    for (size_t i = 0; i < sizeof(SCAN_PINS); i++) {
-        if ((pin_mask & (1ULL << SCAN_PINS[i])) &&
-            SCAN_PINS[i] != cfg.key1_gpio && SCAN_PINS[i] != cfg.key2_gpio) {
-            gpio_reset_pin(SCAN_PINS[i]);
-        }
-    }
-    board_keys_set_gpio(cfg.key1_gpio, cfg.key2_gpio);
-
-    return detected_pin;
+    xTaskNotifyGive(s_input_task_handle);
+    return id;
 }
 
+bool keypad_detect_pin_result(uint32_t id, int *out_pin)
+{
+    portENTER_CRITICAL(&s_keypad_spinlock);
+    bool done = id != 0 && s_detect_done_id == id;
+    int pin = s_detect_done_pin;
+    portEXIT_CRITICAL(&s_keypad_spinlock);
+    if (done && out_pin) {
+        *out_pin = pin;
+    }
+    return done;
+}
 
 void keypad_set_input_enabled(bool enabled)
 {

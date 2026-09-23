@@ -82,10 +82,10 @@ Files: `firmware/main/protocol/frame_parser.c/.h`, `firmware/main/protocol/proto
 
 ### O2 — `detect_pin` and key-GPIO ownership ▸ FP#3, FB#2, FU#7
 Files: `firmware/main/protocol/protocol.c` (~551), `firmware/main/input/keypad.c` (~223, ~504), `firmware/boards/waveshare_esp32s3_touch_lcd_2/board.c` (~19)
-- [ ] Clamp `DetectPinRequest.timeout_ms` (suggest `≤ 30000`, `0` → default).
-- [ ] The pin scan must not run on the CDC task: move `keypad_detect_pressed_pin` execution into the keypad task (request/response via the existing staging mechanism or a small queue), so `board_keys_set_gpio` has a **single owning task** as its header requires. The CDC task only enqueues and later sends `DetectPinResult`. Keep RX serviced meanwhile.
-- [ ] In `keypad.c` staged-config apply: commit `s_config = applied` only **after** `board_keys_set_gpio` succeeds; on failure keep the previous config, re-arm the previous pins, log + `diag_record`.
-- [ ] Same for the `keypad_init` fallback path (FU#7 mentions line ~270): whatever pins are actually armed must be what `keypad_get_config` reports.
+- [x] Clamp `DetectPinRequest.timeout_ms` (suggest `≤ 30000`, `0` → default).
+- [x] The pin scan must not run on the CDC task: move `keypad_detect_pressed_pin` execution into the keypad task (request/response via the existing staging mechanism or a small queue), so `board_keys_set_gpio` has a **single owning task** as its header requires. The CDC task only enqueues and later sends `DetectPinResult`. Keep RX serviced meanwhile.
+- [x] In `keypad.c` staged-config apply: commit `s_config = applied` only **after** `board_keys_set_gpio` succeeds; on failure keep the previous config, re-arm the previous pins, log + `diag_record`.
+- [x] Same for the `keypad_init` fallback path (FU#7 mentions line ~270): whatever pins are actually armed must be what `keypad_get_config` reports.
 - Verify: `make firmware`; on the pad: detect_pin from the app while sending HostStatus (protocol must stay responsive); detect → apply config sequence; deliberately invalid pin to exercise the failure path.
 
 ### O3 — HID report pending races ▸ FU#2, FU#6
@@ -347,5 +347,6 @@ Files: `scripts/release/test_packages.sh` (~26), `desktop/gui/Cargo.toml` (`[pac
 Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <executor>  notes`.
 
 ```
-2026-09-24  O1  (this commit)  Claude Opus  FP#1 FP#2 fixed; parser locks to the first recognised frame's framing; pad test pending
+2026-09-24  O1  aa05333  Claude Opus  FP#1 FP#2 fixed; parser locks to the first recognised frame's framing; pad test pending
+2026-09-24  O2  (this commit)  Claude Opus  FP#3 FB#2 FU#7 fixed; pin scan is a keypad-task state machine, timeout clamped to 30 s; pad test pending
 ```
