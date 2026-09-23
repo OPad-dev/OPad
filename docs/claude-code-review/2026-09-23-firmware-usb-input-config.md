@@ -11,7 +11,7 @@ Findings are ranked most severe first.
 
 ---
 
-## 1. GPIO8 (module-ID ADC pin) is treated as a free key pin — `open`
+## 1. GPIO8 (module-ID ADC pin) is treated as a free key pin — `fixed`
 
 **File:** `firmware/main/input/keypad.c:433` (also `firmware/main/config/config_validate.c:15`)
 **Category:** correctness
@@ -76,7 +76,7 @@ The staged config is committed to `s_config` before `board_keys_set_gpio` runs; 
 
 **Failure scenario:** `board_keys_set_gpio(applied.key1_gpio, ...)` returns an error (e.g. `gpio_isr_handler_add` fails) → `ESP_LOGE` only; `s_config` now says GPIO10/7 while the ISR/pins remain on 14/9 → `keypad_get_config`, protocol `get_config`, and `keypad_detect_pressed_pin`'s exclude logic all use the wrong pins; the end-of-scan `board_keys_set_gpio(cfg...)` then retries with the failing pins and the pad can end with no key ISR at all.
 
-## 8. Duplicated debounce bounds and key GPIO allow-list have already drifted — `open`
+## 8. Duplicated debounce bounds and key GPIO allow-list have already drifted — `fixed`
 
 **File:** `firmware/main/config/config_validate.c:8`
 **Category:** reuse

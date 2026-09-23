@@ -1,18 +1,18 @@
 #include "device_config.h"
+#include "input/debounce.h"
 #include <stdio.h>
 
 #ifdef ESP_PLATFORM
 #include "sdkconfig.h"
 #endif
 
-#define DEBOUNCE_MIN_US     500
-#define DEBOUNCE_MAX_US     20000
-
 // Header GPIOs of the Waveshare ESP32-S3-Touch-LCD-2 (schematic, P1/P2) that can take a
-// switch to GND with the internal pull-up. Keep in sync with KEY_GPIO_PINS in osupad-model.
+// switch to GND with the internal pull-up. Keep in sync with KEY_PINS in opad-model.
 // Left out: 19/20 (USB D-/D+), 43/44 (UART0 console), 47/48 (touch + IMU I2C),
-// 17 (CAM_PWDN, 10k pull-down to GND). The rest are camera pins, free with no camera fitted.
-static const uint8_t KEY_GPIO_ALLOWED[] = {2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 21};
+// 17 (CAM_PWDN, 10k pull-down to GND), 8 (module-ID ADC, 10k to GND through the divider).
+// The rest are camera pins, free with no camera fitted.
+const uint8_t KEY_GPIO_ALLOWED[] = {2, 4, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 18, 21};
+const size_t KEY_GPIO_ALLOWED_COUNT = sizeof(KEY_GPIO_ALLOWED) / sizeof(KEY_GPIO_ALLOWED[0]);
 
 bool device_config_key_gpio_supported(uint32_t gpio)
 {
@@ -21,7 +21,7 @@ bool device_config_key_gpio_supported(uint32_t gpio)
         return false;
     }
 #endif
-    for (size_t i = 0; i < sizeof(KEY_GPIO_ALLOWED); i++) {
+    for (size_t i = 0; i < KEY_GPIO_ALLOWED_COUNT; i++) {
         if (KEY_GPIO_ALLOWED[i] == gpio) {
             return true;
         }

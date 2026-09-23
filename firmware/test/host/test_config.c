@@ -173,13 +173,30 @@ static void test_key_gpio_allow_list(void)
     char err[64] = {0};
     assert(device_config_validate(&cfg, err, sizeof(err)));
 
-    // Every header pin free on the Waveshare board
-    const uint32_t allowed[] = {2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 21};
+    // Every header pin free on the Waveshare board, and the shared list is exactly those
+    const uint32_t allowed[] = {2, 4, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 18, 21};
+    assert(KEY_GPIO_ALLOWED_COUNT == sizeof(allowed) / sizeof(allowed[0]));
     for (size_t i = 0; i < sizeof(allowed) / sizeof(allowed[0]); i++) {
+        assert(KEY_GPIO_ALLOWED[i] == allowed[i]);
+#if defined(CONFIG_OSUPAD_BENCH_DEBUG_GPIO)
+        if (allowed[i] == CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM) {
+            continue;
+        }
+#endif
         assert(device_config_key_gpio_supported(allowed[i]));
     }
-    // Unset, USB, UART0 console, I2C, CAM_PWDN pull-down, LCD, strapping, out of range
-    const uint32_t rejected[] = {0, 1, 3, 5, 17, 19, 20, 38, 39, 43, 44, 45, 46, 47, 48, 49, 255};
+#if defined(CONFIG_OSUPAD_BENCH_DEBUG_GPIO)
+    // The bench debug output is driven by the firmware, never a key
+    assert(!device_config_key_gpio_supported(CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM));
+    cfg.key1_gpio = CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM;
+    memset(err, 0, sizeof(err));
+    assert(!device_config_validate(&cfg, err, sizeof(err)));
+    assert(strstr(err, "key1 gpio") != NULL);
+    cfg.key1_gpio = 14;
+#endif
+    // Unset, USB, module-ID ADC, UART0 console, I2C, CAM_PWDN pull-down, LCD, strapping,
+    // out of range
+    const uint32_t rejected[] = {0, 1, 3, 5, 8, 17, 19, 20, 38, 39, 43, 44, 45, 46, 47, 48, 49, 255};
     for (size_t i = 0; i < sizeof(rejected) / sizeof(rejected[0]); i++) {
         assert(!device_config_key_gpio_supported(rejected[i]));
     }
@@ -199,6 +216,12 @@ static void test_key_gpio_allow_list(void)
     memset(err, 0, sizeof(err));
     assert(!device_config_validate(&cfg, err, sizeof(err)));
     assert(strstr(err, "share gpio") != NULL);
+
+    cfg.key1_gpio = 8; // Module-ID divider holds it LOW: would read as a held key
+    cfg.key2_gpio = 9;
+    memset(err, 0, sizeof(err));
+    assert(!device_config_validate(&cfg, err, sizeof(err)));
+    assert(strstr(err, "key1 gpio") != NULL);
 
     cfg.key1_gpio = 2;
     cfg.key2_gpio = 21;

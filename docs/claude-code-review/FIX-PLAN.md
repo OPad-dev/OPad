@@ -161,10 +161,10 @@ Kickoff prompt:
 
 ### S1 — Key-GPIO allow-list and debounce bounds ▸ FU#1, FU#8
 Files: `firmware/main/input/keypad.c` (`SCAN_PINS`, ~433), `firmware/main/config/config_validate.c` (~8, ~15), `firmware/main/input/debounce.h`, `firmware/test/host/test_config.c`
-- [ ] Remove GPIO8 (module-ID ADC divider, see `board.c:~212`) from both `SCAN_PINS` and `KEY_GPIO_ALLOWED`.
-- [ ] Replace the two lists with **one** shared, host-safe array (e.g. `config_validate.h` exporting `const uint8_t KEY_GPIO_ALLOWED[]` + count) used by `keypad.c` for scanning and by `config_validate.c` for validation. Apply the `CONFIG_OSUPAD_BENCH_DEBUG_GPIO` exclusion in that single place.
-- [ ] Delete the redefined `DEBOUNCE_MIN_US`/`DEBOUNCE_MAX_US` in `config_validate.c`; include `input/debounce.h`.
-- [ ] Extend `test_config.c`: GPIO8 rejected; debug GPIO rejected when configured; all listed pins accepted.
+- [x] Remove GPIO8 (module-ID ADC divider, see `board.c:~212`) from both `SCAN_PINS` and `KEY_GPIO_ALLOWED`.
+- [x] Replace the two lists with **one** shared, host-safe array (e.g. `config_validate.h` exporting `const uint8_t KEY_GPIO_ALLOWED[]` + count) used by `keypad.c` for scanning and by `config_validate.c` for validation. Apply the `CONFIG_OSUPAD_BENCH_DEBUG_GPIO` exclusion in that single place.
+- [x] Delete the redefined `DEBOUNCE_MIN_US`/`DEBOUNCE_MAX_US` in `config_validate.c`; include `input/debounce.h`.
+- [x] Extend `test_config.c`: GPIO8 rejected; debug GPIO rejected when configured; all listed pins accepted.
 - Verify: host tests, `make firmware`. Coordinate: O2 also edits `keypad.c` — rebase on it.
 
 ### S2 — Frame parser resync + protocol hygiene ▸ FP#4, FP#5, FP#6, FP#7
@@ -352,5 +352,6 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  O3  240d115  Claude Opus  FU#2 FU#6 fixed; pending flag replaced by change/sent sequence numbers; bench + pad test pending
 2026-09-24  O4  ec05977  Claude Opus  FU#3 FU#4 FU#5 fixed; all runtime keypad config goes through the keypad task; pad test pending
 2026-09-24  O5  65e343a  Claude Opus  FI#4 FI#5 fixed; mutex over pending layouts + layout NVS writes, failed flush kept and retried every 10 s; no host test (NVS/FreeRTOS-bound), pad test pending
-2026-09-24  O6  (this commit)  Claude Opus  FI#1 FI#6 fixed; ui_lock() returns bool, data_update skipped headless, NULL idle screen -> ESP_ERR_NO_MEM; headless pad test pending
+2026-09-24  O6  9f835c7  Claude Opus  FI#1 FI#6 fixed; ui_lock() returns bool, data_update skipped headless, NULL idle screen -> ESP_ERR_NO_MEM; headless pad test pending
+2026-09-24  S1  (this commit)  Claude Sonnet  FU#1 FU#8 fixed; GPIO8 dropped, one KEY_GPIO_ALLOWED list shared by keypad scan + validation, debug GPIO excluded via device_config_key_gpio_supported; desktop opad-model KEY_PINS still lists GPIO8 (out of firmware scope); pad test pending
 ```

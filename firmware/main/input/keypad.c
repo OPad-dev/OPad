@@ -11,6 +11,7 @@
 #include "input/latency_stats.h"
 #include "driver/gpio.h"
 #include "diag/diag.h"
+#include "config/device_config.h"
 
 static const char *TAG = "keypad";
 
@@ -113,7 +114,6 @@ static bool read_key_level(int key_index)
     return key_index == 0 ? board_key1_read() : board_key2_read();
 }
 
-static const uint8_t SCAN_PINS[] = {2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 21};
 #define DETECT_POLL_TICKS (pdMS_TO_TICKS(10) ? pdMS_TO_TICKS(10) : 1)
 // A pin must read LOW this long to count as pressed
 #define DETECT_CONFIRM_US 15000
@@ -136,10 +136,10 @@ static void detect_scan_release(const detect_scan_t *scan)
     portENTER_CRITICAL(&s_keypad_spinlock);
     keypad_config_t cfg = s_config;
     portEXIT_CRITICAL(&s_keypad_spinlock);
-    for (size_t i = 0; i < sizeof(SCAN_PINS); i++) {
-        if ((scan->pin_mask & (1ULL << SCAN_PINS[i])) &&
-            SCAN_PINS[i] != cfg.key1_gpio && SCAN_PINS[i] != cfg.key2_gpio) {
-            gpio_reset_pin(SCAN_PINS[i]);
+    for (size_t i = 0; i < KEY_GPIO_ALLOWED_COUNT; i++) {
+        uint8_t pin = KEY_GPIO_ALLOWED[i];
+        if ((scan->pin_mask & (1ULL << pin)) && pin != cfg.key1_gpio && pin != cfg.key2_gpio) {
+            gpio_reset_pin(pin);
         }
     }
 }
@@ -164,9 +164,10 @@ static void detect_scan_step(detect_scan_t *scan)
         // already pulled-up inputs, so they are scanned as they are: reconfiguring
         // them here would turn their interrupts off mid-session.
         uint64_t pin_mask = 0;
-        for (size_t i = 0; i < sizeof(SCAN_PINS); i++) {
-            uint8_t pin = SCAN_PINS[i];
-            if (pin != exclude && pin != cfg.key1_gpio && pin != cfg.key2_gpio) {
+        for (size_t i = 0; i < KEY_GPIO_ALLOWED_COUNT; i++) {
+            uint8_t pin = KEY_GPIO_ALLOWED[i];
+            if (device_config_key_gpio_supported(pin) &&
+                pin != exclude && pin != cfg.key1_gpio && pin != cfg.key2_gpio) {
                 pin_mask |= (1ULL << pin);
             }
         }
@@ -204,9 +205,10 @@ static void detect_scan_step(detect_scan_t *scan)
         }
     }
     if (scan->candidate < 0) {
-        for (size_t i = 0; i < sizeof(SCAN_PINS); i++) {
-            uint8_t pin = SCAN_PINS[i];
-            if (pin != scan->exclude && gpio_get_level(pin) == 0) {
+        for (size_t i = 0; i < KEY_GPIO_ALLOWED_COUNT; i++) {
+            uint8_t pin = KEY_GPIO_ALLOWED[i];
+            if (device_config_key_gpio_supported(pin) && pin != scan->exclude &&
+                gpio_get_level(pin) == 0) {
                 scan->candidate = pin;
                 scan->candidate_since_us = now;
                 break;

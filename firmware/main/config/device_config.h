@@ -55,6 +55,13 @@ esp_err_t device_config_init(void);
 bool device_config_validate(const device_config_data_t *cfg, char *err_msg, size_t err_msg_len);
 
 /**
+ * @brief Header GPIOs a key switch can be wired to. The bench debug GPIO may be
+ * among them; check device_config_key_gpio_supported() before using one.
+ */
+extern const uint8_t KEY_GPIO_ALLOWED[];
+extern const size_t KEY_GPIO_ALLOWED_COUNT;
+
+/**
  * @brief True if a key switch can be wired to this GPIO on the board's headers.
  */
 bool device_config_key_gpio_supported(uint32_t gpio);

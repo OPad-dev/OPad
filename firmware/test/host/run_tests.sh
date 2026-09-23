@@ -37,6 +37,13 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" -I "${FW_MAIN}/config" \
     "${FW_MAIN}/config/config_validate.c" \
     "${HOST_TEST_DIR}/test_config.c" \
     -o "${BIN_DIR}/test_config"
+# Again with the bench debug GPIO on one of the header pins
+gcc -Wall -Wextra -Werror -I "${FW_MAIN}" -I "${FW_MAIN}/config" \
+    -DCONFIG_OSUPAD_BENCH_DEBUG_GPIO=1 -DCONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM=4 \
+    "${FW_MAIN}/config/config_validate.c" \
+    "${HOST_TEST_DIR}/test_config.c" \
+    -o "${BIN_DIR}/test_config_debug_gpio"
+"${BIN_DIR}/test_config_debug_gpio"
 "${BIN_DIR}/test_config"
 
 # 4. Diag ring buffer tests (P2-1)
