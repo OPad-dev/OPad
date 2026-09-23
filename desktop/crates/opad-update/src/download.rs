@@ -46,15 +46,59 @@ impl StagedFile {
         }
         std::fs::rename(&self.path, target)?;
         self.persisted = true;
-
-        // Make the rename itself durable, so a power cut after a "successful"
-        // update cannot resurrect the old file with the new one gone.
-        if let Some(dir) = target.parent() {
-            if let Ok(handle) = std::fs::File::open(dir) {
-                let _ = handle.sync_all();
-            }
-        }
+        sync_parent(target);
         Ok(())
+    }
+}
+
+/// Replaces `target` with `bytes` so that a kill at any point leaves the old
+/// file or the new one, never a truncated one: temporary file beside it,
+/// fsync, rename, then fsync the directory. For files with no hash to check
+/// (tosu's VERSION/NOTICE, counter backups); a downloaded artifact goes
+/// through [`stage_bytes`] instead.
+pub fn write_atomic(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let tmp = incoming_path(target)?;
+    let result = write_synced(&tmp, bytes).and_then(|()| std::fs::rename(&tmp, target));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+        return result;
+    }
+    sync_parent(target);
+    Ok(())
+}
+
+/// `.<name>.incoming` in the target's own directory (created if missing), so
+/// the final rename never crosses a filesystem.
+fn incoming_path(target: &Path) -> std::io::Result<PathBuf> {
+    let dir = target.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("{} has no parent directory", target.display()),
+        )
+    })?;
+    std::fs::create_dir_all(dir)?;
+    Ok(dir.join(format!(
+        ".{}.incoming",
+        target
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "opad-update".to_string())
+    )))
+}
+
+fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut file = std::fs::File::create(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
+}
+
+/// Makes a rename into `target`'s directory durable, so a power cut after a
+/// "successful" write cannot resurrect the old file with the new one gone.
+fn sync_parent(target: &Path) {
+    if let Some(dir) = target.parent() {
+        if let Ok(handle) = std::fs::File::open(dir) {
+            let _ = handle.sync_all();
+        }
     }
 }
 
@@ -76,32 +120,13 @@ pub fn stage_bytes(
     expected_sha256: &str,
     artifact_name: &str,
 ) -> Result<StagedFile, UpdateError> {
-    let dir = target.parent().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("{} has no parent directory", target.display()),
-        )
-    })?;
-    std::fs::create_dir_all(dir)?;
-
-    let tmp = dir.join(format!(
-        ".{}.incoming",
-        target
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "opad-update".to_string())
-    ));
-
-    {
-        let mut file = std::fs::File::create(&tmp)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-    }
-
+    let tmp = incoming_path(target)?;
+    // Owned by the StagedFile from here, so a failed write is cleaned up too
     let staged = StagedFile {
         path: tmp,
         persisted: false,
     };
+    write_synced(&staged.path, bytes)?;
     // Verify before returning: a caller cannot install what never verified,
     // and the Drop above removes the rejected file.
     check_hash(artifact_name, &staged.path, expected_sha256)?;
@@ -170,6 +195,36 @@ mod tests {
             .install_to(&target)
             .unwrap();
         assert_eq!(std::fs::read(&target).unwrap(), bytes);
+    }
+
+    #[test]
+    fn an_atomic_write_replaces_the_file_and_leaves_nothing_else() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("VERSION");
+        std::fs::write(&target, b"4.1.0\n").unwrap();
+        write_atomic(&target, b"4.2.0\n").unwrap();
+        assert_eq!(std::fs::read(&target).unwrap(), b"4.2.0\n");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+
+        let nested = dir.path().join("new").join("NOTICE");
+        write_atomic(&nested, b"notice").unwrap();
+        assert_eq!(std::fs::read(&nested).unwrap(), b"notice");
+    }
+
+    #[test]
+    fn a_failed_atomic_write_keeps_the_old_file() {
+        let dir = tempfile::tempdir().unwrap();
+        // A directory in the way makes the final rename fail
+        let target = dir.path().join("VERSION");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(target.join("keep"), b"x").unwrap();
+        assert!(write_atomic(&target, b"4.2.0\n").is_err());
+        assert!(target.join("keep").exists());
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            1,
+            "the temporary file must not be left behind"
+        );
     }
 
     #[cfg(unix)]

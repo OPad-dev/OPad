@@ -118,7 +118,8 @@ pub fn spawn_update_worker(
         loop {
             tokio::select! {
                 _ = ticker.tick() => {
-                    match tick(&daemon_state, &storage, &tosu_supervisor, &status).await {
+                    let have_cached = manifest.is_some();
+                    match tick(&daemon_state, &storage, &tosu_supervisor, &status, have_cached).await {
                         Ok(m) => {
                             if m.is_some() {
                                 shared_manifest.lock().clone_from(&m);
@@ -159,11 +160,15 @@ pub fn spawn_update_worker(
 
 /// Returns the manifest when a fresh one was fetched, so the worker can keep
 /// it for a later Install command without re-fetching and re-verifying.
+/// `have_cached` is whether the worker already holds one; without it the
+/// check is unconditional (the stored ETag survives a restart, the manifest
+/// does not).
 async fn tick(
     daemon_state: &Arc<Mutex<DaemonState>>,
     storage: &Arc<Mutex<Option<Storage>>>,
     tosu_supervisor: &TosuSupervisor,
     status: &SharedUpdateStatus,
+    have_cached: bool,
 ) -> Result<Option<ReleaseManifest>, UpdateError> {
     let mode = daemon_state.lock().mode;
 
@@ -180,7 +185,7 @@ async fn tick(
     }
 
     let client = UpdateClient::new()?;
-    let fetched = client.fetch_manifest(&mut schedule, now).await;
+    let fetched = client.fetch_manifest(&mut schedule, now, have_cached).await;
     // The schedule is recorded whatever happened, so a failure backs off
     // instead of retrying on every tick.
     write_json(storage, SCHEDULE_KEY, &schedule);

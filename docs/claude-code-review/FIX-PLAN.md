@@ -197,13 +197,13 @@ Files: `desktop/crates/opad-device/src/lib.rs` (~268, ~291, ~296, ~1086), `deskt
 
 ### S6 — Updater correctness ▸ DU#1, DU#2, DU#3, DU#4, DU#5, DU#6, DU#8
 Files: `desktop/crates/opad-update/src/{client.rs, tosu.rs, version.rs, download.rs, bin/opad-manifest.rs}`, `desktop/daemon/src/updater.rs`, `desktop/daemon/src/backup.rs`
-- [ ] `fetch_manifest`: send `If-None-Match` only when the caller holds a cached manifest (pass `Option<&ReleaseManifest>` or a `have_cached: bool`); on daemon start with no manifest in memory, do a full fetch. Alternatively clear `schedule.etag` when the manifest is not held — pick one and test the restart path.
-- [ ] `tosu::install`: write VERSION/NOTICE **after** `install_to` succeeds (or roll them back on Err). Fix the doc comment.
-- [ ] `opad-manifest` `app_artifact()`: add `.AppImage` (case-insensitive) → (`linux-x86_64`, `ArtifactKind::Binary`) + unit test.
-- [ ] `fetch_artifact`: hash the in-memory bytes (`sha256_bytes`) — add a bytes variant of `check_hash`; delete `tempdir_for_check` and the temp-file round trip.
-- [ ] `tosu::plan`: use `is_newer` (normalise a leading `v` on both sides) — never downgrade, never reinstall on a cosmetic mismatch.
-- [ ] `version.rs`: semver-correct pre-release compare — split on `.`, numeric identifiers numerically, alphanumeric lexically, numeric < alphanumeric; strip `+build` before comparing. Tests: `rc10 > rc9`, `rc.10 > rc.9`, `1.0.0+build == 1.0.0` for ordering, release > pre-release.
-- [ ] Extract `write_atomic(target, bytes)` in `download.rs` (temp + fsync + rename + dir sync); `stage_bytes` and `daemon/src/backup.rs` call it; use it for VERSION/NOTICE.
+- [x] `fetch_manifest`: send `If-None-Match` only when the caller holds a cached manifest (pass `Option<&ReleaseManifest>` or a `have_cached: bool`); on daemon start with no manifest in memory, do a full fetch. Alternatively clear `schedule.etag` when the manifest is not held — pick one and test the restart path.
+- [x] `tosu::install`: write VERSION/NOTICE **after** `install_to` succeeds (or roll them back on Err). Fix the doc comment.
+- [x] `opad-manifest` `app_artifact()`: add `.AppImage` (case-insensitive) → (`linux-x86_64`, `ArtifactKind::Binary`) + unit test.
+- [x] `fetch_artifact`: hash the in-memory bytes (`sha256_bytes`) — add a bytes variant of `check_hash`; delete `tempdir_for_check` and the temp-file round trip.
+- [x] `tosu::plan`: use `is_newer` (normalise a leading `v` on both sides) — never downgrade, never reinstall on a cosmetic mismatch.
+- [x] `version.rs`: semver-correct pre-release compare — split on `.`, numeric identifiers numerically, alphanumeric lexically, numeric < alphanumeric; strip `+build` before comparing. Tests: `rc10 > rc9`, `rc.10 > rc.9`, `1.0.0+build == 1.0.0` for ordering, release > pre-release.
+- [x] Extract `write_atomic(target, bytes)` in `download.rs` (temp + fsync + rename + dir sync); `stage_bytes` and `daemon/src/backup.rs` call it; use it for VERSION/NOTICE.
 - Verify: `make check`; targeted unit tests for each bullet.
 
 ### S7 — Daemon updater/reset leftovers ▸ DA#7, DA#8
@@ -362,5 +362,6 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  O9  dbc2990  Claude Opus  DD#2 DD#3 fixed; frames dispatched while connected with known framing (re-Hello no longer drops acks), unanswered Hellos reopen once while held connected then Disconnected, regardless of framing; commands held until framing known; pure hello_due/accept_frame unit-tested; manual rehandshake-during-sync + replug test pending
 2026-09-24  O10  9f29000  Claude Opus  DD#5 DD#6 fixed (untested on Windows); accept returns the connected client even if the replacement instance fails (lazy recreate), cancel returns the instance to `next`, connect error replenishes; enter_bootloader re-picks after a fired trigger and reports NoBootloader, not PortBusy, when the app port vanished; opad-ipc/opad-device check + clippy clean for x86_64-pc-windows-gnu (full workspace blocked by missing mingw gcc for ring); VM run pending
 2026-09-24  O11  8e9f92e  Claude Opus  DM#1 DM#4 fixed; paused/stopped watch channels, pause() awaits kill+reap (10 s cap, logged), mid-launch pause killed/skipped, pause stop skips backoff and resume resets it + wakes the loop at once; fake-child (sleep) test on Linux; manual app update with tosu running pending (Linux + Windows VM)
-2026-09-24  S5  (this commit)  Claude Opus (Sonnet list)  DD#1 DD#4 DD#7 fixed; worker's last_hello is Option<Instant> (None = Hello now), test backdating uses checked_sub; pad_mac tries the OSUPAD- serial then device_id; empty XDG_RUNTIME_DIR treated as unset; DD#1 untested on Windows (opad-device/opad-ipc cargo check for windows-gnu clean)
+2026-09-24  S5  a7e3815  Claude Opus (Sonnet list)  DD#1 DD#4 DD#7 fixed; worker's last_hello is Option<Instant> (None = Hello now), test backdating uses checked_sub; pad_mac tries the OSUPAD- serial then device_id; empty XDG_RUNTIME_DIR treated as unset; DD#1 untested on Windows (opad-device/opad-ipc cargo check for windows-gnu clean)
+2026-09-24  S6  (this commit)  Claude Opus (Sonnet list)  DU#1 DU#2 DU#3 DU#4 DU#5 DU#6 DU#8 fixed; fetch_manifest(have_cached) sends If-None-Match only while the worker holds a manifest; tosu binary swapped before VERSION/NOTICE (atomic); .AppImage -> linux-x86_64/Binary; artifact hashed in memory (temp dir gone); tosu plan uses is_newer (no downgrade, v-prefix cosmetic); semver pre-release compare (numeric runs numeric, +build ignored); write_atomic shared by tosu + daemon backup, stage_bytes shares its helpers
 ```

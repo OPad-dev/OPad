@@ -88,7 +88,15 @@ pub fn sha256_bytes(bytes: &[u8]) -> String {
 /// Compares against the manifest's hash, case- and whitespace-insensitively so
 /// a manifest written by hand is not rejected for cosmetics.
 pub fn check_hash(artifact: &str, path: &Path, expected: &str) -> Result<(), UpdateError> {
-    let actual = sha256_file(path)?;
+    compare_hash(artifact, sha256_file(path)?, expected)
+}
+
+/// [`check_hash`] for bytes already in memory
+pub fn check_hash_bytes(artifact: &str, bytes: &[u8], expected: &str) -> Result<(), UpdateError> {
+    compare_hash(artifact, sha256_bytes(bytes), expected)
+}
+
+fn compare_hash(artifact: &str, actual: String, expected: &str) -> Result<(), UpdateError> {
     if actual.eq_ignore_ascii_case(expected.trim()) {
         return Ok(());
     }
@@ -168,6 +176,17 @@ mod tests {
             }
             other => panic!("expected a hash mismatch, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn in_memory_bytes_are_checked_without_touching_disk() {
+        let good = sha256_bytes(b"the real thing");
+        assert!(check_hash_bytes("artifact.bin", b"the real thing", &good).is_ok());
+        assert!(check_hash_bytes("artifact.bin", b"the real thing", &good.to_uppercase()).is_ok());
+        assert!(matches!(
+            check_hash_bytes("artifact.bin", b"the real thing!", &good),
+            Err(UpdateError::HashMismatch { .. })
+        ));
     }
 
     #[test]

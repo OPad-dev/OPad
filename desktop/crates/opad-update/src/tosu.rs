@@ -19,9 +19,10 @@
 //! reported and left alone — replacing it would desynchronise dpkg/rpm/pacman
 //! and overwrite a choice the user made deliberately.
 
-use crate::download::stage_bytes;
+use crate::download::{stage_bytes, write_atomic};
 use crate::manifest::{Artifact, ReleaseManifest, TOSU};
 use crate::origin::InstallOrigin;
+use crate::version::is_newer;
 use crate::{DeferReason, UpdateError};
 use opad_model::paths;
 use std::path::{Path, PathBuf};
@@ -68,13 +69,15 @@ pub fn plan(
         })?;
 
     let installed = installed.unwrap_or("").trim();
-    if !installed.is_empty() && installed == component.version {
+    // Only a strictly newer manifest version is an update: a rolled-back
+    // manifest must not downgrade, and `v4.2.0` against `4.2.0` is cosmetic
+    if !installed.is_empty() && !is_newer(&component.version, installed) {
         return Ok(TosuAction::UpToDate {
-            version: component.version.clone(),
+            version: installed.to_string(),
         });
     }
 
-    // Checked before the gate: "a different version exists" is news the user
+    // Checked before the gate: "a newer version exists" is news the user
     // can act on even mid-map, and it changes nothing on disk.
     if !origin.owns_bundled_tosu() {
         return Ok(TosuAction::NotifyOnly {
@@ -119,9 +122,12 @@ pub fn bundled_dir() -> Result<PathBuf, UpdateError> {
 
 /// Writes the binary, its version and its §T-3 notice as one step.
 ///
-/// The binary goes in last. If anything fails before that, the old tosu is
-/// still there and still runs; if the process dies after it, the version file
-/// already names what is on disk.
+/// The binary goes in first, and VERSION/NOTICE (each replaced atomically)
+/// only once it is in place. If staging or the rename fails, the old tosu and
+/// the VERSION naming it are untouched, so the next check retries. If the
+/// process dies between the rename and VERSION, VERSION still names the old
+/// version and the next check reinstalls the same binary: harmless, where the
+/// reverse order could record a version that never reached the disk.
 pub fn install(
     bundled_dir: &Path,
     binary_bytes: &[u8],
@@ -131,12 +137,15 @@ pub fn install(
 ) -> Result<(), UpdateError> {
     let binary = bundled_dir.join(paths::TOSU_BINARY);
     let staged = stage_bytes(&binary, binary_bytes, &artifact.sha256, "tosu")?;
+    staged.install_to(&binary)?;
 
     let notice = notice_text(version, upstream_tag, &artifact.url);
-    std::fs::write(bundled_dir.join(NOTICE_FILE), notice)?;
-    std::fs::write(bundled_dir.join(VERSION_FILE), format!("{version}\n"))?;
-
-    staged.install_to(&binary)
+    write_atomic(&bundled_dir.join(NOTICE_FILE), notice.as_bytes())?;
+    write_atomic(
+        &bundled_dir.join(VERSION_FILE),
+        format!("{version}\n").as_bytes(),
+    )?;
+    Ok(())
 }
 
 /// The §T-3 notice: upstream project, author, license, exact bundled version
@@ -211,6 +220,50 @@ mod tests {
                 version: "4.1.0".into()
             }
         );
+    }
+
+    #[test]
+    fn an_older_or_cosmetically_different_manifest_version_changes_nothing() {
+        // A rolled-back manifest must not downgrade an install we own
+        let action = plan(
+            &manifest("4.1.0"),
+            Some("4.2.0"),
+            InstallOrigin::User,
+            "linux-x86_64",
+            Ok(()),
+        )
+        .unwrap();
+        assert_eq!(
+            action,
+            TosuAction::UpToDate {
+                version: "4.2.0".into()
+            }
+        );
+        // Nor may a leading v, on either side, reinstall it every day
+        for (available, installed) in [("v4.2.0", "4.2.0"), ("4.2.0", "v4.2.0")] {
+            let action = plan(
+                &manifest(available),
+                Some(installed),
+                InstallOrigin::User,
+                "linux-x86_64",
+                Ok(()),
+            )
+            .unwrap();
+            assert!(
+                matches!(action, TosuAction::UpToDate { .. }),
+                "{available} vs {installed}: {action:?}"
+            );
+        }
+        // An older package-manager tosu is not even worth a notice
+        let action = plan(
+            &manifest("4.1.0"),
+            Some("4.2.0"),
+            InstallOrigin::Deb,
+            "linux-x86_64",
+            Ok(()),
+        )
+        .unwrap();
+        assert!(matches!(action, TosuAction::UpToDate { .. }));
     }
 
     #[test]
@@ -367,6 +420,31 @@ mod tests {
         // "Never leave the directory without a working binary."
         assert_eq!(std::fs::read(&binary).unwrap(), b"the working tosu");
         assert_eq!(installed_version(dir.path()).as_deref(), Some("4.1.0"));
+    }
+
+    #[test]
+    fn a_failed_binary_swap_leaves_version_and_notice_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        // A directory where the binary goes makes the rename fail, as a
+        // Windows sharing violation on a still-running tosu.exe would
+        let binary = dir.path().join(paths::TOSU_BINARY);
+        std::fs::create_dir(&binary).unwrap();
+        std::fs::write(binary.join("busy"), b"x").unwrap();
+        std::fs::write(dir.path().join(VERSION_FILE), "4.1.0\n").unwrap();
+
+        let bytes = b"tosu 4.2.0";
+        let artifact = Artifact {
+            target: "linux-x86_64".into(),
+            kind: ArtifactKind::Binary,
+            url: "https://example.invalid/tosu".into(),
+            sha256: sha256_bytes(bytes),
+            size: None,
+        };
+        assert!(install(dir.path(), bytes, &artifact, "4.2.0", None).is_err());
+
+        // The next check must still see 4.1.0 and retry
+        assert_eq!(installed_version(dir.path()).as_deref(), Some("4.1.0"));
+        assert!(!dir.path().join(NOTICE_FILE).exists());
     }
 
     #[test]

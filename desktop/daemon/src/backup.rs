@@ -23,8 +23,8 @@
 use chrono::{DateTime, SecondsFormat, Utc};
 use opad_model::{paths, DeviceInfo, JsonBackup};
 use opad_storage::Storage;
+use opad_update::download::write_atomic;
 use parking_lot::Mutex;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{info, warn};
@@ -82,29 +82,17 @@ pub fn backup_dir() -> Result<PathBuf, paths::PathError> {
 
 /// Writes one backup and prunes the directory back to [`KEEP`].
 ///
-/// Atomic in the same sense as `opad_update::download::stage_bytes`: a
-/// temporary file in the destination directory, fsynced, then renamed into
-/// place, so a kill at any point leaves whole files only. Returns the path so
-/// the caller can log it.
+/// Written with `opad_update::download::write_atomic`: a temporary file in
+/// the destination directory, fsynced, then renamed into place, so a kill at
+/// any point leaves whole files only. Returns the path so the caller can log
+/// it.
 pub fn write(backup: &JsonBackup, dir: &Path) -> std::io::Result<PathBuf> {
-    std::fs::create_dir_all(dir)?;
+    let target = dir.join(file_name_for(backup.exported_at));
 
-    let name = file_name_for(backup.exported_at);
-    let target = dir.join(&name);
-    let tmp = dir.join(format!(".{name}.incoming"));
-
-    let json = serde_json::to_vec_pretty(backup)
+    let mut json = serde_json::to_vec_pretty(backup)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    {
-        let mut file = std::fs::File::create(&tmp)?;
-        file.write_all(&json)?;
-        file.write_all(b"\n")?;
-        file.sync_all()?;
-    }
-    std::fs::rename(&tmp, &target)?;
-    if let Ok(handle) = std::fs::File::open(dir) {
-        let _ = handle.sync_all();
-    }
+    json.push(b'\n');
+    write_atomic(&target, &json)?;
 
     prune(dir, KEEP);
     Ok(target)

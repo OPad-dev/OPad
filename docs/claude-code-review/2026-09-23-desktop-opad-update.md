@@ -11,7 +11,7 @@ Findings are ranked most severe first.
 
 ---
 
-## 1. `fetch_manifest` sends the persisted ETag with no cached manifest body — `open` (confirmed)
+## 1. `fetch_manifest` sends the persisted ETag with no cached manifest body — `fixed` (confirmed)
 
 **File:** `desktop/crates/opad-update/src/client.rs:63`
 **Category:** correctness
@@ -22,7 +22,7 @@ Findings are ranked most severe first.
 
 **Suggested fix:** Only send `If-None-Match` when the caller has a cached manifest (e.g. pass `Option<&ReleaseManifest>` / a `have_cached` flag, or clear `schedule.etag` when none is held).
 
-## 2. `tosu::install` writes VERSION before the binary rename — `open` (confirmed)
+## 2. `tosu::install` writes VERSION before the binary rename — `fixed` (confirmed)
 
 **File:** `desktop/crates/opad-update/src/tosu.rs:137`
 **Category:** correctness
@@ -33,7 +33,7 @@ Findings are ranked most severe first.
 
 **Suggested fix:** Write VERSION/NOTICE after `install_to` succeeds, or roll them back on Err.
 
-## 3. `opad-manifest` has no rule for `*.AppImage`, so AppImage installs never update — `open` (confirmed)
+## 3. `opad-manifest` has no rule for `*.AppImage`, so AppImage installs never update — `fixed` (confirmed)
 
 **File:** `desktop/crates/opad-update/src/bin/opad-manifest.rs:248`
 **Category:** correctness
@@ -44,7 +44,7 @@ Findings are ranked most severe first.
 
 **Suggested fix:** Add an `.appimage` → (`linux-x86_64`, `Binary`) rule and a test.
 
-## 4. `fetch_artifact` round-trips in-memory bytes through a predictable shared temp path to hash them — `open`
+## 4. `fetch_artifact` round-trips in-memory bytes through a predictable shared temp path to hash them — `fixed`
 
 **File:** `desktop/crates/opad-update/src/client.rs:147`
 **Category:** correctness / security
@@ -55,7 +55,7 @@ Findings are ranked most severe first.
 
 **Suggested fix:** The bytes are already in memory — compare `sha256_bytes(&bytes)` against `artifact.sha256` (add a bytes variant of `check_hash`) and delete `tempdir_for_check`.
 
-## 5. `tosu::plan` treats any version-string difference as "install" — `open`
+## 5. `tosu::plan` treats any version-string difference as "install" — `fixed`
 
 **File:** `desktop/crates/opad-update/src/tosu.rs:71`
 **Category:** correctness
@@ -66,7 +66,7 @@ Findings are ranked most severe first.
 
 **Suggested fix:** Use `is_newer` (or at least normalise both sides) like `app.rs` and `firmware.rs` do.
 
-## 6. Pre-release identifiers compared as whole strings; `+` metadata treated as pre-release — `open`
+## 6. Pre-release identifiers compared as whole strings; `+` metadata treated as pre-release — `fixed`
 
 **File:** `desktop/crates/opad-update/src/version.rs:37`
 **Category:** correctness
@@ -88,7 +88,7 @@ The comment claims `require_https` is re-checked on the final URL after redirect
 
 **Suggested fix:** Either fix the comment or actually check `resp.url().scheme()` after `send()`.
 
-## 8. Atomic-write sequence duplicated in `backup.rs`; VERSION/NOTICE not written atomically — `open`
+## 8. Atomic-write sequence duplicated in `backup.rs`; VERSION/NOTICE not written atomically — `fixed`
 
 **File:** `desktop/crates/opad-update/src/tosu.rs:136`
 **Category:** reuse

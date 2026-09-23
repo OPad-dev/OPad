@@ -245,6 +245,10 @@ fn app_artifact(name: &str) -> Option<(String, ArtifactKind)> {
     {
         return Some(("linux-x86_64".into(), ArtifactKind::Archive));
     }
+    // What an AppImage install (DirectReplace) swaps itself for
+    if lower.ends_with(".appimage") {
+        return Some(("linux-x86_64".into(), ArtifactKind::Binary));
+    }
     None
 }
 
@@ -434,6 +438,14 @@ mod tests {
         assert_eq!(
             app_artifact("osupad-linux-x86_64-1.0.0-rc.tar.gz"),
             Some(("linux-x86_64".into(), ArtifactKind::Archive))
+        );
+        assert_eq!(
+            app_artifact("opad-x86_64.AppImage"),
+            Some(("linux-x86_64".into(), ArtifactKind::Binary))
+        );
+        assert_eq!(
+            app_artifact("OPAD-X86_64.APPIMAGE"),
+            Some(("linux-x86_64".into(), ArtifactKind::Binary))
         );
         // Not app artifacts, and in particular not silently classified as one
         assert_eq!(app_artifact("SHA256SUMS"), None);

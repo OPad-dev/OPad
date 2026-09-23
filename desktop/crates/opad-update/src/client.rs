@@ -9,7 +9,7 @@
 use crate::http::{Fetched, Http, MAX_ARTIFACT_BYTES, MAX_MANIFEST_BYTES};
 use crate::manifest::{ReleaseManifest, SUPPORTED_SCHEMA};
 use crate::schedule::CheckSchedule;
-use crate::verify::{check_hash, signing_configured, verify_manifest_signature};
+use crate::verify::{check_hash_bytes, signing_configured, verify_manifest_signature};
 use crate::{Artifact, UpdateError};
 use std::time::SystemTime;
 
@@ -46,12 +46,18 @@ impl UpdateClient {
 
     /// Returns `None` when the server confirmed our cached copy is current.
     ///
+    /// `have_cached` says whether the caller still holds the manifest the
+    /// stored ETag belongs to. Only then is the request conditional: the ETag
+    /// outlives a daemon restart but the manifest does not, and a 304 to a
+    /// caller with nothing cached would leave it with no manifest at all.
+    ///
     /// Updates `schedule` either way, so a failure backs off and a success
     /// records the ETag the next conditional GET will send.
     pub async fn fetch_manifest(
         &self,
         schedule: &mut CheckSchedule,
         now: SystemTime,
+        have_cached: bool,
     ) -> Result<Option<ReleaseManifest>, UpdateError> {
         if !signing_configured() {
             // Fail closed before touching the network: with no key there is
@@ -60,7 +66,9 @@ impl UpdateClient {
             return Err(UpdateError::NoPublicKey);
         }
 
-        let result = self.fetch_manifest_inner(schedule.etag.as_deref()).await;
+        let result = self
+            .fetch_manifest_inner(conditional_etag(schedule, have_cached))
+            .await;
         match result {
             Ok(None) => {
                 schedule.record_success(now, None);
@@ -143,23 +151,14 @@ impl UpdateClient {
             }
         }
 
-        // Hash in a temporary file so one code path checks every artifact.
-        let dir = tempdir_for_check()?;
-        let path = dir.join("artifact");
-        std::fs::write(&path, &bytes)?;
-        let verdict = check_hash(&artifact.url, &path, &artifact.sha256);
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_dir(&dir);
-        verdict?;
-
+        check_hash_bytes(&artifact.url, &bytes, &artifact.sha256)?;
         Ok(bytes)
     }
 }
 
-fn tempdir_for_check() -> Result<std::path::PathBuf, UpdateError> {
-    let dir = std::env::temp_dir().join(format!("opad-update-{}", std::process::id()));
-    std::fs::create_dir_all(&dir)?;
-    Ok(dir)
+/// The ETag to send as `If-None-Match`, if the request should be conditional
+fn conditional_etag(schedule: &CheckSchedule, have_cached: bool) -> Option<&str> {
+    schedule.etag.as_deref().filter(|_| have_cached)
 }
 
 #[cfg(test)]
@@ -176,6 +175,19 @@ mod tests {
             client.signature_url(),
             "https://example.invalid/m.json.minisig"
         );
+    }
+
+    #[test]
+    fn the_etag_is_only_sent_while_its_manifest_is_held() {
+        let mut schedule = CheckSchedule::default();
+        assert_eq!(conditional_etag(&schedule, true), None);
+        schedule.record_success(SystemTime::UNIX_EPOCH, Some("\"v1\"".into()));
+        assert_eq!(conditional_etag(&schedule, true), Some("\"v1\""));
+        // A restarted daemon has the persisted ETag but no manifest: a 304
+        // would leave it with nothing, so it must fetch in full
+        let restarted: CheckSchedule =
+            serde_json::from_str(&serde_json::to_string(&schedule).unwrap()).unwrap();
+        assert_eq!(conditional_etag(&restarted, false), None);
     }
 
     #[test]
@@ -199,7 +211,7 @@ mod tests {
         };
         let mut schedule = CheckSchedule::default();
         let err = client
-            .fetch_manifest(&mut schedule, SystemTime::UNIX_EPOCH)
+            .fetch_manifest(&mut schedule, SystemTime::UNIX_EPOCH, false)
             .await
             .unwrap_err();
         assert!(matches!(err, UpdateError::Http(_)), "got {err:?}");
