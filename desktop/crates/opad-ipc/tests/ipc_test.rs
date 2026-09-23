@@ -448,3 +448,56 @@ async fn test_stale_socket_cleanup() {
 
     cleanup_addr(&socket_path);
 }
+
+/// DC#6: the log filters are optional on the wire both ways, so no
+/// IPC_PROTOCOL_VERSION bump.
+#[test]
+fn log_filters_are_optional_on_the_wire() {
+    use opad_model::{LogLevel, LogSource};
+
+    // An older client's request (no filter fields) still parses
+    let old: IpcRequest =
+        serde_json::from_str(r#"{"GetLogEntries":{"since_seq":4,"limit":50}}"#).unwrap();
+    match old {
+        IpcRequest::GetLogEntries {
+            since_seq,
+            limit,
+            level,
+            source,
+        } => {
+            assert_eq!((since_seq, limit), (Some(4), 50));
+            assert_eq!((level, source), (None, None));
+        }
+        other => panic!("{other:?}"),
+    }
+
+    // Unfiltered requests are byte-for-byte what an older daemon expects
+    let unfiltered = serde_json::to_string(&IpcRequest::GetLogEntries {
+        since_seq: Some(4),
+        limit: 50,
+        level: None,
+        source: None,
+    })
+    .unwrap();
+    assert_eq!(
+        unfiltered,
+        r#"{"GetLogEntries":{"since_seq":4,"limit":50}}"#
+    );
+
+    // A filtered one round-trips
+    let filtered = IpcRequest::GetLogEntries {
+        since_seq: None,
+        limit: 10,
+        level: Some(LogLevel::Error),
+        source: Some(LogSource::Esp),
+    };
+    let json = serde_json::to_string(&filtered).unwrap();
+    assert!(json.contains(r#""level":"ERROR""#) && json.contains(r#""source":"ESP""#));
+    match serde_json::from_str::<IpcRequest>(&json).unwrap() {
+        IpcRequest::GetLogEntries { level, source, .. } => {
+            assert_eq!(level, Some(LogLevel::Error));
+            assert_eq!(source, Some(LogSource::Esp));
+        }
+        other => panic!("{other:?}"),
+    }
+}

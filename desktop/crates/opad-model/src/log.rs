@@ -2,10 +2,14 @@ use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "UPPERCASE")]
 pub enum LogSource {
+    #[cfg_attr(feature = "clap", value(alias = "daemon"))]
     Host,
+    #[cfg_attr(feature = "clap", value(alias = "device"))]
     Esp,
+    #[cfg_attr(feature = "clap", value(alias = "app", alias = "gui"))]
     Program,
     Tosu,
 }
@@ -22,10 +26,12 @@ impl std::fmt::Display for LogSource {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "UPPERCASE")]
 pub enum LogLevel {
     Debug,
     Info,
+    #[cfg_attr(feature = "clap", value(alias = "warning"))]
     Warn,
     Error,
 }

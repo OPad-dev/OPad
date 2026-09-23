@@ -2,7 +2,7 @@ use opad_layout::{Layout, Screen};
 use opad_model::ui_source::SourceValue;
 use opad_model::{
     CounterSource, CounterState, DeviceConfig, DeviceInfo, IncompatibleDevice, JsonBackup,
-    LatencyStats, LogEntry, RuntimeMode,
+    LatencyStats, LogEntry, LogLevel, LogSource, RuntimeMode,
 };
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -104,6 +104,15 @@ pub enum IpcRequest {
         #[serde(default)]
         since_seq: Option<u64>,
         limit: usize,
+        /// Only entries at or above this level, filtered by the daemon before
+        /// `limit` applies. Optional both ways: an older daemon ignores it
+        /// (the client then filters what it gets), and a request from an
+        /// older client has none. Omitted from the JSON when unset.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        level: Option<LogLevel>,
+        /// Only entries from this source, like `level`
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<LogSource>,
     },
     PrepareFlash,
     FinishFlash,

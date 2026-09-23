@@ -542,6 +542,8 @@ impl App {
                 ipc::request(IpcRequest::GetLogEntries {
                     since_seq,
                     limit: 200,
+                    level: None,
+                    source: None,
                 }),
                 Message::Logs,
             ));

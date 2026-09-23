@@ -16,7 +16,8 @@ clap.workspace = true
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-opad-model = { path = "../crates/opad-model" }
+opad-model = { path = "../crates/opad-model", features = ["clap"] }
+opad-protocol = { path = "../crates/opad-protocol" }
 opad-ipc = { path = "../crates/opad-ipc" }
 opad-device = { path = "../crates/opad-device" }
 opad-tosu = { path = "../crates/opad-tosu" }

@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use opad_device::flash::{self, APP_PARTITION_OFFSET};
-use opad_ipc::{send_request, IpcRequest, IpcResponse, IpcStream, IPC_PROTOCOL_VERSION};
+use opad_ipc::{send_request, IpcRequest, IpcResponse, IpcStream};
 use opad_model::JsonBackup;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -43,10 +43,15 @@ enum Commands {
         limit: usize,
         #[arg(short, long, help = "Follow log stream in real time")]
         follow: bool,
-        #[arg(long, help = "Filter by severity level (debug, info, warn, error)")]
-        level: Option<String>,
-        #[arg(long, help = "Filter by source (host, esp)")]
-        source: Option<String>,
+        #[arg(
+            long,
+            value_enum,
+            ignore_case = true,
+            help = "Only this severity and above"
+        )]
+        level: Option<opad_model::LogLevel>,
+        #[arg(long, value_enum, ignore_case = true, help = "Only this source")]
+        source: Option<opad_model::LogSource>,
     },
     /// Flash new firmware binary onto the ESP32-S3 using espflash
     Flash {
@@ -224,7 +229,7 @@ async fn main() -> Result<()> {
                     println!("Replacement:      ⚠ New pad detected (previous: {}). Run GUI to restore or adopt.", old_id);
                 }
                 if let Some(incompat) = incompatible {
-                    println!("Incompatible:     ⚠ Device protocol {} incompatible with daemon protocol {}. Update firmware or host.", incompat.protocol_version, IPC_PROTOCOL_VERSION);
+                    println!("Incompatible:     ⚠ Device protocol {} incompatible with the protocol this app speaks ({}). Update firmware or host.", incompat.protocol_version, opad_protocol::DEVICE_PROTOCOL_VERSION);
                 }
                 println!(
                     "tosu (osu!):      {}",
@@ -425,57 +430,36 @@ async fn main() -> Result<()> {
             level,
             source,
         } => {
-            let filter_level = level
-                .as_deref()
-                .and_then(|l| match l.to_lowercase().as_str() {
-                    "debug" => Some(opad_model::LogLevel::Debug),
-                    "info" => Some(opad_model::LogLevel::Info),
-                    "warn" | "warning" => Some(opad_model::LogLevel::Warn),
-                    "error" => Some(opad_model::LogLevel::Error),
-                    _ => None,
-                });
-            let filter_source = source
-                .as_deref()
-                .and_then(|s| match s.to_lowercase().as_str() {
-                    "host" | "daemon" => Some(opad_model::LogSource::Host),
-                    "esp" | "device" => Some(opad_model::LogSource::Esp),
-                    "program" | "app" | "gui" => Some(opad_model::LogSource::Program),
-                    "tosu" => Some(opad_model::LogSource::Tosu),
-                    _ => None,
-                });
-
             let mut since_seq = None;
             let mut first_batch = true;
 
             loop {
+                // The daemon filters before applying `limit`; the filter is
+                // repeated here for an older daemon that ignores it
                 let resp = send_request(
                     daemon(&mut stream)?,
-                    &IpcRequest::GetLogEntries { since_seq, limit },
+                    &IpcRequest::GetLogEntries {
+                        since_seq,
+                        limit,
+                        level,
+                        source,
+                    },
                 )
                 .await?;
-                if let IpcResponse::LogEntries {
-                    entries,
-                    latest_seq,
-                } = resp
-                {
+                if let IpcResponse::LogEntries { entries, .. } = resp {
+                    // From the last entry received, never the daemon's latest:
+                    // a burst over `limit` leaves the rest for the next poll
+                    since_seq = next_since_seq(since_seq, &entries);
+                    let shown: Vec<_> = entries
+                        .iter()
+                        .filter(|e| level.is_none_or(|l| e.level >= l))
+                        .filter(|e| source.is_none_or(|s| e.source == s))
+                        .collect();
                     if first_batch && !follow {
-                        println!("=== OPad Monitor (Last {} entries) ===", entries.len());
+                        println!("=== OPad Monitor (Last {} entries) ===", shown.len());
                     }
-                    for entry in &entries {
-                        if let Some(fl) = filter_level {
-                            if entry.level < fl {
-                                continue;
-                            }
-                        }
-                        if let Some(fs) = filter_source {
-                            if entry.source != fs {
-                                continue;
-                            }
-                        }
+                    for entry in shown {
                         println!("{}", entry.format_line());
-                    }
-                    if latest_seq > 0 {
-                        since_seq = Some(latest_seq);
                     }
                 }
                 first_batch = false;
@@ -523,9 +507,14 @@ async fn main() -> Result<()> {
                         println!("  ⚠ WARNING: Device reported protocol version {} which is incompatible with host!", protocol_version);
                     }
                 }
-                Some(IpcResponse::Error(e)) => {
-                    println!("⚠ Post-flash verification warning: {}", e);
-                }
+                // The same outcome as the no-daemon branch below, so the same
+                // exit status: a script must not read a pad that never came
+                // back as success
+                Some(IpcResponse::Error(e)) => bail!(
+                    "Firmware was written, but post-flash verification failed: {}. \
+                     See docs/recovery.md.",
+                    e
+                ),
                 // No daemon to verify through, so watch the pad re-enumerate
                 // as the app ourselves — the last step flash_board.sh did
                 None => {
@@ -691,6 +680,13 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// The `monitor` cursor after a reply: the last entry received. The daemon
+/// returns the first `limit` entries after it, so jumping to its latest seq
+/// would drop the rest of a burst; with nothing received it stays put.
+fn next_since_seq(since_seq: Option<u64>, entries: &[opad_model::LogEntry]) -> Option<u64> {
+    entries.last().map(|e| e.seq).or(since_seq)
 }
 
 /// The daemon connection, for the commands that cannot work without one.
@@ -880,6 +876,37 @@ mod tests {
         let mut f = std::fs::File::create(&path).unwrap();
         f.write_all(content).unwrap();
         path
+    }
+
+    #[test]
+    fn the_monitor_cursor_follows_the_last_entry_received() {
+        use opad_model::{LogEntry, LogLevel, LogSource};
+        let entry = |seq| LogEntry::new(seq, LogSource::Host, LogLevel::Info, "t", "m");
+        // A burst over `limit`: 51.. must still be fetched next time
+        let burst: Vec<_> = (1..=50).map(entry).collect();
+        assert_eq!(next_since_seq(None, &burst), Some(50));
+        assert_eq!(next_since_seq(Some(50), &[]), Some(50));
+        assert_eq!(next_since_seq(None, &[]), None);
+        // A single entry is not fetched again
+        assert_eq!(next_since_seq(None, &[entry(1)]), Some(1));
+    }
+
+    #[test]
+    fn log_filters_reject_unknown_values() {
+        use clap::Parser;
+        let parse = |args: &[&str]| Cli::try_parse_from([&["opadctl", "monitor"], args].concat());
+        assert!(parse(&["--level", "err"]).is_err());
+        assert!(parse(&["--source", "firmware"]).is_err());
+        for ok in [
+            &["--level", "error"][..],
+            &["--level", "WARNING"],
+            &["--source", "daemon"],
+            &["--source", "device"],
+            &["--source", "gui"],
+            &["--source", "tosu"],
+        ] {
+            assert!(parse(ok).is_ok(), "{ok:?}");
+        }
     }
 
     #[test]

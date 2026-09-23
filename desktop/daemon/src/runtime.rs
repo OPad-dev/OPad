@@ -346,7 +346,7 @@ impl RuntimeController {
                 // "connected" (so Tick neither polls nor syncs it), and the
                 // counters its HelloAck just wrote into the state are put back.
                 let pre_hello_counters = self.pre_hello_counters.take();
-                if info.protocol_version != 1 {
+                if info.protocol_version != opad_protocol::DEVICE_PROTOCOL_VERSION {
                     warn!(
                         "{} speaks protocol {}; leaving it alone until its firmware or this app is updated",
                         info.device_id, info.protocol_version

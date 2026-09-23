@@ -11,6 +11,9 @@ use thiserror::Error;
 /// sees a frame start again, so stray bytes (ROM bootloader chatter, a text
 /// command, a dropped byte) cost at most the frame they land in.
 pub const FRAME_MAGIC: [u8; 2] = [0xAA, 0x55];
+/// The pad protocol version (HelloAck `protocol_version`) this host speaks.
+/// A pad reporting another one is left alone as incompatible.
+pub const DEVICE_PROTOCOL_VERSION: u32 = 1;
 pub const HEADER_BYTES: usize = 4;
 /// Matches PROTOCOL_MAX_FRAME_SIZE (8192) on the device minus the header
 pub const MAX_PAYLOAD_BYTES: usize = 8192 - HEADER_BYTES;

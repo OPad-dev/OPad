@@ -58,20 +58,39 @@ impl LogHub {
     }
 
     pub fn get_entries(&self, since_seq: Option<u64>, limit: usize) -> (Vec<LogEntry>, u64) {
+        self.get_matching_entries(since_seq, limit, None, None)
+    }
+
+    /// [`Self::get_entries`] restricted to `level` and above and to `source`.
+    /// The filter applies before `limit`, so a filtered request still gets up
+    /// to `limit` matching entries rather than whatever matched among the
+    /// last `limit`.
+    pub fn get_matching_entries(
+        &self,
+        since_seq: Option<u64>,
+        limit: usize,
+        level: Option<LogLevel>,
+        source: Option<LogSource>,
+    ) -> (Vec<LogEntry>, u64) {
         let inner = self.inner.lock();
         let latest_seq = inner.next_seq.saturating_sub(1);
+        let matches = |e: &&LogEntry| {
+            level.is_none_or(|l| e.level >= l) && source.is_none_or(|s| e.source == s)
+        };
 
         let entries = match since_seq {
             Some(since) => inner
                 .entries
                 .iter()
                 .filter(|e| e.seq > since)
+                .filter(matches)
                 .take(limit)
                 .cloned()
                 .collect(),
             None => {
-                let start = inner.entries.len().saturating_sub(limit);
-                inner.entries.iter().skip(start).cloned().collect()
+                let matching: Vec<&LogEntry> = inner.entries.iter().filter(matches).collect();
+                let start = matching.len().saturating_sub(limit);
+                matching[start..].iter().map(|e| (*e).clone()).collect()
             }
         };
 
@@ -176,5 +195,38 @@ mod tests {
         assert_eq!(limited.len(), 5);
         assert_eq!(limited[0].seq, 6);
         assert_eq!(limited[4].seq, 10);
+    }
+
+    /// DC#6: the filter applies before `limit`, not after it
+    #[test]
+    fn filters_apply_before_the_limit() {
+        let hub = LogHub::new();
+        for i in 1..=100 {
+            let (source, level) = if i % 25 == 0 {
+                (LogSource::Esp, LogLevel::Error)
+            } else {
+                (LogSource::Host, LogLevel::Info)
+            };
+            hub.push(source, level, "test", format!("msg {}", i));
+        }
+
+        // The four errors are all older than the last 10 entries' window
+        let (errors, latest) = hub.get_matching_entries(None, 10, Some(LogLevel::Error), None);
+        assert_eq!(latest, 100);
+        let seqs: Vec<u64> = errors.iter().map(|e| e.seq).collect();
+        assert_eq!(seqs, [25, 50, 75, 100]);
+
+        // Newest matching entries when capped, oldest first after a cursor
+        let (last_two, _) = hub.get_matching_entries(None, 2, None, Some(LogSource::Esp));
+        assert_eq!(
+            last_two.iter().map(|e| e.seq).collect::<Vec<_>>(),
+            [75, 100]
+        );
+        let (after, _) = hub.get_matching_entries(Some(30), 2, Some(LogLevel::Warn), None);
+        assert_eq!(after.iter().map(|e| e.seq).collect::<Vec<_>>(), [50, 75]);
+
+        // Level is a floor
+        let (info_up, _) = hub.get_matching_entries(Some(95), 100, Some(LogLevel::Info), None);
+        assert_eq!(info_up.len(), 5);
     }
 }

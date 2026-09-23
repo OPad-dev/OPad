@@ -1006,8 +1006,14 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
         }
 
-        IpcRequest::GetLogEntries { since_seq, limit } => {
-            let (entries, latest_seq) = log_hub.get_entries(since_seq, limit);
+        IpcRequest::GetLogEntries {
+            since_seq,
+            limit,
+            level,
+            source,
+        } => {
+            let (entries, latest_seq) =
+                log_hub.get_matching_entries(since_seq, limit, level, source);
             IpcResponse::LogEntries {
                 entries,
                 latest_seq,
@@ -1042,7 +1048,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                         firmware_version: info.firmware_version.clone(),
                         running_partition: info.running_partition.clone(),
                         protocol_version: info.protocol_version,
-                        compatible: info.protocol_version == 1,
+                        compatible: info.protocol_version == opad_protocol::DEVICE_PROTOCOL_VERSION,
                     }
                 }
                 Ok(crate::firmware_update::FirmwareUpdateOutcome::Refused { reasons }) => {
@@ -1098,7 +1104,8 @@ pub async fn handle_ipc_request<D: DeviceLink>(
 
             match wait_res {
                 Ok(Ok(info)) => {
-                    let compatible = info.protocol_version == 1;
+                    let compatible =
+                        info.protocol_version == opad_protocol::DEVICE_PROTOCOL_VERSION;
                     IpcResponse::FlashFinished {
                         firmware_version: info.firmware_version,
                         protocol_version: info.protocol_version,

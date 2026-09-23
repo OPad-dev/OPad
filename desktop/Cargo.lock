@@ -3947,6 +3947,7 @@ name = "opad-model"
 version = "1.0.0-rc"
 dependencies = [
  "chrono",
+ "clap",
  "dirs 5.0.1",
  "serde",
  "serde_json",
@@ -4031,6 +4032,7 @@ dependencies = [
  "opad-device",
  "opad-ipc",
  "opad-model",
+ "opad-protocol",
  "opad-tosu",
  "serde",
  "serde_json",

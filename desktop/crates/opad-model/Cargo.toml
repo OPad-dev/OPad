@@ -12,3 +12,5 @@ serde_json.workspace = true
 chrono.workspace = true
 dirs.workspace = true
 thiserror.workspace = true
+# `opadctl monitor --level/--source` parse straight into these types
+clap = { workspace = true, optional = true }
