@@ -115,6 +115,8 @@ static void update_sleep(int64_t now_us)
     } else if (!should_sleep && s_asleep) {
         s_asleep = false;
         board_display_wake();
+        // The brightness may have changed while asleep
+        board_display_set_brightness(s_brightness);
         lv_display_enable_invalidation(s_disp, true);
         lv_obj_invalidate(lv_screen_active());
         diag_record(DIAG_EVENT_DISPLAY_WAKE, 1 /* INFO */, 0, 0);
@@ -259,13 +261,20 @@ void ui_set_time(uint32_t year, uint32_t month, uint32_t day, uint32_t hour, uin
     settimeofday(&tv, NULL);
 }
 
+// s_brightness is the only record of the setting: applied now if awake, on wake
+// otherwise. Under the LVGL lock so it cannot interleave with update_sleep().
 void ui_set_brightness(uint8_t percent)
 {
+    if (!s_ui_ok) {
+        s_brightness = percent > 100 ? 100 : percent;  // ui_init applies it
+        return;
+    }
+    lvgl_port_lock(0);
     s_brightness = percent > 100 ? 100 : percent;
-    if (!s_ui_ok) return;
     if (!s_asleep) {
         board_display_set_brightness(s_brightness);
     }
+    lvgl_port_unlock();
 }
 
 void ui_set_sleep_timeout(uint32_t seconds)

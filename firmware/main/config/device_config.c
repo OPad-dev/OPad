@@ -5,7 +5,6 @@
 #include "ui/ui.h"
 #include "runtime/runtime.h"
 #include "counters/counters.h"
-#include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
 #include "nvs_flash.h"
 #include "nvs.h"
 #include "esp_log.h"
@@ -127,8 +126,7 @@ void device_config_apply(const device_config_data_t *cfg)
     // Keycodes reach usb_hid through the keypad, never while a key is held
     keypad_set_config(&k_cfg);
 
-    // Apply brightness and sleep to board and UI
-    board_backlight_set((uint8_t)cfg->brightness);
+    // The UI owns the backlight: it knows whether the display is asleep
     ui_set_brightness((uint8_t)cfg->brightness);
     ui_set_sleep_timeout(cfg->sleep_s);
 }

@@ -177,9 +177,9 @@ Files: `firmware/main/protocol/frame_parser.c`, `firmware/main/protocol/protocol
 
 ### S3 — Brightness/sleep ownership ▸ FI#2, FB#1
 Files: `firmware/main/ui/ui_port.c` (~117, sleep/wake path), `firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c` (~42), `firmware/main/config/device_config.c` (~131)
-- [ ] Make `ui_port`'s `s_brightness` the single source of truth. On wake, call `board_display_set_brightness(s_brightness)` (not the board's stale private copy).
-- [ ] `device_config_apply` must **not** call `board_backlight_set` directly; route brightness through `ui_set_brightness`.
-- [ ] `ui_set_brightness` must not read `s_asleep` unlocked from the protocol task: either take the LVGL lock, or set a "brightness changed" flag that `pad_timer_cb` applies on the LVGL task.
+- [x] Make `ui_port`'s `s_brightness` the single source of truth. On wake, call `board_display_set_brightness(s_brightness)` (not the board's stale private copy).
+- [x] `device_config_apply` must **not** call `board_backlight_set` directly; route brightness through `ui_set_brightness`.
+- [x] `ui_set_brightness` must not read `s_asleep` unlocked from the protocol task: either take the LVGL lock, or set a "brightness changed" flag that `pad_timer_cb` applies on the LVGL task.
 - Verify: `make firmware`; sleep the display, change brightness from the app, wake by key → new brightness; no backlight flash over a `disp_off` panel.
 
 ### S4 — UI small correctness ▸ FI#3, FI#8
@@ -353,6 +353,7 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  O4  ec05977  Claude Opus  FU#3 FU#4 FU#5 fixed; all runtime keypad config goes through the keypad task; pad test pending
 2026-09-24  O5  65e343a  Claude Opus  FI#4 FI#5 fixed; mutex over pending layouts + layout NVS writes, failed flush kept and retried every 10 s; no host test (NVS/FreeRTOS-bound), pad test pending
 2026-09-24  O6  9f835c7  Claude Opus  FI#1 FI#6 fixed; ui_lock() returns bool, data_update skipped headless, NULL idle screen -> ESP_ERR_NO_MEM; headless pad test pending
-2026-09-24  S1  26f5159  Claude Sonnet  FU#1 FU#8 fixed; GPIO8 dropped, one KEY_GPIO_ALLOWED list shared by keypad scan + validation, debug GPIO excluded via device_config_key_gpio_supported; desktop opad-model KEY_PINS still lists GPIO8 (out of firmware scope); pad test pending
-2026-09-24  S2  (this commit)  Claude Opus (Sonnet list)  FP#4 FP#5 FP#6 FP#7 fixed; head-index resync + memchr in marked mode, resync/stale drops recorded as FRAME_TOO_LARGE (arg0 bytes, arg1 reason), SetLayout with flags > 255 rejected (w/h already rejected); pad junk-stream test pending
+2026-09-24  S1  26f5159  Claude Opus (Sonnet list)  FU#1 FU#8 fixed; GPIO8 dropped, one KEY_GPIO_ALLOWED list shared by keypad scan + validation, debug GPIO excluded via device_config_key_gpio_supported; desktop opad-model KEY_PINS still lists GPIO8 (out of firmware scope); pad test pending
+2026-09-24  S2  c6dc4d1  Claude Opus (Sonnet list)  FP#4 FP#5 FP#6 FP#7 fixed; head-index resync + memchr in marked mode, resync/stale drops recorded as FRAME_TOO_LARGE (arg0 bytes, arg1 reason), SetLayout with flags > 255 rejected (w/h already rejected); pad junk-stream test pending
+2026-09-24  S3  (this commit)  Claude Opus (Sonnet list)  FI#2 FB#1 fixed; ui_port s_brightness is the only copy (board private copy removed, applied on wake), ui_set_brightness under the LVGL lock, device_config_apply no longer drives the backlight; no host test (LVGL/LEDC-bound), pad sleep/brightness test pending
 ```

@@ -9,7 +9,7 @@
 
 ---
 
-## 1. `board_display_wake` restores a stale private brightness — `open` (confirmed)
+## 1. `board_display_wake` restores a stale private brightness — `fixed`
 
 **File:** `firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c:42`
 **Category:** correctness

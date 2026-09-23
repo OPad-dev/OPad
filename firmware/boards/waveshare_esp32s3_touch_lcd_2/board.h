@@ -77,7 +77,8 @@ void board_display_set_brightness(uint8_t percent);
 void board_display_sleep(void);
 
 /**
- * @brief Wake display from sleep (turns on panel and restores backlight).
+ * @brief Wake display from sleep (turns on the panel). The backlight stays off
+ * until the caller sets the brightness it wants.
  */
 void board_display_wake(void);
 

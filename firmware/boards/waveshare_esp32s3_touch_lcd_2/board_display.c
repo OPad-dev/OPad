@@ -9,7 +9,6 @@ static const char *TAG = "board_display";
 
 static esp_lcd_panel_handle_t s_panel_handle = NULL;
 static esp_lcd_panel_io_handle_t s_io_handle = NULL;
-static uint8_t s_display_brightness = 100;
 
 esp_lcd_panel_handle_t board_display_get_panel_handle(void)
 {
@@ -26,7 +25,6 @@ void board_display_set_brightness(uint8_t percent)
     if (percent > 100) {
         percent = 100;
     }
-    s_display_brightness = percent;
     board_backlight_set(percent);
 }
 
@@ -43,7 +41,6 @@ void board_display_wake(void)
     if (s_panel_handle) {
         esp_lcd_panel_disp_on_off(s_panel_handle, true);
     }
-    board_backlight_set(s_display_brightness);
 }
 
 esp_err_t board_display_init(esp_lcd_panel_io_handle_t *out_io, esp_lcd_panel_handle_t *out_panel)

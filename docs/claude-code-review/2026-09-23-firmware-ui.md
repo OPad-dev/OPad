@@ -22,7 +22,7 @@ Findings are ranked most severe first.
 
 **Suggested fix:** Call `ui_trigger_easter_egg()` (the mutex is recursive so nesting under `ui_lock` is fine) or make `ui_lock()` return false when `!s_ui_ok` and have callers skip the batch.
 
-## 2. Brightness change received while asleep is lost on wake — `open`
+## 2. Brightness change received while asleep is lost on wake — `fixed`
 
 **File:** `firmware/main/ui/ui_port.c:117`
 **Category:** correctness
