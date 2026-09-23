@@ -184,8 +184,8 @@ Files: `firmware/main/ui/ui_port.c` (~117, sleep/wake path), `firmware/boards/wa
 
 ### S4 — UI small correctness ▸ FI#3, FI#8
 Files: `firmware/main/ui/ui_port.c` (~87), `firmware/main/ui/ui_store.c` (~126)
-- [ ] KPS ring: compute `total - oldest` as signed and clamp at 0; reset the ring when `total < oldest` (counter rebase/reset); track fill count instead of using 0 as "unfilled".
-- [ ] `ui_store_erase`: when `nvs_erase_key` returns `ESP_ERR_NVS_NOT_FOUND`, return `ESP_OK` without `nvs_commit` and without `counters_record_nvs_write()`.
+- [x] KPS ring: compute `total - oldest` as signed and clamp at 0; reset the ring when `total < oldest` (counter rebase/reset); track fill count instead of using 0 as "unfilled".
+- [x] `ui_store_erase`: when `nvs_erase_key` returns `ESP_ERR_NVS_NOT_FOUND`, return `ESP_OK` without `nvs_commit` and without `counters_record_nvs_write()`.
 - Verify: `make firmware`; force-restore counters to a lower value while KPS shows → no `2147483647`; "Reset to default" twice → NVS write counter increments once.
 
 ### S5 — `opad-device` platform bugs ▸ DD#1, DD#4, DD#7
@@ -355,5 +355,6 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  O6  9f835c7  Claude Opus  FI#1 FI#6 fixed; ui_lock() returns bool, data_update skipped headless, NULL idle screen -> ESP_ERR_NO_MEM; headless pad test pending
 2026-09-24  S1  26f5159  Claude Opus (Sonnet list)  FU#1 FU#8 fixed; GPIO8 dropped, one KEY_GPIO_ALLOWED list shared by keypad scan + validation, debug GPIO excluded via device_config_key_gpio_supported; desktop opad-model KEY_PINS still lists GPIO8 (out of firmware scope); pad test pending
 2026-09-24  S2  c6dc4d1  Claude Opus (Sonnet list)  FP#4 FP#5 FP#6 FP#7 fixed; head-index resync + memchr in marked mode, resync/stale drops recorded as FRAME_TOO_LARGE (arg0 bytes, arg1 reason), SetLayout with flags > 255 rejected (w/h already rejected); pad junk-stream test pending
-2026-09-24  S3  (this commit)  Claude Opus (Sonnet list)  FI#2 FB#1 fixed; ui_port s_brightness is the only copy (board private copy removed, applied on wake), ui_set_brightness under the LVGL lock, device_config_apply no longer drives the backlight; no host test (LVGL/LEDC-bound), pad sleep/brightness test pending
+2026-09-24  S3  250fd4e  Claude Opus (Sonnet list)  FI#2 FB#1 fixed; ui_port s_brightness is the only copy (board private copy removed, applied on wake), ui_set_brightness under the LVGL lock, device_config_apply no longer drives the backlight; no host test (LVGL/LEDC-bound), pad sleep/brightness test pending
+2026-09-24  S4  (this commit)  Claude Opus (Sonnet list)  FI#3 FI#8 fixed; KPS ring restarts on any counter decrease, fill count instead of 0 sentinel, signed diff clamped at 0; erase of a missing layout key returns before commit/counter; no host test (LVGL/NVS-bound), pad test pending
 ```

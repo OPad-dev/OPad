@@ -33,7 +33,7 @@ Findings are ranked most severe first.
 
 **Suggested fix:** On wake call `board_display_set_brightness(s_brightness)`, and take the LVGL lock (or set a flag for `pad_timer_cb`) in `ui_set_brightness`. See also the `firmware/boards` review, finding 1.
 
-## 3. KPS ring uses unsigned subtraction; lifetime counters can decrease — `open`
+## 3. KPS ring uses unsigned subtraction; lifetime counters can decrease — `fixed`
 
 **File:** `firmware/main/ui/ui_port.c:87`
 **Category:** correctness
@@ -88,7 +88,7 @@ The per-screen `ui_layout_t` copy is freed in the screen's `LV_EVENT_DELETE` han
 
 **Suggested fix:** Free `copy` after the children are gone — e.g. in `rebuild_screen` after `lv_obj_delete(old)`, or via a screen-owned struct torn down after children.
 
-## 8. `ui_store_erase()` commits and counts an NVS write even when nothing was stored — `open`
+## 8. `ui_store_erase()` commits and counts an NVS write even when nothing was stored — `fixed`
 
 **File:** `firmware/main/ui/ui_store.c:126`
 **Category:** correctness

@@ -122,7 +122,9 @@ static esp_err_t erase_layout(uint8_t screen)
     key_for(screen, key, sizeof(key));
     err = nvs_erase_key(h, key);
     if (err == ESP_ERR_NVS_NOT_FOUND) {
-        err = ESP_OK;
+        // Nothing stored: nothing to commit, no flash write to count
+        nvs_close(h);
+        return ESP_OK;
     }
     if (err == ESP_OK) {
         err = nvs_commit(h);

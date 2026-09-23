@@ -35,6 +35,7 @@ static volatile bool s_asleep;
 
 static uint64_t s_kps_ring[KPS_WINDOW];
 static int s_kps_pos;
+static int s_kps_fill;  // samples in the ring, up to KPS_WINDOW
 
 // ---- helpers (LVGL lock held) -------------------------------------------------------
 
@@ -79,12 +80,20 @@ static void update_pad_sources(int64_t now_us)
     ui_data_set_number(UI_SRC_PAD_K1_DOWN, k1_down);
     ui_data_set_number(UI_SRC_PAD_K2_DOWN, k2_down);
 
-    // Taps in the last second
+    // Taps in the last second, or since the oldest sample while the ring fills.
+    // Lifetime counters drop on a forced sync or reset: start the window over.
     uint64_t total = k1_life + k2_life;
-    uint64_t oldest = s_kps_ring[s_kps_pos];
+    if (s_kps_fill > 0 && total < s_kps_ring[(s_kps_pos + KPS_WINDOW - 1) % KPS_WINDOW]) {
+        s_kps_fill = 0;
+    }
+    uint64_t oldest = s_kps_fill ? s_kps_ring[(s_kps_pos + KPS_WINDOW - s_kps_fill) % KPS_WINDOW] : total;
+    int64_t taps = (int64_t)(total - oldest);
     s_kps_ring[s_kps_pos] = total;
     s_kps_pos = (s_kps_pos + 1) % KPS_WINDOW;
-    ui_data_set_number(UI_SRC_PAD_KPS, oldest ? (double)(total - oldest) : 0);
+    if (s_kps_fill < KPS_WINDOW) {
+        s_kps_fill++;
+    }
+    ui_data_set_number(UI_SRC_PAD_KPS, taps > 0 ? (double)taps : 0);
 
     ui_data_set_number(UI_SRC_STATUS_PC, usb_cdc_is_connected());
     ui_data_set_number(UI_SRC_PAD_UPTIME, (double)(now_us / 1000000 * 1000));
