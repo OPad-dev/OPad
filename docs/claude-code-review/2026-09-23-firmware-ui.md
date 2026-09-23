@@ -44,7 +44,7 @@ KPS ring uses unsigned subtraction (`total - oldest`) and treats 0 as an "unfill
 
 **Suggested fix:** Signed diff clamped at 0 (or reset the ring when `total < oldest`) and track fill count instead of using 0 as sentinel.
 
-## 4. `ui_store_flush_dirty()` clears the dirty bit before the save; failure drops the layout — `open`
+## 4. `ui_store_flush_dirty()` clears the dirty bit before the save; failure drops the layout — `fixed`
 
 **File:** `firmware/main/ui/ui_store.c:143`
 **Category:** correctness
@@ -55,7 +55,7 @@ KPS ring uses unsigned subtraction (`total - oldest`) and treats 0 as an "unfill
 
 **Suggested fix:** Clear the bit only on success (or re-arm on failure) and `diag_record` the failure.
 
-## 5. `s_pending_layouts[]` / dirty masks shared across cores with no lock — `open`
+## 5. `s_pending_layouts[]` / dirty masks shared across cores with no lock — `fixed`
 
 **File:** `firmware/main/ui/ui_store.c:58`
 **Category:** correctness

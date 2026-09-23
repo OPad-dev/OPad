@@ -4,6 +4,9 @@
 #include "diag/diag.h"
 #include "nvs.h"
 #include "esp_log.h"
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,9 +14,29 @@
 static const char *TAG = "ui_store";
 static const char *NVS_NAMESPACE = "osupad_ui";
 
+// Written by the protocol task (set_layout / reset_layout while not IDLE),
+// flushed by the runtime supervisor on the other core: guarded by store_lock(),
+// which is also held across every layout NVS write so an older deferred layout
+// can never land on top of a newer one
 static ui_layout_t s_pending_layouts[UI_SCREEN_COUNT];
 static uint8_t s_dirty_save_mask = 0;
 static uint8_t s_dirty_erase_mask = 0;
+// A failed deferred write is kept and retried, but not every 100 ms
+#define FLUSH_RETRY_US 10000000
+static int64_t s_flush_retry_at_us = 0;
+
+static SemaphoreHandle_t store_lock(void)
+{
+    static StaticSemaphore_t buf;
+    static SemaphoreHandle_t handle = NULL;
+    static portMUX_TYPE init_mux = portMUX_INITIALIZER_UNLOCKED;
+    portENTER_CRITICAL(&init_mux);
+    if (handle == NULL) {
+        handle = xSemaphoreCreateMutexStatic(&buf);
+    }
+    portEXIT_CRITICAL(&init_mux);
+    return handle;
+}
 
 // Bump when ui_layout_t changes shape; older blobs are then ignored
 #define LAYOUT_BLOB_VERSION 1
@@ -50,18 +73,8 @@ bool ui_store_load(uint8_t screen, ui_layout_t *out)
     return ok;
 }
 
-esp_err_t ui_store_save(uint8_t screen, const ui_layout_t *layout)
+static esp_err_t write_layout(uint8_t screen, const ui_layout_t *layout)
 {
-    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
-        ESP_LOGW(TAG, "Layout save blocked: state != IDLE (deferred to supervisor)");
-        if (screen < UI_SCREEN_COUNT && layout) {
-            s_pending_layouts[screen] = *layout;
-            s_dirty_save_mask |= (1 << screen);
-            s_dirty_erase_mask &= ~(1 << screen);
-        }
-        return ESP_OK;
-    }
-
     ui_layout_t *stored = malloc(sizeof(ui_layout_t));
     if (stored && ui_store_load(screen, stored) && memcmp(stored, layout, sizeof(ui_layout_t)) == 0) {
         free(stored);
@@ -98,17 +111,8 @@ esp_err_t ui_store_save(uint8_t screen, const ui_layout_t *layout)
     return err;
 }
 
-esp_err_t ui_store_erase(uint8_t screen)
+static esp_err_t erase_layout(uint8_t screen)
 {
-    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
-        ESP_LOGW(TAG, "Layout erase blocked: state != IDLE (deferred to supervisor)");
-        if (screen < UI_SCREEN_COUNT) {
-            s_dirty_erase_mask |= (1 << screen);
-            s_dirty_save_mask &= ~(1 << screen);
-        }
-        return ESP_OK;
-    }
-
     nvs_handle_t h;
     esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h);
     if (err != ESP_OK) {
@@ -130,34 +134,81 @@ esp_err_t ui_store_erase(uint8_t screen)
     return err;
 }
 
+esp_err_t ui_store_save(uint8_t screen, const ui_layout_t *layout)
+{
+    if (screen >= UI_SCREEN_COUNT || !layout) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t err = ESP_OK;
+    xSemaphoreTake(store_lock(), portMAX_DELAY);
+    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+        ESP_LOGW(TAG, "Layout save blocked: state != IDLE (deferred to supervisor)");
+        s_pending_layouts[screen] = *layout;
+        s_dirty_save_mask |= (1 << screen);
+        s_dirty_erase_mask &= ~(1 << screen);
+    } else {
+        // Supersedes anything still deferred for this screen
+        s_dirty_save_mask &= ~(1 << screen);
+        s_dirty_erase_mask &= ~(1 << screen);
+        err = write_layout(screen, layout);
+    }
+    xSemaphoreGive(store_lock());
+    return err;
+}
+
+esp_err_t ui_store_erase(uint8_t screen)
+{
+    if (screen >= UI_SCREEN_COUNT) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t err = ESP_OK;
+    xSemaphoreTake(store_lock(), portMAX_DELAY);
+    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+        ESP_LOGW(TAG, "Layout erase blocked: state != IDLE (deferred to supervisor)");
+        s_dirty_erase_mask |= (1 << screen);
+        s_dirty_save_mask &= ~(1 << screen);
+    } else {
+        s_dirty_save_mask &= ~(1 << screen);
+        s_dirty_erase_mask &= ~(1 << screen);
+        err = erase_layout(screen);
+    }
+    xSemaphoreGive(store_lock());
+    return err;
+}
+
 esp_err_t ui_store_flush_dirty(void)
 {
     if (runtime_get_state() != OSUPAD_STATE_IDLE) {
         return ESP_OK;
     }
+    int64_t now = esp_timer_get_time();
+    if (now < s_flush_retry_at_us) {
+        return ESP_OK;
+    }
 
     esp_err_t last_err = ESP_OK;
     uint32_t flushed_count = 0;
+    xSemaphoreTake(store_lock(), portMAX_DELAY);
     for (uint8_t i = 0; i < UI_SCREEN_COUNT; i++) {
-        if (s_dirty_save_mask & (1 << i)) {
-            s_dirty_save_mask &= ~(1 << i);
-            esp_err_t err = ui_store_save(i, &s_pending_layouts[i]);
-            if (err != ESP_OK) {
-                last_err = err;
-            } else {
-                flushed_count++;
-            }
+        bool save = s_dirty_save_mask & (1 << i);
+        bool erase = s_dirty_erase_mask & (1 << i);
+        if (!save && !erase) {
+            continue;
         }
-        if (s_dirty_erase_mask & (1 << i)) {
+        esp_err_t err = save ? write_layout(i, &s_pending_layouts[i]) : erase_layout(i);
+        if (err == ESP_OK) {
+            // Only once it is on flash: a failed write stays pending
+            s_dirty_save_mask &= ~(1 << i);
             s_dirty_erase_mask &= ~(1 << i);
-            esp_err_t err = ui_store_erase(i);
-            if (err != ESP_OK) {
-                last_err = err;
-            } else {
-                flushed_count++;
-            }
+            flushed_count++;
+        } else {
+            last_err = err;
+            diag_record(DIAG_EVENT_LAYOUT_REJECTED, 3 /* ERROR */, i, (uint32_t)err);
         }
     }
+    xSemaphoreGive(store_lock());
+
+    s_flush_retry_at_us = (last_err != ESP_OK) ? now + FLUSH_RETRY_US : 0;
     if (flushed_count > 0) {
         diag_record(DIAG_EVENT_DEFERRED_WRITE_FLUSHED, 1 /* INFO */, flushed_count, 0);
     }

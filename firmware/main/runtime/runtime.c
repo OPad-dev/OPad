@@ -23,6 +23,14 @@ static const int64_t COOLDOWN_DURATION_US = 5000000; // 5 seconds
 // Host streams gameplay at >=1 Hz; leave PLAYING if it stops (daemon/tosu died)
 static const int64_t GAMEPLAY_TIMEOUT_US = 3000000; // 3 seconds
 
+static void flush_layouts(void)
+{
+    esp_err_t err = ui_store_flush_dirty();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Deferred layout write failed: %s (kept, retrying later)", esp_err_to_name(err));
+    }
+}
+
 static void runtime_supervisor_task(void *pvParameters)
 {
     (void)pvParameters;
@@ -46,12 +54,12 @@ static void runtime_supervisor_task(void *pvParameters)
                 // Checkpoint dirty counters, config, and layouts safely now that gameplay has ended
                 counters_checkpoint(false);
                 device_config_flush();
-                ui_store_flush_dirty();
+                flush_layouts();
                 s_last_checkpoint_us = now;
             }
         } else if (current == OSUPAD_STATE_IDLE) {
             device_config_flush();
-            ui_store_flush_dirty();
+            flush_layouts();
             int64_t k1 = keypad_get_last_press_us(KEY_ID_1);
             int64_t k2 = keypad_get_last_press_us(KEY_ID_2);
             int64_t last_press = k1 > k2 ? k1 : k2;

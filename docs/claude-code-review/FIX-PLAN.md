@@ -104,8 +104,8 @@ Files: `firmware/main/input/keypad.c` (~292), `firmware/main/config/device_confi
 
 ### O5 — `ui_store` shared state and dirty-bit ▸ FI#4, FI#5
 Files: `firmware/main/ui/ui_store.c/.h`, `firmware/main/runtime/runtime.c` (~49, ~54)
-- [ ] Protect `s_pending_layouts[]`, `s_dirty_save_mask`, `s_dirty_erase_mask` with a mutex (FreeRTOS semaphore) or make the masks atomic **and** copy the pending layout under the same lock. Protocol task (core 0) and runtime task (core 1) both touch them.
-- [ ] `ui_store_flush_dirty`: clear a dirty bit **only after** its save/erase succeeded; on failure keep the bit (retry next flush) and `diag_record` the error. Have `runtime.c` log the returned error instead of discarding it.
+- [x] Protect `s_pending_layouts[]`, `s_dirty_save_mask`, `s_dirty_erase_mask` with a mutex (FreeRTOS semaphore) or make the masks atomic **and** copy the pending layout under the same lock. Protocol task (core 0) and runtime task (core 1) both touch them.
+- [x] `ui_store_flush_dirty`: clear a dirty bit **only after** its save/erase succeeded; on failure keep the bit (retry next flush) and `diag_record` the error. Have `runtime.c` log the returned error instead of discarding it.
 - Verify: `make firmware`; push a layout during gameplay, finish the map, reboot → layout persists. Host test if `ui_store` logic can be split out; otherwise pad test.
 
 ### O6 — Headless-mode UI guards ▸ FI#1, FI#6
@@ -350,5 +350,6 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  O1  aa05333  Claude Opus  FP#1 FP#2 fixed; parser locks to the first recognised frame's framing; pad test pending
 2026-09-24  O2  abe93c6  Claude Opus  FP#3 FB#2 FU#7 fixed; pin scan is a keypad-task state machine, timeout clamped to 30 s; pad test pending
 2026-09-24  O3  240d115  Claude Opus  FU#2 FU#6 fixed; pending flag replaced by change/sent sequence numbers; bench + pad test pending
-2026-09-24  O4  (this commit)  Claude Opus  FU#3 FU#4 FU#5 fixed; all runtime keypad config goes through the keypad task; pad test pending
+2026-09-24  O4  ec05977  Claude Opus  FU#3 FU#4 FU#5 fixed; all runtime keypad config goes through the keypad task; pad test pending
+2026-09-24  O5  (this commit)  Claude Opus  FI#4 FI#5 fixed; mutex over pending layouts + layout NVS writes, failed flush kept and retried every 10 s; no host test (NVS/FreeRTOS-bound), pad test pending
 ```
