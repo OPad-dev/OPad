@@ -134,6 +134,40 @@ const HELLO_RETRY: Duration = Duration::from_millis(400);
 /// half-read frame left it in.
 const HELLOS_BEFORE_REOPEN: u32 = 10;
 
+/// What the worker does when a Hello is due
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HelloDue {
+    /// Send another one
+    Send,
+    /// Close and reopen the port to drop DTR, but keep reporting the pad as
+    /// connected: an established pad whose parser desynced gets one reopen to
+    /// recover before anyone upstream is told it is gone
+    ReopenHeld,
+    /// Close the port. Upstream hears `Disconnected` if it was connected.
+    Drop,
+}
+
+/// `held`: this port was reopened by [`HelloDue::ReopenHeld`] and has not
+/// answered since
+fn hello_due(unanswered: u32, connected: bool, held: bool) -> HelloDue {
+    if unanswered < HELLOS_BEFORE_REOPEN {
+        HelloDue::Send
+    } else if connected && !held {
+        HelloDue::ReopenHeld
+    } else {
+        HelloDue::Drop
+    }
+}
+
+/// Whether a decoded frame other than a HelloAck reaches the event stream.
+/// Only a port that has not been handshaken with drops frames: once the pad is
+/// connected, a re-Hello re-confirms framing but a CounterSyncResp or
+/// LayoutAck already in flight is still delivered. A port reopened to recover
+/// (framing unknown again) waits for the HelloAck like a new one.
+fn accept_frame(has_hello_ack: bool, connected: bool, framing_known: bool) -> bool {
+    has_hello_ack || (connected && framing_known)
+}
+
 /// Which framing the n-th unanswered Hello uses
 fn hello_framing(attempt: u32) -> Framing {
     if attempt.is_multiple_of(2) {
@@ -210,9 +244,22 @@ impl DeviceManager {
             // rather than on every retry. Cleared when the pad goes away.
             let mut last_open_error: Option<String> = None;
             let mut probes = ProbeHistory::default();
+            // Set while a connected pad's port is being reopened to recover
+            // (HelloDue::ReopenHeld): still reported as connected, and dropped
+            // for real if the reopen fails or goes unanswered too
+            let mut held = false;
+            // The held pad could not even be reopened: it is gone
+            let drop_held = |held: &mut bool, cmd_rx: &mut mpsc::Receiver<HostToDevice>| {
+                if std::mem::take(held) && is_conn_clone.swap(false, Ordering::SeqCst) {
+                    while cmd_rx.try_recv().is_ok() {}
+                    let _ = event_tx_clone.send(DeviceEvent::Disconnected);
+                }
+            };
 
             loop {
                 if is_paused_clone.load(Ordering::SeqCst) {
+                    // pause() reports its own disconnect
+                    held = false;
                     std::thread::sleep(Duration::from_millis(200));
                     continue;
                 }
@@ -222,6 +269,7 @@ impl DeviceManager {
                     Some(p) => p,
                     None => {
                         debug!("Searching for OPad ESP32-S3 USB port...");
+                        drop_held(&mut held, &mut cmd_rx);
                         last_open_error = None;
                         std::thread::sleep(PORT_SCAN_INTERVAL);
                         continue;
@@ -254,6 +302,7 @@ impl DeviceManager {
                         } else {
                             debug!("Failed to open port {}: {}", port_path, e);
                         }
+                        drop_held(&mut held, &mut cmd_rx);
                         std::thread::sleep(PORT_OPEN_RETRY_INTERVAL);
                         continue;
                     }
@@ -272,6 +321,8 @@ impl DeviceManager {
                 // only it is parsed. Unknown until the first answer.
                 let mut framing: Option<Framing> = None;
                 let mut hellos_unanswered: u32 = 0;
+                // Set when the loop below leaves to reopen a held connection
+                let mut reopen_held = false;
 
                 // Inner communication loop
                 loop {
@@ -298,9 +349,28 @@ impl DeviceManager {
 
                     // Periodic Hello retry until HelloAck is received (§6.1)
                     if !has_hello_ack && last_hello.elapsed() >= HELLO_RETRY {
-                        if framing.is_none() && hellos_unanswered >= HELLOS_BEFORE_REOPEN {
-                            debug!("No answer to Hello on {}; reopening it", port_path);
-                            break;
+                        let connected = is_conn_clone.load(Ordering::SeqCst);
+                        match hello_due(hellos_unanswered, connected, held) {
+                            HelloDue::Send => {}
+                            HelloDue::ReopenHeld => {
+                                warn!(
+                                    "The pad on {} stopped answering Hello; reopening the port to reset it",
+                                    port_path
+                                );
+                                reopen_held = true;
+                                break;
+                            }
+                            HelloDue::Drop => {
+                                if connected {
+                                    warn!(
+                                        "The pad on {} still does not answer Hello; treating it as disconnected",
+                                        port_path
+                                    );
+                                } else {
+                                    debug!("No answer to Hello on {}; reopening it", port_path);
+                                }
+                                break;
+                            }
                         }
                         last_hello = Instant::now();
                         let hello_as = framing.unwrap_or(hello_framing(hellos_unanswered));
@@ -310,8 +380,11 @@ impl DeviceManager {
                         }
                     }
 
-                    // 1. Drain incoming command queue to transmit to device
-                    while let Ok(cmd) = cmd_rx.try_recv() {
+                    // 1. Drain incoming command queue to transmit to device.
+                    // Held until the framing is known: commands queue here only
+                    // while a held connection is being reopened, and belong to
+                    // the pad once it answers in its own framing.
+                    while let Some(cmd) = framing.and_then(|_| cmd_rx.try_recv().ok()) {
                         let as_framing = framing.unwrap_or(Framing::Marked);
                         if let Ok(encoded) = encode_host_message_as(&cmd, as_framing) {
                             if let Err(e) = port.write_all(&encoded) {
@@ -342,6 +415,7 @@ impl DeviceManager {
                                             }
                                             has_hello_ack = true;
                                             hellos_unanswered = 0;
+                                            held = false;
                                             if framing.is_none() {
                                                 debug!(
                                                     "{} speaks {:?} framing",
@@ -357,7 +431,11 @@ impl DeviceManager {
                                                 *last_port_clone.lock().unwrap() =
                                                     Some(port_path.clone());
                                             }
-                                        } else if !has_hello_ack {
+                                        } else if !accept_frame(
+                                            has_hello_ack,
+                                            is_conn_clone.load(Ordering::SeqCst),
+                                            framing.is_some(),
+                                        ) {
                                             // Nothing is trusted before the handshake
                                             continue;
                                         }
@@ -386,6 +464,15 @@ impl DeviceManager {
 
                 drop(port);
                 is_open_clone.store(false, Ordering::SeqCst);
+                read_buf.clear();
+                if reopen_held {
+                    // Still connected as far as anyone upstream knows; queued
+                    // commands wait for the pad's answer on the reopened port
+                    held = true;
+                    std::thread::sleep(RECONNECT_SETTLE_INTERVAL);
+                    continue;
+                }
+                held = false;
                 let was_connected = is_conn_clone.swap(false, Ordering::SeqCst);
 
                 // Drain any pending commands on disconnect so they are never replayed to a new connection
@@ -395,7 +482,6 @@ impl DeviceManager {
                 if was_connected {
                     let _ = event_tx_clone.send(DeviceEvent::Disconnected);
                 }
-                read_buf.clear();
                 std::thread::sleep(RECONNECT_SETTLE_INTERVAL);
             }
         });
@@ -1156,10 +1242,10 @@ pub fn select_bootloader_port(
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_port, fit_nanopb_string, handle_device_message, is_opad_device_id, normalize_mac,
-        proto, select_bootloader_port, BootloaderMatch, BootloaderPort, DeviceEvent, PadLocation,
-        PortClass, ProbeHistory, PORT_SCAN_INTERVAL, PROBE_RETRY_KNOWN_VID,
-        RECONNECT_SETTLE_INTERVAL,
+        accept_frame, classify_port, fit_nanopb_string, handle_device_message, hello_due,
+        is_opad_device_id, normalize_mac, proto, select_bootloader_port, BootloaderMatch,
+        BootloaderPort, DeviceEvent, HelloDue, PadLocation, PortClass, ProbeHistory,
+        HELLOS_BEFORE_REOPEN, PORT_SCAN_INTERVAL, PROBE_RETRY_KNOWN_VID, RECONNECT_SETTLE_INTERVAL,
     };
     use serialport::SerialPortType;
     use std::time::{Duration, Instant};
@@ -1175,6 +1261,39 @@ mod tests {
             PORT_SCAN_INTERVAL + RECONNECT_SETTLE_INTERVAL < Duration::from_secs(2),
             "hotplug detection must stay under the 2 s acceptance"
         );
+    }
+
+    /// DD#2: a re-Hello on an established connection must not swallow the
+    /// CounterSyncResp or LayoutAck already on its way
+    #[test]
+    fn frames_in_flight_survive_a_re_hello() {
+        assert!(
+            !accept_frame(false, false, false),
+            "new port: HelloAck first"
+        );
+        assert!(accept_frame(true, true, true));
+        assert!(
+            accept_frame(false, true, true),
+            "connected pad mid-re-Hello: still delivered"
+        );
+        assert!(
+            !accept_frame(false, true, false),
+            "port reopened to recover: HelloAck first again"
+        );
+    }
+
+    /// DD#3: unanswered re-Hellos reopen the port once, then disconnect,
+    /// whether or not the pad's framing was known
+    #[test]
+    fn unanswered_hellos_reopen_once_then_disconnect() {
+        let n = HELLOS_BEFORE_REOPEN;
+        assert_eq!(hello_due(0, true, false), HelloDue::Send);
+        assert_eq!(hello_due(n - 1, true, false), HelloDue::Send);
+        assert_eq!(hello_due(n, true, false), HelloDue::ReopenHeld);
+        assert_eq!(hello_due(n - 1, true, true), HelloDue::Send);
+        assert_eq!(hello_due(n, true, true), HelloDue::Drop);
+        // Never connected: plain reopen, nothing to report upstream
+        assert_eq!(hello_due(n, false, false), HelloDue::Drop);
     }
 
     /// R3, and §W3-3 which inherits it: the connect handler decides known pad

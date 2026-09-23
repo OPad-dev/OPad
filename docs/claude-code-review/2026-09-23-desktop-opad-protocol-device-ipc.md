@@ -22,7 +22,7 @@ Findings are ranked most severe first.
 
 **Suggested fix:** Use `Option<Instant>` / `checked_sub`, or a "send Hello now" flag instead of a backdated `Instant`.
 
-## 2. Frames in flight are dropped after a re-Hello while `is_connected` stays true — `open`
+## 2. Frames in flight are dropped after a re-Hello while `is_connected` stays true — `fixed`
 
 **File:** `desktop/crates/opad-device/src/lib.rs:360`
 **Category:** correctness
@@ -33,7 +33,7 @@ After a re-Hello (`rehandshake()` at 294-297 or the stale-partial-frame drop at 
 
 **Suggested fix:** Keep dispatching frames once the connection has been established; only the pre-connection state should gate them.
 
-## 3. Reopen-after-unanswered-Hellos fallback is disabled once framing is known — `open`
+## 3. Reopen-after-unanswered-Hellos fallback is disabled once framing is known — `fixed`
 
 **File:** `desktop/crates/opad-device/src/lib.rs:301`
 **Category:** correctness

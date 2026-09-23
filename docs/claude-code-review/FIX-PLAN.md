@@ -131,8 +131,8 @@ Files: `desktop/daemon/src/runtime.rs` (~303–345), `desktop/daemon/src/sync.rs
 
 ### O9 — `opad-device` serial worker re-Hello ▸ DD#2, DD#3
 Files: `desktop/crates/opad-device/src/lib.rs` (~283–363)
-- [ ] After the connection is established (`is_connected == true`), do **not** gate frame dispatch on `has_hello_ack`; only the pre-connection state drops non-HelloAck frames. A re-Hello re-confirms framing but must not discard `CounterSyncResp`/`ConfigAck`/`LayoutAck` in flight.
-- [ ] Apply the `HELLOS_BEFORE_REOPEN` reopen/DTR-drop fallback regardless of `framing.is_some()`. If a re-Hello goes unanswered N times: reopen the port; if still unanswered: emit `Disconnected` so daemon/GUI stop showing "connected" with frozen counters.
+- [x] After the connection is established (`is_connected == true`), do **not** gate frame dispatch on `has_hello_ack`; only the pre-connection state drops non-HelloAck frames. A re-Hello re-confirms framing but must not discard `CounterSyncResp`/`ConfigAck`/`LayoutAck` in flight.
+- [x] Apply the `HELLOS_BEFORE_REOPEN` reopen/DTR-drop fallback regardless of `framing.is_some()`. If a re-Hello goes unanswered N times: reopen the port; if still unanswered: emit `Disconnected` so daemon/GUI stop showing "connected" with frozen counters.
 - Verify: `make check`; existing worker tests; manual: with the pad connected, trigger `rehandshake()` during a sync (or simulate lag) and confirm the sync completes; unplug/replug and desync scenarios.
 
 ### O10 — 🪟 Windows pipe accept + bootloader port pick ▸ DD#5, DD#6
@@ -358,5 +358,6 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  S3  250fd4e  Claude Opus (Sonnet list)  FI#2 FB#1 fixed; ui_port s_brightness is the only copy (board private copy removed, applied on wake), ui_set_brightness under the LVGL lock, device_config_apply no longer drives the backlight; no host test (LVGL/LEDC-bound), pad sleep/brightness test pending
 2026-09-24  S4  2ab63c4  Claude Opus (Sonnet list)  FI#3 FI#8 fixed; KPS ring restarts on any counter decrease, fill count instead of 0 sentinel, signed diff clamped at 0; erase of a missing layout key returns before commit/counter; no host test (LVGL/NVS-bound), pad test pending
 2026-09-24  O7  5a7b2cb  Claude Opus  DA#1 DA#2 DA#4 DA#6 fixed; DaemonState::pad_guard()/may_touch_pad() gates post-cooldown/periodic/NVS syncs, perform_sync, 8 IPC handlers and the firmware install (up front + last-moment re-check); Status.foreign_pad added (#[serde(default)], no IPC bump); takeover pushes custom layouts; manual foreign-pad test pending
-2026-09-24  O8  (this commit)  Claude Opus  DA#3 DA#5 fixed; protocol check first in DeviceConnected (not connected, config not adopted, HelloAck counters rolled back, incompatible cleared on disconnect, no HostStatus to an unconnected pad); failed sync leaves pad-reported counters in memory, SQLite keeps reconciled row; manual v2-pad test pending
+2026-09-24  O8  06d0533  Claude Opus  DA#3 DA#5 fixed; protocol check first in DeviceConnected (not connected, config not adopted, HelloAck counters rolled back, incompatible cleared on disconnect, no HostStatus to an unconnected pad); failed sync leaves pad-reported counters in memory, SQLite keeps reconciled row; manual v2-pad test pending
+2026-09-24  O9  (this commit)  Claude Opus  DD#2 DD#3 fixed; frames dispatched while connected with known framing (re-Hello no longer drops acks), unanswered Hellos reopen once while held connected then Disconnected, regardless of framing; commands held until framing known; pure hello_due/accept_frame unit-tested; manual rehandshake-during-sync + replug test pending
 ```
