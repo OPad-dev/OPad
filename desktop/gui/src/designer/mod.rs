@@ -61,8 +61,14 @@ pub enum Message {
     Reload,
     SelectScreen(Screen),
     Select(usize),
-    PointerDown { x: f32, y: f32 },
-    PointerMove { x: f32, y: f32 },
+    PointerDown {
+        x: f32,
+        y: f32,
+    },
+    PointerMove {
+        x: f32,
+        y: f32,
+    },
     PointerUp,
     Nudge(i16, i16),
     Add(WidgetKind),
@@ -92,7 +98,9 @@ pub enum Message {
     LiveValues(Result<Vec<(u8, SourceValue)>, String>),
     SimulatePress(bool),
     Apply,
-    Applied(Result<String, String>),
+    /// The (screen, layout) that was sent, so the reply marks exactly that
+    /// pair even if the user switched screens or kept editing meanwhile
+    Applied(Screen, Box<Layout>, Result<String, String>),
     Revert,
     ResetDefault,
     Export,
@@ -370,14 +378,17 @@ impl Designer {
                     self.busy = true;
                     self.status = "Applying to the pad...".into();
                     let (screen, layout) = (self.screen, self.layout().clone());
-                    return Task::perform(apply_layout(screen, layout), Message::Applied);
+                    let sent = Box::new(layout.clone());
+                    return Task::perform(apply_layout(screen, layout), move |result| {
+                        Message::Applied(screen, sent, result)
+                    });
                 }
             }
-            Message::Applied(result) => {
+            Message::Applied(screen, layout, result) => {
                 self.busy = false;
                 match result {
                     Ok(note) => {
-                        self.applied[idx(self.screen)] = self.layout().clone();
+                        self.applied[idx(screen)] = *layout;
                         self.status = if note.is_empty() {
                             "Applied to the pad".into()
                         } else {
@@ -914,4 +925,36 @@ async fn import_layout() -> Result<Layout, String> {
         .validate()
         .map_err(|e| format!("Invalid layout: {}", e))?;
     Ok(layout)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_apply_reply_marks_the_screen_and_layout_that_were_sent() {
+        let (mut d, _) = Designer::new();
+        d.busy = false;
+        let mut sent = d.defaults[idx(Screen::Playing)].clone();
+        sent.background ^= 0x10_1010;
+        d.working[idx(Screen::Playing)] = sent.clone();
+
+        // The user moves to the Idle tab and edits it while the apply is in flight
+        d.screen = Screen::Idle;
+        d.working[idx(Screen::Idle)].background ^= 0x20_2020;
+
+        let _ = d.update(Message::Applied(
+            Screen::Playing,
+            Box::new(sent.clone()),
+            Ok(String::new()),
+        ));
+
+        assert_eq!(d.applied[idx(Screen::Playing)], sent);
+        assert_eq!(
+            d.applied[idx(Screen::Idle)],
+            d.defaults[idx(Screen::Idle)],
+            "the unsent Idle edits are not what the pad shows"
+        );
+        assert!(d.dirty(), "Idle still has unapplied edits");
+    }
 }

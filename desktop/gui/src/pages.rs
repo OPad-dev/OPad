@@ -1188,7 +1188,7 @@ pub fn monitor(app: &App) -> Element<'_, Message> {
     let visible_entries: Vec<_> = app
         .logs
         .iter()
-        .filter(|e| e.seq > app.log_cleared_seq)
+        .filter(|e| app.log_visible_after_clear(e))
         .filter(|e| app.log_filter_level.is_none_or(|l| e.level >= l))
         .filter(|e| app.log_filter_source.is_none_or(|s| e.source == s))
         .collect();

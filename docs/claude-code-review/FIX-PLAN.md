@@ -222,11 +222,11 @@ Files: `desktop/crates/opad-model/src/lib.rs` (~428–451), `desktop/crates/opad
 
 ### S9 — GUI main/designer bugs ▸ DG#1, DG#2, DG#4, DG#5, DG#7
 Files: `desktop/gui/src/main.rs` (~476, ~791, ~1472, ~1493, ~2597), `desktop/gui/src/designer/mod.rs` (~380)
-- [ ] `ShowRequested`: handle `"logs"` and `"diagnostics"` tokens (and any other `Page` variant `parse_page_arg` can produce — derive the mapping from one table used by both sides).
-- [ ] Separate the local log counter from the daemon fetch cursor: `latest_log_seq` advances **only** from the daemon's returned `latest_seq`/last entry; local `log_event` uses its own counter.
-- [ ] `ImportCompleted`: copy `gameplay_display_hz` too; audit for any other field missing versus the adopt path (make both use one `fn adopt_config(&mut self, &DeviceConfig)`).
-- [ ] Designer `Apply`: carry `(screen, layout)` through `apply_layout` into `Message::Applied` and mark exactly that pair.
-- [ ] `CloseRequested`: while `tray_available == None`, hide to tray (or defer the close until the probe resolves) instead of exiting.
+- [x] `ShowRequested`: handle `"logs"` and `"diagnostics"` tokens (and any other `Page` variant `parse_page_arg` can produce — derive the mapping from one table used by both sides).
+- [x] Separate the local log counter from the daemon fetch cursor: `latest_log_seq` advances **only** from the daemon's returned `latest_seq`/last entry; local `log_event` uses its own counter.
+- [x] `ImportCompleted`: copy `gameplay_display_hz` too; audit for any other field missing versus the adopt path (make both use one `fn adopt_config(&mut self, &DeviceConfig)`).
+- [x] Designer `Apply`: carry `(screen, layout)` through `apply_layout` into `Message::Applied` and mark exactly that pair.
+- [x] `CloseRequested`: while `tray_available == None`, hide to tray (or defer the close until the probe resolves) instead of exiting.
 - Verify: `make check`; run the GUI (`cargo run -p opad-gui`), test each scenario in its finding.
 
 ### S10 — GUI tray + single instance ▸ DG#3, DG#6, DG#8
@@ -365,5 +365,6 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  S5  a7e3815  Claude Opus (Sonnet list)  DD#1 DD#4 DD#7 fixed; worker's last_hello is Option<Instant> (None = Hello now), test backdating uses checked_sub; pad_mac tries the OSUPAD- serial then device_id; empty XDG_RUNTIME_DIR treated as unset; DD#1 untested on Windows (opad-device/opad-ipc cargo check for windows-gnu clean)
 2026-09-24  S6  e3f95c3  Claude Opus (Sonnet list)  DU#1 DU#2 DU#3 DU#4 DU#5 DU#6 DU#8 fixed; fetch_manifest(have_cached) sends If-None-Match only while the worker holds a manifest; tosu binary swapped before VERSION/NOTICE (atomic); .AppImage -> linux-x86_64/Binary; artifact hashed in memory (temp dir gone); tosu plan uses is_newer (no downgrade, v-prefix cosmetic); semver pre-release compare (numeric runs numeric, +build ignored); write_atomic shared by tosu + daemon backup, stage_bytes shares its helpers
 2026-09-24  S7  34f68a7  Claude Opus (Sonnet list)  DA#7 DA#8 fixed; AppImage replace falls back to copy+chmod+sync+rename beside $APPIMAGE on EXDEV, apply step (pkexec/tar) in spawn_blocking; pending_device_push is Option<PendingCounterReset{device_id}>, honoured by perform_sync (zeroed counters above the pad's generation, force_restore, cleared on success, kept for a different pad); manual AppImage-on-other-fs test pending
-2026-09-24  S8  (this commit)  Claude Opus (Sonnet list)  DM#2 DM#5 DM#7 fixed; JsonBackup::validate builds the DeviceConfig and delegates to DeviceConfig::validate (0x00/0xFFFF keys rejected, duplicate ranges gone); stale $OPAD_TOSU_PATH warned by path and falls through to home/PATH/bundled; strip_ansi is a CSI/OSC/ESC-intermediate state machine; stray supervisor doc comment above strip_ansi replaced
+2026-09-24  S8  b2234a5  Claude Opus (Sonnet list)  DM#2 DM#5 DM#7 fixed; JsonBackup::validate builds the DeviceConfig and delegates to DeviceConfig::validate (0x00/0xFFFF keys rejected, duplicate ranges gone); stale $OPAD_TOSU_PATH warned by path and falls through to home/PATH/bundled; strip_ansi is a CSI/OSC/ESC-intermediate state machine; stray supervisor doc comment above strip_ansi replaced
+2026-09-24  S9  (this commit)  Claude Opus (Sonnet list)  DG#1 DG#2 DG#4 DG#5 DG#7 fixed; one Page token table for --page and ShowRequested (logs/diagnostics now switch; diagnostics enables its tab); daemon log cursor moves only from replies (last entry received), GUI entries numbered apart, Clear is time-based; adopt_config() shared by Status adopt and ImportCompleted (gameplay_display_hz); designer Applied carries (screen, layout); close while tray probe pending hides, exits if the probe finds no tray; GUI not run by hand
 ```

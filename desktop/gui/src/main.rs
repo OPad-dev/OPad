@@ -30,16 +30,7 @@ pub fn parse_page_arg() -> Option<Page> {
     let args: Vec<String> = std::env::args().collect();
     for i in 0..args.len() {
         if (args[i] == "--page" || args[i] == "-p") && i + 1 < args.len() {
-            return match args[i + 1].to_lowercase().as_str() {
-                "dashboard" => Some(Page::Dashboard),
-                "designer" => Some(Page::Designer),
-                "settings" => Some(Page::Settings),
-                "device" => Some(Page::Device),
-                "monitor" | "logs" => Some(Page::Logs),
-                "diagnostics" | "test" | "testing" => Some(Page::Diagnostics),
-                "about" | "license" | "licenses" => Some(Page::About),
-                _ => None,
-            };
+            return Page::from_token(&args[i + 1]);
         }
     }
     None
@@ -47,15 +38,7 @@ pub fn parse_page_arg() -> Option<Page> {
 
 pub fn main() -> iced::Result {
     let target_page = parse_page_arg();
-    let page_str = target_page.map(|p| match p {
-        Page::Dashboard => "dashboard",
-        Page::Designer => "designer",
-        Page::Settings => "settings",
-        Page::Device => "device",
-        Page::Logs => "logs",
-        Page::Diagnostics => "diagnostics",
-        Page::About => "about",
-    });
+    let page_str = target_page.map(Page::token);
 
     if !single_instance::claim(page_str) {
         // Another instance was asked to show its window
@@ -93,6 +76,40 @@ pub enum Page {
 impl Page {
     #[allow(non_upper_case_globals)]
     pub const Monitor: Page = Page::Logs;
+
+    /// `--page` names and their aliases. The first name for each page is the
+    /// token a second launch sends to the running instance, so both ends of
+    /// the single-instance handoff read this one table.
+    const TOKENS: [(&'static str, Page); 12] = [
+        ("dashboard", Page::Dashboard),
+        ("designer", Page::Designer),
+        ("settings", Page::Settings),
+        ("device", Page::Device),
+        ("logs", Page::Logs),
+        ("monitor", Page::Logs),
+        ("diagnostics", Page::Diagnostics),
+        ("test", Page::Diagnostics),
+        ("testing", Page::Diagnostics),
+        ("about", Page::About),
+        ("license", Page::About),
+        ("licenses", Page::About),
+    ];
+
+    pub fn from_token(token: &str) -> Option<Page> {
+        let token = token.to_lowercase();
+        Self::TOKENS
+            .iter()
+            .find(|(name, _)| *name == token)
+            .map(|(_, page)| *page)
+    }
+
+    pub fn token(self) -> &'static str {
+        Self::TOKENS
+            .iter()
+            .find(|(_, page)| *page == self)
+            .map(|(name, _)| *name)
+            .expect("every page has a token")
+    }
 
     pub const ALL: [(Page, &'static str); 6] = [
         (Page::Dashboard, "Dashboard"),
@@ -168,6 +185,9 @@ pub struct App {
     pub maximized: bool,
     tray: Option<tray::TrayHandle>,
     tray_available: Option<bool>,
+    /// The window was closed while the tray was still being probed: it is
+    /// hidden for now, and the app exits if the probe finds no tray
+    exit_if_no_tray: bool,
 
     // Daemon state
     pub daemon_online: bool,
@@ -215,10 +235,17 @@ pub struct App {
     config_loaded: bool,
 
     pub logs: Vec<LogEntry>,
+    /// The daemon fetch cursor: the seq of the last daemon entry received.
+    /// Only daemon responses move it (GetLogEntries is exclusive of it).
     pub latest_log_seq: u64,
+    /// Seq for entries the GUI logs itself (source Program), a separate
+    /// numbering from the daemon's
+    local_log_seq: u64,
+    /// Entries at or before this instant are hidden by Clear. A time, not a
+    /// seq, because the daemon's and the GUI's entries are numbered apart.
+    log_cleared_at: Option<chrono::DateTime<chrono::Local>>,
     pub log_filter_level: Option<LogLevel>,
     pub log_filter_source: Option<LogSource>,
-    pub log_cleared_seq: u64,
     pub log_auto_scroll: bool,
     pub banner: Option<String>,
     pub tosu_override_path: Option<std::path::PathBuf>,
@@ -367,6 +394,7 @@ impl App {
             maximized: false,
             tray: None,
             tray_available: None,
+            exit_if_no_tray: false,
             daemon_online: false,
             daemon_spawn_attempted: false,
             device_connected: false,
@@ -414,9 +442,10 @@ impl App {
             config_loaded: false,
             logs: Vec::new(),
             latest_log_seq: 0,
+            local_log_seq: 0,
+            log_cleared_at: None,
             log_filter_level: None,
             log_filter_source: None,
-            log_cleared_seq: 0,
             log_auto_scroll: true,
             banner: None,
             tosu_override_path,
@@ -449,6 +478,8 @@ impl App {
     }
 
     fn open_window(&mut self) -> Task<Message> {
+        // Shown again (e.g. by a second launch): closing decides anew
+        self.exit_if_no_tray = false;
         if let Some(id) = self.window {
             return window::gain_focus(id);
         }
@@ -607,14 +638,7 @@ impl App {
                                 || device_just_connected)
                         {
                             self.config_loaded = true;
-                            self.k1_input = config.key1_char();
-                            self.k2_input = config.key2_char();
-                            self.k1_gpio = config.key1_gpio;
-                            self.k2_gpio = config.key2_gpio;
-                            self.debounce = config.debounce_us;
-                            self.brightness = config.brightness;
-                            self.sleep_seconds = config.display_sleep_seconds;
-                            self.gameplay_display_hz = config.gameplay_display_hz;
+                            self.adopt_config(&config);
                         }
                         self.config = config;
 
@@ -646,6 +670,8 @@ impl App {
                     latest_seq,
                 }) = result
                 {
+                    self.latest_log_seq =
+                        next_log_cursor(self.latest_log_seq, &entries, latest_seq);
                     for entry in entries {
                         if !self
                             .logs
@@ -654,9 +680,6 @@ impl App {
                         {
                             self.logs.push(entry);
                         }
-                    }
-                    if latest_seq > 0 {
-                        self.latest_log_seq = latest_seq;
                     }
                     self.prune_logs();
                 }
@@ -668,7 +691,7 @@ impl App {
                 self.log_filter_source = src;
             }
             Message::ClearLogs => {
-                self.log_cleared_seq = self.latest_log_seq;
+                self.log_cleared_at = Some(chrono::Local::now());
             }
             Message::CopyLogs => {
                 let text = self.formatted_visible_logs().join("\n");
@@ -782,14 +805,8 @@ impl App {
                     config,
                 }) => {
                     self.counters = counters.clone();
-                    self.config = config.clone();
-                    self.k1_input = config.key1_char();
-                    self.k2_input = config.key2_char();
-                    self.k1_gpio = config.key1_gpio;
-                    self.k2_gpio = config.key2_gpio;
-                    self.debounce = config.debounce_us;
-                    self.brightness = config.brightness;
-                    self.sleep_seconds = config.display_sleep_seconds;
+                    self.adopt_config(&config);
+                    self.config = config;
                     self.banner = Some(format!(
                         "Backup successfully imported and synced! (generation: {})",
                         counters.counter_generation
@@ -1470,9 +1487,13 @@ impl App {
 
             Message::WindowOpened(_) => {}
             Message::CloseRequested(id) => {
-                if self.tray_available != Some(true) {
+                match self.tray_available {
+                    Some(true) => {}
                     // Nowhere to live without a window; exit cleanly to avoid zombie background process
-                    return iced::exit();
+                    Some(false) => return iced::exit(),
+                    // Still probing: hide now, and exit only once it is known
+                    // there is no tray to live in
+                    None => self.exit_if_no_tray = true,
                 }
                 self.window = None;
                 return window::close(id);
@@ -1481,6 +1502,9 @@ impl App {
                 if self.tray_available.is_none() {
                     tracing::warn!("Tray host not detected within 2 seconds; falling back to standard window lifecycle");
                     self.tray_available = Some(false);
+                    if self.exit_if_no_tray {
+                        return iced::exit();
+                    }
                     if self.banner.is_none() {
                         self.banner = Some(NO_TRAY_BANNER.into());
                     }
@@ -1490,16 +1514,12 @@ impl App {
                 }
             }
             Message::ShowRequested(target) => {
-                if let Some(target_str) = target {
-                    match target_str.to_lowercase().as_str() {
-                        "monitor" => self.page = Page::Monitor,
-                        "device" => self.page = Page::Device,
-                        "settings" => self.page = Page::Settings,
-                        "designer" => self.page = Page::Designer,
-                        "dashboard" => self.page = Page::Dashboard,
-                        "about" => self.page = Page::About,
-                        _ => {}
+                if let Some(page) = target.as_deref().and_then(Page::from_token) {
+                    // As at startup: asking for Diagnostics shows its tab
+                    if page == Page::Diagnostics {
+                        self.diagnostics_enabled = true;
                     }
+                    self.page = page;
                 }
                 return self.open_window();
             }
@@ -1528,6 +1548,7 @@ impl App {
                 tray::TrayEvent::Started(handle) => {
                     self.tray = Some(handle);
                     self.tray_available = Some(true);
+                    self.exit_if_no_tray = false;
                     // The tray can come up after the 2 s fallback already fired
                     if self.banner.as_deref() == Some(NO_TRAY_BANNER) {
                         self.banner = None;
@@ -1536,6 +1557,9 @@ impl App {
                 }
                 tray::TrayEvent::Unavailable => {
                     self.tray_available = Some(false);
+                    if self.exit_if_no_tray {
+                        return iced::exit();
+                    }
                     if self.banner.is_none() {
                         self.banner = Some(NO_TRAY_BANNER.into());
                     }
@@ -2595,10 +2619,29 @@ impl App {
         target: impl Into<String>,
         message: impl Into<String>,
     ) {
-        self.latest_log_seq = self.latest_log_seq.saturating_add(1);
-        let entry = LogEntry::new(self.latest_log_seq, source, level, target, message);
+        self.local_log_seq = self.local_log_seq.saturating_add(1);
+        let entry = LogEntry::new(self.local_log_seq, source, level, target, message);
         self.logs.push(entry);
         self.prune_logs();
+    }
+
+    /// Loads every Settings form field from `config`. The one place that does,
+    /// so an import and a pad (re)connect cannot disagree on which fields
+    /// exist (an import once left gameplay_display_hz behind).
+    fn adopt_config(&mut self, config: &DeviceConfig) {
+        self.k1_input = config.key1_char();
+        self.k2_input = config.key2_char();
+        self.k1_gpio = config.key1_gpio;
+        self.k2_gpio = config.key2_gpio;
+        self.debounce = config.debounce_us;
+        self.brightness = config.brightness;
+        self.sleep_seconds = config.display_sleep_seconds;
+        self.gameplay_display_hz = config.gameplay_display_hz;
+    }
+
+    /// Whether Clear left this entry visible
+    pub fn log_visible_after_clear(&self, entry: &LogEntry) -> bool {
+        self.log_cleared_at.is_none_or(|t| entry.ts > t)
     }
 
     pub fn prune_logs(&mut self) {
@@ -2613,11 +2656,24 @@ impl App {
     pub fn formatted_visible_logs(&self) -> Vec<String> {
         self.logs
             .iter()
-            .filter(|e| e.seq > self.log_cleared_seq)
+            .filter(|e| self.log_visible_after_clear(e))
             .filter(|e| self.log_filter_level.is_none_or(|l| e.level >= l))
             .filter(|e| self.log_filter_source.is_none_or(|s| e.source == s))
             .map(|e| e.format_line())
             .collect()
+    }
+}
+
+/// The daemon log cursor after a GetLogEntries reply. The daemon returns the
+/// first `limit` entries after the cursor, so the cursor moves to the last
+/// one received, never to `latest_seq`, which would skip the rest of a capped
+/// reply. An empty reply means nothing newer is left: `latest_seq` is adopted,
+/// which also follows a restarted daemon numbering from 1 again.
+fn next_log_cursor(cursor: u64, entries: &[LogEntry], latest_seq: u64) -> u64 {
+    match entries.last() {
+        Some(last) => last.seq,
+        None if latest_seq > 0 => latest_seq,
+        None => cursor,
     }
 }
 
@@ -2760,4 +2816,38 @@ pub fn tosu_source_status(override_path: Option<&std::path::Path>) -> String {
         }
     }
     "Bundled (default)".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_page_token_round_trips() {
+        for (page, _) in Page::ALL_WITH_DIAGNOSTICS {
+            assert_eq!(Page::from_token(page.token()), Some(page), "{page:?}");
+        }
+        // Aliases a second launch may be given
+        assert_eq!(Page::from_token("monitor"), Some(Page::Logs));
+        assert_eq!(Page::from_token("LOGS"), Some(Page::Logs));
+        assert_eq!(Page::from_token("testing"), Some(Page::Diagnostics));
+        assert_eq!(Page::from_token("licenses"), Some(Page::About));
+        assert_eq!(Page::from_token("nowhere"), None);
+    }
+
+    fn entry(seq: u64) -> LogEntry {
+        LogEntry::new(seq, LogSource::Host, LogLevel::Info, "daemon", "x")
+    }
+
+    #[test]
+    fn the_log_cursor_follows_what_was_received() {
+        // A reply capped at `limit`: the rest must still be fetched
+        let capped: Vec<_> = (11..=13).map(entry).collect();
+        assert_eq!(next_log_cursor(10, &capped, 500), 13);
+        // Nothing newer: adopt the daemon's latest
+        assert_eq!(next_log_cursor(13, &[], 13), 13);
+        assert_eq!(next_log_cursor(0, &[], 0), 0);
+        // A restarted daemon numbers from 1 again
+        assert_eq!(next_log_cursor(900, &[], 4), 4);
+    }
 }
