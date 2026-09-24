@@ -99,7 +99,7 @@ The staged config is committed to `s_config` before `board_keys_set_gpio` runs; 
 
 **Failure scenario:** Maintenance cost only: the first comment now contradicts the framing rules documented in the second (a reader following it would think only `BOOTLOADER` is handled and that a length-prefix check is what protects it); `device_config_set` can call `write_to_nvs` unconditionally since it already defers when not IDLE; `s_samples` is redundant with the bucket sum computed in `latency_stats_get`.
 
-## 10. 126-address I2C probe at boot; 100 Hz unconditional CST816 read — `open` (boot scan fixed; idle polling open)
+## 10. 126-address I2C probe at boot; 100 Hz unconditional CST816 read — `fixed`
 
 **File:** `firmware/main/input/touch_retry.c:150`
 **Category:** efficiency

@@ -294,7 +294,7 @@ Files: `firmware/main/usb/usb_cdc.c` (~140–147), `firmware/main/config/device_
 ### A2 — Touch retry boot scan and idle polling ▸ FU#10
 Files: `firmware/main/input/touch_retry.c` (~150, task loop), `firmware/main/Kconfig.projbuild`
 - [x] Gate the 126-address I2C scan behind a new Kconfig option (default off).
-- [ ] In the task loop, read the CST816 register only when INT is active or a touch was seen in the last ~100 ms; otherwise sleep without an I2C transaction.
+- [x] In the task loop, read the CST816 register only when INT is active or a touch was seen in the last ~100 ms; otherwise sleep without an I2C transaction.
 - Verify: `make firmware`; on the pad, touch retry still works (tap the screen during a map), boot log no longer shows the scan, no periodic NACK errors.
 
 ### A3 — UI efficiency + latent lifetime ▸ FI#7, FI#9
@@ -386,4 +386,5 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  A8b  (this commit)  Claude Opus  DC#8 fixed on user go-ahead; opadctl setup compares /etc/udev/rules.d/70-opad.rules with the embedded rule (installed / differs / missing) and prints a sudo tee heredoc of the embedded content instead of a repo-relative cp; unit test on the comparison
 2026-09-24  A4b  (this commit)  Claude Opus  DD#9 fixed on user decision (unify anyway); one Handshake state machine (retry cadence, framing order, HelloAck handling, O9 reopen/drop rules) drives both the worker loop and probe_port via probe_handshake(); probe: Marked at 0 ms, Legacy at 400 ms, give up at 800 ms (legacy pad gets 400 ms, was 225), PROBE_ANSWER_WINDOW/PROBE_READ_TIMEOUT removed, probe read timeout 10 ms; 4 unit tests; Windows cold-plug test with a legacy pad pending
 2026-09-24  O12  (this commit)  Claude Opus  DA#9 fixed on user go-ahead; apply_event mem::swaps the shared DaemonState into the controller for one event and back under the same lock (no clone either way); replacement_was_pending replaces the controller.state read used for the takeover reconciliation; the two between-event readers in main.rs (clock-jump time sync, SQLite reconnect device id) read the shared state briefly under the lock; on_event and all daemon test assertions unchanged
+2026-09-24  A2b  (this commit)  Claude Opus  FU#10 fixed on user decision (less CPU; touch is the third button): touch task sleeps on a falling-edge INT ISR (task notification) with a 1 s safety read while idle, confirms over I2C, then polls at 100 Hz only while the touch is down (release logic unchanged: 2 consecutive up reads); falls back to the old 100 Hz poll if the ISR cannot be registered; robust to INT held or pulsed; pad test pending (tap = press, hold = held, release = clean release, boot log shows "INT wake")
 ```

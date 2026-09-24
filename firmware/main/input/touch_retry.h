@@ -9,7 +9,8 @@ extern "C" {
 
 /**
  * @brief Initialize the capacitive touchscreen quick-retry driver.
- *        Polls the CST816 I2C controller on Core 1 at 100 Hz.
+ *        A Core 1 task sleeps on the CST816's INT line and, once a touch is
+ *        down, polls the controller at 100 Hz until it is released.
  *        Tapping anywhere on the glass sends USB HID Keycode 0x35 ('`' / Quick Retry).
  */
 esp_err_t touch_retry_init(void);

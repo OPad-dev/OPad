@@ -54,51 +54,84 @@ static void cst816_disable_auto_sleep(void)
     }
 }
 
+// Poll period while a touch is down (release detection), and the number of
+// consecutive "up" reads (~20 ms) that count as a clean release.
+#define TOUCH_POLL_MS           10
+#define TOUCH_RELEASE_READS     2
+// With no finger down the task sleeps on the INT edge; this is only a safety
+// net for a miswired or silent INT line, so a held touch is still seen.
+#define TOUCH_IDLE_CHECK_MS     1000
+
+static bool s_int_wakeup = false; // INT falling edge wakes the task
+
+// The CST816 pulls INT low on a touch (held or pulsed, depending on mode); the
+// edge just wakes the task, which confirms over I2C.
+static void IRAM_ATTR touch_int_isr(void *arg)
+{
+    (void)arg;
+    if (s_touch_task) {
+        BaseType_t woken = pdFALSE;
+        vTaskNotifyGiveFromISR(s_touch_task, &woken);
+        portYIELD_FROM_ISR(woken);
+    }
+}
+
+// One sample: the active-low INT level or a non-zero touch count means down.
+static bool touch_is_down(void)
+{
+    bool int_active = (gpio_get_level(BOARD_TOUCH_INT_GPIO) == 0);
+
+    uint8_t touch_num = 0;
+    esp_err_t err = cst816_read_reg(CST816_REG_TOUCH_NUM, &touch_num, 1);
+
+    bool down = int_active || (err == ESP_OK && touch_num > 0);
+    if (down && !s_auto_sleep_disabled) {
+        cst816_disable_auto_sleep();
+    }
+    return down;
+}
+
 static void touch_retry_task(void *arg)
 {
     (void)arg;
-    ESP_LOGI(TAG, "Touch Retry task running on core %d (100 Hz, INT: GPIO%d)",
-             xPortGetCoreID(), BOARD_TOUCH_INT_GPIO);
+    ESP_LOGI(TAG, "Touch Retry task running on core %d (%s, INT: GPIO%d)",
+             xPortGetCoreID(), s_int_wakeup ? "INT wake, 100 Hz while down" : "100 Hz poll",
+             BOARD_TOUCH_INT_GPIO);
 
-    bool last_state = false;
+    bool pressed = false;
     uint8_t release_debounce = 0;
 
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(10)); // 10ms = 100 Hz
-
-        // Check active-low INT line
-        bool int_active = (gpio_get_level(BOARD_TOUCH_INT_GPIO) == 0);
-
-        uint8_t touch_num = 0;
-        esp_err_t err = cst816_read_reg(CST816_REG_TOUCH_NUM, &touch_num, 1);
-
-        bool raw_down = false;
-        if (int_active || (err == ESP_OK && touch_num > 0)) {
-            raw_down = true;
-            if (!s_auto_sleep_disabled) {
-                cst816_disable_auto_sleep();
+        if (!pressed) {
+            // Idle: no I2C traffic and no CPU until INT fires (or the safety
+            // interval passes). Without an ISR this is the old 100 Hz poll.
+            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(s_int_wakeup ? TOUCH_IDLE_CHECK_MS : TOUCH_POLL_MS));
+            if (!touch_is_down()) {
+                continue; // spurious edge, or the safety check found nothing
             }
+            pressed = true;
+            release_debounce = 0;
+            s_touch_pressed = true;
+            usb_hid_set_touch_retry(true);
+            ui_notify_activity();
+            ESP_LOGI(TAG, "Touch down -> Quick Retry pressed ('`')");
+            continue;
         }
 
-        if (raw_down) {
+        // Down: poll for the release. INT may only pulse per report, so the
+        // touch count is what keeps the key held.
+        vTaskDelay(pdMS_TO_TICKS(TOUCH_POLL_MS));
+        if (touch_is_down()) {
             release_debounce = 0;
-            if (!last_state) {
-                last_state = true;
-                s_touch_pressed = true;
-                usb_hid_set_touch_retry(true);
-                ui_notify_activity();
-                ESP_LOGI(TAG, "Touch down -> Quick Retry pressed ('`')");
-            }
-        } else {
-            if (last_state) {
-                // 2 consecutive released reads (~20ms) to ensure clean release without jitter
-                if (++release_debounce >= 2) {
-                    last_state = false;
-                    s_touch_pressed = false;
-                    usb_hid_set_touch_retry(false);
-                    ESP_LOGI(TAG, "Touch up -> Quick Retry released");
-                }
-            }
+            continue;
+        }
+        if (++release_debounce >= TOUCH_RELEASE_READS) {
+            pressed = false;
+            s_touch_pressed = false;
+            usb_hid_set_touch_retry(false);
+            ESP_LOGI(TAG, "Touch up -> Quick Retry released");
+            // An INT edge seen during the press leaves a notification pending;
+            // it costs one confirming read on the next loop and nothing more.
         }
     }
 }
@@ -111,11 +144,23 @@ esp_err_t touch_retry_init(void)
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
+        .intr_type = GPIO_INTR_NEGEDGE,
     };
     esp_err_t err = gpio_config(&int_cfg);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to configure INT GPIO%d: %s", BOARD_TOUCH_INT_GPIO, esp_err_to_name(err));
+    } else {
+        // Same shared ISR service the keypad uses (already installed is fine).
+        // If any of this fails the task falls back to polling.
+        err = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
+        if (err == ESP_OK || err == ESP_ERR_INVALID_STATE) {
+            err = gpio_isr_handler_add(BOARD_TOUCH_INT_GPIO, touch_int_isr, NULL);
+        }
+        if (err == ESP_OK) {
+            s_int_wakeup = true;
+        } else {
+            ESP_LOGW(TAG, "INT wake unavailable (%s); polling at 100 Hz instead", esp_err_to_name(err));
+        }
     }
 
     // 2. Configure I2C bus
