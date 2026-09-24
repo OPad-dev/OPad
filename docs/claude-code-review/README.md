@@ -29,6 +29,37 @@ so each covers the current code of its path rather than a diff.
 executor (Opus / Sonnet / Haiku / Antigravity), clustered by file, with run order,
 session rules and paste-able kickoff prompts.
 
+## Status: closed (2026-09-24)
+
+All 93 findings are closed: **92 fixed, 1 invalid** (DC#10). Every cluster in
+FIX-PLAN.md is ticked. Every commit passed `make firmware`, the firmware host
+tests and `make check` (fmt, clippy `-D warnings`, 328 tests).
+
+### Hardware validation record
+
+Run by the owner on the real pad (Waveshare ESP32-S3 Touch LCD 2, new firmware
+flashed via `opadctl flash`) on 2026-09-24:
+
+| Step | Covers | Result |
+| --- | --- | --- |
+| Flash + reconnect | S12 (daemon pause/resume path) | ✅ released port, 12 s flash, reconnected 3 s later, no 15 s wait |
+| Boot | O6, S1, A2 | ✅ no I2C scan, quiet idle log |
+| Touch as third key (tap / hold / lift / double tap / 30 s idle) | FU#10 | ✅ |
+| Keys, remap while held, detect-pin, protocol responsive during detect | O2, O3, O4, S1 | ✅ |
+| Full map with live tosu data, unplug/replug mid-map | O1, S2 (pad side) | ✅ |
+| Sleep, set brightness asleep, wake | S3, FB#1 | ✅ |
+| Layout pushed during gameplay, reboot | O5 | ✅ |
+
+**Signed off by the owner without a hardware run** (unit/integration tests and
+code review only): foreign-pad guards and incompatible-pad handling (O7, O8),
+headless mode (O6 — the LCD is always fitted), desktop reconnect logic (O9, tested
+on the pad only against the pre-fix daemon), Windows pipe/bootloader-port picks
+(O10, `cargo check` for the Windows target), tosu supervisor pause (O11), the
+updater fixes (S6, S7), the GUI fixes (S9, S10, DG#10), the CLI fixes (S11,
+DC#8), release signing (S13), and the Windows cold-plug with a legacy-firmware
+pad (DD#9). If any of these misbehaves, the FIX-PLAN progress log names the
+commit to look at.
+
 ## Top items across runs (2026-09-23)
 
 ### Firmware
