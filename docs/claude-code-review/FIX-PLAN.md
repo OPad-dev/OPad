@@ -329,7 +329,7 @@ Files: `desktop/gui/src/main.rs` (~476, ~1601), diagnostics page module
 
 ### A8 — CLI UX cleanups ▸ DC#8, DC#9
 Files: `desktop/cli/src/main.rs` (~366–380, ~602–616, ~839)
-- [ ] `fn confirm(prompt: &str, non_tty_msg: &str) -> Result<bool>` used by `Import` and `FirmwareUpdate`.
+- [x] `fn confirm(prompt: &str, non_tty_msg: &str) -> Result<bool>` used by `Import` and `FirmwareUpdate`.
 - [ ] `opadctl setup`: compare the embedded `70-opad.rules` (`include_str!`) with `/etc/udev/rules.d/70-opad.rules`; print "already installed" if identical, else a `sudo tee` command that writes the embedded content (no repo-relative path).
 - Verify: `make check`; run `opadctl setup` on a machine with and without the rule.
 
@@ -380,4 +380,5 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  A5  (this commit)  Claude Opus (Antigravity list)  DA#10 fixed; classify_tosu_line() shared by the log-file tail and the live callback (tail still strips ANSI: the file keeps raw lines; the callback gets stripped ones), banner uses CARGO_PKG_VERSION (now logs v1.0.0-rc), classifier unit test
 2026-09-24  A6  (this commit)  Claude Opus (Antigravity list)  DM#8 DM#10 fixed; opad-ui-preview depends on opad-model, sample_values() uses ui_source names (same ids/values/order), sizes derived from opad_layout (LABEL_MAX = LABEL_MAX_BYTES + 1 = 32 and SUFFIX_MAX = 12: both were right, bytes vs C field with NUL per ui_core.h); launch_tosu's two reader tasks are one pump_lines()
 2026-09-24  A7  (this commit)  Claude Opus (Antigravity list)  DG#9 fixed, DG#10 partly fixed; switch polling on its own thread (4 ms, KeyEvent only on change, stamped when seen; Diagnostics page 28.2% -> 0.8% of a core, debug build, Linux); bundle string not cached (embeds a live sub-second timestamp); UiValues only on Dashboard/Designer, FirmwareUpdate only on Settings/Device/Diagnostics, tray polls status alone, window open polls at once; GetUpdateStatus kept at the tick rate (restart banner on every page), 60 s timer NOT done, needs a decision; Windows clippy clean with a stand-in C compiler, GUI run on Linux only (no key presses)
+2026-09-24  A8  (this commit)  Claude Opus (Antigravity list)  DC#9 fixed; confirm(prompt, non_tty_msg) shared by Import and FirmwareUpdate (same prompts, messages and y/yes rule). DC#8 verified but NOT fixed: it changes opadctl setup's output and checks (correctness, not a refactor), left open for a go-ahead
 ```

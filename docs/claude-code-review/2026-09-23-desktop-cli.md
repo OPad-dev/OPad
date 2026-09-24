@@ -99,7 +99,9 @@ Post-flash verification failure is exit 0 with a warning when the daemon is pres
 
 **Suggested fix:** Since the rule text is already embedded via `include_str!`, compare it with the installed file and print a `sudo tee` of the embedded content (or "already installed") instead.
 
-## 9. Interactive y/N confirmation copy-pasted between `Import` and `FirmwareUpdate` — `open`
+**Status note (A8, 2026-09-24):** Verified: `run_setup` still prints `sudo cp packaging/linux/udev/70-opad.rules …` and never reads `/etc/udev/rules.d/70-opad.rules`. Not fixed in the Antigravity session. That session was limited to behaviour-preserving refactors and efficiency/packaging fixes, and this fix changes what `opadctl setup` prints and checks. It needs an explicit go-ahead, then a run with and without the rule installed.
+
+## 9. Interactive y/N confirmation copy-pasted between `Import` and `FirmwareUpdate` — `fixed`
 
 **File:** `desktop/cli/src/main.rs:602`
 **Category:** simplification

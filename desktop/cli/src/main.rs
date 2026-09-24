@@ -370,20 +370,14 @@ async fn main() -> Result<()> {
                         }
                     }
 
-                    if !yes {
-                        use std::io::IsTerminal;
-                        if !std::io::stdin().is_terminal() {
-                            bail!("Confirmation required to import backup. Run with --yes in non-interactive mode.");
-                        }
-                        print!("\nProceed with import? [y/N]: ");
-                        std::io::stdout().flush()?;
-                        let mut input = String::new();
-                        std::io::stdin().read_line(&mut input)?;
-                        let trimmed = input.trim().to_lowercase();
-                        if trimmed != "y" && trimmed != "yes" {
-                            println!("Import cancelled.");
-                            return Ok(());
-                        }
+                    if !yes
+                        && !confirm(
+                            "\nProceed with import? [y/N]: ",
+                            "Confirmation required to import backup. Run with --yes in non-interactive mode.",
+                        )?
+                    {
+                        println!("Import cancelled.");
+                        return Ok(());
                     }
 
                     let resp = send_request(
@@ -602,20 +596,14 @@ async fn main() -> Result<()> {
                 println!();
                 println!("{}", text);
             }
-            if !yes {
-                use std::io::IsTerminal;
-                if !std::io::stdin().is_terminal() {
-                    bail!("A firmware update needs confirmation. Re-run with --yes.");
-                }
-                print!("\nFlash the pad now? [y/N]: ");
-                std::io::stdout().flush()?;
-                let mut input = String::new();
-                std::io::stdin().read_line(&mut input)?;
-                let answer = input.trim().to_lowercase();
-                if answer != "y" && answer != "yes" {
-                    println!("Cancelled. Nothing was written to the pad.");
-                    return Ok(());
-                }
+            if !yes
+                && !confirm(
+                    "\nFlash the pad now? [y/N]: ",
+                    "A firmware update needs confirmation. Re-run with --yes.",
+                )?
+            {
+                println!("Cancelled. Nothing was written to the pad.");
+                return Ok(());
             }
 
             println!("Flashing. Do not unplug the pad.");
@@ -704,6 +692,21 @@ fn next_since_seq(since_seq: Option<u64>, entries: &[opad_model::LogEntry]) -> O
 }
 
 /// The daemon connection, for the commands that cannot work without one.
+/// Asks a y/N question on the terminal; true only for "y"/"yes". Without a
+/// terminal to ask on, fails with `non_tty_msg` rather than guessing.
+fn confirm(prompt: &str, non_tty_msg: &str) -> Result<bool> {
+    use std::io::IsTerminal;
+    if !std::io::stdin().is_terminal() {
+        bail!("{}", non_tty_msg);
+    }
+    print!("{}", prompt);
+    std::io::stdout().flush()?;
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    let answer = input.trim().to_lowercase();
+    Ok(answer == "y" || answer == "yes")
+}
+
 fn daemon(stream: &mut Option<IpcStream>) -> Result<&mut IpcStream> {
     stream
         .as_mut()
