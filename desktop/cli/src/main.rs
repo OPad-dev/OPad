@@ -890,24 +890,40 @@ fn first_existing(candidates: &[PathBuf]) -> Option<PathBuf> {
     candidates.iter().find(|p| p.exists()).cloned()
 }
 
-/// Where the packages install the udev rule; `opadctl setup` checks the same path.
+/// Where a hand install goes (the admin's directory, which overrides the
+/// package's).
 const UDEV_RULE_PATH: &str = "/etc/udev/rules.d/70-opad.rules";
+/// Every place the rule may already live: the admin's directory, then where
+/// the .deb/.rpm/AppImage/`make install` put it. udev reads both.
+const UDEV_RULE_PATHS: [&str; 2] = [UDEV_RULE_PATH, "/usr/lib/udev/rules.d/70-opad.rules"];
 
 #[derive(Debug, PartialEq, Eq)]
 enum UdevRuleState {
-    /// The installed file is byte-for-byte the rule this build ships.
-    Installed,
-    /// A file exists at the path but its content differs (older package, hand edit).
+    /// An installed copy is byte-for-byte the rule this build ships.
+    Installed(&'static str),
+    /// A copy exists but none matches (older package, hand edit).
     Differs,
-    /// Nothing installed.
+    /// Nothing installed anywhere udev looks.
     Missing,
 }
 
-fn udev_rule_state(installed: Option<&str>, embedded: &str) -> UdevRuleState {
-    match installed {
-        Some(current) if current.trim_end() == embedded.trim_end() => UdevRuleState::Installed,
-        Some(_) => UdevRuleState::Differs,
-        None => UdevRuleState::Missing,
+fn udev_rule_state(
+    installed: impl IntoIterator<Item = (&'static str, Option<String>)>,
+    embedded: &str,
+) -> UdevRuleState {
+    let mut found_any = false;
+    for (path, content) in installed {
+        if let Some(current) = content {
+            if current.trim_end() == embedded.trim_end() {
+                return UdevRuleState::Installed(path);
+            }
+            found_any = true;
+        }
+    }
+    if found_any {
+        UdevRuleState::Differs
+    } else {
+        UdevRuleState::Missing
     }
 }
 
@@ -946,17 +962,20 @@ fn run_setup() -> Result<()> {
     // The same file the packages install, so the two cannot drift apart
     let udev_rule = include_str!("../../../packaging/linux/udev/70-opad.rules");
 
-    let target_path = std::path::Path::new(UDEV_RULE_PATH);
-    let installed = std::fs::read_to_string(target_path).ok();
-    match udev_rule_state(installed.as_deref(), udev_rule) {
-        UdevRuleState::Installed => {
-            println!("✓ udev rule for non-root CDC access is installed ({UDEV_RULE_PATH})");
+    let installed = UDEV_RULE_PATHS
+        .iter()
+        .map(|p| (*p, std::fs::read_to_string(p).ok()));
+    match udev_rule_state(installed, udev_rule) {
+        UdevRuleState::Installed(path) => {
+            println!("✓ udev rule for non-root CDC access is installed ({path})");
         }
         UdevRuleState::Differs => {
-            println!("⚠ {UDEV_RULE_PATH} exists but differs from the rule this build ships.");
+            println!("⚠ an installed udev rule differs from the rule this build ships.");
             print_udev_install_hint(udev_rule, "To update it, run:");
         }
         UdevRuleState::Missing => {
+            // Packages and `make install` ship the rule; only a source build
+            // installed per-user (make install-user) lands here.
             println!("udev rule for non-root CDC access is not installed.");
             print_udev_install_hint(udev_rule, "To install it, run:");
         }
@@ -1005,17 +1024,29 @@ mod tests {
     #[test]
     fn the_udev_rule_check_compares_against_the_embedded_rule() {
         let rule = "SUBSYSTEM==\"tty\", ATTRS{idVendor}==\"303a\", MODE=\"0666\"\n";
-        assert_eq!(udev_rule_state(None, rule), UdevRuleState::Missing);
-        assert_eq!(udev_rule_state(Some(rule), rule), UdevRuleState::Installed);
+        let etc = "/etc/udev/rules.d/70-opad.rules";
+        let lib = "/usr/lib/udev/rules.d/70-opad.rules";
+        let state = |e: Option<&str>, l: Option<&str>| {
+            udev_rule_state(
+                [(etc, e.map(str::to_owned)), (lib, l.map(str::to_owned))],
+                rule,
+            )
+        };
+        assert_eq!(state(None, None), UdevRuleState::Missing);
+        // A package install (usr/lib only) counts as installed
+        assert_eq!(state(None, Some(rule)), UdevRuleState::Installed(lib));
+        assert_eq!(state(Some(rule), None), UdevRuleState::Installed(etc));
         // A trailing newline difference is not a real difference
         assert_eq!(
-            udev_rule_state(Some(rule.trim_end()), rule),
-            UdevRuleState::Installed
+            state(Some(rule.trim_end()), None),
+            UdevRuleState::Installed(etc)
         );
+        // An old copy in one place does not hide a current one in the other
         assert_eq!(
-            udev_rule_state(Some("# old rule\n"), rule),
-            UdevRuleState::Differs
+            state(Some("# old rule\n"), Some(rule)),
+            UdevRuleState::Installed(lib)
         );
+        assert_eq!(state(Some("# old rule\n"), None), UdevRuleState::Differs);
     }
 
     #[test]
