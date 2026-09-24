@@ -25,6 +25,8 @@ so each covers the current code of its path rather than a diff.
 
 93 findings total. `opad-layout`, `opad-storage` and `protocol/` came out clean.
 
+**Hardware (2026-09-24, `main` @ `f78bfbd`):** PCBs and case, checked with KiCad 10.0.6 and OpenSCAD against Waveshare's schematic and drawing: [2026-09-24-hardware.md](2026-09-24-hardware.md), 9 findings: 3 fixed by case V1.1 (#1, #6, #7), 6 open (the PCB and tooling ones).
+
 **Fixing them:** see [FIX-PLAN.md](FIX-PLAN.md) — every finding assigned to one
 executor (Opus / Sonnet / Haiku / Antigravity), clustered by file, with run order,
 session rules and paste-able kickoff prompts.
