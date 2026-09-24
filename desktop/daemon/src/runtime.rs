@@ -211,6 +211,10 @@ pub enum RuntimeAction {
 }
 
 pub struct RuntimeController {
+    /// The state `on_event` works on. When the controller is driven through
+    /// [`apply_event`] the live copy is the shared `Arc<Mutex<DaemonState>>`:
+    /// it is swapped in here only for the length of one event, and between
+    /// events this field holds a spare copy that nothing should read.
     pub state: DaemonState,
     pub pending_ops: PendingOperations,
     pub cooldown_deadline: Option<Instant>,
@@ -239,6 +243,10 @@ pub struct RuntimeController {
     /// `state.counters` as they were when the connecting pad's HelloAck began,
     /// so a pad that turns out to be incompatible leaves no trace in them
     pre_hello_counters: Option<CounterState>,
+    /// Whether the shared state had a replacement prompt open when
+    /// [`apply_event`] last published it, so the next call can tell that IPC
+    /// resolved it in between
+    replacement_was_pending: bool,
 }
 
 impl RuntimeController {
@@ -307,6 +315,7 @@ impl RuntimeController {
             has_initial_db_entry,
             reported_owner: None,
             pre_hello_counters: None,
+            replacement_was_pending: false,
         }
     }
 
@@ -839,11 +848,6 @@ impl RuntimeController {
     }
 }
 
-/// Runs one event through the controller against the shared state.
-///
-/// IPC handlers and `perform_sync` write to the shared `DaemonState` directly (config, layouts,
-/// counters, replacement choice). Pulling it in before the event and publishing the result under
-/// the same lock keeps those writes instead of overwriting them with a stale controller copy.
 /// Whether this PC holds more presses than the pad on either key, i.e. whether
 /// siding with the pad would lose any. Only then is the user asked; when the
 /// pad has at least as many on both keys its counters are simply kept.
@@ -853,6 +857,13 @@ pub fn pc_is_ahead(pc: Option<&CounterState>, pad: &CounterState) -> bool {
     })
 }
 
+/// Runs one event through the controller against the shared state.
+///
+/// IPC handlers and `perform_sync` write to the shared `DaemonState` directly (config, layouts,
+/// counters, replacement choice), so the controller must see those writes and must not overwrite
+/// them with a stale copy of its own. The shared state is therefore swapped into the controller
+/// for the event and swapped back out under the same lock: the controller works on exactly the
+/// shared state, without deep-cloning it (layouts, UI values) twice per event.
 pub fn apply_event(
     controller: &mut RuntimeController,
     shared: &Arc<Mutex<DaemonState>>,
@@ -863,14 +874,17 @@ pub fn apply_event(
     let actions = {
         let mut ds = shared.lock();
         // A replacement prompt resolved over IPC: remember the pad so it is not asked again
-        if controller.state.pending_replacement.is_some() && ds.pending_replacement.is_none() {
+        if controller.replacement_was_pending && ds.pending_replacement.is_none() {
             if let Some(info) = &ds.device_info {
                 controller.known_devices.insert(info.device_id.clone());
             }
         }
-        controller.state = ds.clone();
+        // A panic in on_event takes the whole daemon down (see main), so the
+        // shared state is never left holding the spare copy.
+        std::mem::swap(&mut controller.state, &mut *ds);
         let actions = controller.on_event(event, now);
-        *ds = controller.state.clone();
+        std::mem::swap(&mut controller.state, &mut *ds);
+        controller.replacement_was_pending = ds.pending_replacement.is_some();
         actions
     };
     // perform_sync drains the shared queue, so hand over what the controller deferred

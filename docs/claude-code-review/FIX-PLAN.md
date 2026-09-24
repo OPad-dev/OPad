@@ -149,7 +149,7 @@ Files: `desktop/crates/opad-tosu/src/lib.rs` (~435, ~541)
 
 ### O12 — (optional, last) `apply_event` state cloning ▸ DA#9
 Files: `desktop/daemon/src/runtime.rs` (~799)
-- [ ] Only if budget remains after phases 1–5. Remove the full `DaemonState` clone per event: let the controller borrow the state under the lock, or copy only the fields IPC handlers may write. Behaviour-preserving; existing daemon tests must pass unchanged.
+- [x] Only if budget remains after phases 1–5. Remove the full `DaemonState` clone per event: let the controller borrow the state under the lock, or copy only the fields IPC handlers may write. Behaviour-preserving; existing daemon tests must pass unchanged.
 
 ---
 
@@ -385,4 +385,5 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  A9  (this commit)  Claude Opus (Antigravity list)  PK#3 PK#4 PK#5 fixed; .deb depends on libcap2-bin, .rpm requires libcap, test_packages.sh pre-installs nothing (debian:13 + fedora:43 run on locally built packages: install pulls setcap, tosu gets cap_sys_ptrace, daemon answers; the only FAILs were the stale host-glibc opad-gui and the local non-standalone tosu); both PKGBUILDs run make espflash (+ curl/unzip makedepends; make install -> /usr/lib/opad/bin/espflash checked in a DESTDIR); release.yml checks tosu + its .node addons at <= 2.28 before packaging and tosu in deb/rpm/AppImage after, with missing files failing (objdump chosen over a Debian 11 matrix entry); shellcheck: no new findings; actionlint unavailable, YAML parsed; CI run and makepkg of a real tag pending
 2026-09-24  A8b  (this commit)  Claude Opus  DC#8 fixed on user go-ahead; opadctl setup compares /etc/udev/rules.d/70-opad.rules with the embedded rule (installed / differs / missing) and prints a sudo tee heredoc of the embedded content instead of a repo-relative cp; unit test on the comparison
 2026-09-24  A4b  (this commit)  Claude Opus  DD#9 fixed on user decision (unify anyway); one Handshake state machine (retry cadence, framing order, HelloAck handling, O9 reopen/drop rules) drives both the worker loop and probe_port via probe_handshake(); probe: Marked at 0 ms, Legacy at 400 ms, give up at 800 ms (legacy pad gets 400 ms, was 225), PROBE_ANSWER_WINDOW/PROBE_READ_TIMEOUT removed, probe read timeout 10 ms; 4 unit tests; Windows cold-plug test with a legacy pad pending
+2026-09-24  O12  (this commit)  Claude Opus  DA#9 fixed on user go-ahead; apply_event mem::swaps the shared DaemonState into the controller for one event and back under the same lock (no clone either way); replacement_was_pending replaces the controller.state read used for the takeover reconciliation; the two between-event readers in main.rs (clock-jump time sync, SQLite reconnect device id) read the shared state briefly under the lock; on_event and all daemon test assertions unchanged
 ```

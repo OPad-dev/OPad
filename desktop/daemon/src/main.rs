@@ -400,7 +400,10 @@ async fn main() -> Result<()> {
                 last_instant = now;
                 last_system_time = now_system;
 
-                if clock_jump && controller.state.device_connected && controller.state.mode == RuntimeMode::Idle {
+                if clock_jump && {
+                    let ds = daemon_state.lock();
+                    ds.device_connected && ds.mode == RuntimeMode::Idle
+                } {
                     let _ = device_cmd.send(DeviceCommand::TimeSync).await;
                 }
 
@@ -425,8 +428,9 @@ async fn main() -> Result<()> {
                                     }
                                 }
                             }
-                            let stored_dev = if let Some(info) = &controller.state.device_info {
-                                s.load_device_state(&info.device_id).unwrap_or(None)
+                            let device_id = daemon_state.lock().device_info.as_ref().map(|i| i.device_id.clone());
+                            let stored_dev = if let Some(device_id) = &device_id {
+                                s.load_device_state(device_id).unwrap_or(None)
                             } else {
                                 None
                             };

@@ -87,7 +87,7 @@ AppImage self-replacement uses `std::fs::rename` from the state directory to `$A
 
 **Suggested fix:** Either drop the field or have `perform_sync` honour it with `force_restore = true`.
 
-## 9. `apply_event` deep-clones the full `DaemonState` on every event — `open`
+## 9. `apply_event` deep-clones the full `DaemonState` on every event — `fixed`
 
 **File:** `desktop/daemon/src/runtime.rs:799`
 **Category:** efficiency
