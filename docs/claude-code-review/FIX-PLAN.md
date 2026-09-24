@@ -323,7 +323,7 @@ Files: `desktop/crates/opad-ui-preview/src/lib.rs` (~8, `sample_values`), `deskt
 
 ### A7 — GUI polling efficiency (after S9) ▸ DG#9, DG#10
 Files: `desktop/gui/src/main.rs` (~476, ~1601), diagnostics page module
-- [ ] Diagnostics: move evdev/`GetAsyncKeyState` polling into a `Subscription` stream on its own thread emitting `KeyEvent` only on state change; cache the pretty-printed bundle string in state and regenerate only when its inputs change.
+- [x] Diagnostics: move evdev/`GetAsyncKeyState` polling into a `Subscription` stream on its own thread emitting `KeyEvent` only on state change; cache the pretty-printed bundle string in state and regenerate only when its inputs change.
 - [ ] Poll only what the visible page needs: `GetStatus` always; `GetUiValues` on Dashboard/Designer; `GetUpdateStatus`/`GetFirmwareUpdate` on navigating to Settings plus a 60 s timer.
 - Verify: `make check`; run the GUI; CPU at idle on Diagnostics drops; Settings→Updates still shows fresh state.
 
@@ -379,4 +379,5 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  A4  (this commit)  Claude Opus (Antigravity list)  DD#8 fixed; one device_config_from() for the HelloAck and ConfigAck arms (+ unit test). DD#9 partly done and left open: probe_port takes its framing order from hello_framing() and shares write_hello(); a single handshake() not extracted (the worker's Hello logic lives inside the connected loop, and its 400 ms cadence would leave a legacy pad 50 ms of the probe's 450 ms window, which is a behaviour change on the Windows tier-2 path); needs a decision + Windows cold-plug test
 2026-09-24  A5  (this commit)  Claude Opus (Antigravity list)  DA#10 fixed; classify_tosu_line() shared by the log-file tail and the live callback (tail still strips ANSI: the file keeps raw lines; the callback gets stripped ones), banner uses CARGO_PKG_VERSION (now logs v1.0.0-rc), classifier unit test
 2026-09-24  A6  (this commit)  Claude Opus (Antigravity list)  DM#8 DM#10 fixed; opad-ui-preview depends on opad-model, sample_values() uses ui_source names (same ids/values/order), sizes derived from opad_layout (LABEL_MAX = LABEL_MAX_BYTES + 1 = 32 and SUFFIX_MAX = 12: both were right, bytes vs C field with NUL per ui_core.h); launch_tosu's two reader tasks are one pump_lines()
+2026-09-24  A7  (this commit)  Claude Opus (Antigravity list)  DG#9 fixed, DG#10 partly fixed; switch polling on its own thread (4 ms, KeyEvent only on change, stamped when seen; Diagnostics page 28.2% -> 0.8% of a core, debug build, Linux); bundle string not cached (embeds a live sub-second timestamp); UiValues only on Dashboard/Designer, FirmwareUpdate only on Settings/Device/Diagnostics, tray polls status alone, window open polls at once; GetUpdateStatus kept at the tick rate (restart banner on every page), 60 s timer NOT done, needs a decision; Windows clippy clean with a stand-in C compiler, GUI run on Linux only (no key presses)
 ```

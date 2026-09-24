@@ -241,11 +241,13 @@ fn find_opad_evdev() -> Option<evdev::Device> {
     None
 }
 
+/// Whether each key is down on the pad's input device; `None` for a key with
+/// no evdev code or while the device is not open
 #[cfg(target_os = "linux")]
-pub fn poll_linux_switch_inputs(diag: &mut DiagnosticsState, k1_str: &str, k2_str: &str) {
+fn switch_states(k1_str: &str, k2_str: &str) -> [Option<bool>; 2] {
     let mut guard = match LINUX_EVDEV.lock() {
         Ok(g) => g,
-        Err(_) => return,
+        Err(_) => return [None, None],
     };
 
     if guard.is_none() {
@@ -253,7 +255,7 @@ pub fn poll_linux_switch_inputs(diag: &mut DiagnosticsState, k1_str: &str, k2_st
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         if last.is_some_and(|t| t.elapsed() < EVDEV_RESCAN_INTERVAL) {
-            return;
+            return [None, None];
         }
         *last = Some(std::time::Instant::now());
         *guard = open_opad_evdev();
@@ -262,18 +264,72 @@ pub fn poll_linux_switch_inputs(diag: &mut DiagnosticsState, k1_str: &str, k2_st
     if let Some(dev) = guard.as_mut() {
         match dev.get_key_state() {
             Ok(keys) => {
-                if let Some(k1) = char_to_evdev_key(k1_str) {
-                    diag.handle_key_event(1, keys.contains(k1));
-                }
-                if let Some(k2) = char_to_evdev_key(k2_str) {
-                    diag.handle_key_event(2, keys.contains(k2));
-                }
+                return [
+                    char_to_evdev_key(k1_str).map(|k| keys.contains(k)),
+                    char_to_evdev_key(k2_str).map(|k| keys.contains(k)),
+                ];
             }
             Err(_) => {
                 *guard = None;
             }
         }
     }
+    [None, None]
+}
+
+/// Whether each key is down, from the global async key state
+#[cfg(windows)]
+fn switch_states(k1_str: &str, k2_str: &str) -> [Option<bool>; 2] {
+    [
+        char_to_vk(k1_str).map(is_key_down),
+        char_to_vk(k2_str).map(is_key_down),
+    ]
+}
+
+/// How often the switch tester samples the keys
+#[cfg(any(windows, target_os = "linux"))]
+const SWITCH_POLL_INTERVAL: Duration = Duration::from_millis(4);
+
+/// Samples the two keys on a thread of its own every [`SWITCH_POLL_INTERVAL`]
+/// and yields a `KeyEvent` only when one changes, stamped when it was seen, so
+/// the UI is not woken 250 times a second for nothing. The first reading of each
+/// key is always sent. The thread stops once the subscription is dropped.
+#[cfg(any(windows, target_os = "linux"))]
+pub fn switch_input_stream(
+    keys: &(String, String),
+) -> impl futures_util::Stream<Item = DiagnosticsMessage> {
+    let (k1, k2) = keys.clone();
+    iced::stream::channel(
+        64,
+        move |mut output: iced::futures::channel::mpsc::Sender<DiagnosticsMessage>| async move {
+            use iced::futures::SinkExt;
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            std::thread::spawn(move || {
+                let mut last: [Option<bool>; 2] = [None, None];
+                while !tx.is_closed() {
+                    let now = switch_states(&k1, &k2);
+                    for (i, state) in now.into_iter().enumerate() {
+                        if let Some(is_down) = state {
+                            if last[i] != Some(is_down) {
+                                last[i] = Some(is_down);
+                                let _ = tx.send(DiagnosticsMessage::KeyEvent {
+                                    key_idx: i as u8 + 1,
+                                    is_down,
+                                    at: Instant::now(),
+                                });
+                            }
+                        }
+                    }
+                    std::thread::sleep(SWITCH_POLL_INTERVAL);
+                }
+            });
+            while let Some(event) = rx.recv().await {
+                if output.send(event).await.is_err() {
+                    break;
+                }
+            }
+        },
+    )
 }
 
 /// opad_tosu::ptrace_access() runs `getcap`, and view() runs every frame
@@ -329,7 +385,12 @@ pub enum DiagnosticsMessage {
     SelectTab(DiagnosticsTab),
     ToggleSound(bool),
     ResetInputTester,
-    KeyEvent { key_idx: u8, is_down: bool },
+    /// A key changed state at `at`
+    KeyEvent {
+        key_idx: u8,
+        is_down: bool,
+        at: Instant,
+    },
     SelectDisplayPattern(usize),
     TestBrightness(u32),
     PingDaemon,
@@ -387,7 +448,11 @@ impl DiagnosticsState {
     }
 
     pub fn handle_key_event(&mut self, key_idx: u8, is_down: bool) {
-        let now = Instant::now();
+        self.handle_key_event_at(key_idx, is_down, Instant::now());
+    }
+
+    /// Edge-triggered: a repeat of the key's current state changes nothing
+    pub fn handle_key_event_at(&mut self, key_idx: u8, is_down: bool, now: Instant) {
         let key_name = if key_idx == 1 { "Key 1" } else { "Key 2" };
 
         let (target, other) = if key_idx == 1 {

@@ -285,7 +285,6 @@ pub enum Message {
     CopyDiagnosticBundle,
     SaveDiagnosticBundle,
     DiagnosticBundleSaved(Result<String, String>),
-    DiagnosticsPoll,
     DiagnosticsKeyEvent {
         key: iced::keyboard::Key,
         is_down: bool,
@@ -519,20 +518,41 @@ impl App {
         open.map(Message::WindowOpened)
     }
 
+    /// Asks the daemon for what is on screen: the status always (the tray shows
+    /// it too), the rest only while the window shows something that reads it.
+    /// Navigating and opening the window poll at once, so a page never waits a
+    /// tick for its data.
     fn poll(&self) -> Task<Message> {
-        let mut tasks = vec![
-            Task::perform(ipc::request(IpcRequest::GetStatus), Message::Status),
-            Task::perform(ipc::request(IpcRequest::GetUiValues), Message::UiValues),
-            Task::perform(
+        let mut tasks = vec![Task::perform(
+            ipc::request(IpcRequest::GetStatus),
+            Message::Status,
+        )];
+        let page = self.window.is_some().then_some(self.page);
+        // Live tosu values: the Dashboard's profile and now-playing cards
+        if matches!(page, Some(Page::Dashboard | Page::Designer)) {
+            tasks.push(Task::perform(
+                ipc::request(IpcRequest::GetUiValues),
+                Message::UiValues,
+            ));
+        }
+        // restart_required drives a banner on every page
+        if page.is_some() {
+            tasks.push(Task::perform(
                 ipc::request(IpcRequest::GetUpdateStatus),
                 Message::UpdateStatus,
-            ),
-            Task::perform(
+            ));
+        }
+        // Settings' firmware card, Device's running slot, the diagnostics bundle
+        if matches!(
+            page,
+            Some(Page::Settings | Page::Device | Page::Diagnostics)
+        ) {
+            tasks.push(Task::perform(
                 ipc::request(IpcRequest::GetFirmwareUpdate),
                 Message::FirmwareOffer,
-            ),
-        ];
-        if self.page == Page::Logs && self.window.is_some() {
+            ));
+        }
+        if page == Some(Page::Logs) {
             let since_seq = if self.latest_log_seq > 0 {
                 Some(self.latest_log_seq)
             } else {
@@ -1233,8 +1253,12 @@ impl App {
                 diagnostics::DiagnosticsMessage::ResetInputTester => {
                     self.diagnostics.reset_input_tester();
                 }
-                diagnostics::DiagnosticsMessage::KeyEvent { key_idx, is_down } => {
-                    self.diagnostics.handle_key_event(key_idx, is_down);
+                diagnostics::DiagnosticsMessage::KeyEvent {
+                    key_idx,
+                    is_down,
+                    at,
+                } => {
+                    self.diagnostics.handle_key_event_at(key_idx, is_down, at);
                 }
                 diagnostics::DiagnosticsMessage::SelectDisplayPattern(idx) => {
                     self.diagnostics.test_pattern_index = idx;
@@ -1278,29 +1302,6 @@ impl App {
                     }
                 }
             },
-            Message::DiagnosticsPoll => {
-                #[cfg(windows)]
-                {
-                    let k1_vk = diagnostics::char_to_vk(&self.k1_input);
-                    let k2_vk = diagnostics::char_to_vk(&self.k2_input);
-                    if let Some(vk) = k1_vk {
-                        let down = diagnostics::is_key_down(vk);
-                        self.diagnostics.handle_key_event(1, down);
-                    }
-                    if let Some(vk) = k2_vk {
-                        let down = diagnostics::is_key_down(vk);
-                        self.diagnostics.handle_key_event(2, down);
-                    }
-                }
-                #[cfg(target_os = "linux")]
-                {
-                    diagnostics::poll_linux_switch_inputs(
-                        &mut self.diagnostics,
-                        &self.k1_input,
-                        &self.k2_input,
-                    );
-                }
-            }
             Message::DiagnosticsKeyEvent { key, is_down } => {
                 let key_str = match &key {
                     iced::keyboard::Key::Character(s) => s.to_string().to_uppercase(),
@@ -1503,7 +1504,7 @@ impl App {
             Message::DismissBanner => self.banner = None,
             Message::Designer(msg) => return self.designer.update(msg).map(Message::Designer),
 
-            Message::WindowOpened(_) => {}
+            Message::WindowOpened(_) => return self.poll(),
             Message::CloseRequested(id) => {
                 match self.tray_available {
                     Some(true) => {}
@@ -1655,7 +1656,11 @@ impl App {
             }));
             #[cfg(any(windows, target_os = "linux"))]
             subscriptions.push(
-                iced::time::every(Duration::from_millis(4)).map(|_| Message::DiagnosticsPoll),
+                Subscription::run_with(
+                    (self.k1_input.clone(), self.k2_input.clone()),
+                    diagnostics::switch_input_stream,
+                )
+                .map(Message::Diagnostics),
             );
         }
         Subscription::batch(subscriptions)

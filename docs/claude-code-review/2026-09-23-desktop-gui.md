@@ -90,7 +90,7 @@ Unconditionally unlinking `gui.sock` before bind lets two near-simultaneous laun
 
 **Suggested fix:** Bind first and only remove the file when `connect` fails with `ECONNREFUSED` (a genuinely stale socket).
 
-## 9. 4 ms `DiagnosticsPoll` drives ~250 update+view cycles/s with heavy view work — `open`
+## 9. 4 ms `DiagnosticsPoll` drives ~250 update+view cycles/s with heavy view work — `fixed` (bundle string not cached)
 
 **File:** `desktop/gui/src/main.rs:1601`
 **Category:** efficiency
@@ -101,7 +101,9 @@ A 4 ms `DiagnosticsPoll` timer drives ~250 update+view cycles per second while t
 
 **Suggested fix:** Move evdev/`GetAsyncKeyState` polling into a `Subscription` stream on its own thread that emits a `DiagnosticsMessage::KeyEvent` only on state change (`handle_key_event` is already edge-triggered), and cache the bundle string in state.
 
-## 10. Four IPC connections per poll tick regardless of visible page — `open`
+**Status note (A7, 2026-09-24):** The key polling now runs on its own thread, still every 4 ms. It emits `KeyEvent`s only on a change, each stamped with the `Instant` it was seen, so the chatter/flutter timing is not delayed by the UI queue. With the 250 Hz tick gone, `view()` and the bundle only rebuild on real messages. Measured on Linux (debug build, Diagnostics page, 8 s): 28.2% of a core before, 0.8% after. The bundle string itself is **not** cached. It embeds `chrono::Local::now()` with sub-second precision, which the preview shows live, so a cache would freeze it. That is a visible change, and not needed now that the view runs about once a second.
+
+## 10. Four IPC connections per poll tick regardless of visible page — `open` (partly fixed)
 
 **File:** `desktop/gui/src/main.rs:476`
 **Category:** efficiency
@@ -111,3 +113,13 @@ Every poll tick opens four separate IPC connections with full handshakes (`GetSt
 **Failure scenario:** Window open, daemon online: 4 connect+handshake+request round trips per second (plus a 5th on the Logs page), 3 per 3 s in the tray. `GetUiValues` is fetched even on Settings/Device/About where nothing reads `ui_values`, and `GetUpdateStatus`/`GetFirmwareUpdate` are hammered once a second though the Settings → Updates panel is the only consumer.
 
 **Suggested fix:** Poll update/firmware on Navigate to Settings plus a slow (e.g. 60 s) timer, and only fetch `UiValues` on Dashboard/Designer.
+
+**Status note (A7, 2026-09-24):** Now polled:
+- `GetStatus`: always.
+- `GetUiValues`: only on Dashboard/Designer.
+- `GetFirmwareUpdate`: only on the pages that read it (Settings' firmware card, Device's "Running slot" fallback, the Diagnostics bundle).
+- Tray only (no window): `GetStatus` alone.
+
+Navigating and opening the window poll at once. The window is 3 connections per tick on every page except About, which is 2 (it was 4 everywhere, 5 on Logs). The tray is 1 per 3 s.
+
+**Not done:** moving `GetUpdateStatus` to a 60 s timer. Its `restart_required` drives the "OPad was updated. Restart…" banner on every page, and the Settings → Updates panel shows live state. A 60 s timer would delay both by up to a minute, which is a behaviour change and needs a decision (e.g. a daemon push, or accepting the delay).
