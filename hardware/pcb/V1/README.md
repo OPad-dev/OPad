@@ -56,7 +56,7 @@ With no module plugged in, GPIO8 floats. The firmware can enable the internal pu
 - **Case coordinates** below are those of `hardware/3d/custom_case/V1/osupad_enclosure.scad`: origin at the front-left outer corner, X to the right, Y toward the screen. KiCad uses X = 100 + case X and Y = 100 − case Y, so the top of the KiCad editor is the rear of the case and the layout is not mirrored.
 - **Key centres:** case (28.475, 16.5) and (47.525, 16.5), 19.05 mm pitch, the same as the plate cutouts.
 - **Outline:** case X 12…64, Y 7…31, 1.5 mm corner radius.
-- **Mounting holes:** 2× M2 (2.2 mm NPTH) at case (15.5, 16.5) and (60.5, 16.5), on the key axis and clear of the switch footprints. The case needs M2 bosses (heat-set inserts) there. Hot-swap sockets must be held by screws, or the PCB moves when a switch is pulled.
+- **Mounting holes:** 2× M2 (2.2 mm NPTH) at case (15.5, 16.5) and (60.5, 16.5), on the key axis and clear of the switch footprints. The PCB must be held there, or it moves when a switch is pulled. Case V1.1 does this without screws: pins in the key deck go through the holes and posts on the bottom plate clamp the PCB against the deck.
 - **Height:** the PCB top is **5.0 mm below the top of the plate** (plate 1.5 mm, case z = 10.0). About 3.5 mm of free space is needed under the PCB bottom for the sockets (1.85 mm) and J1 (2.9 mm).
 - **Everything is on the bottom side** (sockets, J1, R1–R4, C1), so JLCPCB assembles one side only. The switches go in from the top through the plate.
 - **J1** sits at the rear edge, centred on the keys, with the opening facing the screen. The cable leaves toward the controller.
@@ -174,11 +174,11 @@ Running `scripts/generate_boards.py` under KiCad's Python regenerates MX and the
 | carrier bottom | socket pin tails | about 3 mm; clip them flush after soldering |
 | glass front | carrier bottom | about 19.8 mm |
 
-**The V1 case does not fit this stack.** With the 20.3° deck, the carrier's lower long edge reaches the case floor, and the four Waveshare support pillars in the bottom plate are in the way. The case revision needs:
-- the screen deck raised by about 3 mm, or a steeper deck;
-- the pillars removed, or replaced by M2 standoffs through the carrier holes;
-- bosses for the MX module holes;
-- the cable routed from the left end of the screen to the rear of the key module (a 100 mm cable is enough).
+**Use case V1.1** ([`hardware/3d/custom_case/V1.1`](../../3d/custom_case/V1.1/README.md)). The V1 case does not fit this stack: with its 20.3° deck, the carrier's lower long edge reaches the floor and the Waveshare support pillars are in the way. V1.1 does the following:
+- tilts the screen at 16° in a raised pod, with the stack 0.6 mm above the floor at its lowest point;
+- replaces the pillars with posts under the carrier's M2 holes;
+- mounts the input module without screws: pins in the key deck locate it and the bottom plate clamps it;
+- routes the cable from the carrier's left end along the left wall to the module's J1 (a 100 mm cable is enough).
 
 ---
 
@@ -259,7 +259,6 @@ Order each board as a separate item.
 | 2 | MX switches (3- or 5-pin) + keycaps | MX module |
 | 2 | MX magnetic switches (Gateron KS-20, Magnetic Jade, Wooting Lekker, Geon Raw HE) + keycaps | HE module |
 | 1 | 14 × 14 mm switch plate, 1.5 mm, held 5.0 mm above the PCB | both modules; the HE module needs it, since the switches are plate-mounted and nothing holds them to the PCB |
-| 2 | M2 × 4 mm screws + M2 heat-set inserts | MX module to the case (revised case) |
 | 4 | M2 spacers, 8.5 mm (or 8 mm + washer), optional | Carrier to the Waveshare standoffs; the sockets hold a first prototype on their own |
 
 ## Before the first order
