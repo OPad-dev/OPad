@@ -88,7 +88,7 @@ When a boot trigger fires but the bootloader port is not matched within the 3 s 
 
 **Suggested fix:** Filter the var with `.filter(|v| !v.is_empty())` before using it.
 
-## 8. `ConfigPayload → DeviceConfig` mapping duplicated between HelloAck and ConfigAck arms — `open`
+## 8. `ConfigPayload → DeviceConfig` mapping duplicated between HelloAck and ConfigAck arms — `fixed`
 
 **File:** `desktop/crates/opad-device/src/lib.rs:783`
 **Category:** reuse
@@ -99,7 +99,7 @@ The `proto::ConfigPayload → DeviceConfig` mapping (including the `== 0 → DEF
 
 **Suggested fix:** Extract one `fn device_config_from(c: &proto::ConfigPayload) -> DeviceConfig` and call it from both arms.
 
-## 9. `probe_port` re-implements the dual-framing Hello handshake — `open`
+## 9. `probe_port` re-implements the dual-framing Hello handshake — `open` (partly deduplicated)
 
 **File:** `desktop/crates/opad-device/src/lib.rs:955`
 **Category:** reuse
@@ -109,6 +109,12 @@ The `proto::ConfigPayload → DeviceConfig` mapping (including the `== 0 → DEF
 **Failure scenario:** Two copies of the framing-negotiation policy drift: a change to how the host tries framings (e.g. adding a third framing or changing the order for old-app↔new-pad compatibility) has to be made in both places, and the probe and the worker can disagree about which pads are found.
 
 **Suggested fix:** A single `fn handshake(port, window) -> Option<(HelloAck, Framing)>` used by both.
+
+**Status note (A4, 2026-09-24):** The probe now gets its framings from the worker's `hello_framing()` (0 = marked, 1 = legacy) and shares `write_hello()`, so the framing order is defined once. The single `handshake()` was **not** extracted, because neither version preserves behaviour:
+- The worker's Hello handling is not a separate phase. It runs inside the connected loop: re-Hellos while frames keep flowing (O9), pause, rehello, stale-partial reset, and the held reopen/drop via `hello_due`.
+- The two timings differ. The probe sends marked, then legacy at 225 ms, within a 450 ms window. The worker sends a Hello every 400 ms, alternating, up to 10 times.
+
+Using the worker's timing in the probe would give a legacy-only pad 50 ms instead of 225 ms to answer. The probe is the tier-2 path Windows takes for composite devices with no USB strings, so this could stop older pads being found on cold plug. Needs a decision on the probe window, then a cold-plug test with a real pad on Windows.
 
 ## 10. Unused deps and unreferenced export in `opad-ipc` — `fixed`
 

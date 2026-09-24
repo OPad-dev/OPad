@@ -377,9 +377,7 @@ impl DeviceManager {
                         last_hello = Some(Instant::now());
                         let hello_as = framing.unwrap_or(hello_framing(hellos_unanswered));
                         hellos_unanswered += 1;
-                        if let Ok(encoded) = encode_host_message_as(&hello_message(), hello_as) {
-                            let _ = port.write_all(&encoded);
-                        }
+                        let _ = write_hello(&mut port, hello_as);
                     }
 
                     // 1. Drain incoming command queue to transmit to device.
@@ -787,6 +785,31 @@ fn fit_nanopb_string(s: &str, max_size: usize) -> String {
     s[..end].to_string()
 }
 
+/// The config a HelloAck or ConfigAck reports. The pad does not store the tosu
+/// endpoint, so it is the default here.
+fn device_config_from(c: &proto::ConfigPayload) -> DeviceConfig {
+    DeviceConfig {
+        key1_hid_usage: c.key1_hid_usage,
+        key2_hid_usage: c.key2_hid_usage,
+        debounce_us: c.debounce_us,
+        brightness: c.brightness,
+        display_sleep_seconds: c.display_sleep_seconds,
+        gameplay_display_hz: c.gameplay_display_hz,
+        tosu_endpoint: opad_model::DeviceConfig::default().tosu_endpoint,
+        // 0 from firmware without configurable pins, which uses the defaults
+        key1_gpio: if c.key1_gpio == 0 {
+            opad_model::DEFAULT_KEY1_GPIO
+        } else {
+            c.key1_gpio
+        },
+        key2_gpio: if c.key2_gpio == 0 {
+            opad_model::DEFAULT_KEY2_GPIO
+        } else {
+            c.key2_gpio
+        },
+    }
+}
+
 fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>) {
     if let Some(payload) = &msg.payload {
         match payload {
@@ -816,25 +839,7 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     map_key1: 0,
                     map_key2: 0,
                 }));
-                let cfg_opt = ack.current_config.as_ref().map(|c| DeviceConfig {
-                    key1_hid_usage: c.key1_hid_usage,
-                    key2_hid_usage: c.key2_hid_usage,
-                    debounce_us: c.debounce_us,
-                    brightness: c.brightness,
-                    display_sleep_seconds: c.display_sleep_seconds,
-                    gameplay_display_hz: c.gameplay_display_hz,
-                    tosu_endpoint: opad_model::DeviceConfig::default().tosu_endpoint,
-                    key1_gpio: if c.key1_gpio == 0 {
-                        opad_model::DEFAULT_KEY1_GPIO
-                    } else {
-                        c.key1_gpio
-                    },
-                    key2_gpio: if c.key2_gpio == 0 {
-                        opad_model::DEFAULT_KEY2_GPIO
-                    } else {
-                        c.key2_gpio
-                    },
-                });
+                let cfg_opt = ack.current_config.as_ref().map(device_config_from);
                 let _ = tx.send(DeviceEvent::Connected(info, cfg_opt));
             }
             proto::device_to_host::Payload::Status(st) => {
@@ -868,26 +873,7 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                 }
             }
             proto::device_to_host::Payload::ConfigAck(ack) => {
-                let cfg_opt = ack.current_config.as_ref().map(|c| DeviceConfig {
-                    key1_hid_usage: c.key1_hid_usage,
-                    key2_hid_usage: c.key2_hid_usage,
-                    debounce_us: c.debounce_us,
-                    brightness: c.brightness,
-                    display_sleep_seconds: c.display_sleep_seconds,
-                    gameplay_display_hz: c.gameplay_display_hz,
-                    tosu_endpoint: opad_model::DeviceConfig::default().tosu_endpoint,
-                    // 0 from firmware without configurable pins, which uses the defaults
-                    key1_gpio: if c.key1_gpio == 0 {
-                        opad_model::DEFAULT_KEY1_GPIO
-                    } else {
-                        c.key1_gpio
-                    },
-                    key2_gpio: if c.key2_gpio == 0 {
-                        opad_model::DEFAULT_KEY2_GPIO
-                    } else {
-                        c.key2_gpio
-                    },
-                });
+                let cfg_opt = ack.current_config.as_ref().map(device_config_from);
                 let _ = tx.send(DeviceEvent::ConfigAck {
                     seq: msg.sequence_number,
                     success: ack.success,
@@ -1049,13 +1035,9 @@ fn probe_port(path: &str) -> bool {
     };
     let _ = port.write_data_terminal_ready(true);
     let _ = port.write_request_to_send(true);
-    let send_hello = |port: &mut Box<dyn serialport::SerialPort>, framing| {
-        encode_host_message_as(&hello_message(), framing)
-            .map(|hello| port.write_all(&hello).is_ok())
-            .unwrap_or(false)
-    };
-    // Marked first; a pad from before the marker gets a legacy Hello halfway
-    if !send_hello(&mut port, Framing::Marked) {
+    // The worker's first two framings (marked, then legacy for a pad from
+    // before the marker), the second one halfway through the window
+    if !write_hello(&mut port, hello_framing(0)) {
         return false;
     }
 
@@ -1067,7 +1049,7 @@ fn probe_port(path: &str) -> bool {
     while Instant::now() < deadline {
         if !sent_legacy && start.elapsed() >= PROBE_ANSWER_WINDOW / 2 {
             sent_legacy = true;
-            if !send_hello(&mut port, Framing::Legacy) {
+            if !write_hello(&mut port, hello_framing(1)) {
                 return false;
             }
         }
@@ -1089,6 +1071,13 @@ fn probe_port(path: &str) -> bool {
         }
     }
     false
+}
+
+/// Sends a Hello in `framing`; false if it could not be written
+fn write_hello(port: &mut Box<dyn serialport::SerialPort>, framing: Framing) -> bool {
+    encode_host_message_as(&hello_message(), framing)
+        .map(|hello| port.write_all(&hello).is_ok())
+        .unwrap_or(false)
 }
 
 fn hello_message() -> HostToDevice {
@@ -1250,10 +1239,11 @@ pub fn select_bootloader_port(
 #[cfg(test)]
 mod tests {
     use super::{
-        accept_frame, classify_port, fit_nanopb_string, handle_device_message, hello_due,
-        is_opad_device_id, normalize_mac, pad_mac, proto, select_bootloader_port, BootloaderMatch,
-        BootloaderPort, DeviceEvent, HelloDue, PadLocation, PortClass, ProbeHistory,
-        HELLOS_BEFORE_REOPEN, PORT_SCAN_INTERVAL, PROBE_RETRY_KNOWN_VID, RECONNECT_SETTLE_INTERVAL,
+        accept_frame, classify_port, device_config_from, fit_nanopb_string, handle_device_message,
+        hello_due, is_opad_device_id, normalize_mac, pad_mac, proto, select_bootloader_port,
+        BootloaderMatch, BootloaderPort, DeviceConfig, DeviceEvent, HelloDue, PadLocation,
+        PortClass, ProbeHistory, HELLOS_BEFORE_REOPEN, PORT_SCAN_INTERVAL, PROBE_RETRY_KNOWN_VID,
+        RECONNECT_SETTLE_INTERVAL,
     };
     use serialport::SerialPortType;
     use std::time::{Duration, Instant};
@@ -1518,6 +1508,31 @@ mod tests {
             Some("AABBCCDDEEFF")
         );
         assert_eq!(pad_mac(Some("7&2ABC&0&0000"), None), None);
+    }
+
+    #[test]
+    fn reported_configs_map_pin_zero_to_the_default_pins() {
+        let mut c = proto::ConfigPayload {
+            key1_hid_usage: 0x1D,
+            key2_hid_usage: 0x1B,
+            debounce_us: 5000,
+            brightness: 80,
+            display_sleep_seconds: 600,
+            gameplay_display_hz: 10,
+            ..Default::default()
+        };
+        let cfg = device_config_from(&c);
+        assert_eq!(
+            (cfg.key1_gpio, cfg.key2_gpio),
+            (opad_model::DEFAULT_KEY1_GPIO, opad_model::DEFAULT_KEY2_GPIO)
+        );
+        assert_eq!(cfg.tosu_endpoint, DeviceConfig::default().tosu_endpoint);
+        assert_eq!((cfg.key1_hid_usage, cfg.brightness), (0x1D, 80));
+
+        c.key1_gpio = 4;
+        c.key2_gpio = 5;
+        let cfg = device_config_from(&c);
+        assert_eq!((cfg.key1_gpio, cfg.key2_gpio), (4, 5));
     }
 
     #[test]

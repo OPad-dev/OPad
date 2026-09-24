@@ -305,7 +305,7 @@ Files: `firmware/main/ui/core/ui_screen.c` (~341), `firmware/main/ui/ui_port.c` 
 
 ### A4 — `opad-device` dedup (after O9) ▸ DD#8, DD#9
 Files: `desktop/crates/opad-device/src/lib.rs` (~300–363, ~731–749, ~783–802, ~955)
-- [ ] Extract `fn device_config_from(c: &proto::ConfigPayload) -> DeviceConfig` (including the `== 0 → DEFAULT_KEYn_GPIO` and `tosu_endpoint` defaults) and use it in both the HelloAck and ConfigAck arms.
+- [x] Extract `fn device_config_from(c: &proto::ConfigPayload) -> DeviceConfig` (including the `== 0 → DEFAULT_KEYn_GPIO` and `tosu_endpoint` defaults) and use it in both the HelloAck and ConfigAck arms.
 - [ ] Extract one `handshake(port, window) -> Option<(HelloAck, Framing)>` used by both `probe_port` and the worker loop. **Behaviour-preserving**: the worker's timing rules win (they are the ones the O9 fix tested); document any difference from the old `probe_port` timing in the commit and confirm `opadctl status`/GUI still finds the pad on cold plug.
 - Verify: `make check`; plug/unplug the pad, probe finds it; connect with the current firmware.
 
@@ -376,4 +376,5 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  A1  (this commit)  Claude Opus (Antigravity list)  FU#9 fixed; stale BOOTLOADER-only comment removed, device_config_set defers to write_to_nvs's IDLE check (a deferred write now logs write_to_nvs's warning instead of its own info line), counter_sync_rules.h include moved to the top, unread latency s_samples removed
 2026-09-24  A2  (this commit)  Claude Opus (Antigravity list)  FU#10 partly fixed; boot I2C scan behind CONFIG_OSUPAD_DEBUG_I2C_SCAN (default n); idle CST816 read gating NOT done (INT || TOUCH_NUM is deliberate, gating may drop a tap if INT pulses), needs an INT-waveform check on the pad; pad test pending (touch retry still fires, no scan in boot log)
 2026-09-24  A3  (this commit)  Claude Opus (Antigravity list)  FI#7 FI#9 fixed; layout copy kept in the screen's user_data and freed by new ui_screen_delete() after lv_obj_delete returns (ui_port rebuild_screen + desktop preview use it); pad.clock/pad.date formatted only when t/60 changes (identical output: no TZ, minute resolution; a host write to 69/70, which the daemon never sends, is no longer overwritten within 20 ms); pad test pending (Idle<->Playing switches, clock on the minute)
+2026-09-24  A4  (this commit)  Claude Opus (Antigravity list)  DD#8 fixed; one device_config_from() for the HelloAck and ConfigAck arms (+ unit test). DD#9 partly done and left open: probe_port takes its framing order from hello_framing() and shares write_hello(); a single handshake() not extracted (the worker's Hello logic lives inside the connected loop, and its 400 ms cadence would leave a legacy pad 50 ms of the probe's 450 ms window, which is a behaviour change on the Windows tier-2 path); needs a decision + Windows cold-plug test
 ```
