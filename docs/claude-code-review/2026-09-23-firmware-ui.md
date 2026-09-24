@@ -77,7 +77,7 @@ KPS ring uses unsigned subtraction (`total - oldest`) and treats 0 as an "unfill
 
 **Suggested fix:** Guard in `ui_init` too (return `ESP_ERR_NO_MEM`).
 
-## 7. Per-screen layout copy freed in `LV_EVENT_DELETE` before children are torn down — `open` (latent)
+## 7. Per-screen layout copy freed in `LV_EVENT_DELETE` before children are torn down — `fixed`
 
 **File:** `firmware/main/ui/core/ui_screen.c:341`
 **Category:** correctness
@@ -99,7 +99,7 @@ The per-screen `ui_layout_t` copy is freed in the screen's `LV_EVENT_DELETE` han
 
 **Suggested fix:** Return `ESP_OK` before commit when the key was not found.
 
-## 9. `update_pad_sources()` runs `localtime_r`/`strftime` every 20 ms — `open`
+## 9. `update_pad_sources()` runs `localtime_r`/`strftime` every 20 ms — `fixed`
 
 **File:** `firmware/main/ui/ui_port.c:92`
 **Category:** efficiency

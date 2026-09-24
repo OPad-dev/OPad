@@ -45,7 +45,7 @@ int preview_render(const ui_layout_t *layout, uint8_t *out_rgba)
     lv_obj_t *old = lv_screen_active();
     lv_screen_load(scr);
     if (old && old != scr) {
-        lv_obj_delete(old);
+        ui_screen_delete(old);
     }
     s_fake_ms += 1000;
     lv_obj_invalidate(scr);

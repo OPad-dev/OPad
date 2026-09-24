@@ -299,8 +299,8 @@ Files: `firmware/main/input/touch_retry.c` (~150, task loop), `firmware/main/Kco
 
 ### A3 — UI efficiency + latent lifetime ▸ FI#7, FI#9
 Files: `firmware/main/ui/core/ui_screen.c` (~341), `firmware/main/ui/ui_port.c` (~92, `rebuild_screen`)
-- [ ] Free the per-screen `ui_layout_t` copy **after** `lv_obj_delete(old)` returns in `rebuild_screen` (and on final teardown), not in the screen's `LV_EVENT_DELETE` handler. Observers must never see a dangling `user_data`.
-- [ ] Clock/date: reformat only when `t / 60` changes (or use a 1 s `lv_timer`); keep `lv_subject_copy_string` behaviour identical.
+- [x] Free the per-screen `ui_layout_t` copy **after** `lv_obj_delete(old)` returns in `rebuild_screen` (and on final teardown), not in the screen's `LV_EVENT_DELETE` handler. Observers must never see a dangling `user_data`.
+- [x] Clock/date: reformat only when `t / 60` changes (or use a 1 s `lv_timer`); keep `lv_subject_copy_string` behaviour identical.
 - Verify: `make firmware`; layouts switch Idle↔Playing repeatedly without crash; clock still updates on the minute.
 
 ### A4 — `opad-device` dedup (after O9) ▸ DD#8, DD#9
@@ -375,4 +375,5 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  (extra)  (this commit)  Claude Opus  found on the Windows VM, not in any findings file: the daemon served requests on a connection with no or a rejected handshake; per-connection loop moved to ipc_handlers::serve_connection, which refuses anything before a successful Handshake and closes after a rejection (flash-pause resume kept); duplex-stream tests + Windows VM repro re-run
 2026-09-24  A1  (this commit)  Claude Opus (Antigravity list)  FU#9 fixed; stale BOOTLOADER-only comment removed, device_config_set defers to write_to_nvs's IDLE check (a deferred write now logs write_to_nvs's warning instead of its own info line), counter_sync_rules.h include moved to the top, unread latency s_samples removed
 2026-09-24  A2  (this commit)  Claude Opus (Antigravity list)  FU#10 partly fixed; boot I2C scan behind CONFIG_OSUPAD_DEBUG_I2C_SCAN (default n); idle CST816 read gating NOT done (INT || TOUCH_NUM is deliberate, gating may drop a tap if INT pulses), needs an INT-waveform check on the pad; pad test pending (touch retry still fires, no scan in boot log)
+2026-09-24  A3  (this commit)  Claude Opus (Antigravity list)  FI#7 FI#9 fixed; layout copy kept in the screen's user_data and freed by new ui_screen_delete() after lv_obj_delete returns (ui_port rebuild_screen + desktop preview use it); pad.clock/pad.date formatted only when t/60 changes (identical output: no TZ, minute resolution; a host write to 69/70, which the daemon never sends, is no longer overwritten within 20 ms); pad test pending (Idle<->Playing switches, clock on the minute)
 ```

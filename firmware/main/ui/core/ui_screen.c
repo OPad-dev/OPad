@@ -314,17 +314,13 @@ bool ui_layout_validate(const ui_layout_t *layout, char *err, size_t err_len)
     #undef FAIL
 }
 
-static void free_layout_cb(lv_event_t *e)
-{
-    lv_free(lv_event_get_user_data(e));
-}
-
 lv_obj_t *ui_screen_create(const ui_layout_t *layout)
 {
     if (!ui_layout_validate(layout, NULL, 0)) {
         return NULL;
     }
-    // Observers keep pointers to the widget specs: give the screen its own copy
+    // Observers keep pointers to the widget specs: give the screen its own copy,
+    // freed by ui_screen_delete once the widgets are gone
     ui_layout_t *copy = lv_malloc(sizeof(ui_layout_t));
     if (!copy) {
         return NULL;
@@ -337,7 +333,7 @@ lv_obj_t *ui_screen_create(const ui_layout_t *layout)
     lv_obj_set_size(scr, UI_SCREEN_W, UI_SCREEN_H);
     lv_obj_set_style_bg_color(scr, lv_color_hex(copy->background), 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
-    lv_obj_add_event_cb(scr, free_layout_cb, LV_EVENT_DELETE, copy);
+    lv_obj_set_user_data(scr, copy);
 
     for (int i = 0; i < copy->count; i++) {
         const ui_widget_t *w = &copy->widgets[i];
@@ -352,4 +348,16 @@ lv_obj_t *ui_screen_create(const ui_layout_t *layout)
         }
     }
     return scr;
+}
+
+void ui_screen_delete(lv_obj_t *scr)
+{
+    if (!scr) {
+        return;
+    }
+    // LV_EVENT_DELETE reaches the screen before its children are torn down, so
+    // the layout copy is only freed after lv_obj_delete has returned
+    ui_layout_t *copy = lv_obj_get_user_data(scr);
+    lv_obj_delete(scr);
+    lv_free(copy);
 }

@@ -36,6 +36,7 @@ static volatile bool s_asleep;
 static uint64_t s_kps_ring[KPS_WINDOW];
 static int s_kps_pos;
 static int s_kps_fill;  // samples in the ring, up to KPS_WINDOW
+static time_t s_clock_minute = -1;  // t / 60 of the last formatted pad.clock/pad.date
 
 // ---- helpers (LVGL lock held) -------------------------------------------------------
 
@@ -56,9 +57,7 @@ static void rebuild_screen(uint8_t screen)
     if (s_active_screen == screen) {
         lv_screen_load(fresh);
     }
-    if (old) {
-        lv_obj_delete(old);
-    }
+    ui_screen_delete(old);
 }
 
 static void update_pad_sources(int64_t now_us)
@@ -98,8 +97,10 @@ static void update_pad_sources(int64_t now_us)
     ui_data_set_number(UI_SRC_STATUS_PC, usb_cdc_is_connected());
     ui_data_set_number(UI_SRC_PAD_UPTIME, (double)(now_us / 1000000 * 1000));
 
+    // Both strings have minute resolution (no TZ on the device): format once a minute
     time_t t = time(NULL);
-    if (t > 1600000000) {  // set by the host
+    if (t > 1600000000 && t / 60 != s_clock_minute) {  // set by the host
+        s_clock_minute = t / 60;
         struct tm tm;
         localtime_r(&t, &tm);
         char buf[24];

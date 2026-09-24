@@ -98,6 +98,9 @@ bool ui_layout_validate(const ui_layout_t *layout, char *err, size_t err_len);
 /** Build a new LVGL screen object (not loaded) for a validated layout. */
 lv_obj_t *ui_screen_create(const ui_layout_t *layout);
 
+/** Delete a screen from ui_screen_create (or any other screen) and free its layout copy. */
+void ui_screen_delete(lv_obj_t *scr);
+
 #ifdef __cplusplus
 }
 #endif
