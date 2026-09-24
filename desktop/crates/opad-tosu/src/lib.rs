@@ -687,6 +687,27 @@ fn disable_dashboard_autostart(bin: &Path) {
     }
 }
 
+/// Hands each line of one of tosu's output streams to `cb` (ANSI stripped)
+/// and appends it to the log file as it came
+async fn pump_lines(
+    reader: impl tokio::io::AsyncRead + Unpin,
+    cb: LogLineCallback,
+    log_file: Arc<std::sync::Mutex<Option<std::fs::File>>>,
+) {
+    use tokio::io::AsyncBufReadExt;
+    let mut lines = tokio::io::BufReader::new(reader).lines();
+    while let Ok(Some(line)) = lines.next_line().await {
+        let clean = strip_ansi(&line);
+        cb(&clean);
+        if let Ok(mut guard) = log_file.lock() {
+            if let Some(f) = guard.as_mut() {
+                use std::io::Write;
+                let _ = writeln!(f, "{}", line);
+            }
+        }
+    }
+}
+
 fn launch_tosu(
     bin: &Path,
     log_path: &Path,
@@ -720,40 +741,10 @@ fn launch_tosu(
         ));
 
         if let Some(p) = stdout {
-            let cb_clone = cb.clone();
-            let file_clone = log_file.clone();
-            tokio::spawn(async move {
-                use tokio::io::AsyncBufReadExt;
-                let mut lines = tokio::io::BufReader::new(p).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    let clean = strip_ansi(&line);
-                    cb_clone(&clean);
-                    if let Ok(mut guard) = file_clone.lock() {
-                        if let Some(f) = guard.as_mut() {
-                            use std::io::Write;
-                            let _ = writeln!(f, "{}", line);
-                        }
-                    }
-                }
-            });
+            tokio::spawn(pump_lines(p, cb.clone(), log_file.clone()));
         }
         if let Some(p) = stderr {
-            let cb_clone = cb;
-            let file_clone = log_file;
-            tokio::spawn(async move {
-                use tokio::io::AsyncBufReadExt;
-                let mut lines = tokio::io::BufReader::new(p).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    let clean = strip_ansi(&line);
-                    cb_clone(&clean);
-                    if let Ok(mut guard) = file_clone.lock() {
-                        if let Some(f) = guard.as_mut() {
-                            use std::io::Write;
-                            let _ = writeln!(f, "{}", line);
-                        }
-                    }
-                }
-            });
+            tokio::spawn(pump_lines(p, cb, log_file));
         }
         Ok(child)
     } else {

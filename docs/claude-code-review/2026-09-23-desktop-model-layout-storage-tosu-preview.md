@@ -88,7 +88,7 @@ Stub mode emits `rerun-if-changed` only for `managed_components` and `preview_st
 
 **Suggested fix:** Track `[` after ESC and consume until a final byte `0x40..0x7E` for CSI; for `]` consume until BEL or `ESC \`.
 
-## 8. `opad-ui-preview` re-declares wire constants and hardcodes source ids — `open`
+## 8. `opad-ui-preview` re-declares wire constants and hardcodes source ids — `fixed`
 
 **File:** `desktop/crates/opad-ui-preview/src/lib.rs:8`
 **Category:** reuse
@@ -110,7 +110,7 @@ Stub mode emits `rerun-if-changed` only for `managed_components` and `preview_st
 
 **Suggested fix:** `let prefix = install_prefix()?; Ok(if cfg!(windows) { prefix } else { prefix.join("lib").join("opad") })`.
 
-## 10. `launch_tosu` spawns two byte-identical reader tasks — `open`
+## 10. `launch_tosu` spawns two byte-identical reader tasks — `fixed`
 
 **File:** `desktop/crates/opad-tosu/src/lib.rs:620`
 **Category:** simplification

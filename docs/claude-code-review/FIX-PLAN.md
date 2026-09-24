@@ -317,8 +317,8 @@ Files: `desktop/daemon/src/main.rs` (~175–209)
 
 ### A6 — ui-preview / tosu dedup ▸ DM#8, DM#10
 Files: `desktop/crates/opad-ui-preview/src/lib.rs` (~8, `sample_values`), `desktop/crates/opad-ui-preview/Cargo.toml`, `desktop/crates/opad-tosu/src/lib.rs` (~620)
-- [ ] `opad-ui-preview`: depend on `opad-model` normally; use `ui_source::*` names in `sample_values()`; derive `SCREEN_W`/`SCREEN_H`/`MAX_WIDGETS`/`LABEL_MAX`/`SUFFIX_MAX` from `opad_layout` (note `LABEL_MAX_BYTES = 31` vs `LABEL_MAX = 32` — determine which is correct from the firmware header and use one).
-- [ ] `launch_tosu`: single generic `pump(reader, cb, file)` for stdout and stderr.
+- [x] `opad-ui-preview`: depend on `opad-model` normally; use `ui_source::*` names in `sample_values()`; derive `SCREEN_W`/`SCREEN_H`/`MAX_WIDGETS`/`LABEL_MAX`/`SUFFIX_MAX` from `opad_layout` (note `LABEL_MAX_BYTES = 31` vs `LABEL_MAX = 32` — determine which is correct from the firmware header and use one).
+- [x] `launch_tosu`: single generic `pump(reader, cb, file)` for stdout and stderr.
 - Verify: `make check` (includes `source_ids_match_firmware`).
 
 ### A7 — GUI polling efficiency (after S9) ▸ DG#9, DG#10
@@ -378,4 +378,5 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  A3  (this commit)  Claude Opus (Antigravity list)  FI#7 FI#9 fixed; layout copy kept in the screen's user_data and freed by new ui_screen_delete() after lv_obj_delete returns (ui_port rebuild_screen + desktop preview use it); pad.clock/pad.date formatted only when t/60 changes (identical output: no TZ, minute resolution; a host write to 69/70, which the daemon never sends, is no longer overwritten within 20 ms); pad test pending (Idle<->Playing switches, clock on the minute)
 2026-09-24  A4  (this commit)  Claude Opus (Antigravity list)  DD#8 fixed; one device_config_from() for the HelloAck and ConfigAck arms (+ unit test). DD#9 partly done and left open: probe_port takes its framing order from hello_framing() and shares write_hello(); a single handshake() not extracted (the worker's Hello logic lives inside the connected loop, and its 400 ms cadence would leave a legacy pad 50 ms of the probe's 450 ms window, which is a behaviour change on the Windows tier-2 path); needs a decision + Windows cold-plug test
 2026-09-24  A5  (this commit)  Claude Opus (Antigravity list)  DA#10 fixed; classify_tosu_line() shared by the log-file tail and the live callback (tail still strips ANSI: the file keeps raw lines; the callback gets stripped ones), banner uses CARGO_PKG_VERSION (now logs v1.0.0-rc), classifier unit test
+2026-09-24  A6  (this commit)  Claude Opus (Antigravity list)  DM#8 DM#10 fixed; opad-ui-preview depends on opad-model, sample_values() uses ui_source names (same ids/values/order), sizes derived from opad_layout (LABEL_MAX = LABEL_MAX_BYTES + 1 = 32 and SUFFIX_MAX = 12: both were right, bytes vs C field with NUL per ui_core.h); launch_tosu's two reader tasks are one pump_lines()
 ```

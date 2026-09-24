@@ -10,9 +10,9 @@ description = "Pixel-exact preview of OPad screen layouts: compiles the firmware
 [dependencies]
 png = "0.17"
 opad-layout = { path = "../opad-layout" }
+opad-model = { path = "../opad-model" }
 
 [dev-dependencies]
-opad-model = { path = "../opad-model" }
 serde_json.workspace = true
 
 [build-dependencies]
