@@ -141,6 +141,18 @@ jobs:
               exit 1
             fi
           done
+          # tosu targets glibc 2.28 (see "Build bundled tosu"). Its native
+          # addons are what the rebuild makes portable, and they are packed
+          # inside the binary, so check them here where they are still files.
+          for bin in build/tosu/tosu build/tosu-src/packages/tosu/dist/*.node; do
+            [ -f "$bin" ] || { echo "ERROR: $bin is missing" >&2; exit 1; }
+            max_ver=$(objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -n 1)
+            echo "$bin: $max_ver"
+            if dpkg --compare-versions "${max_ver#GLIBC_}" gt "2.28"; then
+              echo "ERROR: $bin needs $max_ver, above glibc 2.28" >&2
+              exit 1
+            fi
+          done
 
       - name: Build packages
         env:
@@ -161,6 +173,15 @@ jobs:
             echo "$bin: $max_ver"
             if dpkg --compare-versions "${max_ver#GLIBC_}" gt "2.31"; then
               echo "ERROR: $bin needs $max_ver, above glibc 2.31" >&2
+              exit 1
+            fi
+          done
+          for bin in pkgcheck/{deb,rpm,squashfs-root}/usr/lib/opad/tosu/tosu; do
+            [ -f "$bin" ] || { echo "ERROR: $bin is missing" >&2; exit 1; }
+            max_ver=$(objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -n 1)
+            echo "$bin: $max_ver"
+            if dpkg --compare-versions "${max_ver#GLIBC_}" gt "2.28"; then
+              echo "ERROR: $bin needs $max_ver, above glibc 2.28" >&2
               exit 1
             fi
           done

@@ -20,14 +20,14 @@ set -u
 echo "===== $PRETTY_NAME (glibc $(ldd --version | head -1 | grep -o "[0-9.]*$")) ====="
 fail() { echo "FAIL: $*"; FAILED=1; }
 FAILED=0
+# Nothing is installed ahead of the package: setcap/getcap must come in as its
+# dependencies, or the cap_sys_ptrace check below fails
 if command -v apt-get >/dev/null; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq >/dev/null
-  apt-get install -y -qq libcap2-bin procps >/dev/null 2>&1
   apt-get install -y -qq /dist/*.deb >/tmp/install.log 2>&1 || { tail -5 /tmp/install.log; fail "install"; }
   REMOVE="apt-get remove -y -qq opad"
 else
-  dnf install -y -q libcap procps-ng >/dev/null 2>&1
   dnf install -y -q /dist/*.rpm >/tmp/install.log 2>&1 || { tail -5 /tmp/install.log; fail "install"; }
   REMOVE="dnf remove -y -q opad"
 fi

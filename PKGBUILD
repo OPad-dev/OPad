@@ -34,6 +34,8 @@ makedepends=(
     'git'
     'pnpm'
     'nodejs'
+    'curl'
+    'unzip'
 )
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')
@@ -42,6 +44,8 @@ build() {
     cd "$srcdir/$pkgname-$pkgver"
     make all
     make tosu TOSU_STANDALONE=0
+    # The pinned, checksummed espflash; `make install` puts it in /usr/lib/opad/bin
+    make espflash
 }
 
 check() {

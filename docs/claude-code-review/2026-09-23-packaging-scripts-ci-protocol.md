@@ -25,21 +25,21 @@ Signs the release manifest over a locally rebuilt `dist/` (after `rm -rf dist` a
 
 **Suggested fix:** Use `${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}`.
 
-## 3. `test_packages.sh` pre-installs `libcap2-bin` the .deb does not depend on — `open`
+## 3. `test_packages.sh` pre-installs `libcap2-bin` the .deb does not depend on — `fixed`
 
 **File:** `scripts/release/test_packages.sh:26`
 **Category:** correctness
 
 Installs `libcap2-bin`/`procps` before the package, while the .deb has no `libcap2-bin` Depends and postinst does `setcap ... || true`; the cap_sys_ptrace check passes in the test but a host without `setcap` silently gets a tosu that can't read osu! memory.
 
-## 4. Arch `PKGBUILD` never builds or depends on espflash — `open`
+## 4. Arch `PKGBUILD` never builds or depends on espflash — `fixed`
 
 **File:** `packaging/linux/arch/PKGBUILD:41`
 **Category:** correctness
 
 Never runs `make espflash` and has no espflash dependency, so the Arch install has no `/usr/lib/opad/bin/espflash`; `flash.rs` falls back to a bare `espflash` on PATH, which isn't there, so firmware flashing fails and the version pin is lost.
 
-## 5. Release glibc assertion skips the tosu binary — `open`
+## 5. Release glibc assertion skips the tosu binary — `fixed` (objdump assertion; no glibc ≤ 2.31 distro added)
 
 **File:** `.github/workflows/release.yml:154`
 **Category:** correctness
