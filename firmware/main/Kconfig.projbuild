@@ -37,4 +37,12 @@ menu "OPad Testing and Benchmark"
         help
             Free GPIO pin on Waveshare header (default 4).
 
+    config OSUPAD_DEBUG_I2C_SCAN
+        bool "Log every device on the touch I2C bus at boot"
+        default n
+        help
+            Probes all 126 I2C addresses before touch retry starts and logs the ones
+            that answer. Each missing address can take up to 10 ms, so this adds up
+            to ~1.3 s to boot.
+
 endmenu

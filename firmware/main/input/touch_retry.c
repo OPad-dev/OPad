@@ -144,7 +144,8 @@ esp_err_t touch_retry_init(void)
         return err;
     }
 
-    // 3. Scan I2C bus to discover devices
+#if CONFIG_OSUPAD_DEBUG_I2C_SCAN
+    // 3. Scan I2C bus to discover devices (debug only: up to ~1.3 s of boot)
     ESP_LOGI(TAG, "Scanning I2C bus (SDA: GPIO%d, SCL: GPIO%d)...", BOARD_I2C_SDA_GPIO, BOARD_I2C_SCL_GPIO);
     int devices_found = 0;
     for (uint16_t addr = 1; addr < 127; addr++) {
@@ -154,6 +155,7 @@ esp_err_t touch_retry_init(void)
         }
     }
     ESP_LOGI(TAG, "I2C scan complete (%d devices found)", devices_found);
+#endif
 
     // 4. Try reading CST816 Chip ID
     uint8_t chip_id = 0;

@@ -99,7 +99,7 @@ The staged config is committed to `s_config` before `board_keys_set_gpio` runs; 
 
 **Failure scenario:** Maintenance cost only: the first comment now contradicts the framing rules documented in the second (a reader following it would think only `BOOTLOADER` is handled and that a length-prefix check is what protects it); `device_config_set` can call `write_to_nvs` unconditionally since it already defers when not IDLE; `s_samples` is redundant with the bucket sum computed in `latency_stats_get`.
 
-## 10. 126-address I2C probe at boot; 100 Hz unconditional CST816 read — `open`
+## 10. 126-address I2C probe at boot; 100 Hz unconditional CST816 read — `open` (boot scan fixed; idle polling open)
 
 **File:** `firmware/main/input/touch_retry.c:150`
 **Category:** efficiency
@@ -109,3 +109,5 @@ The staged config is committed to `s_config` before `board_keys_set_gpio` runs; 
 **Failure scenario:** Startup path: with a NACKing/absent touch controller each probe can hit the 10 ms timeout → up to 1.26 s added to `app_main` before touch retry is live; at runtime the 100 Hz unconditional I2C read against a sleeping CST816 returns errors every 10 ms (and on IDF 5.x the `i2c_master` driver logs a NACK error), burning core-1 time and UART log bandwidth.
 
 **Suggested fix:** Drop the scan (or gate it behind a debug Kconfig) and only read `TOUCH_NUM` when INT is active or a touch was recently down.
+
+**Status note (A2, 2026-09-24):** The boot scan is now behind `CONFIG_OSUPAD_DEBUG_I2C_SCAN` (default off). The idle-read gating was **not** applied because it is not provably behaviour-preserving. The loop treats a touch as down on `INT low || TOUCH_NUM > 0` on purpose (3fec148), so the register read catches touches the 10 ms INT sample misses. If the CST816 pulses INT instead of holding it low, reading only after INT is seen would delay or drop the first sample of a tap. This needs a measurement on the pad (INT waveform while tapping and holding) before the read is gated.

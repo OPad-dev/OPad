@@ -293,7 +293,7 @@ Files: `firmware/main/usb/usb_cdc.c` (~140–147), `firmware/main/config/device_
 
 ### A2 — Touch retry boot scan and idle polling ▸ FU#10
 Files: `firmware/main/input/touch_retry.c` (~150, task loop), `firmware/main/Kconfig.projbuild`
-- [ ] Gate the 126-address I2C scan behind a new Kconfig option (default off).
+- [x] Gate the 126-address I2C scan behind a new Kconfig option (default off).
 - [ ] In the task loop, read the CST816 register only when INT is active or a touch was seen in the last ~100 ms; otherwise sleep without an I2C transaction.
 - Verify: `make firmware`; on the pad, touch retry still works (tap the screen during a map), boot log no longer shows the scan, no periodic NACK errors.
 
@@ -374,4 +374,5 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  S5-S13 Windows  360b4f5  Claude Opus (Sonnet list)  Windows VM run (osupad-win11, Rust 1.98): workspace fmt/clippy -D warnings/tests incl. GUI; found and fixed DA#7's copy fallback fsyncing a read-only handle (FlushFileBuffers needs write access); DG#6 pipe test added and passing; end to end with real binaries: opadctl bootloader resumes in <1 s via ResumeDevice, a client dropping after PrepareFlash gets the pad resumed, monitor --level validated; pad not passed through (flash path/PID flip is the known VM limit)
 2026-09-24  (extra)  (this commit)  Claude Opus  found on the Windows VM, not in any findings file: the daemon served requests on a connection with no or a rejected handshake; per-connection loop moved to ipc_handlers::serve_connection, which refuses anything before a successful Handshake and closes after a rejection (flash-pause resume kept); duplex-stream tests + Windows VM repro re-run
 2026-09-24  A1  (this commit)  Claude Opus (Antigravity list)  FU#9 fixed; stale BOOTLOADER-only comment removed, device_config_set defers to write_to_nvs's IDLE check (a deferred write now logs write_to_nvs's warning instead of its own info line), counter_sync_rules.h include moved to the top, unread latency s_samples removed
+2026-09-24  A2  (this commit)  Claude Opus (Antigravity list)  FU#10 partly fixed; boot I2C scan behind CONFIG_OSUPAD_DEBUG_I2C_SCAN (default n); idle CST816 read gating NOT done (INT || TOUCH_NUM is deliberate, gating may drop a tap if INT pulses), needs an INT-waveform check on the pad; pad test pending (touch retry still fires, no scan in boot log)
 ```
