@@ -311,8 +311,8 @@ Files: `desktop/crates/opad-device/src/lib.rs` (~300–363, ~731–749, ~783–8
 
 ### A5 — Daemon main.rs dedup ▸ DA#10
 Files: `desktop/daemon/src/main.rs` (~175–209)
-- [ ] One `fn classify_tosu_line(&str) -> LogLevel` used by both the startup log-tail and the live callback (input is already ANSI-stripped by the supervisor; do not strip twice).
-- [ ] Startup banner uses `env!("CARGO_PKG_VERSION")`.
+- [x] One `fn classify_tosu_line(&str) -> LogLevel` used by both the startup log-tail and the live callback (input is already ANSI-stripped by the supervisor; do not strip twice).
+- [x] Startup banner uses `env!("CARGO_PKG_VERSION")`.
 - Verify: `make check`.
 
 ### A6 — ui-preview / tosu dedup ▸ DM#8, DM#10
@@ -377,4 +377,5 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  A2  (this commit)  Claude Opus (Antigravity list)  FU#10 partly fixed; boot I2C scan behind CONFIG_OSUPAD_DEBUG_I2C_SCAN (default n); idle CST816 read gating NOT done (INT || TOUCH_NUM is deliberate, gating may drop a tap if INT pulses), needs an INT-waveform check on the pad; pad test pending (touch retry still fires, no scan in boot log)
 2026-09-24  A3  (this commit)  Claude Opus (Antigravity list)  FI#7 FI#9 fixed; layout copy kept in the screen's user_data and freed by new ui_screen_delete() after lv_obj_delete returns (ui_port rebuild_screen + desktop preview use it); pad.clock/pad.date formatted only when t/60 changes (identical output: no TZ, minute resolution; a host write to 69/70, which the daemon never sends, is no longer overwritten within 20 ms); pad test pending (Idle<->Playing switches, clock on the minute)
 2026-09-24  A4  (this commit)  Claude Opus (Antigravity list)  DD#8 fixed; one device_config_from() for the HelloAck and ConfigAck arms (+ unit test). DD#9 partly done and left open: probe_port takes its framing order from hello_framing() and shares write_hello(); a single handshake() not extracted (the worker's Hello logic lives inside the connected loop, and its 400 ms cadence would leave a legacy pad 50 ms of the probe's 450 ms window, which is a behaviour change on the Windows tier-2 path); needs a decision + Windows cold-plug test
+2026-09-24  A5  (this commit)  Claude Opus (Antigravity list)  DA#10 fixed; classify_tosu_line() shared by the log-file tail and the live callback (tail still strips ANSI: the file keeps raw lines; the callback gets stripped ones), banner uses CARGO_PKG_VERSION (now logs v1.0.0-rc), classifier unit test
 ```

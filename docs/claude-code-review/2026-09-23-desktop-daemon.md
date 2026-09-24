@@ -98,7 +98,7 @@ AppImage self-replacement uses `std::fs::rename` from the state directory to `$A
 
 **Suggested fix:** Keep the state only behind the `Arc<Mutex>` (controller borrows it under the lock) or diff just the fields IPC handlers may write.
 
-## 10. Duplicated tosu log classifier; hardcoded `v1.0.0` banner — `open`
+## 10. Duplicated tosu log classifier; hardcoded `v1.0.0` banner — `fixed`
 
 **File:** `desktop/daemon/src/main.rs:175`
 **Category:** simplification

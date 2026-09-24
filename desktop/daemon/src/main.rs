@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
         std::process::exit(1);
     }));
 
-    info!("Starting opad-daemon v1.0.0");
+    info!("Starting opad-daemon v{}", env!("CARGO_PKG_VERSION"));
 
     let socket_path = get_socket_path();
     if opad_ipc::connect(&socket_path).await.is_ok() {
@@ -179,14 +179,12 @@ async fn main() -> Result<()> {
                 let clean = opad_tosu::strip_ansi(line);
                 let trimmed = clean.trim();
                 if !trimmed.is_empty() {
-                    let level = if trimmed.contains("error") || trimmed.contains("Error") {
-                        opad_model::LogLevel::Error
-                    } else if trimmed.contains("warn") || trimmed.contains("Warn") {
-                        opad_model::LogLevel::Warn
-                    } else {
-                        opad_model::LogLevel::Info
-                    };
-                    log_hub.push(LogSource::Tosu, level, "tosu", trimmed);
+                    log_hub.push(
+                        LogSource::Tosu,
+                        classify_tosu_line(trimmed),
+                        "tosu",
+                        trimmed,
+                    );
                 }
             }
         }
@@ -196,14 +194,7 @@ async fn main() -> Result<()> {
     let tosu_cb = Arc::new(move |line: &str| {
         let clean = line.trim();
         if !clean.is_empty() {
-            let level = if clean.contains("error") || clean.contains("Error") {
-                opad_model::LogLevel::Error
-            } else if clean.contains("warn") || clean.contains("Warn") {
-                opad_model::LogLevel::Warn
-            } else {
-                opad_model::LogLevel::Info
-            };
-            lh.push(LogSource::Tosu, level, "tosu", clean);
+            lh.push(LogSource::Tosu, classify_tosu_line(clean), "tosu", clean);
         }
     });
 
@@ -573,9 +564,33 @@ async fn main() -> Result<()> {
     }
 }
 
+/// Level of a tosu output line (ANSI already stripped), from its wording
+fn classify_tosu_line(line: &str) -> opad_model::LogLevel {
+    if line.contains("error") || line.contains("Error") {
+        opad_model::LogLevel::Error
+    } else if line.contains("warn") || line.contains("Warn") {
+        opad_model::LogLevel::Warn
+    } else {
+        opad_model::LogLevel::Info
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tosu_lines_are_classified_by_their_wording() {
+        use opad_model::LogLevel;
+        assert_eq!(
+            classify_tosu_line("[tosu] Error: port in use"),
+            LogLevel::Error
+        );
+        assert_eq!(classify_tosu_line("socket error"), LogLevel::Error);
+        assert_eq!(classify_tosu_line("Warn: slow memory read"), LogLevel::Warn);
+        assert_eq!(classify_tosu_line("Server started"), LogLevel::Info);
+    }
+
     use crate::ipc_handlers::handle_ipc_request;
     use crate::runtime::DaemonState;
     use opad_ipc::{IpcRequest, IpcResponse};
