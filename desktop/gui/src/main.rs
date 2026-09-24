@@ -242,6 +242,10 @@ pub struct App {
     /// The daemon fetch cursor: the seq of the last daemon entry received.
     /// Only daemon responses move it (GetLogEntries is exclusive of it).
     pub latest_log_seq: u64,
+    /// When GetUpdateStatus was last asked. Update state changes on the order
+    /// of hours, so it is polled every UPDATE_STATUS_POLL, at once on opening
+    /// Settings and after an update action; `None` forces the next poll.
+    update_status_polled_at: Option<std::time::Instant>,
     /// Seq for entries the GUI logs itself (source Program), a separate
     /// numbering from the daemon's
     local_log_seq: u64,
@@ -261,6 +265,10 @@ pub struct App {
 
 /// Shown when no tray host appeared: closing the window then quits the app
 /// rather than leaving it running with no way back to it
+/// How often the update state is re-asked while the window is open. Worst
+/// case the "restart to finish updating" banner shows this much late.
+const UPDATE_STATUS_POLL: Duration = Duration::from_secs(60);
+
 const NO_TRAY_BANNER: &str =
     "No system tray found; the app will quit when closed. The pad keeps working.";
 
@@ -447,6 +455,7 @@ impl App {
             config_loaded: false,
             logs: Vec::new(),
             latest_log_seq: 0,
+            update_status_polled_at: None,
             local_log_seq: 0,
             log_cleared_at: None,
             log_filter_level: None,
@@ -522,7 +531,7 @@ impl App {
     /// it too), the rest only while the window shows something that reads it.
     /// Navigating and opening the window poll at once, so a page never waits a
     /// tick for its data.
-    fn poll(&self) -> Task<Message> {
+    fn poll(&mut self) -> Task<Message> {
         let mut tasks = vec![Task::perform(
             ipc::request(IpcRequest::GetStatus),
             Message::Status,
@@ -535,8 +544,13 @@ impl App {
                 Message::UiValues,
             ));
         }
-        // restart_required drives a banner on every page
-        if page.is_some() {
+        // restart_required drives a banner on every page, but it changes
+        // rarely: a slow poll, forced when Settings opens or an update ran
+        let update_status_due = self
+            .update_status_polled_at
+            .is_none_or(|t| t.elapsed() >= UPDATE_STATUS_POLL);
+        if page.is_some() && update_status_due {
+            self.update_status_polled_at = Some(std::time::Instant::now());
             tasks.push(Task::perform(
                 ipc::request(IpcRequest::GetUpdateStatus),
                 Message::UpdateStatus,
@@ -613,6 +627,10 @@ impl App {
         match message {
             Message::Navigate(page) => {
                 self.page = page;
+                if page == Page::Settings {
+                    // The Updates panel lives here; show it fresh
+                    self.update_status_polled_at = None;
+                }
                 let mut tasks = vec![self.poll()];
                 if page == Page::Designer
                     && self.daemon_online
@@ -1499,6 +1517,8 @@ impl App {
                     Ok(IpcResponse::Error(e)) | Err(e) => format!("Error: {}", e),
                     Ok(other) => format!("Unexpected response: {:?}", other),
                 });
+                // An install may just have changed the update state
+                self.update_status_polled_at = None;
                 return self.poll();
             }
             Message::DismissBanner => self.banner = None,

@@ -324,7 +324,7 @@ Files: `desktop/crates/opad-ui-preview/src/lib.rs` (~8, `sample_values`), `deskt
 ### A7 — GUI polling efficiency (after S9) ▸ DG#9, DG#10
 Files: `desktop/gui/src/main.rs` (~476, ~1601), diagnostics page module
 - [x] Diagnostics: move evdev/`GetAsyncKeyState` polling into a `Subscription` stream on its own thread emitting `KeyEvent` only on state change; cache the pretty-printed bundle string in state and regenerate only when its inputs change.
-- [ ] Poll only what the visible page needs: `GetStatus` always; `GetUiValues` on Dashboard/Designer; `GetUpdateStatus`/`GetFirmwareUpdate` on navigating to Settings plus a 60 s timer.
+- [x] Poll only what the visible page needs: `GetStatus` always; `GetUiValues` on Dashboard/Designer; `GetUpdateStatus`/`GetFirmwareUpdate` on navigating to Settings plus a 60 s timer.
 - Verify: `make check`; run the GUI; CPU at idle on Diagnostics drops; Settings→Updates still shows fresh state.
 
 ### A8 — CLI UX cleanups ▸ DC#8, DC#9
@@ -387,4 +387,5 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  A4b  (this commit)  Claude Opus  DD#9 fixed on user decision (unify anyway); one Handshake state machine (retry cadence, framing order, HelloAck handling, O9 reopen/drop rules) drives both the worker loop and probe_port via probe_handshake(); probe: Marked at 0 ms, Legacy at 400 ms, give up at 800 ms (legacy pad gets 400 ms, was 225), PROBE_ANSWER_WINDOW/PROBE_READ_TIMEOUT removed, probe read timeout 10 ms; 4 unit tests; Windows cold-plug test with a legacy pad pending
 2026-09-24  O12  (this commit)  Claude Opus  DA#9 fixed on user go-ahead; apply_event mem::swaps the shared DaemonState into the controller for one event and back under the same lock (no clone either way); replacement_was_pending replaces the controller.state read used for the takeover reconciliation; the two between-event readers in main.rs (clock-jump time sync, SQLite reconnect device id) read the shared state briefly under the lock; on_event and all daemon test assertions unchanged
 2026-09-24  A2b  (this commit)  Claude Opus  FU#10 fixed on user decision (less CPU; touch is the third button): touch task sleeps on a falling-edge INT ISR (task notification) with a 1 s safety read while idle, confirms over I2C, then polls at 100 Hz only while the touch is down (release logic unchanged: 2 consecutive up reads); falls back to the old 100 Hz poll if the ISR cannot be registered; robust to INT held or pulsed; pad test pending (tap = press, hold = held, release = clean release, boot log shows "INT wake")
+2026-09-24  A7b  (this commit)  Claude Opus  DG#10 fixed on user decision (60 s is fine): GetUpdateStatus asked every UPDATE_STATUS_POLL (60 s) instead of every tick, forced at once on Navigate(Settings) and after any ActionDone (an install may have changed it); poll() is &mut self to record the time; GUI not run by hand
 ```

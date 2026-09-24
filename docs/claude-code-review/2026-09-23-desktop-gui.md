@@ -103,7 +103,7 @@ A 4 ms `DiagnosticsPoll` timer drives ~250 update+view cycles per second while t
 
 **Status note (A7, 2026-09-24):** The key polling now runs on its own thread, still every 4 ms. It emits `KeyEvent`s only on a change, each stamped with the `Instant` it was seen, so the chatter/flutter timing is not delayed by the UI queue. With the 250 Hz tick gone, `view()` and the bundle only rebuild on real messages. Measured on Linux (debug build, Diagnostics page, 8 s): 28.2% of a core before, 0.8% after. The bundle string itself is **not** cached. It embeds `chrono::Local::now()` with sub-second precision, which the preview shows live, so a cache would freeze it. That is a visible change, and not needed now that the view runs about once a second.
 
-## 10. Four IPC connections per poll tick regardless of visible page — `open` (partly fixed)
+## 10. Four IPC connections per poll tick regardless of visible page — `fixed`
 
 **File:** `desktop/gui/src/main.rs:476`
 **Category:** efficiency
