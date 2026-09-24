@@ -7,9 +7,7 @@ use opad_model::ui_source::SourceValue;
 use opad_model::{CounterState, DeviceConfig, DeviceInfo};
 pub use opad_protocol::proto;
 use opad_protocol::proto::{host_to_device, DeviceToHost, HostToDevice};
-use opad_protocol::{
-    decode_device_message, decode_device_message_framed, encode_host_message_as, Framing,
-};
+use opad_protocol::{decode_device_message_framed, encode_host_message_as, Framing};
 use serialport::SerialPortType;
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -119,11 +117,6 @@ const WORKER_READ_TIMEOUT: Duration = Duration::from_millis(10);
 
 const STALE_PARTIAL_FRAME: Duration = Duration::from_millis(500);
 
-/// Read timeout while probing a port that might be a pad (tier 2)
-const PROBE_READ_TIMEOUT: Duration = Duration::from_millis(150);
-/// How long a probed port gets to answer Hello with a HelloAck
-const PROBE_ANSWER_WINDOW: Duration = Duration::from_millis(450);
-
 /// Hello retry interval until the pad answers. Each retry switches framing:
 /// the marked one first, then the legacy one firmware before the AA 55 marker
 /// parses, so a pad of either age is found within one or two retries.
@@ -176,6 +169,109 @@ fn hello_framing(attempt: u32) -> Framing {
         Framing::Legacy
     }
 }
+
+/// What [`Handshake::step`] asks its caller to do
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HelloStep {
+    /// No Hello is due: keep reading
+    Wait,
+    /// Write a Hello in this framing now (already counted as sent)
+    Send(Framing),
+    /// See [`HelloDue::ReopenHeld`]
+    ReopenHeld,
+    /// See [`HelloDue::Drop`]
+    Drop,
+}
+
+/// The dual-framing Hello handshake (§6.1), the one copy of it that both the
+/// worker and the tier-2 probe drive.
+///
+/// It owns only the decisions: when a Hello is due, in which framing, and what
+/// a HelloAck changes. The caller owns the port and keeps servicing frames
+/// between Hellos (the worker delivers them across a re-Hello, O9).
+///
+/// Timing: a Hello every [`HELLO_RETRY`] (400 ms) until one is answered,
+/// alternating marked / legacy via [`hello_framing`] while the pad's framing
+/// is unknown and repeating the known framing once it is. After
+/// [`HELLOS_BEFORE_REOPEN`] unanswered Hellos [`hello_due`] decides between a
+/// held reopen and a drop, whatever the framing.
+#[derive(Debug, Default)]
+struct Handshake {
+    /// None = a Hello is due now. Never a backdated Instant: on Windows
+    /// `Instant::now() - d` panics during the first `d` after boot.
+    last_hello: Option<Instant>,
+    /// The last Hello was answered with an OSUPAD HelloAck
+    answered: bool,
+    /// The pad's framing, from its first HelloAck; frames go out in it and
+    /// only it is parsed. Unknown until the first answer.
+    framing: Option<Framing>,
+    /// Hellos sent since the last answer
+    unanswered: u32,
+}
+
+impl Handshake {
+    /// Whether the retry timer has run out (or was never started)
+    fn retry_due(&self, now: Instant) -> bool {
+        !self.answered
+            && self
+                .last_hello
+                .is_none_or(|t| now.saturating_duration_since(t) >= HELLO_RETRY)
+    }
+
+    /// The next thing to do at `now`. A `Send` is recorded as sent, so the
+    /// caller must write it (a failed write is retried on the next cadence).
+    fn step(&mut self, now: Instant, connected: bool, held: bool) -> HelloStep {
+        if !self.retry_due(now) {
+            return HelloStep::Wait;
+        }
+        match hello_due(self.unanswered, connected, held) {
+            HelloDue::Send => {}
+            HelloDue::ReopenHeld => return HelloStep::ReopenHeld,
+            HelloDue::Drop => return HelloStep::Drop,
+        }
+        self.last_hello = Some(now);
+        let framing = self.framing.unwrap_or(hello_framing(self.unanswered));
+        self.unanswered += 1;
+        HelloStep::Send(framing)
+    }
+
+    /// Ask again now: a rehandshake request, or a torn stream was dropped.
+    /// The framing stays known and the unanswered count keeps running.
+    fn restart(&mut self) {
+        self.answered = false;
+        self.last_hello = None;
+    }
+
+    /// Records an OSUPAD HelloAck that arrived in `framing`. Returns true when
+    /// this answer is what taught the pad's framing.
+    fn answered_in(&mut self, framing: Framing) -> bool {
+        self.answered = true;
+        self.unanswered = 0;
+        let learned = self.framing.is_none();
+        if learned {
+            self.framing = Some(framing);
+        }
+        learned
+    }
+
+    /// See [`accept_frame`]
+    fn accepts_frames(&self, connected: bool) -> bool {
+        accept_frame(self.answered, connected, self.framing.is_some())
+    }
+}
+
+/// Hellos a tier-2 probe sends before giving up: one per framing, each given a
+/// full [`HELLO_RETRY`] to be answered. The probe ends when the handshake
+/// would send the next one, so its window is `PROBE_HELLOS * HELLO_RETRY`
+/// (800 ms, plus up to one [`WORKER_READ_TIMEOUT`] per Hello of read slack).
+const PROBE_HELLOS: u32 = 2;
+
+/// Whether a probe whose handshake has sent `hellos` unanswered Hellos and has
+/// one due again should give up rather than send it
+fn probe_exhausted(hellos: u32) -> bool {
+    hellos >= PROBE_HELLOS
+}
+
 /// A port with an OPad VID but no identifying strings is probed again this
 /// often (the pad may have been booting). Other unknown ports are probed once
 /// per appearance: opening a stranger's port can reset it (Arduino-style boards).
@@ -314,15 +410,8 @@ impl DeviceManager {
                 debug!("Opened {}; waiting for HelloAck", port_path);
 
                 let mut raw_buf = [0u8; 1024];
-                // None = send a Hello now. Never a backdated Instant: on Windows
-                // `Instant::now() - d` panics during the first `d` after boot.
-                let mut last_hello: Option<Instant> = None;
-                let mut has_hello_ack = false;
+                let mut handshake = Handshake::default();
                 let mut partial_since: Option<Instant> = None;
-                // The pad's framing, from its HelloAck; frames go out in it and
-                // only it is parsed. Unknown until the first answer.
-                let mut framing: Option<Framing> = None;
-                let mut hellos_unanswered: u32 = 0;
                 // Set when the loop below leaves to reopen a held connection
                 let mut reopen_held = false;
 
@@ -340,45 +429,41 @@ impl DeviceManager {
                         );
                         read_buf.clear();
                         partial_since = None;
-                        has_hello_ack = false;
-                        last_hello = None;
+                        handshake.restart();
                     }
 
                     if rehello_clone.swap(false, Ordering::SeqCst) {
-                        has_hello_ack = false;
-                        last_hello = None;
+                        handshake.restart();
                     }
 
                     // Periodic Hello retry until HelloAck is received (§6.1)
-                    if !has_hello_ack && last_hello.is_none_or(|t| t.elapsed() >= HELLO_RETRY) {
-                        let connected = is_conn_clone.load(Ordering::SeqCst);
-                        match hello_due(hellos_unanswered, connected, held) {
-                            HelloDue::Send => {}
-                            HelloDue::ReopenHeld => {
+                    let connected = is_conn_clone.load(Ordering::SeqCst);
+                    match handshake.step(Instant::now(), connected, held) {
+                        HelloStep::Wait => {}
+                        HelloStep::Send(hello_as) => {
+                            let _ = write_hello(&mut port, hello_as);
+                        }
+                        HelloStep::ReopenHeld => {
+                            warn!(
+                                "The pad on {} stopped answering Hello; reopening the port to reset it",
+                                port_path
+                            );
+                            reopen_held = true;
+                            break;
+                        }
+                        HelloStep::Drop => {
+                            if connected {
                                 warn!(
-                                    "The pad on {} stopped answering Hello; reopening the port to reset it",
+                                    "The pad on {} still does not answer Hello; treating it as disconnected",
                                     port_path
                                 );
-                                reopen_held = true;
-                                break;
+                            } else {
+                                debug!("No answer to Hello on {}; reopening it", port_path);
                             }
-                            HelloDue::Drop => {
-                                if connected {
-                                    warn!(
-                                        "The pad on {} still does not answer Hello; treating it as disconnected",
-                                        port_path
-                                    );
-                                } else {
-                                    debug!("No answer to Hello on {}; reopening it", port_path);
-                                }
-                                break;
-                            }
+                            break;
                         }
-                        last_hello = Some(Instant::now());
-                        let hello_as = framing.unwrap_or(hello_framing(hellos_unanswered));
-                        hellos_unanswered += 1;
-                        let _ = write_hello(&mut port, hello_as);
                     }
+                    let framing = handshake.framing;
 
                     // 1. Drain incoming command queue to transmit to device.
                     // Held until the framing is known: commands queue here only
@@ -401,7 +486,8 @@ impl DeviceManager {
 
                             // Parse all ready frames; a bad one is skipped, not fatal
                             loop {
-                                match decode_device_message_framed(&mut read_buf, framing) {
+                                match decode_device_message_framed(&mut read_buf, handshake.framing)
+                                {
                                     Ok(Some((msg, msg_framing))) => {
                                         if let Some(proto::device_to_host::Payload::HelloAck(ack)) =
                                             &msg.payload
@@ -413,15 +499,12 @@ impl DeviceManager {
                                                 );
                                                 continue;
                                             }
-                                            has_hello_ack = true;
-                                            hellos_unanswered = 0;
                                             held = false;
-                                            if framing.is_none() {
+                                            if handshake.answered_in(msg_framing) {
                                                 debug!(
                                                     "{} speaks {:?} framing",
                                                     port_path, msg_framing
                                                 );
-                                                framing = Some(msg_framing);
                                             }
                                             if !is_conn_clone.swap(true, Ordering::SeqCst) {
                                                 info!(
@@ -431,11 +514,9 @@ impl DeviceManager {
                                                 *last_port_clone.lock().unwrap() =
                                                     Some(port_path.clone());
                                             }
-                                        } else if !accept_frame(
-                                            has_hello_ack,
-                                            is_conn_clone.load(Ordering::SeqCst),
-                                            framing.is_some(),
-                                        ) {
+                                        } else if !handshake
+                                            .accepts_frames(is_conn_clone.load(Ordering::SeqCst))
+                                        {
                                             // Nothing is trusted before the handshake
                                             continue;
                                         }
@@ -1024,53 +1105,68 @@ fn discover_port(probes: &mut ProbeHistory) -> Option<String> {
     None
 }
 
-/// Opens `path`, sends a framed Hello and waits briefly for a HelloAck whose
-/// device_id marks it as an OPad.
+/// Opens `path` and runs the worker's [`Handshake`] on it for
+/// [`PROBE_HELLOS`] Hellos; true if it answers with an OPad HelloAck.
 fn probe_port(path: &str) -> bool {
     let Ok(mut port) = serialport::new(path, 115200)
-        .timeout(PROBE_READ_TIMEOUT)
+        .timeout(WORKER_READ_TIMEOUT)
         .open()
     else {
         return false;
     };
     let _ = port.write_data_terminal_ready(true);
     let _ = port.write_request_to_send(true);
-    // The worker's first two framings (marked, then legacy for a pad from
-    // before the marker), the second one halfway through the window
-    if !write_hello(&mut port, hello_framing(0)) {
-        return false;
-    }
+    probe_handshake(&mut port).is_some()
+}
 
-    let start = Instant::now();
-    let deadline = start + PROBE_ANSWER_WINDOW;
-    let mut sent_legacy = false;
+/// The probe's drive of [`Handshake`]: the worker's cadence and framing order
+/// (marked at 0 ms, legacy at 400 ms), ending when a third Hello would be due
+/// (~800 ms), so each framing gets a full [`HELLO_RETRY`] to answer. Returns
+/// the OPad's HelloAck and the framing it answered in. Any other HelloAck
+/// ends the probe: the port is something else speaking this protocol.
+fn probe_handshake(
+    port: &mut Box<dyn serialport::SerialPort>,
+) -> Option<(proto::HelloAck, Framing)> {
+    let mut handshake = Handshake::default();
     let mut buf = BytesMut::with_capacity(1024);
     let mut raw = [0u8; 512];
-    while Instant::now() < deadline {
-        if !sent_legacy && start.elapsed() >= PROBE_ANSWER_WINDOW / 2 {
-            sent_legacy = true;
-            if !write_hello(&mut port, hello_framing(1)) {
-                return false;
+    loop {
+        let now = Instant::now();
+        if handshake.retry_due(now) && probe_exhausted(handshake.unanswered) {
+            return None;
+        }
+        match handshake.step(now, false, false) {
+            HelloStep::Wait => {}
+            HelloStep::Send(framing) => {
+                if !write_hello(port, framing) {
+                    return None;
+                }
             }
+            // Only after HELLOS_BEFORE_REOPEN, far past PROBE_HELLOS
+            HelloStep::ReopenHeld | HelloStep::Drop => return None,
         }
         match port.read(&mut raw) {
             Ok(n) if n > 0 => buf.extend_from_slice(&raw[..n]),
             Ok(_) => {}
             Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
-            Err(_) => return false,
+            Err(_) => return None,
         }
         loop {
-            match decode_device_message(&mut buf) {
-                Ok(Some(DeviceToHost {
-                    payload: Some(proto::device_to_host::Payload::HelloAck(ack)),
-                    ..
-                })) => return is_opad_device_id(&ack.device_id),
+            match decode_device_message_framed(&mut buf, handshake.framing) {
+                Ok(Some((
+                    DeviceToHost {
+                        payload: Some(proto::device_to_host::Payload::HelloAck(ack)),
+                        ..
+                    },
+                    framing,
+                ))) => {
+                    return is_opad_device_id(&ack.device_id).then_some((ack, framing));
+                }
                 Ok(Some(_)) | Err(_) => continue,
                 Ok(None) => break,
             }
         }
     }
-    false
 }
 
 /// Sends a Hello in `framing`; false if it could not be written
@@ -1240,11 +1336,13 @@ pub fn select_bootloader_port(
 mod tests {
     use super::{
         accept_frame, classify_port, device_config_from, fit_nanopb_string, handle_device_message,
-        hello_due, is_opad_device_id, normalize_mac, pad_mac, proto, select_bootloader_port,
-        BootloaderMatch, BootloaderPort, DeviceConfig, DeviceEvent, HelloDue, PadLocation,
-        PortClass, ProbeHistory, HELLOS_BEFORE_REOPEN, PORT_SCAN_INTERVAL, PROBE_RETRY_KNOWN_VID,
+        hello_due, is_opad_device_id, normalize_mac, pad_mac, probe_exhausted, proto,
+        select_bootloader_port, BootloaderMatch, BootloaderPort, DeviceConfig, DeviceEvent,
+        Handshake, HelloDue, HelloStep, PadLocation, PortClass, ProbeHistory, HELLOS_BEFORE_REOPEN,
+        HELLO_RETRY, PORT_SCAN_INTERVAL, PROBE_HELLOS, PROBE_RETRY_KNOWN_VID,
         RECONNECT_SETTLE_INTERVAL,
     };
+    use opad_protocol::Framing;
     use serialport::SerialPortType;
     use std::time::{Duration, Instant};
 
@@ -1403,7 +1501,6 @@ mod tests {
 
     #[test]
     fn unanswered_hellos_alternate_marked_and_legacy_framing() {
-        use opad_protocol::Framing;
         let seq: Vec<_> = (0..4).map(super::hello_framing).collect();
         assert_eq!(
             seq,
@@ -1414,6 +1511,110 @@ mod tests {
                 Framing::Legacy
             ]
         );
+    }
+
+    /// DD#9: the handshake alternates marked / legacy on the 400 ms cadence
+    /// while the framing is unknown
+    #[test]
+    fn handshake_alternates_framings_on_the_retry_cadence() {
+        let t0 = Instant::now();
+        let ms = |n| t0 + Duration::from_millis(n);
+        let mut h = Handshake::default();
+        assert_eq!(h.step(t0, false, false), HelloStep::Send(Framing::Marked));
+        assert_eq!(h.step(ms(399), false, false), HelloStep::Wait);
+        assert_eq!(
+            h.step(ms(400), false, false),
+            HelloStep::Send(Framing::Legacy)
+        );
+        assert_eq!(h.step(ms(799), false, false), HelloStep::Wait);
+        assert_eq!(
+            h.step(ms(800), false, false),
+            HelloStep::Send(Framing::Marked)
+        );
+        assert_eq!(h.unanswered, 3);
+    }
+
+    /// Once answered no Hello is due; a re-Hello repeats the learned framing
+    /// and a later answer in another framing does not change it
+    #[test]
+    fn handshake_keeps_the_framing_it_learned() {
+        let t0 = Instant::now();
+        let mut h = Handshake::default();
+        assert_eq!(h.step(t0, true, false), HelloStep::Send(Framing::Marked));
+        assert!(h.answered_in(Framing::Legacy));
+        assert_eq!(h.unanswered, 0);
+        assert_eq!(
+            h.step(t0 + Duration::from_secs(10), true, false),
+            HelloStep::Wait
+        );
+        h.restart();
+        assert_eq!(h.step(t0, true, false), HelloStep::Send(Framing::Legacy));
+        assert_eq!(
+            h.step(t0 + HELLO_RETRY, true, false),
+            HelloStep::Send(Framing::Legacy)
+        );
+        assert!(!h.answered_in(Framing::Marked));
+        assert_eq!(h.framing, Some(Framing::Legacy));
+    }
+
+    /// O9 through the handshake: frames flow across a re-Hello, and unanswered
+    /// Hellos reopen then drop whether or not the framing is known
+    #[test]
+    fn handshake_keeps_the_o9_rules() {
+        let mut h = Handshake::default();
+        assert!(!h.accepts_frames(false));
+        h.answered_in(Framing::Marked);
+        h.restart();
+        assert!(h.accepts_frames(true), "connected pad mid-re-Hello");
+
+        for known in [None, Some(Framing::Legacy)] {
+            let t0 = Instant::now();
+            let mut h = Handshake {
+                framing: known,
+                ..Default::default()
+            };
+            for i in 0..HELLOS_BEFORE_REOPEN {
+                let at = t0 + HELLO_RETRY * i;
+                assert!(matches!(h.step(at, true, false), HelloStep::Send(_)));
+            }
+            let at = t0 + HELLO_RETRY * HELLOS_BEFORE_REOPEN;
+            assert_eq!(h.step(at, true, false), HelloStep::ReopenHeld);
+            assert_eq!(h.step(at, true, true), HelloStep::Drop);
+            assert_eq!(h.step(at, false, false), HelloStep::Drop);
+        }
+    }
+
+    /// The probe sends one Hello per framing and gives each a full retry
+    /// period: a legacy-only pad gets 400 ms to answer on cold plug
+    #[test]
+    fn the_probe_gives_each_framing_a_full_retry_period() {
+        let framings: Vec<_> = (0..PROBE_HELLOS).map(super::hello_framing).collect();
+        assert_eq!(framings, [Framing::Marked, Framing::Legacy]);
+        const { assert!(PROBE_HELLOS < HELLOS_BEFORE_REOPEN) };
+
+        // Drive it the way probe_handshake does, on a fake clock
+        let t0 = Instant::now();
+        let mut h = Handshake::default();
+        let mut sent = Vec::new();
+        let mut gave_up_at = None;
+        for tick in 0..=100u32 {
+            let now = t0 + Duration::from_millis(u64::from(tick) * 10);
+            if h.retry_due(now) && probe_exhausted(h.unanswered) {
+                gave_up_at = Some(now - t0);
+                break;
+            }
+            if let HelloStep::Send(f) = h.step(now, false, false) {
+                sent.push((now - t0, f));
+            }
+        }
+        assert_eq!(
+            sent,
+            [
+                (Duration::ZERO, Framing::Marked),
+                (HELLO_RETRY, Framing::Legacy)
+            ]
+        );
+        assert_eq!(gave_up_at, Some(HELLO_RETRY * PROBE_HELLOS));
     }
 
     #[test]

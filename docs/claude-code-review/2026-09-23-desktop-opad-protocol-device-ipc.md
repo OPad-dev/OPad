@@ -99,7 +99,7 @@ The `proto::ConfigPayload → DeviceConfig` mapping (including the `== 0 → DEF
 
 **Suggested fix:** Extract one `fn device_config_from(c: &proto::ConfigPayload) -> DeviceConfig` and call it from both arms.
 
-## 9. `probe_port` re-implements the dual-framing Hello handshake — `open` (partly deduplicated)
+## 9. `probe_port` re-implements the dual-framing Hello handshake — `fixed`
 
 **File:** `desktop/crates/opad-device/src/lib.rs:955`
 **Category:** reuse
