@@ -9,12 +9,22 @@ This directory contains the ready-to-print/modify OPad enclosure for the **Waves
 ```
 hardware/3d/
 └── custom_case/
-    └── V1/                                 # Enclosure (~22° screen deck, recessed glass pocket)
-        ├── osupad_enclosure.scad           # Parametric OpenSCAD enclosure integrating the Waveshare LCD + 2x MX keys
+    ├── V1.1/                               # Current: fits the V1 PCBs (carrier on sockets + MX/HE module)
+    │   ├── osupad_params.scad              # every dimension
+    │   ├── osupad_enclosure.scad           # top case and bottom plate (screwless)
+    │   ├── osupad_case_top.stl
+    │   ├── osupad_case_bottom.stl
+    │   ├── osupad_preview.png
+    │   ├── README.md                       # changes from V1, parts, assembly, printing
+    │   └── tools/check_fit.py              # interference check against the PCBs and the Waveshare
+    └── V1/                                 # Original (20.3° screen deck, hand-wired switches); does not fit the V1 PCBs
+        ├── osupad_enclosure.scad
         ├── osupad_case_top.stl
         ├── osupad_case_bottom.stl
         └── osupad_preview.png
 ```
+
+Use **V1.1** with the V1 PCBs; see [`custom_case/V1.1/README.md`](custom_case/V1.1/README.md).
 
 Third-party models (the Waveshare board model and other keypads) are not stored in this repository, since they are not MIT licensed. Download them from their authors if you want them as a modelling reference; see section 4.
 
@@ -41,8 +51,8 @@ Third-party models (the Waveshare board model and other keypads) are not stored 
 ## 3. How to Use & Modify These Models
 
 ### Option A: Use the OpenSCAD Parametric Generator (Recommended)
-1. Open [`hardware/3d/custom_case/V1/osupad_enclosure.scad`](custom_case/V1/osupad_enclosure.scad) in [OpenSCAD](https://openscad.org/).
-2. Change `PART = "top_case";` or `PART = "bottom_plate";`.
+1. Open [`hardware/3d/custom_case/V1.1/osupad_enclosure.scad`](custom_case/V1.1/osupad_enclosure.scad) in [OpenSCAD](https://openscad.org/) (dimensions are in `osupad_params.scad`).
+2. Change `PART` to `"top_case"` or `"bottom_plate"`.
 3. Press `F6` to render, then `F7` to export directly to `.stl`.
 4. All dimensions, wall thicknesses, and tolerances are fully configurable as variables at the top of the file.
 
