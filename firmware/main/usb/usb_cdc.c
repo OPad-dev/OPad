@@ -138,14 +138,6 @@ static void reboot_to_rom_download(void)
 }
 
 /*
- * The plain-text "BOOTLOADER" command is only honoured when it is the entire
- * read ("BOOTLOADER", optionally followed by \r/\n) and arrives between protocol
- * frames. Searching the stream for the text instead would reboot the pad whenever
- * a protobuf payload (e.g. a song title) happened to contain it. At a frame
- * boundary those bytes would decode as an oversized length prefix, so a valid
- * frame can never be mistaken for the command.
- */
-/*
  * Plain-text commands ("BOOTLOADER", "FREAKY67") are only honoured when the
  * command is the entire read, optionally followed by \r/\n, and arrives between
  * protocol frames. Searching the stream for the text instead would fire whenever

@@ -202,13 +202,8 @@ esp_err_t device_config_set(const device_config_data_t *cfg)
     config_store(&next);
     device_config_apply(&next);
 
-    if (runtime_get_state() == OSUPAD_STATE_IDLE) {
-        return write_to_nvs(&next);
-    } else {
-        set_dirty(true);
-        ESP_LOGI(TAG, "Config applied in RAM; NVS write deferred until IDLE");
-        return ESP_OK;
-    }
+    // Outside IDLE this only marks the config dirty for the supervisor
+    return write_to_nvs(&next);
 }
 
 void device_config_get_owner(uint8_t out_owner[OWNER_ID_LEN])

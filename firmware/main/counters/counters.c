@@ -1,4 +1,5 @@
 #include "counters.h"
+#include "counter_sync_rules.h"
 #include "input/keypad.h"
 #include "runtime/runtime.h"
 #include "diag/diag.h"
@@ -145,7 +146,6 @@ void counters_get(counters_snapshot_t *snapshot)
     snapshot->lifetime_key1 = ram_k1;
     snapshot->lifetime_key2 = ram_k2;
 }
-#include "counter_sync_rules.h"
 
 esp_err_t counters_sync_from_host(uint32_t generation, uint64_t k1, uint64_t k2, bool force, char *err_msg, size_t err_msg_len)
 {

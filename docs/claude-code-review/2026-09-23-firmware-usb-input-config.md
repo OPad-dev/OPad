@@ -87,7 +87,7 @@ The staged config is committed to `s_config` before `board_keys_set_gpio` runs; 
 
 **Suggested fix:** Include `debounce.h` and export one `device_config_key_gpio_list()` / shared array used by both.
 
-## 9. Dead / duplicated code left behind — `open`
+## 9. Dead / duplicated code left behind — `fixed`
 
 **File:** `firmware/main/usb/usb_cdc.c:140` (and others listed below)
 **Category:** simplification

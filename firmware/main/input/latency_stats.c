@@ -8,7 +8,6 @@
 #define BUCKET_COUNT 500
 
 static atomic_uint_least32_t s_buckets[BUCKET_COUNT];
-static atomic_uint_least32_t s_samples;
 static atomic_uint_least32_t s_max_us;
 static atomic_uint_least32_t s_deferred;
 static atomic_uint_least32_t s_outlier_count;
@@ -21,7 +20,6 @@ void IRAM_ATTR latency_stats_record(uint32_t latency_us)
         idx = BUCKET_COUNT - 1;
     }
     atomic_fetch_add_explicit(&s_buckets[idx], 1, memory_order_relaxed);
-    atomic_fetch_add_explicit(&s_samples, 1, memory_order_relaxed);
     if (latency_us > atomic_load_explicit(&s_max_us, memory_order_relaxed)) {
         atomic_store_explicit(&s_max_us, latency_us, memory_order_relaxed);
     }
@@ -77,7 +75,6 @@ void latency_stats_reset(void)
     for (int i = 0; i < BUCKET_COUNT; i++) {
         atomic_store_explicit(&s_buckets[i], 0, memory_order_relaxed);
     }
-    atomic_store_explicit(&s_samples, 0, memory_order_relaxed);
     atomic_store_explicit(&s_max_us, 0, memory_order_relaxed);
     atomic_store_explicit(&s_deferred, 0, memory_order_relaxed);
     atomic_store_explicit(&s_outlier_count, 0, memory_order_relaxed);

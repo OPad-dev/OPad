@@ -285,10 +285,10 @@ Kickoff prompt (paste into Antigravity):
 
 ### A1 — Firmware dead/duplicated code ▸ FU#9
 Files: `firmware/main/usb/usb_cdc.c` (~140–147), `firmware/main/config/device_config.c` (~207), `firmware/main/counters/counters.c` (~148), `firmware/main/input/latency_stats.c`
-- [ ] Delete the stale comment block superseded by the one that follows it.
-- [ ] Remove `device_config_set`'s IDLE check (it duplicates `write_to_nvs`'s).
-- [ ] Move the mid-file `#include` to the top of `counters.c`.
-- [ ] Remove the unread `s_samples` counter from `latency_stats`.
+- [x] Delete the stale comment block superseded by the one that follows it.
+- [x] Remove `device_config_set`'s IDLE check (it duplicates `write_to_nvs`'s).
+- [x] Move the mid-file `#include` to the top of `counters.c`.
+- [x] Remove the unread `s_samples` counter from `latency_stats`.
 - Verify: `./firmware/test/host/run_tests.sh`, `make firmware`.
 
 ### A2 — Touch retry boot scan and idle polling ▸ FU#10
@@ -373,4 +373,5 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  S13  e4fc72f  Claude Opus (Sonnet list)  PK#1 fixed; offline signing kept (user's choice): release.yml publishes a draft, sign_release.sh --tag downloads the draft's assets, signs over them, checks, uploads manifest+minisig and starts release-verify.yml, which re-checks on GitHub (minisign vs compiled key, every manifest artifact present with matching sha256/size/SHA256SUMS) and un-drafts; --dist signs an existing dir in place; build_release.sh no longer rm -rf's dist or signs; dry run on a synthetic dist (no-sign, throwaway-key signature, tamper + missing cases); not run on GitHub (no act/actionlint here)
 2026-09-24  S5-S13 Windows  360b4f5  Claude Opus (Sonnet list)  Windows VM run (osupad-win11, Rust 1.98): workspace fmt/clippy -D warnings/tests incl. GUI; found and fixed DA#7's copy fallback fsyncing a read-only handle (FlushFileBuffers needs write access); DG#6 pipe test added and passing; end to end with real binaries: opadctl bootloader resumes in <1 s via ResumeDevice, a client dropping after PrepareFlash gets the pad resumed, monitor --level validated; pad not passed through (flash path/PID flip is the known VM limit)
 2026-09-24  (extra)  (this commit)  Claude Opus  found on the Windows VM, not in any findings file: the daemon served requests on a connection with no or a rejected handshake; per-connection loop moved to ipc_handlers::serve_connection, which refuses anything before a successful Handshake and closes after a rejection (flash-pause resume kept); duplex-stream tests + Windows VM repro re-run
+2026-09-24  A1  (this commit)  Claude Opus (Antigravity list)  FU#9 fixed; stale BOOTLOADER-only comment removed, device_config_set defers to write_to_nvs's IDLE check (a deferred write now logs write_to_nvs's warning instead of its own info line), counter_sync_rules.h include moved to the top, unread latency s_samples removed
 ```
