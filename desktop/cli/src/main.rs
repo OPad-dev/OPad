@@ -890,6 +890,48 @@ fn first_existing(candidates: &[PathBuf]) -> Option<PathBuf> {
     candidates.iter().find(|p| p.exists()).cloned()
 }
 
+/// Where the packages install the udev rule; `opadctl setup` checks the same path.
+const UDEV_RULE_PATH: &str = "/etc/udev/rules.d/70-opad.rules";
+
+#[derive(Debug, PartialEq, Eq)]
+enum UdevRuleState {
+    /// The installed file is byte-for-byte the rule this build ships.
+    Installed,
+    /// A file exists at the path but its content differs (older package, hand edit).
+    Differs,
+    /// Nothing installed.
+    Missing,
+}
+
+fn udev_rule_state(installed: Option<&str>, embedded: &str) -> UdevRuleState {
+    match installed {
+        Some(current) if current.trim_end() == embedded.trim_end() => UdevRuleState::Installed,
+        Some(_) => UdevRuleState::Differs,
+        None => UdevRuleState::Missing,
+    }
+}
+
+/// The install command is built from the embedded rule, so it works from any
+/// directory — the packaged binary has no `packaging/` tree next to it.
+fn print_udev_install_hint(udev_rule: &str, lead: &str) {
+    if let Some(appimage) = std::env::var_os("APPIMAGE") {
+        println!("This is the AppImage; it can install the rule itself:");
+        println!(
+            "  \"{}\" install-udev",
+            std::path::Path::new(&appimage).display()
+        );
+        return;
+    }
+    println!("{lead}");
+    println!("  sudo tee {UDEV_RULE_PATH} >/dev/null <<'EOF'");
+    print!("{}", udev_rule);
+    if !udev_rule.ends_with('\n') {
+        println!();
+    }
+    println!("EOF");
+    println!("  sudo udevadm control --reload-rules && sudo udevadm trigger");
+}
+
 fn run_setup() -> Result<()> {
     // udev is Linux's; on Windows the pad binds to inbox drivers with no setup
     // step at all, so saying nothing would read as "something is missing".
@@ -904,23 +946,20 @@ fn run_setup() -> Result<()> {
     // The same file the packages install, so the two cannot drift apart
     let udev_rule = include_str!("../../../packaging/linux/udev/70-opad.rules");
 
-    let target_path = "/etc/udev/rules.d/70-opad.rules";
-    println!("Recommended udev rule for non-root CDC access:");
-    println!("{}", udev_rule);
-
-    if let Some(appimage) = std::env::var_os("APPIMAGE") {
-        println!("This is the AppImage; it can install the rule itself:");
-        println!(
-            "  \"{}\" install-udev",
-            std::path::Path::new(&appimage).display()
-        );
-    } else if std::path::Path::new("/etc/udev/rules.d").exists() {
-        println!("To install this rule, run:");
-        println!(
-            "  sudo cp packaging/linux/udev/70-opad.rules {}",
-            target_path
-        );
-        println!("  sudo udevadm control --reload-rules && sudo udevadm trigger");
+    let target_path = std::path::Path::new(UDEV_RULE_PATH);
+    let installed = std::fs::read_to_string(target_path).ok();
+    match udev_rule_state(installed.as_deref(), udev_rule) {
+        UdevRuleState::Installed => {
+            println!("✓ udev rule for non-root CDC access is installed ({UDEV_RULE_PATH})");
+        }
+        UdevRuleState::Differs => {
+            println!("⚠ {UDEV_RULE_PATH} exists but differs from the rule this build ships.");
+            print_udev_install_hint(udev_rule, "To update it, run:");
+        }
+        UdevRuleState::Missing => {
+            println!("udev rule for non-root CDC access is not installed.");
+            print_udev_install_hint(udev_rule, "To install it, run:");
+        }
     }
 
     // Yama: can tosu read osu!'s memory at all?
@@ -961,6 +1000,22 @@ mod tests {
         let mut f = std::fs::File::create(&path).unwrap();
         f.write_all(content).unwrap();
         path
+    }
+
+    #[test]
+    fn the_udev_rule_check_compares_against_the_embedded_rule() {
+        let rule = "SUBSYSTEM==\"tty\", ATTRS{idVendor}==\"303a\", MODE=\"0666\"\n";
+        assert_eq!(udev_rule_state(None, rule), UdevRuleState::Missing);
+        assert_eq!(udev_rule_state(Some(rule), rule), UdevRuleState::Installed);
+        // A trailing newline difference is not a real difference
+        assert_eq!(
+            udev_rule_state(Some(rule.trim_end()), rule),
+            UdevRuleState::Installed
+        );
+        assert_eq!(
+            udev_rule_state(Some("# old rule\n"), rule),
+            UdevRuleState::Differs
+        );
     }
 
     #[test]

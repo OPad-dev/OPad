@@ -88,7 +88,7 @@ Post-flash verification failure is exit 0 with a warning when the daemon is pres
 
 **Suggested fix:** Return an error in both branches (or make both a warning).
 
-## 8. `opadctl setup` prints a repo-relative udev path and ignores the installed rule — `open`
+## 8. `opadctl setup` prints a repo-relative udev path and ignores the installed rule — `fixed`
 
 **File:** `desktop/cli/src/main.rs:839`
 **Category:** correctness

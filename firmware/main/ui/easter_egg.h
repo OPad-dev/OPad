@@ -17,11 +17,6 @@ void easter_egg_init(void);
  */
 void easter_egg_trigger(void);
 
-/**
- * @brief Returns whether the easter egg animation is currently active.
- */
-bool easter_egg_is_active(void);
-
 #ifdef __cplusplus
 }
 #endif

@@ -266,14 +266,14 @@ Kickoff prompt:
 
 > Read `docs/claude-code-review/FIX-PLAN.md`, follow "Rules for every session", and do the **Haiku checklist**. Each item is a small mechanical edit; do not change behaviour beyond what is listed. One commit for all items is fine (`chore: small review cleanups`). Budget cap for this session: $__.
 
-- [ ] **H1 ▸ FP#8** `firmware/main/protocol/protocol.c:~36` — remove `volatile` from `s_host_framing_known` / `s_host_framing`; add a comment that protocol state is owned by the CDC task. Verify `make firmware`.
-- [ ] **H2 ▸ DD#10** `desktop/crates/opad-ipc/Cargo.toml:~17`, `src/lib.rs:~22` — remove unused `bytes` and `byteorder` deps and the `MAX_IPC_FRAME_SIZE` alias (confirm zero references with grep first). Verify `make check`.
-- [ ] **H3 ▸ DU#7** `desktop/crates/opad-update/src/http.rs:~43` — after `send()`, assert `resp.url().scheme() == "https"` and return an error otherwise, so the comment becomes true. Verify `make check`.
-- [ ] **H4 ▸ DM#3** `desktop/crates/opad-model/src/log.rs` — `Display` impls for `LogSource`/`LogLevel` use `f.pad(..)` instead of `write!`. Add a test `format!("[{:<7}]", LogSource::Tosu) == "[TOSU   ]"`. Verify `make check`.
-- [ ] **H5 ▸ PK#2** `packaging/linux/appimage/AppRun:~6` — `LD_LIBRARY_PATH="...${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"`. Verify with `shellcheck` if available and by `LD_LIBRARY_PATH= sh -x AppRun` showing no trailing colon.
-- [ ] **H6 ▸ FI#10** `firmware/main/ui/easter_egg.c:~29, ~73–74, ~119–120`, `firmware/main/ui/core/ui_screen.c:~243` — delete `easter_egg_is_active()` (confirm no callers), drop `lv_obj_set_user_data(count, card)`, keep a single opa setter. Verify `make firmware`.
-- [ ] **H7 ▸ DM#6** `desktop/crates/opad-ui-preview/build.rs:~54, ~97` — move the `rerun-if-changed` for `firmware/main/ui/core` above the stub early-return. Verify `cargo build -p opad-ui-preview` twice after touching `ui_ids.h` rebuilds.
-- [ ] **H8 ▸ DM#9** `desktop/crates/opad-model/src/paths.rs:~97` — `install_lib_dir()` composes `install_prefix()`: `let prefix = install_prefix()?; Ok(if cfg!(windows) { prefix } else { prefix.join("lib").join("opad") })`. Existing test `the_install_lib_dir_sits_under_the_prefix` must pass. Verify `make check`.
+- [x] **H1 ▸ FP#8** `firmware/main/protocol/protocol.c:~36` — remove `volatile` from `s_host_framing_known` / `s_host_framing`; add a comment that protocol state is owned by the CDC task. Verify `make firmware`.
+- [x] **H2 ▸ DD#10** `desktop/crates/opad-ipc/Cargo.toml:~17`, `src/lib.rs:~22` — remove unused `bytes` and `byteorder` deps and the `MAX_IPC_FRAME_SIZE` alias (confirm zero references with grep first). Verify `make check`.
+- [x] **H3 ▸ DU#7** `desktop/crates/opad-update/src/http.rs:~43` — after `send()`, assert `resp.url().scheme() == "https"` and return an error otherwise, so the comment becomes true. Verify `make check`.
+- [x] **H4 ▸ DM#3** `desktop/crates/opad-model/src/log.rs` — `Display` impls for `LogSource`/`LogLevel` use `f.pad(..)` instead of `write!`. Add a test `format!("[{:<7}]", LogSource::Tosu) == "[TOSU   ]"`. Verify `make check`.
+- [x] **H5 ▸ PK#2** `packaging/linux/appimage/AppRun:~6` — `LD_LIBRARY_PATH="...${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"`. Verify with `shellcheck` if available and by `LD_LIBRARY_PATH= sh -x AppRun` showing no trailing colon.
+- [x] **H6 ▸ FI#10** `firmware/main/ui/easter_egg.c:~29, ~73–74, ~119–120`, `firmware/main/ui/core/ui_screen.c:~243` — delete `easter_egg_is_active()` (confirm no callers), drop `lv_obj_set_user_data(count, card)`, keep a single opa setter. Verify `make firmware`.
+- [x] **H7 ▸ DM#6** `desktop/crates/opad-ui-preview/build.rs:~54, ~97` — move the `rerun-if-changed` for `firmware/main/ui/core` above the stub early-return. Verify `cargo build -p opad-ui-preview` twice after touching `ui_ids.h` rebuilds.
+- [x] **H8 ▸ DM#9** `desktop/crates/opad-model/src/paths.rs:~97` — `install_lib_dir()` composes `install_prefix()`: `let prefix = install_prefix()?; Ok(if cfg!(windows) { prefix } else { prefix.join("lib").join("opad") })`. Existing test `the_install_lib_dir_sits_under_the_prefix` must pass. Verify `make check`.
 
 ---
 
@@ -330,7 +330,7 @@ Files: `desktop/gui/src/main.rs` (~476, ~1601), diagnostics page module
 ### A8 — CLI UX cleanups ▸ DC#8, DC#9
 Files: `desktop/cli/src/main.rs` (~366–380, ~602–616, ~839)
 - [x] `fn confirm(prompt: &str, non_tty_msg: &str) -> Result<bool>` used by `Import` and `FirmwareUpdate`.
-- [ ] `opadctl setup`: compare the embedded `70-opad.rules` (`include_str!`) with `/etc/udev/rules.d/70-opad.rules`; print "already installed" if identical, else a `sudo tee` command that writes the embedded content (no repo-relative path).
+- [x] `opadctl setup`: compare the embedded `70-opad.rules` (`include_str!`) with `/etc/udev/rules.d/70-opad.rules`; print "already installed" if identical, else a `sudo tee` command that writes the embedded content (no repo-relative path).
 - Verify: `make check`; run `opadctl setup` on a machine with and without the rule.
 
 ### A9 — Packaging/CI ▸ PK#3, PK#4, PK#5
@@ -347,6 +347,7 @@ Files: `scripts/release/test_packages.sh` (~26), `desktop/gui/Cargo.toml` (`[pac
 Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <executor>  notes`.
 
 ```
+2026-09-24  H1-H8  0e3286b  Claude Haiku  FP#8 DD#10 DU#7 DM#3 PK#2 FI#10 DM#6 DM#9 fixed; boxes ticked and the leftover easter_egg_is_active() prototype removed afterwards by the verifying session
 2026-09-24  O1  aa05333  Claude Opus  FP#1 FP#2 fixed; parser locks to the first recognised frame's framing; pad test pending
 2026-09-24  O2  abe93c6  Claude Opus  FP#3 FB#2 FU#7 fixed; pin scan is a keypad-task state machine, timeout clamped to 30 s; pad test pending
 2026-09-24  O3  240d115  Claude Opus  FU#2 FU#6 fixed; pending flag replaced by change/sent sequence numbers; bench + pad test pending
@@ -382,4 +383,5 @@ Append a line per completed cluster: `YYYY-MM-DD  <cluster>  <commit sha>  <exec
 2026-09-24  A7  (this commit)  Claude Opus (Antigravity list)  DG#9 fixed, DG#10 partly fixed; switch polling on its own thread (4 ms, KeyEvent only on change, stamped when seen; Diagnostics page 28.2% -> 0.8% of a core, debug build, Linux); bundle string not cached (embeds a live sub-second timestamp); UiValues only on Dashboard/Designer, FirmwareUpdate only on Settings/Device/Diagnostics, tray polls status alone, window open polls at once; GetUpdateStatus kept at the tick rate (restart banner on every page), 60 s timer NOT done, needs a decision; Windows clippy clean with a stand-in C compiler, GUI run on Linux only (no key presses)
 2026-09-24  A8  (this commit)  Claude Opus (Antigravity list)  DC#9 fixed; confirm(prompt, non_tty_msg) shared by Import and FirmwareUpdate (same prompts, messages and y/yes rule). DC#8 verified but NOT fixed: it changes opadctl setup's output and checks (correctness, not a refactor), left open for a go-ahead
 2026-09-24  A9  (this commit)  Claude Opus (Antigravity list)  PK#3 PK#4 PK#5 fixed; .deb depends on libcap2-bin, .rpm requires libcap, test_packages.sh pre-installs nothing (debian:13 + fedora:43 run on locally built packages: install pulls setcap, tosu gets cap_sys_ptrace, daemon answers; the only FAILs were the stale host-glibc opad-gui and the local non-standalone tosu); both PKGBUILDs run make espflash (+ curl/unzip makedepends; make install -> /usr/lib/opad/bin/espflash checked in a DESTDIR); release.yml checks tosu + its .node addons at <= 2.28 before packaging and tosu in deb/rpm/AppImage after, with missing files failing (objdump chosen over a Debian 11 matrix entry); shellcheck: no new findings; actionlint unavailable, YAML parsed; CI run and makepkg of a real tag pending
+2026-09-24  A8b  (this commit)  Claude Opus  DC#8 fixed on user go-ahead; opadctl setup compares /etc/udev/rules.d/70-opad.rules with the embedded rule (installed / differs / missing) and prints a sudo tee heredoc of the embedded content instead of a repo-relative cp; unit test on the comparison
 ```
