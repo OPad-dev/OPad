@@ -41,6 +41,7 @@ typedef enum {
 #define UI_FLAG_BG_FILL          0x01  // Fill the widget with bg
 #define UI_FLAG_HIDE_WHEN_EMPTY  0x02  // Hidden while the bound source has no value
 #define UI_FLAG_BORDER           0x04  // 1px border in fg (RECT, KEYCARD)
+#define UI_FLAG_KEY_RATE         0x08  // KEYCARD: also show that key's current PPM (play.k1_ppm/k2_ppm)
 
 typedef enum {
     UI_SRC_NONE = 0,              // Static text: label only
@@ -99,6 +100,18 @@ typedef enum {
     UI_SRC_SESSION_PLAYCOUNT = 49,
     UI_SRC_GAME_STATE = 50,       // "Playing", "Song select", ...
 
+    // Player tap rate in PPM (presses per minute) for the current attempt, worked out by
+    // the daemon. Not the beatmap's BPM (UI_SRC_MAP_BPM). Current is empty while not tapping.
+    UI_SRC_PLAY_PPM = 51,
+    UI_SRC_PLAY_PPM_AVG = 52,
+    UI_SRC_PLAY_PPM_PEAK = 53,
+    UI_SRC_PLAY_K1_PPM = 54,
+    UI_SRC_PLAY_K1_PPM_AVG = 55,
+    UI_SRC_PLAY_K1_PPM_PEAK = 56,
+    UI_SRC_PLAY_K2_PPM = 57,
+    UI_SRC_PLAY_K2_PPM_AVG = 58,
+    UI_SRC_PLAY_K2_PPM_PEAK = 59,
+
     // Pad (device-local)
     UI_SRC_PAD_K1_MAP = 60,
     UI_SRC_PAD_K2_MAP = 61,
@@ -115,10 +128,20 @@ typedef enum {
     UI_SRC_PAD_K1_DOWN = 72,      // 0/1, includes a short hold so taps are visible
     UI_SRC_PAD_K2_DOWN = 73,
 
+    // Tap rate history over the period configured in the app (daemon, independent of tosu)
+    UI_SRC_HISTORY_PPM_AVG = 74,
+    UI_SRC_HISTORY_PPM_PEAK = 75,
+    UI_SRC_HISTORY_K1_PPM_AVG = 76,
+    UI_SRC_HISTORY_K1_PPM_PEAK = 77,
+    UI_SRC_HISTORY_K2_PPM_AVG = 78,
+    UI_SRC_HISTORY_K2_PPM_PEAK = 79,
+
     // Connection status (0/1)
     UI_SRC_STATUS_PC = 80,        // daemon connected over USB CDC
     UI_SRC_STATUS_TOSU = 81,
     UI_SRC_STATUS_OSU = 82,       // tosu sees a running osu!
+
+    UI_SRC_HISTORY_PERIOD = 83,   // "LAST 30 DAYS", "ALL TIME"
 
     UI_SRC_COUNT = 96
 } ui_source_t;

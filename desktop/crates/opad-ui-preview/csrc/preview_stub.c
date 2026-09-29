@@ -105,6 +105,16 @@ static const ui_source_info_t s_sources[UI_SRC_COUNT] = {
     [UI_SRC_SESSION_PLAYCOUNT]   = N("session.playcount", 2, 1, 0),
     [UI_SRC_GAME_STATE]          = S("game.state", 0, 1, 0),
 
+    [UI_SRC_PLAY_PPM]            = N("play.ppm", 1, 1, 0),
+    [UI_SRC_PLAY_PPM_AVG]        = N("play.ppm_avg", 1, 1, 0),
+    [UI_SRC_PLAY_PPM_PEAK]       = N("play.ppm_peak", 1, 1, 0),
+    [UI_SRC_PLAY_K1_PPM]         = N("play.k1_ppm", 1, 1, 0),
+    [UI_SRC_PLAY_K1_PPM_AVG]     = N("play.k1_ppm_avg", 1, 1, 0),
+    [UI_SRC_PLAY_K1_PPM_PEAK]    = N("play.k1_ppm_peak", 1, 1, 0),
+    [UI_SRC_PLAY_K2_PPM]         = N("play.k2_ppm", 1, 1, 0),
+    [UI_SRC_PLAY_K2_PPM_AVG]     = N("play.k2_ppm_avg", 1, 1, 0),
+    [UI_SRC_PLAY_K2_PPM_PEAK]    = N("play.k2_ppm_peak", 1, 1, 0),
+
     [UI_SRC_PAD_K1_MAP]          = N("pad.k1_map", 2, 1, 0),
     [UI_SRC_PAD_K2_MAP]          = N("pad.k2_map", 2, 1, 0),
     [UI_SRC_PAD_TOTAL_MAP]       = N("pad.total_map", 2, 1, 0),
@@ -120,9 +130,18 @@ static const ui_source_info_t s_sources[UI_SRC_COUNT] = {
     [UI_SRC_PAD_K1_DOWN]         = N("pad.k1_down", 1, 1, 0),
     [UI_SRC_PAD_K2_DOWN]         = N("pad.k2_down", 1, 1, 0),
 
+    [UI_SRC_HISTORY_PPM_AVG]     = N("history.ppm_avg", 1, 1, 0),
+    [UI_SRC_HISTORY_PPM_PEAK]    = N("history.ppm_peak", 1, 1, 0),
+    [UI_SRC_HISTORY_K1_PPM_AVG]  = N("history.k1_ppm_avg", 1, 1, 0),
+    [UI_SRC_HISTORY_K1_PPM_PEAK] = N("history.k1_ppm_peak", 1, 1, 0),
+    [UI_SRC_HISTORY_K2_PPM_AVG]  = N("history.k2_ppm_avg", 1, 1, 0),
+    [UI_SRC_HISTORY_K2_PPM_PEAK] = N("history.k2_ppm_peak", 1, 1, 0),
+
     [UI_SRC_STATUS_PC]           = N("status.pc", 1, 1, 0),
     [UI_SRC_STATUS_TOSU]         = N("status.tosu", 1, 1, 0),
     [UI_SRC_STATUS_OSU]          = N("status.osu", 1, 1, 0),
+
+    [UI_SRC_HISTORY_PERIOD]      = S("history.period", 0, 1, 0),
 };
 
 #undef S
@@ -178,7 +197,7 @@ static const ui_layout_t s_idle = {
 
 static const ui_layout_t s_playing = {
     .background = BG,
-    .count = 16,
+    .count = 17,
     .widgets = {
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_NONE, .font = UI_FONT_14, .align = UI_ALIGN_CENTER,
           .x = 96, .y = 4, .w = 128, .h = 22, .fg = BG, .bg = PINK, .radius = 11,
@@ -201,10 +220,10 @@ static const ui_layout_t s_playing = {
           .x = 208, .y = 138, .w = 104, .h = 28, .fg = WHITE, .decimals = DEC },
         { .kind = UI_WIDGET_KEYCARD, .source = UI_SRC_PAD_K1_MAP, .font = UI_FONT_24,
           .x = 12, .y = 166, .w = 144, .h = 48, .fg = BG, .bg = PINK, .accent = CARD, .radius = 12,
-          .flags = UI_FLAG_BORDER, .decimals = DEC, .label = "K1" },
+          .flags = UI_FLAG_BORDER | UI_FLAG_KEY_RATE, .decimals = DEC, .label = "K1" },
         { .kind = UI_WIDGET_KEYCARD, .source = UI_SRC_PAD_K2_MAP, .font = UI_FONT_24,
           .x = 164, .y = 166, .w = 144, .h = 48, .fg = WHITE, .bg = CARD, .accent = PINK, .radius = 12,
-          .flags = UI_FLAG_BORDER, .decimals = DEC, .label = "K2" },
+          .flags = UI_FLAG_BORDER | UI_FLAG_KEY_RATE, .decimals = DEC, .label = "K2" },
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_MAP_TIME_ELAPSED, .font = UI_FONT_14, .align = UI_ALIGN_RIGHT,
           .x = 2, .y = 218, .w = 48, .h = 20, .fg = MUTED, .decimals = DEC },
         { .kind = UI_WIDGET_PROGRESS, .source = UI_SRC_MAP_PROGRESS,
@@ -216,6 +235,9 @@ static const ui_layout_t s_playing = {
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_MAX_COMBO, .font = UI_FONT_14, .align = UI_ALIGN_RIGHT,
           .x = 226, .y = 6, .w = 86, .h = 18, .fg = MUTED, .flags = UI_FLAG_HIDE_WHEN_EMPTY,
           .decimals = DEC, .label = "max ", .suffix = "x" },
+        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM, .font = UI_FONT_14, .align = UI_ALIGN_RIGHT,
+          .x = 240, .y = 113, .w = 72, .h = 20, .fg = PINK, .flags = UI_FLAG_HIDE_WHEN_EMPTY,
+          .decimals = DEC, .suffix = " PPM" },
     },
 };
 

@@ -62,7 +62,7 @@ static const ui_layout_t s_idle = {
 
 static const ui_layout_t s_playing = {
     .background = BG,
-    .count = 16,
+    .count = 17,
     .widgets = {
         // Header pill
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_NONE, .font = UI_FONT_14, .align = UI_ALIGN_CENTER,
@@ -94,10 +94,10 @@ static const ui_layout_t s_playing = {
         // Map press counters: K1 pink / K2 dark at rest, colors swap while pressed
         { .kind = UI_WIDGET_KEYCARD, .source = UI_SRC_PAD_K1_MAP, .font = UI_FONT_24,
           .x = 12, .y = 166, .w = 144, .h = 48, .fg = BG, .bg = PINK, .accent = CARD, .radius = 12,
-          .flags = UI_FLAG_BORDER, .decimals = DEC, .label = "K1" },
+          .flags = UI_FLAG_BORDER | UI_FLAG_KEY_RATE, .decimals = DEC, .label = "K1" },
         { .kind = UI_WIDGET_KEYCARD, .source = UI_SRC_PAD_K2_MAP, .font = UI_FONT_24,
           .x = 164, .y = 166, .w = 144, .h = 48, .fg = WHITE, .bg = CARD, .accent = PINK, .radius = 12,
-          .flags = UI_FLAG_BORDER, .decimals = DEC, .label = "K2" },
+          .flags = UI_FLAG_BORDER | UI_FLAG_KEY_RATE, .decimals = DEC, .label = "K2" },
 
         // Progress
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_MAP_TIME_ELAPSED, .font = UI_FONT_14, .align = UI_ALIGN_RIGHT,
@@ -113,6 +113,11 @@ static const ui_layout_t s_playing = {
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_MAX_COMBO, .font = UI_FONT_14, .align = UI_ALIGN_RIGHT,
           .x = 226, .y = 6, .w = 86, .h = 18, .fg = MUTED, .flags = UI_FLAG_HIDE_WHEN_EMPTY,
           .decimals = DEC, .label = "max ", .suffix = "x" },
+
+        // Combined tap rate (PPM, not the map's BPM) right of the PP, only while tapping
+        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM, .font = UI_FONT_14, .align = UI_ALIGN_RIGHT,
+          .x = 240, .y = 113, .w = 72, .h = 20, .fg = PINK, .flags = UI_FLAG_HIDE_WHEN_EMPTY,
+          .decimals = DEC, .suffix = " PPM" },
     },
 };
 

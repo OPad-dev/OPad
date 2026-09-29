@@ -85,8 +85,11 @@ void ui_data_set_string(uint8_t source, const char *value);
 /** Mark a source as having no value (widgets with UI_FLAG_HIDE_WHEN_EMPTY disappear). */
 void ui_data_clear(uint8_t source);
 
-/** Clear all tosu-derived sources (map, play, profile, session), e.g. when tosu disconnects. */
+/** Clear all tosu-derived sources (map, play incl. tap rate, profile, session), e.g. when tosu disconnects. */
 void ui_data_clear_host_sources(void);
+
+/** Clear everything the daemon sends (tosu-derived plus tap rate history), e.g. when the PC goes away. */
+void ui_data_clear_daemon_sources(void);
 
 // ---- Layouts & screens -----------------------------------------------------------
 

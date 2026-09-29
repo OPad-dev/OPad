@@ -79,7 +79,7 @@ message DeviceToHost {
 | 3 | `SetConfig` | Applies device parameters: `key1_hid_usage`, `key2_hid_usage`, `debounce_us` (500–20,000 µs), `brightness` (0–100%), `display_sleep_seconds`, `gameplay_display_hz` (1–60), and `key1_gpio` / `key2_gpio` (switch pins; 0 keeps the current pin). Pins must be one of the supported header GPIOs 2, 4, 6–16, 18, 21 and differ; a pin move is applied by the keypad task once both keys are released. *(Note: `press_color_rgb` is deprecated; highlight colors now come from layouts).* |
 | 4 | `CounterSync` | Lifetime counter synchronization with `target_state` (`counter_generation`, `lifetime_key1`, `lifetime_key2`) and `force_restore` flag. |
 | 5 | `HostStatus` | Host daemon status: `daemon_state` (`IDLE`, `PLAYING`, `COOLDOWN`) and `active_screen`. |
-| 6 | `DataUpdate` | Real-time telemetry batch containing up to 32 `DataValue` elements (`source` ID `0..31`, variant of `number` or `text`). |
+| 6 | `DataUpdate` | Real-time telemetry batch containing up to 32 `DataValue` elements (`source` ID `0..95`, variant of `number`, `text` or `clear`). See [DataUpdate sources](#dataupdate-sources-and-widget-flags). |
 | 7 | `SetLayout` | Uploads custom screen layout JSON / binary definition for `screen` ID `0..3`. |
 | 8 | `ResetLayout` | Resets specified screen to firmware default layout. |
 | 9 | `RequestLogs` | Requests a batch of buffered diagnostic logs from device RAM. |
@@ -87,6 +87,73 @@ message DeviceToHost {
 | 11 | `ResetLatencyStats` | Clears cumulative latency statistics (min, max, average, and histogram buckets). |
 | 12 | `EnterBootloader` | Instructs device to restart immediately into native USB ROM DFU bootloader for flashing. |
 | 14 | `ClaimOwnership` | Records which host install owns this pad (§W3-1, §W3-2). Carries a 16-byte `owner_id`. It is an NVS write, so the firmware honours it **only in IDLE**, never during `PLAYING` or `COOLDOWN` (P1-3); the host only ever sends it at connect time, which is already an IDLE-only moment. An all-zero `owner_id` is **refused**, so there is no wire path to unpairing — that is a documented reflash (§W3-4, `docs/recovery.md` §7). Re-claiming by the current owner writes nothing. |
+
+### DataUpdate sources and widget flags
+
+Source ids are wire format, defined in `firmware/main/ui/core/ui_ids.h`
+(`ui_source_t`) and mirrored by `desktop/crates/opad-model/src/ui_source.rs`;
+they are only ever appended. A layout widget binds one source by id; the
+designer shows the stable names below.
+
+| Ids | Names | Sent by |
+|---|---|---|
+| 1–19 | `map.*` (title, stars, `map.bpm`, progress, ...) | daemon, from tosu |
+| 20–37 | `play.*` (pp, accuracy, combo, grade, hits, ...) | daemon, from tosu |
+| 40–50 | `profile.*`, `session.*`, `game.state` | daemon, from tosu |
+| 51–59 | `play.ppm*`, `play.k1_ppm*`, `play.k2_ppm*` (tap rate) | daemon |
+| 60–73 | `pad.*` (key counters, `pad.kps`, clock, key down) | pad itself |
+| 74–79, 83 | `history.*` (tap rate history) | daemon |
+| 80–82 | `status.pc`, `status.tosu`, `status.osu` | pad itself |
+
+**Tap rate (PPM).** PPM is *presses per minute*: the player's physical key
+press rate, worked out by the daemon from the key counts. It is not the
+beatmap's musical BPM (`map.bpm`, id 12), even though players often say "BPM"
+for it. All PPM values are integer numbers except `history.period`, which is
+text.
+
+| Id | Name | Meaning |
+|---|---|---|
+| 51 | `play.ppm` | Combined current rate (both keys). Cleared while the player is not tapping. |
+| 52 | `play.ppm_avg` | Combined average of the current attempt |
+| 53 | `play.ppm_peak` | Combined peak of the current attempt |
+| 54–56 | `play.k1_ppm`, `play.k1_ppm_avg`, `play.k1_ppm_peak` | Same for K1 alone |
+| 57–59 | `play.k2_ppm`, `play.k2_ppm_avg`, `play.k2_ppm_peak` | Same for K2 alone |
+| 74 | `history.ppm_avg` | Combined average over the history period |
+| 75 | `history.ppm_peak` | Combined peak over the history period |
+| 76–77 | `history.k1_ppm_avg`, `history.k1_ppm_peak` | K1 over the history period |
+| 78–79 | `history.k2_ppm_avg`, `history.k2_ppm_peak` | K2 over the history period |
+| 83 | `history.period` | The period as the pad shows it: `LAST 30 DAYS`, `ALL TIME` |
+
+Averages and peaks of an attempt stay until the next attempt starts. The
+`history.*` sources are sent whenever the daemon knows them, with or without
+tosu. The pad computes none of this and stores none of it.
+
+**Clearing.** A `clear` value empties a source; widgets with
+`UI_FLAG_HIDE_WHEN_EMPTY` then disappear, other widgets show `-` for a number
+and nothing for text. The pad clears sources itself when the host goes away:
+
+- `HostStatus.tosu_connected = false` clears ids 1–59 (tosu data and the
+  current attempt's tap rate).
+- The port closing (`status.pc` → 0) clears everything the daemon sends
+  (1–59, 74–79, 83) and zeroes `status.tosu` / `status.osu`. The daemon
+  resends every value after a reconnect.
+
+**Widget flags** (`ui_widget_t.flags`):
+
+| Bit | Name | Meaning |
+|---|---|---|
+| `0x01` | `UI_FLAG_BG_FILL` | Fill the widget with `bg` |
+| `0x02` | `UI_FLAG_HIDE_WHEN_EMPTY` | Hidden while the bound source has no value |
+| `0x04` | `UI_FLAG_BORDER` | 1 px border (RECT, KEYCARD) |
+| `0x08` | `UI_FLAG_KEY_RATE` | KEYCARD: show that key's current PPM (`play.k1_ppm` for a K1 card, `play.k2_ppm` for K2) as `198 PPM` right of the title. Hidden, with the title centered as before, while the rate is empty. |
+
+**Mixed versions.** Old firmware drops `DataValue`s with unknown source ids
+and ignores unknown flag bits, so a new app can send the tap rate sources and
+set `UI_FLAG_KEY_RATE` safely. It does, however, reject a whole *layout* whose
+widgets bind an unknown source id (`ui_layout_validate`), so a layout that
+uses ids 51–59, 74–79 or 83 only loads on firmware that knows them. An old app
+never sends these sources: on new firmware they stay empty and every widget
+bound to them hides.
 
 ---
 

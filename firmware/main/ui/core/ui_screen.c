@@ -209,6 +209,38 @@ static uint8_t key_down_source(uint8_t source)
     }
 }
 
+// Current tap rate of the card's key, for UI_FLAG_KEY_RATE
+static uint8_t key_rate_source(uint8_t source)
+{
+    switch (key_down_source(source)) {
+    case UI_SRC_PAD_K1_DOWN: return UI_SRC_PLAY_K1_PPM;
+    case UI_SRC_PAD_K2_DOWN: return UI_SRC_PLAY_K2_PPM;
+    default: return UI_SRC_NONE;
+    }
+}
+
+// Key card rate: "198 PPM" right of the title; while there is no rate the title stays
+// centered, so the card looks as it does without the flag
+static void rate_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
+{
+    (void)subject;
+    lv_obj_t *rate = lv_observer_get_target_obj(observer);
+    lv_obj_t *title = lv_obj_get_user_data(rate);
+    uint8_t source = (uint8_t)(uintptr_t)lv_observer_get_user_data(observer);
+    bool empty = ui_data_is_empty(source);
+    if (!empty) {
+        char value[UI_STRING_MAX];
+        ui_data_format(source, UI_DECIMALS_DEFAULT, value, sizeof(value));
+        lv_label_set_text_fmt(rate, "%s PPM", value);
+    }
+    lv_obj_set_flag(rate, LV_OBJ_FLAG_HIDDEN, empty);
+    if (empty) {
+        lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 3);
+    } else {
+        lv_obj_align(title, LV_ALIGN_TOP_LEFT, 10, 3);
+    }
+}
+
 static void build_keycard(lv_obj_t *scr, const ui_widget_t *w)
 {
     lv_obj_t *card = plain_obj(scr);
@@ -242,6 +274,18 @@ static void build_keycard(lv_obj_t *scr, const ui_widget_t *w)
     lv_obj_align(count, LV_ALIGN_CENTER, 0, w->h >= 48 ? 8 : 0);
     if (w->source != UI_SRC_NONE) {
         lv_subject_add_observer_obj(ui_data_subject(w->source), count_observer_cb, count, (void *)w);
+    }
+
+    uint8_t rate_src = (w->flags & UI_FLAG_KEY_RATE) ? key_rate_source(w->source) : UI_SRC_NONE;
+    if (rate_src != UI_SRC_NONE) {
+        lv_obj_t *rate = lv_label_create(card);
+        lv_obj_remove_style_all(rate);
+        lv_obj_set_style_text_font(rate, s_fonts[UI_FONT_14], 0);
+        lv_obj_set_style_text_opa(rate, LV_OPA_70, 0);
+        lv_obj_align(rate, LV_ALIGN_TOP_RIGHT, -10, 3);
+        lv_obj_set_user_data(rate, title);
+        lv_subject_add_observer_obj(ui_data_subject(rate_src), rate_observer_cb, rate,
+                                    (void *)(uintptr_t)rate_src);
     }
 
     uint8_t down = key_down_source(w->source);

@@ -61,6 +61,16 @@ static const ui_source_info_t s_sources[UI_SRC_COUNT] = {
     [UI_SRC_SESSION_PLAYCOUNT]   = N("session.playcount", UI_FMT_GROUPED, 1, 0),
     [UI_SRC_GAME_STATE]          = S("game.state", UI_FMT_TEXT, 1, 0),
 
+    [UI_SRC_PLAY_PPM]            = N("play.ppm", UI_FMT_INT, 1, 0),
+    [UI_SRC_PLAY_PPM_AVG]        = N("play.ppm_avg", UI_FMT_INT, 1, 0),
+    [UI_SRC_PLAY_PPM_PEAK]       = N("play.ppm_peak", UI_FMT_INT, 1, 0),
+    [UI_SRC_PLAY_K1_PPM]         = N("play.k1_ppm", UI_FMT_INT, 1, 0),
+    [UI_SRC_PLAY_K1_PPM_AVG]     = N("play.k1_ppm_avg", UI_FMT_INT, 1, 0),
+    [UI_SRC_PLAY_K1_PPM_PEAK]    = N("play.k1_ppm_peak", UI_FMT_INT, 1, 0),
+    [UI_SRC_PLAY_K2_PPM]         = N("play.k2_ppm", UI_FMT_INT, 1, 0),
+    [UI_SRC_PLAY_K2_PPM_AVG]     = N("play.k2_ppm_avg", UI_FMT_INT, 1, 0),
+    [UI_SRC_PLAY_K2_PPM_PEAK]    = N("play.k2_ppm_peak", UI_FMT_INT, 1, 0),
+
     [UI_SRC_PAD_K1_MAP]          = N("pad.k1_map", UI_FMT_GROUPED, 1, 0),
     [UI_SRC_PAD_K2_MAP]          = N("pad.k2_map", UI_FMT_GROUPED, 1, 0),
     [UI_SRC_PAD_TOTAL_MAP]       = N("pad.total_map", UI_FMT_GROUPED, 1, 0),
@@ -76,9 +86,18 @@ static const ui_source_info_t s_sources[UI_SRC_COUNT] = {
     [UI_SRC_PAD_K1_DOWN]         = N("pad.k1_down", UI_FMT_INT, 1, 0),
     [UI_SRC_PAD_K2_DOWN]         = N("pad.k2_down", UI_FMT_INT, 1, 0),
 
+    [UI_SRC_HISTORY_PPM_AVG]     = N("history.ppm_avg", UI_FMT_INT, 1, 0),
+    [UI_SRC_HISTORY_PPM_PEAK]    = N("history.ppm_peak", UI_FMT_INT, 1, 0),
+    [UI_SRC_HISTORY_K1_PPM_AVG]  = N("history.k1_ppm_avg", UI_FMT_INT, 1, 0),
+    [UI_SRC_HISTORY_K1_PPM_PEAK] = N("history.k1_ppm_peak", UI_FMT_INT, 1, 0),
+    [UI_SRC_HISTORY_K2_PPM_AVG]  = N("history.k2_ppm_avg", UI_FMT_INT, 1, 0),
+    [UI_SRC_HISTORY_K2_PPM_PEAK] = N("history.k2_ppm_peak", UI_FMT_INT, 1, 0),
+
     [UI_SRC_STATUS_PC]           = N("status.pc", UI_FMT_INT, 1, 0),
     [UI_SRC_STATUS_TOSU]         = N("status.tosu", UI_FMT_INT, 1, 0),
     [UI_SRC_STATUS_OSU]          = N("status.osu", UI_FMT_INT, 1, 0),
+
+    [UI_SRC_HISTORY_PERIOD]      = S("history.period", UI_FMT_TEXT, 1, 0),
 };
 
 #undef S
@@ -156,9 +175,19 @@ void ui_data_clear(uint8_t source)
 
 void ui_data_clear_host_sources(void)
 {
-    for (int i = UI_SRC_MAP_TITLE; i <= UI_SRC_GAME_STATE; i++) {
+    // tosu data plus the current attempt's tap rate, which the daemon derives from it
+    for (int i = UI_SRC_MAP_TITLE; i <= UI_SRC_PLAY_K2_PPM_PEAK; i++) {
         ui_data_clear((uint8_t)i);
     }
+}
+
+void ui_data_clear_daemon_sources(void)
+{
+    ui_data_clear_host_sources();
+    for (int i = UI_SRC_HISTORY_PPM_AVG; i <= UI_SRC_HISTORY_K2_PPM_PEAK; i++) {
+        ui_data_clear((uint8_t)i);
+    }
+    ui_data_clear(UI_SRC_HISTORY_PERIOD);
 }
 
 bool ui_data_is_empty(uint8_t source)

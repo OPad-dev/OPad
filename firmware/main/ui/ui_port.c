@@ -37,6 +37,7 @@ static uint64_t s_kps_ring[KPS_WINDOW];
 static int s_kps_pos;
 static int s_kps_fill;  // samples in the ring, up to KPS_WINDOW
 static time_t s_clock_minute = -1;  // t / 60 of the last formatted pad.clock/pad.date
+static bool s_pc_connected;
 
 // ---- helpers (LVGL lock held) -------------------------------------------------------
 
@@ -94,7 +95,15 @@ static void update_pad_sources(int64_t now_us)
     }
     ui_data_set_number(UI_SRC_PAD_KPS, taps > 0 ? (double)taps : 0);
 
-    ui_data_set_number(UI_SRC_STATUS_PC, usb_cdc_is_connected());
+    // The daemon closed the port (or the cable went): nothing it sent is current any more
+    bool pc = usb_cdc_is_connected();
+    if (s_pc_connected && !pc) {
+        ui_data_clear_daemon_sources();
+        ui_data_set_number(UI_SRC_STATUS_TOSU, 0);
+        ui_data_set_number(UI_SRC_STATUS_OSU, 0);
+    }
+    s_pc_connected = pc;
+    ui_data_set_number(UI_SRC_STATUS_PC, pc);
     ui_data_set_number(UI_SRC_PAD_UPTIME, (double)(now_us / 1000000 * 1000));
 
     // Both strings have minute resolution (no TZ on the device): format once a minute
