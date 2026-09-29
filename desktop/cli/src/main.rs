@@ -1,7 +1,8 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use opad_device::flash::{self, APP_PARTITION_OFFSET};
-use opad_ipc::{send_request, IpcRequest, IpcResponse, IpcStream};
+use opad_ipc::{send_request, IpcRequest, IpcResponse, IpcStream, TapStatsSnapshot};
+use opad_model::tap_rate::{self, TapChannel};
 use opad_model::JsonBackup;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -91,6 +92,17 @@ enum Commands {
             help = "Clear the collected samples (e.g. right before playing a map)"
         )]
         reset: bool,
+    },
+    /// Show your tap rate in PPM (presses per minute, not the map's BPM):
+    /// the current or last attempt and the history
+    Stats {
+        #[arg(
+            long,
+            value_name = "DAYS",
+            help = "Set the history period first, in days (0 = all time). It is kept for the \
+                    app and the pad too."
+        )]
+        period: Option<u32>,
     },
     /// Perform initial system setup (udev permissions & directories)
     Setup,
@@ -668,6 +680,25 @@ async fn main() -> Result<()> {
             }
         }
 
+        Commands::Stats { period } => {
+            let request = match period {
+                Some(days) => {
+                    tap_rate::validate_history_days(days).map_err(anyhow::Error::msg)?;
+                    IpcRequest::SetTapHistoryPeriod { days }
+                }
+                None => IpcRequest::GetTapStats,
+            };
+            // An older daemon cannot parse the request and drops the connection
+            let resp = send_request(daemon(&mut stream)?, &request)
+                .await
+                .context("The daemon did not answer; it may predate PPM statistics")?;
+            match resp {
+                IpcResponse::TapStats(snapshot) => print!("{}", format_tap_stats(&snapshot)),
+                IpcResponse::Error(e) => bail!("{}", e),
+                other => bail!("Unexpected response from daemon: {:?}", other),
+            }
+        }
+
         Commands::Setup => unreachable!(),
         Commands::Freaky67 | Commands::EasterEgg => {
             let resp = send_request(daemon(&mut stream)?, &IpcRequest::TriggerEasterEgg).await?;
@@ -682,6 +713,118 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn fmt_ppm(ppm: Option<f64>) -> String {
+    match ppm.filter(|p| p.is_finite()) {
+        Some(p) => format!("{:.0}", p),
+        None => "-".into(),
+    }
+}
+
+/// `opadctl stats`: the live or last attempt, then the history
+fn format_tap_stats(s: &TapStatsSnapshot) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    let (attempt, live) = match (&s.current, &s.last) {
+        (Some(a), _) => (Some(a), true),
+        (None, Some(a)) => (Some(a), false),
+        (None, None) => (None, false),
+    };
+    match attempt {
+        Some(a) => {
+            let _ = writeln!(
+                out,
+                "=== {} (PPM) ===",
+                if live {
+                    "Current attempt, live"
+                } else {
+                    "Last attempt"
+                }
+            );
+            let map = &a.beatmap;
+            if !map.title.is_empty() {
+                let mut line = if map.artist.is_empty() {
+                    map.title.clone()
+                } else {
+                    format!("{} - {}", map.artist, map.title)
+                };
+                if !map.difficulty.is_empty() {
+                    let _ = write!(line, " [{}]", map.difficulty);
+                }
+                if let Some(mods) = map.mods.as_deref().filter(|m| !m.is_empty()) {
+                    let _ = write!(line, " +{mods}");
+                }
+                let _ = writeln!(out, "Map:      {line}");
+            }
+            if let Some(end) = a.ended_at {
+                let _ = writeln!(out, "Ended:    {}", end.format("%Y-%m-%d %H:%M UTC"));
+            }
+            let _ = writeln!(
+                out,
+                "{:<10}{:>9}{:>9}{:>9}{:>10}",
+                "", "Current", "Average", "Peak", "Presses"
+            );
+            for ch in TapChannel::ALL {
+                let c = a.channel(ch);
+                let _ = writeln!(
+                    out,
+                    "{:<10}{:>9}{:>9}{:>9}{:>10}",
+                    ch.label(),
+                    fmt_ppm(c.current_ppm),
+                    fmt_ppm(c.average_ppm),
+                    fmt_ppm(c.peak_ppm),
+                    c.presses
+                );
+            }
+        }
+        None => {
+            let _ = writeln!(out, "=== Attempt (PPM) ===");
+            let _ = writeln!(out, "No attempt yet: play a map with tosu running.");
+        }
+    }
+
+    let _ = writeln!(
+        out,
+        "\n=== History: {} ===",
+        tap_rate::history_period_label(s.period_days)
+    );
+    match &s.history {
+        Some(h) if h.attempts > 0 => {
+            let _ = writeln!(out, "Attempts: {}", h.attempts);
+            let _ = writeln!(
+                out,
+                "{:<10}{:>9}{:>10}{:>11}{:>10}",
+                "", "Average", "Avg peak", "Best peak", "Presses"
+            );
+            for ch in TapChannel::ALL {
+                let c = h.channel(ch);
+                let _ = writeln!(
+                    out,
+                    "{:<10}{:>9}{:>10}{:>11}{:>10}",
+                    ch.label(),
+                    fmt_ppm(c.average_ppm),
+                    fmt_ppm(c.average_peak_ppm),
+                    fmt_ppm(c.best_peak_ppm),
+                    c.total_presses
+                );
+            }
+        }
+        Some(_) => {
+            let _ = writeln!(out, "No attempts in this period yet.");
+        }
+        None => {
+            let _ = writeln!(out, "History not available (storage not ready).");
+        }
+    }
+    if s.unsaved_attempts > 0 {
+        let _ = writeln!(
+            out,
+            "{} attempt(s) will be saved when play stops.",
+            s.unsaved_attempts
+        );
+    }
+    out
 }
 
 /// The `monitor` cursor after a reply: the last entry received. The daemon
@@ -1060,6 +1203,78 @@ mod tests {
         assert_eq!(next_since_seq(None, &[]), None);
         // A single entry is not fetched again
         assert_eq!(next_since_seq(None, &[entry(1)]), Some(1));
+    }
+
+    #[test]
+    fn stats_prints_the_attempt_and_history() {
+        use opad_model::tap_rate::{
+            AttemptStats, BeatmapRef, ChannelHistory, ChannelStats, TapHistory,
+        };
+        let empty = format_tap_stats(&TapStatsSnapshot {
+            period_days: 30,
+            ..Default::default()
+        });
+        assert!(empty.contains("No attempt yet"), "{empty}");
+        assert!(empty.contains("History: Last 30 days"), "{empty}");
+        assert!(empty.contains("storage not ready"), "{empty}");
+
+        let ch = |avg: f64, presses| ChannelStats {
+            current_ppm: None,
+            average_ppm: Some(avg),
+            peak_ppm: Some(avg + 20.4),
+            presses,
+            ..Default::default()
+        };
+        let snapshot = TapStatsSnapshot {
+            current: None,
+            last: Some(AttemptStats {
+                started_at: "2026-09-29T12:00:00Z".parse().unwrap(),
+                ended_at: Some("2026-09-29T12:03:10Z".parse().unwrap()),
+                beatmap: BeatmapRef {
+                    title: "Blue Zenith".into(),
+                    artist: "xi".into(),
+                    difficulty: "FOUR DIMENSIONS".into(),
+                    ..Default::default()
+                },
+                k1: ch(100.2, 50),
+                k2: ch(99.8, 50),
+                combined: ch(200.0, 100),
+            }),
+            history: Some(TapHistory {
+                period_days: 0,
+                attempts: 3,
+                combined: ChannelHistory {
+                    average_ppm: Some(190.4),
+                    best_peak_ppm: Some(251.6),
+                    total_presses: 3000,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+            period_days: 0,
+            unsaved_attempts: 2,
+        };
+        let out = format_tap_stats(&snapshot);
+        assert!(out.contains("Last attempt"), "{out}");
+        assert!(out.contains("Ended:    2026-09-29 12:03 UTC"), "{out}");
+        assert!(out.contains("xi - Blue Zenith [FOUR DIMENSIONS]"), "{out}");
+        assert!(out.contains("History: All time"), "{out}");
+        assert!(out.contains("Attempts: 3"), "{out}");
+        let combined = out.lines().rfind(|l| l.starts_with("Combined")).unwrap();
+        assert!(
+            combined.contains("190") && combined.contains("252"),
+            "{out}"
+        );
+        assert!(out.contains("2 attempt(s) will be saved"), "{out}");
+        assert!(!out.to_lowercase().contains("bpm"), "{out}");
+    }
+
+    #[test]
+    fn stats_period_is_optional() {
+        use clap::Parser;
+        assert!(Cli::try_parse_from(["opadctl", "stats"]).is_ok());
+        assert!(Cli::try_parse_from(["opadctl", "stats", "--period", "0"]).is_ok());
+        assert!(Cli::try_parse_from(["opadctl", "stats", "--period", "week"]).is_err());
     }
 
     #[test]

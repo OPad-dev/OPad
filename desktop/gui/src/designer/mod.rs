@@ -13,7 +13,7 @@ use iced_aw::helpers::{color_picker, number_input};
 use opad_ipc::{IpcRequest, IpcResponse};
 use opad_layout::{
     all_sources, source_info, Align, Font, Layout, Screen, SourceInfo, Widget, WidgetKind,
-    DECIMALS_DEFAULT, FLAG_BG_FILL, FLAG_BORDER, FLAG_HIDE_WHEN_EMPTY, MAX_WIDGETS,
+    DECIMALS_DEFAULT, FLAG_BG_FILL, FLAG_BORDER, FLAG_HIDE_WHEN_EMPTY, FLAG_KEY_RATE, MAX_WIDGETS,
 };
 use opad_model::ui_source::{self, SourceValue};
 use opad_ui_preview as preview;
@@ -837,10 +837,18 @@ impl Designer {
             checkbox(w.has_flag(FLAG_HIDE_WHEN_EMPTY))
                 .label("Hide when there is no data")
                 .on_toggle(|on| Message::Flag(FLAG_HIDE_WHEN_EMPTY, on)),
-            iced::widget::rule::horizontal(1),
-            background,
-            theme::muted(kind_help(w.kind)).size(12),
         ]
+        .push(
+            // The key's own tap rate, which the firmware only draws on key cards
+            (w.kind == WidgetKind::KeyCard).then(|| {
+                checkbox(w.has_flag(FLAG_KEY_RATE))
+                    .label("Show PPM (key tap rate)")
+                    .on_toggle(|on| Message::Flag(FLAG_KEY_RATE, on))
+            }),
+        )
+        .push(iced::widget::rule::horizontal(1))
+        .push(background)
+        .push(theme::muted(kind_help(w.kind)).size(12))
         .spacing(8)
         .into()
     }
@@ -853,7 +861,8 @@ fn kind_help(kind: WidgetKind) -> &'static str {
             "Background = track, Accent = fill. Use a 0-1 source such as map progress or health."
         }
         WidgetKind::KeyCard => {
-            "Label is the title. Background at rest, Accent while the key is held (they swap)."
+            "Label is the title. Background at rest, Accent while the key is held (they swap). \
+             Show PPM adds the key's live presses per minute."
         }
         WidgetKind::StatusDot => {
             "Accent = connected, Background = disconnected, Text = label color."

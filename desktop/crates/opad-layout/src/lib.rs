@@ -19,6 +19,8 @@ pub const DECIMALS_DEFAULT: u8 = 0xFF;
 pub const FLAG_BG_FILL: u8 = 0x01;
 pub const FLAG_HIDE_WHEN_EMPTY: u8 = 0x02;
 pub const FLAG_BORDER: u8 = 0x04;
+/// Key card only: show that key's current tap rate (PPM) in the card
+pub const FLAG_KEY_RATE: u8 = 0x08;
 
 macro_rules! wire_enum {
     ($(#[$meta:meta])* $name:ident { $($variant:ident = $value:literal, $label:literal;)* }) => {
@@ -256,6 +258,7 @@ pub enum SourceCategory {
     Play,
     Profile,
     Pad,
+    History,
     Status,
 }
 
@@ -267,6 +270,7 @@ impl SourceCategory {
             SourceCategory::Play => "Live play",
             SourceCategory::Profile => "Profile & session",
             SourceCategory::Pad => "Pad",
+            SourceCategory::History => "History",
             SourceCategory::Status => "Connection",
         }
     }
@@ -291,7 +295,7 @@ impl SourceInfo {
         let mut words: Vec<String> = short.split('_').map(str::to_string).collect();
         for word in &mut words {
             *word = match word.as_str() {
-                "pp" | "ur" | "bpm" | "ar" | "cs" | "od" | "hp" | "kps" | "pc" => {
+                "pp" | "ppm" | "ur" | "bpm" | "ar" | "cs" | "od" | "hp" | "kps" | "pc" => {
                     word.to_uppercase()
                 }
                 "k1" | "k2" => word.to_uppercase(),
@@ -337,6 +341,7 @@ pub fn source_info(id: u8) -> Option<SourceInfo> {
                 Some("play") => SourceCategory::Play,
                 Some("profile" | "session" | "game") => SourceCategory::Profile,
                 Some("pad") => SourceCategory::Pad,
+                Some("history") => SourceCategory::History,
                 _ => SourceCategory::Status,
             },
         })
@@ -394,5 +399,21 @@ mod tests {
             SourceCategory::Map
         );
         assert!(all_sources().iter().all(|s| s.id != ui_source::PAD_K1_DOWN));
+    }
+
+    #[test]
+    fn tap_rate_sources() {
+        let k1_avg = source_info(ui_source::PLAY_K1_PPM_AVG).unwrap();
+        assert_eq!(k1_avg.label(), "K1 PPM avg");
+        assert_eq!(k1_avg.category, SourceCategory::Play);
+        assert_eq!(source_info(ui_source::PLAY_PPM).unwrap().label(), "PPM");
+        let peak = source_info(ui_source::HISTORY_K2_PPM_PEAK).unwrap();
+        assert_eq!(peak.label(), "K2 PPM peak");
+        assert_eq!(peak.category, SourceCategory::History);
+        assert_eq!(peak.to_string(), "History: K2 PPM peak");
+        assert_eq!(
+            source_info(ui_source::HISTORY_PERIOD).unwrap().category,
+            SourceCategory::History
+        );
     }
 }

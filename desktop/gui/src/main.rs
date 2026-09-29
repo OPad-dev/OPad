@@ -10,6 +10,7 @@ mod platform_linux;
 #[cfg(windows)]
 mod platform_windows;
 mod single_instance;
+mod stats;
 mod theme;
 mod tray;
 
@@ -65,6 +66,7 @@ pub fn main() -> iced::Result {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Dashboard,
+    Stats,
     Designer,
     Settings,
     Device,
@@ -80,8 +82,10 @@ impl Page {
     /// `--page` names and their aliases. The first name for each page is the
     /// token a second launch sends to the running instance, so both ends of
     /// the single-instance handoff read this one table.
-    const TOKENS: [(&'static str, Page); 12] = [
+    const TOKENS: [(&'static str, Page); 14] = [
         ("dashboard", Page::Dashboard),
+        ("stats", Page::Stats),
+        ("ppm", Page::Stats),
         ("designer", Page::Designer),
         ("settings", Page::Settings),
         ("device", Page::Device),
@@ -111,8 +115,9 @@ impl Page {
             .expect("every page has a token")
     }
 
-    pub const ALL: [(Page, &'static str); 6] = [
+    pub const ALL: [(Page, &'static str); 7] = [
         (Page::Dashboard, "Dashboard"),
+        (Page::Stats, "Stats"),
         (Page::Designer, "Designer"),
         (Page::Settings, "Settings"),
         (Page::Device, "Device"),
@@ -120,8 +125,9 @@ impl Page {
         (Page::About, "About"),
     ];
 
-    pub const ALL_WITH_DIAGNOSTICS: [(Page, &'static str); 7] = [
+    pub const ALL_WITH_DIAGNOSTICS: [(Page, &'static str); 8] = [
         (Page::Dashboard, "Dashboard"),
+        (Page::Stats, "Stats"),
         (Page::Designer, "Designer"),
         (Page::Settings, "Settings"),
         (Page::Device, "Device"),
@@ -261,6 +267,8 @@ pub struct App {
     pub diagnostics_enabled: bool,
     pub diagnostics: diagnostics::DiagnosticsState,
     pub settings_tab: pages::SettingsTab,
+    /// The Stats page's tap rate (PPM) statistics
+    pub stats: stats::StatsState,
 }
 
 /// Shown when no tray host appeared: closing the window then quits the app
@@ -278,6 +286,9 @@ pub enum Message {
     Poll,
     Status(Result<IpcResponse, String>),
     UiValues(Result<IpcResponse, String>),
+    TapStats(Result<IpcResponse, String>),
+    SetTapPeriod(u32),
+    TapPeriodSet(Result<IpcResponse, String>),
     Logs(Result<IpcResponse, String>),
     FilterLogLevel(Option<LogLevel>),
     FilterLogSource(Option<LogSource>),
@@ -467,6 +478,7 @@ impl App {
             diagnostics_enabled,
             diagnostics: diagnostics::DiagnosticsState::default(),
             settings_tab: pages::SettingsTab::default(),
+            stats: stats::StatsState::default(),
         };
         app.log_event(
             LogSource::Program,
@@ -566,6 +578,10 @@ impl App {
                 Message::FirmwareOffer,
             ));
         }
+        // Tap rate statistics, only while the Stats page shows them
+        if page == Some(Page::Stats) {
+            tasks.extend(self.stats.poll());
+        }
         if page == Some(Page::Logs) {
             let since_seq = if self.latest_log_seq > 0 {
                 Some(self.latest_log_seq)
@@ -630,6 +646,9 @@ impl App {
                 if page == Page::Settings {
                     // The Updates panel lives here; show it fresh
                     self.update_status_polled_at = None;
+                }
+                if page == Page::Stats {
+                    self.stats.reset_backoff();
                 }
                 let mut tasks = vec![self.poll()];
                 if page == Page::Designer
@@ -720,6 +739,9 @@ impl App {
                     self.ui_values = values.into_iter().collect();
                 }
             }
+            Message::TapStats(result) => self.stats.received(result),
+            Message::SetTapPeriod(days) => return self.stats.set_period(days),
+            Message::TapPeriodSet(result) => self.stats.period_set(result),
             Message::Logs(result) => {
                 if let Ok(IpcResponse::LogEntries {
                     entries,
@@ -1778,6 +1800,7 @@ impl App {
 
         let page: Element<'_, Message> = match self.page {
             Page::Dashboard => pages::dashboard(self),
+            Page::Stats => stats::view(self),
             Page::Designer => self.designer.view().map(Message::Designer),
             Page::Settings => pages::settings(self),
             Page::Device => pages::device(self),
@@ -2889,6 +2912,7 @@ mod tests {
         assert_eq!(Page::from_token("LOGS"), Some(Page::Logs));
         assert_eq!(Page::from_token("testing"), Some(Page::Diagnostics));
         assert_eq!(Page::from_token("licenses"), Some(Page::About));
+        assert_eq!(Page::from_token("ppm"), Some(Page::Stats));
         assert_eq!(Page::from_token("nowhere"), None);
     }
 
