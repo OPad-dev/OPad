@@ -96,6 +96,9 @@ fn main() {
 
     println!("cargo:rerun-if-changed={}", sdkconfig.display());
     println!("cargo:rerun-if-changed=csrc/preview.c");
+    // The firmware's UI core is compiled in too: without this, editing it left
+    // the preview (and its id check against opad-model) on the old code
+    println!("cargo:rerun-if-changed={}", ui_core.display());
 }
 
 /// `CONFIG_LV_*` lines of sdkconfig as C defines (what ESP-IDF puts in sdkconfig.h)
