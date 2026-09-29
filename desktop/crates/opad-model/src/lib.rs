@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 pub mod diag;
 pub mod log;
 pub mod paths;
+pub mod tap_rate;
 pub mod ui_source;
 
 pub use log::{LogEntry, LogLevel, LogSource};
@@ -337,6 +338,23 @@ pub struct GameplayTelemetry {
     /// Every UI data source this frame provides (see `ui_source`)
     #[serde(default)]
     pub values: Vec<(u8, ui_source::SourceValue)>,
+    /// What is being played, recorded with each attempt's tap rate
+    #[serde(default)]
+    pub beatmap: tap_rate::BeatmapRef,
+    /// The play has failed: the attempt is over even though osu! is still in
+    /// its play state until the retry or the exit
+    #[serde(default)]
+    pub failed: bool,
+}
+
+/// tosu's key counters (`/websocket/v2/precise`), sent when either changes.
+/// osu! counts the player's K1/K2 key-downs during a play.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KeyCounts {
+    pub k1: u32,
+    pub k2: u32,
+    /// When this daemon received the frame; the tap rate is measured on it
+    pub at: std::time::Instant,
 }
 
 /// Portable JSON Backup Format (§21)

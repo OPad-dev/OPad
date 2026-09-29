@@ -267,6 +267,8 @@ async fn test_playing_cooldown_playing_no_sync() {
     // 1. Enter playing
     let actions = controller.on_event(
         RuntimeEvent::TosuTelemetry {
+            beatmap: Default::default(),
+            failed: false,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "Test Map".to_string(),
@@ -280,6 +282,8 @@ async fn test_playing_cooldown_playing_no_sync() {
     // 2. Map ends -> enters cooldown
     let actions = controller.on_event(
         RuntimeEvent::TosuTelemetry {
+            beatmap: Default::default(),
+            failed: false,
             is_playing: false,
             live_time_ms: 0.0,
             title: "Test Map".to_string(),
@@ -294,6 +298,8 @@ async fn test_playing_cooldown_playing_no_sync() {
     // 3. User restarts or starts another map at 2 seconds into cooldown (< 5s deadline)
     let actions = controller.on_event(
         RuntimeEvent::TosuTelemetry {
+            beatmap: Default::default(),
+            failed: false,
             is_playing: true,
             live_time_ms: 500.0,
             title: "Test Map 2".to_string(),
@@ -323,6 +329,8 @@ async fn test_playing_cooldown_sync_idle_exactly_one_sync() {
     // 1. Playing
     let _ = controller.on_event(
         RuntimeEvent::TosuTelemetry {
+            beatmap: Default::default(),
+            failed: false,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "Test Map".to_string(),
@@ -335,6 +343,8 @@ async fn test_playing_cooldown_sync_idle_exactly_one_sync() {
     let t_cooldown = now + Duration::from_secs(1);
     let _ = controller.on_event(
         RuntimeEvent::TosuTelemetry {
+            beatmap: Default::default(),
+            failed: false,
             is_playing: false,
             live_time_ms: 0.0,
             title: "Test Map".to_string(),
@@ -436,6 +446,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             pending_takeover: None,
             foreign_pad: false,
             nvs_restore_pending: false,
+            tap: Default::default(),
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
@@ -658,6 +669,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             pending_takeover: None,
             foreign_pad: false,
             nvs_restore_pending: false,
+            tap: Default::default(),
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
@@ -715,6 +727,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             pending_takeover: None,
             foreign_pad: false,
             nvs_restore_pending: false,
+            tap: Default::default(),
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
@@ -815,6 +828,7 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
         pending_takeover: None,
         foreign_pad: false,
         nvs_restore_pending: false,
+        tap: Default::default(),
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
@@ -884,6 +898,7 @@ async fn a_non_monotonic_rejection_is_retried_with_the_pads_current_counters() {
         pending_takeover: None,
         foreign_pad: false,
         nvs_restore_pending: false,
+        tap: Default::default(),
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
@@ -942,6 +957,7 @@ async fn test_json_validation_preview_and_confirm() {
         pending_takeover: None,
         foreign_pad: false,
         nvs_restore_pending: false,
+        tap: Default::default(),
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
@@ -1048,6 +1064,7 @@ async fn test_ipc_handshake_mismatch_and_protocol_version() {
         pending_takeover: None,
         foreign_pad: false,
         nvs_restore_pending: false,
+        tap: Default::default(),
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
@@ -1159,6 +1176,7 @@ async fn test_install_update_is_refused_outside_idle() {
             pending_takeover: None,
             foreign_pad: false,
             nvs_restore_pending: false,
+            tap: Default::default(),
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
@@ -1212,6 +1230,7 @@ async fn test_firmware_is_not_an_enableable_updater() {
         pending_takeover: None,
         foreign_pad: false,
         nvs_restore_pending: false,
+        tap: Default::default(),
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
@@ -1397,6 +1416,8 @@ async fn test_late_sync_result_does_not_leave_playing() {
     );
     let _ = controller.on_event(
         RuntimeEvent::TosuTelemetry {
+            beatmap: Default::default(),
+            failed: false,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "Map".to_string(),
@@ -1582,6 +1603,8 @@ async fn test_replug_during_play_keeps_the_state_machine_and_write_guard() {
     controller.on_event(RuntimeEvent::DeviceConnected(dev_info.clone(), None), now);
     let actions = controller.on_event(
         RuntimeEvent::TosuTelemetry {
+            beatmap: Default::default(),
+            failed: false,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "Hotplug Map".to_string(),
@@ -1632,6 +1655,8 @@ async fn test_replug_during_play_keeps_the_state_machine_and_write_guard() {
     // The map ends normally afterwards: cooldown, then sync, then idle
     let actions = controller.on_event(
         RuntimeEvent::TosuTelemetry {
+            beatmap: Default::default(),
+            failed: false,
             is_playing: false,
             live_time_ms: 0.0,
             title: String::new(),
@@ -2038,6 +2063,7 @@ fn firmware_update_fixture(mode: RuntimeMode, connected: bool) -> IpcFixture {
         pending_takeover: None,
         foreign_pad: false,
         nvs_restore_pending: false,
+        tap: Default::default(),
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
@@ -2237,6 +2263,8 @@ fn play_a_session(start: Instant) -> (RuntimeController, Instant) {
 
     let _ = controller.on_event(
         RuntimeEvent::TosuTelemetry {
+            beatmap: Default::default(),
+            failed: false,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "A Map".to_string(),
@@ -2247,6 +2275,8 @@ fn play_a_session(start: Instant) -> (RuntimeController, Instant) {
     let ended = start + Duration::from_secs(60);
     let _ = controller.on_event(
         RuntimeEvent::TosuTelemetry {
+            beatmap: Default::default(),
+            failed: false,
             is_playing: false,
             live_time_ms: 0.0,
             title: "A Map".to_string(),
@@ -2317,6 +2347,8 @@ async fn backup_never_fires_during_a_map_or_a_cooldown() {
 
     let _ = controller.on_event(
         RuntimeEvent::TosuTelemetry {
+            beatmap: Default::default(),
+            failed: false,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "A Map".to_string(),
@@ -2341,6 +2373,8 @@ async fn backup_never_fires_during_a_map_or_a_cooldown() {
     let ended = start + Duration::from_secs(301);
     let _ = controller.on_event(
         RuntimeEvent::TosuTelemetry {
+            beatmap: Default::default(),
+            failed: false,
             is_playing: false,
             live_time_ms: 0.0,
             title: "A Map".to_string(),
@@ -2368,6 +2402,8 @@ async fn a_map_starting_inside_the_window_cancels_the_pending_backup() {
     let next_map = synced + Duration::from_secs(10);
     let _ = controller.on_event(
         RuntimeEvent::TosuTelemetry {
+            beatmap: Default::default(),
+            failed: false,
             is_playing: true,
             live_time_ms: 500.0,
             title: "The Next Map".to_string(),
@@ -2389,6 +2425,8 @@ async fn a_map_starting_inside_the_window_cancels_the_pending_backup() {
     let ended = next_map + Duration::from_secs(60);
     let _ = controller.on_event(
         RuntimeEvent::TosuTelemetry {
+            beatmap: Default::default(),
+            failed: false,
             is_playing: false,
             live_time_ms: 0.0,
             title: "The Next Map".to_string(),
@@ -2458,6 +2496,8 @@ async fn a_failed_post_play_sync_still_gets_a_backup() {
     );
     let _ = controller.on_event(
         RuntimeEvent::TosuTelemetry {
+            beatmap: Default::default(),
+            failed: false,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "A Map".to_string(),
@@ -2468,6 +2508,8 @@ async fn a_failed_post_play_sync_still_gets_a_backup() {
     let ended = start + Duration::from_secs(60);
     let _ = controller.on_event(
         RuntimeEvent::TosuTelemetry {
+            beatmap: Default::default(),
+            failed: false,
             is_playing: false,
             live_time_ms: 0.0,
             title: "A Map".to_string(),
@@ -2753,6 +2795,8 @@ fn a_map_played_on_a_foreign_pad_ends_without_a_sync() {
     let (mut controller, _) = left_alone_foreign_pad();
     let now = Instant::now();
     let play = |playing: bool| RuntimeEvent::TosuTelemetry {
+        beatmap: Default::default(),
+        failed: false,
         is_playing: playing,
         live_time_ms: 1000.0,
         title: String::new(),
@@ -2792,6 +2836,8 @@ fn a_map_played_on_our_pad_still_ends_in_a_sync() {
     controller.state.foreign_pad = false;
     let now = Instant::now();
     let play = |playing: bool| RuntimeEvent::TosuTelemetry {
+        beatmap: Default::default(),
+        failed: false,
         is_playing: playing,
         live_time_ms: 1000.0,
         title: String::new(),
@@ -3276,6 +3322,7 @@ fn idle_state(
         pending_takeover: None,
         foreign_pad: false,
         nvs_restore_pending: false,
+        tap: Default::default(),
         incompatible: None,
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
@@ -3462,4 +3509,52 @@ async fn a_handshaken_client_is_served_and_its_flash_pause_released_on_drop() {
     drop(client);
     task.await.unwrap();
     assert!(device.is_connected(), "resumed when the client left");
+}
+
+/// Issue #2: the history period applies at once, and the setting waits for
+/// IDLE when gameplay blocks storage writes
+#[tokio::test]
+async fn the_tap_history_period_is_applied_now_and_saved_when_allowed() {
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    let device = MockDeviceLink::new(false);
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    let state = Arc::new(Mutex::new(idle_state(false, None, CounterState::default())));
+    let log_hub = LogHub::new();
+    let ask =
+        |req| handle_ipc_request(req, &state, &storage, &device, &log_hub, &pending_ops, None);
+
+    match ask(IpcRequest::SetTapHistoryPeriod { days: 7 }).await {
+        IpcResponse::TapStats(s) => {
+            assert_eq!(s.period_days, 7);
+            assert_eq!(s.history.map(|h| (h.period_days, h.attempts)), Some((7, 0)));
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(!state.lock().tap.period_unsaved);
+    assert_eq!(
+        storage.lock().as_ref().unwrap().tap_history_days().unwrap(),
+        7
+    );
+
+    // Mid-map: shown at once, saved later
+    storage.lock().as_ref().unwrap().set_writes_allowed(false);
+    state.lock().mode = RuntimeMode::Playing;
+    assert!(matches!(
+        ask(IpcRequest::SetTapHistoryPeriod { days: 0 }).await,
+        IpcResponse::TapStats(ref s) if s.period_days == 0
+    ));
+    assert!(state.lock().tap.period_unsaved);
+    assert_eq!(
+        storage.lock().as_ref().unwrap().tap_history_days().unwrap(),
+        7
+    );
+
+    assert!(matches!(
+        ask(IpcRequest::SetTapHistoryPeriod { days: 100_000 }).await,
+        IpcResponse::Error(_)
+    ));
+    assert!(matches!(
+        ask(IpcRequest::GetTapStats).await,
+        IpcResponse::TapStats(ref s) if s.period_days == 0
+    ));
 }

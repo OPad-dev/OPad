@@ -1,4 +1,5 @@
 use opad_layout::{Layout, Screen};
+use opad_model::tap_rate::{AttemptStats, TapHistory};
 use opad_model::ui_source::SourceValue;
 use opad_model::{
     CounterSource, CounterState, DeviceConfig, DeviceInfo, IncompatibleDevice, JsonBackup,
@@ -170,6 +171,33 @@ pub enum IpcRequest {
         exclude_gpio: u32,
     },
     TriggerEasterEgg,
+    /// The player's tap rate (PPM): the attempt being played, the last one
+    /// that ended, and the history over the configured period. Reads only.
+    /// Added after IPC v1 shipped: an older daemon cannot parse it and closes
+    /// the connection, which the client shows as "not available".
+    GetTapStats,
+    /// Set the statistics history period in days (0 = all time) and answer
+    /// with `TapStats` for it. Kept in memory at once and saved when storage
+    /// writes are allowed again (never during gameplay, P1-3).
+    SetTapHistoryPeriod {
+        days: u32,
+    },
+}
+
+/// The daemon's tap rate statistics (answer to `GetTapStats`)
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TapStatsSnapshot {
+    /// The attempt being played, live
+    pub current: Option<AttemptStats>,
+    /// The most recent attempt that ended (this daemon run)
+    pub last: Option<AttemptStats>,
+    /// Aggregated over `period_days`; None while storage is unavailable or
+    /// not yet read
+    pub history: Option<TapHistory>,
+    /// 0 = all time
+    pub period_days: u32,
+    /// Ended attempts waiting for gameplay to stop before they are saved
+    pub unsaved_attempts: usize,
 }
 
 /// The firmware update offer, and what is in the way (§U-3b)
@@ -364,6 +392,7 @@ pub enum IpcResponse {
         success: bool,
     },
     EasterEggTriggered,
+    TapStats(TapStatsSnapshot),
     Error(String),
 }
 

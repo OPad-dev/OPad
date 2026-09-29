@@ -25,6 +25,7 @@ pub mod ipc_handlers;
 pub mod log_hub;
 pub mod runtime;
 pub mod sync;
+pub mod tap_stats;
 pub mod telemetry;
 pub mod updater;
 
@@ -164,6 +165,19 @@ async fn main() -> Result<()> {
         Err(e) => warn!("Automatic counter backups are unavailable: {}", e),
     }
 
+    // Tap rate statistics (issue #2): the configured period and its history
+    if let Some(s) = storage.lock().as_ref() {
+        let tap = &mut controller.state.tap.snapshot;
+        match s.tap_history_days() {
+            Ok(days) => tap.period_days = days,
+            Err(e) => warn!("Cannot read the tap rate history period: {}", e),
+        }
+        match s.tap_history(tap.period_days, chrono::Utc::now()) {
+            Ok(history) => tap.history = Some(history),
+            Err(e) => warn!("Cannot read the tap rate history: {}", e),
+        }
+    }
+
     let daemon_state = Arc::new(Mutex::new(controller.state.clone()));
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
@@ -205,6 +219,7 @@ async fn main() -> Result<()> {
     );
     let (tosu_manager, mut tosu_rx) = TosuManager::new(initial_config.tosu_endpoint.clone());
     let mut tosu_connected_rx = tosu_manager.subscribe_connected();
+    let mut tosu_keys_rx = tosu_manager.subscribe_keys();
     tosu_manager.start();
 
     // Start Device CDC manager
@@ -356,7 +371,22 @@ async fn main() -> Result<()> {
                     live_time_ms: telemetry.live_time_ms,
                     title: telemetry.title,
                     values: telemetry.values,
+                    beatmap: telemetry.beatmap,
+                    failed: telemetry.failed,
                 });
+            }
+
+            // 2b. osu!'s key counters, for the tap rate (issue #2). A lag
+            //     loses a few presses from one attempt's statistics, nothing
+            //     more, so it is not worth resynchronising anything for.
+            res = tosu_keys_rx.recv() => {
+                match res {
+                    Ok(keys) => event_opt = Some(RuntimeEvent::TosuKeys(keys)),
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        warn!("Fell {} tosu key updates behind; the tap rate skips them", n);
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {}
+                }
             }
 
             // 3. tosu WebSocket connected / disconnected
@@ -551,6 +581,55 @@ async fn main() -> Result<()> {
                     } => {
                         log_hub.push(LogSource::Esp, level, &tag, message);
                     }
+                    RuntimeAction::SaveTapStats {
+                        attempts,
+                        period_days,
+                    } => {
+                        // IDLE by construction. A failure keeps the attempts
+                        // queued for the next IDLE tick rather than losing them.
+                        let (unsaved, period_saved) = match storage.lock().as_ref() {
+                            None => (Some(attempts), period_days.is_none()),
+                            Some(s) => {
+                                let unsaved = match s.save_tap_attempts(&attempts) {
+                                    Ok(n) => {
+                                        if n > 0 {
+                                            info!("Saved the tap rate of {} attempts", n);
+                                        }
+                                        None
+                                    }
+                                    Err(e) => {
+                                        warn!(
+                                            "Cannot save the tap rate of {} attempts yet: {}",
+                                            attempts.len(),
+                                            e
+                                        );
+                                        Some(attempts)
+                                    }
+                                };
+                                let period_saved = period_days.is_none_or(|days| {
+                                    s.set_tap_history_days(days)
+                                        .map_err(|e| {
+                                            warn!(
+                                                "Cannot save the tap rate history period yet: {}",
+                                                e
+                                            )
+                                        })
+                                        .is_ok()
+                                });
+                                (unsaved, period_saved)
+                            }
+                        };
+                        if let Some(attempts) = unsaved {
+                            controller.requeue_tap_attempts(attempts);
+                        }
+                        if !period_saved {
+                            daemon_state.lock().tap.period_unsaved = true;
+                        }
+                        tap_stats::refresh_history(&storage, &daemon_state);
+                    }
+                    RuntimeAction::RefreshTapHistory => {
+                        tap_stats::refresh_history(&storage, &daemon_state);
+                    }
                     RuntimeAction::WriteAutoBackup => {
                         // Synchronous and cheap (one small JSON file), and we
                         // are in IDLE by construction. Every failure inside is
@@ -647,6 +726,7 @@ mod tests {
             pending_takeover: None,
             foreign_pad: false,
             nvs_restore_pending: false,
+            tap: Default::default(),
             incompatible: None,
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),

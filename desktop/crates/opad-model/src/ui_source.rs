@@ -71,6 +71,18 @@ sources! {
     SESSION_PLAYCOUNT = 49, "session.playcount";
     GAME_STATE = 50, "game.state";
 
+    // Player tap rate in PPM (presses per minute) for the current attempt,
+    // worked out by the daemon. Not the beatmap's BPM (`map.bpm`).
+    PLAY_PPM = 51, "play.ppm";
+    PLAY_PPM_AVG = 52, "play.ppm_avg";
+    PLAY_PPM_PEAK = 53, "play.ppm_peak";
+    PLAY_K1_PPM = 54, "play.k1_ppm";
+    PLAY_K1_PPM_AVG = 55, "play.k1_ppm_avg";
+    PLAY_K1_PPM_PEAK = 56, "play.k1_ppm_peak";
+    PLAY_K2_PPM = 57, "play.k2_ppm";
+    PLAY_K2_PPM_AVG = 58, "play.k2_ppm_avg";
+    PLAY_K2_PPM_PEAK = 59, "play.k2_ppm_peak";
+
     PAD_K1_MAP = 60, "pad.k1_map";
     PAD_K2_MAP = 61, "pad.k2_map";
     PAD_TOTAL_MAP = 62, "pad.total_map";
@@ -86,7 +98,18 @@ sources! {
     PAD_K1_DOWN = 72, "pad.k1_down";
     PAD_K2_DOWN = 73, "pad.k2_down";
 
+    // Tap rate history over the configured period (daemon SQLite)
+    HISTORY_PPM_AVG = 74, "history.ppm_avg";
+    HISTORY_PPM_PEAK = 75, "history.ppm_peak";
+    HISTORY_K1_PPM_AVG = 76, "history.k1_ppm_avg";
+    HISTORY_K1_PPM_PEAK = 77, "history.k1_ppm_peak";
+    HISTORY_K2_PPM_AVG = 78, "history.k2_ppm_avg";
+    HISTORY_K2_PPM_PEAK = 79, "history.k2_ppm_peak";
+
     STATUS_PC = 80, "status.pc";
     STATUS_TOSU = 81, "status.tosu";
     STATUS_OSU = 82, "status.osu";
+
+    // The history period as the pad shows it: "LAST 30 DAYS", "ALL TIME"
+    HISTORY_PERIOD = 83, "history.period";
 }

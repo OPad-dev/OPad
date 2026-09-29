@@ -6,6 +6,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use thiserror::Error;
 
+mod tap_stats;
+pub use tap_stats::HISTORY_DAYS_KEY;
+
 #[derive(Debug, Error)]
 pub enum StorageError {
     #[error("Database error: {0}")]
@@ -109,6 +112,9 @@ impl Storage {
         }
         if v < 8 {
             self.apply_v8()?;
+        }
+        if v < 9 {
+            self.apply_v9()?;
         }
         Ok(())
     }

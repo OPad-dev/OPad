@@ -3,11 +3,15 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use opad_ipc::TapStatsSnapshot;
 use opad_layout::{Layout, Screen};
+use opad_model::tap_rate::{
+    self, AttemptStats, AttemptTracker, BeatmapRef, TapHistory, DEFAULT_HISTORY_DAYS,
+};
 use opad_model::ui_source::SourceValue;
 use opad_model::{
-    CounterSource, CounterState, DeviceConfig, DeviceInfo, IncompatibleDevice, LatencyStats,
-    LogLevel, RuntimeMode,
+    CounterSource, CounterState, DeviceConfig, DeviceInfo, IncompatibleDevice, KeyCounts,
+    LatencyStats, LogLevel, RuntimeMode,
 };
 use opad_protocol::proto;
 
@@ -26,6 +30,22 @@ pub const RETRY_REWIND_MS: f64 = 2000.0;
 /// starting the next map immediately cancels the write instead of racing it.
 /// Do not shorten it — the delay *is* the mechanism.
 pub const AUTO_BACKUP_DELAY: Duration = Duration::from_secs(20);
+/// How often the tap rate history is re-read in IDLE, so a "last 30 days"
+/// window keeps sliding while the app just sits there
+pub const TAP_HISTORY_REFRESH: Duration = Duration::from_secs(3600);
+/// Ended attempts kept in memory while they cannot be saved (storage down).
+/// The oldest are dropped past this; each is a few hundred bytes.
+pub const MAX_UNSAVED_ATTEMPTS: usize = 500;
+
+/// The tap rate statistics the daemon holds (issue #2)
+#[derive(Clone, Debug, Default)]
+pub struct TapState {
+    /// What `GetTapStats` answers
+    pub snapshot: TapStatsSnapshot,
+    /// `snapshot.period_days` was changed while storage writes were blocked
+    /// and still has to be saved
+    pub period_unsaved: bool,
+}
 
 #[derive(Clone, Debug)]
 pub struct DaemonState {
@@ -67,6 +87,7 @@ pub struct DaemonState {
     /// generation 1, zero counters, or DIAG_EVENT_NVS_ERASED). The next sync
     /// restores its counters from this PC; its default config is not adopted.
     pub nvs_restore_pending: bool,
+    pub tap: TapState,
 }
 
 impl DaemonState {
@@ -159,7 +180,11 @@ pub enum RuntimeEvent {
         live_time_ms: f64,
         title: String,
         values: Vec<(u8, SourceValue)>,
+        beatmap: BeatmapRef,
+        failed: bool,
     },
+    /// osu!'s K1/K2 key-down counters changed (tosu precise socket)
+    TosuKeys(KeyCounts),
     TosuConnectionChanged(bool),
     Tick(Instant),
     SyncCompleted {
@@ -208,6 +233,17 @@ pub enum RuntimeAction {
     /// Write a JSON counter backup to `<data>/backups` (§P1-3-safe: only ever
     /// emitted in IDLE, `AUTO_BACKUP_DELAY` after the post-play sync settled).
     WriteAutoBackup,
+    /// Save ended attempts' tap rate, and the history period if it changed
+    /// during gameplay, then re-read the history. Only ever emitted in IDLE
+    /// (P1-3). What cannot be saved goes back through
+    /// [`RuntimeController::requeue_tap_attempts`].
+    SaveTapStats {
+        attempts: Vec<AttemptStats>,
+        period_days: Option<u32>,
+    },
+    /// Re-read the tap rate history for the configured period (a read, so
+    /// allowed in any mode)
+    RefreshTapHistory,
 }
 
 pub struct RuntimeController {
@@ -247,6 +283,18 @@ pub struct RuntimeController {
     /// [`apply_event`] last published it, so the next call can tell that IPC
     /// resolved it in between
     replacement_was_pending: bool,
+    /// The attempt being played; None outside gameplay and after a fail
+    tap_attempt: Option<AttemptTracker>,
+    /// The last key counters tosu reported, in any mode, so an attempt's
+    /// first press is measured against the count before it
+    last_keys: Option<(u32, u32)>,
+    /// tosu's fail flag on the previous frame: an attempt ends on the edge
+    last_failed: bool,
+    /// Ended attempts waiting for IDLE to be saved
+    tap_unsaved: Vec<AttemptStats>,
+    /// The history last put into `data_sync`, to notice a new one
+    tap_published_history: Option<TapHistory>,
+    last_tap_history_refresh: Instant,
 }
 
 impl RuntimeController {
@@ -295,6 +343,13 @@ impl RuntimeController {
             ui_values: Vec::new(),
             custom_layouts: initial_layouts,
             last_backup: None,
+            tap: TapState {
+                snapshot: TapStatsSnapshot {
+                    period_days: DEFAULT_HISTORY_DAYS,
+                    ..Default::default()
+                },
+                period_unsaved: false,
+            },
         };
 
         Self {
@@ -316,6 +371,77 @@ impl RuntimeController {
             reported_owner: None,
             pre_hello_counters: None,
             replacement_was_pending: false,
+            tap_attempt: None,
+            last_keys: None,
+            last_failed: false,
+            tap_unsaved: Vec::new(),
+            tap_published_history: None,
+            last_tap_history_refresh: now,
+        }
+    }
+
+    /// Attempts a `SaveTapStats` could not write go back in the queue, ahead
+    /// of anything that ended since. Called outside [`apply_event`], so it
+    /// touches only the controller's own fields; the shared count catches up
+    /// on the next event.
+    pub fn requeue_tap_attempts(&mut self, mut attempts: Vec<AttemptStats>) {
+        attempts.append(&mut self.tap_unsaved);
+        self.tap_unsaved = attempts;
+        self.cap_unsaved();
+    }
+
+    fn cap_unsaved(&mut self) {
+        let excess = self.tap_unsaved.len().saturating_sub(MAX_UNSAVED_ATTEMPTS);
+        if excess > 0 {
+            warn!(
+                "Dropping {} unsaved tap rate attempts: storage has been unavailable",
+                excess
+            );
+            self.tap_unsaved.drain(..excess);
+        }
+    }
+
+    fn start_tap_attempt(&mut self, beatmap: BeatmapRef, now: Instant) {
+        self.finish_tap_attempt();
+        self.tap_attempt = Some(AttemptTracker::new(beatmap, now, chrono::Utc::now()));
+        self.publish_tap_attempt();
+    }
+
+    /// Ends the attempt being played, if any: it becomes `last`, keeps its
+    /// average and peak on the pad until the next one starts, and is queued
+    /// for the history if it has enough presses
+    fn finish_tap_attempt(&mut self) {
+        let Some(tracker) = self.tap_attempt.take() else {
+            return;
+        };
+        let stats = tracker.finish(chrono::Utc::now());
+        self.data_sync
+            .ingest(tap_rate::attempt_ui_values(Some(&stats)));
+        if stats.is_recordable() {
+            self.tap_unsaved.push(stats.clone());
+            self.cap_unsaved();
+        }
+        let snapshot = &mut self.state.tap.snapshot;
+        snapshot.current = None;
+        snapshot.last = Some(stats);
+        snapshot.unsaved_attempts = self.tap_unsaved.len();
+    }
+
+    fn publish_tap_attempt(&mut self) {
+        let snapshot = self.tap_attempt.as_ref().map(AttemptTracker::snapshot);
+        self.data_sync
+            .ingest(tap_rate::attempt_ui_values(snapshot.as_ref()));
+        self.state.tap.snapshot.current = snapshot;
+    }
+
+    /// Puts the history into `data_sync` when it changed (IPC and the action
+    /// handlers write it into the shared state), or after `data_sync` lost it
+    fn publish_tap_history(&mut self, force: bool) {
+        let history = &self.state.tap.snapshot.history;
+        if force || *history != self.tap_published_history {
+            self.data_sync
+                .ingest(tap_rate::history_ui_values(history.as_ref()));
+            self.tap_published_history = history.clone();
         }
     }
 
@@ -604,6 +730,8 @@ impl RuntimeController {
                 live_time_ms,
                 title: _,
                 values,
+                beatmap,
+                failed,
             } => {
                 let current_mode = self.state.mode;
                 self.data_sync.ingest(values.iter().cloned());
@@ -617,6 +745,17 @@ impl RuntimeController {
                     self.last_live_ms = Some(live_time_ms);
                     if new_attempt {
                         self.play_id = self.play_id.wrapping_add(1);
+                        // A fail flag still up from the attempt before is
+                        // not this one failing
+                        self.last_failed = failed;
+                        self.start_tap_attempt(beatmap, now);
+                    } else if failed && !self.last_failed {
+                        // Failed: the attempt is over, though osu! stays in
+                        // its play state until the retry or the exit
+                        self.last_failed = true;
+                        self.finish_tap_attempt();
+                    } else if let Some(tracker) = self.tap_attempt.as_mut() {
+                        tracker.update_beatmap(beatmap);
                     }
 
                     if current_mode != RuntimeMode::Playing {
@@ -644,6 +783,7 @@ impl RuntimeController {
                         }
                     }
                 } else if current_mode == RuntimeMode::Playing {
+                    self.finish_tap_attempt();
                     self.last_live_ms = None;
                     self.state.mode = RuntimeMode::Cooldown;
                     self.cooldown_deadline = Some(now + COOLDOWN_DURATION);
@@ -658,9 +798,31 @@ impl RuntimeController {
                 }
             }
 
+            RuntimeEvent::TosuKeys(keys) => {
+                let prev = self.last_keys.replace((keys.k1, keys.k2));
+                // Only presses during a play count; menus, song select and
+                // anything after a fail never reach the statistics
+                if self.state.mode == RuntimeMode::Playing {
+                    if let (Some((k1, k2)), Some(tracker)) = (prev, self.tap_attempt.as_mut()) {
+                        // osu! restarts its counters with every play: a count
+                        // that went down started again from zero
+                        let delta = |new: u32, old: u32| if new >= old { new - old } else { new };
+                        let (d1, d2) = (delta(keys.k1, k1), delta(keys.k2, k2));
+                        if d1 > 0 || d2 > 0 {
+                            tracker.presses(d1, d2, keys.at);
+                            self.publish_tap_attempt();
+                        }
+                    }
+                }
+            }
+
             RuntimeEvent::TosuConnectionChanged(connected) => {
                 let was_playing = self.state.mode == RuntimeMode::Playing;
                 self.state.tosu_connected = connected;
+                if !connected {
+                    self.finish_tap_attempt();
+                    self.last_keys = None;
+                }
 
                 if !connected && was_playing {
                     self.state.mode = RuntimeMode::Cooldown;
@@ -670,6 +832,10 @@ impl RuntimeController {
                 }
                 if !connected {
                     self.data_sync.clear();
+                    // Not tosu's: the history stays on the pad, and the
+                    // attempt's values go with tosu
+                    self.data_sync.ingest(tap_rate::attempt_ui_values(None));
+                    self.publish_tap_history(true);
                 }
                 if self.state.device_connected {
                     actions.push(RuntimeAction::SendHostStatus {
@@ -726,7 +892,14 @@ impl RuntimeController {
                     });
                 }
 
-                // 4. UI data updates
+                // 4. UI data updates, with the tap rate brought up to date
+                //    first: a rate ends when the tapping stops
+                if let Some(tracker) = self.tap_attempt.as_mut() {
+                    tracker.expire(now);
+                    self.publish_tap_attempt();
+                }
+                self.publish_tap_history(false);
+                self.state.tap.snapshot.unsaved_attempts = self.tap_unsaved.len();
                 if self.state.device_connected && !self.state.foreign_pad {
                     let playing_hz = self.state.config.gameplay_display_hz;
                     let changes = self.data_sync.take_changes(is_playing, playing_hz, false);
@@ -762,6 +935,30 @@ impl RuntimeController {
                         {
                             actions.push(RuntimeAction::TriggerSync);
                         }
+                    }
+                }
+
+                // 5b. Tap rate statistics are saved in IDLE only (P1-3), like
+                //     every other write, and the history window slides
+                if self.state.mode == RuntimeMode::Idle && self.state.storage_error.is_none() {
+                    let period_days = self
+                        .state
+                        .tap
+                        .period_unsaved
+                        .then_some(self.state.tap.snapshot.period_days);
+                    if !self.tap_unsaved.is_empty() || period_days.is_some() {
+                        self.state.tap.period_unsaved = false;
+                        self.last_tap_history_refresh = now;
+                        actions.push(RuntimeAction::SaveTapStats {
+                            attempts: std::mem::take(&mut self.tap_unsaved),
+                            period_days,
+                        });
+                        self.state.tap.snapshot.unsaved_attempts = 0;
+                    } else if now.duration_since(self.last_tap_history_refresh)
+                        >= TAP_HISTORY_REFRESH
+                    {
+                        self.last_tap_history_refresh = now;
+                        actions.push(RuntimeAction::RefreshTapHistory);
                     }
                 }
 
@@ -828,6 +1025,7 @@ impl RuntimeController {
                 stored_device,
             } => {
                 self.state.storage_error = None;
+                actions.push(RuntimeAction::RefreshTapHistory);
                 if let Some(cfg) = config {
                     self.state.config = cfg;
                 }

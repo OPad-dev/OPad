@@ -253,6 +253,31 @@ pub async fn handle_ipc_request<D: DeviceLink>(
 
         IpcRequest::GetUiValues => IpcResponse::UiValues(state.lock().ui_values.clone()),
 
+        IpcRequest::GetTapStats => IpcResponse::TapStats(state.lock().tap.snapshot.clone()),
+
+        IpcRequest::SetTapHistoryPeriod { days } => {
+            if let Err(e) = opad_model::tap_rate::validate_history_days(days) {
+                return IpcResponse::Error(e);
+            }
+            // The history is a read, allowed in any mode; the setting is a
+            // write, so during gameplay it waits for IDLE (P1-3) and applies
+            // in memory meanwhile
+            let (history, saved) = match storage.lock().as_ref() {
+                Some(s) => (
+                    s.tap_history(days, chrono::Utc::now())
+                        .map_err(|e| warn!("Cannot read the tap rate history: {}", e))
+                        .ok(),
+                    s.set_tap_history_days(days).is_ok(),
+                ),
+                None => (None, false),
+            };
+            let mut st = state.lock();
+            st.tap.snapshot.period_days = days;
+            st.tap.snapshot.history = history;
+            st.tap.period_unsaved = !saved;
+            IpcResponse::TapStats(st.tap.snapshot.clone())
+        }
+
         IpcRequest::GetUpdateStatus => {
             let Some(updates) = updates else {
                 return IpcResponse::Error("The update worker is not running".to_string());
@@ -1202,8 +1227,15 @@ pub async fn wait_for_layout_ack(
                     return if success {
                         IpcResponse::LayoutApplied { screen, message }
                     } else {
+                        // Firmware older than a data source (e.g. the PPM
+                        // ones) refuses the whole layout rather than one widget
+                        let hint = if message.contains("unknown source") {
+                            ". Its firmware predates that data source; update the pad's firmware to use it"
+                        } else {
+                            ""
+                        };
                         IpcResponse::OperationRejected {
-                            reason: format!("The pad rejected the layout: {}", message),
+                            reason: format!("The pad rejected the layout: {}{}", message, hint),
                         }
                     };
                 }

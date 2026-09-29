@@ -1,7 +1,8 @@
 use futures_util::StreamExt;
 use opad_model::paths;
+use opad_model::tap_rate::BeatmapRef;
 use opad_model::ui_source::{self as src, SourceValue};
-use opad_model::GameplayTelemetry;
+use opad_model::{GameplayTelemetry, KeyCounts};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
@@ -26,17 +27,20 @@ pub enum TosuError {
 pub struct TosuManager {
     endpoint: String,
     telemetry_tx: broadcast::Sender<GameplayTelemetry>,
+    keys_tx: broadcast::Sender<KeyCounts>,
     connected_tx: watch::Sender<bool>,
 }
 
 impl TosuManager {
     pub fn new(endpoint: String) -> (Self, broadcast::Receiver<GameplayTelemetry>) {
         let (tx, rx) = broadcast::channel(32);
+        let (keys_tx, _) = broadcast::channel(256);
         let (connected_tx, _) = watch::channel(false);
         (
             Self {
                 endpoint: normalize_endpoint(&endpoint),
                 telemetry_tx: tx,
+                keys_tx,
                 connected_tx,
             },
             rx,
@@ -52,8 +56,17 @@ impl TosuManager {
         self.connected_tx.subscribe()
     }
 
-    /// Spawns the background tosu worker loop with auto-reconnect
+    /// osu!'s K1/K2 key-down counters, from tosu's precise socket
+    pub fn subscribe_keys(&self) -> broadcast::Receiver<KeyCounts> {
+        self.keys_tx.subscribe()
+    }
+
+    /// Spawns the background tosu worker loops with auto-reconnect: the v2
+    /// state socket, and the precise socket for the key counters
     pub fn start(self) {
+        if let Some(precise) = precise_endpoint(&self.endpoint) {
+            tokio::spawn(follow_keys(precise, self.keys_tx.clone()));
+        }
         tokio::spawn(async move {
             loop {
                 debug!("Connecting to tosu WebSocket at {}", self.endpoint);
@@ -97,6 +110,61 @@ impl TosuManager {
             }
         });
     }
+}
+
+/// Follows tosu's precise socket, which it polls every few milliseconds, and
+/// passes on the key counters only when they change.
+///
+/// tosu has no tap rate of its own, only these counters, so the daemon works
+/// the rate out from them (issue #2). The frame's arrival time is the press
+/// time: tosu reads osu!'s memory every few ms, which is fine-grained enough
+/// for a rate averaged over several presses.
+async fn follow_keys(endpoint: String, keys_tx: broadcast::Sender<KeyCounts>) {
+    loop {
+        if let Ok((mut stream, _)) = connect_async(&endpoint).await {
+            debug!("Following tosu key counters at {}", endpoint);
+            let mut last: Option<(u32, u32)> = None;
+            while let Some(Ok(msg)) = stream.next().await {
+                if msg.is_close() {
+                    break;
+                }
+                let Ok(text) = msg.to_text() else { continue };
+                let Some(counts) = parse_precise_keys(text) else {
+                    continue;
+                };
+                if last != Some(counts) {
+                    last = Some(counts);
+                    let _ = keys_tx.send(KeyCounts {
+                        k1: counts.0,
+                        k2: counts.1,
+                        at: Instant::now(),
+                    });
+                }
+            }
+            debug!("tosu precise socket closed");
+        }
+        tokio::time::sleep(Duration::from_millis(2500)).await;
+    }
+}
+
+/// K1 and K2 key-down counts from a `/websocket/v2/precise` frame
+pub fn parse_precise_keys(json_str: &str) -> Option<(u32, u32)> {
+    let root: serde_json::Value = serde_json::from_str(json_str).ok()?;
+    let count = |key: &str| {
+        root.pointer(&format!("/keys/{key}/count"))
+            .and_then(|v| v.as_u64())
+            .map(|c| c.min(u64::from(u32::MAX)) as u32)
+    };
+    Some((count("k1")?, count("k2")?))
+}
+
+/// "ws://host:24050/websocket/v2" -> "ws://host:24050/websocket/v2/precise".
+/// None for an endpoint that is not tosu's v2 socket.
+fn precise_endpoint(endpoint: &str) -> Option<String> {
+    endpoint
+        .trim_end_matches('/')
+        .ends_with("/websocket/v2")
+        .then(|| format!("{}/precise", endpoint.trim_end_matches('/')))
 }
 
 /// Map stored legacy endpoints (`/ws`, gosumemory schema) onto the v2 endpoint this parser reads
@@ -226,12 +294,30 @@ pub fn parse_tosu_v2_json(json_str: &str) -> Option<GameplayTelemetry> {
         (src::STATUS_OSU, SourceValue::Number(1.0)),
     ];
 
+    let beatmap = BeatmapRef {
+        title: text("/beatmap/title").unwrap_or_default(),
+        artist: text("/beatmap/artist").unwrap_or_default(),
+        difficulty: text("/beatmap/version").unwrap_or_default(),
+        beatmap_id: root
+            .pointer("/beatmap/id")
+            .and_then(|v| v.as_i64())
+            .filter(|id| *id > 0),
+        checksum: text("/beatmap/checksum"),
+        ruleset: text("/play/mode/name").or_else(|| text("/beatmap/mode/name")),
+        mods: text("/play/mods/name"),
+    };
+
     Some(GameplayTelemetry {
         // tosu state 2 = play
         is_playing: state_num == 2,
         title: text("/beatmap/title").unwrap_or_default(),
         live_time_ms: live.unwrap_or(0.0),
         values,
+        beatmap,
+        failed: root
+            .pointer("/play/failed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
     })
 }
 
@@ -868,6 +954,47 @@ mod tests {
             SourceValue::Number(p) => assert!((p - 0.5).abs() < 0.01),
             other => panic!("progress: {:?}", other),
         }
+    }
+
+    #[test]
+    fn beatmap_details_are_kept_for_the_tap_history() {
+        let frame = r#"{
+            "state": { "number": 2, "name": "play" },
+            "beatmap": { "id": 4242, "checksum": "d41d8cd98f00b204e9800998ecf8427e",
+                         "title": "T", "artist": "A", "version": "Insane",
+                         "mode": { "number": 0, "name": "osu" } },
+            "play": { "mods": { "name": "HDDT" }, "failed": true }
+        }"#;
+        let parsed = parse_tosu_v2_json(frame).unwrap();
+        assert!(parsed.failed);
+        assert_eq!(parsed.beatmap.beatmap_id, Some(4242));
+        assert_eq!(
+            parsed.beatmap.checksum.as_deref(),
+            Some("d41d8cd98f00b204e9800998ecf8427e")
+        );
+        assert_eq!(parsed.beatmap.ruleset.as_deref(), Some("osu"));
+        assert_eq!(parsed.beatmap.mods.as_deref(), Some("HDDT"));
+        assert_eq!(parsed.beatmap.difficulty, "Insane");
+        assert!(!parse_tosu_v2_json(PLAYING_FRAME).unwrap().failed);
+    }
+
+    #[test]
+    fn precise_key_counters() {
+        // Shape of tosu's /websocket/v2/precise frame
+        let frame = r#"{ "currentTime": 1234,
+            "keys": { "k1": { "isPressed": false, "count": 19 },
+                      "k2": { "isPressed": true, "count": 20 },
+                      "m1": { "isPressed": false, "count": 0 },
+                      "m2": { "isPressed": false, "count": 0 } },
+            "hitErrors": [] }"#;
+        assert_eq!(parse_precise_keys(frame), Some((19, 20)));
+        assert_eq!(parse_precise_keys(r#"{ "keys": {} }"#), None);
+        assert_eq!(parse_precise_keys("not json"), None);
+        assert_eq!(
+            precise_endpoint(DEFAULT_TOSU_ENDPOINT).as_deref(),
+            Some("ws://127.0.0.1:24050/websocket/v2/precise")
+        );
+        assert_eq!(precise_endpoint("ws://127.0.0.1:24050/custom"), None);
     }
 
     #[test]
