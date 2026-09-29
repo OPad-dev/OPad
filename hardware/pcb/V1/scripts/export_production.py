@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check and export the osuPad V1 boards for JLCPCB / PCBWay.
+"""Check and export the OPad V1 boards for JLCPCB / PCBWay.
 
 For each board this runs ERC, DRC with schematic parity (and stops on any error), then writes
 <board dir>/production/:
@@ -12,7 +12,7 @@ and <board dir>/production/pcbway/:
   <project>-BOM-PCBWay.csv       PCBWay BOM template columns
   <project>-centroid-PCBWay.csv  Designator, Mid X, Mid Y, Layer, Rotation
 
-Usage: python3 hardware/pcb/V1/scripts/export_production.py
+Usage: python3 hardware/pcb/V1/scripts/export_production.py [MX] [HE] [Carrier]   (default: all)
 """
 
 import csv
@@ -28,6 +28,14 @@ from collections import OrderedDict
 V1 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BOARDS = [("MX", "mx_input_v1"), ("HE", "he_input_v1"), ("Carrier", "controller_carrier_v1")]
 GERBER_LAYERS = "F.Cu,B.Cu,F.Paste,B.Paste,F.Silkscreen,B.Silkscreen,F.Mask,B.Mask,Edge.Cuts"
+
+# JLCPCB places a part by its body centre and its own 0 deg orientation, while KiCad's position
+# file gives the footprint origin. Footprints listed here are written at the centre of their pads,
+# with this many degrees added to the KiCad rotation. The pin sockets have their origin on pin 1
+# and lie along X in JLCPCB's library, so without this the preview shows them across the board.
+JLC_CPL_FIXES = {
+    "PinSocket_1x14_P2.54mm_Vertical": 90,
+}
 
 # DRC warnings that may be accepted (none today: both boards are warning-free)
 ACCEPTED_WARNINGS = set()
@@ -72,7 +80,17 @@ def bom_and_cpl(pcb, out, project):
     import pcbnew
     board = pcbnew.LoadBoard(pcb)
     fields = {}
+    origin = board.GetDesignSettings().GetAuxOrigin()
+    centres = {}
     for fp in board.GetFootprints():
+        name = fp.GetFPID().GetLibItemName().wx_str()
+        if name in JLC_CPL_FIXES:
+            box = pcbnew.BOX2I()
+            for pad in fp.Pads():
+                box.Merge(pad.GetPosition())
+            c = box.GetCenter()
+            centres[fp.GetReference()] = (pcbnew.ToMM(c.x - origin.x), pcbnew.ToMM(origin.y - c.y),
+                                          JLC_CPL_FIXES[name])
         if fp.IsExcludedFromBOM():
             continue
         fields[fp.GetReference()] = (fp.GetValue(), fp.GetFPID().GetLibItemName().wx_str(),
@@ -91,8 +109,12 @@ def bom_and_cpl(pcb, out, project):
         w = csv.writer(f)
         w.writerow(["Designator", "Mid X", "Mid Y", "Layer", "Rotation"])
         for row in csv.DictReader(src):
-            w.writerow([row["Ref"], "%.4fmm" % float(row["PosX"]), "%.4fmm" % float(row["PosY"]),
-                        "Top" if row["Side"] == "top" else "Bottom", "%.1f" % float(row["Rot"])])
+            x, y, rot = float(row["PosX"]), float(row["PosY"]), float(row["Rot"])
+            if row["Ref"] in centres:
+                x, y, extra = centres[row["Ref"]]
+                rot = (rot + extra) % 360
+            w.writerow([row["Ref"], "%.4fmm" % x, "%.4fmm" % y,
+                        "Top" if row["Side"] == "top" else "Bottom", "%.1f" % rot])
     shutil.rmtree(tmp)
 
 
@@ -155,7 +177,10 @@ def pcbway(pcb, out, project):
 
 def main():
     failed = False
+    wanted = sys.argv[1:] or [d for d, _ in BOARDS]
     for directory, project in BOARDS:
+        if directory not in wanted:
+            continue
         base = os.path.join(V1, directory, project)
         sch, pcb = base + ".kicad_sch", base + ".kicad_pcb"
         out = os.path.join(V1, directory, "production")

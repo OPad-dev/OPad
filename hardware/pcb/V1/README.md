@@ -235,6 +235,8 @@ TP1–TP3 are bare probe pads; they are board features, not parts, and are absen
 | J_MOD | JST SM08B-SRSS-TB, bottom side | C160407 |
 | J_P1, J_P2 | 1×14 female header, 2.54 mm, 8.5 mm, top side (THT) | C2897377 |
 
+The CPL gives the two sockets at their **centre, rotated 90°**, because JLCPCB's model of C2897377 is centred and lies along X. KiCad's own position file puts them at pin 1 with 0°, and JLCPCB's preview then shows one socket lying across the board. `export_production.py` applies this correction (`JLC_CPL_FIXES`). The socket is symmetric, so 90° and 270° give the same part.
+
 J_MOD is the only SMD part, on the bottom. The two sockets are through-hole on the top: order them assembled as THT, or solder them yourself (plug them onto the Waveshare board while soldering so they stay aligned).
 
 **Check the part rotation in JLCPCB's placement preview before paying.** KiCad and LCSC define rotation differently for some parts, most often the Kailh socket, the JST connector and SOT-23 parts:
@@ -298,7 +300,7 @@ The shared library gained two footprints and one symbol for this module: `SW_MX_
 
 Each `production/` folder contains `-gerbers.zip`, `-BOM-JLCPCB.csv`, `-CPL-JLCPCB.csv`, `-schematic.pdf`, `-pcb.pdf`, `.step` (for the case CAD), top/bottom renders, and the ERC/DRC reports.
 
-- **Regenerating:** `python3 hardware/pcb/V1/scripts/generate_boards.py` rebuilds the schematics and boards from the netlist in the script and overwrites any edits made in KiCad. After editing in KiCad, only run `export_production.py`.
+- **Regenerating:** `python3 hardware/pcb/V1/scripts/generate_boards.py` rebuilds the schematics and boards from the netlist in the script and overwrites any edits made in KiCad. After editing in KiCad, only run `export_production.py`. It exports every board by default. Pass board folders to export only those, e.g. `export_production.py Carrier`.
 - **Requirements:** KiCad 10 (`kicad-cli` and the `pcbnew` Python module) for MX and the carrier. The KiCad libraries don't need to be installed: everything used is in `lib/`.
 - **Library:** every part in `lib/` is OPad's own drawing under the repository's MIT license. The standard parts are written by `scripts/gen_library.py` (pads and pins from the component datasheets; outlines, silkscreen, courtyards and symbol graphics computed by the script); edit the tables there and re-run it rather than editing those files in KiCad. The Kailh hot-swap, Hall switch and test-pad footprints are hand-drawn. Footprints reference KiCad's installed 3D models by path (`${KICAD10_3DMODEL_DIR}`); the models themselves are not in this repository.
 - **The HE module is the exception:** it is generated and verified with plain Python (3.9+), no KiCad and no `pcbnew`; Pillow is needed only for `verify_he_gerbers.py` and `render_he_preview.py`. Its `production/` folder has no `drc.json`/`erc.json`/PDF/STEP, because those come from `kicad-cli`; run `export_production.py` under a KiCad install if you want them.
