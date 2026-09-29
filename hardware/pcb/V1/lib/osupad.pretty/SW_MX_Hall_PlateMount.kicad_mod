@@ -56,9 +56,7 @@
 			(width 0.12)
 			(type default)
 		)
-		(fill
-			(type none)
-		)
+		(fill no)
 		(layer "Dwgs.User")
 		(uuid "4e9263f0-cd16-4f58-0ae3-c2818ff3bd5f")
 	)
