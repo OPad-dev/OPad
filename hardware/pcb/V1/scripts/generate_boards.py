@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the osuPad V1 KiCad projects (schematic + PCB) from one netlist spec per board.
+"""Generate the OPad V1 KiCad projects (schematic + PCB) from one netlist spec per board.
 
 Boards:
   MX/mx_input_v1           two-key MX hot-swap input module (sits under the key plate)
@@ -239,7 +239,7 @@ class BoardBuilder:
         tb.SetTitle(title)
         tb.SetRevision(REV)
         tb.SetDate(DATE)
-        tb.SetCompany("osuPad")
+        tb.SetCompany("OPad")
         filler = pcbnew.ZONE_FILLER(self.board)
         filler.Fill(self.board.Zones())
         path = os.path.join(directory, self.project + ".kicad_pcb")
@@ -340,10 +340,10 @@ def write_project(directory, project):
         json.dump(pro, f, indent=2)
     with open(os.path.join(directory, "fp-lib-table"), "w") as f:
         f.write('(fp_lib_table\n\t(version 7)\n\t(lib (name "osupad") (type "KiCad") '
-                '(uri "${KIPRJMOD}/../lib/osupad.pretty") (options "") (descr "osuPad project footprints"))\n)\n')
+                '(uri "${KIPRJMOD}/../lib/osupad.pretty") (options "") (descr "OPad project footprints"))\n)\n')
     with open(os.path.join(directory, "sym-lib-table"), "w") as f:
         f.write('(sym_lib_table\n\t(version 7)\n\t(lib (name "osupad") (type "KiCad") '
-                '(uri "${KIPRJMOD}/../lib/osupad.kicad_sym") (options "") (descr "osuPad project symbols"))\n)\n')
+                '(uri "${KIPRJMOD}/../lib/osupad.kicad_sym") (options "") (descr "OPad project symbols"))\n)\n')
 
 
 # -----------------------------------------------------------------------------
@@ -387,7 +387,7 @@ def write_schematic(directory, project, title, parts, notes):
     root = uid()
     out = ['(kicad_sch\n\t(version 20250114)\n\t(generator "eeschema")\n\t(generator_version "9.0")\n',
            '\t(uuid "%s")\n\t(paper "A4")\n' % root,
-           '\t(title_block (title "%s") (date "%s") (rev "%s") (company "osuPad"))\n' % (title, DATE, REV),
+           '\t(title_block (title "%s") (date "%s") (rev "%s") (company "OPad"))\n' % (title, DATE, REV),
            '\t(lib_symbols\n']
     for name in sorted({p.symbol for p in parts}):
         out.append("\t\t" + symbols[name][0] + "\n")
@@ -487,7 +487,7 @@ def build_mx():
              "3V3 decoupling at the module connector"),
     ]
 
-    write_schematic(directory, project, "osuPad MX Input Module V1", parts, [
+    write_schematic(directory, project, "OPad MX Input Module V1", parts, [
         "Module connector pinout (same on every input module):",
         "1 3V3 | 2 GND | 3 IN1 = GPIO10 | 4 IN2 = GPIO7 | 5 ID = GPIO8 | 6 GPIO6 | 7 GPIO4 | 8 GPIO2",
         "MX V1: keys switch IN1/IN2 to GND (10k pull-ups). ID = 3V3 x 10k/(100k+10k) = 0.30 V.",
@@ -551,14 +551,14 @@ def build_mx():
         bb.zone("GND", layer, (x0, y0, x1, y1))
 
     S, Fab = pcbnew.B_SilkS, pcbnew.B_Fab
-    bb.text("osuPad MX module " + REV, 138.0, 89.6, S, 0.9)
+    bb.text("OPad MX module " + REV, 138.0, 89.6, S, 0.9)
     bb.text("1 3V3  2 GND  3 IN1  4 IN2  5 ID", j1[0], 76.9, Fab, 0.8)
     bb.text("KEY1", sw1[0] - 4.0, 87.5, S, 0.8)
     bb.text("KEY2", sw2[0] + 4.0, 87.5, S, 0.8)
     bb.text("JLCJLCJLCJLC", 120.5, 70.9, S, 0.8)
     bb.text("to carrier", j1[0] + 9.8, 70.6, S, 0.8)
 
-    bb.save(directory, "osuPad MX Input Module V1", (x0, y1))
+    bb.save(directory, "OPad MX Input Module V1", (x0, y1))
     write_project(directory, project)
     return directory, project
 
@@ -627,7 +627,7 @@ def build_carrier():
              "Module connector: 1 3V3 | 2 GND | 3 IN1 = GPIO10 | 4 IN2 = GPIO7 | 5 ID = GPIO8 | 6 GPIO6 | 7 GPIO4 | 8 GPIO2",
              "All six module signals are ADC1-capable (ADC continuous mode on the ESP32-S3 is ADC1 only).",
              "Passive carrier: the module ID divider lives on each input module."]
-    write_schematic(directory, project, "osuPad Controller Carrier V1", parts, notes)
+    write_schematic(directory, project, "OPad Controller Carrier V1", parts, notes)
 
     bb = BoardBuilder(project)
     bb.outline([(100.0, 100.0), (135.0, 100.0), (135.0, 148.2), (128.0, 148.2), (128.0, 113.5),
@@ -656,7 +656,7 @@ def build_carrier():
                        (rail_x, lane_y), (rail_x, header_y[header_pin]), (p1x, header_y[header_pin])], 0.25, F)
 
     S = pcbnew.B_SilkS
-    bb.text("osuPad carrier " + REV, 117.5, 111.6, S, 0.8)
+    bb.text("OPad carrier " + REV, 117.5, 111.6, S, 0.8)
     bb.text("1 3V3  2 GND  3 IN1  4 IN2  5 ID  6 IO6  7 IO4  8 IO2", 117.5, 101.3, pcbnew.B_Fab, 0.8)
     bb.text("P2", p2x + 1.5, 116.0, S, 0.8, 0.15, 90)
     bb.text("P1", p1x - 3.3, 118.5, S, 0.8, 0.15, 90)
@@ -664,7 +664,7 @@ def build_carrier():
     bb.text("JLCJLCJLCJLC", 130.4, 124.0, S, 0.8, 0.15, 90)
     bb.text("WAVESHARE ON THIS SIDE", 117.5, 111.6, pcbnew.F_SilkS, 0.8)
 
-    bb.save(directory, "osuPad Controller Carrier V1", (100.0, 148.2))
+    bb.save(directory, "OPad Controller Carrier V1", (100.0, 148.2))
     write_project(directory, project)
     return directory, project
 
