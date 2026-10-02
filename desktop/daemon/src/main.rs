@@ -438,8 +438,11 @@ async fn main() -> Result<()> {
                     let _ = device_cmd.send(DeviceCommand::TimeSync).await;
                 }
 
-                // A telemetry diff met a full device queue: resend everything
-                if resend_data.swap(false, Ordering::SeqCst) {
+                // A telemetry diff met a full device queue, or a message to
+                // the pad was lost on the wire: resend everything, or the
+                // song, stars, ... stay missing until they next change
+                let lost = device_manager.take_lost_writes();
+                if resend_data.swap(false, Ordering::SeqCst) || lost {
                     controller.data_sync.reset_sent();
                 }
 

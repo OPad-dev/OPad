@@ -121,6 +121,11 @@ const STALE_PARTIAL_FRAME: Duration = Duration::from_millis(500);
 /// the marked one first, then the legacy one firmware before the AA 55 marker
 /// parses, so a pad of either age is found within one or two retries.
 const HELLO_RETRY: Duration = Duration::from_millis(400);
+/// How long one message may take to go out. The port's timeout is the short
+/// read poll, and the pad stops reading USB for longer than that while it
+/// builds a screen, so a write retries until this deadline instead of giving
+/// up mid-frame and leaving half a message on the wire.
+const WRITE_DEADLINE: Duration = Duration::from_millis(1000);
 
 /// Hellos in a row without an answer before the port is closed and reopened.
 /// Closing drops DTR, which resets the pad's frame parser whatever state a
@@ -288,6 +293,9 @@ pub struct DeviceManager {
     last_port: Arc<Mutex<Option<String>>>,
     /// Asks the worker to re-send Hello, so the pad re-announces its state
     rehello: Arc<AtomicBool>,
+    /// Set when a message to the pad could not be written; see
+    /// [`DeviceManager::take_lost_writes`]
+    lost_writes: Arc<AtomicBool>,
 }
 
 impl DeviceManager {
@@ -300,6 +308,7 @@ impl DeviceManager {
         let seq_counter = Arc::new(AtomicU32::new(1));
         let last_port = Arc::new(Mutex::new(None));
         let rehello = Arc::new(AtomicBool::new(false));
+        let lost_writes = Arc::new(AtomicBool::new(false));
         tokio::spawn(async move { while cmd_rx.recv().await.is_some() {} });
         (
             Self {
@@ -311,6 +320,7 @@ impl DeviceManager {
                 seq_counter,
                 last_port,
                 rehello,
+                lost_writes,
             },
             event_rx,
         )
@@ -332,6 +342,8 @@ impl DeviceManager {
         let last_port_clone = last_port.clone();
         let rehello = Arc::new(AtomicBool::new(false));
         let rehello_clone = rehello.clone();
+        let lost_writes = Arc::new(AtomicBool::new(false));
+        let lost_writes_clone = lost_writes.clone();
 
         // Spawn background worker managing the serial port lifecycle
         tokio::task::spawn_blocking(move || {
@@ -472,8 +484,12 @@ impl DeviceManager {
                     while let Some(cmd) = framing.and_then(|_| cmd_rx.try_recv().ok()) {
                         let as_framing = framing.unwrap_or(Framing::Marked);
                         if let Ok(encoded) = encode_host_message_as(&cmd, as_framing) {
-                            if let Err(e) = port.write_all(&encoded) {
+                            if let Err(e) = write_frame(&mut *port, &encoded, WRITE_DEADLINE) {
                                 warn!("Failed to write to device: {}", e);
+                                // Whatever it carried is gone: the owner
+                                // resends its state rather than leave the pad
+                                // without it
+                                lost_writes_clone.store(true, Ordering::SeqCst);
                                 break;
                             }
                         }
@@ -577,6 +593,7 @@ impl DeviceManager {
                 seq_counter,
                 last_port,
                 rehello,
+                lost_writes,
             },
             event_rx,
         )
@@ -615,6 +632,13 @@ impl DeviceManager {
     /// lost events rebuilds its view of the pad.
     pub fn rehandshake(&self) {
         self.rehello.store(true, Ordering::SeqCst);
+    }
+
+    /// Whether a message to the pad was lost since the last call. Data the
+    /// pad shows (song, stars, ...) must then be sent again in full, or it
+    /// stays missing until it next changes.
+    pub fn take_lost_writes(&self) -> bool {
+        self.lost_writes.swap(false, Ordering::SeqCst)
     }
 
     /// Serial port of the pad this manager last completed a handshake with.
@@ -1170,6 +1194,28 @@ fn probe_handshake(
 }
 
 /// Sends a Hello in `framing`; false if it could not be written
+/// Writes a whole frame, continuing after the port's short timeout until
+/// `deadline` has passed
+fn write_frame(port: &mut dyn Write, frame: &[u8], deadline: Duration) -> std::io::Result<()> {
+    let until = Instant::now() + deadline;
+    let mut rest = frame;
+    while !rest.is_empty() {
+        match port.write(rest) {
+            Ok(0) => return Err(std::io::ErrorKind::WriteZero.into()),
+            Ok(n) => rest = &rest[n..],
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::WouldBlock
+                        | std::io::ErrorKind::Interrupted
+                ) && Instant::now() < until => {}
+            Err(e) => return Err(e),
+        }
+    }
+    port.flush()
+}
+
 fn write_hello(port: &mut Box<dyn serialport::SerialPort>, framing: Framing) -> bool {
     encode_host_message_as(&hello_message(), framing)
         .map(|hello| port.write_all(&hello).is_ok())
@@ -1744,5 +1790,51 @@ mod tests {
         let jp = "灰".repeat(30); // 3 bytes each
         let fitted = fit_nanopb_string(&jp, 64);
         assert!(fitted.len() <= 63 && fitted.chars().all(|c| c == '灰'));
+    }
+}
+
+#[cfg(test)]
+mod write_tests {
+    use super::{write_frame, WRITE_DEADLINE};
+    use std::io::Write;
+    use std::time::Duration;
+
+    /// A port that times out a few times, then takes 3 bytes per write
+    struct BusyPort {
+        timeouts: u32,
+        written: Vec<u8>,
+    }
+
+    impl Write for BusyPort {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            if self.timeouts > 0 {
+                self.timeouts -= 1;
+                return Err(std::io::ErrorKind::TimedOut.into());
+            }
+            let n = buf.len().min(3);
+            self.written.extend_from_slice(&buf[..n]);
+            Ok(n)
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_busy_pad_delays_a_frame_but_gets_all_of_it() {
+        let mut port = BusyPort {
+            timeouts: 5,
+            written: Vec::new(),
+        };
+        write_frame(&mut port, b"0123456789", WRITE_DEADLINE).unwrap();
+        assert_eq!(port.written, b"0123456789");
+
+        // A pad that never takes it fails once the deadline passes
+        let mut stuck = BusyPort {
+            timeouts: u32::MAX,
+            written: Vec::new(),
+        };
+        let err = write_frame(&mut stuck, b"x", Duration::from_millis(30)).unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
     }
 }
