@@ -13,22 +13,23 @@
 //! - An interval longer than [`SEQUENCE_BREAK_MS`] ends the tapping sequence.
 //!   It is not an interval at all: breaks, sliders and pauses never reach the
 //!   average.
-//! - An interval shorter than [`MIN_INTERVAL_MS`] is a duplicate event, switch
-//!   bounce or two presses landing in one telemetry sample. The second press
-//!   still counts as a press, but the interval is dropped and the next one is
-//!   measured from the first press.
-//! - Current PPM is the live rate: the rolling rate over the last
-//!   [`WINDOW_INTERVALS`] valid intervals of the sequence. Once the player
+//! - Every press counts, however close to the one before: tosu's counts are
+//!   presses osu! registered (the pad debounces its switches itself). Mashing
+//!   both keys puts presses a few ms apart, and dropping those halved the
+//!   measured rate. Presses landing in one telemetry sample share its time
+//!   and add a 0 ms interval: the count is right, and so is the rate over the
+//!   window.
+//! - Current PPM is the live rate: presses over time across the last
+//!   [`WINDOW_INTERVALS`] intervals of the sequence. Once the player
 //!   has clearly stopped (a gap over twice their rhythm and over
 //!   [`STOP_GAP_MS`]) it is the gap itself, so it falls (an 800 ms pause
 //!   reads 75 PPM), and it reads 0 once the sequence has ended. A normal 1/1
 //!   note after a burst does not count as stopping, or the value would swing
 //!   on every beat. It always has a value while an attempt is played, so the
 //!   pad never hides it mid-map.
-//! - Peak PPM is the highest Current PPM over a *full* window, and a full
-//!   window drops its shortest and longest interval before averaging, so one
-//!   stray interval can move neither the peak nor the displayed value much.
-//! - Average PPM is valid presses over valid tapping time: the sum of valid
+//! - Peak PPM is the highest Current PPM over a *full* window: the fastest
+//!   the player kept up over that many presses, not one quick double tap.
+//! - Average PPM is presses over tapping time: the sum of the sequences'
 //!   intervals, not the length of the map.
 //!
 //! The song rate is the other way of looking at it: every press over the song
@@ -49,9 +50,6 @@ pub const WINDOW_INTERVALS: usize = 6;
 pub const STOP_GAP_MS: f64 = 600.0;
 /// A gap longer than this ends the tapping sequence (60 PPM on one channel)
 pub const SEQUENCE_BREAK_MS: f64 = 1000.0;
-/// Shorter intervals are treated as duplicates or bounce (2400 PPM). The
-/// fastest human bursts on one key are well above this.
-pub const MIN_INTERVAL_MS: f64 = 25.0;
 /// Presses this long (song time) before the first note or after the last one
 /// still count: an early or late hit on a note is still a hit on it
 pub const SONG_HIT_MARGIN_MS: f64 = 200.0;
@@ -267,11 +265,7 @@ impl ChannelTracker {
             self.last_press_ms = Some(at_ms);
             return;
         };
-        let interval = at_ms - prev;
-        if interval < MIN_INTERVAL_MS {
-            // Measured from the first of the pair instead
-            return;
-        }
+        let interval = (at_ms - prev).max(0.0);
         self.last_press_ms = Some(at_ms);
         if interval > SEQUENCE_BREAK_MS {
             self.end_sequence();
@@ -332,21 +326,11 @@ impl ChannelTracker {
     }
 }
 
-/// The window's typical interval: the plain mean until it is full, then the
-/// mean without its shortest and longest interval. None while it is empty.
+/// The window's mean interval: its presses over its time. None while it is
+/// empty, or while all its presses landed at the same instant.
 fn window_interval_ms(window: &VecDeque<f64>) -> Option<f64> {
-    if window.is_empty() {
-        return None;
-    }
     let sum: f64 = window.iter().sum();
-    let mean = if window.len() == WINDOW_INTERVALS {
-        let min = window.iter().copied().fold(f64::INFINITY, f64::min);
-        let max = window.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-        (sum - min - max) / (window.len() - 2) as f64
-    } else {
-        sum / window.len() as f64
-    };
-    (mean > 0.0).then_some(mean)
+    (!window.is_empty() && sum > 0.0).then(|| sum / window.len() as f64)
 }
 
 /// One attempt being played: feed it key-down counts as they arrive
@@ -614,25 +598,31 @@ mod tests {
     }
 
     #[test]
-    fn one_bounce_cannot_make_a_peak() {
-        // A duplicate event 5 ms after a press
-        let mut t = tapped(&[300.0; 8]);
-        let last = 300.0 * 8.0;
-        t.press(last + 5.0);
-        let mut at = last + 300.0;
-        for _ in 0..8 {
-            t.press(at);
-            at += 300.0;
+    fn uneven_mashing_is_measured_in_full() {
+        // Both keys mashed: K1 and K2 20 ms apart, a pair every 115 ms, so
+        // 2 presses per 115 ms: 1043 PPM. Dropping the 20 ms gaps read 522.
+        let origin = Instant::now();
+        let mut a = AttemptTracker::new(BeatmapRef::default(), origin, Utc::now());
+        for i in 0..60u64 {
+            a.presses(1, 0, origin + Duration::from_millis(115 * i));
+            a.presses(0, 1, origin + Duration::from_millis(115 * i + 20));
         }
-        assert!(approx(t.stats().peak_ppm, 200.0), "{:?}", t.stats());
-        // A stray press splitting one 300 ms interval into 40 + 260 ms: the
-        // 40 ms is trimmed from the full window, and the peak moves by a few
-        // percent rather than jumping to the 1500 PPM that 40 ms would mean
-        let mut t = tapped(&[300.0, 300.0, 300.0, 300.0, 300.0, 40.0, 260.0, 300.0, 300.0]);
+        let s = a.snapshot();
+        assert!(approx(s.combined.peak_ppm, 1043.5), "{:?}", s.combined);
+        assert!((s.combined.average_ppm.unwrap() - 1043.5).abs() < 10.0);
+        assert!(approx(s.combined.current_ppm, 1043.5));
+        // Each key on its own presses every 115 ms
+        assert!(approx(s.k1.peak_ppm, 521.7));
+    }
+
+    #[test]
+    fn one_stray_press_moves_the_peak_only_a_little() {
+        // A press splitting one 300 ms interval into 40 + 260 ms: one more
+        // press over the window's 1.5 s (240 PPM), not the 1500 PPM that 40 ms
+        // alone would mean
+        let t = tapped(&[300.0, 300.0, 300.0, 300.0, 300.0, 40.0, 260.0, 300.0, 300.0]);
         let peak = t.stats().peak_ppm.unwrap();
-        assert!(peak < 210.0, "peak {peak}");
-        t.press(10_000.0);
-        assert!(t.stats().peak_ppm.unwrap() < 210.0);
+        assert!(peak <= 240.01, "peak {peak}");
     }
 
     #[test]
@@ -657,10 +647,16 @@ mod tests {
         assert!(approx(t.stats().current_ppm, 75.0));
         // The peak is what was sustained, not touched by the pause
         assert!(approx(t.stats().peak_ppm, 370.4));
-        // Tapping again picks the window back up at once
-        t.press(last + 900.0);
-        t.advance(last + 900.0);
-        assert!(t.stats().current_ppm.unwrap() > 300.0);
+        // Tapping again: the pause is one of the window's intervals until
+        // enough presses push it out, so the rate climbs back
+        let mut at = last + 900.0;
+        t.press(at);
+        assert!(approx(t.stats().current_ppm, 210.5));
+        for _ in 0..6 {
+            at += 162.0;
+            t.press(at);
+        }
+        assert!(approx(t.stats().current_ppm, 370.4));
     }
 
     #[test]
@@ -674,15 +670,18 @@ mod tests {
     }
 
     #[test]
-    fn simultaneous_presses_count_but_add_no_interval() {
+    fn simultaneous_presses_all_count() {
         let origin = Instant::now();
         let mut a = AttemptTracker::new(BeatmapRef::default(), origin, Utc::now());
         a.presses(1, 1, origin);
         a.presses(1, 1, origin + Duration::from_millis(300));
         let s = a.snapshot();
+        // 4 presses in 300 ms: 3 intervals (two of them 0 ms) over 300 ms
         assert_eq!(s.combined.presses, 4);
-        assert_eq!(s.combined.valid_intervals, 1);
-        assert!(approx(s.combined.average_ppm, 200.0));
+        assert_eq!(s.combined.valid_intervals, 3);
+        assert!(approx(s.combined.average_ppm, 600.0));
+        // K1 alone: 2 presses 300 ms apart
+        assert!(approx(s.k1.average_ppm, 200.0));
     }
 
     #[test]
@@ -711,13 +710,13 @@ mod tests {
     fn the_song_rate_counts_breaks_but_not_the_intro() {
         let origin = Instant::now();
         let mut a = AttemptTracker::new(BeatmapRef::default(), origin, Utc::now());
-        // Mashing during the intro does not count
+        // A press during the intro does not count towards the song rate
         a.song_clock(clock(2000.0, 1.0));
-        a.presses(5, 0, origin);
+        a.presses(1, 0, origin);
         // 10 s of song from the first note: 20 presses in 5 s, then a 5 s break
         a.song_clock(clock(10_000.0, 1.0));
         for i in 0..20u64 {
-            a.presses(1, 0, origin + Duration::from_millis(250 * i));
+            a.presses(1, 0, origin + Duration::from_millis(2000 + 250 * i));
         }
         a.song_clock(clock(20_000.0, 1.0));
         let s = a.snapshot();
