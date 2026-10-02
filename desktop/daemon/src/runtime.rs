@@ -760,7 +760,7 @@ impl RuntimeController {
                         tracker.update_beatmap(beatmap);
                     }
                     if let (Some(tracker), Some(clock)) = (self.tap_attempt.as_mut(), clock) {
-                        tracker.song_clock(clock);
+                        tracker.song_clock(clock, now);
                     }
 
                     if current_mode != RuntimeMode::Playing {

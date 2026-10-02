@@ -35,7 +35,11 @@
 //! The song rate is the other way of looking at it: every press over the song
 //! time played, from the first note to the last, breaks included. It runs on
 //! the song's own clock, so the game paused (Esc) does not count, and it is
-//! converted to real time under speed mods. It is not split by key.
+//! converted to real time under speed mods. It is not split by key. Its peak
+//! is the most presses in any [`SONG_PEAK_WINDOW_MS`] of song time, counted
+//! the same way: a stretch long enough that one burst cannot make it, so it
+//! points at the hardest section rather than the first quick triplet. (The
+//! per-channel Peak above is that burst: the fastest few presses.)
 
 use crate::ui_source::{self as src, SourceValue};
 use chrono::{DateTime, Utc};
@@ -53,8 +57,14 @@ pub const SEQUENCE_BREAK_MS: f64 = 1000.0;
 /// Presses this long (song time) before the first note or after the last one
 /// still count: an early or late hit on a note is still a hit on it
 pub const SONG_HIT_MARGIN_MS: f64 = 200.0;
-/// The song rate is shown once this much song time (real ms) has been played
-pub const MIN_SONG_MS: f64 = 1000.0;
+/// The song rate is shown once this much song time (real ms) has been played.
+/// Over the first seconds it divides by very little time and swings wildly.
+pub const MIN_SONG_MS: f64 = 5000.0;
+/// The song peak is the most presses in any stretch of song this long (real ms)
+pub const SONG_PEAK_WINDOW_MS: f64 = 10_000.0;
+/// How far a press's song time is carried past the last song clock: tosu
+/// sends one every few dozen ms, and while the game is paused it does not move
+const SONG_CLOCK_CARRY_MS: f64 = 250.0;
 /// Attempts with fewer combined presses are not written to the history
 pub const MIN_RECORDED_PRESSES: u32 = 10;
 
@@ -143,6 +153,10 @@ pub struct SongRate {
     pub presses: u32,
     /// Song time played between them, in real ms
     pub ms: f64,
+    /// The most presses in any [`SONG_PEAK_WINDOW_MS`] of song, per minute.
+    /// None until that much song has been played.
+    #[serde(default)]
+    pub peak_ppm: Option<f64>,
 }
 
 impl SongRate {
@@ -229,6 +243,9 @@ pub struct TapHistory {
     /// All the period's song presses over all its song time
     #[serde(default)]
     pub song_ppm: Option<f64>,
+    /// The best song peak of the period
+    #[serde(default)]
+    pub best_song_peak_ppm: Option<f64>,
 }
 
 impl TapHistory {
@@ -345,6 +362,10 @@ pub struct AttemptTracker {
     song: SongRate,
     /// Between the first note and the last, by the latest song clock
     in_song: bool,
+    /// The latest song clock: song time played (real ms) and when it came
+    song_at: Option<(f64, Instant)>,
+    /// Song times (real ms) of the presses in the last [`SONG_PEAK_WINDOW_MS`]
+    song_window: VecDeque<f64>,
 }
 
 impl AttemptTracker {
@@ -358,13 +379,15 @@ impl AttemptTracker {
             combined: ChannelTracker::default(),
             song: SongRate::default(),
             in_song: false,
+            song_at: None,
+            song_window: VecDeque::new(),
         }
     }
 
     /// The song clock moved. Presses count towards the song rate from just
     /// before the first note to the last; the time does from the first note
     /// to the last, so an intro or an outro does not water it down.
-    pub fn song_clock(&mut self, clock: SongClock) {
+    pub fn song_clock(&mut self, clock: SongClock, at: Instant) {
         let SongClock {
             live_ms,
             first_object_ms: first,
@@ -377,6 +400,36 @@ impl AttemptTracker {
         self.in_song =
             live_ms >= first - SONG_HIT_MARGIN_MS && live_ms <= last + SONG_HIT_MARGIN_MS;
         self.song.ms = (live_ms.clamp(first, last) - first) / rate;
+        self.song_at = Some((self.song.ms, at));
+    }
+
+    /// A press's place in the song (real ms since the first note): the latest
+    /// clock, carried forward a little for the time since it came
+    fn song_time(&self, at: Instant) -> f64 {
+        match self.song_at {
+            Some((ms, clock_at)) => {
+                let since = at.saturating_duration_since(clock_at).as_secs_f64() * 1000.0;
+                ms + since.min(SONG_CLOCK_CARRY_MS)
+            }
+            None => self.song.ms,
+        }
+    }
+
+    fn song_press(&mut self, at: Instant) {
+        self.song.presses = self.song.presses.saturating_add(1);
+        let t = self.song_time(at);
+        self.song_window.push_back(t);
+        while self
+            .song_window
+            .front()
+            .is_some_and(|first| *first <= t - SONG_PEAK_WINDOW_MS)
+        {
+            self.song_window.pop_front();
+        }
+        if t >= SONG_PEAK_WINDOW_MS {
+            let ppm = 60_000.0 * self.song_window.len() as f64 / SONG_PEAK_WINDOW_MS;
+            self.song.peak_ppm = Some(self.song.peak_ppm.map_or(ppm, |p| p.max(ppm)));
+        }
     }
 
     fn ms(&self, at: Instant) -> f64 {
@@ -388,7 +441,9 @@ impl AttemptTracker {
     pub fn presses(&mut self, k1: u32, k2: u32, at: Instant) {
         let t = self.ms(at);
         if self.in_song {
-            self.song.presses = self.song.presses.saturating_add(k1 + k2);
+            for _ in 0..(k1 + k2).min(128) {
+                self.song_press(at);
+            }
         }
         for _ in 0..k1.min(64) {
             self.k1.press(t);
@@ -471,6 +526,11 @@ pub fn attempt_ui_values(stats: Option<&AttemptStats>) -> Vec<(u8, SourceValue)>
                 None => SourceValue::Clear,
             },
         ),
+        // Empty ("-" on the pad) until 10 s of song have been played
+        (
+            src::PLAY_PPM_SONG_PEAK,
+            ppm_value(stats.and_then(|s| s.song.peak_ppm)),
+        ),
     ]
 }
 
@@ -492,6 +552,10 @@ pub fn history_ui_values(history: Option<&TapHistory>) -> Vec<(u8, SourceValue)>
         (
             src::HISTORY_PPM_SONG,
             ppm_value(history.and_then(|h| h.song_ppm)),
+        ),
+        (
+            src::HISTORY_PPM_SONG_PEAK,
+            ppm_value(history.and_then(|h| h.best_song_peak_ppm)),
         ),
         (
             src::HISTORY_PERIOD,
@@ -711,14 +775,14 @@ mod tests {
         let origin = Instant::now();
         let mut a = AttemptTracker::new(BeatmapRef::default(), origin, Utc::now());
         // A press during the intro does not count towards the song rate
-        a.song_clock(clock(2000.0, 1.0));
+        a.song_clock(clock(2000.0, 1.0), origin);
         a.presses(1, 0, origin);
         // 10 s of song from the first note: 20 presses in 5 s, then a 5 s break
-        a.song_clock(clock(10_000.0, 1.0));
+        a.song_clock(clock(10_000.0, 1.0), origin);
         for i in 0..20u64 {
             a.presses(1, 0, origin + Duration::from_millis(2000 + 250 * i));
         }
-        a.song_clock(clock(20_000.0, 1.0));
+        a.song_clock(clock(20_000.0, 1.0), origin);
         let s = a.snapshot();
         assert_eq!(s.song.presses, 20);
         // 20 presses over 10 s, not over the 5 s of tapping
@@ -732,12 +796,12 @@ mod tests {
         let origin = Instant::now();
         let mut a = AttemptTracker::new(BeatmapRef::default(), origin, Utc::now());
         // DT: 30 s of song are 20 s of real time
-        a.song_clock(clock(10_000.0, 1.5));
+        a.song_clock(clock(10_000.0, 1.5), origin);
         a.presses(40, 0, origin);
-        a.song_clock(clock(40_000.0, 1.5));
+        a.song_clock(clock(40_000.0, 1.5), origin);
         assert!(approx(a.snapshot().song.ppm(), 120.0));
         // After the last note neither time nor presses count
-        a.song_clock(clock(105_000.0, 1.5)); // well past the last note
+        a.song_clock(clock(105_000.0, 1.5), origin); // well past the last note
         a.presses(10, 0, origin);
         let s = a.snapshot();
         assert_eq!(s.song.presses, 40);
@@ -748,17 +812,70 @@ mod tests {
     fn the_song_rate_reads_zero_until_there_is_enough_song() {
         let origin = Instant::now();
         let mut a = AttemptTracker::new(BeatmapRef::default(), origin, Utc::now());
-        a.song_clock(clock(10_100.0, 1.0));
+        a.song_clock(clock(10_100.0, 1.0), origin);
         a.presses(1, 0, origin);
         assert_eq!(a.snapshot().song.ppm(), None);
         let values = attempt_ui_values(Some(&a.snapshot()));
         assert!(values.contains(&(src::PLAY_PPM_SONG, SourceValue::Number(0.0))));
     }
 
+    /// Plays `presses` presses `gap_ms` apart from song time `from_ms`, with the
+    /// song clock moving along (one clock per press, as tosu's frames would)
+    fn play_song(a: &mut AttemptTracker, origin: Instant, from_ms: f64, gap_ms: f64, presses: u32) {
+        for i in 0..presses {
+            let song_ms = from_ms + gap_ms * f64::from(i);
+            let at = origin + Duration::from_secs_f64(song_ms / 1000.0);
+            a.song_clock(clock(10_000.0 + song_ms, 1.0), at);
+            a.presses(1, 0, at);
+        }
+    }
+
+    #[test]
+    fn the_song_peak_is_the_best_ten_seconds_not_one_burst() {
+        let origin = Instant::now();
+        let mut a = AttemptTracker::new(BeatmapRef::default(), origin, Utc::now());
+        // A 0.5 s burst at 1200 PPM right at the start, then 300 PPM
+        play_song(&mut a, origin, 0.0, 50.0, 10);
+        play_song(&mut a, origin, 500.0, 200.0, 50);
+        // then the hard part: 15 s at 600 PPM
+        play_song(&mut a, origin, 10_500.0, 100.0, 150);
+        // and an easy end: 10 s at 150 PPM
+        play_song(&mut a, origin, 25_500.0, 400.0, 25);
+        let s = a.snapshot();
+        let peak = s.song.peak_ppm.unwrap();
+        assert!((peak - 600.0).abs() <= 6.0, "peak {peak}");
+        // The burst set the per-channel (6-press) peak, not the song peak
+        assert!(s.combined.peak_ppm.unwrap() > 1000.0);
+        // and the song peak is never below the song rate
+        assert!(peak >= s.song.ppm().unwrap());
+    }
+
+    #[test]
+    fn there_is_no_song_peak_before_ten_seconds_of_song() {
+        let origin = Instant::now();
+        let mut a = AttemptTracker::new(BeatmapRef::default(), origin, Utc::now());
+        play_song(&mut a, origin, 0.0, 100.0, 90);
+        assert_eq!(a.snapshot().song.peak_ppm, None);
+        assert!(attempt_ui_values(Some(&a.snapshot()))
+            .contains(&(src::PLAY_PPM_SONG_PEAK, SourceValue::Clear)));
+        play_song(&mut a, origin, 9_000.0, 100.0, 20);
+        assert!(a.snapshot().song.peak_ppm.is_some());
+    }
+
+    #[test]
+    fn the_song_rate_waits_five_seconds_before_it_shows() {
+        let origin = Instant::now();
+        let mut a = AttemptTracker::new(BeatmapRef::default(), origin, Utc::now());
+        play_song(&mut a, origin, 0.0, 100.0, 40);
+        assert_eq!(a.snapshot().song.ppm(), None);
+        play_song(&mut a, origin, 4_000.0, 100.0, 20);
+        assert!(a.snapshot().song.ppm().is_some());
+    }
+
     #[test]
     fn ui_values_round_and_clear() {
         let values = attempt_ui_values(None);
-        assert_eq!(values.len(), 10);
+        assert_eq!(values.len(), 11);
         assert!(values.iter().all(|(_, v)| *v == SourceValue::Clear));
         let h = TapHistory {
             period_days: 30,

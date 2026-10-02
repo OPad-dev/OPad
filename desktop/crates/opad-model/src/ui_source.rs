@@ -116,4 +116,8 @@ sources! {
     // breaks included (current attempt / history average)
     PLAY_PPM_SONG = 84, "play.ppm_song";
     HISTORY_PPM_SONG = 85, "history.ppm_song";
+    // Song peak: the most presses in any 10 s of song (current attempt /
+    // best over the history period)
+    PLAY_PPM_SONG_PEAK = 86, "play.ppm_song_peak";
+    HISTORY_PPM_SONG_PEAK = 87, "history.ppm_song_peak";
 }

@@ -100,6 +100,8 @@ static const ui_source_info_t s_sources[UI_SRC_COUNT] = {
     [UI_SRC_HISTORY_PERIOD]      = S("history.period", UI_FMT_TEXT, 1, 0),
     [UI_SRC_PLAY_PPM_SONG]       = N("play.ppm_song", UI_FMT_INT, 1, 0),
     [UI_SRC_HISTORY_PPM_SONG]    = N("history.ppm_song", UI_FMT_INT, 1, 0),
+    [UI_SRC_PLAY_PPM_SONG_PEAK]  = N("play.ppm_song_peak", UI_FMT_INT, 1, 0),
+    [UI_SRC_HISTORY_PPM_SONG_PEAK] = N("history.ppm_song_peak", UI_FMT_INT, 1, 0),
 };
 
 #undef S
@@ -182,6 +184,7 @@ void ui_data_clear_host_sources(void)
         ui_data_clear((uint8_t)i);
     }
     ui_data_clear(UI_SRC_PLAY_PPM_SONG);
+    ui_data_clear(UI_SRC_PLAY_PPM_SONG_PEAK);
 }
 
 void ui_data_clear_daemon_sources(void)
@@ -192,6 +195,7 @@ void ui_data_clear_daemon_sources(void)
     }
     ui_data_clear(UI_SRC_HISTORY_PERIOD);
     ui_data_clear(UI_SRC_HISTORY_PPM_SONG);
+    ui_data_clear(UI_SRC_HISTORY_PPM_SONG_PEAK);
 }
 
 bool ui_data_is_empty(uint8_t source)

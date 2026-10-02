@@ -119,6 +119,9 @@ impl Storage {
         if v < 10 {
             self.apply_v10()?;
         }
+        if v < 11 {
+            self.apply_v11()?;
+        }
         Ok(())
     }
 

@@ -144,6 +144,8 @@ static const ui_source_info_t s_sources[UI_SRC_COUNT] = {
     [UI_SRC_HISTORY_PERIOD]      = S("history.period", 0, 1, 0),
     [UI_SRC_PLAY_PPM_SONG]       = N("play.ppm_song", 1, 1, 0),
     [UI_SRC_HISTORY_PPM_SONG]    = N("history.ppm_song", 1, 1, 0),
+    [UI_SRC_PLAY_PPM_SONG_PEAK]  = N("play.ppm_song_peak", 1, 1, 0),
+    [UI_SRC_HISTORY_PPM_SONG_PEAK] = N("history.ppm_song_peak", 1, 1, 0),
 };
 
 #undef S
@@ -243,7 +245,7 @@ static const ui_layout_t s_playing = {
           .x = 226, .y = 92, .w = 88, .h = 14, .fg = MUTED, .decimals = DEC, .label = "SONG PPM" },
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM_SONG, .font = UI_FONT_32, .align = UI_ALIGN_CENTER,
           .x = 226, .y = 105, .w = 88, .h = 34, .fg = PINK, .flags = UI_FLAG_HIDE_WHEN_EMPTY, .decimals = DEC },
-        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM_PEAK, .font = UI_FONT_14, .align = UI_ALIGN_CENTER,
+        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM_SONG_PEAK, .font = UI_FONT_14, .align = UI_ALIGN_CENTER,
           .x = 226, .y = 140, .w = 88, .h = 18, .fg = WHITE, .decimals = DEC, .label = "PEAK " },
     },
 };

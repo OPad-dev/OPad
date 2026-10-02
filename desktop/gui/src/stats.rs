@@ -175,7 +175,7 @@ fn attempt_card<'a>(attempt: &AttemptStats, live: bool) -> Element<'a, Message> 
     if live {
         header.push("Current".into());
     }
-    header.extend(["Average".into(), "Peak".into(), "Presses".into()]);
+    header.extend(["Average".into(), "Burst".into(), "Presses".into()]);
     let mut rows = column![table_row(header, true, false)].spacing(8);
     for channel in TapChannel::ALL {
         let c = attempt.channel(channel);
@@ -204,12 +204,17 @@ fn attempt_card<'a>(attempt: &AttemptStats, live: bool) -> Element<'a, Message> 
         text(map_line(&attempt.beatmap).unwrap_or_else(|| "Unknown map".into()))
             .size(14)
             .color(theme::CYAN),
-        stat("SONG PPM", fmt_ppm(attempt.song.ppm())),
+        row![
+            stat("SONG PPM", fmt_ppm(attempt.song.ppm())),
+            stat("PEAK (BEST 10 S)", fmt_ppm(attempt.song.peak_ppm)),
+        ]
+        .spacing(36),
         container(rows).padding([4, 0]),
         caption(
             "PPM = presses per minute. Song PPM is every press over the song time from the \
-             first note, breaks included. Current is the rate over your last few presses; \
-             Average and Peak count only while you are tapping."
+             first note, breaks included; Peak is the most in any 10 s of song. Current is \
+             the rate over your last few presses, Burst the fastest few presses, and \
+             Average counts only while you are tapping."
         ),
     ]
     .spacing(10)
@@ -222,9 +227,9 @@ fn history_body<'a>(history: &TapHistory, unsaved: usize) -> Element<'a, Message
         row![
             stat("ATTEMPTS", crate::pages::grouped(history.attempts)),
             stat("SONG PPM", fmt_ppm(history.song_ppm)),
+            stat("PEAK", fmt_ppm(history.best_song_peak_ppm)),
             stat("AVERAGE PPM", fmt_ppm(all.average_ppm)),
-            stat("AVERAGE PEAK", fmt_ppm(all.average_peak_ppm)),
-            stat("BEST PEAK", fmt_ppm(all.best_peak_ppm)),
+            stat("BEST BURST", fmt_ppm(all.best_peak_ppm)),
             stat("PRESSES", crate::pages::grouped(all.total_presses)),
         ]
         .spacing(36),
@@ -232,8 +237,8 @@ fn history_body<'a>(history: &TapHistory, unsaved: usize) -> Element<'a, Message
             vec![
                 "".into(),
                 "Average".into(),
-                "Avg peak".into(),
-                "Best peak".into(),
+                "Avg burst".into(),
+                "Best burst".into(),
                 "Presses".into(),
             ],
             true,
