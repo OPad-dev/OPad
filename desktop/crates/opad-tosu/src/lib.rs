@@ -314,10 +314,13 @@ pub fn parse_tosu_v2_json(json_str: &str) -> Option<GameplayTelemetry> {
         live_time_ms: live.unwrap_or(0.0),
         values,
         beatmap,
+        // tosu says failed as soon as HP reaches 0, NoFail or not, but with
+        // NoFail the play goes on and so does the attempt
         failed: root
             .pointer("/play/failed")
             .and_then(|v| v.as_bool())
-            .unwrap_or(false),
+            .unwrap_or(false)
+            && !has_mod(text("/play/mods/name").as_deref().unwrap_or(""), "NF"),
         clock: match (live, first, last) {
             (Some(live_ms), Some(first_object_ms), Some(last_object_ms))
                 if last_object_ms > first_object_ms =>
@@ -335,6 +338,14 @@ pub fn parse_tosu_v2_json(json_str: &str) -> Option<GameplayTelemetry> {
             _ => None,
         },
     })
+}
+
+/// Whether a mods string such as "HDNFDT" (two-letter acronyms run together)
+/// has the given mod
+fn has_mod(mods: &str, acronym: &str) -> bool {
+    mods.as_bytes()
+        .chunks(2)
+        .any(|m| m.eq_ignore_ascii_case(acronym.as_bytes()))
 }
 
 /// tosu state names ("selectPlay") as shown on the pad ("Song select")
@@ -1006,6 +1017,24 @@ mod tests {
             "beatmap": { "time": { "live": 5000, "firstObject": 1000, "lastObject": 9000 } },
             "play": { "mods": { "name": "DT", "rate": 1.5 } } }"#;
         assert_eq!(parse_tosu_v2_json(dt).unwrap().clock.unwrap().rate, 1.5);
+    }
+
+    #[test]
+    fn a_no_fail_play_at_zero_hp_has_not_failed() {
+        // What tosu sends on a NoFail play that ran out of HP: the song goes on
+        let frame = |mods: &str| {
+            format!(
+                r#"{{ "state": {{ "number": 2, "name": "play" }},
+                      "play": {{ "failed": true, "healthBar": {{ "normal": 0 }},
+                                 "mods": {{ "name": "{mods}" }} }} }}"#
+            )
+        };
+        assert!(!parse_tosu_v2_json(&frame("NF")).unwrap().failed);
+        assert!(!parse_tosu_v2_json(&frame("HDNFDT")).unwrap().failed);
+        assert!(parse_tosu_v2_json(&frame("HD")).unwrap().failed);
+        assert!(parse_tosu_v2_json(&frame("")).unwrap().failed);
+        // "N" + "F" across two mods is not NoFail
+        assert!(parse_tosu_v2_json(&frame("HNFD")).unwrap().failed);
     }
 
     #[test]
