@@ -767,13 +767,14 @@ fn format_tap_stats(s: &TapStatsSnapshot) -> String {
             );
             let _ = writeln!(
                 out,
-                "PEAK:     {} PPM (best 10 s of the song)",
+                "PEAK:     {} PPM (fastest 7 presses in a row); best 10 s: {} PPM",
+                fmt_ppm(a.combined.peak_ppm),
                 fmt_ppm(a.song.peak_ppm)
             );
             let _ = writeln!(
                 out,
                 "{:<10}{:>9}{:>9}{:>9}{:>10}",
-                "", "Current", "Tap avg", "Burst", "Presses"
+                "", "Current", "Tap avg", "Peak", "Presses"
             );
             for ch in TapChannel::ALL {
                 let c = a.channel(ch);
@@ -805,13 +806,14 @@ fn format_tap_stats(s: &TapStatsSnapshot) -> String {
             let _ = writeln!(out, "AVG:      {} PPM", fmt_ppm(h.song_ppm));
             let _ = writeln!(
                 out,
-                "PEAK:     {} PPM (best 10 s)",
+                "PEAK:     {} PPM; best 10 s: {} PPM",
+                fmt_ppm(h.combined.best_peak_ppm),
                 fmt_ppm(h.best_song_peak_ppm)
             );
             let _ = writeln!(
                 out,
                 "{:<10}{:>9}{:>10}{:>11}{:>10}",
-                "", "Tap avg", "Avg burst", "Best burst", "Presses"
+                "", "Tap avg", "Avg peak", "Best peak", "Presses"
             );
             for ch in TapChannel::ALL {
                 let c = h.channel(ch);
@@ -1282,7 +1284,11 @@ mod tests {
         assert!(out.contains("History: All time"), "{out}");
         assert!(out.contains("Attempts: 3"), "{out}");
         assert!(out.contains("AVG:      150 PPM"), "{out}");
-        assert!(out.contains("PEAK:     212 PPM"), "{out}");
+        assert!(
+            out.contains("PEAK:     220 PPM (fastest 7 presses in a row); best 10 s: 212 PPM"),
+            "{out}"
+        );
+        assert!(out.contains("PEAK:     252 PPM; best 10 s: - PPM"), "{out}");
         let combined = out.lines().rfind(|l| l.starts_with("Combined")).unwrap();
         assert!(
             combined.contains("190") && combined.contains("252"),

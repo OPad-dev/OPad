@@ -115,7 +115,7 @@ text.
 |---|---|---|
 | 51 | `play.ppm` | Combined live rate (both keys): the rolling rate of the last presses, falling once the player clearly stops and 0 when not tapping. Always set during an attempt; cleared only without tosu. |
 | 52 | `play.ppm_avg` | Combined average of the current attempt |
-| 53 | `play.ppm_peak` | Combined peak of the current attempt |
+| 53 | `play.ppm_peak` | PEAK of the current attempt: the fastest combined rate over 7 presses in a row, which catches a short burst at its real speed |
 | 54–56 | `play.k1_ppm`, `play.k1_ppm_avg`, `play.k1_ppm_peak` | Same for K1 alone |
 | 57–59 | `play.k2_ppm`, `play.k2_ppm_avg`, `play.k2_ppm_peak` | Same for K2 alone |
 | 74 | `history.ppm_avg` | Combined average over the history period |
@@ -125,7 +125,7 @@ text.
 | 83 | `history.period` | The period as the pad shows it: `LAST 30 DAYS`, `ALL TIME` |
 | 84 | `play.ppm_song` | Song rate of the current attempt: every press over the song time from the first note to the last, breaks included, on the song's clock (game paused does not count, speed mods converted to real time). 0 for the first 5 s of song. |
 | 85 | `history.ppm_song` | Song rate over the history period, weighted by song time |
-| 86 | `play.ppm_song_peak` | Song peak of the current attempt: the most presses in any 10 s of song, counted like `play.ppm_song`. Empty until 10 s of song have been played. (`play.ppm_peak` is the burst: the fastest 6 presses.) |
+| 86 | `play.ppm_song_peak` | Song peak of the current attempt: the most presses in any 10 s of song, counted like `play.ppm_song`. Empty until 10 s of song have been played. (`play.ppm_peak` is PEAK, the fastest 7 presses in a row; this is the fastest 10 s.) |
 | 87 | `history.ppm_song_peak` | Best song peak over the history period |
 
 Averages and peaks of an attempt stay until the next attempt starts. The

@@ -115,15 +115,15 @@ static const ui_layout_t s_playing = {
           .decimals = DEC, .label = "max ", .suffix = "x" },
 
         // PPM panel right of the PP: the song rate (every press over the song since the first
-        // note, breaks included; not the map's BPM) and its peak, the best 10 s of song. The key
-        // cards show each key's live rate.
+        // note, breaks included; not the map's BPM) and PEAK, the fastest tapping (7 presses in a
+        // row). The key cards show each key's live rate.
         { .kind = UI_WIDGET_RECT, .source = UI_SRC_NONE, .x = 226, .y = 88, .w = 88, .h = 74,
           .fg = 0x2A2A3C, .bg = CARD, .radius = 12, .flags = UI_FLAG_BORDER, .decimals = DEC },
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_NONE, .font = UI_FONT_12, .align = UI_ALIGN_CENTER,
           .x = 226, .y = 92, .w = 88, .h = 14, .fg = MUTED, .decimals = DEC, .label = "AVG PPM" },
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM_SONG, .font = UI_FONT_32, .align = UI_ALIGN_CENTER,
           .x = 226, .y = 105, .w = 88, .h = 34, .fg = PINK, .flags = UI_FLAG_HIDE_WHEN_EMPTY, .decimals = DEC },
-        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM_SONG_PEAK, .font = UI_FONT_14, .align = UI_ALIGN_CENTER,
+        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM_PEAK, .font = UI_FONT_14, .align = UI_ALIGN_CENTER,
           .x = 226, .y = 140, .w = 88, .h = 18, .fg = WHITE, .decimals = DEC, .label = "PEAK " },
     },
 };

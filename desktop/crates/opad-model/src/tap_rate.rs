@@ -28,7 +28,9 @@
 //!   on every beat. It always has a value while an attempt is played, so the
 //!   pad never hides it mid-map.
 //! - Peak PPM is the highest Current PPM over a *full* window: the fastest
-//!   the player kept up over that many presses, not one quick double tap.
+//!   the player tapped, over 7 presses in a row. That catches a short burst
+//!   at its real speed (a 1/4 burst reads its 1/4 rate), while one quick
+//!   double tap is too short to set it.
 //! - Average PPM is presses over tapping time: the sum of the sequences'
 //!   intervals, not the length of the map.
 //!
@@ -38,8 +40,8 @@
 //! converted to real time under speed mods. It is not split by key. Its peak
 //! is the most presses in any [`SONG_PEAK_WINDOW_MS`] of song time, counted
 //! the same way: a stretch long enough that one burst cannot make it, so it
-//! points at the hardest section rather than the first quick triplet. (The
-//! per-channel Peak above is that burst: the fastest few presses.)
+//! points at the hardest section. (The per-channel Peak above is the fastest
+//! tapping: a short burst at its real speed.)
 
 use crate::ui_source::{self as src, SourceValue};
 use chrono::{DateTime, Utc};
@@ -848,6 +850,28 @@ mod tests {
         assert!(s.combined.peak_ppm.unwrap() > 1000.0);
         // and the song peak is never below the song rate
         assert!(peak >= s.song.ppm().unwrap());
+    }
+
+    #[test]
+    fn peak_is_the_fastest_burst_of_an_easy_song() {
+        // 300 PPM all song long, with one 8-press burst at 720 PPM in the middle
+        let origin = Instant::now();
+        let mut a = AttemptTracker::new(BeatmapRef::default(), origin, Utc::now());
+        play_song(&mut a, origin, 0.0, 200.0, 50);
+        play_song(&mut a, origin, 10_000.0, 1000.0 / 12.0, 8);
+        play_song(
+            &mut a,
+            origin,
+            10_000.0 + 7.0 * 1000.0 / 12.0 + 200.0,
+            200.0,
+            50,
+        );
+        let s = a.snapshot();
+        let peak = s.combined.peak_ppm.unwrap();
+        assert!((peak - 720.0).abs() < 1.0, "peak {peak}");
+        // The song average and the best 10 s barely notice it
+        assert!(s.song.ppm().unwrap() < 330.0);
+        assert!(s.song.peak_ppm.unwrap() < 340.0);
     }
 
     #[test]

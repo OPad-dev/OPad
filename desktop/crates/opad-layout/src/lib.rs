@@ -314,25 +314,26 @@ impl SourceInfo {
 }
 
 /// The tap rate sources in the words the pad and the Stats page use: AVG PPM
-/// is the song average and PEAK its best 10 s, as on the pad's panel; Live is
-/// the key cards' rate, Burst the fastest few presses, and Tapping avg the
-/// average while tapping (breaks left out)
+/// is the song average and PEAK the fastest tapping (7 presses in a row), as
+/// on the pad's panel; Best 10 s is the fastest 10 s of song, Live the key
+/// cards' rate, and Tapping avg the average while tapping (breaks left out)
 fn tap_rate_label(key: &str) -> Option<&'static str> {
     Some(match key {
         "play.ppm_song" | "history.ppm_song" => "AVG PPM",
-        "play.ppm_song_peak" | "history.ppm_song_peak" => "PEAK PPM (best 10 s)",
+        "play.ppm_song_peak" => "Best 10 s PPM",
+        "history.ppm_song_peak" => "Best 10 s PPM",
         "play.ppm" => "Live PPM",
         "play.k1_ppm" => "K1 live PPM",
         "play.k2_ppm" => "K2 live PPM",
         "play.ppm_avg" | "history.ppm_avg" => "Tapping avg PPM",
         "play.k1_ppm_avg" | "history.k1_ppm_avg" => "K1 tapping avg PPM",
         "play.k2_ppm_avg" | "history.k2_ppm_avg" => "K2 tapping avg PPM",
-        "play.ppm_peak" => "Burst PPM",
-        "play.k1_ppm_peak" => "K1 burst PPM",
-        "play.k2_ppm_peak" => "K2 burst PPM",
-        "history.ppm_peak" => "Best burst PPM",
-        "history.k1_ppm_peak" => "K1 best burst PPM",
-        "history.k2_ppm_peak" => "K2 best burst PPM",
+        "play.ppm_peak" => "PEAK PPM",
+        "play.k1_ppm_peak" => "K1 peak PPM",
+        "play.k2_ppm_peak" => "K2 peak PPM",
+        "history.ppm_peak" => "Best PEAK PPM",
+        "history.k1_ppm_peak" => "K1 best peak PPM",
+        "history.k2_ppm_peak" => "K2 best peak PPM",
         "history.period" => "Period",
         _ => return None,
     })
@@ -442,7 +443,11 @@ mod tests {
         assert_eq!(avg.to_string(), "Live play: AVG PPM");
         let peak = source_info(ui_source::HISTORY_PPM_SONG_PEAK).unwrap();
         assert_eq!(peak.category, SourceCategory::History);
-        assert_eq!(peak.to_string(), "History: PEAK PPM (best 10 s)");
+        assert_eq!(peak.to_string(), "History: Best 10 s PPM");
+        assert_eq!(
+            source_info(ui_source::PLAY_PPM_PEAK).unwrap().to_string(),
+            "Live play: PEAK PPM"
+        );
         // Every tap rate source has a written-out name
         for (id, key) in ui_source::ALL {
             if key.contains("ppm") {
