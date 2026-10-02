@@ -762,18 +762,18 @@ fn format_tap_stats(s: &TapStatsSnapshot) -> String {
             }
             let _ = writeln!(
                 out,
-                "Song:     {} PPM (every press over the song time, breaks included)",
+                "AVG:      {} PPM (every press over the song time, breaks included)",
                 fmt_ppm(a.song.ppm())
             );
             let _ = writeln!(
                 out,
-                "Peak:     {} PPM (best 10 s of the song)",
+                "PEAK:     {} PPM (best 10 s of the song)",
                 fmt_ppm(a.song.peak_ppm)
             );
             let _ = writeln!(
                 out,
                 "{:<10}{:>9}{:>9}{:>9}{:>10}",
-                "", "Current", "Average", "Burst", "Presses"
+                "", "Current", "Tap avg", "Burst", "Presses"
             );
             for ch in TapChannel::ALL {
                 let c = a.channel(ch);
@@ -802,16 +802,16 @@ fn format_tap_stats(s: &TapStatsSnapshot) -> String {
     match &s.history {
         Some(h) if h.attempts > 0 => {
             let _ = writeln!(out, "Attempts: {}", h.attempts);
-            let _ = writeln!(out, "Song:     {} PPM", fmt_ppm(h.song_ppm));
+            let _ = writeln!(out, "AVG:      {} PPM", fmt_ppm(h.song_ppm));
             let _ = writeln!(
                 out,
-                "Peak:     {} PPM (best 10 s)",
+                "PEAK:     {} PPM (best 10 s)",
                 fmt_ppm(h.best_song_peak_ppm)
             );
             let _ = writeln!(
                 out,
                 "{:<10}{:>9}{:>10}{:>11}{:>10}",
-                "", "Average", "Avg burst", "Best burst", "Presses"
+                "", "Tap avg", "Avg burst", "Best burst", "Presses"
             );
             for ch in TapChannel::ALL {
                 let c = h.channel(ch);
@@ -1281,8 +1281,8 @@ mod tests {
         assert!(out.contains("xi - Blue Zenith [FOUR DIMENSIONS]"), "{out}");
         assert!(out.contains("History: All time"), "{out}");
         assert!(out.contains("Attempts: 3"), "{out}");
-        assert!(out.contains("Song:     150 PPM"), "{out}");
-        assert!(out.contains("Peak:     212 PPM"), "{out}");
+        assert!(out.contains("AVG:      150 PPM"), "{out}");
+        assert!(out.contains("PEAK:     212 PPM"), "{out}");
         let combined = out.lines().rfind(|l| l.starts_with("Combined")).unwrap();
         assert!(
             combined.contains("190") && combined.contains("252"),
