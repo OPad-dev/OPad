@@ -112,4 +112,8 @@ sources! {
 
     // The history period as the pad shows it: "LAST 30 DAYS", "ALL TIME"
     HISTORY_PERIOD = 83, "history.period";
+    // Song rate: presses over song time from the first note to the last,
+    // breaks included (current attempt / history average)
+    PLAY_PPM_SONG = 84, "play.ppm_song";
+    HISTORY_PPM_SONG = 85, "history.ppm_song";
 }

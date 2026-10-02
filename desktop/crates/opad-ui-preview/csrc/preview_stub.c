@@ -142,6 +142,8 @@ static const ui_source_info_t s_sources[UI_SRC_COUNT] = {
     [UI_SRC_STATUS_OSU]          = N("status.osu", 1, 1, 0),
 
     [UI_SRC_HISTORY_PERIOD]      = S("history.period", 0, 1, 0),
+    [UI_SRC_PLAY_PPM_SONG]       = N("play.ppm_song", 1, 1, 0),
+    [UI_SRC_HISTORY_PPM_SONG]    = N("history.ppm_song", 1, 1, 0),
 };
 
 #undef S
@@ -235,7 +237,7 @@ static const ui_layout_t s_playing = {
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_MAX_COMBO, .font = UI_FONT_14, .align = UI_ALIGN_RIGHT,
           .x = 226, .y = 6, .w = 86, .h = 18, .fg = MUTED, .flags = UI_FLAG_HIDE_WHEN_EMPTY,
           .decimals = DEC, .label = "max ", .suffix = "x" },
-        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM, .font = UI_FONT_24, .align = UI_ALIGN_CENTER,
+        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM_SONG, .font = UI_FONT_24, .align = UI_ALIGN_CENTER,
           .x = 240, .y = 90, .w = 76, .h = 30, .fg = PINK, .flags = UI_FLAG_HIDE_WHEN_EMPTY, .decimals = DEC },
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_NONE, .font = UI_FONT_14, .align = UI_ALIGN_CENTER,
           .x = 240, .y = 119, .w = 76, .h = 18, .fg = MUTED, .decimals = DEC, .label = "PPM" },

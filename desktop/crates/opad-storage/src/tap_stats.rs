@@ -57,6 +57,32 @@ impl Storage {
         Ok(())
     }
 
+    /// v10: the song rate, every press over the song time from the first note
+    /// to the last, breaks included. Rows from v9 have none (0 ms) and are
+    /// left out of its history.
+    pub(crate) fn apply_v10(&self) -> Result<(), StorageError> {
+        // ADD COLUMN has no IF NOT EXISTS: skip it for a table that has the
+        // columns already (v9 run again on a newer table)
+        let has_song: bool = self.conn.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('tap_attempts') WHERE name = 'song_ms'",
+            [],
+            |row| row.get(0),
+        )?;
+        let add_columns = if has_song {
+            ""
+        } else {
+            "ALTER TABLE tap_attempts ADD COLUMN song_press_count INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE tap_attempts ADD COLUMN song_ms REAL NOT NULL DEFAULT 0;"
+        };
+        self.conn.execute_batch(&format!(
+            "BEGIN TRANSACTION;
+            {add_columns}
+            INSERT INTO schema_migrations (version, applied_at) VALUES (10, datetime('now'));
+            COMMIT;"
+        ))?;
+        Ok(())
+    }
+
     /// Saves finished attempts in one transaction. Attempts still being
     /// played (no `ended_at`) are skipped. Returns how many were written.
     pub fn save_tap_attempts(&self, attempts: &[AttemptStats]) -> Result<usize, StorageError> {
@@ -72,10 +98,11 @@ impl Storage {
                     k2_press_count, k2_valid_intervals, k2_interval_ms_sum, k2_average_ppm, k2_peak_ppm,
                     combined_press_count, combined_valid_intervals, combined_interval_ms_sum,
                     combined_average_ppm, combined_peak_ppm,
+                    song_press_count, song_ms,
                     recorded_at
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
                           ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
-                          ?21, ?22, ?23, ?24, ?25, datetime('now'))",
+                          ?21, ?22, ?23, ?24, ?25, ?26, ?27, datetime('now'))",
             )?;
             for a in attempts {
                 let (Some(ended_at), Some(duration)) = (a.ended_at, a.duration_ms()) else {
@@ -109,6 +136,8 @@ impl Storage {
                     all.interval_ms_sum,
                     all.average_ppm,
                     all.peak_ppm,
+                    a.song.presses,
+                    a.song.ms,
                 ])?;
                 written += 1;
             }
@@ -168,6 +197,19 @@ impl Storage {
                 },
             )?;
         }
+        history.song_ppm = self.conn.query_row(
+            "SELECT SUM(song_press_count), SUM(song_ms)
+             FROM tap_attempts WHERE started_at >= ?1 AND song_ms > 0",
+            params![since],
+            |row| {
+                let presses: Option<i64> = row.get(0)?;
+                let ms: Option<f64> = row.get(1)?;
+                Ok(match (presses, ms) {
+                    (Some(n), Some(ms)) if ms > 0.0 => Some(60_000.0 * n as f64 / ms),
+                    _ => None,
+                })
+            },
+        )?;
         Ok(history)
     }
 
@@ -180,7 +222,7 @@ impl Storage {
                     k1_press_count, k1_valid_intervals, k1_interval_ms_sum, k1_average_ppm, k1_peak_ppm,
                     k2_press_count, k2_valid_intervals, k2_interval_ms_sum, k2_average_ppm, k2_peak_ppm,
                     combined_press_count, combined_valid_intervals, combined_interval_ms_sum,
-                    combined_average_ppm, combined_peak_ppm
+                    combined_average_ppm, combined_peak_ppm, song_press_count, song_ms
              FROM tap_attempts ORDER BY started_at DESC, id DESC LIMIT ?1",
         )?;
         let millis = |ms: i64| Utc.timestamp_millis_opt(ms).single().unwrap_or_default();
@@ -210,6 +252,10 @@ impl Storage {
                 k1: channel(9)?,
                 k2: channel(14)?,
                 combined: channel(19)?,
+                song: opad_model::tap_rate::SongRate {
+                    presses: row.get(24)?,
+                    ms: row.get(25)?,
+                },
             })
         })?;
         rows.collect::<Result<_, _>>().map_err(Into::into)
@@ -262,6 +308,10 @@ mod tests {
             k1: channel.clone(),
             k2: channel.clone(),
             combined: channel,
+            song: opad_model::tap_rate::SongRate {
+                presses: intervals + 1,
+                ms: 10_000.0,
+            },
         }
     }
 
@@ -283,6 +333,9 @@ mod tests {
         assert_eq!(h.combined.best_peak_ppm, Some(310.0));
         assert_eq!(h.combined.average_peak_ppm, Some(240.0));
         assert_eq!(h.k1.total_presses, 11 + 1001);
+        // Song rate: 1012 presses over 20 s of song, weighted the same way
+        let song = h.song_ppm.unwrap();
+        assert!((song - 60_000.0 * 1012.0 / 20_000.0).abs() < 0.01, "{song}");
     }
 
     #[test]

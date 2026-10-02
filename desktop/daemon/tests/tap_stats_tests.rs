@@ -33,6 +33,7 @@ fn frame(is_playing: bool, live_time_ms: f64, failed: bool) -> RuntimeEvent {
             ..Default::default()
         },
         failed,
+        clock: None,
     }
 }
 

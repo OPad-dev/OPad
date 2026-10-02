@@ -269,6 +269,7 @@ async fn test_playing_cooldown_playing_no_sync() {
         RuntimeEvent::TosuTelemetry {
             beatmap: Default::default(),
             failed: false,
+            clock: None,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "Test Map".to_string(),
@@ -284,6 +285,7 @@ async fn test_playing_cooldown_playing_no_sync() {
         RuntimeEvent::TosuTelemetry {
             beatmap: Default::default(),
             failed: false,
+            clock: None,
             is_playing: false,
             live_time_ms: 0.0,
             title: "Test Map".to_string(),
@@ -300,6 +302,7 @@ async fn test_playing_cooldown_playing_no_sync() {
         RuntimeEvent::TosuTelemetry {
             beatmap: Default::default(),
             failed: false,
+            clock: None,
             is_playing: true,
             live_time_ms: 500.0,
             title: "Test Map 2".to_string(),
@@ -331,6 +334,7 @@ async fn test_playing_cooldown_sync_idle_exactly_one_sync() {
         RuntimeEvent::TosuTelemetry {
             beatmap: Default::default(),
             failed: false,
+            clock: None,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "Test Map".to_string(),
@@ -345,6 +349,7 @@ async fn test_playing_cooldown_sync_idle_exactly_one_sync() {
         RuntimeEvent::TosuTelemetry {
             beatmap: Default::default(),
             failed: false,
+            clock: None,
             is_playing: false,
             live_time_ms: 0.0,
             title: "Test Map".to_string(),
@@ -1418,6 +1423,7 @@ async fn test_late_sync_result_does_not_leave_playing() {
         RuntimeEvent::TosuTelemetry {
             beatmap: Default::default(),
             failed: false,
+            clock: None,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "Map".to_string(),
@@ -1605,6 +1611,7 @@ async fn test_replug_during_play_keeps_the_state_machine_and_write_guard() {
         RuntimeEvent::TosuTelemetry {
             beatmap: Default::default(),
             failed: false,
+            clock: None,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "Hotplug Map".to_string(),
@@ -1657,6 +1664,7 @@ async fn test_replug_during_play_keeps_the_state_machine_and_write_guard() {
         RuntimeEvent::TosuTelemetry {
             beatmap: Default::default(),
             failed: false,
+            clock: None,
             is_playing: false,
             live_time_ms: 0.0,
             title: String::new(),
@@ -2265,6 +2273,7 @@ fn play_a_session(start: Instant) -> (RuntimeController, Instant) {
         RuntimeEvent::TosuTelemetry {
             beatmap: Default::default(),
             failed: false,
+            clock: None,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "A Map".to_string(),
@@ -2277,6 +2286,7 @@ fn play_a_session(start: Instant) -> (RuntimeController, Instant) {
         RuntimeEvent::TosuTelemetry {
             beatmap: Default::default(),
             failed: false,
+            clock: None,
             is_playing: false,
             live_time_ms: 0.0,
             title: "A Map".to_string(),
@@ -2349,6 +2359,7 @@ async fn backup_never_fires_during_a_map_or_a_cooldown() {
         RuntimeEvent::TosuTelemetry {
             beatmap: Default::default(),
             failed: false,
+            clock: None,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "A Map".to_string(),
@@ -2375,6 +2386,7 @@ async fn backup_never_fires_during_a_map_or_a_cooldown() {
         RuntimeEvent::TosuTelemetry {
             beatmap: Default::default(),
             failed: false,
+            clock: None,
             is_playing: false,
             live_time_ms: 0.0,
             title: "A Map".to_string(),
@@ -2404,6 +2416,7 @@ async fn a_map_starting_inside_the_window_cancels_the_pending_backup() {
         RuntimeEvent::TosuTelemetry {
             beatmap: Default::default(),
             failed: false,
+            clock: None,
             is_playing: true,
             live_time_ms: 500.0,
             title: "The Next Map".to_string(),
@@ -2427,6 +2440,7 @@ async fn a_map_starting_inside_the_window_cancels_the_pending_backup() {
         RuntimeEvent::TosuTelemetry {
             beatmap: Default::default(),
             failed: false,
+            clock: None,
             is_playing: false,
             live_time_ms: 0.0,
             title: "The Next Map".to_string(),
@@ -2498,6 +2512,7 @@ async fn a_failed_post_play_sync_still_gets_a_backup() {
         RuntimeEvent::TosuTelemetry {
             beatmap: Default::default(),
             failed: false,
+            clock: None,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "A Map".to_string(),
@@ -2510,6 +2525,7 @@ async fn a_failed_post_play_sync_still_gets_a_backup() {
         RuntimeEvent::TosuTelemetry {
             beatmap: Default::default(),
             failed: false,
+            clock: None,
             is_playing: false,
             live_time_ms: 0.0,
             title: "A Map".to_string(),
@@ -2797,6 +2813,7 @@ fn a_map_played_on_a_foreign_pad_ends_without_a_sync() {
     let play = |playing: bool| RuntimeEvent::TosuTelemetry {
         beatmap: Default::default(),
         failed: false,
+        clock: None,
         is_playing: playing,
         live_time_ms: 1000.0,
         title: String::new(),
@@ -2838,6 +2855,7 @@ fn a_map_played_on_our_pad_still_ends_in_a_sync() {
     let play = |playing: bool| RuntimeEvent::TosuTelemetry {
         beatmap: Default::default(),
         failed: false,
+        clock: None,
         is_playing: playing,
         live_time_ms: 1000.0,
         title: String::new(),

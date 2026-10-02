@@ -251,6 +251,8 @@ pub fn sample_values() -> Vec<(u8, Value)> {
         (src::HISTORY_K2_PPM_AVG, Value::Number(95.0)),
         (src::HISTORY_K2_PPM_PEAK, Value::Number(124.0)),
         (src::HISTORY_PERIOD, text("LAST 30 DAYS")),
+        (src::PLAY_PPM_SONG, Value::Number(312.0)),
+        (src::HISTORY_PPM_SONG, Value::Number(287.0)),
         (src::STATUS_PC, Value::Number(1.0)),
         (src::STATUS_TOSU, Value::Number(1.0)),
         (src::STATUS_OSU, Value::Number(1.0)),

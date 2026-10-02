@@ -114,8 +114,9 @@ static const ui_layout_t s_playing = {
           .x = 226, .y = 6, .w = 86, .h = 18, .fg = MUTED, .flags = UI_FLAG_HIDE_WHEN_EMPTY,
           .decimals = DEC, .label = "max ", .suffix = "x" },
 
-        // Combined tap rate (PPM, not the map's BPM) in its own column right of the PP
-        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM, .font = UI_FONT_24, .align = UI_ALIGN_CENTER,
+        // Song rate (PPM: every press over the song since the first note, breaks included,
+        // not the map's BPM) in its own column right of the PP; the key cards show the live rate
+        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM_SONG, .font = UI_FONT_24, .align = UI_ALIGN_CENTER,
           .x = 240, .y = 90, .w = 76, .h = 30, .fg = PINK, .flags = UI_FLAG_HIDE_WHEN_EMPTY, .decimals = DEC },
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_NONE, .font = UI_FONT_14, .align = UI_ALIGN_CENTER,
           .x = 240, .y = 119, .w = 76, .h = 18, .fg = MUTED, .decimals = DEC, .label = "PPM" },

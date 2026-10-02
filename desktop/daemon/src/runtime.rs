@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use opad_ipc::TapStatsSnapshot;
 use opad_layout::{Layout, Screen};
 use opad_model::tap_rate::{
-    self, AttemptStats, AttemptTracker, BeatmapRef, TapHistory, DEFAULT_HISTORY_DAYS,
+    self, AttemptStats, AttemptTracker, BeatmapRef, SongClock, TapHistory, DEFAULT_HISTORY_DAYS,
 };
 use opad_model::ui_source::SourceValue;
 use opad_model::{
@@ -182,6 +182,7 @@ pub enum RuntimeEvent {
         values: Vec<(u8, SourceValue)>,
         beatmap: BeatmapRef,
         failed: bool,
+        clock: Option<SongClock>,
     },
     /// osu!'s K1/K2 key-down counters changed (tosu precise socket)
     TosuKeys(KeyCounts),
@@ -732,6 +733,7 @@ impl RuntimeController {
                 values,
                 beatmap,
                 failed,
+                clock,
             } => {
                 let current_mode = self.state.mode;
                 self.data_sync.ingest(values.iter().cloned());
@@ -756,6 +758,9 @@ impl RuntimeController {
                         self.finish_tap_attempt();
                     } else if let Some(tracker) = self.tap_attempt.as_mut() {
                         tracker.update_beatmap(beatmap);
+                    }
+                    if let (Some(tracker), Some(clock)) = (self.tap_attempt.as_mut(), clock) {
+                        tracker.song_clock(clock);
                     }
 
                     if current_mode != RuntimeMode::Playing {

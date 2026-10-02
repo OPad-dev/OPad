@@ -1,6 +1,6 @@
 use futures_util::StreamExt;
 use opad_model::paths;
-use opad_model::tap_rate::BeatmapRef;
+use opad_model::tap_rate::{BeatmapRef, SongClock};
 use opad_model::ui_source::{self as src, SourceValue};
 use opad_model::{GameplayTelemetry, KeyCounts};
 use std::path::{Path, PathBuf};
@@ -318,6 +318,22 @@ pub fn parse_tosu_v2_json(json_str: &str) -> Option<GameplayTelemetry> {
             .pointer("/play/failed")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
+        clock: match (live, first, last) {
+            (Some(live_ms), Some(first_object_ms), Some(last_object_ms))
+                if last_object_ms > first_object_ms =>
+            {
+                Some(SongClock {
+                    live_ms,
+                    first_object_ms,
+                    last_object_ms,
+                    // DT 1.5, HT 0.75, or a custom rate; 1 when tosu omits it
+                    rate: num("/play/mods/rate")
+                        .filter(|r| r.is_finite() && *r > 0.0)
+                        .unwrap_or(1.0),
+                })
+            }
+            _ => None,
+        },
     })
 }
 
@@ -976,6 +992,20 @@ mod tests {
         assert_eq!(parsed.beatmap.mods.as_deref(), Some("HDDT"));
         assert_eq!(parsed.beatmap.difficulty, "Insane");
         assert!(!parse_tosu_v2_json(PLAYING_FRAME).unwrap().failed);
+        let clock = parse_tosu_v2_json(PLAYING_FRAME).unwrap().clock.unwrap();
+        assert_eq!(
+            (
+                clock.live_ms,
+                clock.first_object_ms,
+                clock.last_object_ms,
+                clock.rate
+            ),
+            (89152.0, 792.0, 177513.0, 1.0)
+        );
+        let dt = r#"{ "state": { "number": 2 },
+            "beatmap": { "time": { "live": 5000, "firstObject": 1000, "lastObject": 9000 } },
+            "play": { "mods": { "name": "DT", "rate": 1.5 } } }"#;
+        assert_eq!(parse_tosu_v2_json(dt).unwrap().clock.unwrap().rate, 1.5);
     }
 
     #[test]

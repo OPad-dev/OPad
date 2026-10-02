@@ -373,6 +373,7 @@ async fn main() -> Result<()> {
                     values: telemetry.values,
                     beatmap: telemetry.beatmap,
                     failed: telemetry.failed,
+                    clock: telemetry.clock,
                 });
             }
 

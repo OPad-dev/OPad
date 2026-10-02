@@ -123,6 +123,8 @@ text.
 | 76–77 | `history.k1_ppm_avg`, `history.k1_ppm_peak` | K1 over the history period |
 | 78–79 | `history.k2_ppm_avg`, `history.k2_ppm_peak` | K2 over the history period |
 | 83 | `history.period` | The period as the pad shows it: `LAST 30 DAYS`, `ALL TIME` |
+| 84 | `play.ppm_song` | Song rate of the current attempt: every press over the song time from the first note to the last, breaks included, on the song's clock (game paused does not count, speed mods converted to real time). 0 for the first second of song. |
+| 85 | `history.ppm_song` | Song rate over the history period, weighted by song time |
 
 Averages and peaks of an attempt stay until the next attempt starts. The
 `history.*` sources are sent whenever the daemon knows them, with or without
@@ -132,10 +134,10 @@ tosu. The pad computes none of this and stores none of it.
 `UI_FLAG_HIDE_WHEN_EMPTY` then disappear, other widgets show `-` for a number
 and nothing for text. The pad clears sources itself when the host goes away:
 
-- `HostStatus.tosu_connected = false` clears ids 1–59 (tosu data and the
-  current attempt's tap rate).
+- `HostStatus.tosu_connected = false` clears ids 1–59 and 84 (tosu data and
+  the current attempt's tap rate).
 - The port closing (`status.pc` → 0) clears everything the daemon sends
-  (1–59, 74–79, 83) and zeroes `status.tosu` / `status.osu`. The daemon
+  (1–59, 74–79, 83–85) and zeroes `status.tosu` / `status.osu`. The daemon
   resends every value after a reconnect.
 
 **Widget flags** (`ui_widget_t.flags`):
@@ -151,7 +153,7 @@ and nothing for text. The pad clears sources itself when the host goes away:
 and ignores unknown flag bits, so a new app can send the tap rate sources and
 set `UI_FLAG_KEY_RATE` safely. It does, however, reject a whole *layout* whose
 widgets bind an unknown source id (`ui_layout_validate`), so a layout that
-uses ids 51–59, 74–79 or 83 only loads on firmware that knows them. An old app
+uses ids 51–59, 74–79 or 83–85 only loads on firmware that knows them. An old app
 never sends these sources: on new firmware they stay empty and every widget
 bound to them hides.
 

@@ -762,6 +762,11 @@ fn format_tap_stats(s: &TapStatsSnapshot) -> String {
             }
             let _ = writeln!(
                 out,
+                "Song:     {} PPM (every press over the song time, breaks included)",
+                fmt_ppm(a.song.ppm())
+            );
+            let _ = writeln!(
+                out,
                 "{:<10}{:>9}{:>9}{:>9}{:>10}",
                 "", "Current", "Average", "Peak", "Presses"
             );
@@ -792,6 +797,7 @@ fn format_tap_stats(s: &TapStatsSnapshot) -> String {
     match &s.history {
         Some(h) if h.attempts > 0 => {
             let _ = writeln!(out, "Attempts: {}", h.attempts);
+            let _ = writeln!(out, "Song:     {} PPM", fmt_ppm(h.song_ppm));
             let _ = writeln!(
                 out,
                 "{:<10}{:>9}{:>10}{:>11}{:>10}",
@@ -1239,6 +1245,10 @@ mod tests {
                 k1: ch(100.2, 50),
                 k2: ch(99.8, 50),
                 combined: ch(200.0, 100),
+                song: tap_rate::SongRate {
+                    presses: 100,
+                    ms: 40_000.0,
+                },
             }),
             history: Some(TapHistory {
                 period_days: 0,
@@ -1260,6 +1270,7 @@ mod tests {
         assert!(out.contains("xi - Blue Zenith [FOUR DIMENSIONS]"), "{out}");
         assert!(out.contains("History: All time"), "{out}");
         assert!(out.contains("Attempts: 3"), "{out}");
+        assert!(out.contains("Song:     150 PPM"), "{out}");
         let combined = out.lines().rfind(|l| l.starts_with("Combined")).unwrap();
         assert!(
             combined.contains("190") && combined.contains("252"),

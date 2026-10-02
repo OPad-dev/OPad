@@ -143,5 +143,9 @@ typedef enum {
 
     UI_SRC_HISTORY_PERIOD = 83,   // "LAST 30 DAYS", "ALL TIME"
 
+    // Song rate: presses over song time from the first note to the last, breaks included
+    UI_SRC_PLAY_PPM_SONG = 84,    // current attempt; 0 until a second of song has passed
+    UI_SRC_HISTORY_PPM_SONG = 85, // over the history period
+
     UI_SRC_COUNT = 96
 } ui_source_t;

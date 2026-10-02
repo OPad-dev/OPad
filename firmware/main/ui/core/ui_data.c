@@ -98,6 +98,8 @@ static const ui_source_info_t s_sources[UI_SRC_COUNT] = {
     [UI_SRC_STATUS_OSU]          = N("status.osu", UI_FMT_INT, 1, 0),
 
     [UI_SRC_HISTORY_PERIOD]      = S("history.period", UI_FMT_TEXT, 1, 0),
+    [UI_SRC_PLAY_PPM_SONG]       = N("play.ppm_song", UI_FMT_INT, 1, 0),
+    [UI_SRC_HISTORY_PPM_SONG]    = N("history.ppm_song", UI_FMT_INT, 1, 0),
 };
 
 #undef S
@@ -179,6 +181,7 @@ void ui_data_clear_host_sources(void)
     for (int i = UI_SRC_MAP_TITLE; i <= UI_SRC_PLAY_K2_PPM_PEAK; i++) {
         ui_data_clear((uint8_t)i);
     }
+    ui_data_clear(UI_SRC_PLAY_PPM_SONG);
 }
 
 void ui_data_clear_daemon_sources(void)
@@ -188,6 +191,7 @@ void ui_data_clear_daemon_sources(void)
         ui_data_clear((uint8_t)i);
     }
     ui_data_clear(UI_SRC_HISTORY_PERIOD);
+    ui_data_clear(UI_SRC_HISTORY_PPM_SONG);
 }
 
 bool ui_data_is_empty(uint8_t source)

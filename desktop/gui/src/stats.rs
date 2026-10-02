@@ -204,8 +204,13 @@ fn attempt_card<'a>(attempt: &AttemptStats, live: bool) -> Element<'a, Message> 
         text(map_line(&attempt.beatmap).unwrap_or_else(|| "Unknown map".into()))
             .size(14)
             .color(theme::CYAN),
+        stat("SONG PPM", fmt_ppm(attempt.song.ppm())),
         container(rows).padding([4, 0]),
-        caption("PPM = presses per minute. Current is the rate over your last few presses."),
+        caption(
+            "PPM = presses per minute. Song PPM is every press over the song time from the \
+             first note, breaks included. Current is the rate over your last few presses; \
+             Average and Peak count only while you are tapping."
+        ),
     ]
     .spacing(10)
     .into()
@@ -216,6 +221,7 @@ fn history_body<'a>(history: &TapHistory, unsaved: usize) -> Element<'a, Message
     let mut body = column![
         row![
             stat("ATTEMPTS", crate::pages::grouped(history.attempts)),
+            stat("SONG PPM", fmt_ppm(history.song_ppm)),
             stat("AVERAGE PPM", fmt_ppm(all.average_ppm)),
             stat("AVERAGE PEAK", fmt_ppm(all.average_peak_ppm)),
             stat("BEST PEAK", fmt_ppm(all.best_peak_ppm)),

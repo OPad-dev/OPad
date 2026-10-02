@@ -345,6 +345,10 @@ pub struct GameplayTelemetry {
     /// its play state until the retry or the exit
     #[serde(default)]
     pub failed: bool,
+    /// Song position and note range, for the song rate. None when tosu does
+    /// not say where the notes are.
+    #[serde(skip)]
+    pub clock: Option<tap_rate::SongClock>,
 }
 
 /// tosu's key counters (`/websocket/v2/precise`), sent when either changes.
