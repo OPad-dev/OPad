@@ -89,6 +89,12 @@ void protocol_drain_diag_logs(void);
 /** Sends the DetectPinResult of a finished pin scan. CDC task, like the rest. */
 void protocol_poll_detect_pin(void);
 
+/**
+ * @brief Send the key presses logged since the last call, while a map is played
+ *        (KeyPressBatch, issue #2); drops them otherwise. Protocol task only.
+ */
+void protocol_send_key_presses(void);
+
 #ifdef __cplusplus
 }
 #endif

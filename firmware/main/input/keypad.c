@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include <stdatomic.h>
 #include "input/latency_stats.h"
+#include "input/press_log.h"
 #include "driver/gpio.h"
 #include "diag/diag.h"
 #include "config/device_config.h"
@@ -86,10 +87,12 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
                 atomic_fetch_add_explicit(&s_key1_lifetime_presses, 1, memory_order_relaxed);
                 atomic_fetch_add_explicit(&s_key1_map_presses, 1, memory_order_relaxed);
                 atomic_store_explicit(&s_key1_last_press_us, now, memory_order_relaxed);
+                press_log_push(1, now);
             } else {
                 atomic_fetch_add_explicit(&s_key2_lifetime_presses, 1, memory_order_relaxed);
                 atomic_fetch_add_explicit(&s_key2_map_presses, 1, memory_order_relaxed);
                 atomic_store_explicit(&s_key2_last_press_us, now, memory_order_relaxed);
+                press_log_push(2, now);
             }
         }
 
@@ -315,10 +318,14 @@ static void keypad_task(void *pvParameters)
                             atomic_fetch_add_explicit(&s_key1_lifetime_presses, 1, memory_order_relaxed);
                             atomic_fetch_add_explicit(&s_key1_map_presses, 1, memory_order_relaxed);
                             atomic_store_explicit(&s_key1_last_press_us, now_us, memory_order_relaxed);
+                            // Confirmed by the resample, so up to one lockout
+                            // (debounce_us) after the edge it missed
+                            press_log_push(1, now_us);
                         } else {
                             atomic_fetch_add_explicit(&s_key2_lifetime_presses, 1, memory_order_relaxed);
                             atomic_fetch_add_explicit(&s_key2_map_presses, 1, memory_order_relaxed);
                             atomic_store_explicit(&s_key2_last_press_us, now_us, memory_order_relaxed);
+                            press_log_push(2, now_us);
                         }
                     }
                 }

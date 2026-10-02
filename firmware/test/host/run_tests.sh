@@ -16,7 +16,7 @@ trap cleanup EXIT
 echo "=== Building and Running Firmware Host Unit Tests ==="
 
 # 1. Debounce tests (P0-2)
-echo "[1/6] Running test_debounce..."
+echo "[1/7] Running test_debounce..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/debounce.c" \
     "${HOST_TEST_DIR}/test_debounce.c" \
@@ -24,7 +24,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_debounce"
 
 # 2. Counter sync rules tests (P1-1 / §13)
-echo "[2/6] Running test_counters..."
+echo "[2/7] Running test_counters..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}/counters" \
     "${FW_MAIN}/counters/counter_sync_rules.c" \
     "${HOST_TEST_DIR}/test_counters.c" \
@@ -32,7 +32,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}/counters" \
 "${BIN_DIR}/test_counters"
 
 # 3. Config validation tests (P0-3)
-echo "[3/6] Running test_config..."
+echo "[3/7] Running test_config..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" -I "${FW_MAIN}/config" \
     "${FW_MAIN}/config/config_validate.c" \
     "${HOST_TEST_DIR}/test_config.c" \
@@ -47,7 +47,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" -I "${FW_MAIN}/config" \
 "${BIN_DIR}/test_config"
 
 # 4. Diag ring buffer tests (P2-1)
-echo "[4/6] Running test_diag..."
+echo "[4/7] Running test_diag..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/diag/diag.c" \
     "${HOST_TEST_DIR}/test_diag.c" \
@@ -55,7 +55,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_diag"
 
 # 5. Protocol frame parser tests
-echo "[5/6] Running test_frame_parser..."
+echo "[5/7] Running test_frame_parser..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" -I "${FW_MAIN}/protocol" \
     "${FW_MAIN}/protocol/frame_parser.c" \
     "${HOST_TEST_DIR}/test_frame_parser.c" \
@@ -63,11 +63,19 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" -I "${FW_MAIN}/protocol" \
 "${BIN_DIR}/test_frame_parser"
 
 # 6. Pad ownership decision tests (W3-2)
-echo "[6/6] Running test_owner..."
+echo "[6/7] Running test_owner..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/config/owner.c" \
     "${HOST_TEST_DIR}/test_owner.c" \
     -o "${BIN_DIR}/test_owner"
 "${BIN_DIR}/test_owner"
+
+# 7. Key press log (tap rate, issue #2)
+echo "[7/7] Running test_press_log..."
+gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
+    "${FW_MAIN}/input/press_log.c" \
+    "${HOST_TEST_DIR}/test_press_log.c" \
+    -o "${BIN_DIR}/test_press_log"
+"${BIN_DIR}/test_press_log"
 
 echo "=== All firmware host unit tests passed! ==="

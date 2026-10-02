@@ -20,3 +20,4 @@ osupad.CounterSyncResponse.message max_size:64
 osupad.LogEvent.tag max_size:16
 osupad.LogEvent.message max_size:64
 osupad.LogEventBatch.events max_count:8
+osupad.KeyPressBatch.presses max_count:32

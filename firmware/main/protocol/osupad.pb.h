@@ -98,6 +98,9 @@ typedef struct _osupad_HelloAck {
     char running_partition[17];
     bool has_current_config;
     osupad_ConfigPayload current_config;
+    /* The pad sends KeyPressBatch while a map is played (issue #2). False from
+ firmware predating it: the host then measures the tap rate from tosu. */
+    bool key_press_times;
 } osupad_HelloAck;
 
 typedef struct _osupad_SetConfig {
@@ -224,6 +227,23 @@ typedef struct _osupad_LogEventBatch {
     osupad_LogEvent events[8];
 } osupad_LogEventBatch;
 
+/* One accepted key-down, timed where the pad accepts it: the switch edge for
+ MX, the actuation point for any other input module */
+typedef struct _osupad_KeyPress {
+    uint32_t key; /* 1 = K1, 2 = K2 */
+    uint64_t t_us; /* pad clock (esp_timer, us since boot) */
+} osupad_KeyPress;
+
+/* Key-downs since the last batch, oldest first. Sent only while the host says
+ a map is being played (HostStatus.playing), from the protocol task, never
+ from the input path. */
+typedef struct _osupad_KeyPressBatch {
+    uint64_t now_us; /* pad clock when the batch was built */
+    pb_size_t presses_count;
+    osupad_KeyPress presses[32];
+    uint32_t dropped; /* presses lost to a full buffer since the last batch */
+} osupad_KeyPressBatch;
+
 typedef struct _osupad_DetectPinRequest {
     uint32_t key_id; /* 1 = Key 1, 2 = Key 2 */
     uint32_t timeout_ms; /* Listening timeout in ms */
@@ -268,6 +288,7 @@ typedef struct _osupad_DeviceToHost {
         osupad_LogEventBatch log_batch;
         osupad_LayoutAck layout_ack;
         osupad_DetectPinResponse detect_pin_resp;
+        osupad_KeyPressBatch key_presses;
     } payload;
 } osupad_DeviceToHost;
 
@@ -316,9 +337,11 @@ extern "C" {
 
 
 
+
+
 /* Initializer values for message structs */
 #define osupad_Hello_init_default                {0, ""}
-#define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_default}
+#define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_default, 0}
 #define osupad_ClaimOwnership_init_default       {{0, {0}}}
 #define osupad_DeviceStatus_init_default         {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_ConfigPayload_init_default        {0, 0, 0, 0, 0, 0, 0, 0, 0}
@@ -337,12 +360,14 @@ extern "C" {
 #define osupad_CounterSyncResponse_init_default  {0, false, osupad_CounterState_init_default, ""}
 #define osupad_LogEvent_init_default             {0, _osupad_LogLevel_MIN, "", "", 0, 0, 0}
 #define osupad_LogEventBatch_init_default        {0, {osupad_LogEvent_init_default, osupad_LogEvent_init_default, osupad_LogEvent_init_default, osupad_LogEvent_init_default, osupad_LogEvent_init_default, osupad_LogEvent_init_default, osupad_LogEvent_init_default, osupad_LogEvent_init_default}}
+#define osupad_KeyPress_init_default             {0, 0}
+#define osupad_KeyPressBatch_init_default        {0, 0, {osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default}, 0}
 #define osupad_DetectPinRequest_init_default     {0, 0, 0}
 #define osupad_DetectPinResponse_init_default    {0, 0, 0}
 #define osupad_HostToDevice_init_default         {0, 0, {osupad_Hello_init_default}}
 #define osupad_DeviceToHost_init_default         {0, 0, {osupad_HelloAck_init_default}}
 #define osupad_Hello_init_zero                   {0, ""}
-#define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_zero}
+#define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_zero, 0}
 #define osupad_ClaimOwnership_init_zero          {{0, {0}}}
 #define osupad_DeviceStatus_init_zero            {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_ConfigPayload_init_zero           {0, 0, 0, 0, 0, 0, 0, 0, 0}
@@ -361,6 +386,8 @@ extern "C" {
 #define osupad_CounterSyncResponse_init_zero     {0, false, osupad_CounterState_init_zero, ""}
 #define osupad_LogEvent_init_zero                {0, _osupad_LogLevel_MIN, "", "", 0, 0, 0}
 #define osupad_LogEventBatch_init_zero           {0, {osupad_LogEvent_init_zero, osupad_LogEvent_init_zero, osupad_LogEvent_init_zero, osupad_LogEvent_init_zero, osupad_LogEvent_init_zero, osupad_LogEvent_init_zero, osupad_LogEvent_init_zero, osupad_LogEvent_init_zero}}
+#define osupad_KeyPress_init_zero                {0, 0}
+#define osupad_KeyPressBatch_init_zero           {0, 0, {osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero}, 0}
 #define osupad_DetectPinRequest_init_zero        {0, 0, 0}
 #define osupad_DetectPinResponse_init_zero       {0, 0, 0}
 #define osupad_HostToDevice_init_zero            {0, 0, {osupad_Hello_init_zero}}
@@ -406,6 +433,7 @@ extern "C" {
 #define osupad_HelloAck_owner_id_tag             8
 #define osupad_HelloAck_running_partition_tag    9
 #define osupad_HelloAck_current_config_tag       10
+#define osupad_HelloAck_key_press_times_tag      11
 #define osupad_SetConfig_config_tag              1
 #define osupad_ConfigAck_success_tag             1
 #define osupad_ConfigAck_message_tag             2
@@ -472,6 +500,11 @@ extern "C" {
 #define osupad_LogEvent_arg0_tag                 6
 #define osupad_LogEvent_arg1_tag                 7
 #define osupad_LogEventBatch_events_tag          1
+#define osupad_KeyPress_key_tag                  1
+#define osupad_KeyPress_t_us_tag                 2
+#define osupad_KeyPressBatch_now_us_tag          1
+#define osupad_KeyPressBatch_presses_tag         2
+#define osupad_KeyPressBatch_dropped_tag         3
 #define osupad_DetectPinRequest_key_id_tag       1
 #define osupad_DetectPinRequest_timeout_ms_tag   2
 #define osupad_DetectPinRequest_exclude_gpio_tag 3
@@ -501,6 +534,7 @@ extern "C" {
 #define osupad_DeviceToHost_log_batch_tag        6
 #define osupad_DeviceToHost_layout_ack_tag       7
 #define osupad_DeviceToHost_detect_pin_resp_tag  8
+#define osupad_DeviceToHost_key_presses_tag      9
 
 /* Struct field encoding specification for nanopb */
 #define osupad_Hello_FIELDLIST(X, a) \
@@ -519,7 +553,8 @@ X(a, STATIC,   SINGULAR, UINT64,   lifetime_key1,     6) \
 X(a, STATIC,   SINGULAR, UINT64,   lifetime_key2,     7) \
 X(a, STATIC,   SINGULAR, BYTES,    owner_id,          8) \
 X(a, STATIC,   SINGULAR, STRING,   running_partition,   9) \
-X(a, STATIC,   OPTIONAL, MESSAGE,  current_config,   10)
+X(a, STATIC,   OPTIONAL, MESSAGE,  current_config,   10) \
+X(a, STATIC,   SINGULAR, BOOL,     key_press_times,  11)
 #define osupad_HelloAck_CALLBACK NULL
 #define osupad_HelloAck_DEFAULT NULL
 #define osupad_HelloAck_current_config_MSGTYPE osupad_ConfigPayload
@@ -696,6 +731,20 @@ X(a, STATIC,   REPEATED, MESSAGE,  events,            1)
 #define osupad_LogEventBatch_DEFAULT NULL
 #define osupad_LogEventBatch_events_MSGTYPE osupad_LogEvent
 
+#define osupad_KeyPress_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   key,               1) \
+X(a, STATIC,   SINGULAR, UINT64,   t_us,              2)
+#define osupad_KeyPress_CALLBACK NULL
+#define osupad_KeyPress_DEFAULT NULL
+
+#define osupad_KeyPressBatch_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT64,   now_us,            1) \
+X(a, STATIC,   REPEATED, MESSAGE,  presses,           2) \
+X(a, STATIC,   SINGULAR, UINT32,   dropped,           3)
+#define osupad_KeyPressBatch_CALLBACK NULL
+#define osupad_KeyPressBatch_DEFAULT NULL
+#define osupad_KeyPressBatch_presses_MSGTYPE osupad_KeyPress
+
 #define osupad_DetectPinRequest_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   key_id,            1) \
 X(a, STATIC,   SINGULAR, UINT32,   timeout_ms,        2) \
@@ -747,7 +796,8 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,config_ack,payload.config_ack),   4)
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,counter_sync_resp,payload.counter_sync_resp),   5) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,log_batch,payload.log_batch),   6) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,layout_ack,payload.layout_ack),   7) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,detect_pin_resp,payload.detect_pin_resp),   8)
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,detect_pin_resp,payload.detect_pin_resp),   8) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,key_presses,payload.key_presses),   9)
 #define osupad_DeviceToHost_CALLBACK NULL
 #define osupad_DeviceToHost_DEFAULT NULL
 #define osupad_DeviceToHost_payload_hello_ack_MSGTYPE osupad_HelloAck
@@ -757,6 +807,7 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,detect_pin_resp,payload.detect_pin_r
 #define osupad_DeviceToHost_payload_log_batch_MSGTYPE osupad_LogEventBatch
 #define osupad_DeviceToHost_payload_layout_ack_MSGTYPE osupad_LayoutAck
 #define osupad_DeviceToHost_payload_detect_pin_resp_MSGTYPE osupad_DetectPinResponse
+#define osupad_DeviceToHost_payload_key_presses_MSGTYPE osupad_KeyPressBatch
 
 extern const pb_msgdesc_t osupad_Hello_msg;
 extern const pb_msgdesc_t osupad_HelloAck_msg;
@@ -778,6 +829,8 @@ extern const pb_msgdesc_t osupad_CounterSyncRequest_msg;
 extern const pb_msgdesc_t osupad_CounterSyncResponse_msg;
 extern const pb_msgdesc_t osupad_LogEvent_msg;
 extern const pb_msgdesc_t osupad_LogEventBatch_msg;
+extern const pb_msgdesc_t osupad_KeyPress_msg;
+extern const pb_msgdesc_t osupad_KeyPressBatch_msg;
 extern const pb_msgdesc_t osupad_DetectPinRequest_msg;
 extern const pb_msgdesc_t osupad_DetectPinResponse_msg;
 extern const pb_msgdesc_t osupad_HostToDevice_msg;
@@ -804,6 +857,8 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_CounterSyncResponse_fields &osupad_CounterSyncResponse_msg
 #define osupad_LogEvent_fields &osupad_LogEvent_msg
 #define osupad_LogEventBatch_fields &osupad_LogEventBatch_msg
+#define osupad_KeyPress_fields &osupad_KeyPress_msg
+#define osupad_KeyPressBatch_fields &osupad_KeyPressBatch_msg
 #define osupad_DetectPinRequest_fields &osupad_DetectPinRequest_msg
 #define osupad_DetectPinResponse_fields &osupad_DetectPinResponse_msg
 #define osupad_HostToDevice_fields &osupad_HostToDevice_msg
@@ -824,10 +879,12 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_DeviceStatus_size                 98
 #define osupad_DeviceToHost_size                 889
 #define osupad_GameplayDisplayState_size         196
-#define osupad_HelloAck_size                     225
+#define osupad_HelloAck_size                     227
 #define osupad_Hello_size                        39
 #define osupad_HostStatus_size                   10
 #define osupad_HostToDevice_size                 4309
+#define osupad_KeyPressBatch_size                625
+#define osupad_KeyPress_size                     17
 #define osupad_LayoutAck_size                    73
 #define osupad_LogEventBatch_size                880
 #define osupad_LogEvent_size                     108

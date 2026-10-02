@@ -190,6 +190,7 @@ static void usb_cdc_task_poll(void)
     }
 
     protocol_poll_detect_pin();
+    protocol_send_key_presses();
     protocol_drain_diag_logs();
 }
 

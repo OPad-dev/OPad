@@ -16,7 +16,7 @@ use opad_model::{
 use opad_protocol::proto;
 
 use crate::telemetry::DataSync;
-use tracing::warn;
+use tracing::{info, warn};
 
 pub const COOLDOWN_DURATION: Duration = Duration::from_secs(5);
 pub const HOST_STATUS_INTERVAL: Duration = Duration::from_secs(1);
@@ -36,6 +36,21 @@ pub const TAP_HISTORY_REFRESH: Duration = Duration::from_secs(3600);
 /// Ended attempts kept in memory while they cannot be saved (storage down).
 /// The oldest are dropped past this; each is a few hundred bytes.
 pub const MAX_UNSAVED_ATTEMPTS: usize = 500;
+
+/// Where an attempt's key-downs come from. The pad's own timestamps are exact
+/// (µs, taken where the press is accepted); tosu's are when its message
+/// arrived, which bunches up when tosu is busy, so they are only the fallback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PressSource {
+    /// No press yet: the first source to deliver one decides
+    Undecided,
+    Pad,
+    Tosu,
+}
+
+/// tosu presses seen before the pad has sent any, after which the attempt is
+/// taken to be played on another keyboard and measured from tosu instead
+const KEYBOARD_FALLBACK_PRESSES: u32 = 8;
 
 /// The tap rate statistics the daemon holds (issue #2)
 #[derive(Clone, Debug, Default)]
@@ -186,6 +201,16 @@ pub enum RuntimeEvent {
     },
     /// osu!'s K1/K2 key-down counters changed (tosu precise socket)
     TosuKeys(KeyCounts),
+    /// Whether the connecting pad times its key-downs itself (HelloAck,
+    /// before `DeviceConnected`)
+    PadPressTimes(bool),
+    /// Key-downs timed on the pad: (key 1 or 2, pad µs), oldest first
+    PadPresses {
+        now_us: u64,
+        presses: Vec<(u8, u64)>,
+        dropped: u32,
+        received: Instant,
+    },
     TosuConnectionChanged(bool),
     Tick(Instant),
     SyncCompleted {
@@ -296,6 +321,15 @@ pub struct RuntimeController {
     /// The history last put into `data_sync`, to notice a new one
     tap_published_history: Option<TapHistory>,
     last_tap_history_refresh: Instant,
+    /// The connected pad sends its key-down times (KeyPressBatch)
+    pad_press_times: bool,
+    /// This host's Instant for the pad's clock zero, the earliest seen: the
+    /// batch that arrived quickest. Fixed per connection, so the gaps between
+    /// pad presses keep the pad's precision.
+    pad_epoch: Option<Instant>,
+    press_source: PressSource,
+    /// tosu presses held while the source is undecided
+    tosu_pending: Vec<(u32, u32, Instant)>,
 }
 
 impl RuntimeController {
@@ -378,6 +412,82 @@ impl RuntimeController {
             tap_unsaved: Vec::new(),
             tap_published_history: None,
             last_tap_history_refresh: now,
+            pad_press_times: false,
+            pad_epoch: None,
+            press_source: PressSource::Undecided,
+            tosu_pending: Vec::new(),
+        }
+    }
+
+    /// Whether this attempt's presses should come from the pad
+    fn pad_times_presses(&self) -> bool {
+        self.pad_press_times && self.state.device_connected && !self.state.foreign_pad
+    }
+
+    /// tosu counted `d1`/`d2` new presses at `at`
+    fn tosu_presses(&mut self, d1: u32, d2: u32, at: Instant) {
+        match self.press_source {
+            PressSource::Pad => return,
+            PressSource::Tosu => {}
+            PressSource::Undecided if !self.pad_times_presses() => {
+                self.press_source = PressSource::Tosu;
+            }
+            PressSource::Undecided => {
+                self.tosu_pending.push((d1, d2, at));
+                let seen: u32 = self.tosu_pending.iter().map(|(a, b, _)| a + b).sum();
+                if seen < KEYBOARD_FALLBACK_PRESSES {
+                    return;
+                }
+                // tosu sees presses the pad does not: another keyboard
+                self.press_source = PressSource::Tosu;
+                info!("Tap rate for this attempt from tosu: the pad sends no presses (another keyboard?)");
+                if let Some(tracker) = self.tap_attempt.as_mut() {
+                    for (d1, d2, at) in self.tosu_pending.drain(..) {
+                        tracker.presses(d1, d2, at);
+                    }
+                }
+                self.publish_tap_attempt();
+                return;
+            }
+        }
+        if let Some(tracker) = self.tap_attempt.as_mut() {
+            tracker.presses(d1, d2, at);
+            self.publish_tap_attempt();
+        }
+    }
+
+    fn pad_presses(&mut self, now_us: u64, presses: &[(u8, u64)], received: Instant) {
+        let Some(zero) = received.checked_sub(Duration::from_micros(now_us)) else {
+            return;
+        };
+        let epoch = *self.pad_epoch.get_or_insert(zero);
+        let epoch = epoch.min(zero);
+        self.pad_epoch = Some(epoch);
+        if self.state.mode != RuntimeMode::Playing || self.press_source == PressSource::Tosu {
+            return;
+        }
+        let Some(tracker) = self.tap_attempt.as_mut() else {
+            return;
+        };
+        let origin = tracker.origin();
+        let mut fed = false;
+        for &(key, t_us) in presses {
+            let at = epoch + Duration::from_micros(t_us);
+            // Pressed before this attempt began (a retry's last presses)
+            if at < origin {
+                continue;
+            }
+            let (k1, k2) = if key == 1 { (1, 0) } else { (0, 1) };
+            tracker.presses(k1, k2, at);
+            fed = true;
+        }
+        if fed {
+            if self.press_source != PressSource::Pad {
+                info!("Tap rate for this attempt from the pad's own key timestamps");
+            }
+            self.press_source = PressSource::Pad;
+            self.tosu_pending.clear();
+            self.publish_tap_attempt();
         }
     }
 
@@ -404,6 +514,8 @@ impl RuntimeController {
 
     fn start_tap_attempt(&mut self, beatmap: BeatmapRef, now: Instant) {
         self.finish_tap_attempt();
+        self.press_source = PressSource::Undecided;
+        self.tosu_pending.clear();
         self.tap_attempt = Some(AttemptTracker::new(beatmap, now, chrono::Utc::now()));
         self.publish_tap_attempt();
     }
@@ -660,6 +772,8 @@ impl RuntimeController {
 
             RuntimeEvent::DeviceDisconnected => {
                 self.state.device_connected = false;
+                self.pad_press_times = false;
+                self.pad_epoch = None;
                 self.state.counters_source = CounterSource::Pc;
                 self.state.esp_counters = None;
                 // Never carry one pad's owner into the next pad's connect
@@ -807,18 +921,38 @@ impl RuntimeController {
                 let prev = self.last_keys.replace((keys.k1, keys.k2));
                 // Only presses during a play count; menus, song select and
                 // anything after a fail never reach the statistics
-                if self.state.mode == RuntimeMode::Playing {
-                    if let (Some((k1, k2)), Some(tracker)) = (prev, self.tap_attempt.as_mut()) {
+                if self.state.mode == RuntimeMode::Playing && self.tap_attempt.is_some() {
+                    if let Some((k1, k2)) = prev {
                         // osu! restarts its counters with every play: a count
                         // that went down started again from zero
                         let delta = |new: u32, old: u32| if new >= old { new - old } else { new };
                         let (d1, d2) = (delta(keys.k1, k1), delta(keys.k2, k2));
                         if d1 > 0 || d2 > 0 {
-                            tracker.presses(d1, d2, keys.at);
-                            self.publish_tap_attempt();
+                            self.tosu_presses(d1, d2, keys.at);
                         }
                     }
                 }
+            }
+
+            RuntimeEvent::PadPressTimes(on) => {
+                self.pad_press_times = on;
+                // A new connection: the pad's clock may have restarted
+                self.pad_epoch = None;
+            }
+
+            RuntimeEvent::PadPresses {
+                now_us,
+                presses,
+                dropped,
+                received,
+            } => {
+                if dropped > 0 {
+                    warn!(
+                        "The pad lost {} key presses before it could send them; the tap rate misses them",
+                        dropped
+                    );
+                }
+                self.pad_presses(now_us, &presses, received);
             }
 
             RuntimeEvent::TosuConnectionChanged(connected) => {

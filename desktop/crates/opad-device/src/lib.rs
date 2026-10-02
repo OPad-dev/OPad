@@ -80,6 +80,19 @@ pub enum DeviceEvent {
         gpio: u32,
         success: bool,
     },
+    /// Whether the connecting pad sends `KeyPresses` (issue #2). From the
+    /// same HelloAck as `Connected`, and sent before it.
+    KeyPressTimes(bool),
+    /// Key-downs timed on the pad, oldest first: (key 1 or 2, pad µs)
+    KeyPresses {
+        /// The pad's clock when it built the batch
+        now_us: u64,
+        presses: Vec<(u8, u64)>,
+        /// Presses the pad lost to a full buffer since the last batch
+        dropped: u32,
+        /// When this host received the batch
+        received: Instant,
+    },
 }
 
 /// How often the worker looks for a pad while none is connected (§W1-2).
@@ -944,6 +957,7 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     map_key1: 0,
                     map_key2: 0,
                 }));
+                let _ = tx.send(DeviceEvent::KeyPressTimes(ack.key_press_times));
                 let cfg_opt = ack.current_config.as_ref().map(device_config_from);
                 let _ = tx.send(DeviceEvent::Connected(info, cfg_opt));
             }
@@ -1001,6 +1015,19 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     key_id: resp.key_id,
                     gpio: resp.gpio,
                     success: resp.success,
+                });
+            }
+            proto::device_to_host::Payload::KeyPresses(batch) => {
+                let _ = tx.send(DeviceEvent::KeyPresses {
+                    now_us: batch.now_us,
+                    presses: batch
+                        .presses
+                        .iter()
+                        .filter(|p| p.key == 1 || p.key == 2)
+                        .map(|p| (p.key as u8, p.t_us))
+                        .collect(),
+                    dropped: batch.dropped,
+                    received: Instant::now(),
                 });
             }
         }
@@ -1463,7 +1490,44 @@ mod tests {
         assert!(
             matches!(rx.try_recv(), Ok(DeviceEvent::Counters(c)) if c.device_id == "OSUPAD-NEW")
         );
+        // Firmware predating key press times leaves the field false
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(DeviceEvent::KeyPressTimes(false))
+        ));
         assert!(matches!(rx.try_recv(), Ok(DeviceEvent::Connected(..))));
+    }
+
+    /// Issue #2: a KeyPressBatch arrives as pad-timed presses, with anything
+    /// that is not K1 or K2 left out
+    #[test]
+    fn key_press_batches_become_pad_presses() {
+        let (tx, mut rx) = tokio::sync::broadcast::channel(8);
+        let press = |key, t_us| proto::KeyPress { key, t_us };
+        let msg = proto::DeviceToHost {
+            sequence_number: 2,
+            payload: Some(proto::device_to_host::Payload::KeyPresses(
+                proto::KeyPressBatch {
+                    now_us: 5_000,
+                    presses: vec![press(1, 1_000), press(3, 1_500), press(2, 2_000)],
+                    dropped: 1,
+                },
+            )),
+        };
+        handle_device_message(&msg, &tx);
+        match rx.try_recv() {
+            Ok(DeviceEvent::KeyPresses {
+                now_us,
+                presses,
+                dropped,
+                ..
+            }) => {
+                assert_eq!(now_us, 5_000);
+                assert_eq!(presses, vec![(1, 1_000), (2, 2_000)]);
+                assert_eq!(dropped, 1);
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     /// Firmware that predates §W3-2 sends no owner at all. The event must still

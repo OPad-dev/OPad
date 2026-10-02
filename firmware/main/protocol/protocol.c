@@ -11,6 +11,7 @@
 #include "ui/ui_store.h"
 #include "runtime/runtime.h"
 #include "input/latency_stats.h"
+#include "input/press_log.h"
 #include "esp_mac.h"
 #include "esp_timer.h"
 #include "esp_log.h"
@@ -156,6 +157,8 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     msg.payload.hello_ack.current_config.press_color_rgb = 0;
     msg.payload.hello_ack.current_config.key1_gpio = cfg.key1_gpio;
     msg.payload.hello_ack.current_config.key2_gpio = cfg.key2_gpio;
+    // KeyPressBatch is sent while a map is played (issue #2)
+    msg.payload.hello_ack.key_press_times = true;
 
     ESP_LOGI(TAG, "Sending HelloAck to host (Firmware: %s, Gen: %lu, Partition: %s, K1: GPIO%lu, K2: GPIO%lu)",
              app_desc->version, (unsigned long)snap.generation,
@@ -337,6 +340,39 @@ void protocol_drain_diag_logs(void)
         if (protocol_send_log_batch() != ESP_OK) {
             break;
         }
+    }
+}
+
+void protocol_send_key_presses(void)
+{
+    // Only a played map's presses are wanted; outside one, or with nobody to
+    // send to, they are dropped so the log is empty when the next map starts
+    if (!usb_cdc_is_connected() || !s_host_framing_known ||
+        runtime_get_state() != OSUPAD_STATE_PLAYING) {
+        press_log_clear();
+        return;
+    }
+    static uint32_t s_dropped;
+    while (press_log_pending() > 0) {
+        static press_log_entry_t entries[32];  // protocol task only
+        size_t n = press_log_drain(entries, 32, &s_dropped);
+        osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+        msg.sequence_number = s_out_sequence++;
+        msg.which_payload = osupad_DeviceToHost_key_presses_tag;
+        osupad_KeyPressBatch *batch = &msg.payload.key_presses;
+        batch->now_us = (uint64_t)esp_timer_get_time();
+        batch->presses_count = (pb_size_t)n;
+        for (size_t i = 0; i < n; i++) {
+            batch->presses[i].key = entries[i].key;
+            batch->presses[i].t_us = (uint64_t)entries[i].t_us;
+        }
+        batch->dropped = s_dropped;
+        if (send_envelope(&msg) != ESP_OK) {
+            // The CDC FIFO is full: these presses are gone, and the host is told
+            s_dropped += (uint32_t)n;
+            return;
+        }
+        s_dropped = 0;
     }
 }
 

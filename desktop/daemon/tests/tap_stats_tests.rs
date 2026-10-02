@@ -374,3 +374,140 @@ fn a_period_changed_during_play_is_saved_in_idle() {
     }));
     assert!(!c.state.tap.period_unsaved);
 }
+
+// ---- Pad-timed presses ---------------------------------------------------------------
+
+/// A controller with a connected pad that times its own presses, playing an
+/// attempt that started at `t0`
+fn pad_controller(t0: Instant) -> RuntimeController {
+    let mut c = controller(t0);
+    c.on_event(RuntimeEvent::PadPressTimes(true), t0);
+    c.state.device_connected = true;
+    c.on_event(keys(0, 0, t0), t0);
+    c.on_event(frame(true, 0.0, false), t0);
+    c
+}
+
+/// One batch of pad presses, delivered at `received` with the pad's clock at
+/// `pad_now_us`
+fn batch(presses: Vec<(u8, u64)>, pad_now_us: u64, received: Instant) -> RuntimeEvent {
+    RuntimeEvent::PadPresses {
+        now_us: pad_now_us,
+        presses,
+        dropped: 0,
+        received,
+    }
+}
+
+#[test]
+fn pad_times_are_exact_even_when_batches_arrive_bunched() {
+    let t0 = Instant::now();
+    let mut c = pad_controller(t0);
+    // A 400 BPM 1/4 burst: 1600 PPM, a press every 37.5 ms, alternating keys.
+    // The pad's clock reads 1 s at t0. All of it arrives in one late batch,
+    // the way a stalled delivery bunches tosu's messages.
+    let base_us = 1_000_000u64;
+    let presses: Vec<(u8, u64)> = (0..14u64)
+        .map(|i| (1 + (i % 2) as u8, base_us + 100_000 + i * 37_500))
+        .collect();
+    let last_us = presses.last().unwrap().1;
+    // The pad's clock zero is t0 - 1 s, learnt from a quick earlier batch
+    c.on_event(batch(Vec::new(), base_us, t0), t0);
+    let late = t0 + Duration::from_millis(800);
+    c.on_event(batch(presses, last_us + 2_000, late), late);
+
+    let s = c.state.tap.snapshot.current.clone().unwrap();
+    assert_eq!(s.combined.presses, 14);
+    let peak = s.combined.peak_ppm.unwrap();
+    assert!((peak - 1600.0).abs() < 1.0, "peak {peak}");
+    // Each key alone: 7 presses, every 75 ms
+    assert!((s.k1.peak_ppm.unwrap() - 800.0).abs() < 1.0);
+}
+
+#[test]
+fn once_the_pad_sends_presses_tosu_counts_are_ignored() {
+    let t0 = Instant::now();
+    let mut c = pad_controller(t0);
+    let t = t0 + Duration::from_millis(300);
+    c.on_event(batch(vec![(1, 300_000)], 300_000, t), t);
+    // tosu reports the same press, and later ones the pad also sends
+    c.on_event(keys(5, 0, t), t);
+    let s = c.state.tap.snapshot.current.clone().unwrap();
+    assert_eq!(s.combined.presses, 1);
+}
+
+#[test]
+fn a_keyboard_player_is_measured_from_tosu() {
+    let t0 = Instant::now();
+    let mut c = pad_controller(t0);
+    // tosu counts 8 presses; the pad (nobody touching it) sends none
+    let (_, t) = tap(&mut c, (0, 0), t0, 8);
+    let s = c.state.tap.snapshot.current.clone().unwrap();
+    assert_eq!(s.combined.presses, 8, "the held presses are replayed");
+    // and from then on tosu counts straight through
+    tap(&mut c, (4, 4), t, 4);
+    assert_eq!(
+        c.state
+            .tap
+            .snapshot
+            .current
+            .clone()
+            .unwrap()
+            .combined
+            .presses,
+        12
+    );
+}
+
+#[test]
+fn a_pad_without_press_times_uses_tosu_at_once() {
+    let t0 = Instant::now();
+    let mut c = controller(t0);
+    c.state.device_connected = true;
+    c.on_event(RuntimeEvent::PadPressTimes(false), t0);
+    c.on_event(keys(0, 0, t0), t0);
+    c.on_event(frame(true, 0.0, false), t0);
+    tap(&mut c, (0, 0), t0, 2);
+    assert_eq!(
+        c.state
+            .tap
+            .snapshot
+            .current
+            .clone()
+            .unwrap()
+            .combined
+            .presses,
+        2
+    );
+}
+
+#[test]
+fn presses_from_before_a_retry_stay_out_of_the_new_attempt() {
+    let t0 = Instant::now();
+    let mut c = pad_controller(t0);
+    c.on_event(batch(Vec::new(), 0, t0), t0);
+    // Retry 2 s in; the batch still holds two presses from before it
+    let retry = t0 + Duration::from_secs(2);
+    c.on_event(frame(true, 30_000.0, false), retry);
+    c.on_event(frame(true, 0.0, false), retry);
+    let t = retry + Duration::from_millis(100);
+    c.on_event(
+        batch(
+            vec![(1, 1_900_000), (2, 1_950_000), (1, 2_050_000)],
+            2_100_000,
+            t,
+        ),
+        t,
+    );
+    assert_eq!(
+        c.state
+            .tap
+            .snapshot
+            .current
+            .clone()
+            .unwrap()
+            .combined
+            .presses,
+        1
+    );
+}

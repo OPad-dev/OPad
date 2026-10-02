@@ -434,6 +434,11 @@ impl AttemptTracker {
         }
     }
 
+    /// When the attempt started; presses timed before it are not its own
+    pub fn origin(&self) -> Instant {
+        self.origin
+    }
+
     fn ms(&self, at: Instant) -> f64 {
         at.saturating_duration_since(self.origin).as_secs_f64() * 1000.0
     }

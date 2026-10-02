@@ -50,6 +50,9 @@ message HelloAck {
     // Empty means firmware predating the two-slot table.
     string running_partition = 9;
     ConfigPayload current_config = 10;
+    // The pad sends KeyPressBatch while a map is played (issue #2). False from
+    // firmware predating it: the host then measures the tap rate from tosu.
+    bool key_press_times = 11;
 }
 
 // Record a new owner in NVS (§W3-2). An NVS write, so the firmware must honour
@@ -233,6 +236,26 @@ message LogEventBatch {
 }
 
 // -----------------------------------------------------------------------------
+// Key press times (tap rate, issue #2)
+// -----------------------------------------------------------------------------
+
+// One accepted key-down, timed where the pad accepts it: the switch edge for
+// MX, the actuation point for any other input module
+message KeyPress {
+    uint32 key = 1;      // 1 = K1, 2 = K2
+    uint64 t_us = 2;     // pad clock (esp_timer, us since boot)
+}
+
+// Key-downs since the last batch, oldest first. Sent only while the host says
+// a map is being played (HostStatus.playing), from the protocol task, never
+// from the input path.
+message KeyPressBatch {
+    uint64 now_us = 1;              // pad clock when the batch was built
+    repeated KeyPress presses = 2;
+    uint32 dropped = 3;             // presses lost to a full buffer since the last batch
+}
+
+// -----------------------------------------------------------------------------
 // Interactive Hardware Pin Detection
 // -----------------------------------------------------------------------------
 
@@ -282,5 +305,6 @@ message DeviceToHost {
         LogEventBatch log_batch = 6;
         LayoutAck layout_ack = 7;
         DetectPinResponse detect_pin_resp = 8;
+        KeyPressBatch key_presses = 9;
     }
 }

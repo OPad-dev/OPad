@@ -66,6 +66,12 @@ PB_BIND(osupad_LogEvent, osupad_LogEvent, AUTO)
 PB_BIND(osupad_LogEventBatch, osupad_LogEventBatch, 2)
 
 
+PB_BIND(osupad_KeyPress, osupad_KeyPress, AUTO)
+
+
+PB_BIND(osupad_KeyPressBatch, osupad_KeyPressBatch, 2)
+
+
 PB_BIND(osupad_DetectPinRequest, osupad_DetectPinRequest, AUTO)
 
 

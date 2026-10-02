@@ -171,6 +171,7 @@ bound to them hides.
 | 4 | `LayoutAck` | Acknowledges `SetLayout` or `ResetLayout` with `screen` ID, `success` boolean, and status message. |
 | 5 | `Status` | Periodic or requested device health: `uptime_ms`, `runtime_state`, lifetime counters, and latency statistics (min, max, avg, samples, buckets). |
 | 6 | `LogBatch` | Batch of diagnostic entries from the in-RAM ring buffer: `timestamp_ms`, severity `level`, `event_id`, and optional `arg0`/`arg1`. |
+| 9 | `KeyPressBatch` | Key-downs timed on the pad, for the tap rate: see below. |
 
 ### `HelloAck.owner_id` (field 8, §W3-1 / §W3-2)
 
@@ -201,6 +202,33 @@ The label of the app partition the running image booted from: `ota_0`, `ota_1`,
 or `factory` for a pad still on the pre-OTA single-app table. An **empty string**
 means firmware older than the field, which the host reads as unknown rather than
 guessing a slot. Surfaced by `osupadctl status` as `Running Slot`.
+
+### `KeyPressBatch` (DeviceToHost field 9) and `HelloAck.key_press_times` (field 11)
+
+The tap rate (PPM, issue #2) is measured from the pad's own clock. Every
+accepted key-down is logged with its `esp_timer` time in µs, where the press
+is accepted: the switch edge for MX (a press confirmed by the debounce
+resample is up to one lockout late), and the same point for any other input
+module. Logging is one store into a lock-free ring, inside code the input path
+already runs, so it adds nothing to the key-to-HID latency.
+
+The protocol task, never the input path, sends the log as `KeyPressBatch`
+messages: `presses` (`key` 1 = K1, 2 = K2, `t_us`), oldest first, at most 32
+per message; `now_us`, the pad's clock when the batch was built; and
+`dropped`, presses lost to a full log or a full CDC FIFO since the last batch.
+Batches go out only while the host's `HostStatus.playing` holds the pad in
+PLAYING; otherwise the log is emptied.
+
+The host maps pad time onto its own clock with one offset per connection, the
+smallest `received - now_us` seen, so the gaps between presses keep the pad's
+µs precision whatever the USB and scheduling delays. tosu's key counters, the
+only other source, are stamped when its message arrives, which bunches up
+when tosu is busy; they are used only for a pad that sends no batches
+(`key_press_times` false, i.e. firmware predating it) or for an attempt played
+on another keyboard (tosu counts 8 presses before the pad sends any).
+
+Older hosts skip field 9 as an unknown oneof field; newer hosts read a missing
+field 11 as false.
 
 ---
 
