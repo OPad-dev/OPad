@@ -895,7 +895,7 @@ impl RuntimeController {
                 // 4. UI data updates, with the tap rate brought up to date
                 //    first: a rate ends when the tapping stops
                 if let Some(tracker) = self.tap_attempt.as_mut() {
-                    tracker.expire(now);
+                    tracker.advance(now);
                     self.publish_tap_attempt();
                 }
                 self.publish_tap_history(false);

@@ -120,7 +120,7 @@ fn an_attempt_is_measured_and_saved_only_once_play_has_stopped() {
     assert!(saved(&actions).is_empty(), "saved in COOLDOWN");
     assert!(c.state.tap.snapshot.current.is_none());
     let last = c.state.tap.snapshot.last.clone().expect("last attempt");
-    assert_eq!(last.combined.current_ppm, None);
+    assert_eq!(last.combined.current_ppm, Some(0.0));
     assert!(last.ended_at.is_some());
     assert_eq!(c.state.tap.snapshot.unsaved_attempts, 1);
 
@@ -257,7 +257,8 @@ fn the_pad_gets_the_live_rate_and_the_history() {
     assert!(update.contains(&(src::PLAY_PPM, SourceValue::Number(200.0))));
     assert!(update.contains(&(src::PLAY_K1_PPM, SourceValue::Number(100.0))));
 
-    // Tapping stops: the current rate goes, the attempt's average stays
+    // Tapping stops: the live rate drops to 0 (still shown), the attempt's
+    // average stays
     let t = t + Duration::from_secs(2);
     let_a_flush_interval_pass();
     let actions = c.on_event(RuntimeEvent::Tick(t), t);
@@ -268,7 +269,7 @@ fn the_pad_gets_the_live_rate_and_the_history() {
             _ => Vec::new(),
         })
         .collect();
-    assert!(update.contains(&(src::PLAY_PPM, SourceValue::Clear)));
+    assert!(update.contains(&(src::PLAY_PPM, SourceValue::Number(0.0))));
     assert!(!update.iter().any(|(s, _)| *s == src::PLAY_PPM_AVG));
 
     // A new history (written by IPC or after a save) reaches the pad

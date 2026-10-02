@@ -62,7 +62,7 @@ static const ui_layout_t s_idle = {
 
 static const ui_layout_t s_playing = {
     .background = BG,
-    .count = 17,
+    .count = 18,
     .widgets = {
         // Header pill
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_NONE, .font = UI_FONT_14, .align = UI_ALIGN_CENTER,
@@ -81,7 +81,7 @@ static const ui_layout_t s_playing = {
 
         // PP
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PP, .font = UI_FONT_48, .align = UI_ALIGN_CENTER,
-          .x = 0, .y = 87, .w = 320, .h = 54, .fg = WHITE, .decimals = DEC, .suffix = "pp" },
+          .x = 0, .y = 87, .w = 240, .h = 54, .fg = WHITE, .decimals = DEC, .suffix = "pp" },
 
         // Accuracy · combo · grade
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_ACCURACY, .font = UI_FONT_20, .align = UI_ALIGN_CENTER,
@@ -114,10 +114,11 @@ static const ui_layout_t s_playing = {
           .x = 226, .y = 6, .w = 86, .h = 18, .fg = MUTED, .flags = UI_FLAG_HIDE_WHEN_EMPTY,
           .decimals = DEC, .label = "max ", .suffix = "x" },
 
-        // Combined tap rate (PPM, not the map's BPM) right of the PP, only while tapping
-        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM, .font = UI_FONT_14, .align = UI_ALIGN_RIGHT,
-          .x = 240, .y = 113, .w = 72, .h = 20, .fg = PINK, .flags = UI_FLAG_HIDE_WHEN_EMPTY,
-          .decimals = DEC, .suffix = " PPM" },
+        // Combined tap rate (PPM, not the map's BPM) in its own column right of the PP
+        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM, .font = UI_FONT_24, .align = UI_ALIGN_CENTER,
+          .x = 240, .y = 90, .w = 76, .h = 30, .fg = PINK, .flags = UI_FLAG_HIDE_WHEN_EMPTY, .decimals = DEC },
+        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_NONE, .font = UI_FONT_14, .align = UI_ALIGN_CENTER,
+          .x = 240, .y = 119, .w = 76, .h = 18, .fg = MUTED, .decimals = DEC, .label = "PPM" },
     },
 };
 

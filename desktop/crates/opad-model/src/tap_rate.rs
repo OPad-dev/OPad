@@ -17,8 +17,14 @@
 //!   bounce or two presses landing in one telemetry sample. The second press
 //!   still counts as a press, but the interval is dropped and the next one is
 //!   measured from the first press.
-//! - Current PPM is the rolling rate over the last [`WINDOW_INTERVALS`] valid
-//!   intervals of the sequence. It is shown from [`MIN_DISPLAY_INTERVALS`] on.
+//! - Current PPM is the live rate: the rolling rate over the last
+//!   [`WINDOW_INTERVALS`] valid intervals of the sequence. Once the player
+//!   has clearly stopped (a gap over twice their rhythm and over
+//!   [`STOP_GAP_MS`]) it is the gap itself, so it falls (an 800 ms pause
+//!   reads 75 PPM), and it reads 0 once the sequence has ended. A normal 1/1
+//!   note after a burst does not count as stopping, or the value would swing
+//!   on every beat. It always has a value while an attempt is played, so the
+//!   pad never hides it mid-map.
 //! - Peak PPM is the highest Current PPM over a *full* window, and a full
 //!   window drops its shortest and longest interval before averaging, so one
 //!   stray interval can move neither the peak nor the displayed value much.
@@ -33,8 +39,9 @@ use std::time::Instant;
 
 /// Valid intervals in the rolling window behind Current and Peak PPM
 pub const WINDOW_INTERVALS: usize = 6;
-/// Current PPM is shown once a sequence has this many valid intervals
-pub const MIN_DISPLAY_INTERVALS: usize = 3;
+/// A gap must be at least this long, and twice the player's rhythm, before
+/// the live rate treats it as having stopped (100 PPM; a 1/1 note at 100 BPM)
+pub const STOP_GAP_MS: f64 = 600.0;
 /// A gap longer than this ends the tapping sequence (60 PPM on one channel)
 pub const SEQUENCE_BREAK_MS: f64 = 1000.0;
 /// Shorter intervals are treated as duplicates or bounce (2400 PPM). The
@@ -202,8 +209,9 @@ impl TapHistory {
 #[derive(Debug, Clone, Default)]
 pub struct ChannelTracker {
     last_press_ms: Option<f64>,
+    /// The latest time seen, from a press or [`Self::advance`]
+    now_ms: f64,
     window: VecDeque<f64>,
-    current_ppm: Option<f64>,
     peak_ppm: Option<f64>,
     presses: u32,
     valid_intervals: u32,
@@ -212,6 +220,7 @@ pub struct ChannelTracker {
 
 impl ChannelTracker {
     pub fn press(&mut self, at_ms: f64) {
+        self.now_ms = self.now_ms.max(at_ms);
         self.presses = self.presses.saturating_add(1);
         let Some(prev) = self.last_press_ms else {
             self.last_press_ms = Some(at_ms);
@@ -233,19 +242,20 @@ impl ChannelTracker {
             self.window.pop_front();
         }
         self.window.push_back(interval);
-        self.current_ppm = window_ppm(&self.window);
         if self.window.len() == WINDOW_INTERVALS {
-            if let Some(ppm) = self.current_ppm {
+            if let Some(ppm) = window_interval_ms(&self.window).map(ppm_from_interval_ms) {
                 self.peak_ppm = Some(self.peak_ppm.map_or(ppm, |p| p.max(ppm)));
             }
         }
     }
 
-    /// Ends the sequence once no press has come for [`SEQUENCE_BREAK_MS`]
-    pub fn expire(&mut self, now_ms: f64) {
+    /// Moves the clock on without a press: the live rate falls with the gap,
+    /// and the sequence ends once it passes [`SEQUENCE_BREAK_MS`]
+    pub fn advance(&mut self, now_ms: f64) {
+        self.now_ms = self.now_ms.max(now_ms);
         if self
             .last_press_ms
-            .is_some_and(|last| now_ms - last > SEQUENCE_BREAK_MS)
+            .is_some_and(|last| self.now_ms - last > SEQUENCE_BREAK_MS)
         {
             self.end_sequence();
         }
@@ -253,12 +263,23 @@ impl ChannelTracker {
 
     fn end_sequence(&mut self) {
         self.window.clear();
-        self.current_ppm = None;
+    }
+
+    /// The live rate: the window's rate, or the gap once the player has
+    /// clearly stopped, and 0 outside a sequence
+    pub fn current_ppm(&self) -> f64 {
+        let (Some(last), Some(interval)) = (self.last_press_ms, window_interval_ms(&self.window))
+        else {
+            return 0.0;
+        };
+        let gap = self.now_ms - last;
+        let stopped = gap > (2.0 * interval).max(STOP_GAP_MS);
+        ppm_from_interval_ms(if stopped { gap } else { interval })
     }
 
     pub fn stats(&self) -> ChannelStats {
         ChannelStats {
-            current_ppm: self.current_ppm,
+            current_ppm: Some(self.current_ppm()),
             average_ppm: (self.valid_intervals > 0 && self.interval_ms_sum > 0.0).then(|| {
                 ppm_from_interval_ms(self.interval_ms_sum / f64::from(self.valid_intervals))
             }),
@@ -270,10 +291,10 @@ impl ChannelTracker {
     }
 }
 
-/// Current PPM from the window: the plain mean interval until it is full,
-/// then the mean without its shortest and longest interval
-fn window_ppm(window: &VecDeque<f64>) -> Option<f64> {
-    if window.len() < MIN_DISPLAY_INTERVALS {
+/// The window's typical interval: the plain mean until it is full, then the
+/// mean without its shortest and longest interval. None while it is empty.
+fn window_interval_ms(window: &VecDeque<f64>) -> Option<f64> {
+    if window.is_empty() {
         return None;
     }
     let sum: f64 = window.iter().sum();
@@ -284,7 +305,7 @@ fn window_ppm(window: &VecDeque<f64>) -> Option<f64> {
     } else {
         sum / window.len() as f64
     };
-    (mean > 0.0).then(|| ppm_from_interval_ms(mean))
+    (mean > 0.0).then_some(mean)
 }
 
 /// One attempt being played: feed it key-down counts as they arrive
@@ -328,11 +349,12 @@ impl AttemptTracker {
         }
     }
 
-    pub fn expire(&mut self, now: Instant) {
+    /// Moves the clock on, so the live rate falls while nothing is pressed
+    pub fn advance(&mut self, now: Instant) {
         let t = self.ms(now);
-        self.k1.expire(t);
-        self.k2.expire(t);
-        self.combined.expire(t);
+        self.k1.advance(t);
+        self.k2.advance(t);
+        self.combined.advance(t);
     }
 
     /// Mods are only known once the play frame says so; keep the latest
@@ -351,12 +373,13 @@ impl AttemptTracker {
         }
     }
 
-    /// The final record: no current rate, an end time
+    /// The final record, with an end time. Nobody is tapping any more, so
+    /// the live rate is 0.
     pub fn finish(&self, ended_at: DateTime<Utc>) -> AttemptStats {
         let mut stats = self.snapshot();
         stats.ended_at = Some(ended_at);
         for c in [&mut stats.k1, &mut stats.k2, &mut stats.combined] {
-            c.current_ppm = None;
+            c.current_ppm = Some(0.0);
         }
         stats
     }
@@ -449,7 +472,8 @@ mod tests {
         assert!(approx(s.k1.peak_ppm, 200.0));
         assert!(approx(s.combined.current_ppm, 200.0));
         assert_eq!(s.k2.presses, 0);
-        assert_eq!(s.k2.current_ppm, None);
+        // A key nobody pressed is at 0, not missing
+        assert_eq!(s.k2.current_ppm, Some(0.0));
     }
 
     #[test]
@@ -494,9 +518,9 @@ mod tests {
     fn a_long_pause_ends_the_sequence_and_stays_out_of_the_average() {
         let mut t = tapped(&[300.0; 10]);
         assert!(approx(t.stats().current_ppm, 200.0));
-        // Silence: the rate is gone once the break has passed
-        t.expire(3000.0 + SEQUENCE_BREAK_MS + 1.0);
-        assert_eq!(t.stats().current_ppm, None);
+        // Silence: the rate is 0 once the break has passed
+        t.advance(3000.0 + SEQUENCE_BREAK_MS + 1.0);
+        assert_eq!(t.stats().current_ppm, Some(0.0));
         // Then a new sequence at the same speed, 2 s after the last press
         let mut at = 3000.0 + 2000.0;
         for _ in 0..10 {
@@ -540,6 +564,36 @@ mod tests {
     }
 
     #[test]
+    fn the_live_rate_falls_as_soon_as_tapping_slows() {
+        // 162 ms taps: 370 PPM
+        let mut t = tapped(&[162.0; 8]);
+        let last = 162.0 * 8.0;
+        assert!(approx(t.stats().current_ppm, 370.4));
+        // A gap like a 1/1 note is not stopping: the value holds steady
+        t.advance(last + 500.0);
+        assert!(approx(t.stats().current_ppm, 370.4));
+        // An 800 ms pause is: it reads what the gap means
+        t.advance(last + 800.0);
+        assert!(approx(t.stats().current_ppm, 75.0));
+        // The peak is what was sustained, not touched by the pause
+        assert!(approx(t.stats().peak_ppm, 370.4));
+        // Tapping again picks the window back up at once
+        t.press(last + 900.0);
+        t.advance(last + 900.0);
+        assert!(t.stats().current_ppm.unwrap() > 300.0);
+    }
+
+    #[test]
+    fn the_live_rate_is_shown_from_the_second_press() {
+        let mut t = ChannelTracker::default();
+        assert_eq!(t.stats().current_ppm, Some(0.0));
+        t.press(0.0);
+        assert_eq!(t.stats().current_ppm, Some(0.0));
+        t.press(300.0);
+        assert!(approx(t.stats().current_ppm, 200.0));
+    }
+
+    #[test]
     fn simultaneous_presses_count_but_add_no_interval() {
         let origin = Instant::now();
         let mut a = AttemptTracker::new(BeatmapRef::default(), origin, Utc::now());
@@ -552,14 +606,14 @@ mod tests {
     }
 
     #[test]
-    fn finished_attempts_have_no_current_rate() {
+    fn finished_attempts_read_zero_now() {
         let origin = Instant::now();
         let mut a = AttemptTracker::new(BeatmapRef::default(), origin, Utc::now());
         for i in 0..20u64 {
             a.presses(1, 0, origin + Duration::from_millis(300 * i));
         }
         let f = a.finish(Utc::now());
-        assert_eq!(f.combined.current_ppm, None);
+        assert_eq!(f.combined.current_ppm, Some(0.0));
         assert!(f.ended_at.is_some());
         assert!(f.is_recordable());
     }

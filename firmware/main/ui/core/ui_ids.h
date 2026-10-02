@@ -101,7 +101,7 @@ typedef enum {
     UI_SRC_GAME_STATE = 50,       // "Playing", "Song select", ...
 
     // Player tap rate in PPM (presses per minute) for the current attempt, worked out by
-    // the daemon. Not the beatmap's BPM (UI_SRC_MAP_BPM). Current is empty while not tapping.
+    // the daemon. Not the beatmap's BPM (UI_SRC_MAP_BPM). Current is 0 while not tapping.
     UI_SRC_PLAY_PPM = 51,
     UI_SRC_PLAY_PPM_AVG = 52,
     UI_SRC_PLAY_PPM_PEAK = 53,

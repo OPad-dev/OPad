@@ -113,7 +113,7 @@ text.
 
 | Id | Name | Meaning |
 |---|---|---|
-| 51 | `play.ppm` | Combined current rate (both keys). Cleared while the player is not tapping. |
+| 51 | `play.ppm` | Combined live rate (both keys): the rolling rate of the last presses, falling once the player clearly stops and 0 when not tapping. Always set during an attempt; cleared only without tosu. |
 | 52 | `play.ppm_avg` | Combined average of the current attempt |
 | 53 | `play.ppm_peak` | Combined peak of the current attempt |
 | 54–56 | `play.k1_ppm`, `play.k1_ppm_avg`, `play.k1_ppm_peak` | Same for K1 alone |

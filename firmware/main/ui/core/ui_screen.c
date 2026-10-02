@@ -278,11 +278,11 @@ static void build_keycard(lv_obj_t *scr, const ui_widget_t *w)
 
     uint8_t rate_src = (w->flags & UI_FLAG_KEY_RATE) ? key_rate_source(w->source) : UI_SRC_NONE;
     if (rate_src != UI_SRC_NONE) {
+        // Full strength and a size up from the title: it is read mid-map
         lv_obj_t *rate = lv_label_create(card);
         lv_obj_remove_style_all(rate);
-        lv_obj_set_style_text_font(rate, s_fonts[UI_FONT_14], 0);
-        lv_obj_set_style_text_opa(rate, LV_OPA_70, 0);
-        lv_obj_align(rate, LV_ALIGN_TOP_RIGHT, -10, 3);
+        lv_obj_set_style_text_font(rate, s_fonts[UI_FONT_16], 0);
+        lv_obj_align(rate, LV_ALIGN_TOP_RIGHT, -10, 2);
         lv_obj_set_user_data(rate, title);
         lv_subject_add_observer_obj(ui_data_subject(rate_src), rate_observer_cb, rate,
                                     (void *)(uintptr_t)rate_src);

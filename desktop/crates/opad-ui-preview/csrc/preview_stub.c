@@ -197,7 +197,7 @@ static const ui_layout_t s_idle = {
 
 static const ui_layout_t s_playing = {
     .background = BG,
-    .count = 17,
+    .count = 18,
     .widgets = {
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_NONE, .font = UI_FONT_14, .align = UI_ALIGN_CENTER,
           .x = 96, .y = 4, .w = 128, .h = 22, .fg = BG, .bg = PINK, .radius = 11,
@@ -211,7 +211,7 @@ static const ui_layout_t s_playing = {
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_MAP_STARS, .font = UI_FONT_14, .align = UI_ALIGN_LEFT,
           .x = 214, .y = 71, .w = 98, .h = 18, .fg = YELLOW, .decimals = DEC, .suffix = " *" },
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PP, .font = UI_FONT_48, .align = UI_ALIGN_CENTER,
-          .x = 0, .y = 87, .w = 320, .h = 54, .fg = WHITE, .decimals = DEC, .suffix = "pp" },
+          .x = 0, .y = 87, .w = 240, .h = 54, .fg = WHITE, .decimals = DEC, .suffix = "pp" },
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_ACCURACY, .font = UI_FONT_20, .align = UI_ALIGN_CENTER,
           .x = 8, .y = 140, .w = 116, .h = 24, .fg = WHITE, .decimals = DEC, .suffix = "%" },
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_COMBO, .font = UI_FONT_20, .align = UI_ALIGN_CENTER,
@@ -235,9 +235,10 @@ static const ui_layout_t s_playing = {
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_MAX_COMBO, .font = UI_FONT_14, .align = UI_ALIGN_RIGHT,
           .x = 226, .y = 6, .w = 86, .h = 18, .fg = MUTED, .flags = UI_FLAG_HIDE_WHEN_EMPTY,
           .decimals = DEC, .label = "max ", .suffix = "x" },
-        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM, .font = UI_FONT_14, .align = UI_ALIGN_RIGHT,
-          .x = 240, .y = 113, .w = 72, .h = 20, .fg = PINK, .flags = UI_FLAG_HIDE_WHEN_EMPTY,
-          .decimals = DEC, .suffix = " PPM" },
+        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM, .font = UI_FONT_24, .align = UI_ALIGN_CENTER,
+          .x = 240, .y = 90, .w = 76, .h = 30, .fg = PINK, .flags = UI_FLAG_HIDE_WHEN_EMPTY, .decimals = DEC },
+        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_NONE, .font = UI_FONT_14, .align = UI_ALIGN_CENTER,
+          .x = 240, .y = 119, .w = 76, .h = 18, .fg = MUTED, .decimals = DEC, .label = "PPM" },
     },
 };
 
