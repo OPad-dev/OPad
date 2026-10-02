@@ -62,7 +62,7 @@ static const ui_layout_t s_idle = {
 
 static const ui_layout_t s_playing = {
     .background = BG,
-    .count = 18,
+    .count = 20,
     .widgets = {
         // Header pill
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_NONE, .font = UI_FONT_14, .align = UI_ALIGN_CENTER,
@@ -81,15 +81,15 @@ static const ui_layout_t s_playing = {
 
         // PP
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PP, .font = UI_FONT_48, .align = UI_ALIGN_CENTER,
-          .x = 0, .y = 87, .w = 240, .h = 54, .fg = WHITE, .decimals = DEC, .suffix = "pp" },
+          .x = 0, .y = 87, .w = 224, .h = 54, .fg = WHITE, .decimals = DEC, .suffix = "pp" },
 
         // Accuracy · combo · grade
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_ACCURACY, .font = UI_FONT_20, .align = UI_ALIGN_CENTER,
-          .x = 8, .y = 140, .w = 116, .h = 24, .fg = WHITE, .decimals = DEC, .suffix = "%" },
+          .x = 4, .y = 140, .w = 92, .h = 24, .fg = WHITE, .decimals = DEC, .suffix = "%" },
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_COMBO, .font = UI_FONT_20, .align = UI_ALIGN_CENTER,
-          .x = 124, .y = 140, .w = 84, .h = 24, .fg = WHITE, .decimals = DEC, .suffix = "x" },
+          .x = 96, .y = 140, .w = 64, .h = 24, .fg = WHITE, .decimals = DEC, .suffix = "x" },
         { .kind = UI_WIDGET_GRADE, .source = UI_SRC_PLAY_GRADE, .font = UI_FONT_24, .align = UI_ALIGN_CENTER,
-          .x = 208, .y = 138, .w = 104, .h = 28, .fg = WHITE, .decimals = DEC },
+          .x = 160, .y = 138, .w = 68, .h = 28, .fg = WHITE, .decimals = DEC },
 
         // Map press counters: K1 pink / K2 dark at rest, colors swap while pressed
         { .kind = UI_WIDGET_KEYCARD, .source = UI_SRC_PAD_K1_MAP, .font = UI_FONT_24,
@@ -114,12 +114,17 @@ static const ui_layout_t s_playing = {
           .x = 226, .y = 6, .w = 86, .h = 18, .fg = MUTED, .flags = UI_FLAG_HIDE_WHEN_EMPTY,
           .decimals = DEC, .label = "max ", .suffix = "x" },
 
-        // Song rate (PPM: every press over the song since the first note, breaks included,
-        // not the map's BPM) in its own column right of the PP; the key cards show the live rate
-        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM_SONG, .font = UI_FONT_24, .align = UI_ALIGN_CENTER,
-          .x = 240, .y = 90, .w = 76, .h = 30, .fg = PINK, .flags = UI_FLAG_HIDE_WHEN_EMPTY, .decimals = DEC },
-        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_NONE, .font = UI_FONT_14, .align = UI_ALIGN_CENTER,
-          .x = 240, .y = 119, .w = 76, .h = 18, .fg = MUTED, .decimals = DEC, .label = "PPM" },
+        // PPM panel right of the PP: the song rate (every press over the song since the first
+        // note, breaks included; not the map's BPM) and the attempt's peak live rate. The key
+        // cards show each key's live rate.
+        { .kind = UI_WIDGET_RECT, .source = UI_SRC_NONE, .x = 226, .y = 88, .w = 88, .h = 74,
+          .fg = 0x2A2A3C, .bg = CARD, .radius = 12, .flags = UI_FLAG_BORDER, .decimals = DEC },
+        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_NONE, .font = UI_FONT_12, .align = UI_ALIGN_CENTER,
+          .x = 226, .y = 92, .w = 88, .h = 14, .fg = MUTED, .decimals = DEC, .label = "SONG PPM" },
+        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM_SONG, .font = UI_FONT_32, .align = UI_ALIGN_CENTER,
+          .x = 226, .y = 105, .w = 88, .h = 34, .fg = PINK, .flags = UI_FLAG_HIDE_WHEN_EMPTY, .decimals = DEC },
+        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM_PEAK, .font = UI_FONT_14, .align = UI_ALIGN_CENTER,
+          .x = 226, .y = 140, .w = 88, .h = 18, .fg = WHITE, .decimals = DEC, .label = "PEAK " },
     },
 };
 
