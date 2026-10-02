@@ -3558,3 +3558,38 @@ async fn the_tap_history_period_is_applied_now_and_saved_when_allowed() {
         IpcResponse::TapStats(ref s) if s.period_days == 0
     ));
 }
+
+/// The designer's live preview reads GetUiValues, so the tap rate the daemon
+/// works out has to be in it alongside tosu's values
+#[tokio::test]
+async fn live_ui_values_include_the_tap_rate() {
+    let storage = Arc::new(Mutex::new(None));
+    let device = MockDeviceLink::new(false);
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    let state = Arc::new(Mutex::new(idle_state(false, None, CounterState::default())));
+    state.lock().tap.snapshot.history = Some(opad_model::tap_rate::TapHistory {
+        period_days: 30,
+        attempts: 1,
+        combined: opad_model::tap_rate::ChannelHistory {
+            average_ppm: Some(194.0),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    let resp = handle_ipc_request(
+        IpcRequest::GetUiValues,
+        &state,
+        &storage,
+        &device,
+        &LogHub::new(),
+        &pending_ops,
+        None,
+    )
+    .await;
+    let IpcResponse::UiValues(values) = resp else {
+        panic!("{resp:?}")
+    };
+    use opad_model::ui_source as src;
+    assert!(values.contains(&(src::HISTORY_PPM_AVG, SourceValue::Number(194.0))));
+    assert!(values.contains(&(src::PLAY_PPM, SourceValue::Clear)));
+}

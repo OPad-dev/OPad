@@ -205,6 +205,11 @@ impl Designer {
         self.working[idx(self.screen)] != self.applied[idx(self.screen)]
     }
 
+    /// Edits on either screen that were not applied yet
+    pub fn has_unapplied_edits(&self) -> bool {
+        self.working != self.applied
+    }
+
     /// Re-render the preview and resync color text fields after any change
     fn refresh(&mut self) {
         let layout = self.layout().clone();

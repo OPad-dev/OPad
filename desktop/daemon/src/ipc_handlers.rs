@@ -251,7 +251,20 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             wait_for_layout_ack(&mut events, screen).await
         }
 
-        IpcRequest::GetUiValues => IpcResponse::UiValues(state.lock().ui_values.clone()),
+        IpcRequest::GetUiValues => {
+            // Everything the pad is shown: tosu's values plus the tap rate the
+            // daemon works out, so the designer's live preview has PPM too
+            let st = state.lock();
+            let tap = &st.tap.snapshot;
+            let mut values = st.ui_values.clone();
+            values.extend(opad_model::tap_rate::attempt_ui_values(
+                tap.current.as_ref().or(tap.last.as_ref()),
+            ));
+            values.extend(opad_model::tap_rate::history_ui_values(
+                tap.history.as_ref(),
+            ));
+            IpcResponse::UiValues(values)
+        }
 
         IpcRequest::GetTapStats => IpcResponse::TapStats(state.lock().tap.snapshot.clone()),
 

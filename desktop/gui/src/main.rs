@@ -651,9 +651,12 @@ impl App {
                     self.stats.reset_backoff();
                 }
                 let mut tasks = vec![self.poll()];
+                // Layouts change outside the designer too (opadctl, another
+                // GUI, an update adding sources): show what the daemon holds
+                // now, unless that would throw away edits not applied yet
                 if page == Page::Designer
                     && self.daemon_online
-                    && self.designer.status.contains("Daemon unavailable")
+                    && !self.designer.has_unapplied_edits()
                 {
                     tasks.push(self.designer.reload().map(Message::Designer));
                 }
