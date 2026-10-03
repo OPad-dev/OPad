@@ -162,7 +162,18 @@ fn table_row<'a>(cells: Vec<String>, header: bool, bold: bool) -> Element<'a, Me
 }
 
 fn attempt_card<'a>(attempt: &AttemptStats, live: bool) -> Element<'a, Message> {
-    let (title, badge, badge_color) = if live {
+    let (title, badge, badge_color) = if attempt.replay {
+        // Not your presses: shown so you can watch the rate, never saved
+        (
+            if live {
+                "Current attempt"
+            } else {
+                "Last attempt"
+            },
+            "REPLAY · NOT SAVED".to_string(),
+            theme::MUTED,
+        )
+    } else if live {
         ("Current attempt", "LIVE".to_string(), theme::GREEN)
     } else {
         let ended = attempt

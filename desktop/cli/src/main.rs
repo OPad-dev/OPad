@@ -760,6 +760,9 @@ fn format_tap_stats(s: &TapStatsSnapshot) -> String {
             if let Some(end) = a.ended_at {
                 let _ = writeln!(out, "Ended:    {}", end.format("%Y-%m-%d %H:%M UTC"));
             }
+            if a.replay {
+                let _ = writeln!(out, "Replay:   shown only, not saved to the history");
+            }
             let _ = writeln!(
                 out,
                 "AVG:      {} PPM (every press over the song time, breaks included)",
@@ -1262,6 +1265,7 @@ mod tests {
                     ms: 40_000.0,
                     peak_ppm: Some(212.0),
                 },
+                replay: false,
             }),
             history: Some(TapHistory {
                 period_days: 0,

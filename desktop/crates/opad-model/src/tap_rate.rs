@@ -184,6 +184,10 @@ pub struct AttemptStats {
     pub combined: ChannelStats,
     #[serde(default)]
     pub song: SongRate,
+    /// Not the player's own presses (a replay, or a pad left idle while
+    /// another keyboard plays): shown live, never saved to the history
+    #[serde(default)]
+    pub replay: bool,
 }
 
 impl AttemptStats {
@@ -202,7 +206,9 @@ impl AttemptStats {
 
     /// Worth keeping in the history: enough presses to say anything
     pub fn is_recordable(&self) -> bool {
-        self.combined.presses >= MIN_RECORDED_PRESSES && self.combined.valid_intervals > 0
+        !self.replay
+            && self.combined.presses >= MIN_RECORDED_PRESSES
+            && self.combined.valid_intervals > 0
     }
 }
 
@@ -412,6 +418,7 @@ pub struct AttemptTracker {
     song_at: Option<(f64, Instant)>,
     /// Song times (real ms) of the presses in the last [`SONG_PEAK_WINDOW_MS`]
     song_window: VecDeque<f64>,
+    replay: bool,
 }
 
 impl AttemptTracker {
@@ -427,7 +434,17 @@ impl AttemptTracker {
             in_song: false,
             song_at: None,
             song_window: VecDeque::new(),
+            replay: false,
         }
+    }
+
+    /// Not the player's own presses: shown, never saved (see `AttemptStats::replay`)
+    pub fn mark_replay(&mut self) {
+        self.replay = true;
+    }
+
+    pub fn is_replay(&self) -> bool {
+        self.replay
     }
 
     /// The song clock moved. Presses count towards the song rate from just
@@ -536,6 +553,7 @@ impl AttemptTracker {
             k2: self.k2.stats(),
             combined: self.combined.stats(),
             song: self.song,
+            replay: self.replay,
         }
     }
 

@@ -281,6 +281,7 @@ impl Storage {
                     ms: row.get(25)?,
                     peak_ppm: row.get(26)?,
                 },
+                replay: false,
             })
         })?;
         rows.collect::<Result<_, _>>().map_err(Into::into)
@@ -338,6 +339,7 @@ mod tests {
                 ms: 10_000.0,
                 peak_ppm: Some(peak),
             },
+            replay: false,
         }
     }
 

@@ -50,6 +50,11 @@ enum PressSource {
     Tosu,
 }
 
+/// tosu presses seen before a pad that times its own sends any, after which
+/// the attempt is not the pad's (a replay, or another keyboard): shown from
+/// tosu and not saved
+const TOSU_ONLY_PRESSES: u32 = 8;
+
 /// The tap rate statistics the daemon holds (issue #2)
 #[derive(Clone, Debug, Default)]
 pub struct TapState {
@@ -328,6 +333,8 @@ pub struct RuntimeController {
     /// pad presses keep the pad's precision.
     pad_epoch: Option<Instant>,
     press_source: PressSource,
+    /// tosu presses held while the source is undecided
+    tosu_pending: Vec<(u32, u32, Instant)>,
 }
 
 impl RuntimeController {
@@ -413,6 +420,7 @@ impl RuntimeController {
             pad_press_times: false,
             pad_epoch: None,
             press_source: PressSource::Undecided,
+            tosu_pending: Vec::new(),
         }
     }
 
@@ -421,18 +429,60 @@ impl RuntimeController {
         self.pad_press_times && self.state.device_connected && !self.state.foreign_pad
     }
 
-    /// tosu counted `d1`/`d2` new presses at `at`. With a pad that times its
-    /// own presses connected, only those count: tosu's counters also run
-    /// during a replay, from the replay's presses.
-    fn tosu_presses(&mut self, d1: u32, d2: u32, at: Instant) {
-        if self.press_source == PressSource::Pad || self.pad_times_presses() {
+    /// Someone else's play (tosu's player is not the profile): measured from
+    /// tosu's counters, which run from the replay, shown, never saved
+    fn watch_replay(&mut self) {
+        let Some(tracker) = self.tap_attempt.as_mut() else {
+            return;
+        };
+        if tracker.is_replay() {
             return;
         }
-        if self.press_source == PressSource::Undecided {
+        info!("Another player's play (a replay?): its tap rate is shown but not saved");
+        tracker.mark_replay();
+        if self.press_source != PressSource::Tosu {
+            tracker.coarse_timing();
             self.press_source = PressSource::Tosu;
-            info!("Tap rate for this attempt from tosu (this pad does not time its presses)");
-            if let Some(tracker) = self.tap_attempt.as_mut() {
-                tracker.coarse_timing();
+            for (d1, d2, at) in std::mem::take(&mut self.tosu_pending) {
+                tracker.presses(d1, d2, at);
+            }
+        }
+        self.publish_tap_attempt();
+    }
+
+    /// tosu counted `d1`/`d2` new presses at `at`. A pad that times its own
+    /// presses is the source while it sends them; tosu's counters, which also
+    /// run during a replay, only stand in when it does not.
+    fn tosu_presses(&mut self, d1: u32, d2: u32, at: Instant) {
+        match self.press_source {
+            PressSource::Pad => return,
+            PressSource::Tosu => {}
+            PressSource::Undecided if !self.pad_times_presses() => {
+                self.press_source = PressSource::Tosu;
+                info!("Tap rate for this attempt from tosu (this pad does not time its presses)");
+                if let Some(tracker) = self.tap_attempt.as_mut() {
+                    tracker.coarse_timing();
+                }
+            }
+            PressSource::Undecided => {
+                self.tosu_pending.push((d1, d2, at));
+                let seen: u32 = self.tosu_pending.iter().map(|(a, b, _)| a + b).sum();
+                if seen < TOSU_ONLY_PRESSES {
+                    return;
+                }
+                // tosu counts presses the pad does not: your own replay, or
+                // another keyboard. Shown from tosu, not saved as yours.
+                info!("tosu counts presses the pad does not (a replay?): shown but not saved");
+                self.press_source = PressSource::Tosu;
+                if let Some(tracker) = self.tap_attempt.as_mut() {
+                    tracker.coarse_timing();
+                    tracker.mark_replay();
+                    for (d1, d2, at) in self.tosu_pending.drain(..) {
+                        tracker.presses(d1, d2, at);
+                    }
+                }
+                self.publish_tap_attempt();
+                return;
             }
         }
         if let Some(tracker) = self.tap_attempt.as_mut() {
@@ -471,6 +521,7 @@ impl RuntimeController {
                 info!("Tap rate for this attempt from the pad's own key timestamps");
             }
             self.press_source = PressSource::Pad;
+            self.tosu_pending.clear();
             self.publish_tap_attempt();
         }
     }
@@ -499,6 +550,7 @@ impl RuntimeController {
     fn start_tap_attempt(&mut self, beatmap: BeatmapRef, now: Instant) {
         self.finish_tap_attempt();
         self.press_source = PressSource::Undecided;
+        self.tosu_pending.clear();
         self.tap_attempt = Some(AttemptTracker::new(beatmap, now, chrono::Utc::now()));
         self.publish_tap_attempt();
     }
@@ -845,18 +897,6 @@ impl RuntimeController {
                     self.last_live_ms = Some(live_time_ms);
                     if new_attempt {
                         self.play_id = self.play_id.wrapping_add(1);
-                    }
-                    if other_player {
-                        // A replay: its presses are someone else's, so nothing
-                        // is measured, shown or recorded
-                        if new_attempt || self.tap_attempt.is_some() {
-                            self.finish_tap_attempt();
-                            self.data_sync.ingest(tap_rate::attempt_ui_values(None));
-                            if new_attempt {
-                                info!("Another player's play (a replay?): its tap rate is not measured");
-                            }
-                        }
-                    } else if new_attempt {
                         // A fail flag still up from the attempt before is
                         // not this one failing
                         self.last_failed = failed;
@@ -871,6 +911,9 @@ impl RuntimeController {
                     }
                     if let (Some(tracker), Some(clock)) = (self.tap_attempt.as_mut(), clock) {
                         tracker.song_clock(clock, now);
+                    }
+                    if other_player {
+                        self.watch_replay();
                     }
 
                     if current_mode != RuntimeMode::Playing {

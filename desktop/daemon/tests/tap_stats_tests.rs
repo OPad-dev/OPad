@@ -438,41 +438,67 @@ fn once_the_pad_sends_presses_tosu_counts_are_ignored() {
 }
 
 #[test]
-fn with_the_pad_connected_tosu_presses_do_not_count() {
+fn presses_the_pad_does_not_send_are_shown_but_not_saved() {
     // Your own replay: tosu's counters run from the replay, the pad is idle
     let t0 = Instant::now();
     let mut c = pad_controller(t0);
     let (_, t) = tap(&mut c, (0, 0), t0, 30);
-    assert_eq!(
-        c.state
-            .tap
-            .snapshot
-            .current
-            .clone()
-            .unwrap()
-            .combined
-            .presses,
-        0
-    );
+    let live = c.state.tap.snapshot.current.clone().unwrap();
+    assert!(live.replay);
+    assert_eq!(live.combined.presses, 30, "shown, from tosu");
     c.on_event(frame(false, 0.0, false), t);
-    assert!(saved(&settle(&mut c, t)).is_empty());
+    assert!(c.state.tap.snapshot.last.as_ref().unwrap().replay);
+    assert!(saved(&settle(&mut c, t)).is_empty(), "never saved");
 }
 
 #[test]
-fn another_players_replay_is_not_measured() {
+fn another_players_replay_is_shown_but_not_saved() {
     let t0 = Instant::now();
-    let mut c = controller(t0);
-    c.state.device_connected = true;
-    c.on_event(keys(0, 0, t0), t0);
+    let mut c = pad_controller(t0);
     let mut replay = frame(true, 0.0, false);
     if let RuntimeEvent::TosuTelemetry { other_player, .. } = &mut replay {
         *other_player = true;
     }
     c.on_event(replay, t0);
-    let (_, t) = tap(&mut c, (0, 0), t0, 30);
-    assert!(c.state.tap.snapshot.current.is_none());
+    // Shown from tosu at once, without waiting for the pad
+    let (_, t) = tap(&mut c, (0, 0), t0, 3);
+    let live = c.state.tap.snapshot.current.clone().unwrap();
+    assert!(live.replay);
+    assert_eq!(live.combined.presses, 3);
     c.on_event(frame(false, 0.0, false), t);
     assert!(saved(&settle(&mut c, t)).is_empty());
+}
+
+#[test]
+fn a_replay_at_nightcore_speed_cannot_make_an_impossible_peak() {
+    let t0 = Instant::now();
+    let mut c = pad_controller(t0);
+    let mut replay = frame(true, 0.0, false);
+    if let RuntimeEvent::TosuTelemetry { other_player, .. } = &mut replay {
+        *other_player = true;
+    }
+    c.on_event(replay, t0);
+    // tosu delivers 600 PPM taps in bunches of 4, 2 ms apart
+    let mut count = 0u32;
+    for bunch in 0..30u64 {
+        let at = t0 + Duration::from_millis(400 * bunch);
+        for i in 0..4u64 {
+            count += 1;
+            let at = at + Duration::from_millis(2 * i);
+            c.on_event(keys(count, 0, at), at);
+        }
+    }
+    let peak = c
+        .state
+        .tap
+        .snapshot
+        .current
+        .clone()
+        .unwrap()
+        .combined
+        .peak_ppm
+        .unwrap();
+    assert!(peak < 1000.0, "peak {peak}");
 }
 
 #[test]
