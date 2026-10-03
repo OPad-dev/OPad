@@ -349,6 +349,10 @@ pub struct GameplayTelemetry {
     /// not say where the notes are.
     #[serde(skip)]
     pub clock: Option<tap_rate::SongClock>,
+    /// The play is someone else's: a replay, or spectating. Its presses are
+    /// not the player's, so its tap rate is not measured.
+    #[serde(default)]
+    pub other_player: bool,
 }
 
 /// tosu's key counters (`/websocket/v2/precise`), sent when either changes.

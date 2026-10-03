@@ -56,6 +56,11 @@ pub const WINDOW_INTERVALS: usize = 6;
 pub const STOP_GAP_MS: f64 = 600.0;
 /// A gap longer than this ends the tapping sequence (60 PPM on one channel)
 pub const SEQUENCE_BREAK_MS: f64 = 1000.0;
+/// With coarse timestamps (tosu's: when its message arrived, on a ~10 ms poll,
+/// bunched whenever tosu is busy) a peak must span at least this long, or a
+/// bunch of messages reads as an impossible rate (8997 PPM on a replay). Pad
+/// timestamps are exact and need no such floor.
+pub const COARSE_PEAK_MIN_SPAN_MS: f64 = 400.0;
 /// Presses this long (song time) before the first note or after the last one
 /// still count: an early or late hit on a note is still a hit on it
 pub const SONG_HIT_MARGIN_MS: f64 = 200.0;
@@ -274,9 +279,18 @@ pub struct ChannelTracker {
     presses: u32,
     valid_intervals: u32,
     interval_ms_sum: f64,
+    /// 0 for exact timestamps; otherwise the shortest span a peak may cover
+    min_peak_span_ms: f64,
+    /// The sequence's latest press times, for peaks over a minimum span
+    recent: VecDeque<f64>,
 }
 
 impl ChannelTracker {
+    /// Timestamps are coarse (tosu): peaks must cover [`COARSE_PEAK_MIN_SPAN_MS`]
+    pub fn coarse_timing(&mut self) {
+        self.min_peak_span_ms = COARSE_PEAK_MIN_SPAN_MS;
+    }
+
     pub fn press(&mut self, at_ms: f64) {
         self.now_ms = self.now_ms.max(at_ms);
         self.presses = self.presses.saturating_add(1);
@@ -288,7 +302,15 @@ impl ChannelTracker {
         self.last_press_ms = Some(at_ms);
         if interval > SEQUENCE_BREAK_MS {
             self.end_sequence();
+            self.recent.push_back(at_ms);
             return;
+        }
+        if self.recent.is_empty() {
+            self.recent.push_back(prev);
+        }
+        self.recent.push_back(at_ms);
+        while self.recent.len() > 128 {
+            self.recent.pop_front();
         }
         self.valid_intervals += 1;
         self.interval_ms_sum += interval;
@@ -296,11 +318,32 @@ impl ChannelTracker {
             self.window.pop_front();
         }
         self.window.push_back(interval);
-        if self.window.len() == WINDOW_INTERVALS {
-            if let Some(ppm) = window_interval_ms(&self.window).map(ppm_from_interval_ms) {
-                self.peak_ppm = Some(self.peak_ppm.map_or(ppm, |p| p.max(ppm)));
-            }
+        let peak = if self.min_peak_span_ms > 0.0 {
+            self.spanned_ppm()
+        } else if self.window.len() == WINDOW_INTERVALS {
+            window_interval_ms(&self.window).map(ppm_from_interval_ms)
+        } else {
+            None
+        };
+        if let Some(ppm) = peak {
+            self.peak_ppm = Some(self.peak_ppm.map_or(ppm, |p| p.max(ppm)));
         }
+    }
+
+    /// The rate over the latest presses, at least [`WINDOW_INTERVALS`] of them
+    /// and as many more as it takes to span `min_peak_span_ms`. None when the
+    /// sequence is not that long yet.
+    fn spanned_ppm(&self) -> Option<f64> {
+        let last = *self.recent.back()?;
+        let n = self.recent.len();
+        if n <= WINDOW_INTERVALS {
+            return None;
+        }
+        let first = (0..n - WINDOW_INTERVALS)
+            .rev()
+            .find(|&i| last - self.recent[i] >= self.min_peak_span_ms)?;
+        let span = last - self.recent[first];
+        Some(ppm_from_interval_ms(span / (n - 1 - first) as f64))
     }
 
     /// Moves the clock on without a press: the live rate falls with the gap,
@@ -317,6 +360,7 @@ impl ChannelTracker {
 
     fn end_sequence(&mut self) {
         self.window.clear();
+        self.recent.clear();
     }
 
     /// The live rate: the window's rate, or the gap once the player has
@@ -432,6 +476,14 @@ impl AttemptTracker {
             let ppm = 60_000.0 * self.song_window.len() as f64 / SONG_PEAK_WINDOW_MS;
             self.song.peak_ppm = Some(self.song.peak_ppm.map_or(ppm, |p| p.max(ppm)));
         }
+    }
+
+    /// The presses come with coarse timestamps (tosu): see
+    /// [`COARSE_PEAK_MIN_SPAN_MS`]
+    pub fn coarse_timing(&mut self) {
+        self.k1.coarse_timing();
+        self.k2.coarse_timing();
+        self.combined.coarse_timing();
     }
 
     /// When the attempt started; presses timed before it are not its own
@@ -877,6 +929,37 @@ mod tests {
         // The song average and the best 10 s barely notice it
         assert!(s.song.ppm().unwrap() < 330.0);
         assert!(s.song.peak_ppm.unwrap() < 340.0);
+    }
+
+    #[test]
+    fn coarse_timestamps_cannot_make_an_impossible_peak() {
+        // 450 PPM taps, but a stall delivers 7 of them within 20 ms
+        let mut times: Vec<f64> = (0..20).map(|i| f64::from(i) * 133.3).collect();
+        let stall = 20.0 * 133.3 + 500.0;
+        times.extend((0..7).map(|i| stall + f64::from(i) * 3.0));
+        times.extend((1..20).map(|i| stall + 18.0 + f64::from(i) * 133.3));
+        let run = |coarse: bool| {
+            let mut t = ChannelTracker::default();
+            if coarse {
+                t.coarse_timing();
+            }
+            for at in &times {
+                t.press(*at);
+            }
+            t.stats().peak_ppm.unwrap()
+        };
+        // Taken as exact, the bunch is 7 presses in 18 ms
+        assert!(run(false) > 5000.0);
+        // Over at least 0.4 s it is what was really tapped, plus the bunch
+        let coarse = run(true);
+        assert!(coarse < 1000.0, "peak {coarse}");
+        // A real 1/4 stream at 186 BPM still reads its speed
+        let mut t = ChannelTracker::default();
+        t.coarse_timing();
+        for i in 0..40 {
+            t.press(f64::from(i) * 60_000.0 / 744.0);
+        }
+        assert!(approx(t.stats().peak_ppm, 744.0));
     }
 
     #[test]

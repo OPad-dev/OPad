@@ -380,6 +380,7 @@ async fn main() -> Result<()> {
                     beatmap: telemetry.beatmap,
                     failed: telemetry.failed,
                     clock: telemetry.clock,
+                    other_player: telemetry.other_player,
                 });
             }
 

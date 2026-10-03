@@ -34,6 +34,7 @@ fn frame(is_playing: bool, live_time_ms: f64, failed: bool) -> RuntimeEvent {
         },
         failed,
         clock: None,
+        other_player: false,
     }
 }
 
@@ -437,15 +438,11 @@ fn once_the_pad_sends_presses_tosu_counts_are_ignored() {
 }
 
 #[test]
-fn a_keyboard_player_is_measured_from_tosu() {
+fn with_the_pad_connected_tosu_presses_do_not_count() {
+    // Your own replay: tosu's counters run from the replay, the pad is idle
     let t0 = Instant::now();
     let mut c = pad_controller(t0);
-    // tosu counts 8 presses; the pad (nobody touching it) sends none
-    let (_, t) = tap(&mut c, (0, 0), t0, 8);
-    let s = c.state.tap.snapshot.current.clone().unwrap();
-    assert_eq!(s.combined.presses, 8, "the held presses are replayed");
-    // and from then on tosu counts straight through
-    tap(&mut c, (4, 4), t, 4);
+    let (_, t) = tap(&mut c, (0, 0), t0, 30);
     assert_eq!(
         c.state
             .tap
@@ -455,8 +452,27 @@ fn a_keyboard_player_is_measured_from_tosu() {
             .unwrap()
             .combined
             .presses,
-        12
+        0
     );
+    c.on_event(frame(false, 0.0, false), t);
+    assert!(saved(&settle(&mut c, t)).is_empty());
+}
+
+#[test]
+fn another_players_replay_is_not_measured() {
+    let t0 = Instant::now();
+    let mut c = controller(t0);
+    c.state.device_connected = true;
+    c.on_event(keys(0, 0, t0), t0);
+    let mut replay = frame(true, 0.0, false);
+    if let RuntimeEvent::TosuTelemetry { other_player, .. } = &mut replay {
+        *other_player = true;
+    }
+    c.on_event(replay, t0);
+    let (_, t) = tap(&mut c, (0, 0), t0, 30);
+    assert!(c.state.tap.snapshot.current.is_none());
+    c.on_event(frame(false, 0.0, false), t);
+    assert!(saved(&settle(&mut c, t)).is_empty());
 }
 
 #[test]

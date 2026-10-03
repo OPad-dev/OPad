@@ -224,8 +224,11 @@ smallest `received - now_us` seen, so the gaps between presses keep the pad's
 µs precision whatever the USB and scheduling delays. tosu's key counters, the
 only other source, are stamped when its message arrives, which bunches up
 when tosu is busy; they are used only for a pad that sends no batches
-(`key_press_times` false, i.e. firmware predating it) or for an attempt played
-on another keyboard (tosu counts 8 presses before the pad sends any).
+(`key_press_times` false, i.e. firmware predating it), and then a peak must
+span at least 0.4 s. With a pad that sends batches, only its presses count:
+tosu's counters also run during a replay, from the replay's presses. A play
+whose player is not the logged-in profile (a replay, spectating) is not
+measured at all.
 
 Older hosts skip field 9 as an unknown oneof field; newer hosts read a missing
 field 11 as false.

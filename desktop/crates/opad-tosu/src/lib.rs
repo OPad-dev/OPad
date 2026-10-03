@@ -321,6 +321,12 @@ pub fn parse_tosu_v2_json(json_str: &str) -> Option<GameplayTelemetry> {
             .and_then(|v| v.as_bool())
             .unwrap_or(false)
             && !has_mod(text("/play/mods/name").as_deref().unwrap_or(""), "NF"),
+        // A replay or spectating shows the other player's name in the play,
+        // and the logged-in player's in the profile
+        other_player: match (text("/play/playerName"), text("/profile/name")) {
+            (Some(player), Some(me)) => !player.trim().eq_ignore_ascii_case(me.trim()),
+            _ => false,
+        },
         clock: match (live, first, last) {
             (Some(live_ms), Some(first_object_ms), Some(last_object_ms))
                 if last_object_ms > first_object_ms =>
@@ -1035,6 +1041,22 @@ mod tests {
         assert!(parse_tosu_v2_json(&frame("")).unwrap().failed);
         // "N" + "F" across two mods is not NoFail
         assert!(parse_tosu_v2_json(&frame("HNFD")).unwrap().failed);
+    }
+
+    #[test]
+    fn someone_elses_replay_is_another_player() {
+        let frame = |player: &str| {
+            format!(
+                r#"{{ "state": {{ "number": 2, "name": "play" }},
+                      "play": {{ "playerName": "{player}" }},
+                      "profile": {{ "name": "Paella" }} }}"#
+            )
+        };
+        assert!(parse_tosu_v2_json(&frame("mrekk")).unwrap().other_player);
+        assert!(!parse_tosu_v2_json(&frame("Paella")).unwrap().other_player);
+        assert!(!parse_tosu_v2_json(&frame("paella ")).unwrap().other_player);
+        // No name (lazer before the play loads, or offline): assume it is yours
+        assert!(!parse_tosu_v2_json(&frame("")).unwrap().other_player);
     }
 
     #[test]

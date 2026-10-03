@@ -39,7 +39,9 @@ pub const MAX_UNSAVED_ATTEMPTS: usize = 500;
 
 /// Where an attempt's key-downs come from. The pad's own timestamps are exact
 /// (µs, taken where the press is accepted); tosu's are when its message
-/// arrived, which bunches up when tosu is busy, so they are only the fallback.
+/// arrived, which bunches up when tosu is busy, so they are only used for a
+/// pad that does not time its presses (older firmware), and with peaks over
+/// at least COARSE_PEAK_MIN_SPAN_MS.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PressSource {
     /// No press yet: the first source to deliver one decides
@@ -47,10 +49,6 @@ enum PressSource {
     Pad,
     Tosu,
 }
-
-/// tosu presses seen before the pad has sent any, after which the attempt is
-/// taken to be played on another keyboard and measured from tosu instead
-const KEYBOARD_FALLBACK_PRESSES: u32 = 8;
 
 /// The tap rate statistics the daemon holds (issue #2)
 #[derive(Clone, Debug, Default)]
@@ -198,6 +196,8 @@ pub enum RuntimeEvent {
         beatmap: BeatmapRef,
         failed: bool,
         clock: Option<SongClock>,
+        /// Someone else's play (a replay): not measured
+        other_player: bool,
     },
     /// osu!'s K1/K2 key-down counters changed (tosu precise socket)
     TosuKeys(KeyCounts),
@@ -328,8 +328,6 @@ pub struct RuntimeController {
     /// pad presses keep the pad's precision.
     pad_epoch: Option<Instant>,
     press_source: PressSource,
-    /// tosu presses held while the source is undecided
-    tosu_pending: Vec<(u32, u32, Instant)>,
 }
 
 impl RuntimeController {
@@ -415,7 +413,6 @@ impl RuntimeController {
             pad_press_times: false,
             pad_epoch: None,
             press_source: PressSource::Undecided,
-            tosu_pending: Vec::new(),
         }
     }
 
@@ -424,30 +421,18 @@ impl RuntimeController {
         self.pad_press_times && self.state.device_connected && !self.state.foreign_pad
     }
 
-    /// tosu counted `d1`/`d2` new presses at `at`
+    /// tosu counted `d1`/`d2` new presses at `at`. With a pad that times its
+    /// own presses connected, only those count: tosu's counters also run
+    /// during a replay, from the replay's presses.
     fn tosu_presses(&mut self, d1: u32, d2: u32, at: Instant) {
-        match self.press_source {
-            PressSource::Pad => return,
-            PressSource::Tosu => {}
-            PressSource::Undecided if !self.pad_times_presses() => {
-                self.press_source = PressSource::Tosu;
-            }
-            PressSource::Undecided => {
-                self.tosu_pending.push((d1, d2, at));
-                let seen: u32 = self.tosu_pending.iter().map(|(a, b, _)| a + b).sum();
-                if seen < KEYBOARD_FALLBACK_PRESSES {
-                    return;
-                }
-                // tosu sees presses the pad does not: another keyboard
-                self.press_source = PressSource::Tosu;
-                info!("Tap rate for this attempt from tosu: the pad sends no presses (another keyboard?)");
-                if let Some(tracker) = self.tap_attempt.as_mut() {
-                    for (d1, d2, at) in self.tosu_pending.drain(..) {
-                        tracker.presses(d1, d2, at);
-                    }
-                }
-                self.publish_tap_attempt();
-                return;
+        if self.press_source == PressSource::Pad || self.pad_times_presses() {
+            return;
+        }
+        if self.press_source == PressSource::Undecided {
+            self.press_source = PressSource::Tosu;
+            info!("Tap rate for this attempt from tosu (this pad does not time its presses)");
+            if let Some(tracker) = self.tap_attempt.as_mut() {
+                tracker.coarse_timing();
             }
         }
         if let Some(tracker) = self.tap_attempt.as_mut() {
@@ -486,7 +471,6 @@ impl RuntimeController {
                 info!("Tap rate for this attempt from the pad's own key timestamps");
             }
             self.press_source = PressSource::Pad;
-            self.tosu_pending.clear();
             self.publish_tap_attempt();
         }
     }
@@ -515,7 +499,6 @@ impl RuntimeController {
     fn start_tap_attempt(&mut self, beatmap: BeatmapRef, now: Instant) {
         self.finish_tap_attempt();
         self.press_source = PressSource::Undecided;
-        self.tosu_pending.clear();
         self.tap_attempt = Some(AttemptTracker::new(beatmap, now, chrono::Utc::now()));
         self.publish_tap_attempt();
     }
@@ -848,6 +831,7 @@ impl RuntimeController {
                 beatmap,
                 failed,
                 clock,
+                other_player,
             } => {
                 let current_mode = self.state.mode;
                 self.data_sync.ingest(values.iter().cloned());
@@ -861,6 +845,18 @@ impl RuntimeController {
                     self.last_live_ms = Some(live_time_ms);
                     if new_attempt {
                         self.play_id = self.play_id.wrapping_add(1);
+                    }
+                    if other_player {
+                        // A replay: its presses are someone else's, so nothing
+                        // is measured, shown or recorded
+                        if new_attempt || self.tap_attempt.is_some() {
+                            self.finish_tap_attempt();
+                            self.data_sync.ingest(tap_rate::attempt_ui_values(None));
+                            if new_attempt {
+                                info!("Another player's play (a replay?): its tap rate is not measured");
+                            }
+                        }
+                    } else if new_attempt {
                         // A fail flag still up from the attempt before is
                         // not this one failing
                         self.last_failed = failed;
