@@ -322,11 +322,16 @@ pub fn parse_tosu_v2_json(json_str: &str) -> Option<GameplayTelemetry> {
             .unwrap_or(false)
             && !has_mod(text("/play/mods/name").as_deref().unwrap_or(""), "NF"),
         // A replay or spectating shows the other player's name in the play,
-        // and the logged-in player's in the profile
+        // and the logged-in player's in the profile. Autoplay and Cinema press
+        // the keys themselves and Relax taps for the player: none of those
+        // presses are the player's either. (Autopilot leaves the tapping to
+        // the player, so it counts.)
         other_player: match (text("/play/playerName"), text("/profile/name")) {
             (Some(player), Some(me)) => !player.trim().eq_ignore_ascii_case(me.trim()),
             _ => false,
-        },
+        } || ["AT", "CN", "RX"]
+            .iter()
+            .any(|m| has_mod(text("/play/mods/name").as_deref().unwrap_or(""), m)),
         clock: match (live, first, last) {
             (Some(live_ms), Some(first_object_ms), Some(last_object_ms))
                 if last_object_ms > first_object_ms =>
@@ -1057,6 +1062,29 @@ mod tests {
         assert!(!parse_tosu_v2_json(&frame("paella ")).unwrap().other_player);
         // No name (lazer before the play loads, or offline): assume it is yours
         assert!(!parse_tosu_v2_json(&frame("")).unwrap().other_player);
+    }
+
+    #[test]
+    fn autoplay_cinema_and_relax_presses_are_not_the_players() {
+        let frame = |mods: &str| {
+            format!(
+                r#"{{ "state": {{ "number": 2, "name": "play" }},
+                      "play": {{ "playerName": "Paella", "mods": {{ "name": "{mods}" }} }},
+                      "profile": {{ "name": "Paella" }} }}"#
+            )
+        };
+        for mods in ["AT", "HDAT", "CN", "RX", "DTRX"] {
+            assert!(
+                parse_tosu_v2_json(&frame(mods)).unwrap().other_player,
+                "{mods}"
+            );
+        }
+        for mods in ["", "AP", "HDDT", "NF"] {
+            assert!(
+                !parse_tosu_v2_json(&frame(mods)).unwrap().other_player,
+                "{mods}"
+            );
+        }
     }
 
     #[test]
