@@ -417,6 +417,20 @@ with physical ESP32-S3 pad (`OSUPAD-3CDC75701678`) on `COM3`.
 
 ---
 
+## 13. Tap rate (PPM, issue #2)
+
+Generate the test map with `python3 scripts/ppm_test_map.py` (needs ffmpeg; `--bpm`
+picks another tempo) and open the `.osz` with osu! to import it. It is light, then a
+1/4 stream of at least 10.5 s, then light again, with silent audio; the script prints
+what every number should read. Play it with the pad, hitting every note once.
+
+| ID | Test Item | Procedure | Acceptance Criteria | Linux | Windows |
+|---|---|---|---|---|---|
+| PPM-01 | Test map, played with the pad | Play the 180 BPM test map once, alternating the stream. Then check `opadctl stats` and the daemon log. | Log: "Tap rate for this attempt from the pad's own key timestamps". The attempt is saved. AVG PPM, PEAK and Best 10 s within about ±10% of the printed values (PEAK may read a little higher: a rushed burst). Song time 35.0 s; K1 presses = half the stream. | **PASS** (2026-10-03) — 226 presses (224 notes + 2), song 35.0 s, AVG 387 (exact for 226 presses), Best 10 s 726, PEAK 787, K1/K2 peak 378/378, K1 64 = half the stream | n/r |
+| PPM-02 | Autoplay is shown, not saved | Play the test map with Autoplay (AT). | PPM shows on the pad while it plays; the log says "shown but not saved"; nothing new in the history. | **PASS** (2026-10-03) — logged "Another player's play (a replay?): its tap rate is shown but not saved", no attempt saved | n/r |
+| PPM-03 | A replay is shown, not saved | Watch another player's replay for 20 s. | Same as PPM-02; the Stats page badge reads "REPLAY · NOT SAVED"; no impossible PEAK (thousands). | n/r — before the fix, a replay was saved with a PEAK of 8997 | n/r |
+| PPM-04 | No input latency cost | Run `opadctl latency` before and after a played map. | Key-to-HID p50/p99.9 unchanged within noise; no "lost key presses" warning in the daemon log. | **PASS** (2026-10-03) — p50 130 µs after the key-timestamp firmware; no lost presses on any attempt | n/r |
+
 ## 8. Verification Sign-Off
 
 - **Linux v1.0.0, 2026-09-13:** sections 1–4 verified and passing, **except**
