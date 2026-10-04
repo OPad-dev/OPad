@@ -70,7 +70,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 
 ; Upgrade behaviour: cleanly stop running instances before replacing binaries
 CloseApplications=yes
-CloseApplicationsFilter=opad-gui.exe,opad-daemon.exe,opadctl.exe,osupad-gui.exe,osupad-daemon.exe,osupadctl.exe
+CloseApplicationsFilter=opad-gui.exe,opad-daemon.exe,opadctl.exe,osupad-gui.exe,osupad-daemon.exe,osupadctl.exe,tosu.exe
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -140,17 +140,17 @@ Type: files; Name: "{userappdata}\osupad\tosu.log"
 //    - Device NVS: hardware counters and calibration intentionally preserved (§W3-4).
 
 // Stop running background processes so binaries are not locked during install or uninstall (§W2-3, §PKG-06)
+//
+// tosu.exe is killed by name, not just by path: the daemon's supervisor spawns
+// it as a plain child process (no job object), so taskkill on opad-daemon.exe
+// alone leaves it orphaned and still holding its own exe file open, and the
+// GUI's "Start tosu" button can also launch it detached from the GUI entirely.
+// /T additionally tree-kills anything else still parented to the processes below.
 procedure StopRunningProcesses;
 var
   ResultCode: Integer;
-  AppTosuPath: String;
-  PowerShellCmd: String;
 begin
-  Exec('taskkill.exe', '/F /IM opad-daemon.exe /IM opad-gui.exe /IM opadctl.exe /IM osupad-daemon.exe /IM osupad-gui.exe /IM osupadctl.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  AppTosuPath := ExpandConstant('{app}\tosu\tosu.exe');
-  StringChange(AppTosuPath, '''', '''''');
-  PowerShellCmd := '-NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq ''' + AppTosuPath + ''' } | Stop-Process -Force"';
-  Exec('powershell.exe', PowerShellCmd, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /T /IM opad-daemon.exe /IM opad-gui.exe /IM opadctl.exe /IM osupad-daemon.exe /IM osupad-gui.exe /IM osupadctl.exe /IM tosu.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
 function InitializeUninstall(): Boolean;
