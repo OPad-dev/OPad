@@ -32,7 +32,7 @@ bool device_config_key_gpio_supported(uint32_t gpio)
 // A key is optional (0) unless the action sends it
 static bool swipe_valid(uint8_t action, uint8_t key)
 {
-    if (action < SWIPE_ACTION_NONE || action > SWIPE_ACTION_KEY) {
+    if (action < SWIPE_ACTION_NONE || action > SWIPE_ACTION_VOLUME_DOWN) {
         return false;
     }
     if (key != 0 && (key < 0x04 || key > 0xE7)) {
@@ -89,9 +89,14 @@ bool device_config_validate(const device_config_data_t *cfg, char *err_msg, size
                                              cfg->swipe_right_action, cfg->swipe_right_key);
         return false;
     }
-    if (cfg->swipe_invert_vertical > 1) {
-        if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "invalid vertical swipe setting %u",
-                                             cfg->swipe_invert_vertical);
+    if (!swipe_valid(cfg->swipe_up_action, cfg->swipe_up_key)) {
+        if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "invalid up swipe action %u key 0x%02x",
+                                             cfg->swipe_up_action, cfg->swipe_up_key);
+        return false;
+    }
+    if (!swipe_valid(cfg->swipe_down_action, cfg->swipe_down_key)) {
+        if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "invalid down swipe action %u key 0x%02x",
+                                             cfg->swipe_down_action, cfg->swipe_down_key);
         return false;
     }
     if (cfg->key1_gpio == cfg->key2_gpio) {

@@ -25,6 +25,8 @@ static void test_valid_config_accepted(void)
         .sleep_s = 600,
         .swipe_left_action = SWIPE_ACTION_PREV_TRACK,
         .swipe_right_action = SWIPE_ACTION_NEXT_TRACK,
+        .swipe_up_action = SWIPE_ACTION_VOLUME_UP,
+        .swipe_down_action = SWIPE_ACTION_VOLUME_DOWN,
     };
     char err[64] = {0};
     bool ok = device_config_validate(&cfg, err, sizeof(err));
@@ -46,6 +48,8 @@ static void test_invalid_key_usages_rejected(void)
         .sleep_s = 600,
         .swipe_left_action = SWIPE_ACTION_PREV_TRACK,
         .swipe_right_action = SWIPE_ACTION_NEXT_TRACK,
+        .swipe_up_action = SWIPE_ACTION_VOLUME_UP,
+        .swipe_down_action = SWIPE_ACTION_VOLUME_DOWN,
     };
     char err[64] = {0};
     bool ok = device_config_validate(&cfg, err, sizeof(err));
@@ -74,6 +78,8 @@ static void test_debounce_bounds(void)
         .sleep_s = 600,
         .swipe_left_action = SWIPE_ACTION_PREV_TRACK,
         .swipe_right_action = SWIPE_ACTION_NEXT_TRACK,
+        .swipe_up_action = SWIPE_ACTION_VOLUME_UP,
+        .swipe_down_action = SWIPE_ACTION_VOLUME_DOWN,
     };
     char err[64] = {0};
     bool ok = device_config_validate(&cfg, err, sizeof(err));
@@ -109,6 +115,8 @@ static void test_brightness_and_sleep_bounds(void)
         .sleep_s = 600,
         .swipe_left_action = SWIPE_ACTION_PREV_TRACK,
         .swipe_right_action = SWIPE_ACTION_NEXT_TRACK,
+        .swipe_up_action = SWIPE_ACTION_VOLUME_UP,
+        .swipe_down_action = SWIPE_ACTION_VOLUME_DOWN,
     };
     char err[64] = {0};
     bool ok = device_config_validate(&cfg, err, sizeof(err));
@@ -147,6 +155,8 @@ static void test_gameplay_display_hz_bounds(void)
         .sleep_s = 600,
         .swipe_left_action = SWIPE_ACTION_PREV_TRACK,
         .swipe_right_action = SWIPE_ACTION_NEXT_TRACK,
+        .swipe_up_action = SWIPE_ACTION_VOLUME_UP,
+        .swipe_down_action = SWIPE_ACTION_VOLUME_DOWN,
         .gameplay_display_hz = 61, // Above 60
     };
     char err[64] = {0};
@@ -179,6 +189,8 @@ static void test_key_gpio_allow_list(void)
         .sleep_s = 600,
         .swipe_left_action = SWIPE_ACTION_PREV_TRACK,
         .swipe_right_action = SWIPE_ACTION_NEXT_TRACK,
+        .swipe_up_action = SWIPE_ACTION_VOLUME_UP,
+        .swipe_down_action = SWIPE_ACTION_VOLUME_DOWN,
         .key1_gpio = 14,
         .key2_gpio = 9,
     };
@@ -254,6 +266,8 @@ static void test_swipe_actions(void)
         .sleep_s = 600,
         .swipe_left_action = SWIPE_ACTION_NONE,
         .swipe_right_action = SWIPE_ACTION_MUTE,
+        .swipe_up_action = SWIPE_ACTION_VOLUME_UP,
+        .swipe_down_action = SWIPE_ACTION_VOLUME_DOWN,
     };
     char err[64] = {0};
     assert(device_config_validate(&cfg, err, sizeof(err)));
@@ -262,7 +276,7 @@ static void test_swipe_actions(void)
     cfg.swipe_left_action = 0;
     assert(!device_config_validate(&cfg, err, sizeof(err)));
     assert(strstr(err, "left swipe") != NULL);
-    cfg.swipe_left_action = SWIPE_ACTION_KEY + 1;
+    cfg.swipe_left_action = SWIPE_ACTION_VOLUME_DOWN + 1;
     assert(!device_config_validate(&cfg, err, sizeof(err)));
 
     // A key action needs a key
@@ -279,12 +293,19 @@ static void test_swipe_actions(void)
     cfg.swipe_right_action = SWIPE_ACTION_NEXT_TRACK;
     cfg.swipe_right_key = 0x3B;
     assert(device_config_validate(&cfg, err, sizeof(err)));
-    // Up/down inverted is a 0/1 flag
-    cfg.swipe_invert_vertical = 1;
+    // Up/down take any action, volume included on left/right too
+    cfg.swipe_up_action = SWIPE_ACTION_VOLUME_DOWN;
+    cfg.swipe_down_action = SWIPE_ACTION_KEY;
+    cfg.swipe_down_key = 0x29; // Esc
+    cfg.swipe_left_action = SWIPE_ACTION_VOLUME_UP;
     assert(device_config_validate(&cfg, err, sizeof(err)));
-    cfg.swipe_invert_vertical = 2;
+    cfg.swipe_down_key = 0;
     assert(!device_config_validate(&cfg, err, sizeof(err)));
-    assert(strstr(err, "vertical swipe") != NULL);
+    assert(strstr(err, "down swipe") != NULL);
+    cfg.swipe_down_action = SWIPE_ACTION_NEXT_TRACK;
+    cfg.swipe_up_action = SWIPE_ACTION_VOLUME_DOWN + 1;
+    assert(!device_config_validate(&cfg, err, sizeof(err)));
+    assert(strstr(err, "up swipe") != NULL);
     printf("✓ test_swipe_actions passed\n");
 }
 

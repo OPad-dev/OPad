@@ -1,6 +1,7 @@
 use chrono::Utc;
 use opad_model::{
-    CounterState, DeviceConfig, DeviceInfo, SwipeAction, DEFAULT_SWIPE_LEFT, DEFAULT_SWIPE_RIGHT,
+    CounterState, DeviceConfig, DeviceInfo, SwipeAction, DEFAULT_SWIPE_DOWN, DEFAULT_SWIPE_LEFT,
+    DEFAULT_SWIPE_RIGHT, DEFAULT_SWIPE_UP,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
@@ -129,6 +130,9 @@ impl Storage {
         }
         if v < 13 {
             self.apply_v13()?;
+        }
+        if v < 14 {
+            self.apply_v14()?;
         }
         Ok(())
     }
@@ -270,6 +274,42 @@ impl Storage {
         Ok(())
     }
 
+    /// v14: up/down swipe actions and keys (defaults: volume up / down). The
+    /// v13 "up/down inverted" flag becomes swapped volume actions, then goes.
+    fn apply_v14(&self) -> Result<(), StorageError> {
+        let has_column = |name: &str| -> Result<bool, StorageError> {
+            Ok(self.conn.query_row(
+                "SELECT COUNT(*) > 0 FROM pragma_table_info('config') WHERE name = ?1",
+                params![name],
+                |row| row.get(0),
+            )?)
+        };
+        // Re-run safe, like v11
+        let add_actions = if has_column("swipe_up_action")? {
+            ""
+        } else {
+            "ALTER TABLE config ADD COLUMN swipe_up_action INTEGER NOT NULL DEFAULT 7;
+            ALTER TABLE config ADD COLUMN swipe_down_action INTEGER NOT NULL DEFAULT 8;
+            ALTER TABLE config ADD COLUMN swipe_up_key INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE config ADD COLUMN swipe_down_key INTEGER NOT NULL DEFAULT 0;"
+        };
+        let drop_invert = if has_column("swipe_invert_vertical")? {
+            "UPDATE config SET swipe_up_action = 8, swipe_down_action = 7
+                WHERE swipe_invert_vertical != 0;
+            ALTER TABLE config DROP COLUMN swipe_invert_vertical;"
+        } else {
+            ""
+        };
+        self.conn.execute_batch(&format!(
+            "BEGIN TRANSACTION;
+            {add_actions}
+            {drop_invert}
+            INSERT INTO schema_migrations (version, applied_at) VALUES (14, datetime('now'));
+            COMMIT;"
+        ))?;
+        Ok(())
+    }
+
     /// Reads a host-side value written by [`Self::set_app_state`]
     pub fn get_app_state(&self, key: &str) -> Result<Option<String>, StorageError> {
         self.conn
@@ -372,7 +412,8 @@ impl Storage {
                 "SELECT key1_hid_usage, key2_hid_usage, debounce_us, brightness,
                     display_sleep_seconds, gameplay_display_hz, tosu_endpoint,
                     key1_gpio, key2_gpio, swipe_left_action, swipe_right_action,
-                    swipe_left_key, swipe_right_key, swipe_invert_vertical
+                    swipe_left_key, swipe_right_key, swipe_up_action, swipe_down_action,
+                    swipe_up_key, swipe_down_key
              FROM config WHERE id = 1",
                 [],
                 |row| {
@@ -399,7 +440,12 @@ impl Storage {
                             .unwrap_or(DEFAULT_SWIPE_RIGHT),
                         swipe_left_key: row.get(11)?,
                         swipe_right_key: row.get(12)?,
-                        swipe_invert_vertical: row.get(13)?,
+                        swipe_up_action: SwipeAction::from_wire(row.get(13)?)
+                            .unwrap_or(DEFAULT_SWIPE_UP),
+                        swipe_down_action: SwipeAction::from_wire(row.get(14)?)
+                            .unwrap_or(DEFAULT_SWIPE_DOWN),
+                        swipe_up_key: row.get(15)?,
+                        swipe_down_key: row.get(16)?,
                     })
                 },
             )
@@ -423,7 +469,10 @@ impl Storage {
                 swipe_right_action = ?11,
                 swipe_left_key = ?12,
                 swipe_right_key = ?13,
-                swipe_invert_vertical = ?14
+                swipe_up_action = ?14,
+                swipe_down_action = ?15,
+                swipe_up_key = ?16,
+                swipe_down_key = ?17
              WHERE id = 1",
             params![
                 config.key1_hid_usage,
@@ -439,7 +488,10 @@ impl Storage {
                 config.swipe_right_action.to_wire(),
                 config.swipe_left_key,
                 config.swipe_right_key,
-                config.swipe_invert_vertical,
+                config.swipe_up_action.to_wire(),
+                config.swipe_down_action.to_wire(),
+                config.swipe_up_key,
+                config.swipe_down_key,
             ],
         )?;
         Ok(())
@@ -840,7 +892,9 @@ mod tests {
         updated.swipe_left_action = SwipeAction::Key;
         updated.swipe_left_key = 0x3B;
         updated.swipe_right_action = SwipeAction::Mute;
-        updated.swipe_invert_vertical = true;
+        updated.swipe_up_action = SwipeAction::Key;
+        updated.swipe_up_key = 0x29;
+        updated.swipe_down_action = SwipeAction::VolumeUp;
         storage.save_config(&updated).unwrap();
         assert_eq!(storage.load_config().unwrap(), updated);
 
@@ -852,7 +906,10 @@ mod tests {
                  ALTER TABLE config DROP COLUMN swipe_right_action;
                  ALTER TABLE config DROP COLUMN swipe_left_key;
                  ALTER TABLE config DROP COLUMN swipe_right_key;
-                 ALTER TABLE config DROP COLUMN swipe_invert_vertical;
+                 ALTER TABLE config DROP COLUMN swipe_up_action;
+                 ALTER TABLE config DROP COLUMN swipe_down_action;
+                 ALTER TABLE config DROP COLUMN swipe_up_key;
+                 ALTER TABLE config DROP COLUMN swipe_down_key;
                  DELETE FROM schema_migrations WHERE version >= 12;",
             )
             .unwrap();
@@ -860,7 +917,26 @@ mod tests {
         let migrated = storage.load_config().unwrap();
         assert_eq!(migrated.swipe_left_action, SwipeAction::PrevTrack);
         assert_eq!(migrated.swipe_left_key, 0);
-        assert!(!migrated.swipe_invert_vertical);
+        assert_eq!(migrated.swipe_up_action, SwipeAction::VolumeUp);
+        assert_eq!(migrated.swipe_down_action, SwipeAction::VolumeDown);
+
+        // A v13 database with up/down inverted gets swapped volume actions
+        storage
+            .conn
+            .execute_batch(
+                "ALTER TABLE config DROP COLUMN swipe_up_action;
+                 ALTER TABLE config DROP COLUMN swipe_down_action;
+                 ALTER TABLE config DROP COLUMN swipe_up_key;
+                 ALTER TABLE config DROP COLUMN swipe_down_key;
+                 ALTER TABLE config ADD COLUMN swipe_invert_vertical INTEGER NOT NULL DEFAULT 0;
+                 UPDATE config SET swipe_invert_vertical = 1;
+                 DELETE FROM schema_migrations WHERE version >= 14;",
+            )
+            .unwrap();
+        storage.migrate().unwrap();
+        let migrated = storage.load_config().unwrap();
+        assert_eq!(migrated.swipe_up_action, SwipeAction::VolumeDown);
+        assert_eq!(migrated.swipe_down_action, SwipeAction::VolumeUp);
     }
 
     #[test]

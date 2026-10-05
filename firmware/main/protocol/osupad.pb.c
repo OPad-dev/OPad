@@ -93,8 +93,6 @@ PB_BIND(osupad_DeviceToHost, osupad_DeviceToHost, 2)
 
 
 
-
-
 #ifndef PB_CONVERT_DOUBLE_FLOAT
 /* On some platforms (such as AVR), double is really float.
  * To be able to encode/decode double on these platforms, you need.

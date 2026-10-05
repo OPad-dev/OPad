@@ -70,8 +70,13 @@ static void cst816_disable_auto_sleep(void)
 // net for a miswired or silent INT line, so a held touch is still seen.
 #define TOUCH_IDLE_CHECK_MS     1000
 
-// During a map a touch is Quick Retry first: it can still become a swipe if it
-// moves this soon after landing, after that it is a hold
+// During a map Quick Retry waits until the finger has rested (moved less than
+// PLAY_RETRY_STILL_PX) for PLAY_RETRY_STILL_US, so a swipe never sends '`'.
+// A finger still moving at PLAY_SWIPE_WINDOW_US without having become a swipe
+// is a hold all the same. osu!'s retry is itself a hold, so the wait costs
+// nothing noticeable.
+#define PLAY_RETRY_STILL_US     60000
+#define PLAY_RETRY_STILL_PX     12
 #define PLAY_SWIPE_WINDOW_US    250000
 // The daemon sends HostStatus every second; this long without one and the pad
 // can no longer tell a map from a menu
@@ -103,9 +108,11 @@ static bool s_int_wakeup = false; // INT falling edge wakes the task
 // Written by the protocol task, read here at touch-down
 static atomic_llong s_host_seen_us = 0;     // last HostStatus with tosu connected, 0 = none
 static atomic_bool s_osu_active = false;
-// Left/right swipe actions (swipe_action_t) and keys, from the device config
-static atomic_uint s_swipe_cfg = (SWIPE_ACTION_PREV_TRACK) | (SWIPE_ACTION_NEXT_TRACK << 16);
-static atomic_bool s_swipe_invert_vertical = false;
+// Swipe actions (swipe_action_t) and keys from the device config, one byte
+// each in gesture_t order: up (bits 0-7), down, left, right
+static atomic_uint s_swipe_actions = SWIPE_ACTION_VOLUME_UP | (SWIPE_ACTION_VOLUME_DOWN << 8) |
+                                     (SWIPE_ACTION_PREV_TRACK << 16) | (SWIPE_ACTION_NEXT_TRACK << 24);
+static atomic_uint s_swipe_keys = 0;
 
 typedef enum {
     TOUCH_MODE_RETRY,   // Nothing tells us a map from a menu: Quick Retry only, as always
@@ -192,10 +199,44 @@ static void tap_keyboard_key(uint8_t key)
     usb_hid_set_touch_key(0, 0);
 }
 
-// Runs a left/right action. Returns the label to show, NULL for nothing done.
-static const char *run_swipe_action(uint8_t action, uint8_t key, bool playing, const char **symbol)
+/*
+ * One volume step. Goes to osu! when the host says it is in front (Windows)
+ * or running (Linux, osu!lazer): Alt+wheel in menus, where a plain wheel
+ * scrolls song select; the plain wheel during a map, so the keyboard report
+ * never carries Alt next to K1/K2. Otherwise the system volume.
+ * *alt_held: Alt stays down for the rest of the touch once a menu volume swipe
+ * pressed it, so a long drag is one Alt press with several wheel notches.
+ */
+static const char *step_volume(bool up, bool playing, bool *alt_held)
+{
+    bool osu = atomic_load(&s_osu_active);
+    if (osu && playing) {
+        usb_media_wheel(up ? 1 : -1);
+    } else if (osu) {
+        if (!*alt_held) {
+            usb_hid_set_touch_key(0, HID_MOD_LEFT_ALT);
+            wait_touch_key_delivered();
+            vTaskDelay(pdMS_TO_TICKS(TOUCH_ORDER_GAP_MS));
+            *alt_held = true;
+        }
+        usb_media_wheel(up ? 1 : -1);
+    } else {
+        usb_media_consumer_tap(up ? USB_MEDIA_VOLUME_UP : USB_MEDIA_VOLUME_DOWN);
+    }
+    return osu ? (up ? "osu! Vol +" : "osu! Vol -") : (up ? "Vol +" : "Vol -");
+}
+
+// Runs a swipe's action. Returns the label to show, NULL for nothing done.
+static const char *run_swipe_action(uint8_t action, uint8_t key, bool playing, bool *alt_held,
+                                    const char **symbol)
 {
     switch (action) {
+    case SWIPE_ACTION_VOLUME_UP:
+        *symbol = LV_SYMBOL_VOLUME_MAX;
+        return step_volume(true, playing, alt_held);
+    case SWIPE_ACTION_VOLUME_DOWN:
+        *symbol = LV_SYMBOL_VOLUME_MID;
+        return step_volume(false, playing, alt_held);
     case SWIPE_ACTION_PREV_TRACK:
         usb_media_consumer_tap(USB_MEDIA_PREV_TRACK);
         *symbol = LV_SYMBOL_PREV;
@@ -226,54 +267,27 @@ static const char *run_swipe_action(uint8_t action, uint8_t key, bool playing, c
 }
 
 /*
- * One swipe step. Volume goes to osu! when the host says it is in front
- * (Windows) or running (Linux, osu!lazer): Alt+wheel in menus, where a plain
- * wheel scrolls song select; the plain wheel during a map, so the keyboard
- * report never carries Alt next to K1/K2. Otherwise the system volume.
- * *alt_held: Alt stays down for the rest of the touch once a menu volume swipe
- * pressed it, so a long drag is one Alt press with several wheel notches.
+ * One swipe step in direction g. repeat: not the touch's first step (a long
+ * vertical drag steps every GESTURE_SWIPE_PX). Volume repeats; every other
+ * action fires once per touch.
  */
-static void handle_swipe(gesture_t g, touch_mode_t mode, bool *alt_held)
+static void handle_swipe(gesture_t g, touch_mode_t mode, bool repeat, bool *alt_held)
 {
     bool playing = (mode == TOUCH_MODE_PLAY);
-    const char *symbol = NULL;
-    const char *text = NULL;
-    int dx = 0;
-    int dy = 0;
-
-    if (g == GESTURE_UP || g == GESTURE_DOWN) {
-        // The arrow on the pad follows the finger; the volume follows the setting
-        bool finger_up = (g == GESTURE_UP);
-        bool up = finger_up != atomic_load(&s_swipe_invert_vertical);
-        bool osu = atomic_load(&s_osu_active);
-        if (osu && playing) {
-            usb_media_wheel(up ? 1 : -1);
-        } else if (osu) {
-            if (!*alt_held) {
-                usb_hid_set_touch_key(0, HID_MOD_LEFT_ALT);
-                wait_touch_key_delivered();
-                vTaskDelay(pdMS_TO_TICKS(TOUCH_ORDER_GAP_MS));
-                *alt_held = true;
-            }
-            usb_media_wheel(up ? 1 : -1);
-        } else {
-            usb_media_consumer_tap(up ? USB_MEDIA_VOLUME_UP : USB_MEDIA_VOLUME_DOWN);
-        }
-        symbol = finger_up ? LV_SYMBOL_UP : LV_SYMBOL_DOWN;
-        text = osu ? (up ? "osu! Vol +" : "osu! Vol -") : (up ? "Vol +" : "Vol -");
-        dy = finger_up ? -1 : 1;
-    } else if (g == GESTURE_LEFT || g == GESTURE_RIGHT) {
-        unsigned cfg = atomic_load(&s_swipe_cfg);
-        bool left = (g == GESTURE_LEFT);
-        uint8_t action = (uint8_t)(left ? cfg : cfg >> 16);
-        uint8_t key = (uint8_t)(left ? cfg >> 8 : cfg >> 24);
-        text = run_swipe_action(action, key, playing, &symbol);
-        dx = left ? -1 : 1;
+    unsigned shift = 8u * (unsigned)(g - GESTURE_UP);
+    uint8_t action = (uint8_t)(atomic_load(&s_swipe_actions) >> shift);
+    uint8_t key = (uint8_t)(atomic_load(&s_swipe_keys) >> shift);
+    if (repeat && action != SWIPE_ACTION_VOLUME_UP && action != SWIPE_ACTION_VOLUME_DOWN) {
+        return;
     }
 
+    const char *symbol = NULL;
+    const char *text = run_swipe_action(action, key, playing, alt_held, &symbol);
     ESP_LOGI(TAG, "Swipe %d -> %s", (int)g, text ? text : "nothing");
-    // Gameplay draws nothing extra
+    // Gameplay draws nothing extra. The feedback moves the way the finger did.
     if (text && !playing) {
+        int dx = g == GESTURE_LEFT ? -1 : g == GESTURE_RIGHT ? 1 : 0;
+        int dy = g == GESTURE_UP ? -1 : g == GESTURE_DOWN ? 1 : 0;
         ui_show_swipe(dx, dy, symbol, text);
     }
 }
@@ -293,6 +307,15 @@ static void release_alt(bool *alt_held)
     }
 }
 
+// Quick Retry pressed and released at once: a tap during a map that ended
+// before it could count as a hold
+static void tap_retry(void)
+{
+    usb_hid_set_touch_retry(true);
+    wait_touch_key_delivered();
+    usb_hid_set_touch_retry(false);
+}
+
 static void touch_retry_task(void *arg)
 {
     (void)arg;
@@ -304,9 +327,11 @@ static void touch_retry_task(void *arg)
     uint8_t release_debounce = 0;
     touch_mode_t mode = TOUCH_MODE_RETRY;
     bool retry_held = false;
+    bool retry_pending = false; // a map: Quick Retry once the finger rests
     bool alt_held = false;
-    bool tracking = false;     // following the finger for a swipe
+    bool tracking = false;      // following the finger for a swipe
     bool tracker_started = false;
+    int swipes = 0;             // swipe steps this touch
     int64_t down_us = 0;
     gesture_tracker_t tracker;
 
@@ -324,10 +349,11 @@ static void touch_retry_task(void *arg)
             s_touch_pressed = true;
             down_us = esp_timer_get_time();
             mode = touch_mode_now();
-            retry_held = (mode != TOUCH_MODE_MENU);
+            swipes = 0;
+            // Without a host, every touch is Quick Retry at once, as always
+            retry_held = (mode == TOUCH_MODE_RETRY);
+            retry_pending = (mode == TOUCH_MODE_PLAY);
             if (retry_held) {
-                // Pressed at once: a swipe that follows releases it long before
-                // osu!'s hold-to-retry completes
                 usb_hid_set_touch_retry(true);
                 ESP_LOGI(TAG, "Touch down -> Quick Retry pressed ('`')");
             }
@@ -346,10 +372,6 @@ static void touch_retry_task(void *arg)
         touch_sample_t s = touch_read();
         if (s.down) {
             release_debounce = 0;
-            if (tracking && mode == TOUCH_MODE_PLAY && !(tracker_started && gesture_is_swipe(&tracker)) &&
-                esp_timer_get_time() - down_us > PLAY_SWIPE_WINDOW_US) {
-                tracking = false; // a held Quick Retry
-            }
             if (tracking && s.has_pos) {
                 if (!tracker_started) {
                     gesture_begin(&tracker, s.x, s.y);
@@ -357,12 +379,22 @@ static void touch_retry_task(void *arg)
                 } else {
                     gesture_t g = gesture_feed(&tracker, s.x, s.y);
                     if (g != GESTURE_NONE) {
-                        if (retry_held) {
-                            usb_hid_set_touch_retry(false);
-                            retry_held = false;
-                        }
-                        handle_swipe(g, mode, &alt_held);
+                        retry_pending = false; // a swipe never sends '`'
+                        handle_swipe(g, mode, swipes > 0, &alt_held);
+                        swipes++;
                     }
+                }
+            }
+            if (retry_pending) {
+                int64_t held_us = esp_timer_get_time() - down_us;
+                bool resting = !(tracker_started && s.has_pos) ||
+                               gesture_distance(&tracker, s.x, s.y) < PLAY_RETRY_STILL_PX;
+                if ((resting && held_us >= PLAY_RETRY_STILL_US) || held_us >= PLAY_SWIPE_WINDOW_US) {
+                    retry_pending = false;
+                    retry_held = true;
+                    tracking = false; // a held Quick Retry, not a swipe
+                    usb_hid_set_touch_retry(true);
+                    ESP_LOGI(TAG, "Touch held -> Quick Retry pressed ('`')");
                 }
             }
             continue;
@@ -371,6 +403,11 @@ static void touch_retry_task(void *arg)
             pressed = false;
             s_touch_pressed = false;
             tracking = false;
+            if (retry_pending) {
+                retry_pending = false;
+                tap_retry();
+                ESP_LOGI(TAG, "Touch tap -> Quick Retry pressed and released");
+            }
             if (retry_held) {
                 usb_hid_set_touch_retry(false);
                 retry_held = false;
@@ -390,13 +427,16 @@ void touch_retry_set_host_status(bool tosu_connected, bool osu_active)
     atomic_store(&s_osu_active, osu_active);
 }
 
-void touch_retry_set_swipe_actions(uint8_t left_action, uint8_t left_key,
-                                   uint8_t right_action, uint8_t right_key,
-                                   bool invert_vertical)
+void touch_retry_set_swipe_actions(const uint8_t actions[4], const uint8_t keys[4])
 {
-    atomic_store(&s_swipe_invert_vertical, invert_vertical);
-    atomic_store(&s_swipe_cfg, (unsigned)left_action | ((unsigned)left_key << 8) |
-                               ((unsigned)right_action << 16) | ((unsigned)right_key << 24));
+    unsigned a = 0;
+    unsigned k = 0;
+    for (unsigned i = 0; i < 4; i++) {
+        a |= (unsigned)actions[i] << (8 * i);
+        k |= (unsigned)keys[i] << (8 * i);
+    }
+    atomic_store(&s_swipe_actions, a);
+    atomic_store(&s_swipe_keys, k);
 }
 
 esp_err_t touch_retry_init(void)

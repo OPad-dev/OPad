@@ -242,7 +242,10 @@ pub struct App {
     /// HID usage for [`SwipeAction::Key`], 0 = not chosen yet
     pub swipe_left_key: u32,
     pub swipe_right_key: u32,
-    pub swipe_invert_vertical: bool,
+    pub swipe_up: SwipeAction,
+    pub swipe_down: SwipeAction,
+    pub swipe_up_key: u32,
+    pub swipe_down_key: u32,
     pub debounce: u32,
     pub brightness: u32,
     pub sleep_seconds: u32,
@@ -357,7 +360,10 @@ pub enum Message {
     SwipeRight(SwipeAction),
     SwipeLeftKey(SwipeKey),
     SwipeRightKey(SwipeKey),
-    SwipeInvertVertical(bool),
+    SwipeUp(SwipeAction),
+    SwipeDown(SwipeAction),
+    SwipeUpKey(SwipeKey),
+    SwipeDownKey(SwipeKey),
     Debounce(u32),
     Brightness(u32),
     SleepSeconds(u32),
@@ -468,7 +474,10 @@ impl App {
             swipe_right: opad_model::DEFAULT_SWIPE_RIGHT,
             swipe_left_key: 0,
             swipe_right_key: 0,
-            swipe_invert_vertical: false,
+            swipe_up: opad_model::DEFAULT_SWIPE_UP,
+            swipe_down: opad_model::DEFAULT_SWIPE_DOWN,
+            swipe_up_key: 0,
+            swipe_down_key: 0,
             debounce: 5000,
             brightness: 100,
             sleep_seconds: 600,
@@ -1214,9 +1223,24 @@ impl App {
                     self.swipe_right_key = key.usage;
                 }
             }
-            Message::SwipeInvertVertical(on) => {
+            Message::SwipeUp(action) => {
                 if self.device_connected {
-                    self.swipe_invert_vertical = on;
+                    self.swipe_up = action;
+                }
+            }
+            Message::SwipeDown(action) => {
+                if self.device_connected {
+                    self.swipe_down = action;
+                }
+            }
+            Message::SwipeUpKey(key) => {
+                if self.device_connected {
+                    self.swipe_up_key = key.usage;
+                }
+            }
+            Message::SwipeDownKey(key) => {
+                if self.device_connected {
+                    self.swipe_down_key = key.usage;
                 }
             }
             Message::Debounce(v) => {
@@ -1436,7 +1460,10 @@ impl App {
                     swipe_right_action: self.swipe_right,
                     swipe_left_key: self.swipe_left_key,
                     swipe_right_key: self.swipe_right_key,
-                    swipe_invert_vertical: self.swipe_invert_vertical,
+                    swipe_up_action: self.swipe_up,
+                    swipe_down_action: self.swipe_down,
+                    swipe_up_key: self.swipe_up_key,
+                    swipe_down_key: self.swipe_down_key,
                     brightness: self.brightness,
                     display_sleep_seconds: self.sleep_seconds,
                     gameplay_display_hz: self.gameplay_display_hz,
@@ -2767,7 +2794,10 @@ impl App {
         self.swipe_right = config.swipe_right_action;
         self.swipe_left_key = config.swipe_left_key;
         self.swipe_right_key = config.swipe_right_key;
-        self.swipe_invert_vertical = config.swipe_invert_vertical;
+        self.swipe_up = config.swipe_up_action;
+        self.swipe_down = config.swipe_down_action;
+        self.swipe_up_key = config.swipe_up_key;
+        self.swipe_down_key = config.swipe_down_key;
         self.debounce = config.debounce_us;
         self.brightness = config.brightness;
         self.sleep_seconds = config.display_sleep_seconds;

@@ -14,6 +14,13 @@ bool gesture_is_swipe(const gesture_tracker_t *g)
     return g->axis != GESTURE_AXIS_NONE;
 }
 
+int gesture_distance(const gesture_tracker_t *g, int16_t x, int16_t y)
+{
+    int ax = abs(x - g->origin_x);
+    int ay = abs(y - g->origin_y);
+    return ax > ay ? ax : ay;
+}
+
 gesture_t gesture_feed(gesture_tracker_t *g, int16_t x, int16_t y)
 {
     int dx = x - g->origin_x;

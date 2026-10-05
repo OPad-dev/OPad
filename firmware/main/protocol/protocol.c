@@ -162,8 +162,10 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     msg.payload.hello_ack.current_config.swipe_right_action = (osupad_SwipeAction)cfg.swipe_right_action;
     msg.payload.hello_ack.current_config.swipe_left_key = cfg.swipe_left_key;
     msg.payload.hello_ack.current_config.swipe_right_key = cfg.swipe_right_key;
-    msg.payload.hello_ack.current_config.swipe_vertical = cfg.swipe_invert_vertical ? osupad_SwipeVertical_SWIPE_VERTICAL_INVERTED
-                                                    : osupad_SwipeVertical_SWIPE_VERTICAL_NORMAL;
+    msg.payload.hello_ack.current_config.swipe_up_action = (osupad_SwipeAction)cfg.swipe_up_action;
+    msg.payload.hello_ack.current_config.swipe_down_action = (osupad_SwipeAction)cfg.swipe_down_action;
+    msg.payload.hello_ack.current_config.swipe_up_key = cfg.swipe_up_key;
+    msg.payload.hello_ack.current_config.swipe_down_key = cfg.swipe_down_key;
     // KeyPressBatch is sent while a map is played (issue #2)
     msg.payload.hello_ack.key_press_times = true;
 
@@ -231,8 +233,10 @@ esp_err_t protocol_send_config_ack(uint32_t seq, bool success, const char *text)
     msg.payload.config_ack.current_config.swipe_right_action = (osupad_SwipeAction)cfg.swipe_right_action;
     msg.payload.config_ack.current_config.swipe_left_key = cfg.swipe_left_key;
     msg.payload.config_ack.current_config.swipe_right_key = cfg.swipe_right_key;
-    msg.payload.config_ack.current_config.swipe_vertical = cfg.swipe_invert_vertical ? osupad_SwipeVertical_SWIPE_VERTICAL_INVERTED
-                                                    : osupad_SwipeVertical_SWIPE_VERTICAL_NORMAL;
+    msg.payload.config_ack.current_config.swipe_up_action = (osupad_SwipeAction)cfg.swipe_up_action;
+    msg.payload.config_ack.current_config.swipe_down_action = (osupad_SwipeAction)cfg.swipe_down_action;
+    msg.payload.config_ack.current_config.swipe_up_key = cfg.swipe_up_key;
+    msg.payload.config_ack.current_config.swipe_down_key = cfg.swipe_down_key;
 
     return send_envelope(&msg);
 }
@@ -482,8 +486,10 @@ static void handle_host_message(const osupad_HostToDevice *msg)
             if (c->swipe_right_action > 0) dcfg.swipe_right_action = c->swipe_right_action <= UINT8_MAX ? (uint8_t)c->swipe_right_action : 0;
             if (c->swipe_left_key > 0) dcfg.swipe_left_key = c->swipe_left_key <= UINT8_MAX ? (uint8_t)c->swipe_left_key : 1;
             if (c->swipe_right_key > 0) dcfg.swipe_right_key = c->swipe_right_key <= UINT8_MAX ? (uint8_t)c->swipe_right_key : 1;
-            if (c->swipe_vertical > 0) dcfg.swipe_invert_vertical = c->swipe_vertical == osupad_SwipeVertical_SWIPE_VERTICAL_NORMAL ? 0
-                                                                 : c->swipe_vertical == osupad_SwipeVertical_SWIPE_VERTICAL_INVERTED ? 1 : UINT8_MAX;
+            if (c->swipe_up_action > 0) dcfg.swipe_up_action = c->swipe_up_action <= UINT8_MAX ? (uint8_t)c->swipe_up_action : 0;
+            if (c->swipe_down_action > 0) dcfg.swipe_down_action = c->swipe_down_action <= UINT8_MAX ? (uint8_t)c->swipe_down_action : 0;
+            if (c->swipe_up_key > 0) dcfg.swipe_up_key = c->swipe_up_key <= UINT8_MAX ? (uint8_t)c->swipe_up_key : 1;
+            if (c->swipe_down_key > 0) dcfg.swipe_down_key = c->swipe_down_key <= UINT8_MAX ? (uint8_t)c->swipe_down_key : 1;
 
             char err_msg[64] = "";
             if (!device_config_validate(&dcfg, err_msg, sizeof(err_msg))) {

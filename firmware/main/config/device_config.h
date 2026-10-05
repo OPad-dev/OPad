@@ -17,7 +17,7 @@ typedef int esp_err_t;
 extern "C" {
 #endif
 
-#define DEVICE_CONFIG_VERSION               5
+#define DEVICE_CONFIG_VERSION               6
 #define DEVICE_CONFIG_DEFAULT_KEY1          0x1D // 'Z'
 #define DEVICE_CONFIG_DEFAULT_KEY2          0x1B // 'X'
 #define DEVICE_CONFIG_DEFAULT_DEBOUNCE_US   5000
@@ -27,8 +27,8 @@ extern "C" {
 #define DEVICE_CONFIG_DEFAULT_KEY1_GPIO     14   // Header P2, pin 11
 #define DEVICE_CONFIG_DEFAULT_KEY2_GPIO     9    // Header P2, pin 12
 
-// What a left/right swipe does. Values are osupad.proto's SwipeAction; 0
-// (keep current) is wire only and never stored.
+// What a swipe does. Values are osupad.proto's SwipeAction; 0 (keep current)
+// is wire only and never stored.
 typedef enum {
     SWIPE_ACTION_NONE = 1,
     SWIPE_ACTION_PREV_TRACK = 2,
@@ -36,10 +36,14 @@ typedef enum {
     SWIPE_ACTION_PLAY_PAUSE = 4,
     SWIPE_ACTION_MUTE = 5,
     SWIPE_ACTION_KEY = 6,   // swipe_*_key, a keyboard key
+    SWIPE_ACTION_VOLUME_UP = 7,
+    SWIPE_ACTION_VOLUME_DOWN = 8,
 } swipe_action_t;
 
 #define DEVICE_CONFIG_DEFAULT_SWIPE_LEFT    SWIPE_ACTION_PREV_TRACK
 #define DEVICE_CONFIG_DEFAULT_SWIPE_RIGHT   SWIPE_ACTION_NEXT_TRACK
+#define DEVICE_CONFIG_DEFAULT_SWIPE_UP      SWIPE_ACTION_VOLUME_UP
+#define DEVICE_CONFIG_DEFAULT_SWIPE_DOWN    SWIPE_ACTION_VOLUME_DOWN
 
 typedef struct __attribute__((packed)) {
     uint32_t version;
@@ -61,8 +65,12 @@ typedef struct __attribute__((packed)) {
     uint8_t swipe_right_action;
     uint8_t swipe_left_key;
     uint8_t swipe_right_key;
-    // v5: 1 = up/down swipes inverted (swipe up = volume down)
-    uint8_t swipe_invert_vertical;
+    // v6: up/down swipe actions and keys. v5 had a single "up/down inverted"
+    // byte where swipe_up_action now is; it loads as swapped volume actions.
+    uint8_t swipe_up_action;
+    uint8_t swipe_down_action;
+    uint8_t swipe_up_key;
+    uint8_t swipe_down_key;
 } device_config_data_t;
 
 /**

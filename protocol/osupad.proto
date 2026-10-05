@@ -97,27 +97,24 @@ message ConfigPayload {
     uint32 press_color_rgb = 7 [deprecated = true]; // Deprecated: key highlight colors now come from layouts
     uint32 key1_gpio = 8;            // Switch GPIO for key 1, default: 14. 0 = keep current
     uint32 key2_gpio = 9;            // Switch GPIO for key 2, default: 9. 0 = keep current
-    // What a left/right swipe on the touchscreen does (SwipeAction). Firmware
-    // predating swipes ignores these and reports 0, which a host reads as the
-    // defaults (previous / next track).
+    // What each touchscreen swipe does (SwipeAction). Firmware predating
+    // swipes ignores these and reports 0, which a host reads as the defaults
+    // (up/down volume, left/right previous / next track).
     SwipeAction swipe_left_action = 10;  // Default: SWIPE_ACTION_PREV_TRACK. 0 = keep current
     SwipeAction swipe_right_action = 11; // Default: SWIPE_ACTION_NEXT_TRACK. 0 = keep current
     uint32 swipe_left_key = 12;      // HID usage for SWIPE_ACTION_KEY. 0 = keep current
     uint32 swipe_right_key = 13;     // HID usage for SWIPE_ACTION_KEY. 0 = keep current
-    SwipeVertical swipe_vertical = 14; // Default: SWIPE_VERTICAL_NORMAL. 0 = keep current
+    reserved 14;                     // swipe_vertical, replaced by swipe_up/down_action before release
+    SwipeAction swipe_up_action = 15;    // Default: SWIPE_ACTION_VOLUME_UP. 0 = keep current
+    SwipeAction swipe_down_action = 16;  // Default: SWIPE_ACTION_VOLUME_DOWN. 0 = keep current
+    uint32 swipe_up_key = 17;        // HID usage for SWIPE_ACTION_KEY. 0 = keep current
+    uint32 swipe_down_key = 18;      // HID usage for SWIPE_ACTION_KEY. 0 = keep current
 }
 
-// Which way up/down swipes go. Firmware predating the setting reports 0,
-// which a host reads as normal.
-enum SwipeVertical {
-    SWIPE_VERTICAL_KEEP = 0;         // Wire only: leave the current setting
-    SWIPE_VERTICAL_NORMAL = 1;       // Swipe up = volume up
-    SWIPE_VERTICAL_INVERTED = 2;     // Swipe up = volume down
-}
-
-// Up/down swipes always set the volume; left/right do one of these. Keyboard
-// keys (SWIPE_ACTION_KEY) are never sent while a map is played: the keyboard
-// report then carries only K1, K2 and Quick Retry.
+// What a swipe does. Volume steps repeat along a long drag; every other
+// action fires once per touch. Keyboard keys (SWIPE_ACTION_KEY) are never
+// sent while a map is played: the keyboard report then carries only K1, K2
+// and Quick Retry.
 enum SwipeAction {
     SWIPE_ACTION_KEEP = 0;           // Wire only: leave the current action
     SWIPE_ACTION_NONE = 1;
@@ -126,6 +123,10 @@ enum SwipeAction {
     SWIPE_ACTION_PLAY_PAUSE = 4;
     SWIPE_ACTION_MUTE = 5;
     SWIPE_ACTION_KEY = 6;            // The swipe_*_key keyboard key
+    // osu!'s volume while osu! is active (HostStatus.osu_active), otherwise
+    // the system volume
+    SWIPE_ACTION_VOLUME_UP = 7;
+    SWIPE_ACTION_VOLUME_DOWN = 8;
 }
 
 message SetConfig {

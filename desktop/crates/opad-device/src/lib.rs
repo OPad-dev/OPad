@@ -731,11 +731,10 @@ impl DeviceManager {
                     swipe_right_action: config.swipe_right_action.to_wire() as i32,
                     swipe_left_key: config.swipe_left_key,
                     swipe_right_key: config.swipe_right_key,
-                    swipe_vertical: if config.swipe_invert_vertical {
-                        proto::SwipeVertical::Inverted
-                    } else {
-                        proto::SwipeVertical::Normal
-                    } as i32,
+                    swipe_up_action: config.swipe_up_action.to_wire() as i32,
+                    swipe_down_action: config.swipe_down_action.to_wire() as i32,
+                    swipe_up_key: config.swipe_up_key,
+                    swipe_down_key: config.swipe_down_key,
                 }),
             })),
         };
@@ -946,8 +945,12 @@ fn device_config_from(c: &proto::ConfigPayload) -> DeviceConfig {
             .unwrap_or(opad_model::DEFAULT_SWIPE_RIGHT),
         swipe_left_key: c.swipe_left_key,
         swipe_right_key: c.swipe_right_key,
-        // 0 (firmware predating the setting) reads as normal
-        swipe_invert_vertical: c.swipe_vertical == proto::SwipeVertical::Inverted as i32,
+        swipe_up_action: SwipeAction::from_wire(c.swipe_up_action as u32)
+            .unwrap_or(opad_model::DEFAULT_SWIPE_UP),
+        swipe_down_action: SwipeAction::from_wire(c.swipe_down_action as u32)
+            .unwrap_or(opad_model::DEFAULT_SWIPE_DOWN),
+        swipe_up_key: c.swipe_up_key,
+        swipe_down_key: c.swipe_down_key,
     }
 }
 
@@ -1885,9 +1888,17 @@ mod tests {
             ),
             (SwipeAction::Key, 0x3B, SwipeAction::None)
         );
-        assert!(!cfg.swipe_invert_vertical);
-        c.swipe_vertical = proto::SwipeVertical::Inverted as i32;
-        assert!(device_config_from(&c).swipe_invert_vertical);
+        assert_eq!(
+            (cfg.swipe_up_action, cfg.swipe_down_action),
+            (SwipeAction::VolumeUp, SwipeAction::VolumeDown)
+        );
+        c.swipe_up_action = SwipeAction::VolumeDown.to_wire() as i32;
+        c.swipe_down_action = SwipeAction::Mute.to_wire() as i32;
+        let cfg = device_config_from(&c);
+        assert_eq!(
+            (cfg.swipe_up_action, cfg.swipe_down_action),
+            (SwipeAction::VolumeDown, SwipeAction::Mute)
+        );
     }
 
     #[test]

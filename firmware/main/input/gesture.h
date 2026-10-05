@@ -51,6 +51,13 @@ gesture_t gesture_feed(gesture_tracker_t *g, int16_t x, int16_t y);
  */
 bool gesture_is_swipe(const gesture_tracker_t *g);
 
+/**
+ * @brief How far (px, the larger axis) the finger is from where it landed,
+ *        for telling a resting finger from one that is starting a swipe.
+ *        Meaningful until the touch becomes a swipe.
+ */
+int gesture_distance(const gesture_tracker_t *g, int16_t x, int16_t y);
+
 #ifdef __cplusplus
 }
 #endif

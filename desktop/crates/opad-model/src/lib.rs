@@ -208,12 +208,16 @@ fn validate_key_gpios(key1_gpio: u32, key2_gpio: u32) -> Result<(), String> {
     Ok(())
 }
 
-/// What a left/right swipe on the pad's touchscreen does. Up/down always set
-/// the volume. The wire values are osupad.proto's `SwipeAction`.
+/// What a swipe on the pad's touchscreen does. Volume steps repeat along a
+/// long drag; everything else fires once per touch. The wire values are
+/// osupad.proto's `SwipeAction`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SwipeAction {
     None,
+    /// osu!'s volume while osu! is active, otherwise the system volume
+    VolumeUp,
+    VolumeDown,
     PrevTrack,
     NextTrack,
     PlayPause,
@@ -223,8 +227,10 @@ pub enum SwipeAction {
 }
 
 impl SwipeAction {
-    pub const ALL: [SwipeAction; 6] = [
+    pub const ALL: [SwipeAction; 8] = [
         SwipeAction::None,
+        SwipeAction::VolumeUp,
+        SwipeAction::VolumeDown,
         SwipeAction::PrevTrack,
         SwipeAction::NextTrack,
         SwipeAction::PlayPause,
@@ -240,6 +246,8 @@ impl SwipeAction {
             SwipeAction::PlayPause => 4,
             SwipeAction::Mute => 5,
             SwipeAction::Key => 6,
+            SwipeAction::VolumeUp => 7,
+            SwipeAction::VolumeDown => 8,
         }
     }
 
@@ -251,6 +259,8 @@ impl SwipeAction {
     pub fn label(self) -> &'static str {
         match self {
             SwipeAction::None => "Nothing",
+            SwipeAction::VolumeUp => "Volume up",
+            SwipeAction::VolumeDown => "Volume down",
             SwipeAction::PrevTrack => "Previous track",
             SwipeAction::NextTrack => "Next track",
             SwipeAction::PlayPause => "Play / pause",
@@ -320,6 +330,8 @@ pub fn swipe_key_by_usage(usage: u32) -> Option<SwipeKey> {
 
 pub const DEFAULT_SWIPE_LEFT: SwipeAction = SwipeAction::PrevTrack;
 pub const DEFAULT_SWIPE_RIGHT: SwipeAction = SwipeAction::NextTrack;
+pub const DEFAULT_SWIPE_UP: SwipeAction = SwipeAction::VolumeUp;
+pub const DEFAULT_SWIPE_DOWN: SwipeAction = SwipeAction::VolumeDown;
 
 fn default_swipe_left() -> SwipeAction {
     DEFAULT_SWIPE_LEFT
@@ -327,6 +339,14 @@ fn default_swipe_left() -> SwipeAction {
 
 fn default_swipe_right() -> SwipeAction {
     DEFAULT_SWIPE_RIGHT
+}
+
+fn default_swipe_up() -> SwipeAction {
+    DEFAULT_SWIPE_UP
+}
+
+fn default_swipe_down() -> SwipeAction {
+    DEFAULT_SWIPE_DOWN
 }
 
 fn validate_swipe(side: &str, action: SwipeAction, key: u32) -> Result<(), String> {
@@ -362,9 +382,14 @@ pub struct DeviceConfig {
     pub swipe_left_key: u32,
     #[serde(default)]
     pub swipe_right_key: u32,
-    /// Swipe up turns the volume down
+    #[serde(default = "default_swipe_up")]
+    pub swipe_up_action: SwipeAction,
+    #[serde(default = "default_swipe_down")]
+    pub swipe_down_action: SwipeAction,
     #[serde(default)]
-    pub swipe_invert_vertical: bool,
+    pub swipe_up_key: u32,
+    #[serde(default)]
+    pub swipe_down_key: u32,
 }
 
 impl Default for DeviceConfig {
@@ -383,7 +408,10 @@ impl Default for DeviceConfig {
             swipe_right_action: DEFAULT_SWIPE_RIGHT,
             swipe_left_key: 0,
             swipe_right_key: 0,
-            swipe_invert_vertical: false,
+            swipe_up_action: DEFAULT_SWIPE_UP,
+            swipe_down_action: DEFAULT_SWIPE_DOWN,
+            swipe_up_key: 0,
+            swipe_down_key: 0,
         }
     }
 }
@@ -430,6 +458,8 @@ impl DeviceConfig {
         }
         validate_swipe("left", self.swipe_left_action, self.swipe_left_key)?;
         validate_swipe("right", self.swipe_right_action, self.swipe_right_key)?;
+        validate_swipe("up", self.swipe_up_action, self.swipe_up_key)?;
+        validate_swipe("down", self.swipe_down_action, self.swipe_down_key)?;
         validate_key_gpios(self.key1_gpio, self.key2_gpio)
     }
 
@@ -559,8 +589,14 @@ pub struct JsonBackupConfig {
     pub swipe_left_key: u32,
     #[serde(default)]
     pub swipe_right_key: u32,
+    #[serde(default = "default_swipe_up")]
+    pub swipe_up_action: SwipeAction,
+    #[serde(default = "default_swipe_down")]
+    pub swipe_down_action: SwipeAction,
     #[serde(default)]
-    pub swipe_invert_vertical: bool,
+    pub swipe_up_key: u32,
+    #[serde(default)]
+    pub swipe_down_key: u32,
 }
 
 impl JsonBackup {
@@ -590,7 +626,10 @@ impl JsonBackup {
                 swipe_right_action: config.swipe_right_action,
                 swipe_left_key: config.swipe_left_key,
                 swipe_right_key: config.swipe_right_key,
-                swipe_invert_vertical: config.swipe_invert_vertical,
+                swipe_up_action: config.swipe_up_action,
+                swipe_down_action: config.swipe_down_action,
+                swipe_up_key: config.swipe_up_key,
+                swipe_down_key: config.swipe_down_key,
             },
         }
     }
@@ -636,7 +675,10 @@ impl JsonBackup {
             swipe_right_action: self.config.swipe_right_action,
             swipe_left_key: self.config.swipe_left_key,
             swipe_right_key: self.config.swipe_right_key,
-            swipe_invert_vertical: self.config.swipe_invert_vertical,
+            swipe_up_action: self.config.swipe_up_action,
+            swipe_down_action: self.config.swipe_down_action,
+            swipe_up_key: self.config.swipe_up_key,
+            swipe_down_key: self.config.swipe_down_key,
             ..DeviceConfig::default()
         }
         .validate()
@@ -760,7 +802,10 @@ mod tests {
             "swipe_right_action",
             "swipe_left_key",
             "swipe_right_key",
-            "swipe_invert_vertical",
+            "swipe_up_action",
+            "swipe_down_action",
+            "swipe_up_key",
+            "swipe_down_key",
         ] {
             assert!(cfg.remove(field).is_some(), "{field} is written");
         }
@@ -768,7 +813,8 @@ mod tests {
         assert_eq!(b.config.swipe_left_action, SwipeAction::PrevTrack);
         assert_eq!(b.config.swipe_right_action, SwipeAction::NextTrack);
         assert_eq!((b.config.swipe_left_key, b.config.swipe_right_key), (0, 0));
-        assert!(!b.config.swipe_invert_vertical);
+        assert_eq!(b.config.swipe_up_action, SwipeAction::VolumeUp);
+        assert_eq!(b.config.swipe_down_action, SwipeAction::VolumeDown);
         assert!(b.validate().is_ok());
     }
 
@@ -779,7 +825,7 @@ mod tests {
         }
         // 0 is "keep current" on the wire
         assert_eq!(SwipeAction::from_wire(0), None);
-        assert_eq!(SwipeAction::from_wire(7), None);
+        assert_eq!(SwipeAction::from_wire(9), None);
 
         let mut c = DeviceConfig {
             swipe_right_action: SwipeAction::Key,
@@ -793,6 +839,9 @@ mod tests {
         assert!(c.validate().is_ok());
         c.swipe_left_key = 0x03;
         assert!(c.validate().unwrap_err().contains("left swipe key"));
+        c.swipe_left_key = 0;
+        c.swipe_up_action = SwipeAction::Key;
+        assert!(c.validate().unwrap_err().contains("up swipe needs a key"));
     }
 
     #[test]

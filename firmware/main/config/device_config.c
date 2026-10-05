@@ -31,6 +31,8 @@ static device_config_data_t s_current_config = {
     .key2_gpio = DEVICE_CONFIG_DEFAULT_KEY2_GPIO,
     .swipe_left_action = DEVICE_CONFIG_DEFAULT_SWIPE_LEFT,
     .swipe_right_action = DEVICE_CONFIG_DEFAULT_SWIPE_RIGHT,
+    .swipe_up_action = DEVICE_CONFIG_DEFAULT_SWIPE_UP,
+    .swipe_down_action = DEVICE_CONFIG_DEFAULT_SWIPE_DOWN,
 };
 
 // v1 blobs end before key1_gpio; they load with the default pins
@@ -40,8 +42,10 @@ static device_config_data_t s_current_config = {
 #define DEVICE_CONFIG_V2_SIZE offsetof(device_config_data_t, owner_id)
 // v3 blobs end before the swipe actions; they load with the defaults
 #define DEVICE_CONFIG_V3_SIZE offsetof(device_config_data_t, swipe_left_action)
-// v4 blobs end before the vertical swipe setting; they load as not inverted
-#define DEVICE_CONFIG_V4_SIZE offsetof(device_config_data_t, swipe_invert_vertical)
+// v4 blobs end before the up/down actions; they load with the defaults
+#define DEVICE_CONFIG_V4_SIZE offsetof(device_config_data_t, swipe_up_action)
+// v5 blobs add one byte, "up/down inverted", read into swipe_up_action
+#define DEVICE_CONFIG_V5_SIZE (DEVICE_CONFIG_V4_SIZE + 1)
 
 static bool s_dirty = false;
 // Guards s_current_config and s_dirty: written by the protocol task, read by the
@@ -86,7 +90,10 @@ static void set_defaults(device_config_data_t *cfg)
     cfg->swipe_right_action = DEVICE_CONFIG_DEFAULT_SWIPE_RIGHT;
     cfg->swipe_left_key = 0;
     cfg->swipe_right_key = 0;
-    cfg->swipe_invert_vertical = 0;
+    cfg->swipe_up_action = DEVICE_CONFIG_DEFAULT_SWIPE_UP;
+    cfg->swipe_down_action = DEVICE_CONFIG_DEFAULT_SWIPE_DOWN;
+    cfg->swipe_up_key = 0;
+    cfg->swipe_down_key = 0;
 }
 
 
@@ -142,9 +149,12 @@ void device_config_apply(const device_config_data_t *cfg)
     ui_set_brightness((uint8_t)cfg->brightness);
     ui_set_sleep_timeout(cfg->sleep_s);
 
-    touch_retry_set_swipe_actions(cfg->swipe_left_action, cfg->swipe_left_key,
-                                  cfg->swipe_right_action, cfg->swipe_right_key,
-                                  cfg->swipe_invert_vertical != 0);
+    // In gesture_t order: up, down, left, right
+    const uint8_t actions[4] = {cfg->swipe_up_action, cfg->swipe_down_action,
+                                cfg->swipe_left_action, cfg->swipe_right_action};
+    const uint8_t keys[4] = {cfg->swipe_up_key, cfg->swipe_down_key,
+                             cfg->swipe_left_key, cfg->swipe_right_key};
+    touch_retry_set_swipe_actions(actions, keys);
 }
 
 esp_err_t device_config_init(void)
@@ -174,10 +184,16 @@ esp_err_t device_config_init(void)
         nvs_close(handle);
 
         bool layout_ok = (len == sizeof(loaded) && loaded.version == DEVICE_CONFIG_VERSION) ||
+                         (len == DEVICE_CONFIG_V5_SIZE && loaded.version == 5) ||
                          (len == DEVICE_CONFIG_V4_SIZE && loaded.version == 4) ||
                          (len == DEVICE_CONFIG_V3_SIZE && loaded.version == 3) ||
                          (len == DEVICE_CONFIG_V2_SIZE && loaded.version == 2) ||
                          (len == DEVICE_CONFIG_V1_SIZE && loaded.version == 1);
+        if (err == ESP_OK && layout_ok && loaded.version == 5) {
+            bool inverted = loaded.swipe_up_action != 0;
+            loaded.swipe_up_action = inverted ? SWIPE_ACTION_VOLUME_DOWN : SWIPE_ACTION_VOLUME_UP;
+            loaded.swipe_down_action = inverted ? SWIPE_ACTION_VOLUME_UP : SWIPE_ACTION_VOLUME_DOWN;
+        }
         if (err == ESP_OK && layout_ok && device_config_validate(&loaded, NULL, 0)) {
             if (loaded.version != DEVICE_CONFIG_VERSION) {
                 ESP_LOGI(TAG, "Migrating NVS config v%lu -> v%d",

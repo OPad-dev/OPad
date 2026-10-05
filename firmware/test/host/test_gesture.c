@@ -12,6 +12,8 @@ static void test_still_finger_is_no_swipe(void)
     assert(gesture_feed(&g, 150, 128) == GESTURE_NONE);
     assert(gesture_feed(&g, 160 + GESTURE_SWIPE_PX - 1, 120) == GESTURE_NONE);
     assert(!gesture_is_swipe(&g));
+    assert(gesture_distance(&g, 165, 118) == 5);
+    assert(gesture_distance(&g, 150, 128) == 10);
     printf("✓ test_still_finger_is_no_swipe passed\n");
 }
 

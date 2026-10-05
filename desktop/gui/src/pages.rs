@@ -391,13 +391,31 @@ pub fn settings(app: &App) -> Element<'_, Message> {
         column![
             text("Touchscreen swipes").size(18).font(theme::FONT_BOLD),
             muted(
-                "Swipe up / down for volume: osu!'s own volume when osu! is the window in \
-                 front (Windows) or osu!lazer is running (Linux), the system volume otherwise. \
-                 During a map a touch is Quick Retry and swipes still work, but never send a \
-                 keyboard key. Outside a map a tap does nothing. While tosu is not connected \
-                 the pad cannot tell a map from a menu: every touch is Quick Retry, no swipes."
+                "Volume goes to osu! when osu! is the window in front (Windows) or osu!lazer \
+                 is running (Linux), to the system otherwise, and steps again every bit of a \
+                 long drag; other actions fire once per swipe. During a map a resting finger \
+                 is Quick Retry and swipes still work, but never send a keyboard key. Outside \
+                 a map a tap does nothing. While tosu is not connected the pad cannot tell a \
+                 map from a menu: every touch is Quick Retry, no swipes."
             )
             .size(12),
+            row![
+                swipe_select(
+                    "SWIPE UP",
+                    app.swipe_up,
+                    app.swipe_up_key,
+                    Message::SwipeUp,
+                    Message::SwipeUpKey
+                ),
+                swipe_select(
+                    "SWIPE DOWN",
+                    app.swipe_down,
+                    app.swipe_down_key,
+                    Message::SwipeDown,
+                    Message::SwipeDownKey
+                ),
+            ]
+            .spacing(24),
             row![
                 swipe_select(
                     "SWIPE LEFT",
@@ -415,15 +433,6 @@ pub fn settings(app: &App) -> Element<'_, Message> {
                 ),
             ]
             .spacing(24),
-            {
-                let invert = checkbox(app.swipe_invert_vertical)
-                    .label("Invert up / down (swipe up turns the volume down)");
-                if app.device_connected {
-                    invert.on_toggle(Message::SwipeInvertVertical)
-                } else {
-                    invert
-                }
-            },
         ]
         .spacing(18),
     );
