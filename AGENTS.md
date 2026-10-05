@@ -29,10 +29,13 @@ details.
    both together". State the result in the commit (see §3).
 4. **The touchscreen is the third button.** It must give a clean press, a held
    state while the finger stays down, and a clean release, not just tap
-   detection. Gestures are planned but not built yet: swipe up/down will set
-   the osu! volume; left/right is still to be decided. Don't make design
-   choices that would block either. Keep it cheap on CPU (idle on the touch
-   interrupt, poll only while a finger is down).
+   detection. During a map a touch is Quick Retry (`` ` ``); outside a map a
+   tap sends nothing. Swipes: up/down set the volume (osu!'s when osu! is
+   active, the system's otherwise), left/right run a configurable action.
+   Nothing extra is drawn during a map, and swipes never put Alt or another
+   key in the keyboard report mid-map. With no host or no tosu, every touch is
+   Quick Retry. Keep it cheap on CPU (idle on the touch interrupt, poll only
+   while a finger is down).
 
 ## 2. Workflow
 

@@ -431,6 +431,30 @@ what every number should read. Play it with the pad, hitting every note once.
 | PPM-03 | A replay is shown, not saved | Watch another player's replay for 20 s. | Same as PPM-02; the Stats page badge reads "REPLAY · NOT SAVED"; no impossible PEAK (thousands). | n/r — before the fix, a replay was saved with a PEAK of 8997 | n/r |
 | PPM-04 | No input latency cost | Run `opadctl latency` before and after a played map. | Key-to-HID p50/p99.9 unchanged within noise; no "lost key presses" warning in the daemon log. | **PASS** (2026-10-03) — p50 130 µs after the key-timestamp firmware; no lost presses on any attempt | n/r |
 
+## 14. Touchscreen swipes
+
+Swipe up/down sets the volume, left/right runs the configured action (default
+previous / next track). During a map a touch is still Quick Retry; outside one a
+tap sends nothing. Firmware: `firmware/main/input/touch_retry.c`,
+`firmware/main/input/gesture.c`; the media controls are a second HID interface
+(`firmware/main/usb/usb_descriptors.c`). Run with the daemon and tosu up unless a
+row says otherwise.
+
+| ID | Test Item | Procedure | Acceptance Criteria | Linux | Windows |
+|---|---|---|---|---|---|
+| SWP-01 | Directions match the screen | On the idle screen, swipe up, down, left, right. | The arrow on the pad and the action match the direction as the pad is held. If up/down or left/right are swapped, fix `TOUCH_SWAP_XY` / `TOUCH_MIRROR_X` / `TOUCH_MIRROR_Y` in `touch_retry.c`. | n/r | n/r |
+| SWP-02 | No ` outside a map | Open a text editor, tap the screen and swipe. | Nothing is typed. Daemon log shows no Quick Retry. | n/r | n/r |
+| SWP-03 | System volume | osu! closed. Swipe up and down. | The system volume moves one step per ~30 px of drag; the pad shows "Vol +" / "Vol -". | n/r | n/r |
+| SWP-04 | osu! volume in menus | osu! (lazer on Linux) open and in front, in song select. Swipe up and down. | osu!'s volume overlay moves; the beatmap list does not scroll; daemon log: "osu! active". On Windows: no window menu or lost key after the swipe. | n/r | n/r |
+| SWP-05 | osu! volume during a map | Start a map, swipe up/down mid-map. | osu!'s volume changes (needs "disable mouse wheel in play mode" off); nothing is drawn on the pad; the map does not restart. | n/r | n/r |
+| SWP-06 | A quick swipe does not retry | Mid-map, swipe fast in any direction. | The map continues: the ` blip a swipe starts with is released before osu!'s hold-to-retry completes. If it retries, play-time touches need a short still-finger wait first. | n/r | n/r |
+| SWP-07 | Quick Retry still works | Mid-map, hold a finger still on the screen. | The map restarts exactly as before swipes. | n/r | n/r |
+| SWP-08 | No daemon, no tosu | Stop tosu (then the daemon). Tap and swipe. | Every touch is Quick Retry, as before swipes; swipes do nothing. | n/r | n/r |
+| SWP-09 | No key latency cost | `opadctl latency` reset, play a map without swiping; reset, play it again swiping several times mid-map. | p50/p99.9/max unchanged within noise; no extra deferred reports. | n/r | n/r |
+| SWP-10 | Left/right actions | Set each action in Settings → Keypad, including Keyboard key = F2 in song select. | Each does what it says; F2 picks a random map; a keyboard-key swipe mid-map sends nothing. | n/r | n/r |
+| SWP-11 | Re-enumeration after the update | Flash the swipe firmware over the previous one. | Keyboard, COM port and the new "OPad Media Controls" interface all work without unplugging; Windows keeps the "OPad (COMx)" name. | n/r | n/r |
+| SWP-12 | Old app, new firmware / new app, old firmware | Run the previous app with this firmware, then this app with the previous firmware. | Keys, display and config work both ways. Old app: swipes set the system volume only. Old firmware: the swipe settings are ignored, nothing else changes. | n/r | n/r |
+
 ## 8. Verification Sign-Off
 
 - **Linux v1.0.0, 2026-09-13:** sections 1–4 verified and passing, **except**
