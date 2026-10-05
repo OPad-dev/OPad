@@ -735,6 +735,10 @@ impl DeviceManager {
                     swipe_down_action: config.swipe_down_action.to_wire() as i32,
                     swipe_up_key: config.swipe_up_key,
                     swipe_down_key: config.swipe_down_key,
+                    swipe_up_modifiers: config.swipe_up_modifiers,
+                    swipe_down_modifiers: config.swipe_down_modifiers,
+                    swipe_left_modifiers: config.swipe_left_modifiers,
+                    swipe_right_modifiers: config.swipe_right_modifiers,
                 }),
             })),
         };
@@ -951,6 +955,10 @@ fn device_config_from(c: &proto::ConfigPayload) -> DeviceConfig {
             .unwrap_or(opad_model::DEFAULT_SWIPE_DOWN),
         swipe_up_key: c.swipe_up_key,
         swipe_down_key: c.swipe_down_key,
+        swipe_up_modifiers: c.swipe_up_modifiers,
+        swipe_down_modifiers: c.swipe_down_modifiers,
+        swipe_left_modifiers: c.swipe_left_modifiers,
+        swipe_right_modifiers: c.swipe_right_modifiers,
     }
 }
 

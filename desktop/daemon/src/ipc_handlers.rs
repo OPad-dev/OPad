@@ -999,6 +999,10 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 swipe_down_action: backup.config.swipe_down_action,
                 swipe_up_key: backup.config.swipe_up_key,
                 swipe_down_key: backup.config.swipe_down_key,
+                swipe_up_modifiers: backup.config.swipe_up_modifiers,
+                swipe_down_modifiers: backup.config.swipe_down_modifiers,
+                swipe_left_modifiers: backup.config.swipe_left_modifiers,
+                swipe_right_modifiers: backup.config.swipe_right_modifiers,
             };
 
             let new_counters = CounterState {

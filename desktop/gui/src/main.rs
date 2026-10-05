@@ -19,11 +19,11 @@ use iced::widget::{
 };
 use iced::{window, Alignment, Element, Length, Size, Subscription, Task};
 use opad_ipc::{CurrentBackupState, IpcRequest, IpcResponse};
+use opad_model::swipe::{FreeKey, SwipeChoice, SwipeDir, SwipeSetting};
 use opad_model::ui_source::SourceValue;
 use opad_model::{
     char_to_hid_usage, CounterSource, CounterState, DeviceConfig, DeviceInfo, IncompatibleDevice,
-    JsonBackup, KeyPin, LatencyStats, LogEntry, LogLevel, LogSource, RuntimeMode, SwipeAction,
-    SwipeKey,
+    JsonBackup, KeyPin, LatencyStats, LogEntry, LogLevel, LogSource, RuntimeMode,
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -237,15 +237,8 @@ pub struct App {
     pub k2_input: String,
     pub k1_gpio: u32,
     pub k2_gpio: u32,
-    pub swipe_left: SwipeAction,
-    pub swipe_right: SwipeAction,
-    /// HID usage for [`SwipeAction::Key`], 0 = not chosen yet
-    pub swipe_left_key: u32,
-    pub swipe_right_key: u32,
-    pub swipe_up: SwipeAction,
-    pub swipe_down: SwipeAction,
-    pub swipe_up_key: u32,
-    pub swipe_down_key: u32,
+    /// Each swipe direction, in SwipeDir::ALL order
+    pub swipes: [SwipeSetting; 4],
     pub debounce: u32,
     pub brightness: u32,
     pub sleep_seconds: u32,
@@ -356,14 +349,8 @@ pub enum Message {
     Key2(String),
     Key1Pin(KeyPin),
     Key2Pin(KeyPin),
-    SwipeLeft(SwipeAction),
-    SwipeRight(SwipeAction),
-    SwipeLeftKey(SwipeKey),
-    SwipeRightKey(SwipeKey),
-    SwipeUp(SwipeAction),
-    SwipeDown(SwipeAction),
-    SwipeUpKey(SwipeKey),
-    SwipeDownKey(SwipeKey),
+    Swipe(SwipeDir, SwipeChoice),
+    SwipeKey(SwipeDir, FreeKey),
     Debounce(u32),
     Brightness(u32),
     SleepSeconds(u32),
@@ -470,14 +457,7 @@ impl App {
             k2_input: "X".into(),
             k1_gpio: opad_model::DEFAULT_KEY1_GPIO,
             k2_gpio: opad_model::DEFAULT_KEY2_GPIO,
-            swipe_left: opad_model::DEFAULT_SWIPE_LEFT,
-            swipe_right: opad_model::DEFAULT_SWIPE_RIGHT,
-            swipe_left_key: 0,
-            swipe_right_key: 0,
-            swipe_up: opad_model::DEFAULT_SWIPE_UP,
-            swipe_down: opad_model::DEFAULT_SWIPE_DOWN,
-            swipe_up_key: 0,
-            swipe_down_key: 0,
+            swipes: SwipeDir::ALL.map(|d| DeviceConfig::default().swipe(d)),
             debounce: 5000,
             brightness: 100,
             sleep_seconds: 600,
@@ -1203,44 +1183,17 @@ impl App {
                     self.k2_gpio = pin.gpio;
                 }
             }
-            Message::SwipeLeft(action) => {
+            Message::Swipe(dir, choice) => {
                 if self.device_connected {
-                    self.swipe_left = action;
+                    let s = &mut self.swipes[dir.index()];
+                    *s = s.chosen(choice);
                 }
             }
-            Message::SwipeRight(action) => {
+            Message::SwipeKey(dir, key) => {
                 if self.device_connected {
-                    self.swipe_right = action;
-                }
-            }
-            Message::SwipeLeftKey(key) => {
-                if self.device_connected {
-                    self.swipe_left_key = key.usage;
-                }
-            }
-            Message::SwipeRightKey(key) => {
-                if self.device_connected {
-                    self.swipe_right_key = key.usage;
-                }
-            }
-            Message::SwipeUp(action) => {
-                if self.device_connected {
-                    self.swipe_up = action;
-                }
-            }
-            Message::SwipeDown(action) => {
-                if self.device_connected {
-                    self.swipe_down = action;
-                }
-            }
-            Message::SwipeUpKey(key) => {
-                if self.device_connected {
-                    self.swipe_up_key = key.usage;
-                }
-            }
-            Message::SwipeDownKey(key) => {
-                if self.device_connected {
-                    self.swipe_down_key = key.usage;
+                    let s = &mut self.swipes[dir.index()];
+                    s.key = key.0;
+                    s.modifiers = 0;
                 }
             }
             Message::Debounce(v) => {
@@ -1448,7 +1401,7 @@ impl App {
                     self.banner = Some("Cannot save settings: device is not connected.".into());
                     return Task::none();
                 }
-                let config = DeviceConfig {
+                let mut config = DeviceConfig {
                     key1_hid_usage: char_to_hid_usage(&self.k1_input)
                         .unwrap_or(self.config.key1_hid_usage),
                     key2_hid_usage: char_to_hid_usage(&self.k2_input)
@@ -1456,19 +1409,14 @@ impl App {
                     debounce_us: self.debounce,
                     key1_gpio: self.k1_gpio,
                     key2_gpio: self.k2_gpio,
-                    swipe_left_action: self.swipe_left,
-                    swipe_right_action: self.swipe_right,
-                    swipe_left_key: self.swipe_left_key,
-                    swipe_right_key: self.swipe_right_key,
-                    swipe_up_action: self.swipe_up,
-                    swipe_down_action: self.swipe_down,
-                    swipe_up_key: self.swipe_up_key,
-                    swipe_down_key: self.swipe_down_key,
                     brightness: self.brightness,
                     display_sleep_seconds: self.sleep_seconds,
                     gameplay_display_hz: self.gameplay_display_hz,
                     ..self.config.clone()
                 };
+                for dir in SwipeDir::ALL {
+                    config.set_swipe(dir, self.swipes[dir.index()]);
+                }
                 self.banner = Some("Saving settings...".into());
                 return Task::perform(
                     ipc::request(IpcRequest::UpdateConfig(config)),
@@ -2790,14 +2738,7 @@ impl App {
         self.k2_input = config.key2_char();
         self.k1_gpio = config.key1_gpio;
         self.k2_gpio = config.key2_gpio;
-        self.swipe_left = config.swipe_left_action;
-        self.swipe_right = config.swipe_right_action;
-        self.swipe_left_key = config.swipe_left_key;
-        self.swipe_right_key = config.swipe_right_key;
-        self.swipe_up = config.swipe_up_action;
-        self.swipe_down = config.swipe_down_action;
-        self.swipe_up_key = config.swipe_up_key;
-        self.swipe_down_key = config.swipe_down_key;
+        self.swipes = SwipeDir::ALL.map(|d| config.swipe(d));
         self.debounce = config.debounce_us;
         self.brightness = config.brightness;
         self.sleep_seconds = config.display_sleep_seconds;

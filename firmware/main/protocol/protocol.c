@@ -166,6 +166,10 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     msg.payload.hello_ack.current_config.swipe_down_action = (osupad_SwipeAction)cfg.swipe_down_action;
     msg.payload.hello_ack.current_config.swipe_up_key = cfg.swipe_up_key;
     msg.payload.hello_ack.current_config.swipe_down_key = cfg.swipe_down_key;
+    msg.payload.hello_ack.current_config.swipe_up_modifiers = cfg.swipe_mods[0];
+    msg.payload.hello_ack.current_config.swipe_down_modifiers = cfg.swipe_mods[1];
+    msg.payload.hello_ack.current_config.swipe_left_modifiers = cfg.swipe_mods[2];
+    msg.payload.hello_ack.current_config.swipe_right_modifiers = cfg.swipe_mods[3];
     // KeyPressBatch is sent while a map is played (issue #2)
     msg.payload.hello_ack.key_press_times = true;
 
@@ -237,6 +241,10 @@ esp_err_t protocol_send_config_ack(uint32_t seq, bool success, const char *text)
     msg.payload.config_ack.current_config.swipe_down_action = (osupad_SwipeAction)cfg.swipe_down_action;
     msg.payload.config_ack.current_config.swipe_up_key = cfg.swipe_up_key;
     msg.payload.config_ack.current_config.swipe_down_key = cfg.swipe_down_key;
+    msg.payload.config_ack.current_config.swipe_up_modifiers = cfg.swipe_mods[0];
+    msg.payload.config_ack.current_config.swipe_down_modifiers = cfg.swipe_mods[1];
+    msg.payload.config_ack.current_config.swipe_left_modifiers = cfg.swipe_mods[2];
+    msg.payload.config_ack.current_config.swipe_right_modifiers = cfg.swipe_mods[3];
 
     return send_envelope(&msg);
 }
@@ -490,6 +498,13 @@ static void handle_host_message(const osupad_HostToDevice *msg)
             if (c->swipe_down_action > 0) dcfg.swipe_down_action = c->swipe_down_action <= UINT8_MAX ? (uint8_t)c->swipe_down_action : 0;
             if (c->swipe_up_key > 0) dcfg.swipe_up_key = c->swipe_up_key <= UINT8_MAX ? (uint8_t)c->swipe_up_key : 1;
             if (c->swipe_down_key > 0) dcfg.swipe_down_key = c->swipe_down_key <= UINT8_MAX ? (uint8_t)c->swipe_down_key : 1;
+            // No "keep current" for modifiers: none is a value. An old host
+            // that does not know them sends 0 along with plain keys only.
+            const uint32_t mods[4] = {c->swipe_up_modifiers, c->swipe_down_modifiers,
+                                      c->swipe_left_modifiers, c->swipe_right_modifiers};
+            for (int i = 0; i < 4; i++) {
+                dcfg.swipe_mods[i] = (uint8_t)mods[i]; // HID modifiers are 8 bits
+            }
 
             char err_msg[64] = "";
             if (!device_config_validate(&dcfg, err_msg, sizeof(err_msg))) {

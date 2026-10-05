@@ -46,6 +46,8 @@ static device_config_data_t s_current_config = {
 #define DEVICE_CONFIG_V4_SIZE offsetof(device_config_data_t, swipe_up_action)
 // v5 blobs add one byte, "up/down inverted", read into swipe_up_action
 #define DEVICE_CONFIG_V5_SIZE (DEVICE_CONFIG_V4_SIZE + 1)
+// v6 blobs end before the swipe key modifiers; they load as none
+#define DEVICE_CONFIG_V6_SIZE offsetof(device_config_data_t, swipe_mods)
 
 static bool s_dirty = false;
 // Guards s_current_config and s_dirty: written by the protocol task, read by the
@@ -94,6 +96,7 @@ static void set_defaults(device_config_data_t *cfg)
     cfg->swipe_down_action = DEVICE_CONFIG_DEFAULT_SWIPE_DOWN;
     cfg->swipe_up_key = 0;
     cfg->swipe_down_key = 0;
+    memset(cfg->swipe_mods, 0, sizeof(cfg->swipe_mods));
 }
 
 
@@ -154,7 +157,7 @@ void device_config_apply(const device_config_data_t *cfg)
                                 cfg->swipe_left_action, cfg->swipe_right_action};
     const uint8_t keys[4] = {cfg->swipe_up_key, cfg->swipe_down_key,
                              cfg->swipe_left_key, cfg->swipe_right_key};
-    touch_retry_set_swipe_actions(actions, keys);
+    touch_retry_set_swipe_actions(actions, keys, cfg->swipe_mods);
 }
 
 esp_err_t device_config_init(void)
@@ -184,6 +187,7 @@ esp_err_t device_config_init(void)
         nvs_close(handle);
 
         bool layout_ok = (len == sizeof(loaded) && loaded.version == DEVICE_CONFIG_VERSION) ||
+                         (len == DEVICE_CONFIG_V6_SIZE && loaded.version == 6) ||
                          (len == DEVICE_CONFIG_V5_SIZE && loaded.version == 5) ||
                          (len == DEVICE_CONFIG_V4_SIZE && loaded.version == 4) ||
                          (len == DEVICE_CONFIG_V3_SIZE && loaded.version == 3) ||

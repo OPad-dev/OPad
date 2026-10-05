@@ -44,7 +44,7 @@ typedef enum _osupad_SwipeAction {
     osupad_SwipeAction_SWIPE_ACTION_NEXT_TRACK = 3,
     osupad_SwipeAction_SWIPE_ACTION_PLAY_PAUSE = 4,
     osupad_SwipeAction_SWIPE_ACTION_MUTE = 5,
-    osupad_SwipeAction_SWIPE_ACTION_KEY = 6, /* The swipe_*_key keyboard key */
+    osupad_SwipeAction_SWIPE_ACTION_KEY = 6, /* The swipe_*_key keyboard key, with swipe_*_modifiers */
     /* osu!'s volume while osu! is active (HostStatus.osu_active), otherwise
  the system volume */
     osupad_SwipeAction_SWIPE_ACTION_VOLUME_UP = 7,
@@ -107,6 +107,13 @@ typedef struct _osupad_ConfigPayload {
     osupad_SwipeAction swipe_down_action; /* Default: SWIPE_ACTION_VOLUME_DOWN. 0 = keep current */
     uint32_t swipe_up_key; /* HID usage for SWIPE_ACTION_KEY. 0 = keep current */
     uint32_t swipe_down_key; /* HID usage for SWIPE_ACTION_KEY. 0 = keep current */
+    /* Modifiers sent with swipe_*_key (HID modifier bits: 0x01 Ctrl, 0x02
+ Shift, 0x04 Alt, 0x08 GUI), e.g. Ctrl+O for osu!'s settings. Sent with
+ every SetConfig; firmware predating them sends the key alone. */
+    uint32_t swipe_up_modifiers;
+    uint32_t swipe_down_modifiers;
+    uint32_t swipe_left_modifiers;
+    uint32_t swipe_right_modifiers;
 } osupad_ConfigPayload;
 
 typedef PB_BYTES_ARRAY_T(16) osupad_HelloAck_owner_id_t;
@@ -385,7 +392,7 @@ extern "C" {
 #define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_default, 0}
 #define osupad_ClaimOwnership_init_default       {{0, {0}}}
 #define osupad_DeviceStatus_init_default         {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-#define osupad_ConfigPayload_init_default        {0, 0, 0, 0, 0, 0, 0, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0}
+#define osupad_ConfigPayload_init_default        {0, 0, 0, 0, 0, 0, 0, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, 0, 0, 0, 0}
 #define osupad_SetConfig_init_default            {false, osupad_ConfigPayload_init_default}
 #define osupad_ConfigAck_init_default            {0, "", false, osupad_ConfigPayload_init_default}
 #define osupad_TimeSync_init_default             {0, 0, 0, 0, 0, 0}
@@ -411,7 +418,7 @@ extern "C" {
 #define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_zero, 0}
 #define osupad_ClaimOwnership_init_zero          {{0, {0}}}
 #define osupad_DeviceStatus_init_zero            {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-#define osupad_ConfigPayload_init_zero           {0, 0, 0, 0, 0, 0, 0, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0}
+#define osupad_ConfigPayload_init_zero           {0, 0, 0, 0, 0, 0, 0, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, 0, 0, 0, 0}
 #define osupad_SetConfig_init_zero               {false, osupad_ConfigPayload_init_zero}
 #define osupad_ConfigAck_init_zero               {0, "", false, osupad_ConfigPayload_init_zero}
 #define osupad_TimeSync_init_zero                {0, 0, 0, 0, 0, 0}
@@ -472,6 +479,10 @@ extern "C" {
 #define osupad_ConfigPayload_swipe_down_action_tag 16
 #define osupad_ConfigPayload_swipe_up_key_tag    17
 #define osupad_ConfigPayload_swipe_down_key_tag  18
+#define osupad_ConfigPayload_swipe_up_modifiers_tag 19
+#define osupad_ConfigPayload_swipe_down_modifiers_tag 20
+#define osupad_ConfigPayload_swipe_left_modifiers_tag 21
+#define osupad_ConfigPayload_swipe_right_modifiers_tag 22
 #define osupad_HelloAck_protocol_version_tag     1
 #define osupad_HelloAck_firmware_version_tag     2
 #define osupad_HelloAck_board_profile_tag        3
@@ -652,7 +663,11 @@ X(a, STATIC,   SINGULAR, UINT32,   swipe_right_key,  13) \
 X(a, STATIC,   SINGULAR, UENUM,    swipe_up_action,  15) \
 X(a, STATIC,   SINGULAR, UENUM,    swipe_down_action,  16) \
 X(a, STATIC,   SINGULAR, UINT32,   swipe_up_key,     17) \
-X(a, STATIC,   SINGULAR, UINT32,   swipe_down_key,   18)
+X(a, STATIC,   SINGULAR, UINT32,   swipe_down_key,   18) \
+X(a, STATIC,   SINGULAR, UINT32,   swipe_up_modifiers,  19) \
+X(a, STATIC,   SINGULAR, UINT32,   swipe_down_modifiers,  20) \
+X(a, STATIC,   SINGULAR, UINT32,   swipe_left_modifiers,  21) \
+X(a, STATIC,   SINGULAR, UINT32,   swipe_right_modifiers,  22)
 #define osupad_ConfigPayload_CALLBACK NULL
 #define osupad_ConfigPayload_DEFAULT NULL
 
@@ -926,8 +941,8 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 /* Maximum encoded size of messages (where known) */
 #define OSUPAD_OSUPAD_PB_H_MAX_SIZE              osupad_HostToDevice_size
 #define osupad_ClaimOwnership_size               18
-#define osupad_ConfigAck_size                    158
-#define osupad_ConfigPayload_size                89
+#define osupad_ConfigAck_size                    186
+#define osupad_ConfigPayload_size                117
 #define osupad_CounterState_size                 61
 #define osupad_CounterSyncRequest_size           65
 #define osupad_CounterSyncResponse_size          130
@@ -938,7 +953,7 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_DeviceStatus_size                 98
 #define osupad_DeviceToHost_size                 889
 #define osupad_GameplayDisplayState_size         196
-#define osupad_HelloAck_size                     262
+#define osupad_HelloAck_size                     290
 #define osupad_Hello_size                        39
 #define osupad_HostStatus_size                   12
 #define osupad_HostToDevice_size                 4309
@@ -947,7 +962,7 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_LayoutAck_size                    73
 #define osupad_LogEventBatch_size                880
 #define osupad_LogEvent_size                     108
-#define osupad_SetConfig_size                    91
+#define osupad_SetConfig_size                    119
 #define osupad_SetLayout_size                    4300
 #define osupad_TimeSync_size                     36
 #define osupad_UiWidget_size                     131

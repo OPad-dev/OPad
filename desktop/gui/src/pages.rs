@@ -7,10 +7,9 @@ use iced::widget::{
     Space,
 };
 use iced::{Alignment, Color, Element, Length};
+use opad_model::swipe::{free_keys, swipe_choices, FreeKey, SwipeChoice, SwipeDir};
 use opad_model::ui_source::{self as src, SourceValue};
-use opad_model::{
-    key_pin, swipe_key_by_usage, KeyPin, SwipeAction, SwipeKey, KEY_PINS, SWIPE_KEYS,
-};
+use opad_model::{key_pin, KeyPin, KEY_PINS};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SettingsTab {
@@ -353,24 +352,25 @@ pub fn settings(app: &App) -> Element<'_, Message> {
         .spacing(18),
     );
 
-    // One side's action, and the key to send when that action is a key
-    let swipe_select = |label: &'static str,
-                        action: SwipeAction,
-                        key: u32,
-                        on_action: fn(SwipeAction) -> Message,
-                        on_key: fn(SwipeKey) -> Message| {
+    // One direction's choice, and the free key when that choice is "Other key"
+    let swipe_select = |label: &'static str, dir: SwipeDir| {
+        let setting = app.swipes[dir.index()];
+        let choice = setting.choice();
         let mut col = column![caption(label)]
             .spacing(6)
             .width(Length::FillPortion(1));
         if app.device_connected {
             col = col.push(
-                pick_list(SwipeAction::ALL, Some(action), on_action)
-                    .width(Length::Fill)
-                    .padding(10),
+                pick_list(swipe_choices(), Some(choice), move |c| {
+                    Message::Swipe(dir, c)
+                })
+                .width(Length::Fill)
+                .padding(10),
             );
-            if action == SwipeAction::Key {
+            if choice == SwipeChoice::OtherKey {
+                let current = free_keys().into_iter().find(|k| *k == FreeKey(setting.key));
                 col = col.push(
-                    pick_list(SWIPE_KEYS, swipe_key_by_usage(key), on_key)
+                    pick_list(free_keys(), current, move |k| Message::SwipeKey(dir, k))
                         .placeholder("Choose a key")
                         .width(Length::Fill)
                         .padding(10),
@@ -378,7 +378,7 @@ pub fn settings(app: &App) -> Element<'_, Message> {
             }
         } else {
             col = col.push(
-                text_input("", &format!("{} (disconnected)", action))
+                text_input("", &format!("{} (disconnected)", setting.describe()))
                     .size(13)
                     .width(Length::Fill)
                     .padding(10),
@@ -393,8 +393,8 @@ pub fn settings(app: &App) -> Element<'_, Message> {
             muted(
                 "Volume goes to osu! when osu! is the window in front (Windows) or osu!lazer \
                  is running (Linux), to the system otherwise, and steps again every bit of a \
-                 long drag; other actions fire once per swipe. During a map a resting finger \
-                 is Quick Retry and swipes still work, but never send a keyboard key. Outside \
+                 long drag; other actions fire once per swipe. osu! shortcuts and other keys \
+                 are never sent during a map, where a resting finger is Quick Retry. Outside \
                  a map a tap does nothing. While tosu is not connected the pad cannot tell a \
                  map from a menu: every touch is Quick Retry, no swipes."
             )
@@ -404,45 +404,21 @@ pub fn settings(app: &App) -> Element<'_, Message> {
             column![
                 row![
                     Space::new().width(Length::FillPortion(1)),
-                    swipe_select(
-                        "↑ SWIPE UP",
-                        app.swipe_up,
-                        app.swipe_up_key,
-                        Message::SwipeUp,
-                        Message::SwipeUpKey
-                    ),
+                    swipe_select("↑ SWIPE UP", SwipeDir::Up),
                     Space::new().width(Length::FillPortion(1)),
                 ]
                 .spacing(16),
                 row![
-                    swipe_select(
-                        "← SWIPE LEFT",
-                        app.swipe_left,
-                        app.swipe_left_key,
-                        Message::SwipeLeft,
-                        Message::SwipeLeftKey
-                    ),
+                    swipe_select("← SWIPE LEFT", SwipeDir::Left),
                     container(text("◆").size(28).color(theme::MUTED))
                         .center_x(Length::FillPortion(1)),
-                    swipe_select(
-                        "SWIPE RIGHT →",
-                        app.swipe_right,
-                        app.swipe_right_key,
-                        Message::SwipeRight,
-                        Message::SwipeRightKey
-                    ),
+                    swipe_select("SWIPE RIGHT →", SwipeDir::Right),
                 ]
                 .spacing(16)
                 .align_y(Alignment::Center),
                 row![
                     Space::new().width(Length::FillPortion(1)),
-                    swipe_select(
-                        "↓ SWIPE DOWN",
-                        app.swipe_down,
-                        app.swipe_down_key,
-                        Message::SwipeDown,
-                        Message::SwipeDownKey
-                    ),
+                    swipe_select("↓ SWIPE DOWN", SwipeDir::Down),
                     Space::new().width(Length::FillPortion(1)),
                 ]
                 .spacing(16),

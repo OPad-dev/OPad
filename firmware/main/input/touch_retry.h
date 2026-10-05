@@ -31,10 +31,11 @@ bool touch_retry_is_pressed(void);
 void touch_retry_set_host_status(bool tosu_connected, bool osu_active);
 
 /**
- * @brief Swipe actions (swipe_action_t) and their keyboard keys, in gesture_t
- *        order: up, down, left, right.
+ * @brief Swipe actions (swipe_action_t), their keyboard keys and the
+ *        modifiers held with them, in gesture_t order: up, down, left, right.
  */
-void touch_retry_set_swipe_actions(const uint8_t actions[4], const uint8_t keys[4]);
+void touch_retry_set_swipe_actions(const uint8_t actions[4], const uint8_t keys[4],
+                                   const uint8_t mods[4]);
 
 #ifdef __cplusplus
 }

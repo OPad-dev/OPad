@@ -17,7 +17,7 @@ typedef int esp_err_t;
 extern "C" {
 #endif
 
-#define DEVICE_CONFIG_VERSION               6
+#define DEVICE_CONFIG_VERSION               7
 #define DEVICE_CONFIG_DEFAULT_KEY1          0x1D // 'Z'
 #define DEVICE_CONFIG_DEFAULT_KEY2          0x1B // 'X'
 #define DEVICE_CONFIG_DEFAULT_DEBOUNCE_US   5000
@@ -71,6 +71,9 @@ typedef struct __attribute__((packed)) {
     uint8_t swipe_down_action;
     uint8_t swipe_up_key;
     uint8_t swipe_down_key;
+    // v7: modifiers held with each swipe's key (HID modifier bits), in
+    // gesture order: up, down, left, right
+    uint8_t swipe_mods[4];
 } device_config_data_t;
 
 /**

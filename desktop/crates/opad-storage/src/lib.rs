@@ -134,6 +134,9 @@ impl Storage {
         if v < 14 {
             self.apply_v14()?;
         }
+        if v < 15 {
+            self.apply_v15()?;
+        }
         Ok(())
     }
 
@@ -310,6 +313,31 @@ impl Storage {
         Ok(())
     }
 
+    /// v15: modifiers held with each swipe's key (osu! shortcuts like Ctrl+O)
+    fn apply_v15(&self) -> Result<(), StorageError> {
+        // Re-run safe, like v11
+        let has_column: bool = self.conn.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('config') WHERE name = 'swipe_up_modifiers'",
+            [],
+            |row| row.get(0),
+        )?;
+        self.conn.execute_batch(&format!(
+            "BEGIN TRANSACTION;
+            {}
+            INSERT INTO schema_migrations (version, applied_at) VALUES (15, datetime('now'));
+            COMMIT;",
+            if has_column {
+                ""
+            } else {
+                "ALTER TABLE config ADD COLUMN swipe_up_modifiers INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE config ADD COLUMN swipe_down_modifiers INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE config ADD COLUMN swipe_left_modifiers INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE config ADD COLUMN swipe_right_modifiers INTEGER NOT NULL DEFAULT 0;"
+            }
+        ))?;
+        Ok(())
+    }
+
     /// Reads a host-side value written by [`Self::set_app_state`]
     pub fn get_app_state(&self, key: &str) -> Result<Option<String>, StorageError> {
         self.conn
@@ -413,7 +441,8 @@ impl Storage {
                     display_sleep_seconds, gameplay_display_hz, tosu_endpoint,
                     key1_gpio, key2_gpio, swipe_left_action, swipe_right_action,
                     swipe_left_key, swipe_right_key, swipe_up_action, swipe_down_action,
-                    swipe_up_key, swipe_down_key
+                    swipe_up_key, swipe_down_key, swipe_up_modifiers, swipe_down_modifiers,
+                    swipe_left_modifiers, swipe_right_modifiers
              FROM config WHERE id = 1",
                 [],
                 |row| {
@@ -446,6 +475,10 @@ impl Storage {
                             .unwrap_or(DEFAULT_SWIPE_DOWN),
                         swipe_up_key: row.get(15)?,
                         swipe_down_key: row.get(16)?,
+                        swipe_up_modifiers: row.get(17)?,
+                        swipe_down_modifiers: row.get(18)?,
+                        swipe_left_modifiers: row.get(19)?,
+                        swipe_right_modifiers: row.get(20)?,
                     })
                 },
             )
@@ -472,7 +505,11 @@ impl Storage {
                 swipe_up_action = ?14,
                 swipe_down_action = ?15,
                 swipe_up_key = ?16,
-                swipe_down_key = ?17
+                swipe_down_key = ?17,
+                swipe_up_modifiers = ?18,
+                swipe_down_modifiers = ?19,
+                swipe_left_modifiers = ?20,
+                swipe_right_modifiers = ?21
              WHERE id = 1",
             params![
                 config.key1_hid_usage,
@@ -492,6 +529,10 @@ impl Storage {
                 config.swipe_down_action.to_wire(),
                 config.swipe_up_key,
                 config.swipe_down_key,
+                config.swipe_up_modifiers,
+                config.swipe_down_modifiers,
+                config.swipe_left_modifiers,
+                config.swipe_right_modifiers,
             ],
         )?;
         Ok(())
@@ -895,6 +936,7 @@ mod tests {
         updated.swipe_up_action = SwipeAction::Key;
         updated.swipe_up_key = 0x29;
         updated.swipe_down_action = SwipeAction::VolumeUp;
+        updated.swipe_right_modifiers = 0x03;
         storage.save_config(&updated).unwrap();
         assert_eq!(storage.load_config().unwrap(), updated);
 

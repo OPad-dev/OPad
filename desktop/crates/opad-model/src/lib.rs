@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 pub mod diag;
 pub mod log;
 pub mod paths;
+pub mod swipe;
 pub mod tap_rate;
 pub mod ui_source;
 
@@ -276,58 +277,6 @@ impl std::fmt::Display for SwipeAction {
     }
 }
 
-/// A keyboard key a swipe can send ([`SwipeAction::Key`])
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SwipeKey {
-    pub usage: u32,
-    pub name: &'static str,
-}
-
-impl std::fmt::Display for SwipeKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.name)
-    }
-}
-
-const fn swipe_key(usage: u32, name: &'static str) -> SwipeKey {
-    SwipeKey { usage, name }
-}
-
-/// The keys offered for a swipe, by HID usage. Letters and digits are left
-/// out: a swipe that types one is rarely what anyone wants.
-pub const SWIPE_KEYS: &[SwipeKey] = &[
-    swipe_key(0x29, "Esc"),
-    swipe_key(0x28, "Enter"),
-    swipe_key(0x2C, "Space"),
-    swipe_key(0x2B, "Tab"),
-    swipe_key(0x2A, "Backspace"),
-    swipe_key(0x4C, "Delete"),
-    swipe_key(0x3A, "F1"),
-    swipe_key(0x3B, "F2"),
-    swipe_key(0x3C, "F3"),
-    swipe_key(0x3D, "F4"),
-    swipe_key(0x3E, "F5"),
-    swipe_key(0x3F, "F6"),
-    swipe_key(0x40, "F7"),
-    swipe_key(0x41, "F8"),
-    swipe_key(0x42, "F9"),
-    swipe_key(0x43, "F10"),
-    swipe_key(0x44, "F11"),
-    swipe_key(0x45, "F12"),
-    swipe_key(0x52, "Up"),
-    swipe_key(0x51, "Down"),
-    swipe_key(0x50, "Left"),
-    swipe_key(0x4F, "Right"),
-    swipe_key(0x4B, "Page Up"),
-    swipe_key(0x4E, "Page Down"),
-    swipe_key(0x4A, "Home"),
-    swipe_key(0x4D, "End"),
-];
-
-pub fn swipe_key_by_usage(usage: u32) -> Option<SwipeKey> {
-    SWIPE_KEYS.iter().copied().find(|k| k.usage == usage)
-}
-
 pub const DEFAULT_SWIPE_LEFT: SwipeAction = SwipeAction::PrevTrack;
 pub const DEFAULT_SWIPE_RIGHT: SwipeAction = SwipeAction::NextTrack;
 pub const DEFAULT_SWIPE_UP: SwipeAction = SwipeAction::VolumeUp;
@@ -390,6 +339,15 @@ pub struct DeviceConfig {
     pub swipe_up_key: u32,
     #[serde(default)]
     pub swipe_down_key: u32,
+    /// HID modifier bits held with each swipe's key ([`swipe::MOD_CTRL`]...)
+    #[serde(default)]
+    pub swipe_up_modifiers: u32,
+    #[serde(default)]
+    pub swipe_down_modifiers: u32,
+    #[serde(default)]
+    pub swipe_left_modifiers: u32,
+    #[serde(default)]
+    pub swipe_right_modifiers: u32,
 }
 
 impl Default for DeviceConfig {
@@ -412,6 +370,10 @@ impl Default for DeviceConfig {
             swipe_down_action: DEFAULT_SWIPE_DOWN,
             swipe_up_key: 0,
             swipe_down_key: 0,
+            swipe_up_modifiers: 0,
+            swipe_down_modifiers: 0,
+            swipe_left_modifiers: 0,
+            swipe_right_modifiers: 0,
         }
     }
 }
@@ -460,6 +422,16 @@ impl DeviceConfig {
         validate_swipe("right", self.swipe_right_action, self.swipe_right_key)?;
         validate_swipe("up", self.swipe_up_action, self.swipe_up_key)?;
         validate_swipe("down", self.swipe_down_action, self.swipe_down_key)?;
+        for (side, mods) in [
+            ("up", self.swipe_up_modifiers),
+            ("down", self.swipe_down_modifiers),
+            ("left", self.swipe_left_modifiers),
+            ("right", self.swipe_right_modifiers),
+        ] {
+            if mods > 0xFF {
+                return Err(format!("Invalid {} swipe modifiers: 0x{:X}", side, mods));
+            }
+        }
         validate_key_gpios(self.key1_gpio, self.key2_gpio)
     }
 
@@ -597,6 +569,14 @@ pub struct JsonBackupConfig {
     pub swipe_up_key: u32,
     #[serde(default)]
     pub swipe_down_key: u32,
+    #[serde(default)]
+    pub swipe_up_modifiers: u32,
+    #[serde(default)]
+    pub swipe_down_modifiers: u32,
+    #[serde(default)]
+    pub swipe_left_modifiers: u32,
+    #[serde(default)]
+    pub swipe_right_modifiers: u32,
 }
 
 impl JsonBackup {
@@ -630,6 +610,10 @@ impl JsonBackup {
                 swipe_down_action: config.swipe_down_action,
                 swipe_up_key: config.swipe_up_key,
                 swipe_down_key: config.swipe_down_key,
+                swipe_up_modifiers: config.swipe_up_modifiers,
+                swipe_down_modifiers: config.swipe_down_modifiers,
+                swipe_left_modifiers: config.swipe_left_modifiers,
+                swipe_right_modifiers: config.swipe_right_modifiers,
             },
         }
     }
@@ -679,6 +663,10 @@ impl JsonBackup {
             swipe_down_action: self.config.swipe_down_action,
             swipe_up_key: self.config.swipe_up_key,
             swipe_down_key: self.config.swipe_down_key,
+            swipe_up_modifiers: self.config.swipe_up_modifiers,
+            swipe_down_modifiers: self.config.swipe_down_modifiers,
+            swipe_left_modifiers: self.config.swipe_left_modifiers,
+            swipe_right_modifiers: self.config.swipe_right_modifiers,
             ..DeviceConfig::default()
         }
         .validate()

@@ -113,6 +113,7 @@ static atomic_bool s_osu_active = false;
 static atomic_uint s_swipe_actions = SWIPE_ACTION_VOLUME_UP | (SWIPE_ACTION_VOLUME_DOWN << 8) |
                                      (SWIPE_ACTION_PREV_TRACK << 16) | (SWIPE_ACTION_NEXT_TRACK << 24);
 static atomic_uint s_swipe_keys = 0;
+static atomic_uint s_swipe_mods = 0;
 
 typedef enum {
     TOUCH_MODE_RETRY,   // Nothing tells us a map from a menu: Quick Retry only, as always
@@ -190,12 +191,21 @@ static void wait_touch_key_delivered(void)
     }
 }
 
-// Menus only: a keyboard key, pressed and released
-static void tap_keyboard_key(uint8_t key)
+// Menus only: a keyboard key with its modifiers, pressed and released. The
+// modifiers go down first and come up last, as from a keyboard.
+static void tap_keyboard_key(uint8_t key, uint8_t mods)
 {
-    usb_hid_set_touch_key(key, 0);
+    if (mods) {
+        usb_hid_set_touch_key(0, mods);
+        wait_touch_key_delivered();
+    }
+    usb_hid_set_touch_key(key, mods);
     wait_touch_key_delivered();
     vTaskDelay(pdMS_TO_TICKS(TOUCH_KEY_TAP_MS));
+    if (mods) {
+        usb_hid_set_touch_key(0, mods);
+        wait_touch_key_delivered();
+    }
     usb_hid_set_touch_key(0, 0);
 }
 
@@ -227,8 +237,8 @@ static const char *step_volume(bool up, bool playing, bool *alt_held)
 }
 
 // Runs a swipe's action. Returns the label to show, NULL for nothing done.
-static const char *run_swipe_action(uint8_t action, uint8_t key, bool playing, bool *alt_held,
-                                    const char **symbol)
+static const char *run_swipe_action(uint8_t action, uint8_t key, uint8_t mods, bool playing,
+                                    bool *alt_held, const char **symbol)
 {
     switch (action) {
     case SWIPE_ACTION_VOLUME_UP:
@@ -258,7 +268,7 @@ static const char *run_swipe_action(uint8_t action, uint8_t key, bool playing, b
         if (playing || key == 0) {
             return NULL;
         }
-        tap_keyboard_key(key);
+        tap_keyboard_key(key, mods);
         *symbol = LV_SYMBOL_KEYBOARD;
         return "Key";
     default:
@@ -277,12 +287,13 @@ static void handle_swipe(gesture_t g, touch_mode_t mode, bool repeat, bool *alt_
     unsigned shift = 8u * (unsigned)(g - GESTURE_UP);
     uint8_t action = (uint8_t)(atomic_load(&s_swipe_actions) >> shift);
     uint8_t key = (uint8_t)(atomic_load(&s_swipe_keys) >> shift);
+    uint8_t mods = (uint8_t)(atomic_load(&s_swipe_mods) >> shift);
     if (repeat && action != SWIPE_ACTION_VOLUME_UP && action != SWIPE_ACTION_VOLUME_DOWN) {
         return;
     }
 
     const char *symbol = NULL;
-    const char *text = run_swipe_action(action, key, playing, alt_held, &symbol);
+    const char *text = run_swipe_action(action, key, mods, playing, alt_held, &symbol);
     ESP_LOGI(TAG, "Swipe %d -> %s", (int)g, text ? text : "nothing");
     // Gameplay draws nothing extra. The feedback moves the way the finger did.
     if (text && !playing) {
@@ -430,16 +441,20 @@ void touch_retry_set_host_status(bool tosu_connected, bool osu_active)
     atomic_store(&s_osu_active, osu_active);
 }
 
-void touch_retry_set_swipe_actions(const uint8_t actions[4], const uint8_t keys[4])
+void touch_retry_set_swipe_actions(const uint8_t actions[4], const uint8_t keys[4],
+                                   const uint8_t mods[4])
 {
     unsigned a = 0;
     unsigned k = 0;
+    unsigned m = 0;
     for (unsigned i = 0; i < 4; i++) {
         a |= (unsigned)actions[i] << (8 * i);
         k |= (unsigned)keys[i] << (8 * i);
+        m |= (unsigned)mods[i] << (8 * i);
     }
     atomic_store(&s_swipe_actions, a);
     atomic_store(&s_swipe_keys, k);
+    atomic_store(&s_swipe_mods, m);
 }
 
 esp_err_t touch_retry_init(void)
