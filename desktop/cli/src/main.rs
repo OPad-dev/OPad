@@ -266,9 +266,14 @@ async fn main() -> Result<()> {
                     other => other.to_string(),
                 };
                 println!(
-                    "Swipes:           left {}, right {}",
+                    "Swipes:           left {}, right {}, up/down {}",
                     swipe(config.swipe_left_action, config.swipe_left_key),
-                    swipe(config.swipe_right_action, config.swipe_right_key)
+                    swipe(config.swipe_right_action, config.swipe_right_key),
+                    if config.swipe_invert_vertical {
+                        "inverted"
+                    } else {
+                        "normal"
+                    }
                 );
                 println!("Brightness:       {}%", config.brightness);
                 println!("Sleep Timeout:    {}s", config.display_sleep_seconds);

@@ -415,6 +415,15 @@ pub fn settings(app: &App) -> Element<'_, Message> {
                 ),
             ]
             .spacing(24),
+            {
+                let invert = checkbox(app.swipe_invert_vertical)
+                    .label("Invert up / down (swipe up turns the volume down)");
+                if app.device_connected {
+                    invert.on_toggle(Message::SwipeInvertVertical)
+                } else {
+                    invert
+                }
+            },
         ]
         .spacing(18),
     );

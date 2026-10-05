@@ -17,7 +17,7 @@ typedef int esp_err_t;
 extern "C" {
 #endif
 
-#define DEVICE_CONFIG_VERSION               4
+#define DEVICE_CONFIG_VERSION               5
 #define DEVICE_CONFIG_DEFAULT_KEY1          0x1D // 'Z'
 #define DEVICE_CONFIG_DEFAULT_KEY2          0x1B // 'X'
 #define DEVICE_CONFIG_DEFAULT_DEBOUNCE_US   5000
@@ -61,6 +61,8 @@ typedef struct __attribute__((packed)) {
     uint8_t swipe_right_action;
     uint8_t swipe_left_key;
     uint8_t swipe_right_key;
+    // v5: 1 = up/down swipes inverted (swipe up = volume down)
+    uint8_t swipe_invert_vertical;
 } device_config_data_t;
 
 /**

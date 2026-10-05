@@ -442,7 +442,7 @@ row says otherwise.
 
 | ID | Test Item | Procedure | Acceptance Criteria | Linux | Windows |
 |---|---|---|---|---|---|
-| SWP-01 | Directions match the screen | On the idle screen, swipe up, down, left, right. | The arrow on the pad and the action match the direction as the pad is held. If up/down or left/right are swapped, fix `TOUCH_SWAP_XY` / `TOUCH_MIRROR_X` / `TOUCH_MIRROR_Y` in `touch_retry.c`. | n/r | n/r |
+| SWP-01 | Directions match the screen | On the idle screen, swipe up, down, left, right. | The arrow on the pad and the action match the direction as the pad is held; swipe up turns the volume up. With Settings → Keypad → "Invert up / down" on, swipe up turns it down while the arrow still follows the finger. If the arrows themselves are wrong, fix `TOUCH_SWAP_XY` / `TOUCH_MIRROR_X` / `TOUCH_MIRROR_Y` in `touch_retry.c`. | n/r | n/r |
 | SWP-02 | No ` outside a map | Open a text editor, tap the screen and swipe. | Nothing is typed. Daemon log shows no Quick Retry. | n/r | n/r |
 | SWP-03 | System volume | osu! closed. Swipe up and down. | The system volume moves one step per ~30 px of drag; the pad shows "Vol +" / "Vol -". | n/r | n/r |
 | SWP-04 | osu! volume in menus | osu! (lazer on Linux) open and in front, in song select. Swipe up and down. | osu!'s volume overlay moves; the beatmap list does not scroll; daemon log: "osu! active". On Windows: no window menu or lost key after the swipe. | n/r | n/r |

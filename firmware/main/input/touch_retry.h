@@ -31,10 +31,12 @@ bool touch_retry_is_pressed(void);
 void touch_retry_set_host_status(bool tosu_connected, bool osu_active);
 
 /**
- * @brief Left/right swipe actions (swipe_action_t) and their keyboard keys.
+ * @brief Left/right swipe actions (swipe_action_t) and their keyboard keys,
+ *        and whether up/down are swapped (swipe up = volume down).
  */
 void touch_retry_set_swipe_actions(uint8_t left_action, uint8_t left_key,
-                                   uint8_t right_action, uint8_t right_key);
+                                   uint8_t right_action, uint8_t right_key,
+                                   bool invert_vertical);
 
 #ifdef __cplusplus
 }

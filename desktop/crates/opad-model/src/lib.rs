@@ -362,6 +362,9 @@ pub struct DeviceConfig {
     pub swipe_left_key: u32,
     #[serde(default)]
     pub swipe_right_key: u32,
+    /// Swipe up turns the volume down
+    #[serde(default)]
+    pub swipe_invert_vertical: bool,
 }
 
 impl Default for DeviceConfig {
@@ -380,6 +383,7 @@ impl Default for DeviceConfig {
             swipe_right_action: DEFAULT_SWIPE_RIGHT,
             swipe_left_key: 0,
             swipe_right_key: 0,
+            swipe_invert_vertical: false,
         }
     }
 }
@@ -555,6 +559,8 @@ pub struct JsonBackupConfig {
     pub swipe_left_key: u32,
     #[serde(default)]
     pub swipe_right_key: u32,
+    #[serde(default)]
+    pub swipe_invert_vertical: bool,
 }
 
 impl JsonBackup {
@@ -584,6 +590,7 @@ impl JsonBackup {
                 swipe_right_action: config.swipe_right_action,
                 swipe_left_key: config.swipe_left_key,
                 swipe_right_key: config.swipe_right_key,
+                swipe_invert_vertical: config.swipe_invert_vertical,
             },
         }
     }
@@ -629,6 +636,7 @@ impl JsonBackup {
             swipe_right_action: self.config.swipe_right_action,
             swipe_left_key: self.config.swipe_left_key,
             swipe_right_key: self.config.swipe_right_key,
+            swipe_invert_vertical: self.config.swipe_invert_vertical,
             ..DeviceConfig::default()
         }
         .validate()
@@ -752,6 +760,7 @@ mod tests {
             "swipe_right_action",
             "swipe_left_key",
             "swipe_right_key",
+            "swipe_invert_vertical",
         ] {
             assert!(cfg.remove(field).is_some(), "{field} is written");
         }
@@ -759,6 +768,7 @@ mod tests {
         assert_eq!(b.config.swipe_left_action, SwipeAction::PrevTrack);
         assert_eq!(b.config.swipe_right_action, SwipeAction::NextTrack);
         assert_eq!((b.config.swipe_left_key, b.config.swipe_right_key), (0, 0));
+        assert!(!b.config.swipe_invert_vertical);
         assert!(b.validate().is_ok());
     }
 

@@ -279,6 +279,12 @@ static void test_swipe_actions(void)
     cfg.swipe_right_action = SWIPE_ACTION_NEXT_TRACK;
     cfg.swipe_right_key = 0x3B;
     assert(device_config_validate(&cfg, err, sizeof(err)));
+    // Up/down inverted is a 0/1 flag
+    cfg.swipe_invert_vertical = 1;
+    assert(device_config_validate(&cfg, err, sizeof(err)));
+    cfg.swipe_invert_vertical = 2;
+    assert(!device_config_validate(&cfg, err, sizeof(err)));
+    assert(strstr(err, "vertical swipe") != NULL);
     printf("✓ test_swipe_actions passed\n");
 }
 

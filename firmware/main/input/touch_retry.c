@@ -96,7 +96,7 @@ static void cst816_disable_auto_sleep(void)
  */
 #define TOUCH_SWAP_XY           1
 #define TOUCH_MIRROR_X          0
-#define TOUCH_MIRROR_Y          0
+#define TOUCH_MIRROR_Y          1
 
 static bool s_int_wakeup = false; // INT falling edge wakes the task
 
@@ -105,6 +105,7 @@ static atomic_llong s_host_seen_us = 0;     // last HostStatus with tosu connect
 static atomic_bool s_osu_active = false;
 // Left/right swipe actions (swipe_action_t) and keys, from the device config
 static atomic_uint s_swipe_cfg = (SWIPE_ACTION_PREV_TRACK) | (SWIPE_ACTION_NEXT_TRACK << 16);
+static atomic_bool s_swipe_invert_vertical = false;
 
 typedef enum {
     TOUCH_MODE_RETRY,   // Nothing tells us a map from a menu: Quick Retry only, as always
@@ -241,7 +242,9 @@ static void handle_swipe(gesture_t g, touch_mode_t mode, bool *alt_held)
     int dy = 0;
 
     if (g == GESTURE_UP || g == GESTURE_DOWN) {
-        bool up = (g == GESTURE_UP);
+        // The arrow on the pad follows the finger; the volume follows the setting
+        bool finger_up = (g == GESTURE_UP);
+        bool up = finger_up != atomic_load(&s_swipe_invert_vertical);
         bool osu = atomic_load(&s_osu_active);
         if (osu && playing) {
             usb_media_wheel(up ? 1 : -1);
@@ -256,9 +259,9 @@ static void handle_swipe(gesture_t g, touch_mode_t mode, bool *alt_held)
         } else {
             usb_media_consumer_tap(up ? USB_MEDIA_VOLUME_UP : USB_MEDIA_VOLUME_DOWN);
         }
-        symbol = up ? LV_SYMBOL_UP : LV_SYMBOL_DOWN;
+        symbol = finger_up ? LV_SYMBOL_UP : LV_SYMBOL_DOWN;
         text = osu ? (up ? "osu! Vol +" : "osu! Vol -") : (up ? "Vol +" : "Vol -");
-        dy = up ? -1 : 1;
+        dy = finger_up ? -1 : 1;
     } else if (g == GESTURE_LEFT || g == GESTURE_RIGHT) {
         unsigned cfg = atomic_load(&s_swipe_cfg);
         bool left = (g == GESTURE_LEFT);
@@ -388,8 +391,10 @@ void touch_retry_set_host_status(bool tosu_connected, bool osu_active)
 }
 
 void touch_retry_set_swipe_actions(uint8_t left_action, uint8_t left_key,
-                                   uint8_t right_action, uint8_t right_key)
+                                   uint8_t right_action, uint8_t right_key,
+                                   bool invert_vertical)
 {
+    atomic_store(&s_swipe_invert_vertical, invert_vertical);
     atomic_store(&s_swipe_cfg, (unsigned)left_action | ((unsigned)left_key << 8) |
                                ((unsigned)right_action << 16) | ((unsigned)right_key << 24));
 }

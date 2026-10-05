@@ -731,6 +731,11 @@ impl DeviceManager {
                     swipe_right_action: config.swipe_right_action.to_wire() as i32,
                     swipe_left_key: config.swipe_left_key,
                     swipe_right_key: config.swipe_right_key,
+                    swipe_vertical: if config.swipe_invert_vertical {
+                        proto::SwipeVertical::Inverted
+                    } else {
+                        proto::SwipeVertical::Normal
+                    } as i32,
                 }),
             })),
         };
@@ -941,6 +946,8 @@ fn device_config_from(c: &proto::ConfigPayload) -> DeviceConfig {
             .unwrap_or(opad_model::DEFAULT_SWIPE_RIGHT),
         swipe_left_key: c.swipe_left_key,
         swipe_right_key: c.swipe_right_key,
+        // 0 (firmware predating the setting) reads as normal
+        swipe_invert_vertical: c.swipe_vertical == proto::SwipeVertical::Inverted as i32,
     }
 }
 
@@ -1878,6 +1885,9 @@ mod tests {
             ),
             (SwipeAction::Key, 0x3B, SwipeAction::None)
         );
+        assert!(!cfg.swipe_invert_vertical);
+        c.swipe_vertical = proto::SwipeVertical::Inverted as i32;
+        assert!(device_config_from(&c).swipe_invert_vertical);
     }
 
     #[test]

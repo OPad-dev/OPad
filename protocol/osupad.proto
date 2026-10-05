@@ -104,6 +104,15 @@ message ConfigPayload {
     SwipeAction swipe_right_action = 11; // Default: SWIPE_ACTION_NEXT_TRACK. 0 = keep current
     uint32 swipe_left_key = 12;      // HID usage for SWIPE_ACTION_KEY. 0 = keep current
     uint32 swipe_right_key = 13;     // HID usage for SWIPE_ACTION_KEY. 0 = keep current
+    SwipeVertical swipe_vertical = 14; // Default: SWIPE_VERTICAL_NORMAL. 0 = keep current
+}
+
+// Which way up/down swipes go. Firmware predating the setting reports 0,
+// which a host reads as normal.
+enum SwipeVertical {
+    SWIPE_VERTICAL_KEEP = 0;         // Wire only: leave the current setting
+    SWIPE_VERTICAL_NORMAL = 1;       // Swipe up = volume up
+    SWIPE_VERTICAL_INVERTED = 2;     // Swipe up = volume down
 }
 
 // Up/down swipes always set the volume; left/right do one of these. Keyboard

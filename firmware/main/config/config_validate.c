@@ -89,6 +89,11 @@ bool device_config_validate(const device_config_data_t *cfg, char *err_msg, size
                                              cfg->swipe_right_action, cfg->swipe_right_key);
         return false;
     }
+    if (cfg->swipe_invert_vertical > 1) {
+        if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "invalid vertical swipe setting %u",
+                                             cfg->swipe_invert_vertical);
+        return false;
+    }
     if (cfg->key1_gpio == cfg->key2_gpio) {
         if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "key1 and key2 share gpio %lu", (unsigned long)cfg->key1_gpio);
         return false;
