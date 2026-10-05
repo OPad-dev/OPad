@@ -399,40 +399,55 @@ pub fn settings(app: &App) -> Element<'_, Message> {
                  map from a menu: every touch is Quick Retry, no swipes."
             )
             .size(12),
-            row![
-                swipe_select(
-                    "SWIPE UP",
-                    app.swipe_up,
-                    app.swipe_up_key,
-                    Message::SwipeUp,
-                    Message::SwipeUpKey
-                ),
-                swipe_select(
-                    "SWIPE DOWN",
-                    app.swipe_down,
-                    app.swipe_down_key,
-                    Message::SwipeDown,
-                    Message::SwipeDownKey
-                ),
+            // Laid out as the swipes go: up on top, down below, left and right
+            // either side of the pad
+            column![
+                row![
+                    Space::new().width(Length::FillPortion(1)),
+                    swipe_select(
+                        "↑ SWIPE UP",
+                        app.swipe_up,
+                        app.swipe_up_key,
+                        Message::SwipeUp,
+                        Message::SwipeUpKey
+                    ),
+                    Space::new().width(Length::FillPortion(1)),
+                ]
+                .spacing(16),
+                row![
+                    swipe_select(
+                        "← SWIPE LEFT",
+                        app.swipe_left,
+                        app.swipe_left_key,
+                        Message::SwipeLeft,
+                        Message::SwipeLeftKey
+                    ),
+                    container(text("◆").size(28).color(theme::MUTED))
+                        .center_x(Length::FillPortion(1)),
+                    swipe_select(
+                        "SWIPE RIGHT →",
+                        app.swipe_right,
+                        app.swipe_right_key,
+                        Message::SwipeRight,
+                        Message::SwipeRightKey
+                    ),
+                ]
+                .spacing(16)
+                .align_y(Alignment::Center),
+                row![
+                    Space::new().width(Length::FillPortion(1)),
+                    swipe_select(
+                        "↓ SWIPE DOWN",
+                        app.swipe_down,
+                        app.swipe_down_key,
+                        Message::SwipeDown,
+                        Message::SwipeDownKey
+                    ),
+                    Space::new().width(Length::FillPortion(1)),
+                ]
+                .spacing(16),
             ]
-            .spacing(24),
-            row![
-                swipe_select(
-                    "SWIPE LEFT",
-                    app.swipe_left,
-                    app.swipe_left_key,
-                    Message::SwipeLeft,
-                    Message::SwipeLeftKey
-                ),
-                swipe_select(
-                    "SWIPE RIGHT",
-                    app.swipe_right,
-                    app.swipe_right_key,
-                    Message::SwipeRight,
-                    Message::SwipeRightKey
-                ),
-            ]
-            .spacing(24),
+            .spacing(12),
         ]
         .spacing(18),
     );
