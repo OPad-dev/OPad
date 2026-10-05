@@ -67,6 +67,27 @@ static void test_vertical_steps_repeat(void)
     printf("✓ test_vertical_steps_repeat passed\n");
 }
 
+static void test_fast_finger_keeps_every_step(void)
+{
+    gesture_tracker_t g;
+    gesture_begin(&g, 160, 200);
+    // One read 3.5 steps further up: three steps now, the half step stays
+    int16_t y = (int16_t)(200 - 3 * GESTURE_SWIPE_PX - GESTURE_SWIPE_PX / 2);
+    int ups = 0;
+    while (gesture_feed(&g, 160, y) == GESTURE_UP) {
+        ups++;
+    }
+    assert(ups == 3);
+    // ...and completes on the next bit of movement
+    assert(gesture_feed(&g, 160, (int16_t)(y - GESTURE_SWIPE_PX / 2)) == GESTURE_UP);
+
+    // Horizontal still fires once, however far one read jumps
+    gesture_begin(&g, 0, 120);
+    assert(gesture_feed(&g, 4 * GESTURE_SWIPE_PX, 120) == GESTURE_RIGHT);
+    assert(gesture_feed(&g, 4 * GESTURE_SWIPE_PX, 120) == GESTURE_NONE);
+    printf("✓ test_fast_finger_keeps_every_step passed\n");
+}
+
 static void test_horizontal_fires_once(void)
 {
     gesture_tracker_t g;
@@ -85,6 +106,7 @@ int main(void)
     test_swipe_directions();
     test_diagonal_waits();
     test_vertical_steps_repeat();
+    test_fast_finger_keeps_every_step();
     test_horizontal_fires_once();
     printf("All gesture tests passed\n");
     return 0;

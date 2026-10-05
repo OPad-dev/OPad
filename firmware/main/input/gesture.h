@@ -42,7 +42,9 @@ void gesture_begin(gesture_tracker_t *g, int16_t x, int16_t y);
 
 /**
  * @brief Feeds the next position of the finger.
- * @return The swipe this position completes, or GESTURE_NONE.
+ * @return The swipe this position completes, or GESTURE_NONE. One position
+ *         can complete several vertical steps (a fast finger, or a sample
+ *         read late): call again with the same position until GESTURE_NONE.
  */
 gesture_t gesture_feed(gesture_tracker_t *g, int16_t x, int16_t y);
 

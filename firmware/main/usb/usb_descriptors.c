@@ -58,10 +58,12 @@ const uint8_t osupad_usb_config_desc[] = {
     // Interface 1 & 2: CDC-ACM (Notification EP: 0x82, Data OUT: 0x03, Data IN: 0x83)
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, STRID_CDC, 0x82, 8, 0x03, 0x83, 64),
 
-    // Interface 3: HID media controls (EP 0x84, polled every 10 ms: swipes are
-    // not latency sensitive)
+    // Interface 3: HID media controls (EP 0x84, polled every 1 ms). A volume
+    // step is a press and a release report, and the touch task waits for
+    // each: at 10 ms a step held it ~20 ms. Its own endpoint, so the keyboard
+    // reports never wait on it.
     TUD_HID_DESCRIPTOR(ITF_NUM_MEDIA, STRID_MEDIA, HID_ITF_PROTOCOL_NONE,
-                       sizeof(osupad_media_report_desc), 0x84, 8, 10),
+                       sizeof(osupad_media_report_desc), 0x84, 8, 1),
 };
 
 const char *osupad_usb_string_desc[] = {

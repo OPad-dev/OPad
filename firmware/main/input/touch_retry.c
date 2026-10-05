@@ -377,8 +377,11 @@ static void touch_retry_task(void *arg)
                     gesture_begin(&tracker, s.x, s.y);
                     tracker_started = true;
                 } else {
-                    gesture_t g = gesture_feed(&tracker, s.x, s.y);
-                    if (g != GESTURE_NONE) {
+                    // Every step the finger covered since the last read, not
+                    // just one: a fast swipe, or one read late because the
+                    // previous step was still being sent, keeps its length
+                    gesture_t g;
+                    while ((g = gesture_feed(&tracker, s.x, s.y)) != GESTURE_NONE) {
                         retry_pending = false; // a swipe never sends '`'
                         handle_swipe(g, mode, swipes > 0, &alt_held);
                         swipes++;
