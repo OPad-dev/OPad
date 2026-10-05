@@ -23,6 +23,7 @@ pub mod firmware_update;
 pub mod identity;
 pub mod ipc_handlers;
 pub mod log_hub;
+pub mod osu_window;
 pub mod runtime;
 pub mod sync;
 pub mod tap_stats;
@@ -221,6 +222,7 @@ async fn main() -> Result<()> {
     let mut tosu_connected_rx = tosu_manager.subscribe_connected();
     let mut tosu_keys_rx = tosu_manager.subscribe_keys();
     tosu_manager.start();
+    let mut osu_active_rx = osu_window::watch();
 
     // Start Device CDC manager
     let (device_manager, mut device_rx) = DeviceManager::new();
@@ -404,6 +406,14 @@ async fn main() -> Result<()> {
                 event_opt = Some(RuntimeEvent::TosuConnectionChanged(connected));
             }
 
+            // 3b. osu! came to the front / started, or went away: where the
+            //     pad's volume swipes go
+            Ok(()) = osu_active_rx.changed() => {
+                let active = *osu_active_rx.borrow_and_update();
+                info!("{}", if active { "osu! active: volume swipes go to osu!" } else { "osu! inactive: volume swipes set the system volume" });
+                event_opt = Some(RuntimeEvent::OsuActiveChanged(active));
+            }
+
             // 4. A background sync finished
             Some(res) = sync_done_rx.recv() => {
                 event_opt = Some(match res {
@@ -530,12 +540,14 @@ async fn main() -> Result<()> {
                         tosu_connected,
                         is_playing,
                         play_id,
+                        osu_active,
                     } => {
                         let _ = device_cmd
                             .send(DeviceCommand::HostStatus {
                                 tosu_connected,
                                 is_playing,
                                 play_id,
+                                osu_active,
                             })
                             .await;
                     }
@@ -731,6 +743,7 @@ mod tests {
             last_sync_error: None,
             storage_error: Some("Database permission denied".to_string()),
             tosu_connected: false,
+            osu_active: false,
             latency: None,
             pending_replacement: None,
             install_id: None,

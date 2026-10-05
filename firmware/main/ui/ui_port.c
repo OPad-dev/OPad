@@ -399,3 +399,69 @@ void ui_show_notice(const char *text)
     lv_label_set_text(label, text);
     lvgl_port_unlock();
 }
+
+// ---- swipe feedback ------------------------------------------------------------------
+
+#define SWIPE_ANIM_MS       400
+#define SWIPE_ANIM_TRAVEL   28   // px moved in the swipe's direction
+
+static lv_obj_t *s_swipe_box;    // on the top layer, hidden between swipes
+static lv_obj_t *s_swipe_label;
+static int s_swipe_dx;
+static int s_swipe_dy;
+
+// v: 0..1000 through the animation. Fully shown for the first 40 %, then fades
+static void swipe_anim_cb(void *var, int32_t v)
+{
+    lv_obj_t *box = var;
+    int32_t travel = SWIPE_ANIM_TRAVEL * v / 1000;
+    lv_obj_set_style_translate_x(box, s_swipe_dx * travel, 0);
+    lv_obj_set_style_translate_y(box, s_swipe_dy * travel, 0);
+    int32_t opa = v < 400 ? LV_OPA_COVER : LV_OPA_COVER * (1000 - v) / 600;
+    lv_obj_set_style_bg_opa(box, (lv_opa_t)(opa * 9 / 10), 0);
+    lv_obj_set_style_text_opa(box, (lv_opa_t)opa, 0);
+}
+
+static void swipe_anim_done(lv_anim_t *a)
+{
+    lv_obj_add_flag((lv_obj_t *)a->var, LV_OBJ_FLAG_HIDDEN);
+}
+
+void ui_show_swipe(int dx, int dy, const char *symbol, const char *text)
+{
+    // Asleep: this touch is what wakes the screen, nothing to show it on yet
+    if (!s_ui_ok || s_asleep || !text) return;
+    lvgl_port_lock(0);
+    if (!s_swipe_box) {
+        s_swipe_box = lv_obj_create(lv_layer_top());
+        lv_obj_set_size(s_swipe_box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+        lv_obj_align(s_swipe_box, LV_ALIGN_CENTER, 0, 0);
+        lv_obj_set_style_bg_color(s_swipe_box, lv_color_hex(0x1E1E2E), 0);
+        lv_obj_set_style_border_width(s_swipe_box, 0, 0);
+        lv_obj_set_style_radius(s_swipe_box, 12, 0);
+        lv_obj_set_style_pad_hor(s_swipe_box, 16, 0);
+        lv_obj_set_style_pad_ver(s_swipe_box, 10, 0);
+        lv_obj_remove_flag(s_swipe_box, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+        s_swipe_label = lv_label_create(s_swipe_box);
+        lv_obj_set_style_text_color(s_swipe_label, lv_color_white(), 0);
+        lv_obj_set_style_text_font(s_swipe_label, &lv_font_montserrat_24, 0);
+    }
+    lv_label_set_text_fmt(s_swipe_label, "%s  %s", symbol ? symbol : "", text);
+    s_swipe_dx = dx;
+    s_swipe_dy = dy;
+
+    // A swipe during the previous one's fade restarts it
+    lv_anim_delete(s_swipe_box, swipe_anim_cb);
+    swipe_anim_cb(s_swipe_box, 0);
+    lv_obj_remove_flag(s_swipe_box, LV_OBJ_FLAG_HIDDEN);
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, s_swipe_box);
+    lv_anim_set_values(&a, 0, 1000);
+    lv_anim_set_duration(&a, SWIPE_ANIM_MS);
+    lv_anim_set_exec_cb(&a, swipe_anim_cb);
+    lv_anim_set_completed_cb(&a, swipe_anim_done);
+    lv_anim_start(&a);
+    lvgl_port_unlock();
+}

@@ -23,6 +23,8 @@ static void test_valid_config_accepted(void)
         .debounce_us = 5000,
         .brightness = 80,
         .sleep_s = 600,
+        .swipe_left_action = SWIPE_ACTION_PREV_TRACK,
+        .swipe_right_action = SWIPE_ACTION_NEXT_TRACK,
     };
     char err[64] = {0};
     bool ok = device_config_validate(&cfg, err, sizeof(err));
@@ -42,6 +44,8 @@ static void test_invalid_key_usages_rejected(void)
         .debounce_us = 5000,
         .brightness = 80,
         .sleep_s = 600,
+        .swipe_left_action = SWIPE_ACTION_PREV_TRACK,
+        .swipe_right_action = SWIPE_ACTION_NEXT_TRACK,
     };
     char err[64] = {0};
     bool ok = device_config_validate(&cfg, err, sizeof(err));
@@ -68,6 +72,8 @@ static void test_debounce_bounds(void)
         .debounce_us = 499, // Below 500
         .brightness = 80,
         .sleep_s = 600,
+        .swipe_left_action = SWIPE_ACTION_PREV_TRACK,
+        .swipe_right_action = SWIPE_ACTION_NEXT_TRACK,
     };
     char err[64] = {0};
     bool ok = device_config_validate(&cfg, err, sizeof(err));
@@ -101,6 +107,8 @@ static void test_brightness_and_sleep_bounds(void)
         .debounce_us = 5000,
         .brightness = 101, // Above 100
         .sleep_s = 600,
+        .swipe_left_action = SWIPE_ACTION_PREV_TRACK,
+        .swipe_right_action = SWIPE_ACTION_NEXT_TRACK,
     };
     char err[64] = {0};
     bool ok = device_config_validate(&cfg, err, sizeof(err));
@@ -137,6 +145,8 @@ static void test_gameplay_display_hz_bounds(void)
         .debounce_us = 5000,
         .brightness = 100,
         .sleep_s = 600,
+        .swipe_left_action = SWIPE_ACTION_PREV_TRACK,
+        .swipe_right_action = SWIPE_ACTION_NEXT_TRACK,
         .gameplay_display_hz = 61, // Above 60
     };
     char err[64] = {0};
@@ -167,6 +177,8 @@ static void test_key_gpio_allow_list(void)
         .debounce_us = 5000,
         .brightness = 100,
         .sleep_s = 600,
+        .swipe_left_action = SWIPE_ACTION_PREV_TRACK,
+        .swipe_right_action = SWIPE_ACTION_NEXT_TRACK,
         .key1_gpio = 14,
         .key2_gpio = 9,
     };
@@ -229,6 +241,47 @@ static void test_key_gpio_allow_list(void)
     printf("✓ test_key_gpio_allow_list passed\n");
 }
 
+static void test_swipe_actions(void)
+{
+    device_config_data_t cfg = {
+        .version = DEVICE_CONFIG_VERSION,
+        .key1_usage = 0x1D,
+        .key2_usage = 0x1B,
+        .key1_gpio = DEVICE_CONFIG_DEFAULT_KEY1_GPIO,
+        .key2_gpio = DEVICE_CONFIG_DEFAULT_KEY2_GPIO,
+        .debounce_us = 5000,
+        .brightness = 80,
+        .sleep_s = 600,
+        .swipe_left_action = SWIPE_ACTION_NONE,
+        .swipe_right_action = SWIPE_ACTION_MUTE,
+    };
+    char err[64] = {0};
+    assert(device_config_validate(&cfg, err, sizeof(err)));
+
+    // 0 is "keep current" on the wire, never a stored action
+    cfg.swipe_left_action = 0;
+    assert(!device_config_validate(&cfg, err, sizeof(err)));
+    assert(strstr(err, "left swipe") != NULL);
+    cfg.swipe_left_action = SWIPE_ACTION_KEY + 1;
+    assert(!device_config_validate(&cfg, err, sizeof(err)));
+
+    // A key action needs a key
+    cfg.swipe_left_action = SWIPE_ACTION_NONE;
+    cfg.swipe_right_action = SWIPE_ACTION_KEY;
+    assert(!device_config_validate(&cfg, err, sizeof(err)));
+    assert(strstr(err, "right swipe") != NULL);
+    cfg.swipe_right_key = 0x3B; // F2
+    assert(device_config_validate(&cfg, err, sizeof(err)));
+    cfg.swipe_right_key = 0x03;
+    assert(!device_config_validate(&cfg, err, sizeof(err)));
+
+    // A key kept from an earlier KEY action is fine under another action
+    cfg.swipe_right_action = SWIPE_ACTION_NEXT_TRACK;
+    cfg.swipe_right_key = 0x3B;
+    assert(device_config_validate(&cfg, err, sizeof(err)));
+    printf("✓ test_swipe_actions passed\n");
+}
+
 int main(void)
 {
     test_null_config_rejected();
@@ -238,6 +291,7 @@ int main(void)
     test_brightness_and_sleep_bounds();
     test_gameplay_display_hz_bounds();
     test_key_gpio_allow_list();
+    test_swipe_actions();
     printf("All config validation unit tests passed successfully!\n");
     return 0;
 }

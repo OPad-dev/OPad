@@ -1,4 +1,5 @@
 #include "usb_hid.h"
+#include "usb_descriptors.h"
 #include "input/keypad.h"
 #include "input/latency_stats.h"
 #include "diag/diag.h"
@@ -16,9 +17,10 @@ static uint8_t s_key3_code = 0x35; // '`' / '~' (osu! Quick Retry)
 
 /*
  * Who touches what:
- * - s_key1/2_pressed: written by the keypad task (core 0), s_key3_pressed by
- *   the touch task (core 1). Each has that one writer; every submitter reads all
- *   three.
+ * - s_key1/2_pressed: written by the keypad task (core 0), s_touch_code and
+ *   s_touch_mods by the touch task (core 1). Each has that one writer; every
+ *   submitter reads them all. During a map the touch slot only ever holds
+ *   Quick Retry; Alt and swipe keys are sent outside gameplay only.
  * - s_change_seq: bumped by both writers after they change a key, so a submit
  *   that loaded it before reading the keys carries at least that change.
  * - s_sent_seq: the newest s_change_seq a submitted report carried, raised by
@@ -29,7 +31,9 @@ static uint8_t s_key3_code = 0x35; // '`' / '~' (osu! Quick Retry)
  */
 static volatile bool s_key1_pressed = false;
 static volatile bool s_key2_pressed = false;
-static volatile bool s_key3_pressed = false;
+// Key the touchscreen holds down (0 = none), and the modifiers with it
+static volatile uint8_t s_touch_code = 0;
+static volatile uint8_t s_touch_mods = 0;
 static atomic_uint s_change_seq = 0;
 static atomic_uint s_sent_seq = 0;
 // Edge time of the oldest key change not yet delivered, for latency stats (0 = none)
@@ -90,11 +94,12 @@ static bool submit_current_state(void)
     if (s_key2_pressed && count < 6) {
         keycodes[count++] = s_key2_code;
     }
-    if (s_key3_pressed && count < 6) {
-        keycodes[count++] = s_key3_code;
+    uint8_t touch_code = s_touch_code;
+    if (touch_code && count < 6) {
+        keycodes[count++] = touch_code;
     }
 
-    return tud_hid_ready() && tud_hid_keyboard_report(0, 0, keycodes);
+    return tud_hid_ready() && tud_hid_keyboard_report(0, s_touch_mods, keycodes);
 }
 
 // Submits the current state. On success marks every change up to the one
@@ -117,14 +122,25 @@ static bool change_pending(void)
     return !seq_reached(atomic_load(&s_sent_seq), atomic_load(&s_change_seq));
 }
 
-void usb_hid_set_touch_retry(bool pressed)
+void usb_hid_set_touch_key(uint8_t keycode, uint8_t modifiers)
 {
-    if (s_key3_pressed == pressed) {
+    if (s_touch_code == keycode && s_touch_mods == modifiers) {
         return;
     }
-    s_key3_pressed = pressed;
+    s_touch_code = keycode;
+    s_touch_mods = modifiers;
     atomic_fetch_add(&s_change_seq, 1);
     try_submit();
+}
+
+void usb_hid_set_touch_retry(bool pressed)
+{
+    usb_hid_set_touch_key(pressed ? s_key3_code : 0, 0);
+}
+
+bool usb_hid_touch_key_delivered(void)
+{
+    return !change_pending() && tud_hid_ready();
 }
 
 bool IRAM_ATTR usb_hid_handle_key_event(uint8_t key_index, bool pressed, int64_t edge_us)
@@ -160,9 +176,12 @@ bool IRAM_ATTR usb_hid_handle_key_event(uint8_t key_index, bool pressed, int64_t
 // arrived while the endpoint was busy is sent now instead of being lost (stuck key).
 void tud_hid_report_complete_cb(uint8_t instance, uint8_t const *report, uint16_t len)
 {
-    (void)instance;
     (void)report;
     (void)len;
+    // The media interface completes here too; it never holds a key change
+    if (instance != HID_INSTANCE_KEYBOARD) {
+        return;
+    }
     // On failure another transfer is in flight, and its completion retries
     if (change_pending() && try_submit()) {
         record_pending_latency();

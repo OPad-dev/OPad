@@ -1,5 +1,7 @@
 use chrono::Utc;
-use opad_model::{CounterState, DeviceConfig, DeviceInfo};
+use opad_model::{
+    CounterState, DeviceConfig, DeviceInfo, SwipeAction, DEFAULT_SWIPE_LEFT, DEFAULT_SWIPE_RIGHT,
+};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -122,6 +124,9 @@ impl Storage {
         if v < 11 {
             self.apply_v11()?;
         }
+        if v < 12 {
+            self.apply_v12()?;
+        }
         Ok(())
     }
 
@@ -211,6 +216,32 @@ impl Storage {
             INSERT INTO schema_migrations (version, applied_at) VALUES (8, datetime('now'));
             COMMIT;",
         )?;
+        Ok(())
+    }
+
+    /// v12: left/right touchscreen swipe actions, as `SwipeAction` wire values
+    /// (defaults: previous / next track) and their keyboard keys
+    fn apply_v12(&self) -> Result<(), StorageError> {
+        // Re-run safe, like v11: the columns may already be there
+        let has_swipes: bool = self.conn.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('config') WHERE name = 'swipe_left_action'",
+            [],
+            |row| row.get(0),
+        )?;
+        self.conn.execute_batch(&format!(
+            "BEGIN TRANSACTION;
+            {}
+            INSERT INTO schema_migrations (version, applied_at) VALUES (12, datetime('now'));
+            COMMIT;",
+            if has_swipes {
+                ""
+            } else {
+                "ALTER TABLE config ADD COLUMN swipe_left_action INTEGER NOT NULL DEFAULT 2;
+                ALTER TABLE config ADD COLUMN swipe_right_action INTEGER NOT NULL DEFAULT 3;
+                ALTER TABLE config ADD COLUMN swipe_left_key INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE config ADD COLUMN swipe_right_key INTEGER NOT NULL DEFAULT 0;"
+            }
+        ))?;
         Ok(())
     }
 
@@ -315,7 +346,8 @@ impl Storage {
             .query_row(
                 "SELECT key1_hid_usage, key2_hid_usage, debounce_us, brightness,
                     display_sleep_seconds, gameplay_display_hz, tosu_endpoint,
-                    key1_gpio, key2_gpio
+                    key1_gpio, key2_gpio, swipe_left_action, swipe_right_action,
+                    swipe_left_key, swipe_right_key
              FROM config WHERE id = 1",
                 [],
                 |row| {
@@ -336,6 +368,12 @@ impl Storage {
                         },
                         key1_gpio: row.get(7)?,
                         key2_gpio: row.get(8)?,
+                        swipe_left_action: SwipeAction::from_wire(row.get(9)?)
+                            .unwrap_or(DEFAULT_SWIPE_LEFT),
+                        swipe_right_action: SwipeAction::from_wire(row.get(10)?)
+                            .unwrap_or(DEFAULT_SWIPE_RIGHT),
+                        swipe_left_key: row.get(11)?,
+                        swipe_right_key: row.get(12)?,
                     })
                 },
             )
@@ -354,7 +392,11 @@ impl Storage {
                 gameplay_display_hz = ?6,
                 tosu_endpoint = ?7,
                 key1_gpio = ?8,
-                key2_gpio = ?9
+                key2_gpio = ?9,
+                swipe_left_action = ?10,
+                swipe_right_action = ?11,
+                swipe_left_key = ?12,
+                swipe_right_key = ?13
              WHERE id = 1",
             params![
                 config.key1_hid_usage,
@@ -366,6 +408,10 @@ impl Storage {
                 config.tosu_endpoint,
                 config.key1_gpio,
                 config.key2_gpio,
+                config.swipe_left_action.to_wire(),
+                config.swipe_right_action.to_wire(),
+                config.swipe_left_key,
+                config.swipe_right_key,
             ],
         )?;
         Ok(())
@@ -751,6 +797,39 @@ mod tests {
 
         let migrated = storage.load_config().unwrap();
         assert_eq!(migrated.tosu_endpoint, "ws://127.0.0.1:24050/websocket/v2");
+    }
+
+    #[test]
+    fn test_swipe_actions_round_trip_and_migrate() {
+        let storage = Storage::open_in_memory().expect("open");
+        let config = storage.load_config().unwrap();
+        assert_eq!(
+            (config.swipe_left_action, config.swipe_right_action),
+            (SwipeAction::PrevTrack, SwipeAction::NextTrack)
+        );
+
+        let mut updated = config.clone();
+        updated.swipe_left_action = SwipeAction::Key;
+        updated.swipe_left_key = 0x3B;
+        updated.swipe_right_action = SwipeAction::Mute;
+        storage.save_config(&updated).unwrap();
+        assert_eq!(storage.load_config().unwrap(), updated);
+
+        // A database from before swipes gets the defaults
+        storage
+            .conn
+            .execute_batch(
+                "ALTER TABLE config DROP COLUMN swipe_left_action;
+                 ALTER TABLE config DROP COLUMN swipe_right_action;
+                 ALTER TABLE config DROP COLUMN swipe_left_key;
+                 ALTER TABLE config DROP COLUMN swipe_right_key;
+                 DELETE FROM schema_migrations WHERE version >= 12;",
+            )
+            .unwrap();
+        storage.migrate().unwrap();
+        let migrated = storage.load_config().unwrap();
+        assert_eq!(migrated.swipe_left_action, SwipeAction::PrevTrack);
+        assert_eq!(migrated.swipe_left_key, 0);
     }
 
     #[test]

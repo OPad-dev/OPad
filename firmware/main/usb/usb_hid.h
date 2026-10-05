@@ -34,6 +34,18 @@ void usb_hid_set_key3_code(uint8_t key3_code);
 void usb_hid_set_touch_retry(bool pressed);
 
 /**
+ * @brief Hold a key (0 = none) and modifiers from the touchscreen, in place of
+ * whatever it held before. Touch task only. During a map it is only ever
+ * Quick Retry (usb_hid_set_touch_retry).
+ */
+void usb_hid_set_touch_key(uint8_t keycode, uint8_t modifiers);
+
+/**
+ * @brief True once the host has the last usb_hid_set_touch_key change.
+ */
+bool usb_hid_touch_key_delivered(void);
+
+/**
  * @brief Handler dispatched when keypad physical state changes.
  */
 bool usb_hid_handle_key_event(uint8_t key_index, bool pressed, int64_t edge_us);

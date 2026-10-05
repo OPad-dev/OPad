@@ -44,6 +44,12 @@ bool ui_set_layout(uint8_t screen, const ui_layout_t *layout, char *err, size_t 
 /** Trigger the 67 freaky cat easter egg animation. */
 void ui_trigger_easter_egg(void);
 
+/**
+ * Brief swipe feedback: @p symbol and @p text slide (dx, dy = -1/0/1) and fade
+ * out. Never call it while a map is played: gameplay draws nothing extra.
+ */
+void ui_show_swipe(int dx, int dy, const char *symbol, const char *text);
+
 // A message that stays on top of every screen until reboot (e.g. an unsupported input module)
 void ui_show_notice(const char *text);
 

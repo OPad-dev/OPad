@@ -260,6 +260,16 @@ async fn main() -> Result<()> {
                     config.key1_gpio, config.key2_gpio
                 );
                 println!("Debounce Lockout: {} µs", config.debounce_us);
+                let swipe = |action: opad_model::SwipeAction, key: u32| match action {
+                    opad_model::SwipeAction::Key => opad_model::swipe_key_by_usage(key)
+                        .map_or(format!("key 0x{:02X}", key), |k| format!("key {}", k)),
+                    other => other.to_string(),
+                };
+                println!(
+                    "Swipes:           left {}, right {}",
+                    swipe(config.swipe_left_action, config.swipe_left_key),
+                    swipe(config.swipe_right_action, config.swipe_right_key)
+                );
                 println!("Brightness:       {}%", config.brightness);
                 println!("Sleep Timeout:    {}s", config.display_sleep_seconds);
             }

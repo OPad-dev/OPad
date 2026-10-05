@@ -4,7 +4,7 @@ use bytes::BytesMut;
 use chrono::{Datelike, Local, Timelike};
 use opad_layout::{Layout, Screen};
 use opad_model::ui_source::SourceValue;
-use opad_model::{CounterState, DeviceConfig, DeviceInfo};
+use opad_model::{CounterState, DeviceConfig, DeviceInfo, SwipeAction};
 pub use opad_protocol::proto;
 use opad_protocol::proto::{host_to_device, DeviceToHost, HostToDevice};
 use opad_protocol::{decode_device_message_framed, encode_host_message_as, Framing};
@@ -726,6 +726,11 @@ impl DeviceManager {
                     press_color_rgb: 0,
                     key1_gpio: config.key1_gpio,
                     key2_gpio: config.key2_gpio,
+                    // Firmware without swipes skips these fields
+                    swipe_left_action: config.swipe_left_action.to_wire() as i32,
+                    swipe_right_action: config.swipe_right_action.to_wire() as i32,
+                    swipe_left_key: config.swipe_left_key,
+                    swipe_right_key: config.swipe_right_key,
                 }),
             })),
         };
@@ -828,11 +833,13 @@ impl DeviceManager {
         self.send_msg(msg)
     }
 
+    /// `osu_active`: volume swipes go to osu! (ignored by firmware without swipes)
     pub async fn send_host_status(
         &self,
         tosu_connected: bool,
         playing: bool,
         play_id: u32,
+        osu_active: bool,
     ) -> Result<(), DeviceError> {
         let msg = HostToDevice {
             sequence_number: self.next_seq(),
@@ -840,6 +847,7 @@ impl DeviceManager {
                 tosu_connected,
                 playing,
                 play_id,
+                osu_active,
             })),
         };
         self.send_msg(msg)
@@ -925,6 +933,14 @@ fn device_config_from(c: &proto::ConfigPayload) -> DeviceConfig {
         } else {
             c.key2_gpio
         },
+        // 0 from firmware without swipes: the defaults, which is what the host
+        // sends it anyway (and it ignores)
+        swipe_left_action: SwipeAction::from_wire(c.swipe_left_action as u32)
+            .unwrap_or(opad_model::DEFAULT_SWIPE_LEFT),
+        swipe_right_action: SwipeAction::from_wire(c.swipe_right_action as u32)
+            .unwrap_or(opad_model::DEFAULT_SWIPE_RIGHT),
+        swipe_left_key: c.swipe_left_key,
+        swipe_right_key: c.swipe_right_key,
     }
 }
 
@@ -1411,8 +1427,8 @@ mod tests {
         accept_frame, classify_port, device_config_from, fit_nanopb_string, handle_device_message,
         hello_due, is_opad_device_id, normalize_mac, pad_mac, probe_exhausted, proto,
         select_bootloader_port, BootloaderMatch, BootloaderPort, DeviceConfig, DeviceEvent,
-        Handshake, HelloDue, HelloStep, PadLocation, PortClass, ProbeHistory, HELLOS_BEFORE_REOPEN,
-        HELLO_RETRY, PORT_SCAN_INTERVAL, PROBE_HELLOS, PROBE_RETRY_KNOWN_VID,
+        Handshake, HelloDue, HelloStep, PadLocation, PortClass, ProbeHistory, SwipeAction,
+        HELLOS_BEFORE_REOPEN, HELLO_RETRY, PORT_SCAN_INTERVAL, PROBE_HELLOS, PROBE_RETRY_KNOWN_VID,
         RECONNECT_SETTLE_INTERVAL,
     };
     use opad_protocol::Framing;
@@ -1844,6 +1860,24 @@ mod tests {
         c.key2_gpio = 5;
         let cfg = device_config_from(&c);
         assert_eq!((cfg.key1_gpio, cfg.key2_gpio), (4, 5));
+
+        // Firmware without swipes reports 0: the defaults
+        assert_eq!(
+            (cfg.swipe_left_action, cfg.swipe_right_action),
+            (SwipeAction::PrevTrack, SwipeAction::NextTrack)
+        );
+        c.swipe_left_action = SwipeAction::Key.to_wire() as i32;
+        c.swipe_left_key = 0x3B;
+        c.swipe_right_action = SwipeAction::None.to_wire() as i32;
+        let cfg = device_config_from(&c);
+        assert_eq!(
+            (
+                cfg.swipe_left_action,
+                cfg.swipe_left_key,
+                cfg.swipe_right_action
+            ),
+            (SwipeAction::Key, 0x3B, SwipeAction::None)
+        );
     }
 
     #[test]

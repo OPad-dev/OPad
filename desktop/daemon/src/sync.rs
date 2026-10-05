@@ -24,6 +24,7 @@ pub trait DeviceLink: Send + Sync {
         tosu_connected: bool,
         is_playing: bool,
         play_id: u32,
+        osu_active: bool,
     ) -> Result<(), DeviceError>;
     async fn send_data_update(&self, values: &[(u8, SourceValue)]) -> Result<(), DeviceError>;
     async fn send_counter_sync(
@@ -78,8 +79,9 @@ impl DeviceLink for DeviceManager {
         tosu_connected: bool,
         is_playing: bool,
         play_id: u32,
+        osu_active: bool,
     ) -> Result<(), DeviceError> {
-        self.send_host_status(tosu_connected, is_playing, play_id)
+        self.send_host_status(tosu_connected, is_playing, play_id, osu_active)
             .await
     }
 

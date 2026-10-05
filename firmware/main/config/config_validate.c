@@ -29,6 +29,18 @@ bool device_config_key_gpio_supported(uint32_t gpio)
     return false;
 }
 
+// A key is optional (0) unless the action sends it
+static bool swipe_valid(uint8_t action, uint8_t key)
+{
+    if (action < SWIPE_ACTION_NONE || action > SWIPE_ACTION_KEY) {
+        return false;
+    }
+    if (key != 0 && (key < 0x04 || key > 0xE7)) {
+        return false;
+    }
+    return action != SWIPE_ACTION_KEY || key != 0;
+}
+
 bool device_config_validate(const device_config_data_t *cfg, char *err_msg, size_t err_msg_len)
 {
     if (!cfg) {
@@ -65,6 +77,16 @@ bool device_config_validate(const device_config_data_t *cfg, char *err_msg, size
     }
     if (!device_config_key_gpio_supported(cfg->key2_gpio)) {
         if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "unsupported key2 gpio %lu", (unsigned long)cfg->key2_gpio);
+        return false;
+    }
+    if (!swipe_valid(cfg->swipe_left_action, cfg->swipe_left_key)) {
+        if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "invalid left swipe action %u key 0x%02x",
+                                             cfg->swipe_left_action, cfg->swipe_left_key);
+        return false;
+    }
+    if (!swipe_valid(cfg->swipe_right_action, cfg->swipe_right_key)) {
+        if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "invalid right swipe action %u key 0x%02x",
+                                             cfg->swipe_right_action, cfg->swipe_right_key);
         return false;
     }
     if (cfg->key1_gpio == cfg->key2_gpio) {

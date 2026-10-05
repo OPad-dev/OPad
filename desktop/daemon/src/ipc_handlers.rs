@@ -991,6 +991,10 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 tosu_endpoint: current_tosu,
                 key1_gpio: backup.config.key1_gpio,
                 key2_gpio: backup.config.key2_gpio,
+                swipe_left_action: backup.config.swipe_left_action,
+                swipe_right_action: backup.config.swipe_right_action,
+                swipe_left_key: backup.config.swipe_left_key,
+                swipe_right_key: backup.config.swipe_right_key,
             };
 
             let new_counters = CounterState {

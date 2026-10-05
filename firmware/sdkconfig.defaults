@@ -10,11 +10,11 @@ CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
 # FreeRTOS 1000 Hz tick for microsecond-level timing and 1ms USB polling
 CONFIG_FREERTOS_HZ=1000
 
-# TinyUSB Composite Device (HID Keyboard + CDC ACM)
+# TinyUSB Composite Device (HID Keyboard + CDC ACM + HID media controls)
 CONFIG_TINYUSB=y
 CONFIG_TINYUSB_CDC_ENABLED=y
 CONFIG_TINYUSB_HID_ENABLED=y
-CONFIG_TINYUSB_HID_COUNT=1
+CONFIG_TINYUSB_HID_COUNT=2
 CONFIG_TINYUSB_CDC_COUNT=1
 # Room for the largest device frame, so frames are queued whole (usb_cdc_write)
 CONFIG_TINYUSB_CDC_TX_BUFSIZE=2048

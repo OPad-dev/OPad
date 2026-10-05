@@ -79,6 +79,9 @@ pub struct DaemonState {
     pub last_sync_error: Option<String>,
     pub storage_error: Option<String>,
     pub tosu_connected: bool,
+    /// osu! should get the pad's volume swipes: in front on Windows, running
+    /// (osu!lazer) on Linux. See `osu_window`.
+    pub osu_active: bool,
     pub latency: Option<LatencyStats>,
     pub pending_replacement: Option<String>,
     /// This install's identity (§W3-1). `None` when storage is unavailable, in
@@ -217,6 +220,8 @@ pub enum RuntimeEvent {
         received: Instant,
     },
     TosuConnectionChanged(bool),
+    /// osu! became active or stopped being active (`osu_window`)
+    OsuActiveChanged(bool),
     Tick(Instant),
     SyncCompleted {
         success: bool,
@@ -245,6 +250,8 @@ pub enum RuntimeAction {
         tosu_connected: bool,
         is_playing: bool,
         play_id: u32,
+        /// Volume swipes go to osu! ([`DaemonState::osu_active`])
+        osu_active: bool,
     },
     SendDataUpdate(Vec<(u8, SourceValue)>),
     SendLayout(Screen, Layout),
@@ -373,6 +380,7 @@ impl RuntimeController {
             last_sync_error: None,
             storage_error,
             tosu_connected: false,
+            osu_active: false,
             latency: None,
             pending_replacement: None,
             install_id: None,
@@ -772,6 +780,7 @@ impl RuntimeController {
                     tosu_connected: self.state.tosu_connected,
                     is_playing: self.state.mode == RuntimeMode::Playing,
                     play_id: self.play_id,
+                    osu_active: self.state.osu_active,
                 });
                 self.data_sync.reset_sent();
 
@@ -932,6 +941,7 @@ impl RuntimeController {
                             tosu_connected: true,
                             is_playing: true,
                             play_id: self.play_id,
+                            osu_active: self.state.osu_active,
                         });
                         self.last_host_status = now;
                         let playing_hz = self.state.config.gameplay_display_hz;
@@ -951,6 +961,7 @@ impl RuntimeController {
                             tosu_connected: true,
                             is_playing: false,
                             play_id: self.play_id,
+                            osu_active: self.state.osu_active,
                         });
                     }
                 }
@@ -1020,9 +1031,25 @@ impl RuntimeController {
                         tosu_connected: connected,
                         is_playing: false,
                         play_id: self.play_id,
+                        osu_active: self.state.osu_active,
                     });
                 }
                 self.last_host_status = now;
+            }
+
+            RuntimeEvent::OsuActiveChanged(active) => {
+                self.state.osu_active = active;
+                // At once rather than at the next heartbeat: a swipe right
+                // after switching to osu! should already reach it
+                if self.state.device_connected {
+                    actions.push(RuntimeAction::SendHostStatus {
+                        tosu_connected: self.state.tosu_connected,
+                        is_playing: self.state.mode == RuntimeMode::Playing,
+                        play_id: self.play_id,
+                        osu_active: active,
+                    });
+                    self.last_host_status = now;
+                }
             }
 
             RuntimeEvent::Tick(now) => {
@@ -1067,6 +1094,7 @@ impl RuntimeController {
                         tosu_connected: self.state.tosu_connected,
                         is_playing,
                         play_id: self.play_id,
+                        osu_active: self.state.osu_active,
                     });
                 }
 

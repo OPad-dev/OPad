@@ -5,6 +5,7 @@
 #include "usb/usb_hid.h"
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
 #include "config/device_config.h"
+#include "input/touch_retry.h"
 #include "input/keypad.h"
 #include "counters/counters.h"
 #include "ui/ui.h"
@@ -157,6 +158,10 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     msg.payload.hello_ack.current_config.press_color_rgb = 0;
     msg.payload.hello_ack.current_config.key1_gpio = cfg.key1_gpio;
     msg.payload.hello_ack.current_config.key2_gpio = cfg.key2_gpio;
+    msg.payload.hello_ack.current_config.swipe_left_action = (osupad_SwipeAction)cfg.swipe_left_action;
+    msg.payload.hello_ack.current_config.swipe_right_action = (osupad_SwipeAction)cfg.swipe_right_action;
+    msg.payload.hello_ack.current_config.swipe_left_key = cfg.swipe_left_key;
+    msg.payload.hello_ack.current_config.swipe_right_key = cfg.swipe_right_key;
     // KeyPressBatch is sent while a map is played (issue #2)
     msg.payload.hello_ack.key_press_times = true;
 
@@ -220,6 +225,10 @@ esp_err_t protocol_send_config_ack(uint32_t seq, bool success, const char *text)
     msg.payload.config_ack.current_config.press_color_rgb = 0;
     msg.payload.config_ack.current_config.key1_gpio = cfg.key1_gpio;
     msg.payload.config_ack.current_config.key2_gpio = cfg.key2_gpio;
+    msg.payload.config_ack.current_config.swipe_left_action = (osupad_SwipeAction)cfg.swipe_left_action;
+    msg.payload.config_ack.current_config.swipe_right_action = (osupad_SwipeAction)cfg.swipe_right_action;
+    msg.payload.config_ack.current_config.swipe_left_key = cfg.swipe_left_key;
+    msg.payload.config_ack.current_config.swipe_right_key = cfg.swipe_right_key;
 
     return send_envelope(&msg);
 }
@@ -464,6 +473,11 @@ static void handle_host_message(const osupad_HostToDevice *msg)
             if (c->gameplay_display_hz > 0) dcfg.gameplay_display_hz = c->gameplay_display_hz;
             if (c->key1_gpio > 0) dcfg.key1_gpio = c->key1_gpio;
             if (c->key2_gpio > 0) dcfg.key2_gpio = c->key2_gpio;
+            // Out-of-range values are left for validation to reject, not truncated
+            if (c->swipe_left_action > 0) dcfg.swipe_left_action = c->swipe_left_action <= UINT8_MAX ? (uint8_t)c->swipe_left_action : 0;
+            if (c->swipe_right_action > 0) dcfg.swipe_right_action = c->swipe_right_action <= UINT8_MAX ? (uint8_t)c->swipe_right_action : 0;
+            if (c->swipe_left_key > 0) dcfg.swipe_left_key = c->swipe_left_key <= UINT8_MAX ? (uint8_t)c->swipe_left_key : 1;
+            if (c->swipe_right_key > 0) dcfg.swipe_right_key = c->swipe_right_key <= UINT8_MAX ? (uint8_t)c->swipe_right_key : 1;
 
             char err_msg[64] = "";
             if (!device_config_validate(&dcfg, err_msg, sizeof(err_msg))) {
@@ -526,6 +540,7 @@ static void handle_host_message(const osupad_HostToDevice *msg)
             keypad_reset_map_presses();
         }
         ui_set_tosu_connected(hs->tosu_connected);
+        touch_retry_set_host_status(hs->tosu_connected, hs->osu_active);
         runtime_notify_gameplay(hs->playing);
         break;
     }

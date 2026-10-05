@@ -208,6 +208,137 @@ fn validate_key_gpios(key1_gpio: u32, key2_gpio: u32) -> Result<(), String> {
     Ok(())
 }
 
+/// What a left/right swipe on the pad's touchscreen does. Up/down always set
+/// the volume. The wire values are osupad.proto's `SwipeAction`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SwipeAction {
+    None,
+    PrevTrack,
+    NextTrack,
+    PlayPause,
+    Mute,
+    /// The configured keyboard key (`swipe_*_key`). Never sent during a map.
+    Key,
+}
+
+impl SwipeAction {
+    pub const ALL: [SwipeAction; 6] = [
+        SwipeAction::None,
+        SwipeAction::PrevTrack,
+        SwipeAction::NextTrack,
+        SwipeAction::PlayPause,
+        SwipeAction::Mute,
+        SwipeAction::Key,
+    ];
+
+    pub fn to_wire(self) -> u32 {
+        match self {
+            SwipeAction::None => 1,
+            SwipeAction::PrevTrack => 2,
+            SwipeAction::NextTrack => 3,
+            SwipeAction::PlayPause => 4,
+            SwipeAction::Mute => 5,
+            SwipeAction::Key => 6,
+        }
+    }
+
+    /// `None` for 0 (keep current, or firmware without swipes) and unknown values
+    pub fn from_wire(value: u32) -> Option<SwipeAction> {
+        SwipeAction::ALL.into_iter().find(|a| a.to_wire() == value)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SwipeAction::None => "Nothing",
+            SwipeAction::PrevTrack => "Previous track",
+            SwipeAction::NextTrack => "Next track",
+            SwipeAction::PlayPause => "Play / pause",
+            SwipeAction::Mute => "Mute",
+            SwipeAction::Key => "Keyboard key",
+        }
+    }
+}
+
+impl std::fmt::Display for SwipeAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
+/// A keyboard key a swipe can send ([`SwipeAction::Key`])
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwipeKey {
+    pub usage: u32,
+    pub name: &'static str,
+}
+
+impl std::fmt::Display for SwipeKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name)
+    }
+}
+
+const fn swipe_key(usage: u32, name: &'static str) -> SwipeKey {
+    SwipeKey { usage, name }
+}
+
+/// The keys offered for a swipe, by HID usage. Letters and digits are left
+/// out: a swipe that types one is rarely what anyone wants.
+pub const SWIPE_KEYS: &[SwipeKey] = &[
+    swipe_key(0x29, "Esc"),
+    swipe_key(0x28, "Enter"),
+    swipe_key(0x2C, "Space"),
+    swipe_key(0x2B, "Tab"),
+    swipe_key(0x2A, "Backspace"),
+    swipe_key(0x4C, "Delete"),
+    swipe_key(0x3A, "F1"),
+    swipe_key(0x3B, "F2"),
+    swipe_key(0x3C, "F3"),
+    swipe_key(0x3D, "F4"),
+    swipe_key(0x3E, "F5"),
+    swipe_key(0x3F, "F6"),
+    swipe_key(0x40, "F7"),
+    swipe_key(0x41, "F8"),
+    swipe_key(0x42, "F9"),
+    swipe_key(0x43, "F10"),
+    swipe_key(0x44, "F11"),
+    swipe_key(0x45, "F12"),
+    swipe_key(0x52, "Up"),
+    swipe_key(0x51, "Down"),
+    swipe_key(0x50, "Left"),
+    swipe_key(0x4F, "Right"),
+    swipe_key(0x4B, "Page Up"),
+    swipe_key(0x4E, "Page Down"),
+    swipe_key(0x4A, "Home"),
+    swipe_key(0x4D, "End"),
+];
+
+pub fn swipe_key_by_usage(usage: u32) -> Option<SwipeKey> {
+    SWIPE_KEYS.iter().copied().find(|k| k.usage == usage)
+}
+
+pub const DEFAULT_SWIPE_LEFT: SwipeAction = SwipeAction::PrevTrack;
+pub const DEFAULT_SWIPE_RIGHT: SwipeAction = SwipeAction::NextTrack;
+
+fn default_swipe_left() -> SwipeAction {
+    DEFAULT_SWIPE_LEFT
+}
+
+fn default_swipe_right() -> SwipeAction {
+    DEFAULT_SWIPE_RIGHT
+}
+
+fn validate_swipe(side: &str, action: SwipeAction, key: u32) -> Result<(), String> {
+    if key != 0 && !(0x04..=0xE7).contains(&key) {
+        return Err(format!("Invalid {} swipe key: 0x{:02X}", side, key));
+    }
+    if action == SwipeAction::Key && key == 0 {
+        return Err(format!("The {} swipe needs a key to send", side));
+    }
+    Ok(())
+}
+
 /// Device configuration parameters (§37)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeviceConfig {
@@ -222,6 +353,15 @@ pub struct DeviceConfig {
     pub key1_gpio: u32, // Default: 14
     #[serde(default = "default_key2_gpio")]
     pub key2_gpio: u32, // Default: 9
+    #[serde(default = "default_swipe_left")]
+    pub swipe_left_action: SwipeAction,
+    #[serde(default = "default_swipe_right")]
+    pub swipe_right_action: SwipeAction,
+    /// HID usage for [`SwipeAction::Key`], 0 = none
+    #[serde(default)]
+    pub swipe_left_key: u32,
+    #[serde(default)]
+    pub swipe_right_key: u32,
 }
 
 impl Default for DeviceConfig {
@@ -236,6 +376,10 @@ impl Default for DeviceConfig {
             tosu_endpoint: "ws://127.0.0.1:24050/websocket/v2".to_string(),
             key1_gpio: DEFAULT_KEY1_GPIO,
             key2_gpio: DEFAULT_KEY2_GPIO,
+            swipe_left_action: DEFAULT_SWIPE_LEFT,
+            swipe_right_action: DEFAULT_SWIPE_RIGHT,
+            swipe_left_key: 0,
+            swipe_right_key: 0,
         }
     }
 }
@@ -280,6 +424,8 @@ impl DeviceConfig {
                 self.gameplay_display_hz
             ));
         }
+        validate_swipe("left", self.swipe_left_action, self.swipe_left_key)?;
+        validate_swipe("right", self.swipe_right_action, self.swipe_right_key)?;
         validate_key_gpios(self.key1_gpio, self.key2_gpio)
     }
 
@@ -400,6 +546,15 @@ pub struct JsonBackupConfig {
     pub key1_gpio: u32,
     #[serde(default = "default_key2_gpio")]
     pub key2_gpio: u32,
+    // Backups from before swipes have none of these: the defaults
+    #[serde(default = "default_swipe_left")]
+    pub swipe_left_action: SwipeAction,
+    #[serde(default = "default_swipe_right")]
+    pub swipe_right_action: SwipeAction,
+    #[serde(default)]
+    pub swipe_left_key: u32,
+    #[serde(default)]
+    pub swipe_right_key: u32,
 }
 
 impl JsonBackup {
@@ -425,6 +580,10 @@ impl JsonBackup {
                 gameplay_display_hz: config.gameplay_display_hz,
                 key1_gpio: config.key1_gpio,
                 key2_gpio: config.key2_gpio,
+                swipe_left_action: config.swipe_left_action,
+                swipe_right_action: config.swipe_right_action,
+                swipe_left_key: config.swipe_left_key,
+                swipe_right_key: config.swipe_right_key,
             },
         }
     }
@@ -466,6 +625,10 @@ impl JsonBackup {
             gameplay_display_hz: self.config.gameplay_display_hz,
             key1_gpio: self.config.key1_gpio,
             key2_gpio: self.config.key2_gpio,
+            swipe_left_action: self.config.swipe_left_action,
+            swipe_right_action: self.config.swipe_right_action,
+            swipe_left_key: self.config.swipe_left_key,
+            swipe_right_key: self.config.swipe_right_key,
             ..DeviceConfig::default()
         }
         .validate()
@@ -578,6 +741,48 @@ mod tests {
             [2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 21]
         );
         assert!(key_pin(DEFAULT_KEY1_GPIO).is_some() && key_pin(DEFAULT_KEY2_GPIO).is_some());
+    }
+
+    #[test]
+    fn test_backup_without_swipes_uses_defaults() {
+        let mut json = serde_json::to_value(valid_backup()).unwrap();
+        let cfg = json["config"].as_object_mut().unwrap();
+        for field in [
+            "swipe_left_action",
+            "swipe_right_action",
+            "swipe_left_key",
+            "swipe_right_key",
+        ] {
+            assert!(cfg.remove(field).is_some(), "{field} is written");
+        }
+        let b: JsonBackup = serde_json::from_value(json).unwrap();
+        assert_eq!(b.config.swipe_left_action, SwipeAction::PrevTrack);
+        assert_eq!(b.config.swipe_right_action, SwipeAction::NextTrack);
+        assert_eq!((b.config.swipe_left_key, b.config.swipe_right_key), (0, 0));
+        assert!(b.validate().is_ok());
+    }
+
+    #[test]
+    fn test_swipe_actions() {
+        for action in SwipeAction::ALL {
+            assert_eq!(SwipeAction::from_wire(action.to_wire()), Some(action));
+        }
+        // 0 is "keep current" on the wire
+        assert_eq!(SwipeAction::from_wire(0), None);
+        assert_eq!(SwipeAction::from_wire(7), None);
+
+        let mut c = DeviceConfig {
+            swipe_right_action: SwipeAction::Key,
+            ..DeviceConfig::default()
+        };
+        assert!(c
+            .validate()
+            .unwrap_err()
+            .contains("right swipe needs a key"));
+        c.swipe_right_key = 0x3B; // F2
+        assert!(c.validate().is_ok());
+        c.swipe_left_key = 0x03;
+        assert!(c.validate().unwrap_err().contains("left swipe key"));
     }
 
     #[test]

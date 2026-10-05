@@ -97,6 +97,26 @@ message ConfigPayload {
     uint32 press_color_rgb = 7 [deprecated = true]; // Deprecated: key highlight colors now come from layouts
     uint32 key1_gpio = 8;            // Switch GPIO for key 1, default: 14. 0 = keep current
     uint32 key2_gpio = 9;            // Switch GPIO for key 2, default: 9. 0 = keep current
+    // What a left/right swipe on the touchscreen does (SwipeAction). Firmware
+    // predating swipes ignores these and reports 0, which a host reads as the
+    // defaults (previous / next track).
+    SwipeAction swipe_left_action = 10;  // Default: SWIPE_ACTION_PREV_TRACK. 0 = keep current
+    SwipeAction swipe_right_action = 11; // Default: SWIPE_ACTION_NEXT_TRACK. 0 = keep current
+    uint32 swipe_left_key = 12;      // HID usage for SWIPE_ACTION_KEY. 0 = keep current
+    uint32 swipe_right_key = 13;     // HID usage for SWIPE_ACTION_KEY. 0 = keep current
+}
+
+// Up/down swipes always set the volume; left/right do one of these. Keyboard
+// keys (SWIPE_ACTION_KEY) are never sent while a map is played: the keyboard
+// report then carries only K1, K2 and Quick Retry.
+enum SwipeAction {
+    SWIPE_ACTION_KEEP = 0;           // Wire only: leave the current action
+    SWIPE_ACTION_NONE = 1;
+    SWIPE_ACTION_PREV_TRACK = 2;
+    SWIPE_ACTION_NEXT_TRACK = 3;
+    SWIPE_ACTION_PLAY_PAUSE = 4;
+    SWIPE_ACTION_MUTE = 5;
+    SWIPE_ACTION_KEY = 6;            // The swipe_*_key keyboard key
 }
 
 message SetConfig {
@@ -143,6 +163,10 @@ message HostStatus {
     bool tosu_connected = 1;          // Daemon has a live tosu WebSocket
     bool playing = 2;                 // osu! is currently playing a map
     uint32 play_id = 3;               // Changes on every new attempt (new map, retry); device zeroes map counters
+    // Volume swipes go to osu! (Alt+wheel, or the plain wheel during a map)
+    // rather than the system volume. Windows: osu! is the foreground window.
+    // Linux: osu!lazer is running. Hosts predating swipes leave it false.
+    bool osu_active = 4;
 }
 
 // One UI data source value. Source ids: firmware/main/ui/core/ui_ids.h (ui_source_t)

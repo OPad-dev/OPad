@@ -1,6 +1,7 @@
 #include "device_config.h"
 #include "input/keypad.h"
 #include "input/debounce.h"
+#include "input/touch_retry.h"
 #include "usb/usb_hid.h"
 #include "ui/ui.h"
 #include "runtime/runtime.h"
@@ -28,6 +29,8 @@ static device_config_data_t s_current_config = {
     .gameplay_display_hz = DEVICE_CONFIG_DEFAULT_GAMEPLAY_DISPLAY_HZ,
     .key1_gpio = DEVICE_CONFIG_DEFAULT_KEY1_GPIO,
     .key2_gpio = DEVICE_CONFIG_DEFAULT_KEY2_GPIO,
+    .swipe_left_action = DEVICE_CONFIG_DEFAULT_SWIPE_LEFT,
+    .swipe_right_action = DEVICE_CONFIG_DEFAULT_SWIPE_RIGHT,
 };
 
 // v1 blobs end before key1_gpio; they load with the default pins
@@ -35,6 +38,8 @@ static device_config_data_t s_current_config = {
 // v2 blobs end before owner_id; they load unclaimed, which is correct — a pad
 // that predates §W3-2 has never been claimed by anyone
 #define DEVICE_CONFIG_V2_SIZE offsetof(device_config_data_t, owner_id)
+// v3 blobs end before the swipe actions; they load with the defaults
+#define DEVICE_CONFIG_V3_SIZE offsetof(device_config_data_t, swipe_left_action)
 
 static bool s_dirty = false;
 // Guards s_current_config and s_dirty: written by the protocol task, read by the
@@ -75,6 +80,10 @@ static void set_defaults(device_config_data_t *cfg)
     cfg->key1_gpio = DEVICE_CONFIG_DEFAULT_KEY1_GPIO;
     cfg->key2_gpio = DEVICE_CONFIG_DEFAULT_KEY2_GPIO;
     memset(cfg->owner_id, 0, sizeof(cfg->owner_id));
+    cfg->swipe_left_action = DEVICE_CONFIG_DEFAULT_SWIPE_LEFT;
+    cfg->swipe_right_action = DEVICE_CONFIG_DEFAULT_SWIPE_RIGHT;
+    cfg->swipe_left_key = 0;
+    cfg->swipe_right_key = 0;
 }
 
 
@@ -129,6 +138,9 @@ void device_config_apply(const device_config_data_t *cfg)
     // The UI owns the backlight: it knows whether the display is asleep
     ui_set_brightness((uint8_t)cfg->brightness);
     ui_set_sleep_timeout(cfg->sleep_s);
+
+    touch_retry_set_swipe_actions(cfg->swipe_left_action, cfg->swipe_left_key,
+                                  cfg->swipe_right_action, cfg->swipe_right_key);
 }
 
 esp_err_t device_config_init(void)
@@ -158,14 +170,15 @@ esp_err_t device_config_init(void)
         nvs_close(handle);
 
         bool layout_ok = (len == sizeof(loaded) && loaded.version == DEVICE_CONFIG_VERSION) ||
+                         (len == DEVICE_CONFIG_V3_SIZE && loaded.version == 3) ||
                          (len == DEVICE_CONFIG_V2_SIZE && loaded.version == 2) ||
                          (len == DEVICE_CONFIG_V1_SIZE && loaded.version == 1);
         if (err == ESP_OK && layout_ok && device_config_validate(&loaded, NULL, 0)) {
             if (loaded.version != DEVICE_CONFIG_VERSION) {
                 ESP_LOGI(TAG, "Migrating NVS config v%lu -> v%d",
                          (unsigned long)loaded.version, DEVICE_CONFIG_VERSION);
-                // An older blob stops short of owner_id, so the bytes beyond it
-                // are whatever set_defaults left: zero, i.e. unclaimed.
+                // An older blob stops short, so the fields beyond it keep what
+                // set_defaults left: unclaimed, default swipe actions.
                 loaded.version = DEVICE_CONFIG_VERSION;
             }
             s_current_config = loaded;

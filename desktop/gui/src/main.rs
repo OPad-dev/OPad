@@ -22,7 +22,8 @@ use opad_ipc::{CurrentBackupState, IpcRequest, IpcResponse};
 use opad_model::ui_source::SourceValue;
 use opad_model::{
     char_to_hid_usage, CounterSource, CounterState, DeviceConfig, DeviceInfo, IncompatibleDevice,
-    JsonBackup, KeyPin, LatencyStats, LogEntry, LogLevel, LogSource, RuntimeMode,
+    JsonBackup, KeyPin, LatencyStats, LogEntry, LogLevel, LogSource, RuntimeMode, SwipeAction,
+    SwipeKey,
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -236,6 +237,11 @@ pub struct App {
     pub k2_input: String,
     pub k1_gpio: u32,
     pub k2_gpio: u32,
+    pub swipe_left: SwipeAction,
+    pub swipe_right: SwipeAction,
+    /// HID usage for [`SwipeAction::Key`], 0 = not chosen yet
+    pub swipe_left_key: u32,
+    pub swipe_right_key: u32,
     pub debounce: u32,
     pub brightness: u32,
     pub sleep_seconds: u32,
@@ -346,6 +352,10 @@ pub enum Message {
     Key2(String),
     Key1Pin(KeyPin),
     Key2Pin(KeyPin),
+    SwipeLeft(SwipeAction),
+    SwipeRight(SwipeAction),
+    SwipeLeftKey(SwipeKey),
+    SwipeRightKey(SwipeKey),
     Debounce(u32),
     Brightness(u32),
     SleepSeconds(u32),
@@ -452,6 +462,10 @@ impl App {
             k2_input: "X".into(),
             k1_gpio: opad_model::DEFAULT_KEY1_GPIO,
             k2_gpio: opad_model::DEFAULT_KEY2_GPIO,
+            swipe_left: opad_model::DEFAULT_SWIPE_LEFT,
+            swipe_right: opad_model::DEFAULT_SWIPE_RIGHT,
+            swipe_left_key: 0,
+            swipe_right_key: 0,
             debounce: 5000,
             brightness: 100,
             sleep_seconds: 600,
@@ -1177,6 +1191,26 @@ impl App {
                     self.k2_gpio = pin.gpio;
                 }
             }
+            Message::SwipeLeft(action) => {
+                if self.device_connected {
+                    self.swipe_left = action;
+                }
+            }
+            Message::SwipeRight(action) => {
+                if self.device_connected {
+                    self.swipe_right = action;
+                }
+            }
+            Message::SwipeLeftKey(key) => {
+                if self.device_connected {
+                    self.swipe_left_key = key.usage;
+                }
+            }
+            Message::SwipeRightKey(key) => {
+                if self.device_connected {
+                    self.swipe_right_key = key.usage;
+                }
+            }
             Message::Debounce(v) => {
                 if self.device_connected {
                     self.debounce = v;
@@ -1390,6 +1424,10 @@ impl App {
                     debounce_us: self.debounce,
                     key1_gpio: self.k1_gpio,
                     key2_gpio: self.k2_gpio,
+                    swipe_left_action: self.swipe_left,
+                    swipe_right_action: self.swipe_right,
+                    swipe_left_key: self.swipe_left_key,
+                    swipe_right_key: self.swipe_right_key,
                     brightness: self.brightness,
                     display_sleep_seconds: self.sleep_seconds,
                     gameplay_display_hz: self.gameplay_display_hz,
@@ -2716,6 +2754,10 @@ impl App {
         self.k2_input = config.key2_char();
         self.k1_gpio = config.key1_gpio;
         self.k2_gpio = config.key2_gpio;
+        self.swipe_left = config.swipe_left_action;
+        self.swipe_right = config.swipe_right_action;
+        self.swipe_left_key = config.swipe_left_key;
+        self.swipe_right_key = config.swipe_right_key;
         self.debounce = config.debounce_us;
         self.brightness = config.brightness;
         self.sleep_seconds = config.display_sleep_seconds;

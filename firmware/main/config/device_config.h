@@ -17,7 +17,7 @@ typedef int esp_err_t;
 extern "C" {
 #endif
 
-#define DEVICE_CONFIG_VERSION               3
+#define DEVICE_CONFIG_VERSION               4
 #define DEVICE_CONFIG_DEFAULT_KEY1          0x1D // 'Z'
 #define DEVICE_CONFIG_DEFAULT_KEY2          0x1B // 'X'
 #define DEVICE_CONFIG_DEFAULT_DEBOUNCE_US   5000
@@ -26,6 +26,20 @@ extern "C" {
 #define DEVICE_CONFIG_DEFAULT_GAMEPLAY_DISPLAY_HZ 10
 #define DEVICE_CONFIG_DEFAULT_KEY1_GPIO     14   // Header P2, pin 11
 #define DEVICE_CONFIG_DEFAULT_KEY2_GPIO     9    // Header P2, pin 12
+
+// What a left/right swipe does. Values are osupad.proto's SwipeAction; 0
+// (keep current) is wire only and never stored.
+typedef enum {
+    SWIPE_ACTION_NONE = 1,
+    SWIPE_ACTION_PREV_TRACK = 2,
+    SWIPE_ACTION_NEXT_TRACK = 3,
+    SWIPE_ACTION_PLAY_PAUSE = 4,
+    SWIPE_ACTION_MUTE = 5,
+    SWIPE_ACTION_KEY = 6,   // swipe_*_key, a keyboard key
+} swipe_action_t;
+
+#define DEVICE_CONFIG_DEFAULT_SWIPE_LEFT    SWIPE_ACTION_PREV_TRACK
+#define DEVICE_CONFIG_DEFAULT_SWIPE_RIGHT   SWIPE_ACTION_NEXT_TRACK
 
 typedef struct __attribute__((packed)) {
     uint32_t version;
@@ -41,6 +55,12 @@ typedef struct __attribute__((packed)) {
     // v3: which host install owns this pad (§W3-1, §W3-2). All zero =
     // unclaimed, which is what every pad flashed before v3 reads as.
     uint8_t owner_id[OWNER_ID_LEN];
+    // v4: left/right swipe actions (swipe_action_t) and their keyboard keys
+    // (HID usage, 0 = none), used when the action is SWIPE_ACTION_KEY
+    uint8_t swipe_left_action;
+    uint8_t swipe_right_action;
+    uint8_t swipe_left_key;
+    uint8_t swipe_right_key;
 } device_config_data_t;
 
 /**

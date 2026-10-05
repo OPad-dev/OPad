@@ -14,7 +14,7 @@ void usb_descriptors_init(void)
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
-#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_CDC_DESC_LEN)
+#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_CDC_DESC_LEN + TUD_HID_DESC_LEN)
 
 const tusb_desc_device_t osupad_usb_device_desc = {
     .bLength            = sizeof(tusb_desc_device_t),
@@ -26,7 +26,9 @@ const tusb_desc_device_t osupad_usb_device_desc = {
     .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
     .idVendor           = 0x303A,   // Espressif VID
     .idProduct          = 0x4001,   // Custom PID for OPad
-    .bcdDevice          = 0x0100,   // Version 1.0.0
+    // 1.0.1 added the media interface: a new bcdDevice makes Windows read the
+    // descriptors again instead of reusing the ones it cached for 1.0.0
+    .bcdDevice          = 0x0101,
     .iManufacturer      = STRID_MANUFACTURER,
     .iProduct           = STRID_PRODUCT,
     .iSerialNumber      = STRID_SERIAL,
@@ -35,6 +37,14 @@ const tusb_desc_device_t osupad_usb_device_desc = {
 
 const uint8_t osupad_hid_report_desc[] = {
     TUD_HID_REPORT_DESC_KEYBOARD()
+};
+
+// Touchscreen swipes: volume and media keys, and a wheel for osu!'s volume.
+// Its own interface and endpoint, so nothing sent here queues behind or ahead
+// of a key report.
+const uint8_t osupad_media_report_desc[] = {
+    TUD_HID_REPORT_DESC_CONSUMER(HID_REPORT_ID(MEDIA_REPORT_ID_CONSUMER)),
+    TUD_HID_REPORT_DESC_MOUSE(HID_REPORT_ID(MEDIA_REPORT_ID_MOUSE)),
 };
 
 const uint8_t osupad_usb_config_desc[] = {
@@ -47,6 +57,11 @@ const uint8_t osupad_usb_config_desc[] = {
 
     // Interface 1 & 2: CDC-ACM (Notification EP: 0x82, Data OUT: 0x03, Data IN: 0x83)
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, STRID_CDC, 0x82, 8, 0x03, 0x83, 64),
+
+    // Interface 3: HID media controls (EP 0x84, polled every 10 ms: swipes are
+    // not latency sensitive)
+    TUD_HID_DESCRIPTOR(ITF_NUM_MEDIA, STRID_MEDIA, HID_ITF_PROTOCOL_NONE,
+                       sizeof(osupad_media_report_desc), 0x84, 8, 10),
 };
 
 const char *osupad_usb_string_desc[] = {
@@ -56,13 +71,13 @@ const char *osupad_usb_string_desc[] = {
     s_serial_str,                   // 3: Serial (runtime MAC-derived)
     "OPad HID Keyboard",            // 4: HID Interface
     "OPad CDC Telemetry",           // 5: CDC Interface
+    "OPad Media Controls",          // 6: HID media interface
 };
 
 
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance)
 {
-    (void)instance;
-    return osupad_hid_report_desc;
+    return instance == HID_INSTANCE_MEDIA ? osupad_media_report_desc : osupad_hid_report_desc;
 }
 
 uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer, uint16_t reqlen)

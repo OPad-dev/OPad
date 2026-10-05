@@ -34,6 +34,7 @@ pub enum DeviceCommand {
         tosu_connected: bool,
         is_playing: bool,
         play_id: u32,
+        osu_active: bool,
     },
     DataUpdate(Vec<(u8, SourceValue)>),
     Layout(Screen, Layout),
@@ -49,8 +50,9 @@ async fn send_once<D: DeviceLink>(dm: &D, cmd: &DeviceCommand) -> Result<(), Dev
             tosu_connected,
             is_playing,
             play_id,
+            osu_active,
         } => {
-            dm.send_host_status(*tosu_connected, *is_playing, *play_id)
+            dm.send_host_status(*tosu_connected, *is_playing, *play_id, *osu_active)
                 .await
         }
         DeviceCommand::DataUpdate(changes) => dm.send_data_update(changes).await,
@@ -147,7 +149,13 @@ mod tests {
         async fn reset_layout(&self, _: Screen) -> Result<(), DeviceError> {
             self.record("reset_layout")
         }
-        async fn send_host_status(&self, _: bool, _: bool, _: u32) -> Result<(), DeviceError> {
+        async fn send_host_status(
+            &self,
+            _: bool,
+            _: bool,
+            _: u32,
+            _: bool,
+        ) -> Result<(), DeviceError> {
             self.record("host_status")
         }
         async fn send_data_update(&self, _: &[(u8, SourceValue)]) -> Result<(), DeviceError> {

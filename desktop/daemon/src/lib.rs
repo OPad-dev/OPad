@@ -4,6 +4,7 @@ pub mod firmware_update;
 pub mod identity;
 pub mod ipc_handlers;
 pub mod log_hub;
+pub mod osu_window;
 pub mod runtime;
 pub mod sync;
 pub mod tap_stats;

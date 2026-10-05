@@ -8,7 +8,9 @@ use iced::widget::{
 };
 use iced::{Alignment, Color, Element, Length};
 use opad_model::ui_source::{self as src, SourceValue};
-use opad_model::{key_pin, KeyPin, KEY_PINS};
+use opad_model::{
+    key_pin, swipe_key_by_usage, KeyPin, SwipeAction, SwipeKey, KEY_PINS, SWIPE_KEYS,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SettingsTab {
@@ -351,6 +353,72 @@ pub fn settings(app: &App) -> Element<'_, Message> {
         .spacing(18),
     );
 
+    // One side's action, and the key to send when that action is a key
+    let swipe_select = |label: &'static str,
+                        action: SwipeAction,
+                        key: u32,
+                        on_action: fn(SwipeAction) -> Message,
+                        on_key: fn(SwipeKey) -> Message| {
+        let mut col = column![caption(label)]
+            .spacing(6)
+            .width(Length::FillPortion(1));
+        if app.device_connected {
+            col = col.push(
+                pick_list(SwipeAction::ALL, Some(action), on_action)
+                    .width(Length::Fill)
+                    .padding(10),
+            );
+            if action == SwipeAction::Key {
+                col = col.push(
+                    pick_list(SWIPE_KEYS, swipe_key_by_usage(key), on_key)
+                        .placeholder("Choose a key")
+                        .width(Length::Fill)
+                        .padding(10),
+                );
+            }
+        } else {
+            col = col.push(
+                text_input("", &format!("{} (disconnected)", action))
+                    .size(13)
+                    .width(Length::Fill)
+                    .padding(10),
+            );
+        }
+        col
+    };
+
+    let swipes = card(
+        column![
+            text("Touchscreen swipes").size(18).font(theme::FONT_BOLD),
+            muted(
+                "Swipe up / down for volume: osu!'s own volume when osu! is the window in \
+                 front (Windows) or osu!lazer is running (Linux), the system volume otherwise. \
+                 During a map a touch is Quick Retry and swipes still work, but never send a \
+                 keyboard key. Outside a map a tap does nothing. While tosu is not connected \
+                 the pad cannot tell a map from a menu: every touch is Quick Retry, no swipes."
+            )
+            .size(12),
+            row![
+                swipe_select(
+                    "SWIPE LEFT",
+                    app.swipe_left,
+                    app.swipe_left_key,
+                    Message::SwipeLeft,
+                    Message::SwipeLeftKey
+                ),
+                swipe_select(
+                    "SWIPE RIGHT",
+                    app.swipe_right,
+                    app.swipe_right_key,
+                    Message::SwipeRight,
+                    Message::SwipeRightKey
+                ),
+            ]
+            .spacing(24),
+        ]
+        .spacing(18),
+    );
+
     let sleep_label = if app.sleep_seconds.is_multiple_of(60) {
         format!("{} min", app.sleep_seconds / 60)
     } else {
@@ -480,6 +548,7 @@ pub fn settings(app: &App) -> Element<'_, Message> {
                 content = content.push(w);
             }
             content = content.push(keys);
+            content = content.push(swipes);
             content = content.push(row![save_btn]);
         }
         SettingsTab::Display => {

@@ -78,6 +78,7 @@ impl DeviceLink for MockDeviceLink {
         _tosu_connected: bool,
         _is_playing: bool,
         _play_id: u32,
+        _osu_active: bool,
     ) -> Result<(), DeviceError> {
         Ok(())
     }
@@ -221,6 +222,7 @@ async fn test_daemon_connection_states_and_reconnect() {
         tosu_connected: false,
         is_playing: false,
         play_id: controller.play_id,
+        osu_active: false,
     }));
 
     // tosu connects
@@ -230,6 +232,7 @@ async fn test_daemon_connection_states_and_reconnect() {
         tosu_connected: true,
         is_playing: false,
         play_id: controller.play_id,
+        osu_active: false,
     }));
 
     // tosu disconnects and reconnects
@@ -239,6 +242,7 @@ async fn test_daemon_connection_states_and_reconnect() {
         tosu_connected: false,
         is_playing: false,
         play_id: controller.play_id,
+        osu_active: false,
     }));
 
     let actions = controller.on_event(RuntimeEvent::TosuConnectionChanged(true), now);
@@ -247,6 +251,25 @@ async fn test_daemon_connection_states_and_reconnect() {
         tosu_connected: true,
         is_playing: false,
         play_id: controller.play_id,
+        osu_active: false,
+    }));
+
+    // osu! comes to the front: the pad hears at once, and every later
+    // HostStatus carries it
+    let actions = controller.on_event(RuntimeEvent::OsuActiveChanged(true), now);
+    assert!(controller.state.osu_active);
+    assert!(actions.contains(&RuntimeAction::SendHostStatus {
+        tosu_connected: true,
+        is_playing: false,
+        play_id: controller.play_id,
+        osu_active: true,
+    }));
+    let actions = controller.on_event(RuntimeEvent::TosuConnectionChanged(true), now);
+    assert!(actions.contains(&RuntimeAction::SendHostStatus {
+        tosu_connected: true,
+        is_playing: false,
+        play_id: controller.play_id,
+        osu_active: true,
     }));
 }
 
@@ -450,6 +473,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             last_sync_error: None,
             storage_error: None,
             tosu_connected: true,
+            osu_active: false,
             latency: None,
             pending_replacement: None,
             install_id: None,
@@ -673,6 +697,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             last_sync_error: None,
             storage_error: None,
             tosu_connected: false,
+            osu_active: false,
             latency: None,
             pending_replacement: None,
             install_id: None,
@@ -731,6 +756,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             last_sync_error: None,
             storage_error: None,
             tosu_connected: false,
+            osu_active: false,
             latency: None,
             pending_replacement: None,
             install_id: None,
@@ -832,6 +858,7 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
         last_sync_error: None,
         storage_error: None,
         tosu_connected: false,
+        osu_active: false,
         latency: None,
         pending_replacement: None,
         install_id: None,
@@ -902,6 +929,7 @@ async fn a_non_monotonic_rejection_is_retried_with_the_pads_current_counters() {
         last_sync_error: None,
         storage_error: None,
         tosu_connected: false,
+        osu_active: false,
         latency: None,
         pending_replacement: None,
         install_id: None,
@@ -961,6 +989,7 @@ async fn test_json_validation_preview_and_confirm() {
         last_sync_error: None,
         storage_error: None,
         tosu_connected: false,
+        osu_active: false,
         latency: None,
         pending_replacement: None,
         install_id: None,
@@ -1068,6 +1097,7 @@ async fn test_ipc_handshake_mismatch_and_protocol_version() {
         last_sync_error: None,
         storage_error: None,
         tosu_connected: false,
+        osu_active: false,
         latency: None,
         pending_replacement: None,
         install_id: None,
@@ -1180,6 +1210,7 @@ async fn test_install_update_is_refused_outside_idle() {
             last_sync_error: None,
             storage_error: None,
             tosu_connected: false,
+            osu_active: false,
             latency: None,
             pending_replacement: None,
             install_id: None,
@@ -1234,6 +1265,7 @@ async fn test_firmware_is_not_an_enableable_updater() {
         last_sync_error: None,
         storage_error: None,
         tosu_connected: false,
+        osu_active: false,
         latency: None,
         pending_replacement: None,
         install_id: None,
@@ -1345,7 +1377,9 @@ async fn test_queue_does_not_block_without_device() {
     let res = device_manager.send_config(&DeviceConfig::default()).await;
     assert!(matches!(res, Err(opad_device::DeviceError::NotConnected)));
 
-    let res = device_manager.send_host_status(false, false, 1).await;
+    let res = device_manager
+        .send_host_status(false, false, 1, false)
+        .await;
     assert!(matches!(res, Err(opad_device::DeviceError::NotConnected)));
 
     let res = device_manager
@@ -2073,6 +2107,7 @@ fn firmware_update_fixture(mode: RuntimeMode, connected: bool) -> IpcFixture {
         last_sync_error: None,
         storage_error: None,
         tosu_connected: false,
+        osu_active: false,
         latency: None,
         pending_replacement: None,
         install_id: None,
@@ -2584,6 +2619,7 @@ async fn test_device_connected_with_config_adopts_device_config() {
         tosu_endpoint: "ws://127.0.0.1:24050/websocket/v2".to_string(),
         key1_gpio: 14,
         key2_gpio: 9,
+        ..DeviceConfig::default()
     };
     let now = Instant::now();
     let mut controller = RuntimeController::new(
@@ -3352,6 +3388,7 @@ fn idle_state(
         last_sync_error: None,
         storage_error: None,
         tosu_connected: false,
+        osu_active: false,
         latency: None,
         pending_replacement: None,
         install_id: None,

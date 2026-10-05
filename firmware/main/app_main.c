@@ -114,7 +114,7 @@ void app_main(void)
     tusb_cfg.descriptor.device = &osupad_usb_device_desc;
     tusb_cfg.descriptor.full_speed_config = osupad_usb_config_desc;
     tusb_cfg.descriptor.string = osupad_usb_string_desc;
-    tusb_cfg.descriptor.string_count = 6;
+    tusb_cfg.descriptor.string_count = STRID_COUNT;
 #if (TUD_OPT_HIGH_SPEED)
     tusb_cfg.descriptor.high_speed_config = osupad_usb_config_desc;
 #endif
