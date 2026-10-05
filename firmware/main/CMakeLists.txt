@@ -9,6 +9,7 @@ idf_component_register(
         "input/press_log.c"
         "input/touch_retry.c"
         "input/gesture.c"
+        "input/swipe_labels.c"
         "usb/usb_descriptors.c"
         "usb/usb_hid.c"
         "usb/usb_media.c"

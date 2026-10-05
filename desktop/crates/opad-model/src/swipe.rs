@@ -471,6 +471,47 @@ mod tests {
         assert_eq!(cfg.swipe_left_key, usage::f(2));
     }
 
+    /// The pad names each shortcut in its swipe feedback from its own table
+    /// (firmware/main/input/swipe_labels.c): every shortcut offered here has
+    /// to be in it, or the pad would show a bare key name
+    #[test]
+    fn the_pad_names_every_shortcut() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../firmware/main/input/swipe_labels.c"
+        );
+        let source = std::fs::read_to_string(path).expect("firmware swipe_labels.c");
+        let rows: Vec<(u32, u32)> = source
+            .lines()
+            .filter_map(|line| {
+                // {0x3B, MOD_SHIFT, SWIPE_ICON_SHUFFLE, "Prev random"},
+                let row = line.trim().strip_prefix("{0x")?;
+                let (key, rest) = row.split_once(',')?;
+                let (mods, _) = rest.split_once(',')?;
+                let mods = mods
+                    .split('|')
+                    .map(|m| match m.trim() {
+                        "0" => 0,
+                        "MOD_CTRL" => MOD_CTRL,
+                        "MOD_SHIFT" => MOD_SHIFT,
+                        "MOD_ALT" => MOD_ALT,
+                        other => panic!("unknown modifier {other}"),
+                    })
+                    .fold(0, |a, b| a | b);
+                Some((u32::from_str_radix(key, 16).ok()?, mods))
+            })
+            .collect();
+        assert!(rows.len() >= OSU_SHORTCUTS.len());
+        for s in OSU_SHORTCUTS {
+            assert!(
+                rows.contains(&(s.usage, s.modifiers)),
+                "{} ({}) is missing from swipe_labels.c",
+                s.action,
+                combo_name(s.usage, s.modifiers)
+            );
+        }
+    }
+
     #[test]
     fn choices_list_actions_then_osu_then_other_key() {
         let choices = swipe_choices();

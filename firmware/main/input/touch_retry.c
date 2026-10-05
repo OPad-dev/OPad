@@ -3,6 +3,7 @@
 #include "usb/usb_hid.h"
 #include "usb/usb_media.h"
 #include "input/gesture.h"
+#include "input/swipe_labels.h"
 #include "config/device_config.h"
 #include "runtime/runtime.h"
 #include "ui/ui.h"
@@ -236,6 +237,37 @@ static const char *step_volume(bool up, bool playing, bool *alt_held)
     return osu ? (up ? "osu! Vol +" : "osu! Vol -") : (up ? "Vol +" : "Vol -");
 }
 
+static const char *icon_symbol(swipe_icon_t icon)
+{
+    switch (icon) {
+    case SWIPE_ICON_SHUFFLE:    return LV_SYMBOL_SHUFFLE;
+    case SWIPE_ICON_LIST:       return LV_SYMBOL_LIST;
+    case SWIPE_ICON_BARS:       return LV_SYMBOL_BARS;
+    case SWIPE_ICON_LEFT:       return LV_SYMBOL_LEFT;
+    case SWIPE_ICON_RIGHT:      return LV_SYMBOL_RIGHT;
+    case SWIPE_ICON_UP:         return LV_SYMBOL_UP;
+    case SWIPE_ICON_DOWN:       return LV_SYMBOL_DOWN;
+    case SWIPE_ICON_DIRECTORY:  return LV_SYMBOL_DIRECTORY;
+    case SWIPE_ICON_BACKSPACE:  return LV_SYMBOL_BACKSPACE;
+    case SWIPE_ICON_OK:         return LV_SYMBOL_OK;
+    case SWIPE_ICON_CLOSE:      return LV_SYMBOL_CLOSE;
+    case SWIPE_ICON_ENVELOPE:   return LV_SYMBOL_ENVELOPE;
+    case SWIPE_ICON_BELL:       return LV_SYMBOL_BELL;
+    case SWIPE_ICON_SETTINGS:   return LV_SYMBOL_SETTINGS;
+    case SWIPE_ICON_IMAGE:      return LV_SYMBOL_IMAGE;
+    case SWIPE_ICON_VIDEO:      return LV_SYMBOL_VIDEO;
+    case SWIPE_ICON_AUDIO:      return LV_SYMBOL_AUDIO;
+    case SWIPE_ICON_DOWNLOAD:   return LV_SYMBOL_DOWNLOAD;
+    case SWIPE_ICON_HOME:       return LV_SYMBOL_HOME;
+    case SWIPE_ICON_EYE_OPEN:   return LV_SYMBOL_EYE_OPEN;
+    case SWIPE_ICON_EYE_CLOSE:  return LV_SYMBOL_EYE_CLOSE;
+    case SWIPE_ICON_TINT:       return LV_SYMBOL_TINT;
+    case SWIPE_ICON_REFRESH:    return LV_SYMBOL_REFRESH;
+    case SWIPE_ICON_KEYBOARD:
+    default:                    return LV_SYMBOL_KEYBOARD;
+    }
+}
+
 // Runs a swipe's action. Returns the label to show, NULL for nothing done.
 static const char *run_swipe_action(uint8_t action, uint8_t key, uint8_t mods, bool playing,
                                     bool *alt_held, const char **symbol)
@@ -269,8 +301,13 @@ static const char *run_swipe_action(uint8_t action, uint8_t key, uint8_t mods, b
             return NULL;
         }
         tap_keyboard_key(key, mods);
-        *symbol = LV_SYMBOL_KEYBOARD;
-        return "Key";
+        {
+            // Touch task only, and ui_show_swipe copies the text
+            static char name[16];
+            swipe_label_t l = swipe_label_for(key, mods, name, sizeof(name));
+            *symbol = icon_symbol(l.icon);
+            return l.label;
+        }
     default:
         return NULL;
     }
