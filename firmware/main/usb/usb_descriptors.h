@@ -36,10 +36,12 @@ enum {
     HID_INSTANCE_MEDIA = 1,
 };
 
-// Report ids on the media interface
+// Report ids on the media interface. Key 2 has its own keyboard report here,
+// so each key has an endpoint of its own (see usb_hid.c)
 enum {
     MEDIA_REPORT_ID_CONSUMER = 1,
     MEDIA_REPORT_ID_MOUSE = 2,
+    MEDIA_REPORT_ID_KEYBOARD = 3,
 };
 
 extern const tusb_desc_device_t osupad_usb_device_desc;

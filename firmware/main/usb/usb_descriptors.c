@@ -26,9 +26,10 @@ const tusb_desc_device_t osupad_usb_device_desc = {
     .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
     .idVendor           = 0x303A,   // Espressif VID
     .idProduct          = 0x4001,   // Custom PID for OPad
-    // 1.0.1 added the media interface: a new bcdDevice makes Windows read the
-    // descriptors again instead of reusing the ones it cached for 1.0.0
-    .bcdDevice          = 0x0101,
+    // A new bcdDevice makes Windows read the descriptors again instead of
+    // reusing the ones it cached: 1.0.1 added the media interface, 1.0.2 put
+    // a keyboard report for key 2 on it
+    .bcdDevice          = 0x0102,
     .iManufacturer      = STRID_MANUFACTURER,
     .iProduct           = STRID_PRODUCT,
     .iSerialNumber      = STRID_SERIAL,
@@ -40,11 +41,15 @@ const uint8_t osupad_hid_report_desc[] = {
 };
 
 // Touchscreen swipes: volume and media keys, and a wheel for osu!'s volume.
-// Its own interface and endpoint, so nothing sent here queues behind or ahead
-// of a key report.
+// Also key 2's keyboard report: a report waits for the host to collect the one
+// before it on the same endpoint (up to 1 ms), and in a stream K1 and K2 change
+// well within 1 ms of each other. The S3 has no endpoint left for a third HID
+// interface (five IN endpoints at most, EP0 included), so key 2 shares this
+// one, where only swipes send anything.
 const uint8_t osupad_media_report_desc[] = {
     TUD_HID_REPORT_DESC_CONSUMER(HID_REPORT_ID(MEDIA_REPORT_ID_CONSUMER)),
     TUD_HID_REPORT_DESC_MOUSE(HID_REPORT_ID(MEDIA_REPORT_ID_MOUSE)),
+    TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(MEDIA_REPORT_ID_KEYBOARD)),
 };
 
 const uint8_t osupad_usb_config_desc[] = {
@@ -58,12 +63,12 @@ const uint8_t osupad_usb_config_desc[] = {
     // Interface 1 & 2: CDC-ACM (Notification EP: 0x82, Data OUT: 0x03, Data IN: 0x83)
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, STRID_CDC, 0x82, 8, 0x03, 0x83, 64),
 
-    // Interface 3: HID media controls (EP 0x84, polled every 1 ms). A volume
-    // step is a press and a release report, and the touch task waits for
-    // each: at 10 ms a step held it ~20 ms. Its own endpoint, so the keyboard
-    // reports never wait on it.
+    // Interface 3: HID media controls and key 2 (EP 0x84, polled every 1 ms).
+    // A volume step is a press and a release report, and the touch task waits
+    // for each: at 10 ms a step held it ~20 ms. 16 bytes: key 2's report is
+    // its id and 8 bytes.
     TUD_HID_DESCRIPTOR(ITF_NUM_MEDIA, STRID_MEDIA, HID_ITF_PROTOCOL_NONE,
-                       sizeof(osupad_media_report_desc), 0x84, 8, 1),
+                       sizeof(osupad_media_report_desc), 0x84, 16, 1),
 };
 
 const char *osupad_usb_string_desc[] = {
