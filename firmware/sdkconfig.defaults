@@ -7,6 +7,12 @@ CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
 CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
 
+# 240 MHz and the key path in IRAM (main/linker.lf): with the screen busy on
+# core 1, a press took ~240 us to reach USB from flash at 160 MHz, 70 us this way
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+# gpio_get_level and friends in IRAM, for the key ISR and the keypad task
+CONFIG_GPIO_CTRL_FUNC_IN_IRAM=y
+
 # FreeRTOS 1000 Hz tick for microsecond-level timing and 1ms USB polling
 CONFIG_FREERTOS_HZ=1000
 

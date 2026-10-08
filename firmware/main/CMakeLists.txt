@@ -46,6 +46,8 @@ idf_component_register(
         "runtime"
         "protocol"
         "protocol/nanopb"
+    LDFRAGMENTS
+        "linker.lf"
     REQUIRES
         driver
         esp_lcd

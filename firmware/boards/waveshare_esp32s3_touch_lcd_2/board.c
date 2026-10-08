@@ -148,13 +148,14 @@ esp_err_t board_keys_register_isr(gpio_isr_t isr_handler)
     return ESP_OK;
 }
 
-bool board_key1_read(void)
+// IRAM: called from the key ISR, which also runs while the flash cache is off
+bool IRAM_ATTR board_key1_read(void)
 {
     gpio_num_t gpio = s_key1_gpio;
     return gpio != GPIO_NUM_NC && gpio_get_level(gpio) == 0;
 }
 
-bool board_key2_read(void)
+bool IRAM_ATTR board_key2_read(void)
 {
     gpio_num_t gpio = s_key2_gpio;
     return gpio != GPIO_NUM_NC && gpio_get_level(gpio) == 0;

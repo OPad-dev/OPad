@@ -1,0 +1,31 @@
+# The key path runs from IRAM: edge ISR -> keypad task -> HID report -> USB
+# FIFO. From flash it shares the cache with core 1 (screen, protocol), and a
+# press landing while core 1 is busy took ~240 us to reach USB instead of ~70.
+# Only the functions on that path are listed, to keep internal RAM free.
+[mapping:opad_keypath_main]
+archive: libmain.a
+entries:
+    keypad:keypad_task (noflash)
+    usb_hid (noflash)
+
+[mapping:opad_keypath_tinyusb]
+archive: libespressif__tinyusb.a
+entries:
+    hid_device:tud_hid_n_ready (noflash)
+    hid_device:tud_hid_n_report (noflash)
+    hid_device:tud_hid_n_keyboard_report (noflash)
+    usbd:tud_mounted (noflash)
+    usbd:tud_suspended (noflash)
+    usbd:usbd_edpt_busy (noflash)
+    usbd:usbd_edpt_claim (noflash)
+    usbd:usbd_edpt_release (noflash)
+    usbd:usbd_edpt_xfer (noflash)
+    usbd:usbd_spin_lock (noflash)
+    usbd:usbd_spin_unlock (noflash)
+    tusb:tu_edpt_claim (noflash)
+    tusb:tu_edpt_release (noflash)
+    # Whole file: GCC clones its static helpers under changing names
+    # (edpt_schedule_packets$isra$0), which a symbol entry would silently miss.
+    # It also holds the USB interrupt handler that completes each report.
+    dcd_dwc2 (noflash)
+    tusb_fifo:tu_hwfifo_write (noflash)
