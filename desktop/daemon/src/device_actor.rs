@@ -179,6 +179,12 @@ mod tests {
         async fn send_detect_pin(&self, _: u32, _: u32, _: u32) -> Result<(), DeviceError> {
             self.record("detect")
         }
+        async fn run_board_test(&self) -> Result<(), DeviceError> {
+            self.record("board_test")
+        }
+        fn supports_board_test(&self) -> bool {
+            true
+        }
         fn subscribe(&self) -> broadcast::Receiver<DeviceEvent> {
             broadcast::channel(1).1
         }

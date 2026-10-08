@@ -87,6 +87,7 @@ message DeviceToHost {
 | 11 | `ResetLatencyStats` | Clears cumulative latency statistics (min, max, average, and histogram buckets). |
 | 12 | `EnterBootloader` | Instructs device to restart immediately into native USB ROM DFU bootloader for flashing. |
 | 14 | `ClaimOwnership` | Records which host install owns this pad (§W3-1, §W3-2). Carries a 16-byte `owner_id`. It is an NVS write, so the firmware honours it **only in IDLE**, never during `PLAYING` or `COOLDOWN` (P1-3); the host only ever sends it at connect time, which is already an IDLE-only moment. An all-zero `owner_id` is **refused**, so there is no wire path to unpairing — that is a documented reflash (§W3-4, `docs/recovery.md` §7). Re-claiming by the current owner writes nothing. |
+| 16 | `run_board_test` | Asks the pad to test the carrier and input module PCBs; answered with `BoardTestResult`. See [below](#boardtestresult-devicetohost-field-10-and-helloackboard_test-field-12). |
 
 ### DataUpdate sources and widget flags
 
@@ -172,6 +173,7 @@ bound to them hides.
 | 5 | `Status` | Periodic or requested device health: `uptime_ms`, `runtime_state`, lifetime counters, and latency statistics (min, max, avg, samples, buckets). |
 | 6 | `LogBatch` | Batch of diagnostic entries from the in-RAM ring buffer: `timestamp_ms`, severity `level`, `event_id`, and optional `arg0`/`arg1`. |
 | 9 | `KeyPressBatch` | Key-downs timed on the pad, for the tap rate: see below. |
+| 10 | `BoardTestResult` | Carrier and input module measurements, the answer to `run_board_test`: see below. |
 
 ### `HelloAck.owner_id` (field 8, §W3-1 / §W3-2)
 
@@ -234,6 +236,34 @@ never saved.
 
 Older hosts skip field 9 as an unknown oneof field; newer hosts read a missing
 field 11 as false.
+
+### `BoardTestResult` (DeviceToHost field 10) and `HelloAck.board_test` (field 12)
+
+`run_board_test` (HostToDevice field 16) has the pad measure its carrier and
+input module wiring (`firmware/main/diag/board_test.c`). The pad only reports
+measurements. The host judges them (`desktop/crates/opad-model/src/board_test.rs`),
+so the thresholds and advice can change without a firmware update.
+
+| Field | Meaning |
+|---|---|
+| `ran`, `message` | `ran` is false when the pad refused: outside IDLE (`"not while a map is played"`), or the key line test did not run |
+| `boot_module`, `module` | `InputModule` seen at boot (it sets the key pins and the Hall Effect lockout) and now |
+| `id_mv`, `id_loaded_mv` | ID (GPIO8) voltage with the internal pull-down off and on, -1 = not measured |
+| `reverse_probe_mv` | ID voltage with GPIO2 pulled up, only when no module answers: a pin 1 ↔ 8 reversed cable powers an MX module's IN2 pull-up from GPIO2, lifting ID to ~1.5 V. -1 = not run |
+| `key1_gpio`, `key2_gpio`, `keys_enabled` | The key pins tested, and whether key input is on (off with a Hall Effect module on v1) |
+| `tested_gpios`, `high_with_pullup`, `high_with_pulldown` | GPIO bitmasks (bit n = GPIOn). Key lines: low with the pull-up = held or shorted to GND; high with the pull-down = the MX module's 10 kΩ pull-up reaches the pin. Spare lines (GPIO6/4/2, connector pins 6–8, only with a module answering): each must follow its own pull |
+| `bridged_gpios` | Spare-line neighbours that follow each other: one is driven low (only after both passed alone) and the other, pulled up, reads low |
+
+The test takes about 30 ms on the protocol task. Key edges are ignored for
+about 1 ms while the key pins are on pull-downs. The keypad task runs that part
+itself and sends no report meanwhile, then restarts debouncing from the pins.
+Nothing changes on the key path outside the test. The pad refuses the test
+outside IDLE.
+
+Compatibility: firmware predating the test reads field 16 as an unknown
+payload and does not answer; it also leaves `HelloAck.board_test` false, so the
+daemon refuses the request with "update the firmware" instead of waiting.
+Older hosts never send field 16 and skip field 10.
 
 ---
 

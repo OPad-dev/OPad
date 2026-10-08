@@ -1,4 +1,5 @@
 use opad_layout::{Layout, Screen};
+use opad_model::board_test::BoardTestReport;
 use opad_model::tap_rate::{AttemptStats, TapHistory};
 use opad_model::ui_source::SourceValue;
 use opad_model::{
@@ -182,6 +183,12 @@ pub enum IpcRequest {
     SetTapHistoryPeriod {
         days: u32,
     },
+    /// Have the pad test the carrier and input module PCBs (answered with
+    /// `BoardTest`, or `Error` without a pad or with firmware predating it).
+    /// It reconfigures pins for a moment, so the pad refuses it during a map.
+    /// Added after IPC v1 shipped: an older daemon cannot parse it and closes
+    /// the connection, which the client shows as "not available".
+    RunBoardTest,
 }
 
 /// The daemon's tap rate statistics (answer to `GetTapStats`)
@@ -393,6 +400,7 @@ pub enum IpcResponse {
     },
     EasterEggTriggered,
     TapStats(TapStatsSnapshot),
+    BoardTest(BoardTestReport),
     Error(String),
 }
 

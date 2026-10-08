@@ -18,6 +18,9 @@ use crate::runtime::{DaemonState, PendingCounterReset, PendingOperations};
 use crate::sync::{perform_sync, DeviceLink};
 use crate::updater::{self, UpdateService};
 
+/// The pad takes about 30 ms; this covers a busy USB link and a slow protocol task
+const BOARD_TEST_TIMEOUT: Duration = Duration::from_secs(3);
+
 /// Resolves a pending takeover without asking when the pad has at least as many
 /// presses as this PC on both keys: the pad is taken over keeping its own
 /// counters, exactly as if the user had picked that, so nothing is lost. When
@@ -1174,6 +1177,38 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             info!("Resuming device discovery (no post-flash verification requested)");
             device.resume();
             IpcResponse::DeviceResumed
+        }
+
+        IpcRequest::RunBoardTest => {
+            if !device.is_connected() {
+                return IpcResponse::Error("The pad is not connected".to_string());
+            }
+            if !device.supports_board_test() {
+                return IpcResponse::Error(
+                    "This pad's firmware has no board test. Update the firmware, then run it again."
+                        .to_string(),
+                );
+            }
+            let mut sub = device.subscribe();
+            if let Err(e) = device.run_board_test().await {
+                return IpcResponse::Error(format!("Could not ask the pad for a board test: {e}"));
+            }
+            let result = tokio::time::timeout(BOARD_TEST_TIMEOUT, async {
+                loop {
+                    match sub.recv().await {
+                        Ok(DeviceEvent::BoardTest(report)) => return Some(report),
+                        Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                            continue
+                        }
+                        Err(_) => return None,
+                    }
+                }
+            })
+            .await;
+            match result {
+                Ok(Some(report)) => IpcResponse::BoardTest(report),
+                _ => IpcResponse::Error("The pad did not answer the board test".to_string()),
+            }
         }
 
         IpcRequest::DetectPin {

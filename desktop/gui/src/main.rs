@@ -1351,6 +1351,66 @@ impl App {
                         |res| Message::Diagnostics(diagnostics::DiagnosticsMessage::PingDone(res)),
                     );
                 }
+                diagnostics::DiagnosticsMessage::RunBoardTest => {
+                    self.diagnostics.board_test_running = true;
+                    return Task::perform(
+                        async {
+                            // An older daemon cannot parse the request and drops the connection
+                            match ipc::request(IpcRequest::RunBoardTest).await {
+                                Ok(IpcResponse::BoardTest(report)) => Ok(report),
+                                Ok(IpcResponse::Error(e)) => Err(e),
+                                Ok(other) => Err(format!("Unexpected response: {:?}", other)),
+                                Err(_) => Err("The daemon did not answer; it may predate the \
+                                               board test. Update OPad and try again."
+                                    .to_string()),
+                            }
+                        },
+                        |res| {
+                            Message::Diagnostics(diagnostics::DiagnosticsMessage::BoardTestDone(
+                                res,
+                            ))
+                        },
+                    );
+                }
+                diagnostics::DiagnosticsMessage::BoardTestDone(res) => {
+                    self.diagnostics.board_test_running = false;
+                    self.diagnostics.board_test = Some(res);
+                }
+                diagnostics::DiagnosticsMessage::UseCarrierKeyPins => {
+                    self.k1_gpio = opad_model::board_test::CARRIER_KEY1_GPIO;
+                    self.k2_gpio = opad_model::board_test::CARRIER_KEY2_GPIO;
+                    let config = DeviceConfig {
+                        key1_gpio: self.k1_gpio,
+                        key2_gpio: self.k2_gpio,
+                        ..self.config.clone()
+                    };
+                    self.diagnostics.board_test_running = true;
+                    return Task::perform(
+                        async move {
+                            match ipc::request(IpcRequest::UpdateConfig(config)).await {
+                                Ok(IpcResponse::ConfigUpdated { .. }) => {}
+                                Ok(IpcResponse::Error(e)) | Err(e) => {
+                                    return Err(format!("Could not set the key pins: {e}"))
+                                }
+                                Ok(other) => {
+                                    return Err(format!("Unexpected response: {:?}", other))
+                                }
+                            }
+                            // The pad moves the pins once both keys are released
+                            tokio::time::sleep(Duration::from_millis(300)).await;
+                            match ipc::request(IpcRequest::RunBoardTest).await {
+                                Ok(IpcResponse::BoardTest(report)) => Ok(report),
+                                Ok(IpcResponse::Error(e)) | Err(e) => Err(e),
+                                Ok(other) => Err(format!("Unexpected response: {:?}", other)),
+                            }
+                        },
+                        |res| {
+                            Message::Diagnostics(diagnostics::DiagnosticsMessage::BoardTestDone(
+                                res,
+                            ))
+                        },
+                    );
+                }
                 diagnostics::DiagnosticsMessage::PingDone(res) => {
                     self.diagnostics.ping_in_progress = false;
                     match res {

@@ -9,7 +9,7 @@
 PB_BIND(osupad_Hello, osupad_Hello, AUTO)
 
 
-PB_BIND(osupad_HelloAck, osupad_HelloAck, AUTO)
+PB_BIND(osupad_HelloAck, osupad_HelloAck, 2)
 
 
 PB_BIND(osupad_ClaimOwnership, osupad_ClaimOwnership, AUTO)
@@ -78,10 +78,15 @@ PB_BIND(osupad_DetectPinRequest, osupad_DetectPinRequest, AUTO)
 PB_BIND(osupad_DetectPinResponse, osupad_DetectPinResponse, AUTO)
 
 
+PB_BIND(osupad_BoardTestResult, osupad_BoardTestResult, AUTO)
+
+
 PB_BIND(osupad_HostToDevice, osupad_HostToDevice, 2)
 
 
 PB_BIND(osupad_DeviceToHost, osupad_DeviceToHost, 2)
+
+
 
 
 

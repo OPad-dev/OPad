@@ -271,6 +271,26 @@ Order each board as a separate item.
 4. Order 5 of each and test-fit before a larger batch.
 5. For the HE module, measure before committing to a batch: probe IN1/IN2 with the switch at rest and fully pressed. If the swing is much under ~0.5 V, move to a DRV5055A2 or A1 (drop-in, same footprint) rather than respinning the board.
 
+## Testing the assembled boards
+
+With the Waveshare on the carrier, the MX module on the cable and the pad
+connected, run `opadctl board-test` or open **Diagnostics → PCB Test** in the
+app. Release both keys while it runs. The pad checks
+(`firmware/main/diag/board_test.c`, judged in
+`desktop/crates/opad-model/src/board_test.rs`):
+
+| Check | How | Typical faults it finds |
+|---|---|---|
+| Input module | ID voltage on GPIO8, 0.30 V for MX | Cable unplugged; P2-1 / P2-2 / P1-8 sockets not soldered; R3/R4 wrong |
+| Cable | Pulls GPIO2 up: on a reversed cable this powers the module's IN2 pull-up onto ID | A pin 1 ↔ 8 "reverse" JST cable |
+| Key pins | Keys must be GPIO10 / GPIO7 with the carrier | Old hand-wired pins (the app and `--fix-pins` set them) |
+| Key 1 / Key 2 line | Swaps the pad's pull-up for a pull-down: R1/R2 (10 kΩ) must still hold the line high | Open line (cable, J1/J_MOD pin 3/4, socket P1-10/P1-9, R1/R2); line shorted to GND |
+| Spare lines | Connector pins 6–8 must follow the pad's pulls, and must not follow a driven neighbour | Solder bridges on J_MOD or J1 |
+
+It does not press the switches for you: afterwards, press each key in
+Diagnostics → Switch Chatter & Input (or watch the counters in `opadctl status`).
+Key 1 and Key 2 must each register on their own.
+
 ---
 
 ## Files

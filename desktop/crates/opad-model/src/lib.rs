@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+pub mod board_test;
 pub mod diag;
 pub mod log;
 pub mod paths;

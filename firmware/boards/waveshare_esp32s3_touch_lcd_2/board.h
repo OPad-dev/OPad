@@ -109,6 +109,31 @@ typedef enum {
  */
 board_module_type_t board_detect_module(void);
 
+/**
+ * @brief What board_detect_module found at boot (NONE before it ran).
+ */
+board_module_type_t board_boot_module(void);
+
+/**
+ * @brief Measure the module ID voltage on GPIO8: with the internal pull-down
+ *        off (open) and on (loaded), in mV, -1 where a read failed. Takes
+ *        about 10 ms. ADC1 must be free (nothing else here uses it).
+ */
+esp_err_t board_read_module_id(int *out_open_mv, int *out_loaded_mv);
+
+/**
+ * @brief Which module an ID reading names (the thresholds board_detect_module uses).
+ */
+board_module_type_t board_module_from_id(int open_mv, int loaded_mv);
+
+/**
+ * @brief ID voltage (mV) with GPIO2 pulled up and ID pulled down: about
+ *        1.5 V when an MX module hangs on a pin 1 <-> 8 reversed cable,
+ *        near 0 V or the module's divider otherwise. GPIO2 is reset after.
+ *        Call only when GPIO2 is not a key pin.
+ */
+esp_err_t board_probe_reversed_cable(int *out_mv);
+
 #ifdef __cplusplus
 }
 #endif

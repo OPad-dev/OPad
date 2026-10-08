@@ -43,6 +43,10 @@ pub trait DeviceLink: Send + Sync {
         timeout_ms: u32,
         exclude_gpio: u32,
     ) -> Result<(), DeviceError>;
+    /// Ask the pad for a board test; it answers with `DeviceEvent::BoardTest`
+    async fn run_board_test(&self) -> Result<(), DeviceError>;
+    /// Whether the connected pad answers `run_board_test`
+    fn supports_board_test(&self) -> bool;
     fn subscribe(&self) -> broadcast::Receiver<DeviceEvent>;
     async fn pause_and_release(&self, timeout: Duration) -> bool;
     fn resume(&self);
@@ -116,6 +120,14 @@ impl DeviceLink for DeviceManager {
         exclude_gpio: u32,
     ) -> Result<(), DeviceError> {
         self.send_detect_pin(key_id, timeout_ms, exclude_gpio).await
+    }
+
+    async fn run_board_test(&self) -> Result<(), DeviceError> {
+        self.run_board_test().await
+    }
+
+    fn supports_board_test(&self) -> bool {
+        DeviceManager::supports_board_test(self)
     }
 
     fn subscribe(&self) -> broadcast::Receiver<DeviceEvent> {

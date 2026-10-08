@@ -100,6 +100,22 @@ uint32_t keypad_detect_pin_start(uint32_t timeout_ms, uint32_t exclude_gpio);
  */
 bool keypad_detect_pin_result(uint32_t id, int *out_pin);
 
+/** Result of keypad_line_test */
+typedef struct {
+    bool ran;                                 // false: key input is off (Hall Effect module)
+    uint8_t gpio[KEY_ID_COUNT];               // the pins tested
+    bool high_with_pullup[KEY_ID_COUNT];      // false: switch held, or line shorted to GND
+    bool high_with_pulldown[KEY_ID_COUNT];    // true: an external pull-up (MX module) reaches the pin
+} keypad_line_test_t;
+
+/**
+ * @brief Test the key lines for a short to GND and for the module's pull-up.
+ * Runs on the keypad task (key edges ignored for about 1 ms, nothing reported
+ * in between) and blocks the caller until it has, up to 100 ms. Board test
+ * only: call from the protocol task, in IDLE.
+ */
+esp_err_t keypad_line_test(keypad_line_test_t *out);
+
 /**
  * @brief Turn key input off (edges ignored, no presses reported) or back on.
  * Used when the connected input module is not one this firmware can read.

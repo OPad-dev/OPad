@@ -4,12 +4,14 @@
 //! 1. Switch Chatter & Input Tester (real-time key visualization, <15ms bounce detection, audio beep, NKRO test)
 //! 2. Hardware COM & Protocol Test (serial connection, ping latency, COM-02 resilience, latency percentiles)
 //! 3. Display & Screen Self-Test (backlight brightness ramp, test patterns, layout preview)
-//! 4. One-click Diagnostic Bundle Exporter (system info, USB stats, firmware version, counters, and recent logs)
+//! 4. Carrier & module PCB test (the pad measures, `opad_model::board_test` judges)
+//! 5. One-click Diagnostic Bundle Exporter (system info, USB stats, firmware version, counters, and recent logs)
 
 use crate::theme::{self, caption, heading, muted};
 use crate::{App, Message};
 use iced::widget::{button, checkbox, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Border, Element, Length};
+use opad_model::board_test::{self, BoardFix, BoardTestReport, CheckStatus};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
@@ -377,6 +379,7 @@ pub enum DiagnosticsTab {
     InputTester,
     ComProtocol,
     DisplayScreen,
+    BoardTest,
     ExportBundle,
 }
 
@@ -395,6 +398,10 @@ pub enum DiagnosticsMessage {
     TestBrightness(u32),
     PingDaemon,
     PingDone(Result<Duration, String>),
+    RunBoardTest,
+    BoardTestDone(Result<BoardTestReport, String>),
+    /// Set Key 1 = GPIO10 and Key 2 = GPIO7, then test again
+    UseCarrierKeyPins,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -419,6 +426,9 @@ pub struct DiagnosticsState {
     pub test_pattern_index: usize,
     pub ping_in_progress: bool,
     pub last_ping_ms: Option<f64>,
+    pub board_test_running: bool,
+    /// The last board test: the pad's report, or why there is none
+    pub board_test: Option<Result<BoardTestReport, String>>,
 }
 
 impl Default for DiagnosticsState {
@@ -433,6 +443,8 @@ impl Default for DiagnosticsState {
             test_pattern_index: 0,
             ping_in_progress: false,
             last_ping_ms: None,
+            board_test_running: false,
+            board_test: None,
         }
     }
 }
@@ -566,6 +578,7 @@ impl DiagnosticsState {
             tab_btn(DiagnosticsTab::InputTester, "⌨ Switch Chatter & Input"),
             tab_btn(DiagnosticsTab::ComProtocol, "🔌 Hardware COM & Protocol"),
             tab_btn(DiagnosticsTab::DisplayScreen, "🖥 Screen & Backlight"),
+            tab_btn(DiagnosticsTab::BoardTest, "🔧 PCB Test"),
             tab_btn(DiagnosticsTab::ExportBundle, "📦 Export Diagnostic Bundle"),
         ]
         .spacing(8);
@@ -574,6 +587,7 @@ impl DiagnosticsState {
             DiagnosticsTab::InputTester => self.view_input_tester(app),
             DiagnosticsTab::ComProtocol => self.view_com_protocol(app),
             DiagnosticsTab::DisplayScreen => self.view_display_screen(app),
+            DiagnosticsTab::BoardTest => self.view_board_test(app),
             DiagnosticsTab::ExportBundle => self.view_export_bundle(app),
         };
 
@@ -1203,6 +1217,80 @@ impl DiagnosticsState {
         column![brightness_card, screen_card].spacing(14).into()
     }
 
+    fn view_board_test<'a>(&'a self, app: &'a App) -> Element<'a, Message> {
+        let can_run = app.device_connected && !self.board_test_running;
+        let run_label = if self.board_test_running {
+            "Testing..."
+        } else if self.board_test.is_some() {
+            "Run Again"
+        } else {
+            "Run PCB Test"
+        };
+        let run_btn = button(text(run_label).size(13))
+            .padding([8, 16])
+            .style(theme::primary)
+            .on_press_maybe(
+                can_run.then_some(Message::Diagnostics(DiagnosticsMessage::RunBoardTest)),
+            );
+
+        let intro = container(
+            column![
+                text("Carrier & Input Module PCB Test")
+                    .size(16)
+                    .font(theme::FONT_BOLD),
+                muted(
+                    "The pad checks its own wiring: which module answers on the carrier's \
+                     connector, whether the cable is reversed, whether each key line reaches the \
+                     module, and whether the spare connector pins are shorted. Release both keys \
+                     while it runs. Not available during a map."
+                )
+                .size(12),
+                row![
+                    run_btn,
+                    Space::new().width(12),
+                    if app.device_connected {
+                        muted("Takes a fraction of a second.").size(12)
+                    } else {
+                        muted("Connect the pad first.").size(12)
+                    },
+                ]
+                .align_y(Alignment::Center),
+            ]
+            .spacing(10),
+        )
+        .padding(16)
+        .width(Length::Fill)
+        .style(theme::card);
+
+        let results: Element<'a, Message> = match &self.board_test {
+            None => Space::new().height(0).into(),
+            Some(Err(e)) => container(text(e.clone()).size(13).color(theme::RED))
+                .padding(16)
+                .width(Length::Fill)
+                .style(theme::card)
+                .into(),
+            Some(Ok(report)) => board_test_results(report),
+        };
+
+        let press_hint = container(
+            column![
+                text("Then press each key").size(15).font(theme::FONT_BOLD),
+                muted(
+                    "The test proves the lines are connected, not that the switches work. Press \
+                     each key in the Switch Chatter & Input tab: Key 1 must light the left card \
+                     and Key 2 the right one, each on its own."
+                )
+                .size(12),
+            ]
+            .spacing(6),
+        )
+        .padding(16)
+        .width(Length::Fill)
+        .style(theme::card);
+
+        column![intro, results, press_hint].spacing(16).into()
+    }
+
     fn view_export_bundle<'a>(&'a self, app: &'a App) -> Element<'a, Message> {
         let bundle_json = generate_diagnostic_bundle(app, self);
 
@@ -1257,6 +1345,79 @@ impl DiagnosticsState {
 }
 
 /// Generates a structured JSON diagnostic bundle from app and diagnostics state
+fn board_test_results(report: &BoardTestReport) -> Element<'_, Message> {
+    let checks = board_test::evaluate(report);
+    let status_color = |s: CheckStatus| match s {
+        CheckStatus::Pass => theme::GREEN,
+        CheckStatus::Warn => theme::YELLOW,
+        CheckStatus::Fail => theme::RED,
+        CheckStatus::Skip => theme::MUTED,
+    };
+    let overall = board_test::overall(&checks);
+
+    let mut rows = column![row![
+        text("Result").size(15).font(theme::FONT_BOLD),
+        Space::new().width(Length::Fill),
+        text(overall.label().to_uppercase())
+            .size(13)
+            .font(theme::FONT_BOLD)
+            .color(status_color(overall)),
+    ]
+    .align_y(Alignment::Center)]
+    .spacing(12);
+
+    for c in checks {
+        let mut detail = column![
+            text(c.name).size(13).font(theme::FONT_BOLD),
+            muted(c.detail).size(12),
+        ]
+        .spacing(2)
+        .width(Length::Fill);
+        if c.fix == Some(BoardFix::UseCarrierKeyPins) {
+            detail = detail.push(
+                button(text("Set Key 1 = GPIO10, Key 2 = GPIO7").size(12))
+                    .padding([4, 10])
+                    .style(theme::secondary)
+                    .on_press(Message::Diagnostics(DiagnosticsMessage::UseCarrierKeyPins)),
+            );
+        }
+        rows = rows.push(
+            row![
+                text(c.status.label().to_uppercase())
+                    .size(12)
+                    .font(theme::FONT_BOLD)
+                    .color(status_color(c.status))
+                    .width(48),
+                detail,
+            ]
+            .spacing(12),
+        );
+    }
+
+    if report.ran {
+        let mv = |v: Option<u32>| v.map_or("—".to_string(), |v| format!("{v} mV"));
+        rows = rows.push(
+            caption(format!(
+                "Measured: {} (at boot: {}) · ID {} / {} loaded · reverse probe {} · keys GPIO{} / GPIO{}",
+                report.module.label(),
+                report.boot_module.label(),
+                mv(report.id_mv),
+                mv(report.id_loaded_mv),
+                mv(report.reverse_probe_mv),
+                report.key1_gpio,
+                report.key2_gpio
+            ))
+            .size(11),
+        );
+    }
+
+    container(rows)
+        .padding(16)
+        .width(Length::Fill)
+        .style(theme::card)
+        .into()
+}
+
 pub fn generate_diagnostic_bundle(app: &App, diag: &DiagnosticsState) -> String {
     let now = chrono::Local::now().to_rfc3339();
     let info = app.device_info.as_ref();
@@ -1301,6 +1462,13 @@ pub fn generate_diagnostic_bundle(app: &App, diag: &DiagnosticsState) -> String 
                 app.firmware_offer.as_ref().and_then(|o| o.running_partition.clone())
             }),
         },
+        "board_test": diag.board_test.as_ref().map(|r| match r {
+            Ok(report) => serde_json::json!({
+                "report": report,
+                "checks": board_test::evaluate(report),
+            }),
+            Err(e) => serde_json::json!({ "error": e }),
+        }),
         "config": {
             "key1": app.k1_input,
             "key2": app.k2_input,

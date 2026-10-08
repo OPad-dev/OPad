@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use opad_device::flash::{self, APP_PARTITION_OFFSET};
 use opad_ipc::{send_request, IpcRequest, IpcResponse, IpcStream, TapStatsSnapshot};
+use opad_model::board_test;
 use opad_model::tap_rate::{self, TapChannel};
 use opad_model::JsonBackup;
 use std::io::Write;
@@ -104,6 +105,16 @@ enum Commands {
         )]
         period: Option<u32>,
     },
+    /// Test the carrier and input module PCBs: module ID, cable direction,
+    /// key lines and connector shorts. Release both keys while it runs.
+    BoardTest {
+        #[arg(
+            long,
+            help = "If the keys are on the wrong pins for the carrier, set Key 1 = GPIO10 and \
+                    Key 2 = GPIO7, then test again"
+        )]
+        fix_pins: bool,
+    },
     /// Perform initial system setup (udev permissions & directories)
     Setup,
     /// Hidden command: trigger freaky 67 easter egg on the pad
@@ -112,6 +123,53 @@ enum Commands {
     /// Hidden command: trigger freaky 67 easter egg on the pad
     #[command(hide = true)]
     EasterEgg,
+}
+
+async fn run_board_test(stream: &mut IpcStream) -> Result<board_test::BoardTestReport> {
+    // An older daemon cannot parse the request and drops the connection
+    let resp = send_request(stream, &IpcRequest::RunBoardTest)
+        .await
+        .context("The daemon did not answer; it may predate the board test")?;
+    match resp {
+        IpcResponse::BoardTest(report) => Ok(report),
+        IpcResponse::Error(e) => bail!("{}", e),
+        other => bail!("Unexpected response from daemon: {:?}", other),
+    }
+}
+
+fn format_board_test(
+    report: &board_test::BoardTestReport,
+    checks: &[board_test::BoardCheck],
+) -> String {
+    use board_test::CheckStatus;
+    let mut out = String::from("=== Board test (carrier + input module) ===\n");
+    for c in checks {
+        let mark = match c.status {
+            CheckStatus::Pass => "✓",
+            CheckStatus::Warn => "!",
+            CheckStatus::Fail => "✗",
+            CheckStatus::Skip => "-",
+        };
+        out += &format!("{mark} {:<13} {}\n", c.name, c.detail);
+    }
+    if report.ran {
+        let mv = |v: Option<u32>| v.map_or("-".to_string(), |v| format!("{v} mV"));
+        out += &format!(
+            "\nMeasured: module {} (boot: {}), ID {} / {} loaded, reverse probe {}, keys GPIO{} / GPIO{}\n",
+            report.module.label(),
+            report.boot_module.label(),
+            mv(report.id_mv),
+            mv(report.id_loaded_mv),
+            mv(report.reverse_probe_mv),
+            report.key1_gpio,
+            report.key2_gpio
+        );
+    }
+    out += &format!(
+        "Result: {}\n",
+        board_test::overall(checks).label().to_uppercase()
+    );
+    out
 }
 
 #[tokio::main]
@@ -704,6 +762,41 @@ async fn main() -> Result<()> {
                 IpcResponse::TapStats(snapshot) => print!("{}", format_tap_stats(&snapshot)),
                 IpcResponse::Error(e) => bail!("{}", e),
                 other => bail!("Unexpected response from daemon: {:?}", other),
+            }
+        }
+
+        Commands::BoardTest { fix_pins } => {
+            let stream = daemon(&mut stream)?;
+            let mut report = run_board_test(stream).await?;
+            let mut checks = board_test::evaluate(&report);
+            let needs_pins = checks
+                .iter()
+                .any(|c| c.fix == Some(board_test::BoardFix::UseCarrierKeyPins));
+            if fix_pins && needs_pins {
+                let mut config = match send_request(stream, &IpcRequest::GetStatus).await? {
+                    IpcResponse::Status { config, .. } => config,
+                    other => bail!("Unexpected response from daemon: {:?}", other),
+                };
+                config.key1_gpio = board_test::CARRIER_KEY1_GPIO;
+                config.key2_gpio = board_test::CARRIER_KEY2_GPIO;
+                match send_request(stream, &IpcRequest::UpdateConfig(config)).await? {
+                    IpcResponse::ConfigUpdated { .. } => {
+                        println!("✓ Keys moved to GPIO10 / GPIO7; testing again\n")
+                    }
+                    IpcResponse::Error(e) => bail!("Could not set the key pins: {}", e),
+                    other => bail!("Unexpected response from daemon: {:?}", other),
+                }
+                // The pad moves the pins once both keys are released
+                tokio::time::sleep(Duration::from_millis(300)).await;
+                report = run_board_test(stream).await?;
+                checks = board_test::evaluate(&report);
+            }
+            print!("{}", format_board_test(&report, &checks));
+            if board_test::overall(&checks) == board_test::CheckStatus::Fail {
+                if !fix_pins && needs_pins {
+                    println!("Run `opadctl board-test --fix-pins` to set the key pins.");
+                }
+                bail!("the board test found problems")
             }
         }
 

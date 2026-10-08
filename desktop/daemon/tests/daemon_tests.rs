@@ -167,6 +167,14 @@ impl DeviceLink for MockDeviceLink {
         Ok(())
     }
 
+    async fn run_board_test(&self) -> Result<(), DeviceError> {
+        Ok(())
+    }
+
+    fn supports_board_test(&self) -> bool {
+        false
+    }
+
     fn subscribe(&self) -> broadcast::Receiver<DeviceEvent> {
         self.event_tx.subscribe()
     }

@@ -19,6 +19,7 @@
 #include "esp_app_desc.h"
 #include "esp_ota_ops.h"
 #include "diag/diag.h"
+#include "diag/board_test.h"
 #include "frame_parser.h"
 #include <string.h>
 
@@ -172,6 +173,8 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     msg.payload.hello_ack.current_config.swipe_right_modifiers = cfg.swipe_mods[3];
     // KeyPressBatch is sent while a map is played (issue #2)
     msg.payload.hello_ack.key_press_times = true;
+    // Answers run_board_test
+    msg.payload.hello_ack.board_test = true;
 
     ESP_LOGI(TAG, "Sending HelloAck to host (Firmware: %s, Gen: %lu, Partition: %s, K1: GPIO%lu, K2: GPIO%lu)",
              app_desc->version, (unsigned long)snap.generation,
@@ -294,6 +297,49 @@ esp_err_t protocol_send_detect_pin_resp(uint32_t seq, uint32_t key_id, uint32_t 
     msg.payload.detect_pin_resp.key_id = key_id;
     msg.payload.detect_pin_resp.gpio = gpio;
     msg.payload.detect_pin_resp.success = success;
+    return send_envelope(&msg);
+}
+
+static osupad_InputModule input_module_to_proto(board_module_type_t m)
+{
+    switch (m) {
+    case BOARD_MODULE_MX: return osupad_InputModule_INPUT_MODULE_MX;
+    case BOARD_MODULE_HE: return osupad_InputModule_INPUT_MODULE_HALL_EFFECT;
+    default:              return osupad_InputModule_INPUT_MODULE_NONE;
+    }
+}
+
+esp_err_t protocol_send_board_test(uint32_t seq, const char *refusal)
+{
+    osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+    msg.sequence_number = seq ? seq : s_out_sequence++;
+    msg.which_payload = osupad_DeviceToHost_board_test_tag;
+    osupad_BoardTestResult *out = &msg.payload.board_test;
+
+    board_test_result_t r;
+    esp_err_t err = ESP_OK;
+    if (refusal) {
+        strncpy(out->message, refusal, sizeof(out->message) - 1);
+    } else if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+        // It reconfigures pins and ignores key edges for a moment: never in a map
+        strncpy(out->message, "not while a map is played", sizeof(out->message) - 1);
+    } else if ((err = board_test_run(&r)) != ESP_OK) {
+        snprintf(out->message, sizeof(out->message), "test failed to run: %s", esp_err_to_name(err));
+    } else {
+        out->ran = true;
+        out->boot_module = input_module_to_proto(r.boot_module);
+        out->module = input_module_to_proto(r.module);
+        out->id_mv = r.id_mv;
+        out->id_loaded_mv = r.id_loaded_mv;
+        out->reverse_probe_mv = r.reverse_probe_mv;
+        out->key1_gpio = r.key1_gpio;
+        out->key2_gpio = r.key2_gpio;
+        out->keys_enabled = r.keys_enabled;
+        out->tested_gpios = r.tested_gpios;
+        out->high_with_pullup = r.high_with_pullup;
+        out->high_with_pulldown = r.high_with_pulldown;
+        out->bridged_gpios = r.bridged_gpios;
+    }
     return send_envelope(&msg);
 }
 
@@ -666,6 +712,14 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         break;
     }
 
+    case osupad_HostToDevice_run_board_test_tag:
+        if (msg->payload.run_board_test) {
+            // The pin scan holds GPIO2/4/6 as pulled-up inputs, which the test reconfigures
+            protocol_send_board_test(msg->sequence_number,
+                                     s_detect.id != 0 ? "pin detection is running" : NULL);
+        }
+        break;
+
     default:
         diag_record(DIAG_EVENT_UNKNOWN_HOST_MSG, 0 /* DEBUG */, msg->which_payload, 0);
         ESP_LOGD(TAG, "Unhandled host message payload tag: %d", msg->which_payload);
@@ -682,7 +736,7 @@ static void on_frame_received(const uint8_t *payload, size_t payload_len, void *
         // nanopb accepts most varint garbage with no payload set: only a
         // recognised message is evidence of the host's framing
         if (!s_host_framing_known && msg.which_payload >= osupad_HostToDevice_hello_tag &&
-            msg.which_payload <= osupad_HostToDevice_detect_pin_tag) {
+            msg.which_payload <= osupad_HostToDevice_run_board_test_tag) {
             s_host_framing = s_parser.last_format;
             s_host_framing_known = true;
         }

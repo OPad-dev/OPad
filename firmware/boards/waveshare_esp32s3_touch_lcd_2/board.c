@@ -207,6 +207,48 @@ static int read_module_id_mv(adc_oneshot_unit_handle_t adc, adc_cali_handle_t ca
     return (raw_avg * 3100) / 4095;
 }
 
+typedef struct {
+    adc_oneshot_unit_handle_t adc;
+    adc_cali_handle_t cali;
+} module_id_adc_t;
+
+static esp_err_t module_id_adc_open(module_id_adc_t *m)
+{
+    *m = (module_id_adc_t){0};
+    adc_oneshot_unit_init_cfg_t unit_cfg = {
+        .unit_id = ADC_UNIT_1,
+    };
+    esp_err_t err = adc_oneshot_new_unit(&unit_cfg, &m->adc);
+    if (err != ESP_OK) {
+        return err;
+    }
+    adc_oneshot_chan_cfg_t chan_cfg = {
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_12,
+    };
+    adc_oneshot_config_channel(m->adc, ADC_CHANNEL_7, &chan_cfg);
+
+    adc_cali_curve_fitting_config_t cali_cfg = {
+        .unit_id = ADC_UNIT_1,
+        .chan = ADC_CHANNEL_7,
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_12,
+    };
+    if (adc_cali_create_scheme_curve_fitting(&cali_cfg, &m->cali) != ESP_OK) {
+        m->cali = NULL;
+    }
+    return ESP_OK;
+}
+
+static void module_id_adc_close(module_id_adc_t *m)
+{
+    if (m->cali) {
+        adc_cali_delete_scheme_curve_fitting(m->cali);
+    }
+    adc_oneshot_del_unit(m->adc);
+    gpio_reset_pin(BOARD_MODULE_ID_GPIO);
+}
+
 /*
  * The module on the JST connector identifies itself with a divider from 3V3
  * to GND on ID (GPIO8): 100k/10k = 0.30 V for MX, 100k/47k = 1.06 V for Hall
@@ -218,62 +260,89 @@ static int read_module_id_mv(adc_oneshot_unit_handle_t adc, adc_cali_handle_t ca
  * the pull-down off, since its ~45k would load the 32k-source HE divider down
  * to where it looks like MX.
  */
-board_module_type_t board_detect_module(void)
+esp_err_t board_read_module_id(int *out_open_mv, int *out_loaded_mv)
 {
-    adc_oneshot_unit_handle_t adc = NULL;
-    adc_oneshot_unit_init_cfg_t unit_cfg = {
-        .unit_id = ADC_UNIT_1,
-    };
-    if (adc_oneshot_new_unit(&unit_cfg, &adc) != ESP_OK) {
-        ESP_LOGE(TAG, "Module ID: ADC1 unavailable, assuming no module");
-        return BOARD_MODULE_NONE;
+    module_id_adc_t m;
+    esp_err_t err = module_id_adc_open(&m);
+    if (err != ESP_OK) {
+        return err;
     }
-    adc_oneshot_chan_cfg_t chan_cfg = {
-        .atten = ADC_ATTEN_DB_12,
-        .bitwidth = ADC_BITWIDTH_12,
-    };
-    adc_oneshot_config_channel(adc, ADC_CHANNEL_7, &chan_cfg);
-
-    adc_cali_handle_t cali = NULL;
-    adc_cali_curve_fitting_config_t cali_cfg = {
-        .unit_id = ADC_UNIT_1,
-        .chan = ADC_CHANNEL_7,
-        .atten = ADC_ATTEN_DB_12,
-        .bitwidth = ADC_BITWIDTH_12,
-    };
-    if (adc_cali_create_scheme_curve_fitting(&cali_cfg, &cali) != ESP_OK) {
-        cali = NULL;
-    }
-
     // oneshot_config_channel leaves the pad's pulls alone
     gpio_pulldown_en(BOARD_MODULE_ID_GPIO);
     gpio_pullup_dis(BOARD_MODULE_ID_GPIO);
     esp_rom_delay_us(2000);
-    int loaded_mv = read_module_id_mv(adc, cali);
+    int loaded_mv = read_module_id_mv(m.adc, m.cali);
 
     gpio_pulldown_dis(BOARD_MODULE_ID_GPIO);
     esp_rom_delay_us(2000);
-    int open_mv = read_module_id_mv(adc, cali);
+    int open_mv = read_module_id_mv(m.adc, m.cali);
+    module_id_adc_close(&m);
 
-    if (cali) {
-        adc_cali_delete_scheme_curve_fitting(cali);
+    *out_open_mv = open_mv;
+    *out_loaded_mv = loaded_mv;
+    return (open_mv < 0 || loaded_mv < 0) ? ESP_FAIL : ESP_OK;
+}
+
+/*
+ * A cable that swaps pin 1 <-> 8 puts the module's 3V3 on GPIO2 and its IN2
+ * line (10k pull-up to that 3V3, on an MX module) on ID. Unpowered, the module
+ * then reads as nothing at all. Pulling GPIO2 up powers that pull-up through
+ * ~45k, so ID climbs to ~1.5 V against its pull-down, while with the cable the
+ * right way round GPIO2 goes nowhere and ID stays at its divider (or ~0 V).
+ * Pulls only: nothing is driven, whatever is wired to these pins.
+ */
+esp_err_t board_probe_reversed_cable(int *out_mv)
+{
+    module_id_adc_t m;
+    esp_err_t err = module_id_adc_open(&m);
+    if (err != ESP_OK) {
+        return err;
     }
-    adc_oneshot_del_unit(adc);
-    gpio_reset_pin(BOARD_MODULE_ID_GPIO);
+    gpio_set_direction(BOARD_REVERSE_PROBE_GPIO, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(BOARD_REVERSE_PROBE_GPIO, GPIO_PULLUP_ONLY);
+    gpio_pulldown_en(BOARD_MODULE_ID_GPIO);
+    gpio_pullup_dis(BOARD_MODULE_ID_GPIO);
+    esp_rom_delay_us(5000);
+    int mv = read_module_id_mv(m.adc, m.cali);
+    module_id_adc_close(&m);
+    gpio_reset_pin(BOARD_REVERSE_PROBE_GPIO);
 
-    board_module_type_t result;
+    *out_mv = mv;
+    return mv < 0 ? ESP_FAIL : ESP_OK;
+}
+
+board_module_type_t board_module_from_id(int open_mv, int loaded_mv)
+{
     if (loaded_mv < 0 || open_mv < 0 || loaded_mv < 120) {
-        result = BOARD_MODULE_NONE;          // floating, or unreadable
+        return BOARD_MODULE_NONE;          // floating, or unreadable
     } else if (open_mv < 650) {
-        result = BOARD_MODULE_MX;            // 0.30 V
+        return BOARD_MODULE_MX;            // 0.30 V
     } else if (open_mv < 1600) {
-        result = BOARD_MODULE_HE;            // 1.06 V
-    } else {
-        result = BOARD_MODULE_NONE;          // no known module sits up here
+        return BOARD_MODULE_HE;            // 1.06 V
     }
+    return BOARD_MODULE_NONE;              // no known module sits up here
+}
+
+static board_module_type_t s_boot_module = BOARD_MODULE_NONE;
+
+board_module_type_t board_detect_module(void)
+{
+    int open_mv = -1;
+    int loaded_mv = -1;
+    esp_err_t err = board_read_module_id(&open_mv, &loaded_mv);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Module ID: read failed (%s), assuming no module", esp_err_to_name(err));
+    }
+    board_module_type_t result = board_module_from_id(open_mv, loaded_mv);
 
     ESP_LOGI(TAG, "Module ID: %d mV (%d mV with pull-down) -> %s", open_mv, loaded_mv,
              result == BOARD_MODULE_MX ? "MX" :
              result == BOARD_MODULE_HE ? "Hall Effect" : "none");
+    s_boot_module = result;
     return result;
+}
+
+board_module_type_t board_boot_module(void)
+{
+    return s_boot_module;
 }

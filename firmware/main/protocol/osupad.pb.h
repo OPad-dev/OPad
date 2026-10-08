@@ -51,6 +51,14 @@ typedef enum _osupad_SwipeAction {
     osupad_SwipeAction_SWIPE_ACTION_VOLUME_DOWN = 8
 } osupad_SwipeAction;
 
+/* Input module on the carrier's connector, from its ID voltage on GPIO8 */
+typedef enum _osupad_InputModule {
+    osupad_InputModule_INPUT_MODULE_UNKNOWN = 0,
+    osupad_InputModule_INPUT_MODULE_NONE = 1, /* ID floating: no module, or a hand-wired pad */
+    osupad_InputModule_INPUT_MODULE_MX = 2, /* 100k/10k divider, 0.30 V */
+    osupad_InputModule_INPUT_MODULE_HALL_EFFECT = 3 /* 100k/47k divider, 1.06 V */
+} osupad_InputModule;
+
 /* Struct definitions */
 typedef struct _osupad_Hello {
     uint32_t protocol_version;
@@ -137,6 +145,9 @@ typedef struct _osupad_HelloAck {
     /* The pad sends KeyPressBatch while a map is played (issue #2). False from
  firmware predating it: the host then measures the tap rate from tosu. */
     bool key_press_times;
+    /* The pad answers run_board_test with a BoardTestResult. False from
+ firmware predating it: the host then offers no board test. */
+    bool board_test;
 } osupad_HelloAck;
 
 typedef struct _osupad_SetConfig {
@@ -296,6 +307,27 @@ typedef struct _osupad_DetectPinResponse {
     bool success;
 } osupad_DetectPinResponse;
 
+/* Measurements only; the host turns them into pass/fail checks. Run in IDLE
+ only, on request. GPIO bitmasks have bit n for GPIOn. */
+typedef struct _osupad_BoardTestResult {
+    bool ran; /* false: refused, see message */
+    char message[64];
+    osupad_InputModule boot_module; /* what the pad saw at boot (sets key pins, HE lockout) */
+    osupad_InputModule module; /* what it measures now */
+    int32_t id_mv; /* ID voltage, pull-down off. -1 = not measured */
+    int32_t id_loaded_mv; /* ID voltage with the ~45k internal pull-down on */
+    /* ID voltage with GPIO2 pulled up: a reversed cable (pin 1 <-> 8) powers
+ the module from GPIO2 and its IN2 pull-up lands on ID. -1 = not run */
+    int32_t reverse_probe_mv;
+    uint32_t key1_gpio;
+    uint32_t key2_gpio;
+    bool keys_enabled; /* false: key input off (Hall Effect module on v1) */
+    uint64_t tested_gpios; /* pins with the pull tests below */
+    uint64_t high_with_pullup; /* read high with only the internal pull-up */
+    uint64_t high_with_pulldown; /* read high with only the internal pull-down */
+    uint64_t bridged_gpios; /* spare pins that follow a neighbour driven low */
+} osupad_BoardTestResult;
+
 typedef struct _osupad_HostToDevice {
     uint32_t sequence_number;
     pb_size_t which_payload;
@@ -314,6 +346,7 @@ typedef struct _osupad_HostToDevice {
         bool request_logs;
         osupad_ClaimOwnership claim_ownership;
         osupad_DetectPinRequest detect_pin;
+        bool run_board_test; /* answered with BoardTestResult */
     } payload;
 } osupad_HostToDevice;
 
@@ -329,6 +362,7 @@ typedef struct _osupad_DeviceToHost {
         osupad_LayoutAck layout_ack;
         osupad_DetectPinResponse detect_pin_resp;
         osupad_KeyPressBatch key_presses;
+        osupad_BoardTestResult board_test;
     } payload;
 } osupad_DeviceToHost;
 
@@ -353,6 +387,10 @@ extern "C" {
 #define _osupad_SwipeAction_MIN osupad_SwipeAction_SWIPE_ACTION_KEEP
 #define _osupad_SwipeAction_MAX osupad_SwipeAction_SWIPE_ACTION_VOLUME_DOWN
 #define _osupad_SwipeAction_ARRAYSIZE ((osupad_SwipeAction)(osupad_SwipeAction_SWIPE_ACTION_VOLUME_DOWN+1))
+
+#define _osupad_InputModule_MIN osupad_InputModule_INPUT_MODULE_UNKNOWN
+#define _osupad_InputModule_MAX osupad_InputModule_INPUT_MODULE_HALL_EFFECT
+#define _osupad_InputModule_ARRAYSIZE ((osupad_InputModule)(osupad_InputModule_INPUT_MODULE_HALL_EFFECT+1))
 
 
 
@@ -384,12 +422,15 @@ extern "C" {
 
 
 
+#define osupad_BoardTestResult_boot_module_ENUMTYPE osupad_InputModule
+#define osupad_BoardTestResult_module_ENUMTYPE osupad_InputModule
+
 
 
 
 /* Initializer values for message structs */
 #define osupad_Hello_init_default                {0, ""}
-#define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_default, 0}
+#define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_default, 0, 0}
 #define osupad_ClaimOwnership_init_default       {{0, {0}}}
 #define osupad_DeviceStatus_init_default         {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_ConfigPayload_init_default        {0, 0, 0, 0, 0, 0, 0, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, 0, 0, 0, 0}
@@ -412,10 +453,11 @@ extern "C" {
 #define osupad_KeyPressBatch_init_default        {0, 0, {osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default, osupad_KeyPress_init_default}, 0}
 #define osupad_DetectPinRequest_init_default     {0, 0, 0}
 #define osupad_DetectPinResponse_init_default    {0, 0, 0}
+#define osupad_BoardTestResult_init_default      {0, "", _osupad_InputModule_MIN, _osupad_InputModule_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_HostToDevice_init_default         {0, 0, {osupad_Hello_init_default}}
 #define osupad_DeviceToHost_init_default         {0, 0, {osupad_HelloAck_init_default}}
 #define osupad_Hello_init_zero                   {0, ""}
-#define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_zero, 0}
+#define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_zero, 0, 0}
 #define osupad_ClaimOwnership_init_zero          {{0, {0}}}
 #define osupad_DeviceStatus_init_zero            {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_ConfigPayload_init_zero           {0, 0, 0, 0, 0, 0, 0, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, 0, 0, 0, 0}
@@ -438,6 +480,7 @@ extern "C" {
 #define osupad_KeyPressBatch_init_zero           {0, 0, {osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero, osupad_KeyPress_init_zero}, 0}
 #define osupad_DetectPinRequest_init_zero        {0, 0, 0}
 #define osupad_DetectPinResponse_init_zero       {0, 0, 0}
+#define osupad_BoardTestResult_init_zero         {0, "", _osupad_InputModule_MIN, _osupad_InputModule_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_HostToDevice_init_zero            {0, 0, {osupad_Hello_init_zero}}
 #define osupad_DeviceToHost_init_zero            {0, 0, {osupad_HelloAck_init_zero}}
 
@@ -494,6 +537,7 @@ extern "C" {
 #define osupad_HelloAck_running_partition_tag    9
 #define osupad_HelloAck_current_config_tag       10
 #define osupad_HelloAck_key_press_times_tag      11
+#define osupad_HelloAck_board_test_tag           12
 #define osupad_SetConfig_config_tag              1
 #define osupad_ConfigAck_success_tag             1
 #define osupad_ConfigAck_message_tag             2
@@ -572,6 +616,20 @@ extern "C" {
 #define osupad_DetectPinResponse_key_id_tag      1
 #define osupad_DetectPinResponse_gpio_tag        2
 #define osupad_DetectPinResponse_success_tag     3
+#define osupad_BoardTestResult_ran_tag           1
+#define osupad_BoardTestResult_message_tag       2
+#define osupad_BoardTestResult_boot_module_tag   3
+#define osupad_BoardTestResult_module_tag        4
+#define osupad_BoardTestResult_id_mv_tag         5
+#define osupad_BoardTestResult_id_loaded_mv_tag  6
+#define osupad_BoardTestResult_reverse_probe_mv_tag 7
+#define osupad_BoardTestResult_key1_gpio_tag     8
+#define osupad_BoardTestResult_key2_gpio_tag     9
+#define osupad_BoardTestResult_keys_enabled_tag  10
+#define osupad_BoardTestResult_tested_gpios_tag  11
+#define osupad_BoardTestResult_high_with_pullup_tag 12
+#define osupad_BoardTestResult_high_with_pulldown_tag 13
+#define osupad_BoardTestResult_bridged_gpios_tag 14
 #define osupad_HostToDevice_sequence_number_tag  1
 #define osupad_HostToDevice_hello_tag            2
 #define osupad_HostToDevice_set_config_tag       3
@@ -587,6 +645,7 @@ extern "C" {
 #define osupad_HostToDevice_request_logs_tag     13
 #define osupad_HostToDevice_claim_ownership_tag  14
 #define osupad_HostToDevice_detect_pin_tag       15
+#define osupad_HostToDevice_run_board_test_tag   16
 #define osupad_DeviceToHost_sequence_number_tag  1
 #define osupad_DeviceToHost_hello_ack_tag        2
 #define osupad_DeviceToHost_status_tag           3
@@ -596,6 +655,7 @@ extern "C" {
 #define osupad_DeviceToHost_layout_ack_tag       7
 #define osupad_DeviceToHost_detect_pin_resp_tag  8
 #define osupad_DeviceToHost_key_presses_tag      9
+#define osupad_DeviceToHost_board_test_tag       10
 
 /* Struct field encoding specification for nanopb */
 #define osupad_Hello_FIELDLIST(X, a) \
@@ -615,7 +675,8 @@ X(a, STATIC,   SINGULAR, UINT64,   lifetime_key2,     7) \
 X(a, STATIC,   SINGULAR, BYTES,    owner_id,          8) \
 X(a, STATIC,   SINGULAR, STRING,   running_partition,   9) \
 X(a, STATIC,   OPTIONAL, MESSAGE,  current_config,   10) \
-X(a, STATIC,   SINGULAR, BOOL,     key_press_times,  11)
+X(a, STATIC,   SINGULAR, BOOL,     key_press_times,  11) \
+X(a, STATIC,   SINGULAR, BOOL,     board_test,       12)
 #define osupad_HelloAck_CALLBACK NULL
 #define osupad_HelloAck_DEFAULT NULL
 #define osupad_HelloAck_current_config_MSGTYPE osupad_ConfigPayload
@@ -833,6 +894,24 @@ X(a, STATIC,   SINGULAR, BOOL,     success,           3)
 #define osupad_DetectPinResponse_CALLBACK NULL
 #define osupad_DetectPinResponse_DEFAULT NULL
 
+#define osupad_BoardTestResult_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BOOL,     ran,               1) \
+X(a, STATIC,   SINGULAR, STRING,   message,           2) \
+X(a, STATIC,   SINGULAR, UENUM,    boot_module,       3) \
+X(a, STATIC,   SINGULAR, UENUM,    module,            4) \
+X(a, STATIC,   SINGULAR, SINT32,   id_mv,             5) \
+X(a, STATIC,   SINGULAR, SINT32,   id_loaded_mv,      6) \
+X(a, STATIC,   SINGULAR, SINT32,   reverse_probe_mv,   7) \
+X(a, STATIC,   SINGULAR, UINT32,   key1_gpio,         8) \
+X(a, STATIC,   SINGULAR, UINT32,   key2_gpio,         9) \
+X(a, STATIC,   SINGULAR, BOOL,     keys_enabled,     10) \
+X(a, STATIC,   SINGULAR, UINT64,   tested_gpios,     11) \
+X(a, STATIC,   SINGULAR, UINT64,   high_with_pullup,  12) \
+X(a, STATIC,   SINGULAR, UINT64,   high_with_pulldown,  13) \
+X(a, STATIC,   SINGULAR, UINT64,   bridged_gpios,    14)
+#define osupad_BoardTestResult_CALLBACK NULL
+#define osupad_BoardTestResult_DEFAULT NULL
+
 #define osupad_HostToDevice_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   sequence_number,   1) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,hello,payload.hello),   2) \
@@ -848,7 +927,8 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,set_layout,payload.set_layout),  11)
 X(a, STATIC,   ONEOF,    UINT32,   (payload,reset_layout,payload.reset_layout),  12) \
 X(a, STATIC,   ONEOF,    BOOL,     (payload,request_logs,payload.request_logs),  13) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,claim_ownership,payload.claim_ownership),  14) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,detect_pin,payload.detect_pin),  15)
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,detect_pin,payload.detect_pin),  15) \
+X(a, STATIC,   ONEOF,    BOOL,     (payload,run_board_test,payload.run_board_test),  16)
 #define osupad_HostToDevice_CALLBACK NULL
 #define osupad_HostToDevice_DEFAULT NULL
 #define osupad_HostToDevice_payload_hello_MSGTYPE osupad_Hello
@@ -871,7 +951,8 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,counter_sync_resp,payload.counter_sy
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,log_batch,payload.log_batch),   6) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,layout_ack,payload.layout_ack),   7) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,detect_pin_resp,payload.detect_pin_resp),   8) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,key_presses,payload.key_presses),   9)
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,key_presses,payload.key_presses),   9) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,board_test,payload.board_test),  10)
 #define osupad_DeviceToHost_CALLBACK NULL
 #define osupad_DeviceToHost_DEFAULT NULL
 #define osupad_DeviceToHost_payload_hello_ack_MSGTYPE osupad_HelloAck
@@ -882,6 +963,7 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,key_presses,payload.key_presses),   
 #define osupad_DeviceToHost_payload_layout_ack_MSGTYPE osupad_LayoutAck
 #define osupad_DeviceToHost_payload_detect_pin_resp_MSGTYPE osupad_DetectPinResponse
 #define osupad_DeviceToHost_payload_key_presses_MSGTYPE osupad_KeyPressBatch
+#define osupad_DeviceToHost_payload_board_test_MSGTYPE osupad_BoardTestResult
 
 extern const pb_msgdesc_t osupad_Hello_msg;
 extern const pb_msgdesc_t osupad_HelloAck_msg;
@@ -907,6 +989,7 @@ extern const pb_msgdesc_t osupad_KeyPress_msg;
 extern const pb_msgdesc_t osupad_KeyPressBatch_msg;
 extern const pb_msgdesc_t osupad_DetectPinRequest_msg;
 extern const pb_msgdesc_t osupad_DetectPinResponse_msg;
+extern const pb_msgdesc_t osupad_BoardTestResult_msg;
 extern const pb_msgdesc_t osupad_HostToDevice_msg;
 extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 
@@ -935,11 +1018,13 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_KeyPressBatch_fields &osupad_KeyPressBatch_msg
 #define osupad_DetectPinRequest_fields &osupad_DetectPinRequest_msg
 #define osupad_DetectPinResponse_fields &osupad_DetectPinResponse_msg
+#define osupad_BoardTestResult_fields &osupad_BoardTestResult_msg
 #define osupad_HostToDevice_fields &osupad_HostToDevice_msg
 #define osupad_DeviceToHost_fields &osupad_DeviceToHost_msg
 
 /* Maximum encoded size of messages (where known) */
 #define OSUPAD_OSUPAD_PB_H_MAX_SIZE              osupad_HostToDevice_size
+#define osupad_BoardTestResult_size              147
 #define osupad_ClaimOwnership_size               18
 #define osupad_ConfigAck_size                    186
 #define osupad_ConfigPayload_size                117
@@ -953,7 +1038,7 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_DeviceStatus_size                 98
 #define osupad_DeviceToHost_size                 889
 #define osupad_GameplayDisplayState_size         196
-#define osupad_HelloAck_size                     290
+#define osupad_HelloAck_size                     292
 #define osupad_Hello_size                        39
 #define osupad_HostStatus_size                   12
 #define osupad_HostToDevice_size                 4309

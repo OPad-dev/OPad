@@ -362,7 +362,7 @@ async fn main() -> Result<()> {
                     DeviceEvent::LogBatch(batch) => {
                         event_opt = Some(RuntimeEvent::DeviceLogBatch(batch));
                     }
-                    DeviceEvent::PinDetected { .. } => {}
+                    DeviceEvent::PinDetected { .. } | DeviceEvent::BoardTest(_) => {}
                     DeviceEvent::KeyPressTimes(on) => {
                         event_opt = Some(RuntimeEvent::PadPressTimes(on));
                     }

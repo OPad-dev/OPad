@@ -53,6 +53,9 @@ message HelloAck {
     // The pad sends KeyPressBatch while a map is played (issue #2). False from
     // firmware predating it: the host then measures the tap rate from tosu.
     bool key_press_times = 11;
+    // The pad answers run_board_test with a BoardTestResult. False from
+    // firmware predating it: the host then offers no board test.
+    bool board_test = 12;
 }
 
 // Record a new owner in NVS (§W3-2). An NVS write, so the firmware must honour
@@ -313,6 +316,39 @@ message DetectPinResponse {
 }
 
 // -----------------------------------------------------------------------------
+// Board test (carrier + input module PCBs)
+// -----------------------------------------------------------------------------
+
+// Input module on the carrier's connector, from its ID voltage on GPIO8
+enum InputModule {
+    INPUT_MODULE_UNKNOWN = 0;
+    INPUT_MODULE_NONE = 1;           // ID floating: no module, or a hand-wired pad
+    INPUT_MODULE_MX = 2;             // 100k/10k divider, 0.30 V
+    INPUT_MODULE_HALL_EFFECT = 3;    // 100k/47k divider, 1.06 V
+}
+
+// Measurements only; the host turns them into pass/fail checks. Run in IDLE
+// only, on request. GPIO bitmasks have bit n for GPIOn.
+message BoardTestResult {
+    bool ran = 1;                    // false: refused, see message
+    string message = 2;
+    InputModule boot_module = 3;     // what the pad saw at boot (sets key pins, HE lockout)
+    InputModule module = 4;          // what it measures now
+    sint32 id_mv = 5;                // ID voltage, pull-down off. -1 = not measured
+    sint32 id_loaded_mv = 6;         // ID voltage with the ~45k internal pull-down on
+    // ID voltage with GPIO2 pulled up: a reversed cable (pin 1 <-> 8) powers
+    // the module from GPIO2 and its IN2 pull-up lands on ID. -1 = not run
+    sint32 reverse_probe_mv = 7;
+    uint32 key1_gpio = 8;
+    uint32 key2_gpio = 9;
+    bool keys_enabled = 10;          // false: key input off (Hall Effect module on v1)
+    uint64 tested_gpios = 11;        // pins with the pull tests below
+    uint64 high_with_pullup = 12;    // read high with only the internal pull-up
+    uint64 high_with_pulldown = 13;  // read high with only the internal pull-down
+    uint64 bridged_gpios = 14;       // spare pins that follow a neighbour driven low
+}
+
+// -----------------------------------------------------------------------------
 // Top-Level Envelopes
 // -----------------------------------------------------------------------------
 
@@ -333,6 +369,7 @@ message HostToDevice {
         bool request_logs = 13;
         ClaimOwnership claim_ownership = 14;
         DetectPinRequest detect_pin = 15;
+        bool run_board_test = 16;    // answered with BoardTestResult
     }
 }
 
@@ -347,5 +384,6 @@ message DeviceToHost {
         LayoutAck layout_ack = 7;
         DetectPinResponse detect_pin_resp = 8;
         KeyPressBatch key_presses = 9;
+        BoardTestResult board_test = 10;
     }
 }

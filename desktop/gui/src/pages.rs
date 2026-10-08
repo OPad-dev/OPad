@@ -582,7 +582,8 @@ pub fn settings(app: &App) -> Element<'_, Message> {
                     muted(
                         "Activate the Diagnostics suite to access interactive test tools built for OPad: \
                          the switch chatter / contact bounce tester, COM-02 protocol recovery check, \
-                         screen backlight / color verification, and one-click diagnostic report exporter."
+                         screen backlight / color verification, the carrier & module PCB test, and one-click \
+                         diagnostic report exporter."
                     ).size(13),
                     checkbox(app.diagnostics_enabled)
                         .label("Enable Diagnostics Menu in Navigation")

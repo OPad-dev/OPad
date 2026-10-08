@@ -11,6 +11,7 @@
 #include "input/latency_stats.h"
 #include "input/press_log.h"
 #include "driver/gpio.h"
+#include "esp_rom_sys.h"
 #include "diag/diag.h"
 #include "config/device_config.h"
 
@@ -40,6 +41,12 @@ static uint32_t s_detect_req_timeout_ms;
 static uint32_t s_detect_req_exclude;
 static uint32_t s_detect_done_id = 0;
 static int s_detect_done_pin = -1;
+
+// Key line test requests (keypad_line_test), also served by the keypad task.
+// Guarded by s_keypad_spinlock.
+static uint32_t s_line_test_req_id = 0;
+static uint32_t s_line_test_done_id = 0;
+static keypad_line_test_t s_line_test_result;
 
 static volatile bool s_key_state[KEY_ID_COUNT] = {false, false};
 static volatile int64_t s_last_transition_us[KEY_ID_COUNT] = {0, 0};
@@ -115,6 +122,84 @@ static bool read_key_level(int key_index)
         return false;
     }
     return key_index == 0 ? board_key1_read() : board_key2_read();
+}
+
+// Start debouncing again from the pins as they read now. True if a key reads
+// pressed, so the caller can have the keypad task report it.
+static bool restart_debounce_from_pins(void)
+{
+    bool levels[KEY_ID_COUNT] = {read_key_level(0), read_key_level(1)};
+    portENTER_CRITICAL(&s_keypad_spinlock);
+    for (int i = 0; i < KEY_ID_COUNT; i++) {
+        debounce_init(&s_key_debounce[i], levels[i]);
+        s_key_state[i] = levels[i];
+        s_last_transition_us[i] = esp_timer_get_time();
+    }
+    portEXIT_CRITICAL(&s_keypad_spinlock);
+    return levels[0] || levels[1];
+}
+
+// How long a key line gets to settle after its pull changes. The pin, carrier
+// trace and cable are tens of pF against a ~45k internal pull: microseconds.
+#define LINE_TEST_SETTLE_US 300
+
+/*
+ * Swap each key pin's internal pull-up for a pull-down and read it. A line
+ * that still reads high has an external pull-up: the MX module's 10k (R1/R2),
+ * which proves the cable, the carrier trace and both connectors carry it. A
+ * line low even with the pull-up is a held switch or a short to GND.
+ *
+ * Runs on the keypad task, about 1 ms. Edges are ignored meanwhile (no HID
+ * report is sent in between, the task is busy here) and debouncing restarts
+ * from the pins afterwards, so a key held through the test stays held.
+ */
+static void line_test_run(keypad_line_test_t *r)
+{
+    portENTER_CRITICAL(&s_keypad_spinlock);
+    keypad_config_t cfg = s_config;
+    portEXIT_CRITICAL(&s_keypad_spinlock);
+
+    gpio_num_t pins[KEY_ID_COUNT] = {(gpio_num_t)cfg.key1_gpio, (gpio_num_t)cfg.key2_gpio};
+    *r = (keypad_line_test_t){
+        .gpio = {cfg.key1_gpio, cfg.key2_gpio},
+    };
+    if (!s_input_enabled) {
+        return; // Hall Effect outputs on the pins: nothing a pull test can say
+    }
+
+    s_input_enabled = false;
+    for (int i = 0; i < KEY_ID_COUNT; i++) {
+        r->high_with_pullup[i] = gpio_get_level(pins[i]) != 0;
+        gpio_set_pull_mode(pins[i], GPIO_PULLDOWN_ONLY);
+    }
+    esp_rom_delay_us(LINE_TEST_SETTLE_US);
+    for (int i = 0; i < KEY_ID_COUNT; i++) {
+        r->high_with_pulldown[i] = gpio_get_level(pins[i]) != 0;
+        gpio_set_pull_mode(pins[i], GPIO_PULLUP_ONLY);
+    }
+    esp_rom_delay_us(LINE_TEST_SETTLE_US);
+    s_input_enabled = true;
+    restart_debounce_from_pins();
+    r->ran = true;
+}
+
+static void line_test_step(void)
+{
+    portENTER_CRITICAL(&s_keypad_spinlock);
+    uint32_t req_id = s_line_test_req_id;
+    bool pending = req_id != s_line_test_done_id;
+    portEXIT_CRITICAL(&s_keypad_spinlock);
+    if (!pending) {
+        return;
+    }
+    keypad_line_test_t result;
+    line_test_run(&result);
+    portENTER_CRITICAL(&s_keypad_spinlock);
+    s_line_test_result = result;
+    s_line_test_done_id = req_id;
+    portEXIT_CRITICAL(&s_keypad_spinlock);
+    // Report whatever the pins read now (a key pressed during the test)
+    xTaskNotifyGive(s_input_task_handle);
 }
 
 #define DETECT_POLL_TICKS (pdMS_TO_TICKS(10) ? pdMS_TO_TICKS(10) : 1)
@@ -407,21 +492,16 @@ static void keypad_task(void *pvParameters)
             usb_hid_set_keycodes(applied.keycode1, applied.keycode2);
             portEXIT_CRITICAL(&s_keypad_spinlock);
             // Start debouncing from the new pins; a switch already held down is reported
-            bool levels[KEY_ID_COUNT] = {read_key_level(0), read_key_level(1)};
-            portENTER_CRITICAL(&s_keypad_spinlock);
-            for (int i = 0; i < KEY_ID_COUNT; i++) {
-                debounce_init(&s_key_debounce[i], levels[i]);
-                s_key_state[i] = levels[i];
-                s_last_transition_us[i] = esp_timer_get_time();
-            }
-            portEXIT_CRITICAL(&s_keypad_spinlock);
-            if (levels[0] || levels[1]) {
+            if (restart_debounce_from_pins()) {
                 xTaskNotifyGive(s_input_task_handle);
             }
         }
 
         // 4. Pin detection
         detect_scan_step(&scan);
+
+        // 5. Key line test (board test, IDLE only)
+        line_test_step();
     }
 }
 
@@ -632,13 +712,37 @@ void keypad_set_input_enabled(bool enabled)
         return; // keypad_init reads the pins with this in effect
     }
     // Start again from the pins as they read now (released when off)
-    bool levels[KEY_ID_COUNT] = {read_key_level(0), read_key_level(1)};
-    portENTER_CRITICAL(&s_keypad_spinlock);
-    for (int i = 0; i < KEY_ID_COUNT; i++) {
-        debounce_init(&s_key_debounce[i], levels[i]);
-        s_key_state[i] = levels[i];
-        s_last_transition_us[i] = esp_timer_get_time();
+    restart_debounce_from_pins();
+    xTaskNotifyGive(s_input_task_handle);
+}
+
+// Long enough for the keypad task to get round to it between key events
+#define LINE_TEST_WAIT_MS 100
+
+esp_err_t keypad_line_test(keypad_line_test_t *out)
+{
+    if (!out) {
+        return ESP_ERR_INVALID_ARG;
     }
+    if (s_input_task_handle == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    portENTER_CRITICAL(&s_keypad_spinlock);
+    uint32_t id = ++s_line_test_req_id;
     portEXIT_CRITICAL(&s_keypad_spinlock);
     xTaskNotifyGive(s_input_task_handle);
+
+    for (int waited = 0; waited < LINE_TEST_WAIT_MS; waited++) {
+        vTaskDelay(pdMS_TO_TICKS(1) ? pdMS_TO_TICKS(1) : 1);
+        portENTER_CRITICAL(&s_keypad_spinlock);
+        bool done = s_line_test_done_id == id;
+        if (done) {
+            *out = s_line_test_result;
+        }
+        portEXIT_CRITICAL(&s_keypad_spinlock);
+        if (done) {
+            return ESP_OK;
+        }
+    }
+    return ESP_ERR_TIMEOUT;
 }

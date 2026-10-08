@@ -77,6 +77,13 @@ esp_err_t protocol_send_counter_sync_resp(uint32_t seq, bool success, const char
 esp_err_t protocol_send_detect_pin_resp(uint32_t seq, uint32_t key_id, uint32_t gpio, bool success);
 
 /**
+ * @brief Run the board test and send its BoardTestResult. Refused, with a
+ * message, outside IDLE or when `refusal` is not NULL (the message then).
+ * Blocks the protocol task about 30 ms.
+ */
+esp_err_t protocol_send_board_test(uint32_t seq, const char *refusal);
+
+/**
  * @brief Send a batch of diagnostic log events to host over CDC (only in IDLE).
  */
 esp_err_t protocol_send_log_batch(void);

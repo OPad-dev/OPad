@@ -3,6 +3,7 @@ pub mod flash;
 use bytes::BytesMut;
 use chrono::{Datelike, Local, Timelike};
 use opad_layout::{Layout, Screen};
+use opad_model::board_test::{BoardTestReport, InputModule};
 use opad_model::ui_source::SourceValue;
 use opad_model::{CounterState, DeviceConfig, DeviceInfo, SwipeAction};
 pub use opad_protocol::proto;
@@ -80,6 +81,8 @@ pub enum DeviceEvent {
         gpio: u32,
         success: bool,
     },
+    /// The pad's answer to `run_board_test`
+    BoardTest(BoardTestReport),
     /// Whether the connecting pad sends `KeyPresses` (issue #2). From the
     /// same HelloAck as `Connected`, and sent before it.
     KeyPressTimes(bool),
@@ -309,6 +312,8 @@ pub struct DeviceManager {
     /// Set when a message to the pad could not be written; see
     /// [`DeviceManager::take_lost_writes`]
     lost_writes: Arc<AtomicBool>,
+    /// The connected pad answers `run_board_test` (HelloAck.board_test)
+    board_test: Arc<AtomicBool>,
 }
 
 impl DeviceManager {
@@ -322,6 +327,7 @@ impl DeviceManager {
         let last_port = Arc::new(Mutex::new(None));
         let rehello = Arc::new(AtomicBool::new(false));
         let lost_writes = Arc::new(AtomicBool::new(false));
+        let board_test = Arc::new(AtomicBool::new(false));
         tokio::spawn(async move { while cmd_rx.recv().await.is_some() {} });
         (
             Self {
@@ -334,6 +340,7 @@ impl DeviceManager {
                 last_port,
                 rehello,
                 lost_writes,
+                board_test,
             },
             event_rx,
         )
@@ -357,6 +364,8 @@ impl DeviceManager {
         let rehello_clone = rehello.clone();
         let lost_writes = Arc::new(AtomicBool::new(false));
         let lost_writes_clone = lost_writes.clone();
+        let board_test = Arc::new(AtomicBool::new(false));
+        let board_test_clone = board_test.clone();
 
         // Spawn background worker managing the serial port lifecycle
         tokio::task::spawn_blocking(move || {
@@ -529,6 +538,8 @@ impl DeviceManager {
                                                 continue;
                                             }
                                             held = false;
+                                            board_test_clone
+                                                .store(ack.board_test, Ordering::SeqCst);
                                             if handshake.answered_in(msg_framing) {
                                                 debug!(
                                                     "{} speaks {:?} framing",
@@ -607,6 +618,7 @@ impl DeviceManager {
                 last_port,
                 rehello,
                 lost_writes,
+                board_test,
             },
             event_rx,
         )
@@ -638,6 +650,12 @@ impl DeviceManager {
 
     pub fn is_connected(&self) -> bool {
         self.is_connected.load(Ordering::SeqCst)
+    }
+
+    /// Whether the connected pad answers [`DeviceManager::run_board_test`].
+    /// False for firmware predating the board test.
+    pub fn supports_board_test(&self) -> bool {
+        self.board_test.load(Ordering::SeqCst)
     }
 
     /// Re-send Hello. The pad answers with a fresh HelloAck, which re-emits
@@ -885,6 +903,16 @@ impl DeviceManager {
         Ok(seq)
     }
 
+    /// Ask the pad to test the carrier and module PCBs. It answers with
+    /// `DeviceEvent::BoardTest`, or refuses in it while a map is played.
+    pub async fn run_board_test(&self) -> Result<(), DeviceError> {
+        let msg = HostToDevice {
+            sequence_number: self.next_seq(),
+            payload: Some(host_to_device::Payload::RunBoardTest(true)),
+        };
+        self.send_msg(msg)
+    }
+
     pub async fn send_detect_pin(
         &self,
         key_id: u32,
@@ -959,6 +987,36 @@ fn device_config_from(c: &proto::ConfigPayload) -> DeviceConfig {
         swipe_down_modifiers: c.swipe_down_modifiers,
         swipe_left_modifiers: c.swipe_left_modifiers,
         swipe_right_modifiers: c.swipe_right_modifiers,
+    }
+}
+
+fn input_module_from(m: i32) -> InputModule {
+    match proto::InputModule::try_from(m) {
+        Ok(proto::InputModule::None) => InputModule::None,
+        Ok(proto::InputModule::Mx) => InputModule::Mx,
+        Ok(proto::InputModule::HallEffect) => InputModule::HallEffect,
+        _ => InputModule::Unknown,
+    }
+}
+
+fn board_test_report_from(r: &proto::BoardTestResult) -> BoardTestReport {
+    // -1 is "not measured" on the wire
+    let mv = |v: i32| u32::try_from(v).ok();
+    BoardTestReport {
+        ran: r.ran,
+        message: r.message.clone(),
+        boot_module: input_module_from(r.boot_module),
+        module: input_module_from(r.module),
+        id_mv: mv(r.id_mv),
+        id_loaded_mv: mv(r.id_loaded_mv),
+        reverse_probe_mv: mv(r.reverse_probe_mv),
+        key1_gpio: r.key1_gpio,
+        key2_gpio: r.key2_gpio,
+        keys_enabled: r.keys_enabled,
+        tested_gpios: r.tested_gpios,
+        high_with_pullup: r.high_with_pullup,
+        high_with_pulldown: r.high_with_pulldown,
+        bridged_gpios: r.bridged_gpios,
     }
 }
 
@@ -1050,6 +1108,9 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     gpio: resp.gpio,
                     success: resp.success,
                 });
+            }
+            proto::device_to_host::Payload::BoardTest(r) => {
+                let _ = tx.send(DeviceEvent::BoardTest(board_test_report_from(r)));
             }
             proto::device_to_host::Payload::KeyPresses(batch) => {
                 let _ = tx.send(DeviceEvent::KeyPresses {

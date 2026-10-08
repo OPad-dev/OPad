@@ -34,4 +34,10 @@
 // Where the carrier routes an MX module's keys (connector pins 3/4)
 #define BOARD_MX_KEY1_GPIO      10
 #define BOARD_MX_KEY2_GPIO      7
+// Spare module lines (connector pins 6, 7, 8): not used by the MX module
+#define BOARD_MODULE_IO6_GPIO   6
+#define BOARD_MODULE_IO4_GPIO   4
+#define BOARD_MODULE_IO2_GPIO   2
+// Connector pin 8: where a reversed cable puts the module's 3V3
+#define BOARD_REVERSE_PROBE_GPIO GPIO_NUM_2
 
