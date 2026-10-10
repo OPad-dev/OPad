@@ -37,6 +37,12 @@ details.
    key in the keyboard report mid-map. With no host or no tosu, every touch is
    Quick Retry. Keep it cheap on CPU (idle on the touch interrupt, poll only
    while a finger is down).
+5. **Never the BOOT or RESET buttons.** Flashing, updating and recovering a
+   pad all happen over USB or serial. Never tell anyone to press them, not even
+   as a fallback. An update must not be able to strand a pad: it goes to the
+   other OTA slot and rolls back unless the host configures USB, and a pad that
+   does not enumerate at all is recovered with `opadctl recover` and a replug
+   (see `docs/recovery.md` §7.6–7.7).
 
 ## 2. Workflow
 
@@ -89,7 +95,8 @@ AI: assisted
 | Desktop | `cd desktop && cargo build` |
 | Firmware (ESP-IDF **v5.5.2**) | `cd firmware && idf.py set-target esp32s3 build` |
 | Regenerate protobuf | `./scripts/gen_proto.sh` |
-| Flash a pad | `opadctl flash firmware/build/opad-firmware.bin` (`--full firmware/build` for recovery) |
+| Flash a pad | `opadctl flash firmware/build/opad-firmware.bin` (other OTA slot, rolls back if it never enumerates) |
+| Recover a pad that does not show up as OPad | `opadctl recover firmware/build`, then replug it |
 
 `make check` runs `cargo fmt --check`, clippy with `-D warnings`, the workspace
 tests and `firmware/test/host/run_tests.sh`. CI additionally:
@@ -113,7 +120,9 @@ to follow.
   lives in `firmware/main/protocol/nanopb/`; don't modify it.
 - **`sdkconfig.defaults`:** after editing it, delete `firmware/sdkconfig` and
   rebuild. `idf.py fullclean` keeps the old saved config, so the edit silently
-  does nothing.
+  does nothing. A stale one once built firmware with one HID interface fewer
+  than the descriptor declares, which the host refuses (`can't set config #1,
+  error -32`); `usb_descriptors.c` now fails the build on that.
 - **Pinned versions:** don't bump these casually:
   - espflash **4.6.0** (checksum in the `Makefile`): a different version once
     silently stopped resetting the S3 out of download mode;
@@ -140,7 +149,7 @@ to follow.
   - the host must see a real detach (SE0 about 300 ms) and then a re-attach,
     or it fails with `error -71` and the app comes back;
   - set `dp_pullup` back to 1 *before* dropping the pull override, or the board
-    vanishes from the bus until a manual BOOT+RESET;
+    vanishes from the bus until a replug and `opadctl recover`;
   - call `tud_disconnect()`, never `tinyusb_driver_uninstall()`, which frees
     mutexes other tasks still use;
   - leaving download mode needs an RTC watchdog reset. espflash's own

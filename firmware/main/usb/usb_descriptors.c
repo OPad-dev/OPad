@@ -14,6 +14,16 @@ void usb_descriptors_init(void)
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
+// The descriptor below declares two HID interfaces and one CDC. With fewer
+// enabled in sdkconfig, TinyUSB stalls SET_CONFIGURATION and the host never
+// gets a keyboard ("can't set config #1, error -32"). A stale firmware/sdkconfig
+// that predates sdkconfig.defaults did exactly that, so it is a build error.
+_Static_assert(CFG_TUD_HID >= HID_INSTANCE_MEDIA + 1,
+               "CONFIG_TINYUSB_HID_COUNT is below the HID interfaces declared here: "
+               "delete firmware/sdkconfig and rebuild");
+_Static_assert(CFG_TUD_CDC >= 1,
+               "CONFIG_TINYUSB_CDC_COUNT is 0: delete firmware/sdkconfig and rebuild");
+
 #define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_CDC_DESC_LEN + TUD_HID_DESC_LEN)
 
 const tusb_desc_device_t osupad_usb_device_desc = {

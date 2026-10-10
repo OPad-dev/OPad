@@ -25,6 +25,107 @@ use tracing::{debug, info};
 /// It was `0x10000` under the old single-app table, and a pad flashed at the
 /// old offset with the new table does not boot.
 pub const APP_PARTITION_OFFSET: u32 = 0x20000;
+/// `ota_1`, the second slot in `firmware/partitions.csv`
+pub const OTA_1_OFFSET: u32 = 0x220000;
+/// `otadata`: two 4 KB sectors, one boot-selection entry each
+pub const OTADATA_OFFSET: u32 = 0xf000;
+const OTADATA_SIZE: usize = 0x2000;
+const OTADATA_SECTOR: usize = 0x1000;
+// esp_ota_img_states_t (esp_flash_partitions.h)
+const OTA_IMG_NEW: u32 = 0x0;
+const OTA_IMG_VALID: u32 = 0x2;
+
+/// Where an app update goes, and what the pad should be running afterwards.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppUpdatePlan {
+    /// In write order: the app image first, then the boot selection, so an
+    /// interrupted flash still boots the old image
+    pub images: Vec<(u32, PathBuf)>,
+    /// The slot the new image boots from (`ota_0`/`ota_1`). `None` for the
+    /// old in-place write, where a rollback has nothing to go back to.
+    pub target_slot: Option<&'static str>,
+}
+
+/// Plan an app update next to the running image rather than over it.
+///
+/// The image goes to the slot the pad is *not* running, and `otadata` is
+/// rewritten so the bootloader tries it once (`NEW`) with the running slot
+/// kept `VALID` behind it. The firmware only confirms the new image once the
+/// host has configured USB (`confirm_image_once_usb_works` in
+/// `firmware/main/app_main.c`); one that never becomes a keyboard, or crashes,
+/// is marked aborted by the bootloader on the next boot and the old image
+/// runs again. No button, no recovery flash.
+///
+/// With the running slot unknown (no daemon, or firmware too old to report
+/// it) this falls back to writing `ota_0` in place, as before.
+pub fn plan_app_update(
+    app_image: &Path,
+    running_slot: Option<&str>,
+    scratch_dir: &Path,
+) -> Result<AppUpdatePlan, FlashError> {
+    let (old, new) = match running_slot {
+        Some("ota_0") => (0u8, 1u8),
+        Some("ota_1") => (1, 0),
+        _ => {
+            return Ok(AppUpdatePlan {
+                images: vec![(APP_PARTITION_OFFSET, app_image.to_path_buf())],
+                target_slot: None,
+            })
+        }
+    };
+    let otadata = scratch_dir.join("opad-otadata.bin");
+    std::fs::write(&otadata, otadata_image(old, new))?;
+    let offset = if new == 0 {
+        APP_PARTITION_OFFSET
+    } else {
+        OTA_1_OFFSET
+    };
+    Ok(AppUpdatePlan {
+        images: vec![(offset, app_image.to_path_buf()), (OTADATA_OFFSET, otadata)],
+        target_slot: Some(if new == 0 { "ota_0" } else { "ota_1" }),
+    })
+}
+
+/// The `otadata` partition selecting `new_slot` for one trial boot, with
+/// `old_slot` valid to fall back to. Each sector holds an
+/// `esp_ota_select_entry_t`: `ota_seq` (u32), `seq_label` (20 bytes),
+/// `ota_state` (u32), `crc` (u32). The bootloader boots the valid entry with
+/// the highest sequence, slot `(seq - 1) % 2`.
+pub fn otadata_image(old_slot: u8, new_slot: u8) -> Vec<u8> {
+    let mut out = vec![0xFFu8; OTADATA_SIZE];
+    // Sequence numbers that map to each slot, the new one higher
+    let old_seq = u32::from(old_slot) + 1;
+    let new_seq = if new_slot as u32 + 1 > old_seq {
+        new_slot as u32 + 1
+    } else {
+        new_slot as u32 + 3
+    };
+    for (sector, seq, state) in [(0, old_seq, OTA_IMG_VALID), (1, new_seq, OTA_IMG_NEW)] {
+        let entry = &mut out[sector * OTADATA_SECTOR..sector * OTADATA_SECTOR + 32];
+        entry[0..4].copy_from_slice(&seq.to_le_bytes());
+        // seq_label stays 0xFF, as esp_ota_set_boot_partition leaves it
+        entry[24..28].copy_from_slice(&state.to_le_bytes());
+        entry[28..32].copy_from_slice(&otadata_crc(seq).to_le_bytes());
+    }
+    out
+}
+
+/// `esp_rom_crc32_le(UINT32_MAX, &ota_seq, 4)`, which is zlib's
+/// `crc32(seq, 0xFFFFFFFF)` (IDF's `otatool.py` computes it that way)
+fn otadata_crc(seq: u32) -> u32 {
+    let mut crc = !0xFFFF_FFFFu32;
+    for byte in seq.to_le_bytes() {
+        crc ^= u32::from(byte);
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xEDB8_8320
+            } else {
+                crc >> 1
+            };
+        }
+    }
+    !crc
+}
 
 #[derive(Debug, Error)]
 pub enum FlashError {
@@ -32,7 +133,7 @@ pub enum FlashError {
     NoDevice,
     #[error("{0} could not be opened. On Windows the port is exclusive: close anything else using it (a serial monitor, another opad-daemon) first. ({1})")]
     PortBusy(String, String),
-    #[error("The pad did not re-enumerate as the ROM bootloader (303a:1001) after every trigger. See docs/recovery.md for the manual BOOT+RESET sequence.")]
+    #[error("The pad did not re-enumerate as the ROM bootloader (303a:1001). Run `opadctl recover` and replug the pad's USB cable; see docs/recovery.md.")]
     NoBootloader,
     #[error("Several ESP32 ROM bootloader ports could be this pad ({0:?}); pass the right one with --port")]
     AmbiguousBootloader(Vec<String>),
@@ -291,6 +392,178 @@ pub async fn flash(
     reset_to_app(&boot_port)
 }
 
+// ---------------------------------------------------------------------------
+// Recovery without buttons (`opadctl recover`).
+//
+// An app that boots but never answers on USB (a broken build, a stalled
+// SET_CONFIGURATION) cannot be asked to enter the bootloader. But at every
+// boot, before the app takes the USB PHY over, the ROM's USB-Serial-JTAG is on
+// the bus as 303a:1001 for a fraction of a second, and its DTR/RTS lines can
+// reset the chip into download mode, where it stays. So: wait for a boot (the
+// person replugs the cable), catch that window, and flash the full set.
+// ---------------------------------------------------------------------------
+
+const RTC_CNTL_SWD_CONF_REG: u32 = 0x6000_80B4;
+const RTC_CNTL_SWD_WPROTECT_REG: u32 = 0x6000_80B8;
+const RTC_CNTL_SWD_WKEY: u32 = 0x8F1D_312A;
+const RTC_CNTL_SWD_AUTO_FEED_EN: u32 = 1 << 31;
+
+/// esptool's USB-Serial-JTAG reset into download mode, with 5 ms steps instead
+/// of 100 ms: the hardware applies each line change at once, and the app takes
+/// the port away ~200 ms after it appears.
+fn usj_reset_to_download(path: &str) -> Result<(), String> {
+    let deadline = Instant::now() + Duration::from_millis(400);
+    let mut port = loop {
+        match serialport::new(path, 115_200)
+            .timeout(Duration::from_millis(50))
+            .open()
+        {
+            Ok(p) => break p,
+            Err(e) if Instant::now() >= deadline => return Err(e.to_string()),
+            Err(_) => std::thread::sleep(Duration::from_millis(2)),
+        }
+    };
+    let step = Duration::from_millis(5);
+    let mut set = |rts: bool, dtr: bool| -> Result<(), String> {
+        port.write_request_to_send(rts).map_err(|e| e.to_string())?;
+        port.write_data_terminal_ready(dtr)
+            .map_err(|e| e.to_string())
+    };
+    set(false, false)?;
+    std::thread::sleep(step);
+    // IO0 low
+    set(false, true)?;
+    std::thread::sleep(step);
+    // Reset with IO0 still low: RTS first, so the lines pass through (1,1)
+    // and not (0,0), which lets IO0 go before the reset (esptool's order)
+    port.write_request_to_send(true)
+        .map_err(|e| e.to_string())?;
+    port.write_data_terminal_ready(false)
+        .map_err(|e| e.to_string())?;
+    port.write_request_to_send(true)
+        .map_err(|e| e.to_string())?;
+    std::thread::sleep(step);
+    // The port drops as the chip resets; nothing left to do if it is gone
+    let _ = port.write_request_to_send(false);
+    Ok(())
+}
+
+/// 303a:1001 ports, read straight from sysfs on Linux: udev's database (what
+/// serialport's enumeration reads) fills in too late for a window this short
+#[cfg(target_os = "linux")]
+fn rom_port_names() -> Vec<String> {
+    let read = |p: std::path::PathBuf| std::fs::read_to_string(p).unwrap_or_default();
+    let Ok(entries) = std::fs::read_dir("/sys/class/tty") else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with("ttyACM"))
+        .filter_map(|e| {
+            let iface = std::fs::canonicalize(e.path().join("device")).ok()?;
+            let usb = iface.parent()?;
+            (read(usb.join("idVendor")).trim() == "303a"
+                && read(usb.join("idProduct")).trim() == "1001")
+                .then(|| format!("/dev/{}", e.file_name().to_string_lossy()))
+        })
+        .collect()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn rom_port_names() -> Vec<String> {
+    crate::bootloader_ports()
+        .into_iter()
+        .map(|p| p.name)
+        .collect()
+}
+
+/// The first 303a:1001 port to appear (or one already there), polled fast
+/// enough to catch the boot window.
+fn wait_for_rom_port(timeout: Duration) -> Result<String, FlashError> {
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        let mut ports = rom_port_names();
+        match ports.len() {
+            0 => std::thread::sleep(Duration::from_millis(5)),
+            1 => return Ok(ports.remove(0)),
+            _ => return Err(FlashError::AmbiguousBootloader(ports)),
+        }
+    }
+    Err(FlashError::NoBootloader)
+}
+
+/// Download mode reached through a reset from the bootloader still has the
+/// RTC watchdog the second-stage bootloader armed: it would reset the chip
+/// halfway through the write. Stop it, and let the super watchdog feed itself.
+fn disable_watchdogs(port_path: &str) -> Result<(), FlashError> {
+    let mut port = open_with_retry(port_path, Duration::from_secs(3))?;
+    // A ROM fresh out of reset ignores every command until it has seen a SYNC
+    rom_sync(&mut *port)
+        .map_err(|e| FlashError::ResetFailed(format!("syncing with the ROM: {e}")))?;
+    let steps = [
+        (RTC_CNTL_WDTWPROTECT_REG, RTC_CNTL_WDT_WKEY),
+        (RTC_CNTL_WDTCONFIG0_REG, 0),
+        (RTC_CNTL_WDTWPROTECT_REG, 0),
+        (RTC_CNTL_SWD_WPROTECT_REG, RTC_CNTL_SWD_WKEY),
+        (RTC_CNTL_SWD_CONF_REG, RTC_CNTL_SWD_AUTO_FEED_EN),
+        (RTC_CNTL_SWD_WPROTECT_REG, 0),
+    ];
+    for (addr, value) in steps {
+        write_reg(&mut *port, addr, value, true)
+            .map_err(|e| FlashError::ResetFailed(format!("stopping the watchdogs: {e}")))?;
+    }
+    Ok(())
+}
+
+const CMD_SYNC: u8 = 0x08;
+
+/// The ROM loader's SYNC handshake. It answers each SYNC with several
+/// replies; they are drained so the next command reads its own.
+fn rom_sync(port: &mut dyn serialport::SerialPort) -> Result<(), String> {
+    let mut data = vec![0x07, 0x07, 0x12, 0x20];
+    data.extend_from_slice(&[0x55; 32]);
+    let mut packet = vec![0x00, CMD_SYNC];
+    packet.extend_from_slice(&(data.len() as u16).to_le_bytes());
+    packet.extend_from_slice(&0u32.to_le_bytes());
+    packet.extend_from_slice(&data);
+    let frame = slip_encode(&packet);
+    for _ in 0..10 {
+        let _ = port.clear(serialport::ClearBuffer::Input);
+        port.write_all(&frame).map_err(|e| e.to_string())?;
+        port.flush().map_err(|e| e.to_string())?;
+        if let Ok(reply) = read_slip_frame(port, Duration::from_millis(100)) {
+            if reply.len() >= 2 && reply[0] == 0x01 && reply[1] == CMD_SYNC {
+                while read_slip_frame(port, Duration::from_millis(50)).is_ok() {}
+                return Ok(());
+            }
+        }
+    }
+    Err("no answer to SYNC".to_string())
+}
+
+/// Catch the pad's next boot, hold it in download mode, write `images` (the
+/// full recovery set) and boot it. `progress` hears each step; the caller has
+/// already told the person to replug the cable.
+pub fn recover(
+    images: &[(u32, PathBuf)],
+    timeout: Duration,
+    progress: &(dyn Fn(&str) + Sync),
+) -> Result<(), FlashError> {
+    let caught = wait_for_rom_port(timeout)?;
+    usj_reset_to_download(&caught).map_err(|e| FlashError::PortBusy(caught.clone(), e))?;
+    progress(&format!(
+        "Caught the pad booting on {caught}, holding it in download mode..."
+    ));
+    // A USB-Serial-JTAG reset keeps the port on the bus: the same port is now
+    // the ROM in download mode, once it has restarted
+    std::thread::sleep(Duration::from_millis(300));
+    let boot_port = wait_for_rom_port(Duration::from_secs(5))?;
+    disable_watchdogs(&boot_port)?;
+    write_images(images, &boot_port, progress)?;
+    progress("Firmware written, rebooting into the application...");
+    reset_to_app(&boot_port)
+}
+
 /// Wait until the port can actually be opened. On Windows the handle is
 /// exclusive, so this is where a daemon that has not let go yet shows up as a
 /// clear wait rather than as a mysterious flash failure (§W1-3).
@@ -528,6 +801,68 @@ pub fn check_esp32s3_image_file(path: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn entry(img: &[u8], sector: usize) -> (u32, u32, u32) {
+        let e = &img[sector * OTADATA_SECTOR..];
+        let word = |at: usize| u32::from_le_bytes(e[at..at + 4].try_into().unwrap());
+        (word(0), word(24), word(28))
+    }
+
+    /// The bootloader's rule: the valid entry with the highest sequence wins,
+    /// and boots slot (seq - 1) % 2
+    fn booted_slot(img: &[u8]) -> u32 {
+        let (a, b) = (entry(img, 0), entry(img, 1));
+        let seq = if a.0 > b.0 { a.0 } else { b.0 };
+        (seq - 1) % 2
+    }
+
+    #[test]
+    fn otadata_crc_matches_idf_otatool() {
+        // binascii.crc32(struct.pack('I', seq), 0xFFFFFFFF), as otatool.py does
+        assert_eq!(otadata_crc(1), 0x4743_989a);
+        assert_eq!(otadata_crc(2), 0x55f6_3774);
+        assert_eq!(otadata_crc(3), 0xed4a_5011);
+    }
+
+    #[test]
+    fn otadata_tries_the_new_slot_and_keeps_the_old_one_valid() {
+        for (old, new) in [(0u8, 1u8), (1, 0)] {
+            let img = otadata_image(old, new);
+            assert_eq!(img.len(), OTADATA_SIZE);
+            assert_eq!(booted_slot(&img), u32::from(new));
+            let (old_seq, old_state, old_crc) = entry(&img, 0);
+            let (new_seq, new_state, new_crc) = entry(&img, 1);
+            assert_eq!((old_seq - 1) % 2, u32::from(old));
+            assert_eq!(old_state, OTA_IMG_VALID);
+            assert_eq!(new_state, OTA_IMG_NEW);
+            assert_eq!(old_crc, otadata_crc(old_seq));
+            assert_eq!(new_crc, otadata_crc(new_seq));
+            // Aborting the new entry leaves the old one to boot
+            assert!(new_seq > old_seq);
+        }
+    }
+
+    #[test]
+    fn an_update_goes_to_the_slot_not_running() {
+        let dir = std::env::temp_dir().join(format!("opad-plan-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let app = Path::new("app.bin");
+
+        let plan = plan_app_update(app, Some("ota_0"), &dir).unwrap();
+        assert_eq!(plan.target_slot, Some("ota_1"));
+        assert_eq!(plan.images[0], (OTA_1_OFFSET, app.to_path_buf()));
+        assert_eq!(plan.images[1].0, OTADATA_OFFSET);
+
+        let plan = plan_app_update(app, Some("ota_1"), &dir).unwrap();
+        assert_eq!(plan.target_slot, Some("ota_0"));
+        assert_eq!(plan.images[0], (APP_PARTITION_OFFSET, app.to_path_buf()));
+
+        // Unknown slot: the old in-place write, nothing to roll back to
+        let plan = plan_app_update(app, None, &dir).unwrap();
+        assert_eq!(plan.target_slot, None);
+        assert_eq!(plan.images, vec![(APP_PARTITION_OFFSET, app.to_path_buf())]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn s3_header() -> [u8; 32] {
         let mut h = [0u8; 32];

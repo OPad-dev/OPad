@@ -19,9 +19,49 @@
 #include "soc/rtc_cntl_reg.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
+#include "esp_timer.h"
+#include "tusb.h"
 #include "diag/diag.h"
 
 static const char *TAG = "app_main";
+
+// A new image has this long, once a host has reset the bus, to be configured
+#define IMAGE_CONFIRM_TIMEOUT_US (20 * 1000 * 1000)
+
+/*
+ * A freshly flashed image boots once as PENDING_VERIFY (opadctl writes it to
+ * the other slot, see desktop/crates/opad-device/src/flash.rs). It is only
+ * confirmed once the host has configured USB, so an image that boots but never
+ * becomes a keyboard is rolled back: if a host resets the bus and does not
+ * configure it within IMAGE_CONFIRM_TIMEOUT_US, restart, and the bootloader
+ * boots the previous image. No host (a charger) leaves it pending; it is
+ * confirmed when a host does configure it. A crash loop rolls back the same
+ * way. Runs at the end of app_main, so everything has had its chance to start.
+ */
+static void confirm_image_once_usb_works(void)
+{
+    esp_ota_img_states_t ota_state;
+    if (esp_ota_get_state_partition(esp_ota_get_running_partition(), &ota_state) != ESP_OK ||
+        ota_state != ESP_OTA_IMG_PENDING_VERIFY) {
+        return;
+    }
+    ESP_LOGI(TAG, "New image: confirmed once the host configures USB");
+    int64_t host_since_us = 0;
+    while (!tud_mounted()) {
+        int64_t now = esp_timer_get_time();
+        if (!tud_connected()) {
+            host_since_us = 0;
+        } else if (host_since_us == 0) {
+            host_since_us = now;
+        } else if (now - host_since_us > IMAGE_CONFIRM_TIMEOUT_US) {
+            ESP_LOGE(TAG, "The host never configured this image's USB: rolling back");
+            esp_restart();
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    esp_ota_mark_app_valid_cancel_rollback();
+    ESP_LOGI(TAG, "OTA image marked valid");
+}
 
 static void usb_event_handler(tinyusb_event_t *event, void *arg)
 {
@@ -127,14 +167,6 @@ void app_main(void)
     ESP_ERROR_CHECK(tinyusb_driver_install(&tusb_cfg));
     ESP_LOGI(TAG, "TinyUSB stack installed successfully (HID operational)");
 
-    // The keypad works, so this image is good: cancel a pending OTA rollback
-    esp_ota_img_states_t ota_state;
-    if (esp_ota_get_state_partition(esp_ota_get_running_partition(), &ota_state) == ESP_OK &&
-        ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
-        esp_ota_mark_app_valid_cancel_rollback();
-        ESP_LOGI(TAG, "OTA image marked valid");
-    }
-
     // Step ii complete: HID is now fully operational! Everything below is NON-FATAL.
 
 #if defined(CONFIG_OSUPAD_BENCH_HID_ONLY) || defined(OSUPAD_BENCH_HID_ONLY)
@@ -217,4 +249,5 @@ void app_main(void)
 
     ESP_LOGI(TAG, "OPad initialized and ready");
 #endif
+    confirm_image_once_usb_works();
 }

@@ -72,6 +72,18 @@ enum Commands {
         )]
         full: bool,
     },
+    /// Recover a pad that no longer shows up as OPad: replug it, and its next
+    /// boot is caught over USB and flashed with the full set. No buttons.
+    Recover {
+        #[arg(help = "An ESP-IDF build directory or an unpacked release (as for flash --full)")]
+        firmware: PathBuf,
+        #[arg(
+            long,
+            default_value_t = 300,
+            help = "How long to wait for the replug, in seconds"
+        )]
+        timeout: u64,
+    },
     /// Reboot device into ROM download bootloader mode hands-free over USB
     Bootloader {
         #[arg(long, help = "Explicit serial port (default: auto-detect)")]
@@ -186,7 +198,7 @@ async fn main() -> Result<()> {
     // other command is meaningless without the daemon and still fails loudly.
     let flashing = matches!(
         cli.command,
-        Commands::Flash { .. } | Commands::Bootloader { .. }
+        Commands::Flash { .. } | Commands::Bootloader { .. } | Commands::Recover { .. }
     );
     let mut stream = match opad_ipc::connect_and_handshake().await {
         Ok((s, _)) => Some(s),
@@ -550,12 +562,30 @@ async fn main() -> Result<()> {
             port,
             full,
         } => {
-            let images = resolve_flash_set(&firmware, full)?;
-            // The app image is always written last, and it is the one whose
-            // header has to match this board
-            let (_, app_image) = images.last().expect("flash set is never empty");
-            flash::check_esp32s3_image_file(app_image)
+            let mut images = resolve_flash_set(&firmware, full)?;
+            // The app image is always the last of the set, and it is the one
+            // whose header has to match this board
+            let (_, app_image) = images.last().cloned().expect("flash set is never empty");
+            flash::check_esp32s3_image_file(&app_image)
                 .map_err(|e| anyhow::anyhow!("{}: {}", app_image.display(), e))?;
+
+            // An app update goes beside the running image, which stays
+            // there to fall back to (see flash::plan_app_update)
+            let mut target_slot = None;
+            if !full {
+                let running = running_slot(stream.as_mut()).await;
+                let plan =
+                    flash::plan_app_update(&app_image, running.as_deref(), &std::env::temp_dir())?;
+                images = plan.images;
+                target_slot = plan.target_slot;
+                match target_slot {
+                    Some(slot) => println!(
+                        "Writing slot {slot}; {} stays as the fallback if the new firmware never comes up on USB",
+                        running.as_deref().unwrap_or("?")
+                    ),
+                    None => println!("Running slot unknown: writing ota_0 in place, with no fallback"),
+                }
+            }
 
             for (offset, path) in &images {
                 println!("  {:#08x}  {}", offset, path.display());
@@ -576,19 +606,18 @@ async fn main() -> Result<()> {
             let finish_resp = finish_flash(stream.as_mut()).await;
             release(&interrupt);
 
+            if let Some(slot) = target_slot {
+                // A rejected image restarts ~20 s after the host gives up on
+                // it, so the verification above may have timed out on it
+                return report_slot_after_flash(stream.as_mut(), slot, finish_resp).await;
+            }
+
             match finish_resp {
                 Some(IpcResponse::FlashFinished {
                     firmware_version,
                     protocol_version,
                     compatible,
-                }) => {
-                    println!("✓ Flash succeeded!");
-                    println!("  Firmware Version: {}", firmware_version);
-                    println!("  Protocol Version: {}", protocol_version);
-                    if !compatible {
-                        println!("  ⚠ WARNING: Device reported protocol version {} which is incompatible with host!", protocol_version);
-                    }
-                }
+                }) => print_flash_success(&firmware_version, protocol_version, compatible),
                 // The same outcome as the no-daemon branch below, so the same
                 // exit status: a script must not read a pad that never came
                 // back as success
@@ -609,11 +638,31 @@ async fn main() -> Result<()> {
                         Some(p) => println!("✓ Flash succeeded! The pad came back on {}", p),
                         None => bail!(
                             "Firmware was written, but the pad did not come back as the OPad app \
-                         within 15s. See docs/recovery.md."
+                         within 15s. Run `opadctl recover` and replug it; see docs/recovery.md."
                         ),
                     }
                 }
                 Some(_) => {}
+            }
+        }
+
+        Commands::Recover { firmware, timeout } => {
+            let images = resolve_flash_set(&firmware, true)?;
+            let (_, app_image) = images.last().expect("flash set is never empty");
+            flash::check_esp32s3_image_file(app_image)
+                .map_err(|e| anyhow::anyhow!("{}: {}", app_image.display(), e))?;
+            for (offset, path) in &images {
+                println!("  {:#08x}  {}", offset, path.display());
+            }
+            println!("Unplug the pad's USB cable and plug it back in (waiting {timeout} s)...");
+            let result = tokio::task::spawn_blocking(move || {
+                flash::recover(&images, Duration::from_secs(timeout), &|m| println!("{m}"))
+            })
+            .await?;
+            result?;
+            match flash::wait_for_port(opad_device::find_target_port, Duration::from_secs(15)).await {
+                Some(p) => println!("✓ Recovered: the pad came back as OPad on {p}"),
+                None => bail!("The firmware was written, but the pad did not come back as the OPad app within 15 s"),
             }
         }
 
@@ -1001,6 +1050,77 @@ async fn prepare_flash(
         IpcResponse::OperationRejected { reason } => bail!("Rejected by daemon: {}", reason),
         other => bail!("Unexpected response from daemon: {:?}", other),
     }
+}
+
+/// The slot the pad runs from, as the daemon last heard it. `None` without a
+/// daemon, a pad, or firmware that reports it.
+async fn running_slot(stream: Option<&mut IpcStream>) -> Option<String> {
+    match send_request(stream?, &IpcRequest::GetStatus).await.ok()? {
+        IpcResponse::Status {
+            device_connected: true,
+            device_info: Some(info),
+            ..
+        } => info.running_partition,
+        _ => None,
+    }
+}
+
+fn print_flash_success(firmware_version: &str, protocol_version: u32, compatible: bool) {
+    println!("✓ Flash succeeded!");
+    println!("  Firmware Version: {}", firmware_version);
+    println!("  Protocol Version: {}", protocol_version);
+    if !compatible {
+        println!(
+            "  ⚠ WARNING: Device reported protocol version {} which is incompatible with host!",
+            protocol_version
+        );
+    }
+}
+
+/// How long a rejected image takes to give up and fall back, with margin:
+/// IMAGE_CONFIRM_TIMEOUT_US in firmware/main/app_main.c, then a reboot
+const ROLLBACK_WAIT: Duration = Duration::from_secs(45);
+
+/// After an A/B flash: success only if the pad came back running the slot
+/// that was written. Back on the old slot means it rejected the new image.
+async fn report_slot_after_flash(
+    mut stream: Option<&mut IpcStream>,
+    target: &str,
+    finish: Option<IpcResponse>,
+) -> Result<()> {
+    if let Some(IpcResponse::FlashFinished {
+        firmware_version,
+        protocol_version,
+        compatible,
+    }) = &finish
+    {
+        if running_slot(stream.as_deref_mut()).await.as_deref() == Some(target) {
+            print_flash_success(firmware_version, *protocol_version, *compatible);
+            println!("  Running Slot:     {target}");
+            return Ok(());
+        }
+    }
+    println!("Waiting to see which image the pad settles on...");
+    let deadline = tokio::time::Instant::now() + ROLLBACK_WAIT;
+    while tokio::time::Instant::now() < deadline {
+        match running_slot(stream.as_deref_mut()).await {
+            Some(slot) if slot == target => {
+                println!("✓ Flash succeeded! Running Slot: {target}");
+                return Ok(());
+            }
+            Some(slot) => bail!(
+                "The pad did not accept the new firmware (it never came up as a working USB \
+                 device) and went back to the previous one on {slot}. It works as before; \
+                 nothing else is needed."
+            ),
+            None => tokio::time::sleep(Duration::from_secs(1)).await,
+        }
+    }
+    bail!(
+        "Firmware was written, but the pad did not come back within {}s. Run `opadctl \
+         recover` and replug it; see docs/recovery.md.",
+        ROLLBACK_WAIT.as_secs()
+    )
 }
 
 /// Hand the port back to the daemon and let it verify what is now running.

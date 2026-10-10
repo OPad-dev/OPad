@@ -25,7 +25,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{info, warn};
 
-use opad_device::flash::{self, APP_PARTITION_OFFSET};
+use opad_device::flash;
 use opad_ipc::FirmwareOffer;
 use opad_model::DeviceInfo;
 use opad_storage::Storage;
@@ -40,7 +40,10 @@ use crate::sync::DeviceLink;
 
 /// How long to wait for the pad to come back as the app after the reboot.
 /// Generous: a first boot after a flash also initialises NVS and the display.
-const RECONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+/// A rejected image restarts into the old one ~20 s after the host gives up
+/// on it (IMAGE_CONFIRM_TIMEOUT_US in firmware/main/app_main.c), so this
+/// covers that as well as a plain reboot.
+const RECONNECT_TIMEOUT: Duration = Duration::from_secs(45);
 
 /// What a firmware update would do right now, and everything in its way.
 ///
@@ -146,8 +149,12 @@ pub enum FirmwareUpdateError {
     /// as expected. Never silently swallowed.
     #[error("The firmware was written, but the pad came back as {found}, not {expected}. See docs/recovery.md.")]
     WrongVersionBack { expected: String, found: String },
-    #[error("The firmware was written, but the pad did not come back within {0:?}. See docs/recovery.md — it is not damaged, but it needs a manual flash.")]
+    #[error("The firmware was written, but the pad did not come back within {0:?}. It is not damaged: run `opadctl recover` and replug it (docs/recovery.md).")]
     NoReconnect(Duration),
+    /// The new image never came up as a working USB device, and the pad went
+    /// back to the image it had. Nothing is broken.
+    #[error("The pad did not accept the new firmware and went back to the previous one on {0}. It works as before.")]
+    RolledBack(String),
 }
 
 /// Flash the pad. `consented` is the person's answer and there is no default.
@@ -297,17 +304,32 @@ async fn flash_and_verify<D: DeviceLink>(
     }
     state.lock().device_connected = false;
     let app_port = device.port().or_else(opad_device::find_target_port);
-    let device_id = state
-        .lock()
-        .device_info
-        .as_ref()
-        .map(|i| i.device_id.clone());
+    let (device_id, running) = {
+        let st = state.lock();
+        let info = st.device_info.as_ref();
+        (
+            info.map(|i| i.device_id.clone()),
+            info.and_then(|i| i.running_partition.clone()),
+        )
+    };
 
-    // Step 5. The app partition and nothing else.
-    let images = [(APP_PARTITION_OFFSET, image.to_path_buf())];
-    let flashed = flash::flash(&images, app_port.as_deref(), device_id.as_deref(), &|m| {
-        info!("{m}")
-    })
+    // Step 5. The app image beside the running one, which stays as the
+    // fallback (flash::plan_app_update), and nothing else.
+    let scratch = image.parent().unwrap_or(std::path::Path::new("."));
+    let plan = match flash::plan_app_update(image, running.as_deref(), scratch) {
+        Ok(plan) => plan,
+        Err(e) => {
+            // Nothing written yet: the pad is still the keyboard it was
+            device.resume();
+            return Err(e.into());
+        }
+    };
+    let flashed = flash::flash(
+        &plan.images,
+        app_port.as_deref(),
+        device_id.as_deref(),
+        &|m| info!("{m}"),
+    )
     .await;
 
     // Step 6. Whatever happened, the device loop gets its port back: if the
@@ -332,6 +354,13 @@ async fn flash_and_verify<D: DeviceLink>(
         warn!("The pad did not come back after the firmware flash");
         return Err(FirmwareUpdateError::NoReconnect(RECONNECT_TIMEOUT));
     };
+
+    if let (Some(target), Some(back)) = (plan.target_slot, info.running_partition.as_deref()) {
+        if back != target {
+            warn!("The pad rejected the image written to {target} and is back on {back}");
+            return Err(FirmwareUpdateError::RolledBack(back.to_string()));
+        }
+    }
 
     if info.firmware_version != available {
         warn!(

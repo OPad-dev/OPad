@@ -82,8 +82,8 @@ play session:
 | Where | `<data>/backups/osupad-backup-YYYYMMDDTHHMMSSZ.json` — `~/.local/share/osupad/backups` on Linux, `%APPDATA%\osupad\backups` on Windows |
 | When | **20 seconds** after a session has settled into `IDLE` |
 | How many | The **10 most recent**. Older ones are deleted; files the daemon did not write are never touched. |
-| Restore | `osupadctl import <file>` — identical to a manual export, because it is the same document built by the same code |
-| Last one | `osupadctl status` → `Last Backup`, and the full path is in the daemon log every time one is written |
+| Restore | `opadctl import <file>` — identical to a manual export, because it is the same document built by the same code |
+| Last one | `opadctl status` → `Last Backup`, and the full path is in the daemon log every time one is written |
 
 **The 20 seconds are not a nicety.** A backup is a storage write, and P1-3
 forbids storage writes during `PLAYING` and `COOLDOWN` (§6). The sequence after
@@ -148,7 +148,7 @@ Your host keeps its own copy of the counters in SQLite, but export the portable
 JSON anyway — it is the only copy that survives reinstalling the app:
 
 ```bash
-osupadctl export ~/osupad-backup.json     # or: the app → Device → Export backup
+opadctl export ~/osupad-backup.json     # or: the app → Device → Export backup
 ```
 
 **There is probably already one.** Since the automatic backups landed (§5.1)
@@ -157,7 +157,7 @@ the ten newest in `<data>/backups/`. Check what is there before you erase
 anything:
 
 ```bash
-osupadctl status | grep 'Last Backup'
+opadctl status | grep 'Last Backup'
 ls -t ~/.local/share/osupad/backups/ | head        # %APPDATA%\osupad\backups on Windows
 ```
 
@@ -166,7 +166,7 @@ rather than inside the directory a reinstall may clear, and the automatic one
 is as old as your last session — which is not the same as "as old as the
 counters", if you have played since the pad last synced.
 
-Restore it afterwards with `osupadctl import ~/osupad-backup.json`, which bumps
+Restore it afterwards with `opadctl import ~/osupad-backup.json`, which bumps
 the counter generation and writes the counts back to the pad (§5).
 
 **One thing to understand before you erase.** Reflashing makes the pad
@@ -181,7 +181,7 @@ that claims it.
 ### 7.3 Put the pad in download mode and free the port
 
 ```bash
-osupadctl bootloader
+opadctl bootloader
 ```
 
 That does both halves: it asks `osupad-daemon` to release the serial port, then
@@ -191,25 +191,22 @@ it came back on. It works with no daemon running at all.
 **Windows: the port must be free, not merely idle.** Windows serial handles are
 exclusive (`CreateFileW` with no sharing), so anything still holding the port
 fails the flash outright rather than just slowing it down — unlike Linux, where
-a second reader is only impolite. `osupadctl bootloader` handles the daemon;
+a second reader is only impolite. `opadctl bootloader` handles the daemon;
 close any serial monitor, PuTTY or Arduino IDE window yourself. If a flash stops
 with a sharing violation or "access denied", that is what it means.
 
 Find the port with `espflash list-ports`, or Device Manager → Ports (COM & LPT).
-Ports above COM9 are fine; `osupadctl` and `espflash` both apply the `\\.\`
+Ports above COM9 are fine; `opadctl` and `espflash` both apply the `\\.\`
 prefix that raw COM names need.
 
 **The USB-download reboot quirk.** The pad reboots itself into download mode
 over its USB-Serial-JTAG interface, and that interface keeps the USB address it
 had at power-on. The host has to see a real detach before the re-attach, so the
 firmware forces one; if it does not land you get `error -71` and the app simply
-comes back. `osupadctl bootloader` tries three different triggers for this
-reason. If all three fail:
-
-1. Unplug the pad, wait two seconds, plug it back in, and try again.
-2. Failing that, do it by hand: hold **BOOT**, tap **RESET**, release **BOOT**.
-   The pad enumerates as `303a:1001` with no firmware involvement at all, which
-   is the path that always works.
+comes back. `opadctl bootloader` tries three different triggers for this
+reason. If they all fail, use `opadctl recover` (§7.7): it gets the pad into
+download mode through a replug of the cable, with no firmware involvement. The
+pad never needs its BOOT or RESET buttons.
 
 ### 7.4 Erase, then flash
 
@@ -219,14 +216,14 @@ With the pad sitting in download mode:
 
 ```bash
 espflash erase-flash -p /dev/ttyACM0 --before no-reset --after no-reset-no-stub
-osupadctl flash --full ~/Downloads/osupad-1.0.0/          # or firmware/build
+opadctl flash --full ~/Downloads/osupad-1.0.0/          # or firmware/build
 ```
 
 **Windows (PowerShell or cmd)**
 
 ```powershell
 espflash erase-flash -p COM3 --before no-reset --after no-reset-no-stub
-osupadctl flash --full C:\Users\you\Downloads\osupad-1.0.0\
+opadctl flash --full C:\Users\you\Downloads\osupad-1.0.0\
 ```
 
 `--before no-reset` matters: the pad is already in download mode, and letting
@@ -243,7 +240,7 @@ either an unpacked release directory or an ESP-IDF `firmware/build` tree.
 ### 7.5 Confirm
 
 ```bash
-osupadctl status
+opadctl status
 ```
 
 A pad that came back correctly reports `ESP32 Device: Connected` and a
@@ -255,17 +252,48 @@ erased it from, expect the counts it remembers: its generation now outranks the
 pad's blank one, so it restores them and silently re-claims the pad, and the
 daemon log says both happened (§7.2).
 
-If the pad does not come back as the app within 15 seconds, `osupadctl flash`
+If the pad does not come back as the app within 15 seconds, `opadctl flash`
 says so. Repeat **7.4's flash step only** — do not erase again. The pad is still
-in download mode and re-running the flash is safe.
+in download mode and re-running the flash is safe. If it has left download mode
+and does not show up as OPad either, use `opadctl recover` (§7.7).
 
 ### 7.6 When flashing is interrupted
 
-If power or the cable is lost part-way through writing the app, the app
-partition is incomplete and the pad will not run as a keyboard until it is
-flashed again. It is **not** bricked (§7.1). Put it back in download mode with
-BOOT + RESET and re-run the flash step.
+An app update (`opadctl flash <app.bin>`, or the app's firmware update) writes
+the slot the pad is **not** running, and only then points the bootloader at it
+(`plan_app_update` in `desktop/crates/opad-device/src/flash.rs`). The running
+image is not touched, so:
 
-This failure mode is the reason firmware updates ask for explicit consent every
-time (§U-3b), and the reason the two-slot layout exists (§U-3a): once OTA A/B
-lands, a failed update rolls back to the slot that was working instead.
+- **Interrupted before the end:** the boot selection was not written yet, and
+  the pad boots the image it had.
+- **Written, but the new image is broken:** it boots once on trial. The
+  firmware only confirms it once the host has configured USB
+  (`confirm_image_once_usb_works` in `firmware/main/app_main.c`). If a host
+  resets the bus and does not configure it within 20 s, the pad restarts, and
+  the bootloader marks the image aborted and boots the old one. A crash loop
+  rolls back the same way. `opadctl flash` reports "did not accept the new
+  firmware and went back to the previous one"; the pad works as before.
+
+A `--full` flash (§7.4) writes `ota_0` in place with no fallback. If it is
+interrupted, the pad is **not** bricked (§7.1): run `opadctl recover` (§7.7).
+
+### 7.7 A pad that does not show up as OPad (`opadctl recover`)
+
+When the app cannot be reached over USB at all (for example a build that boots
+but never enumerates: `can't set config #1, error -32` in `dmesg`), nothing can
+ask it to enter the bootloader. Recover it through a replug:
+
+```bash
+opadctl recover firmware/build         # or an unpacked release directory
+```
+
+and unplug and replug the pad's USB cable when it says so. At every power-on,
+before the app takes the USB port over, the ESP32-S3's ROM is on the bus as
+`303a:1001` for a fraction of a second. `recover` catches that window, resets
+the chip into download mode over USB (the USB-Serial-JTAG's DTR/RTS lines),
+stops the watchdog the bootloader had started, writes the full set as `--full`
+does, and boots it (`recover` in `desktop/crates/opad-device/src/flash.rs`).
+No BOOT or RESET button is ever needed.
+
+A software restart does not bring the ROM's port back, only a real power-on,
+so a replug is the one thing it asks of you.
