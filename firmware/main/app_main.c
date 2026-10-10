@@ -132,8 +132,10 @@ void app_main(void)
 
     // 2. Initialize Keypad: switch GPIOs, usages and debouncing (FATAL if fails)
     if (module == BOARD_MODULE_HE) {
-        // Before the ISR is armed: Hall sensors drive analog levels on the key pins
+        // Before the ISR is armed: Hall sensors drive analog levels on the key
+        // pins, so they stay analog and no host config re-arms them
         keypad_set_input_enabled(false);
+        board_keys_set_analog(true);
     }
     ESP_ERROR_CHECK(keypad_init(&k_cfg));
     keypad_config_t armed;

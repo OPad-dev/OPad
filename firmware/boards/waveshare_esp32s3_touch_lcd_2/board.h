@@ -19,6 +19,13 @@ extern "C" {
 esp_err_t board_keys_set_gpio(int key1_gpio, int key2_gpio);
 
 /**
+ * @brief Leave the key pins analog: an HE module's sensors drive them. Call
+ * before keypad_init. board_keys_set_gpio then records pins without arming
+ * them (no pull, no digital input, no interrupt) and no key ISR is attached.
+ */
+void board_keys_set_analog(bool analog);
+
+/**
  * @brief Initialize LCD backlight PWM (LEDC).
  */
 esp_err_t board_backlight_init(void);

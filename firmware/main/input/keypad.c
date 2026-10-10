@@ -678,8 +678,8 @@ void keypad_get_config(keypad_config_t *out_config)
 
 uint32_t keypad_detect_pin_start(uint32_t timeout_ms, uint32_t exclude_gpio)
 {
-    if (s_input_task_handle == NULL) {
-        return 0;
+    if (s_input_task_handle == NULL || !s_input_enabled) {
+        return 0; // also with an HE module: its analog outputs would read as a pin
     }
     portENTER_CRITICAL(&s_keypad_spinlock);
     uint32_t id = ++s_detect_req_id;

@@ -15,11 +15,41 @@ static bool s_gpio_isr_service_installed = false;
 static volatile gpio_num_t s_key1_gpio = GPIO_NUM_NC;
 static volatile gpio_num_t s_key2_gpio = GPIO_NUM_NC;
 static gpio_isr_t s_key_isr = NULL;
+// Set before keypad_init with an HE module: the key pins carry analog outputs
+static bool s_keys_analog = false;
+
+// No pulls, no digital input, no interrupt: a sensor output resting near
+// mid-rail would otherwise fire an any-edge interrupt without end on core 0
+static void key_pin_park_analog(gpio_num_t pin)
+{
+    gpio_intr_disable(pin);
+    gpio_set_intr_type(pin, GPIO_INTR_DISABLE);
+    gpio_set_pull_mode(pin, GPIO_FLOATING);
+    gpio_set_direction(pin, GPIO_MODE_DISABLE);
+}
+
+void board_keys_set_analog(bool analog)
+{
+    s_keys_analog = analog;
+}
 
 esp_err_t board_keys_set_gpio(int key1_gpio, int key2_gpio)
 {
     if (key1_gpio == key2_gpio || !GPIO_IS_VALID_GPIO(key1_gpio) || !GPIO_IS_VALID_GPIO(key2_gpio)) {
         return ESP_ERR_INVALID_ARG;
+    }
+    if (s_keys_analog) {
+        // Every config the host pushes comes through here, on each connect
+        // too: record the pins, but never arm them
+        gpio_num_t pins[4] = {s_key1_gpio, s_key2_gpio, key1_gpio, key2_gpio};
+        for (int i = 0; i < 4; i++) {
+            if (pins[i] != GPIO_NUM_NC) {
+                key_pin_park_analog(pins[i]);
+            }
+        }
+        s_key1_gpio = (gpio_num_t)key1_gpio;
+        s_key2_gpio = (gpio_num_t)key2_gpio;
+        return ESP_OK;
     }
     if (key1_gpio == s_key1_gpio && key2_gpio == s_key2_gpio) {
         // Same pins: re-arm them anyway. Something else (pin detection) may have
@@ -133,6 +163,10 @@ esp_err_t board_keys_register_isr(gpio_isr_t isr_handler)
 
     if (s_key1_gpio == GPIO_NUM_NC || s_key2_gpio == GPIO_NUM_NC) {
         return ESP_ERR_INVALID_STATE;
+    }
+    if (s_keys_analog) {
+        s_key_isr = isr_handler; // kept, never attached to analog pins
+        return ESP_OK;
     }
 
     esp_err_t err1 = gpio_isr_handler_add(s_key1_gpio, isr_handler, (void *)(intptr_t)1);
