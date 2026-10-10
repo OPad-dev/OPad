@@ -190,6 +190,11 @@ def _neg(token):
     return text
 
 
+def _on_layer(node, layer):
+    lay = find(node, "layer") if isinstance(node, list) else None
+    return bool(lay) and len(lay) > 1 and lay[1].strip('"') == layer
+
+
 def place_footprint(part, nets):
     path = os.path.join(FP_LIB, part.footprint + ".kicad_mod")
     tree = parse(open(path, encoding="utf8").read())
@@ -199,7 +204,14 @@ def place_footprint(part, nets):
 
     body = drop(tree[2:], {"version", "generator", "generator_version", "layer",
                            "property", "attr", "model"})
+    # The board's silkscreen is drawn from he_board's own lists (shared with
+    # the Gerbers), so the footprints' silkscreen graphics stay out of it.
+    body = [c for c in body if not _on_layer(c, "F.SilkS")]
     body = [_negate_y(child, part.rot) for child in body]
+    for node in find_all(body, "fp_text"):
+        effects = find(node, "effects")
+        if effects is not None and find(effects, "justify") is None:
+            effects.append(["justify", "mirror"])
 
     out = ["footprint", '"osupad:%s"' % part.footprint,
            ["layer", '"B.Cu"'],
@@ -222,7 +234,7 @@ def place_footprint(part, nets):
               ("LCSC", part.lcsc, "B.Fab", 0.0),
               ("MPN", ("%s %s" % (part.manufacturer, part.mpn)).strip(), "B.Fab", 0.0)]
     for name, value, layer, dy in fields:
-        prop = ["property", '"%s"' % name, '"%s"' % value,
+        prop = ["property", '"%s"' % name, '"%s"' % esc(value),
                 ["at", "0", "%g" % dy, angle],
                 ["layer", '"%s"' % layer]]
         if name != "Reference" and name != "Value":
@@ -334,6 +346,26 @@ def silk_texts():
                      "silk/b/marker", mirror=True))
     for i, (text, x, y, height, _anchor) in enumerate(B.TOP_SILK):
         out.append(_text(text, x, y, height, "F.SilkS", "silk/f/%d" % i))
+    for layer, shapes in (("B.SilkS", B.bottom_silk_shapes()), ("F.SilkS", B.top_silk_shapes())):
+        for i, shape in enumerate(shapes):
+            seed = "silk/%s/shape/%d" % (layer[0], i)
+            if shape[0] == "line":
+                for j, (a, b) in enumerate(zip(shape[1], shape[1][1:])):
+                    out.append(["gr_line",
+                                ["start", "%g" % kx(a[0]), "%g" % ky(a[1])],
+                                ["end", "%g" % kx(b[0]), "%g" % ky(b[1])],
+                                ["stroke", ["width", "%g" % B.SILK_W], ["type", "solid"]],
+                                ["layer", '"%s"' % layer],
+                                ["uuid", '"%s"' % uid("%s/%d" % (seed, j))]])
+            else:
+                (cx, cy), dia = shape[1], shape[2]
+                out.append(["gr_circle",
+                            ["center", "%g" % kx(cx), "%g" % ky(cy)],
+                            ["end", "%g" % kx(cx + dia / 2.0), "%g" % ky(cy)],
+                            ["stroke", ["width", "0.1"], ["type", "solid"]],
+                            ["fill", "yes"],
+                            ["layer", '"%s"' % layer],
+                            ["uuid", '"%s"' % uid(seed)]])
     return out
 
 
@@ -500,6 +532,7 @@ def switch_position(ref, x, y):
                   assembled=False)
     node = place_footprint(part, {})
     node = drop(node, {"attr"})
+    node = [c for c in node if not (_on_layer(c, "F.CrtYd") or _on_layer(c, "B.CrtYd"))]
     node.append(["attr", "board_only", "exclude_from_pos_files", "exclude_from_bom",
                  "allow_missing_courtyard"])
     return node
@@ -537,7 +570,11 @@ def load_symbols(names):
 
 
 SYMBOL_OF = {B.FP_C0603: "C", B.FP_R0603: "R", B.FP_SOT23: "DRV5055",
-             B.FP_JST8: "Conn_01x08", B.FP_TESTPOINT: "TestPoint"}
+             B.FP_JST8: "Conn_01x08_1MP", B.FP_TESTPOINT: "TestPoint"}
+
+# The supply nets get a PWR_FLAG each so ERC knows they are driven (through
+# the connector, which has passive pins): (net, sheet position)
+POWER_FLAGS = [("3V3", (182.88, 38.1)), ("GND", (198.12, 38.1))]
 
 NOTES = [
     "osuPad Hall Effect (Rapid Trigger) input module V1 - two DRV5055 linear Hall sensors",
@@ -555,14 +592,19 @@ NOTES = [
 ]
 
 
+def esc(text):
+    """Escape a string for a KiCad s-expression (a raw quote breaks the file)."""
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
 def prop(name, value, x, y, hide=False, angle=0):
     return ('\t\t(property "%s" "%s" (at %.2f %.2f %d)%s '
             '(effects (font (size 1.27 1.27))))\n'
-            % (name, value, x, y, angle, " (hide yes)" if hide else ""))
+            % (name, esc(value), x, y, angle, " (hide yes)" if hide else ""))
 
 
 def write_schematic():
-    symbols = load_symbols(sorted({SYMBOL_OF[p.footprint] for p in B.PARTS}))
+    symbols = load_symbols(sorted({SYMBOL_OF[p.footprint] for p in B.PARTS} | {"PWR_FLAG"}))
     root = uid("sheet/root")
     out = ['(kicad_sch\n\t(version 20250114)\n\t(generator "osupad")\n'
            '\t(generator_version "9.0")\n',
@@ -577,7 +619,7 @@ def write_schematic():
     for i, note in enumerate(NOTES):
         out.append('\t(text "%s" (exclude_from_sim no) (at 20.32 %.2f 0) '
                    '(effects (font (size 1.27 1.27)) (justify left bottom)) '
-                   '(uuid "%s"))\n' % (note, 160.02 + i * 4.06, uid("note/%d" % i)))
+                   '(uuid "%s"))\n' % (esc(note), 160.02 + i * 4.06, uid("note/%d" % i)))
 
     for part in B.PARTS:
         name = SYMBOL_OF[part.footprint]
@@ -624,6 +666,22 @@ def write_schematic():
                        % (net, x, y, label_angle, justify,
                           uid("label/%s/%s" % (part.ref, number))))
 
+    for i, (net, (fx, fy)) in enumerate(POWER_FLAGS):
+        ref = "#FLG%02d" % (i + 1)
+        out.append('\t(symbol (lib_id "osupad:PWR_FLAG") (at %.2f %.2f 0) (unit 1) '
+                   '(exclude_from_sim no) (in_bom no) (on_board yes) (dnp no) (uuid "%s")\n'
+                   % (fx, fy, uid("sym/" + ref)))
+        out.append(prop("Reference", ref, fx, fy - 1.905, hide=True))
+        out.append(prop("Value", "PWR_FLAG", fx, fy - 3.81))
+        out.append(prop("Footprint", "", fx, fy, hide=True))
+        out.append(prop("Datasheet", "", fx, fy, hide=True))
+        out.append('\t\t(pin "1" (uuid "%s"))\n' % uid("pin/%s/1" % ref))
+        out.append('\t\t(instances (project "%s" (path "/%s" (reference "%s") '
+                   '(unit 1))))\n\t)\n' % (B.PROJECT, root, ref))
+        out.append('\t(label "%s" (at %.2f %.2f 0) (fields_autoplaced yes) '
+                   '(effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "%s"))\n'
+                   % (net, fx, fy, uid("label/%s" % ref)))
+
     out.append('\t(sheet_instances (path "/" (page "1")))\n)\n')
     path = os.path.join(HE_DIR, B.PROJECT + ".kicad_sch")
     with open(path, "w", newline="\n", encoding="utf8") as f:
@@ -658,7 +716,7 @@ def write_project():
                     "min_microvia_drill": 0.1,
                     "min_resolved_spokes": 1,
                     "min_silk_clearance": 0.0,
-                    "min_text_height": B.SILK_H,
+                    "min_text_height": B.SILK_H_MIN,
                     "min_text_thickness": B.SILK_W,
                     "min_through_hole_diameter": 0.3,
                     "min_track_width": 0.15,

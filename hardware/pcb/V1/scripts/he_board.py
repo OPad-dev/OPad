@@ -54,6 +54,7 @@ the MX module (same outline, same connector) is for.
 """
 
 import math
+import os
 
 # ---------------------------------------------------------------------------
 # Identity
@@ -62,7 +63,7 @@ import math
 PROJECT = "he_input_v1"
 TITLE = "osuPad Hall Effect Input Module V1"
 REV = "V1.1"
-DATE = "2026-09-20"
+DATE = "2026-10-10"
 COMPANY = "osuPad"
 
 # ---------------------------------------------------------------------------
@@ -104,14 +105,17 @@ HOLE_CLEARANCE = 0.25         # copper to NPTH hole wall
 HOLE_TO_HOLE = 0.4            # hole wall to hole wall
 TRACK_W = 0.25                # signal
 POWER_W = 0.3                 # 3V3 / GND
-VIA_DIA = 0.6
-VIA_DRILL = 0.3
+VIA_DIA = 0.7                 # 0.2 mm annular ring: Aisler HASL wants 0.20,
+VIA_DRILL = 0.3               # Eurocircuits class 6 0.125 measured from the
+                              # 0.4 mm production tool (finished hole + 0.1)
 MASK_EXPAND = 0.05            # solder mask opening, per side
-POUR_GAP = 0.3                # pour to foreign copper
+POUR_GAP = 0.45               # pour to foreign copper; 0.45 leaves no sliver
+                              # between 1.0 mm pitch traces or 0603 pads
 THERMAL_GAP = 0.3             # pour to own-net pad before the spokes
 THERMAL_SPOKE = 0.4
 SILK_W = 0.15
-SILK_H = 0.8
+SILK_H = 0.8                  # order marker and labels; the connector legend is 0.7
+SILK_H_MIN = 0.7
 EDGE_W = 0.1
 
 # ---------------------------------------------------------------------------
@@ -260,13 +264,13 @@ PARTS = [
          "3V3 bulk decoupling at the module connector",
          (182.88, 63.5)),
 
-    Part("C2", "100nF", FP_C0603, (13.95, 12.0), 0,
+    Part("C2", "100nF", FP_C0603, (13.95, 12.2), 0,
          {"1": NET_GND, "2": NET_3V3},
          "C14663", "CC0603KRX7R9BB104", "YAGEO",
          "Local supply decoupling for U1",
          (105.41, 50.8)),
 
-    Part("C3", "100nF", FP_C0603, (33.0, 12.0), 0,
+    Part("C3", "100nF", FP_C0603, (33.0, 12.2), 0,
          {"1": NET_GND, "2": NET_3V3},
          "C14663", "CC0603KRX7R9BB104", "YAGEO",
          "Local supply decoupling for U2",
@@ -367,6 +371,9 @@ VIAS = [
     (NET_GND, (8.0, 15.0)), (NET_GND, (44.0, 15.0)),
     (NET_GND, (8.0, 20.5)), (NET_GND, (44.0, 20.5)),
     (NET_GND, (13.0, 6.5)), (NET_GND, (39.0, 6.5)),
+    # the pocket the IN2 trace and U2's 3V3 stub close off would otherwise be
+    # a floating piece of pour (verify_he_gerbers.py checks for these)
+    (NET_GND, (35.3, 12.4)),
 ]
 
 # Ground pads that connect to the pour through a thermal relief rather than
@@ -385,16 +392,17 @@ BOTTOM_SILK = [
     ("OSUPAD HE " + REV, 26.0, 2.2, 0.9, "center"),
     ("KEY1", KEY1[0], 4.6, 0.8, "center"),
     ("KEY2", KEY2[0], 4.6, 0.8, "center"),
-    ("U1", 13.2, 9.5, 0.7, "center"),
-    ("U2", 38.8, 9.5, 0.7, "center"),
-    ("C1", 18.5, 20.4, 0.7, "center"),
-    ("C2", 13.95, 13.9, 0.7, "center"),
-    ("C3", 33.0, 13.9, 0.7, "center"),
-    ("R1", 37.0, 21.0, 0.7, "center"),
-    ("R2", 37.0, 19.0, 0.7, "center"),
-    ("1", 22.5, 17.3, 0.7, "center"),          # J1 pin 1
-    ("TO CARRIER", 41.5, 22.4, 0.7, "center"),
-    ("3V3 GND IN1 IN2 ID", 26.0, 11.6, 0.7, "center"),
+    ("U1", 13.2, 9.5, 0.8, "center"),
+    ("U2", 38.8, 9.5, 0.8, "center"),
+    ("C1", 18.5, 20.4, 0.8, "center"),
+    ("C2", 13.95, 14.1, 0.8, "center"),
+    ("C3", 33.0, 14.1, 0.8, "center"),
+    ("R1", 37.0, 21.0, 0.8, "center"),
+    ("R2", 37.0, 19.0, 0.8, "center"),
+    ("1", 22.5, 17.3, 0.8, "center"),          # J1 pin 1
+    ("TO CARRIER", 41.5, 22.4, 0.8, "center"),
+    # J1's pin order as read from the bottom, where pin 1 is on the right
+    ("ID IN2 IN1 GND 3V3", 26.0, 11.6, 0.7, "center"),
 ]
 
 TOP_SILK = [
@@ -403,6 +411,45 @@ TOP_SILK = [
     ("KEY2", KEY2[0], 13.6, 0.8, "center"),
     ("HALL SENSOR UNDER BOARD - DO NOT DRILL", 26.0, 1.4, 0.7, "center"),
 ]
+
+# Silkscreen drawings. The Gerbers and the KiCad board both draw exactly these
+# (the library footprints' own silkscreen is left out of the board), so the two
+# outputs cannot disagree. Items are ("line", [points]) polylines of SILK_W or
+# ("dot", centre, diameter) filled circles.
+SENSOR_OUTLINE = 3.6          # square round each sensor; 3.0 would sit on the pad tips
+PIN1_DOT = 0.3                # pin-1 marker diameter
+SILK_TO_MASK = 0.15           # silkscreen to a solder mask opening
+
+
+def _square(cx, cy, half):
+    return [(cx - half, cy - half), (cx + half, cy - half), (cx + half, cy + half),
+            (cx - half, cy + half), (cx - half, cy - half)]
+
+
+def bottom_silk_shapes():
+    out = []
+    half = SENSOR_OUTLINE / 2.0
+    for part in PARTS:
+        if part.footprint != FP_SOT23:
+            continue
+        cx, cy = part.centre
+        out.append(("line", _square(cx, cy, half)))
+        # pin-1 dot just outside the square, on pad 1's side and level with it
+        p1, p2 = part.pad_pos("1"), part.pad_pos("2")
+        side = 1.0 if p1[0] > p2[0] else -1.0
+        out.append(("dot", (cx + side * (half + SILK_TO_MASK + PIN1_DOT / 2.0), p1[1]),
+                    PIN1_DOT))
+    return out
+
+
+def top_silk_shapes():
+    """The 14 mm switch outlines and a cross on each sensor centre."""
+    out = []
+    for cx, cy in (KEY1, KEY2):
+        out.append(("line", _square(cx, cy, 7.0)))
+        out.append(("line", [(cx - 1.2, cy), (cx + 1.2, cy)]))
+        out.append(("line", [(cx, cy - 1.2), (cx, cy + 1.2)]))
+    return out
 
 # ---------------------------------------------------------------------------
 # Derived collections
@@ -689,6 +736,28 @@ def check():
             errors.append("silk %r runs off the board outline (%.3f, %.3f)-(%.3f, %.3f)"
                           % (text, box[0], box[1], box[2], box[3]))
 
+    # 9. silkscreen drawings (lines and dots), segment by segment, so a square
+    #    drawn round a part is checked against the pads inside it as well
+    shapes = [(s, "B") for s in bottom_silk_shapes()] + [(s, "F") for s in top_silk_shapes()]
+    for shape, layer in shapes:
+        if shape[0] == "line":
+            segs = list(zip(shape[1], shape[1][1:]))
+            half = SILK_W / 2.0
+        else:
+            segs = [(shape[1], shape[1])]
+            half = shape[2] / 2.0
+        for a, b in segs:
+            if layer == "B":
+                for ref, num, pbox in pad_boxes:
+                    if _seg_rect_dist(a, b, pbox) - half < SILK_TO_MASK - 1e-6:
+                        errors.append("silk %s at %s is %.3f mm (<%.2f) from the mask opening "
+                                      "of %s pad %s" % (shape[0], a, _seg_rect_dist(a, b, pbox) - half,
+                                                        SILK_TO_MASK, ref, num))
+            for p in (a, b):
+                if (p[0] - half < EDGE_W or p[1] - half < EDGE_W
+                        or p[0] + half > BOARD_W - EDGE_W or p[1] + half > BOARD_H - EDGE_W):
+                    errors.append("silk %s at %s runs off the board outline" % (shape[0], p))
+
     return errors
 
 
@@ -723,7 +792,90 @@ def selftest():
                             "mirrored package for a %s-side part" %
                             (part.ref, "clockwise" if clockwise else "counter-clockwise",
                              part.side))
+    # The connector pinout against the MX module that is already built and
+    # working with the carrier and the cable: same pad, same net, pin by pin.
+    mx = os.path.join(V1_DIR, "MX", "mx_input_v1.kicad_pcb")
+    try:
+        mx_nets = _kicad_pad_nets(open(mx, encoding="utf8").read(), "J1")
+    except (IOError, OSError):
+        problems.append("cannot read %s to compare the connector pinout" % mx)
+        mx_nets = {}
+    for pad, net in sorted(MODULE_PINOUT.items()):
+        got = mx_nets.get(pad)
+        if got is None:
+            if net in (NET_3V3, NET_GND, NET_IN1, NET_IN2, NET_ID):
+                problems.append("MX module J1 pad %s has no net; expected %s" % (pad, net))
+        elif got != net:
+            problems.append("J1 pad %s is %s here but %s on the MX module" % (pad, net, got))
+    # The sensor symbol's pin names against the nets the board puts on them,
+    # so the schematic says VCC where the copper carries 3V3.
+    names = _symbol_pin_names("DRV5055")
+    want = {"VCC": {NET_3V3}, "GND": {NET_GND}, "OUT": {NET_IN1, NET_IN2}}
+    for part in PARTS:
+        if part.footprint != FP_SOT23:
+            continue
+        for number, net in part.pins.items():
+            name = names.get(number)
+            if name not in want:
+                problems.append("%s pin %s: no DRV5055 symbol pin with that number" % (part.ref, number))
+            elif net not in want[name]:
+                problems.append("%s pin %s is %s on the symbol but carries %s" % (part.ref, number, name, net))
     return problems
+
+
+V1_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _kicad_pad_nets(text, ref):
+    """{pad number: net name} of footprint ``ref`` in a .kicad_pcb (net names
+    without the sheet's leading slash)."""
+    import re
+    out, inside, pad = {}, False, None
+    for line in text.splitlines():
+        t = line.strip()
+        if t.startswith("(footprint "):
+            inside, pad = False, None
+            continue
+        m = re.match(r'\(property "Reference" "([^"]+)"', t)
+        if m:
+            inside = m.group(1) == ref
+            continue
+        if not inside:
+            continue
+        m = re.match(r'\(pad "([^"]*)"', t)
+        if m:
+            pad = m.group(1)
+            continue
+        m = re.match(r'\(net (?:\d+ )?"([^"]*)"\)', t)   # KiCad 10 drops the index
+        if m and pad is not None and not m.group(1).startswith("unconnected-"):
+            out[pad] = m.group(1).lstrip("/")
+    return out
+
+
+def _symbol_pin_names(symbol):
+    """{pin number: pin name} of ``symbol`` in lib/osupad.kicad_sym."""
+    import re
+    text = open(os.path.join(V1_DIR, "lib", "osupad.kicad_sym"), encoding="utf8").read()
+    start = text.index('(symbol "%s"' % symbol)
+    depth, i = 0, start
+    while True:
+        if text[i] == "(":
+            depth += 1
+        elif text[i] == ")":
+            depth -= 1
+            if depth == 0:
+                break
+        i += 1
+    raw = text[start:i + 1]
+    out = {}
+    pins = [m.start() for m in re.finditer(r"\(pin ", raw)] + [len(raw)]
+    for a, b in zip(pins, pins[1:]):
+        blk = raw[a:b]
+        name = re.search(r'\(name "([^"]+)"', blk)
+        number = re.search(r'\(number "([^"]+)"', blk)
+        if name and number:
+            out[number.group(1)] = name.group(1)
+    return out
 
 
 if __name__ == "__main__":

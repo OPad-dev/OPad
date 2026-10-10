@@ -4,7 +4,7 @@
 	(generator_version "9.0")
 	(uuid "fe72237b-5ad3-56e7-b98a-19631374258d")
 	(paper "A4")
-	(title_block (title "osuPad Hall Effect Input Module V1") (date "2026-09-20") (rev "V1.1") (company "osuPad"))
+	(title_block (title "osuPad Hall Effect Input Module V1") (date "2026-10-10") (rev "V1.1") (company "osuPad"))
 	(lib_symbols
 		(symbol "osupad:C"
 		(pin_numbers
@@ -161,7 +161,7 @@
 		)
 		(embedded_fonts no)
 	)
-		(symbol "osupad:Conn_01x08"
+		(symbol "osupad:Conn_01x08_1MP"
 		(pin_numbers
 			(hide no)
 		)
@@ -184,8 +184,8 @@
 				)
 			)
 		)
-		(property "Value" "Conn_01x08"
-			(at 0 -12.7 0)
+		(property "Value" "Conn_01x08_1MP"
+			(at 0 -15.24 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -216,7 +216,7 @@
 				)
 			)
 		)
-		(property "Description" "Single-row connector, 8 pins"
+		(property "Description" "Single-row connector, 8 pins, plus the mounting pads as pin MP"
 			(at 0 0 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -238,7 +238,7 @@
 				)
 			)
 		)
-		(property "ki_fp_filters" "*_1x08_*"
+		(property "ki_fp_filters" "*_1x08-1MP_*"
 			(at 0 0 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -249,10 +249,10 @@
 				)
 			)
 		)
-		(symbol "Conn_01x08_0_1"
+		(symbol "Conn_01x08_1MP_0_1"
 			(rectangle
 				(start -1.27 8.89)
-				(end 1.27 -11.43)
+				(end 1.27 -13.97)
 				(stroke
 					(width 0.254)
 					(type default)
@@ -365,8 +365,21 @@
 					(type none)
 				)
 			)
+			(polyline
+				(pts
+					(xy -1.27 -12.7)
+					(xy -0.508 -12.7)
+				)
+				(stroke
+					(width 0.1524)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
 		)
-		(symbol "Conn_01x08_1_1"
+		(symbol "Conn_01x08_1MP_1_1"
 			(pin passive line
 				(at -5.08 7.62 0)
 				(length 3.81)
@@ -504,6 +517,24 @@
 					)
 				)
 				(number "8"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at -5.08 -12.7 0)
+				(length 3.81)
+				(name "MP"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "MP"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -651,6 +682,123 @@
 					)
 				)
 				(number "3"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+		(symbol "osupad:PWR_FLAG"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board yes)
+		(duplicate_pin_numbers_are_jumpers no)
+		(property "Reference" "#FLG"
+			(at 0 1.905 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 0 3.81 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power flag: marks a net as driven, for ERC"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "power flag"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(symbol "PWR_FLAG_0_1"
+			(polyline
+				(pts
+					(xy 0 0)
+					(xy 0 1.27)
+					(xy -1.016 1.905)
+					(xy 0 2.54)
+					(xy 1.016 1.905)
+					(xy 0 1.27)
+				)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "PWR_FLAG_1_1"
+			(pin power_out line
+				(at 0 0 90)
+				(length 0)
+				(name "pwr"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
 					(effects
 						(font
 							(size 1.27 1.27)
@@ -917,12 +1065,12 @@
 	(text "Module connector pinout, identical on every osuPad input module:" (exclude_from_sim no) (at 20.32 164.08 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "ff30c478-1ac1-5193-98a6-78193f271a70"))
 	(text "1 3V3 | 2 GND | 3 IN1 = GPIO10 (ADC1_CH9) | 4 IN2 = GPIO7 (ADC1_CH6) | 5 ID = GPIO8 (ADC1_CH7) | 6 GPIO6 | 7 GPIO4 | 8 GPIO2" (exclude_from_sim no) (at 20.32 168.14 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "c29bb5d1-a5c0-5f5c-b350-62f37848491b"))
 	(text "U1/U2 output a ratiometric analog voltage centred on VCC/2; the firmware tracks the peak and applies the rapid-trigger threshold." (exclude_from_sim no) (at 20.32 172.20 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "95c4fdcf-bd28-52ec-bde4-5dc6137361b7"))
-	(text "Module ID: 3V3 x 47k / (100k + 47k) = 1.06 V, read on GPIO8 and decoded as "Hall Effect module V1"." (exclude_from_sim no) (at 20.32 176.26 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "c61be83e-5948-5bc0-8188-0911fbdecf94"))
+	(text "Module ID: 3V3 x 47k / (100k + 47k) = 1.06 V, read on GPIO8 and decoded as \"Hall Effect module V1\"." (exclude_from_sim no) (at 20.32 176.26 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "c61be83e-5948-5bc0-8188-0911fbdecf94"))
 	(text "Everything is on the bottom side. U1 and U2 sit on the key centres over solid FR-4, with no copper pour in the magnetic path." (exclude_from_sim no) (at 20.32 180.32 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "b6d16186-b6d9-5e07-b4bd-db60d84a87eb"))
 	(text "J1-6/7/8 are reserved for an SPI variant and are brought out to probe pads TP1..TP3 instead of being left floating." (exclude_from_sim no) (at 20.32 184.38 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "354acdcb-f26c-5727-bf92-c5cb5d217fd9"))
-	(symbol (lib_id "osupad:Conn_01x08") (at 60.96 60.96 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "abae5b55-01b0-5829-ac38-11340de82096")
+	(symbol (lib_id "osupad:Conn_01x08_1MP") (at 60.96 60.96 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "abae5b55-01b0-5829-ac38-11340de82096")
 		(property "Reference" "J1" (at 60.96 49.53 0) (effects (font (size 1.27 1.27))))
-		(property "Value" "MODULE" (at 60.96 74.93 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "MODULE" (at 60.96 77.47 0) (effects (font (size 1.27 1.27))))
 		(property "Footprint" "osupad:JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal" (at 60.96 60.96 0) (hide yes) (effects (font (size 1.27 1.27))))
 		(property "Datasheet" "" (at 60.96 60.96 0) (hide yes) (effects (font (size 1.27 1.27))))
 		(property "Description" "Module connector to controller carrier (JST SH 8-pin, horizontal)" (at 60.96 60.96 0) (hide yes) (effects (font (size 1.27 1.27))))
@@ -936,6 +1084,7 @@
 		(pin "6" (uuid "76e10694-ba3e-5265-83b5-41195fbcde6b"))
 		(pin "7" (uuid "8bb1182a-c102-5a48-9c86-a2f442d0d76a"))
 		(pin "8" (uuid "2d2c6336-a295-5524-8b08-aa7e8185e9f1"))
+		(pin "MP" (uuid "851eb92c-d21b-5d6f-a515-a96e486e6598"))
 		(instances (project "he_input_v1" (path "/fe72237b-5ad3-56e7-b98a-19631374258d" (reference "J1") (unit 1))))
 	)
 	(label "3V3" (at 55.88 53.34 180) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "f0884d3c-7931-5d3e-9d3c-23afdb165266"))
@@ -946,6 +1095,7 @@
 	(label "IO6" (at 55.88 66.04 180) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "2c2809da-5179-5f10-b1dd-b0713e27e1db"))
 	(label "IO4" (at 55.88 68.58 180) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "47b64fbf-8e52-5094-9f62-d2e40972cbd6"))
 	(label "IO2" (at 55.88 71.12 180) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "3beaa097-39ec-59ac-9aa4-4980265878c8"))
+	(label "GND" (at 55.88 73.66 180) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "251d76c8-4b9c-5511-b53e-2d7a7af0d43e"))
 	(symbol (lib_id "osupad:DRV5055") (at 130.81 50.80 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "ff4b99bd-a5aa-54d1-a538-b6b134d2d0e8")
 		(property "Reference" "U1" (at 130.81 44.45 0) (effects (font (size 1.27 1.27))))
 		(property "Value" "DRV5055A3" (at 130.81 57.15 0) (effects (font (size 1.27 1.27))))
@@ -1084,5 +1234,23 @@
 		(instances (project "he_input_v1" (path "/fe72237b-5ad3-56e7-b98a-19631374258d" (reference "TP3") (unit 1))))
 	)
 	(label "IO2" (at 33.02 78.74 270) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "170a8ba1-c313-5e2b-910f-6579b2f41be0"))
+	(symbol (lib_id "osupad:PWR_FLAG") (at 182.88 38.10 0) (unit 1) (exclude_from_sim no) (in_bom no) (on_board yes) (dnp no) (uuid "5af73145-71b5-5a19-85e5-5768a9540573")
+		(property "Reference" "#FLG01" (at 182.88 36.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Value" "PWR_FLAG" (at 182.88 34.29 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "" (at 182.88 38.10 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 182.88 38.10 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "8f14e739-c8e6-54aa-a31f-d1af7d5d8d5d"))
+		(instances (project "he_input_v1" (path "/fe72237b-5ad3-56e7-b98a-19631374258d" (reference "#FLG01") (unit 1))))
+	)
+	(label "3V3" (at 182.88 38.10 0) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "9fd7db81-0b83-56f7-80a4-a39be8f85cad"))
+	(symbol (lib_id "osupad:PWR_FLAG") (at 198.12 38.10 0) (unit 1) (exclude_from_sim no) (in_bom no) (on_board yes) (dnp no) (uuid "3dd3157e-a29b-50a9-8832-6f145c703c3e")
+		(property "Reference" "#FLG02" (at 198.12 36.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Value" "PWR_FLAG" (at 198.12 34.29 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "" (at 198.12 38.10 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 198.12 38.10 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "2d3fffc9-f7e1-5540-b280-d525d2e65771"))
+		(instances (project "he_input_v1" (path "/fe72237b-5ad3-56e7-b98a-19631374258d" (reference "#FLG02") (unit 1))))
+	)
+	(label "GND" (at 198.12 38.10 0) (fields_autoplaced yes) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "bed14b22-ba6f-5710-a281-592786c4d184"))
 	(sheet_instances (path "/" (page "1")))
 )

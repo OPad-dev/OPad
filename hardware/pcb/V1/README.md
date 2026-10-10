@@ -13,7 +13,7 @@ Modular hardware ecosystem joined by one 8-wire JST-SH cable:
 
 The input module is **swappable**: both the MX mechanical module and the Hall-effect (rapid trigger) module use the same outline, mounting holes, connector position and pinout, and plug into the same carrier and cable. The module reports which kind it is through an ID voltage on the connector (0.30 V for MX, 1.06 V for Hall Effect).
 
-Status: the MX module and the carrier pass ERC, DRC (zero errors, zero warnings) and schematic parity in KiCad 10.0.6. The Hall Effect module is generated and checked by its own toolchain (`scripts/he_board.py`, see below), which needs no KiCad install; it reports zero rule violations and its Gerbers verify clean against the netlist. Production files are in each board's `production/` folder.
+Status: the MX module and the carrier pass ERC, DRC (zero errors, zero warnings) and schematic parity in KiCad 10.0.6. The Hall Effect module is generated and checked by its own toolchain (`scripts/he_board.py`, see below), which needs no KiCad install; it reports zero rule violations, its Gerbers verify clean against the netlist, and the generated KiCad files pass ERC and DRC with schematic parity in KiCad 10.0.6 (`scripts/check_he_kicad.py`; only "footprint does not match library" warnings remain, see Toolchain). Production files are in each board's `production/` folder.
 
 ---
 
@@ -67,6 +67,8 @@ With no module plugged in, GPIO8 floats. The firmware can enable the internal pu
 Same outline, mounting holes, connector position and pinout as the MX module, so the two are interchangeable on one cable. Instead of switching a pin to ground, each key has a **TI DRV5055A3 ratiometric linear Hall sensor** whose analog output tracks the magnet in the switch stem, which is what rapid trigger needs.
 
 > **V1.0 erratum (fixed in V1.1):** the V1.0 SOT-23 footprint was mirrored, so every assembled sensor sits with **VCC on its IN line and OUT on 3V3**. It powers itself backwards through its protection diode, reads a fixed ~2.9 V and barely reacts to a magnet. The connectivity was right, so neither DRC nor the assembler could catch it. V1.1 swaps pads 1 and 2 (`scripts/gen_library.py`, `scripts/he_board.py`), moves C2/C3 to the pin-1 side so the 3V3 stub and the IN line do not cross, and `he_board.py`'s self-test now checks every SOT-23's pin order against the real package. A V1.0 board works only with each sensor re-soldered upside down (marking towards the board), which mirrors its pin order back.
+>
+> **V1.1 review (2026-10-10), before ordering:** TI's DBZ pinout (datasheet SBAS640C Figure 4-1 and Table 4-1: 1 = VCC, 2 = OUT, 3 = GND, pin 1 top-left in the top view) was checked against the footprint by hand, against KiCad's flip convention and against the V1.0 measurements; the three agree with the V1.1 pads. Found and fixed in the same pass: the vias grow from 0.6 to **0.7 mm** (0.2 mm annular ring, which Aisler's HASL rules and Eurocircuits' class 6 need; JLCPCB accepted 0.6); the silkscreen square round each sensor was 3.0 mm and crossed the pad tips, it is now 3.6 mm with a pin-1 dot, and `C2`/`C3` moved 0.2 mm away from the sensors to make room; the pour gap went from 0.3 to 0.45 mm and a ground via fills the pocket next to U2, so the Gerbers hold no floating copper slivers (`verify_he_gerbers.py` now checks for islands); the generated schematic had an unescaped quote and did not load in KiCad, so ERC had never actually run on it (it now passes, with PWR_FLAGs and a connector symbol that carries the MP pads). None of these change the netlist.
 
 ### Sensor architecture (the part that matters)
 
@@ -77,12 +79,13 @@ This is **Architecture A: bottom-side SMT on solid FR-4.**
 - A **3.0 × 3.0 mm copper keepout on both layers** around each sensor keeps the ground pour out of the magnetic path, so the stem magnet's flux is not damped by eddy currents in the plane. In KiCad these are rule areas with `copperpour not_allowed`; in the Gerbers the pour is genuinely absent there.
 ### Why there is no centre hole, and what the board is actually compatible with
 
-This is not a compromise forced by single-side assembly — it is what the switch standard requires. In a Lekker / Gateron KS-20 class magnetic switch:
+In a Lekker / Gateron KS-20 class magnetic switch (Gateron's KS-20T drawing DS-02-001-A0, in the [Magnetic Orange datasheet](https://gateron.com/u_file/2312/26/file/GATERONMagneticOrangeSwitch-KS-20TO10B050NW-Y64.pdf), sheet 1):
 
-- **the magnet sits at the centre of the switch and reaches the bottom face of the housing.** There is no MX-style centre pole to clear, and equally no room for a component on the *top* side of the PCB either;
-- **two plastic alignment pins stick out of the bottom and pass straight through the PCB**, protruding about 1 mm out the back. Those are the ±5.08 mm pins, and they are why the 1.75 mm peg holes are needed.
+- **the magnet sits in the stem at the switch centre, N pole towards the PCB.** There is no MX-style centre pole and no 4 mm centre hole;
+- **two Ø 1.70 ± 0.05 mm plastic pins, 10.16 mm apart (±5.08 mm), stick out of the bottom and pass straight through the PCB**, protruding about 1 mm out the back. That is why the 1.75 mm peg holes are needed;
+- the bottom housing has a pocket ("the hole for setting hall sensor") so Gateron's own reference layout puts a SOT-23 sensor on the **top** of the PCB, between the two pins, with three 0.8 × 0.8 mm pads.
 
-Wooting describe exactly this in [Lekker update #5, part 2](https://wooting.io/post/we-overcame-the-challenges-lekker-update-5-part-22) and moved their own sensors to the PCB bottom for the same reason. So peg holes **and** a solid centre **and** a bottom-side sensor is the consistent set: a board that had the peg holes *and* a 4 mm centre hole would be an MX PCB-mount pattern, which is a different switch.
+So a top-side sensor is possible with these switches; this board puts it on the bottom instead, like Wooting ([Lekker update #5, part 2](https://wooting.io/post/we-overcame-the-challenges-lekker-update-5-part-22)), because single-side assembly is cheaper and the top of the PCB stays flat against the plate. The price is distance: the magnet reads through the full 1.6 mm of FR-4 plus the package, so the field at the die is a fraction of what Gateron's pocket position sees (numbers under Sensor sensitivity). Peg holes **and** a solid centre **and** a bottom-side sensor is a consistent set; a board that had the peg holes *and* a 4 mm centre hole would be an MX PCB-mount pattern, which is a different switch.
 
 | Switch | Works on this board? |
 |---|---|
@@ -103,23 +106,26 @@ These magnetic switches are deliberately not MX-compatible; vendors say so thems
 
 The magnet reads through 1.6 mm of FR-4, so the field at the die is weaker than a top-side design's. Wooting hit the same geometry and compensated with a stronger magnet *and* a more sensitive sensor. All three variants share the SOT-23 pinout and this footprint, so **the board never changes** — only which reel JLCPCB loads. Set `SENSOR_VARIANT` in `scripts/he_board.py` and regenerate.
 
-| Variant | LCSC | Sensitivity @3.3 V | Linear range | Notes |
-|---|---|---|---|---|
-| A1 | `C962987` | ≈66 mV/mT | ≈±20 mT | best resolution, clips soonest at full press |
-| A2 | `C266131` | ≈33 mV/mT | ≈±40 mT | **recommended middle ground** |
-| A3 | `C266128` | ≈16 mV/mT | ≈±80 mT | current default; cannot clip, coarsest |
+Datasheet values (TI SBAS640C §5.6, VCC = 3.3 V, 25 °C): quiescent output 1.59–1.71 V (typ. 1.65 V), linear output range 0.2 V to VCC − 0.2 V, input-referred noise 0.2 mT peak-to-peak for every variant (so a more sensitive part gives more volts per millimetre but the same magnetic noise):
 
-A3 is shipped as the default because it is the one variant that physically cannot saturate, which makes first bring-up unambiguous. Given Wooting's experience, expect to move to A2.
+| Variant | LCSC | Sensitivity @3.3 V | Linear range @3.3 V | Notes |
+|---|---|---|---|---|
+| A1 | `C962987` | 60 mV/mT (57–63) | ±22 mT | clips before mid-travel with a Jade |
+| A2 | `C266131` | 30 mV/mT (28.5–31.5) | ±44 mT | about 2× A3's resolution, may clip in the last few tenths of a millimetre |
+| A3 | `C266128` | 15 mV/mT (14.3–15.8) | ±88 mT | current default; cannot clip |
+
+What the magnet delivers: Gateron quotes the Magnetic Jade at 120 Gs (12 mT) initial and 700–800 Gs (70–80 mT) at bottom-out "with a 1.2 mm PCB", N pole towards the PCB; the KS-20T, read in its pocket, at 102 / 905 Gs. Through 1.6 mm the bottom-out figure drops to very roughly 50–60 mT. With the N pole facing the sensor's back the output **rises** when the key is pressed: A3 goes from about 1.8 V at rest to about 2.4–2.6 V at bottom-out, inside the ESP32-S3 ADC's accurate range at 12 dB (0–2.9 V, ±50 mV); A2 would reach 3.1 V (its limit) at 48 mT, so it saturates near the end of travel but doubles the resolution over the rest. A3 is shipped as the default because it cannot saturate, which makes first bring-up unambiguous; measure the actual swing on the first V1.1 build before choosing between A3 and A2. The Jade Silent (3.2 ± 0.2 mm travel) has no published flux figures.
 
 ### Layout
 
 - **Everything is on the bottom side**, so JLCPCB assembles one side.
 - `U1`/`U2` are at 180°, so both analog outputs face the connector and both ground pads face the board's front edge, where a short stub and a via drop them into the pour outside the keepout.
-- `C2`/`C3` sit just outside each keepout, feeding VCC from the side; `C1` is the bulk decoupler next to J1 pin 1.
+- `C2`/`C3` sit just outside each keepout on the pin-1 side (centre 2.7 mm from the sensor, 100 nF; TI asks for at least 10 nF close to VCC, §7.4), feeding VCC from the side; `C1` is the bulk decoupler next to J1 pin 1.
 - **3V3 is distributed on F.Cu**, the otherwise empty top layer, so every analog trace stays on B.Cu with no crossings. Four vias tie it to the bottom-side stubs.
 - `R1`/`R2` are the 100 k / 47 k ID divider.
 - J1-6/7/8 (GPIO6/4/2) are reserved for an SPI variant, so instead of being left floating they run to probe pads **TP1/TP2/TP3** below the connector — the three bare pads visible under J1 in the render. They are board features, not parts: nothing is assembled on them, they take no solder paste, and they appear in neither the BOM nor the centroid file. Delete `_probe_pad(...)` from `PARTS` in `he_board.py` and regenerate if you would rather leave those pins unconnected.
-- Ground: pours on both layers, thermal relief on every ground pad, and 21 plated vias stitching the two planes.
+- Ground: pours on both layers with a 0.45 mm gap to foreign copper (wide enough that no sliver is left between 1.0 mm pitch traces), thermal relief on every ground pad, and 22 plated vias stitching the two planes.
+- Vias are 0.7 mm with a 0.3 mm hole (0.2 mm annular ring), tented on both sides.
 
 ### Pinout
 
@@ -132,7 +138,7 @@ A3 is shipped as the default because it is the one variant that physically canno
 | 5 | ID | R1/R2 divider, 1.06 V → GPIO8 (ADC1_CH7) |
 | 6, 7, 8 | IO6 / IO4 / IO2 | TP1 / TP2 / TP3 probe pads, reserved for SPI |
 
-**DRV5055 SOT-23 pinout: 1 = VCC, 2 = OUT, 3 = GND** (TI DBZ package). Worth repeating because swapping 2 and 3 would put the output straight on ground. Turned so pins 1–2 face up, pin 1 is on the **right** in the top view; on this bottom-side board the self-test enforces it.
+**DRV5055 SOT-23 pinout: 1 = VCC, 2 = OUT, 3 = GND** (TI DBZ package, datasheet Figure 4-1 and Table 4-1). Worth repeating because swapping 2 and 3 would put the output straight on ground. Turned so pins 1–2 face up, pin 1 is on the **right** in the top view of the chip; a chip on the bottom side is seen mirrored from above, so in the board's top view (and in the KiCad editor) pad 1 is the **left** one of the pair, the one next to the silkscreen dot. `he_board.py`'s self-test enforces this and also compares J1's pinout with the built MX board and the sensor symbol's pin names with the nets.
 
 ### Toolchain
 
@@ -142,15 +148,18 @@ The HE board does not depend on a KiCad install. `scripts/he_board.py` holds the
 python3 scripts/he_board.py            # placement self-test + DRC, exit 1 on any violation
 python3 scripts/generate_he_gerbers.py # Gerbers, drills, job file, BOM, CPL (JLCPCB + PCBWay)
 python3 scripts/generate_he_kicad.py   # .kicad_sch, .kicad_pcb, .kicad_pro, lib tables
-python3 scripts/verify_he_gerbers.py   # rasterise the Gerbers, check nets for opens/shorts
+python3 scripts/verify_he_gerbers.py   # rasterise the Gerbers, check nets for opens/shorts/islands
 python3 scripts/render_he_preview.py   # production/*-top.png and *-bottom.png
+python3 scripts/check_he_kicad.py      # optional, needs kicad-cli: ERC + DRC (zones refilled, parity)
 ```
 
-`generate_he_gerbers.py` and `generate_he_kicad.py` both refuse to write anything if the DRC fails. `verify_he_gerbers.py` does not re-read the geometry and declare it fine: it replays the Gerber files, including every clear-polarity knockout, labels the copper regions, joins the layers through the vias, and then asserts that each net is one region and that no region carries two nets. It also checks that the sensor keepouts hold no pour copper and that nothing sits over a non-plated hole. Both it and the preview renderer need Pillow.
+`generate_he_gerbers.py` and `generate_he_kicad.py` both refuse to write anything if the DRC fails. `verify_he_gerbers.py` does not re-read the geometry and declare it fine: it replays the Gerber files, including every clear-polarity knockout, labels the copper regions, joins the layers through the vias, and then asserts that each net is one region and that no region carries two nets. It also checks that the sensor keepouts hold no pour copper, that nothing sits over a non-plated hole, and that every copper region holds a pad or a via (no floating slivers, which this writer has no minimum-width pass to remove). Both it and the preview renderer need Pillow.
 
-Copper pours in the Gerbers are real: the pour is filled, then every foreign pad, track, via and NPTH is knocked out with `%LPC*%` using apertures grown by the 0.3 mm pour gap, then the actual copper is flashed back. Isolation gaps show up properly in any fab viewer.
+`check_he_kicad.py` is the independent second opinion: KiCad's ERC on the schematic and DRC on the board with the zones refilled and schematic parity on. It reports warnings and fails on errors. The warnings it leaves are "footprint does not match copy in library" for every part, which is expected: the board carries the library footprints without their silkscreen, because the board's silkscreen (sensor squares, pin-1 dots, labels) comes from `he_board.py` and is the same drawing the Gerbers get.
 
-**File format:** the board is written in KiCad 8 syntax (`version 20240108`), which KiCad 8, 9 and 10 all open. The schematic is KiCad 9 syntax, because it embeds the shared symbol library and that library is saved by KiCad 10. This differs from `MX/` and `Carrier/`, which are native KiCad 10 files. Zones are written as outlines with their clearance and thermal settings; KiCad fills them on open (or any DRC run) — the shipped Gerbers already contain the filled result.
+Copper pours in the Gerbers are real: the pour is filled, then every foreign pad, track, via and NPTH is knocked out with `%LPC*%` using apertures grown by the 0.45 mm pour gap, then the actual copper is flashed back. Isolation gaps show up properly in any fab viewer.
+
+**File format:** the board is written in KiCad 8 syntax (`version 20240108`), which KiCad 8, 9 and 10 all open. The schematic is KiCad 9 syntax, because it embeds the shared symbol library and that library is saved by KiCad 10; it uses `Conn_01x08_1MP` (the connector with its mounting pads as pin MP, on GND) and two `PWR_FLAG`s so ERC and parity are clean. This differs from `MX/` and `Carrier/`, which are native KiCad 10 files. Zones are written as outlines with their clearance and thermal settings; KiCad fills them on open (or any DRC run) — the shipped Gerbers already contain the filled result.
 
 Running `scripts/generate_boards.py` under KiCad's Python regenerates MX and the carrier with `pcbnew` as before; its `build_he()` just calls the generator above, so there is only one definition of this board.
 
@@ -197,7 +206,10 @@ Upload `production/<board>-gerbers.zip`. Both boards use standard options:
 | Copper | 1 oz |
 | Min track / clearance | 0.25 / 0.2 mm |
 | Min drill | 0.3 mm (vias) |
+| Via | 0.6 mm (MX, carrier) / 0.7 mm (HE), 0.3 mm hole |
 | Finish | HASL lead-free or ENIG |
+
+European fabs: the HE module fits Aisler's "2 layer 1.6 mm HASL" rules (track 0.2, spacing 0.15, drill ≥ 0.3, via ring 0.2, copper to edge 0.3, hole to hole 0.3) and Eurocircuits pattern class 6 / drill class C (track and isolation 0.15, outer ring 0.125 measured from the 0.4 mm production tool, non-plated hole isolation 0.2). Checked against their published tables on 2026-10-10; the MX and carrier vias (0.6 mm) give a 0.15 mm ring, which Aisler HASL does not accept, so order those two with ENIG there or enlarge their vias first.
 | Order number | "Specify a location" (JLCPCB): each board has a `JLCJLCJLCJLC` silkscreen mark on the bottom |
 
 The Gerbers include the board outline on its own layer (the carrier's window and corner radii are in Edge.Cuts) plus separate PTH and NPTH drill files.
@@ -244,7 +256,7 @@ J_MOD is the only SMD part, on the bottom. The two sockets are through-hole on t
 **Check the part rotation in JLCPCB's placement preview before paying.** KiCad and LCSC define rotation differently for some parts, most often the Kailh socket, the JST connector and SOT-23 parts:
 - the socket's two pads must cover the two copper pads next to the 3.05 mm holes;
 - the JST's 8 contacts sit toward the inside of the board, with the plug opening at the board edge;
-- on the HE module U1 and U2 are at **180°**: the single lead (pin 3, GND) must point toward the board's front edge, the two-lead side (pins 1 and 2) toward the connector. Both sensors face the same way, so if one looks wrong in the preview they both are.
+- on the HE module U1 and U2 are at **180°**: the single lead (pin 3, GND) must point toward the board's front edge (the `OSUPAD HE` text), the two-lead side (pins 1 and 2) toward the connector, inside the silkscreen square. JLCPCB's preview shows the bottom as seen from below; with the connector edge away from you, pin 1 (VCC) is then the **right-hand** lead of the pair, next to the silkscreen dot. A SOT-23 cannot be placed mirrored, so if the pins sit on the pads the orientation is right; if a sensor shows rotated 90° or 180° with its leads off the pads, rotate it in the preview. Both sensors face the same way, so if one looks wrong they both are.
 
 ### PCBWay
 
@@ -300,7 +312,7 @@ Key 1 and Key 2 must each register on their own.
 ```
 V1/
 ├── lib/                      project library shared by all boards
-│   ├── osupad.kicad_sym      R, C, SW_Push, DRV5055, Conn_01x08, Conn_01x14, TestPoint
+│   ├── osupad.kicad_sym      R, C, SW_Push, DRV5055, Conn_01x08, Conn_01x08_1MP, Conn_01x14, TestPoint, PWR_FLAG
 │   └── osupad.pretty/        0603 R/C, SOT-23, JST SH, pin socket, M2 hole, Kailh hot-swap, Hall switch positions, test pad
 ├── Carrier/                  controller_carrier_v1.kicad_pro / .kicad_sch / .kicad_pcb, production/
 ├── MX/                       mx_input_v1.kicad_pro / .kicad_sch / .kicad_pcb, production/
@@ -313,16 +325,17 @@ V1/
     ├── he_board.py              HE module: geometry, netlist, placement and its own DRC (no KiCad needed)
     ├── generate_he_gerbers.py   HE module: Gerbers, drills, job file, BOM, CPL
     ├── generate_he_kicad.py     HE module: .kicad_sch / .kicad_pcb / .kicad_pro
-    ├── verify_he_gerbers.py     HE module: rasterise the Gerbers, check the netlist for opens/shorts
+    ├── verify_he_gerbers.py     HE module: rasterise the Gerbers, check the netlist for opens/shorts/islands
     ├── render_he_preview.py     HE module: top/bottom artwork previews
+    ├── check_he_kicad.py        HE module: KiCad ERC + DRC (parity) through kicad-cli, optional
     └── strokefont.py            single-stroke vector font for generated silkscreen
 ```
 
-The shared library gained two footprints and one symbol for this module: `SW_MX_Hall_PlateMount_SolidCentre` (peg holes only, no stem hole), `TestPoint_Pad_1.0x1.0mm`, and the `TestPoint` symbol.
+The shared library gained two footprints and three symbols for this module: `SW_MX_Hall_PlateMount_SolidCentre` (peg holes only, no stem hole), `TestPoint_Pad_1.0x1.0mm`, and the `TestPoint`, `Conn_01x08_1MP` and `PWR_FLAG` symbols.
 
 Each `production/` folder contains `-gerbers.zip`, `-BOM-JLCPCB.csv`, `-CPL-JLCPCB.csv`, `-schematic.pdf`, `-pcb.pdf`, `.step` (for the case CAD), top/bottom renders, and the ERC/DRC reports.
 
 - **Regenerating:** `python3 hardware/pcb/V1/scripts/generate_boards.py` rebuilds the schematics and boards from the netlist in the script and overwrites any edits made in KiCad. After editing in KiCad, only run `export_production.py`. It exports every board by default. Pass board folders to export only those, e.g. `export_production.py Carrier`.
 - **Requirements:** KiCad 10 (`kicad-cli` and the `pcbnew` Python module) for MX and the carrier. The KiCad libraries don't need to be installed: everything used is in `lib/`.
 - **Library:** every part in `lib/` is OPad's own drawing under the repository's MIT license. The standard parts are written by `scripts/gen_library.py` (pads and pins from the component datasheets; outlines, silkscreen, courtyards and symbol graphics computed by the script); edit the tables there and re-run it rather than editing those files in KiCad. The Kailh hot-swap, Hall switch and test-pad footprints are hand-drawn. Footprints reference KiCad's installed 3D models by path (`${KICAD10_3DMODEL_DIR}`); the models themselves are not in this repository.
-- **The HE module is the exception:** it is generated and verified with plain Python (3.9+), no KiCad and no `pcbnew`; Pillow is needed only for `verify_he_gerbers.py` and `render_he_preview.py`. Its `production/` folder has no `drc.json`/`erc.json`/PDF/STEP, because those come from `kicad-cli`; run `export_production.py` under a KiCad install if you want them.
+- **The HE module is the exception:** it is generated and verified with plain Python (3.9+), no KiCad and no `pcbnew`; Pillow is needed only for `verify_he_gerbers.py` and `render_he_preview.py`, and `kicad-cli` only for the optional `check_he_kicad.py`. Its `production/` folder has no `drc.json`/`erc.json`/PDF/STEP, because those come from `kicad-cli`; run `export_production.py` under a KiCad install if you want them. CI does not run the HE scripts; run them by hand before ordering.

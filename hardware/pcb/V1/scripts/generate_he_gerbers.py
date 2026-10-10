@@ -336,17 +336,13 @@ def make_silk(layer, order_marker):
     if layer == "B":
         marker, mx, my = order_marker
         polys += strokefont.strokes(marker, mx, my, B.SILK_H, mirror=True, anchor="left")
-        # pin 1 of the connector, and the sensor outlines
-        for cx, cy in (B.KEY1, B.KEY2):
-            h = B.SENSOR_KEEPOUT / 2.0
-            polys.append([(cx - h, cy - h), (cx + h, cy - h),
-                          (cx + h, cy + h), (cx - h, cy + h), (cx - h, cy - h)])
-    else:
-        for cx, cy in (B.KEY1, B.KEY2):
-            polys.append([(cx - 7.0, cy - 7.0), (cx + 7.0, cy - 7.0),
-                          (cx + 7.0, cy + 7.0), (cx - 7.0, cy + 7.0), (cx - 7.0, cy - 7.0)])
-            polys.append([(cx - 1.2, cy), (cx + 1.2, cy)])
-            polys.append([(cx, cy - 1.2), (cx, cy + 1.2)])
+
+    shapes = B.bottom_silk_shapes() if layer == "B" else B.top_silk_shapes()
+    for shape in shapes:
+        if shape[0] == "line":
+            polys.append(shape[1])
+        else:
+            g.flash(g.circle(shape[2], None), shape[1])
 
     for poly in polys:
         g.stroke(d, poly)
@@ -476,8 +472,10 @@ def make_bom_pcbway():
     notes = {
         "J1": "BOTTOM side. Cable opening faces the nearest board edge; "
               "the 8 contacts sit inward, the two retention tabs toward the edge",
-        "U1": "BOTTOM side. SOT-23 pin 1 (VCC) is the lower-left lead seen from the bottom; "
-              "the part sits exactly on the key centre over solid FR-4",
+        "U1": "BOTTOM side, on the key centre over solid FR-4. Seen from the bottom with "
+              "the connector edge away from you: the two leads (pins 1-2) point to the "
+              "connector, the single lead (pin 3, GND) to the near edge, and pin 1 (VCC) is "
+              "the right-hand one of the two, next to the silkscreen dot",
         "U2": "BOTTOM side. Same orientation as U1",
     }
     for i, (value, refs, footprint, _lcsc, mpn, manufacturer, _d) in enumerate(B.bom_groups(), 1):

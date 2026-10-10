@@ -8,8 +8,9 @@ the two layers through the plated vias, and then checks that
 
   * every pad and via of a net lands in one single copper region (no opens), and
   * no copper region carries two different nets (no shorts), and
-  * the sensor keepouts contain no pour copper, and
-  * no copper sits over a non-plated hole.
+  * the sensor keepouts contain no pour copper,
+  * no copper sits over a non-plated hole, and
+  * there is no floating copper (every region holds a pad or a via).
 
 Run after generate_he_gerbers.py:
 
@@ -35,6 +36,7 @@ ZIP = os.path.join(V1, "HE", "production", "%s-gerbers.zip" % B.PROJECT)
 
 DPMM = 40                      # raster resolution, pixels per mm
 PAD = 2.0                      # mm of margin around the board
+ISLAND_MIN_MM2 = 0.01          # floating copper larger than this fails
 
 
 # ---------------------------------------------------------------------------
@@ -297,6 +299,33 @@ def main():
             if hit:
                 failures.append("NPTH d%.2f at (%.3f, %.3f) has copper in it on %s.Cu"
                                 % (dia, hx, hy, side))
+
+    # 5. no floating copper: every copper region must hold a pad or a via.
+    #    Slivers left between knockouts are what this catches (KiCad removes
+    #    them with its minimum zone width; this writer has no such pass).
+    for side in ("F", "B"):
+        r = rasters[side]
+        area = {}
+        where = {}
+        for yy, row in enumerate(rows[side]):
+            for start, end, name in row:
+                root = unions[side].find(name)
+                area[root] = area.get(root, 0) + (end - start + 1)
+                where.setdefault(root, ((start + end) / 2.0 / DPMM - PAD, (r.h - yy) / DPMM - PAD))
+        held = set()
+        for _ref, _num, pos, _size, _net, _tp in B.all_pads():
+            c = component_at(rows[side], unions[side], r, pos)
+            if c:
+                held.add(c)
+        for _net, pos in B.VIAS:
+            c = component_at(rows[side], unions[side], r, pos)
+            if c:
+                held.add(c)
+        for root, px_count in area.items():
+            mm2 = px_count / float(DPMM * DPMM)
+            if root not in held and mm2 > ISLAND_MIN_MM2:
+                failures.append("ISLAND: %.2f mm2 of floating copper on %s.Cu near (%.1f, %.1f)"
+                                % (mm2, side, where[root][0], where[root][1]))
 
     for line in failures:
         print("FAIL:", line)

@@ -6,8 +6,8 @@ Writes, from the tables below:
 - lib/osupad.pretty/{C_0603_1608Metric, R_0603_1608Metric, SOT-23,
   JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal,
   PinSocket_1x14_P2.54mm_Vertical, MountingHole_2.2mm_M2}.kicad_mod
-- lib/osupad.kicad_sym (every symbol: R, C, SW_Push, Conn_01x08, Conn_01x14,
-  DRV5055, TestPoint)
+- lib/osupad.kicad_sym (every symbol: R, C, SW_Push, Conn_01x08,
+  Conn_01x08_1MP, Conn_01x14, DRV5055, TestPoint, PWR_FLAG)
 
 The other footprints in lib/osupad.pretty (Kailh hot-swap, the Hall switch
 positions, the test pad) are drawn by hand and are not touched.
@@ -391,7 +391,34 @@ def connector(n):
     )
 
 
+def connector_mp(n):
+    """``connector(n)`` plus a passive MP pin for the shell / retention pads,
+    so a board whose MP pads sit on ground still matches its schematic."""
+    c = connector(n)
+    top = 2.54 * ((n - 1) // 2)
+    c.update(
+        name="Conn_01x%02d_1MP" % n, value="Conn_01x%02d_1MP" % n,
+        value_at=(0, top - 2.54 * (n + 1)),
+        descr="Single-row connector, %d pins, plus the mounting pads as pin MP" % n,
+        fp_filters="*_1x%02d-1MP_*" % n,
+        graphics=[rect(-1.27, top + 1.27, 1.27, top - 2.54 * (n + 1) + 1.27, fill="background")]
+        + [polyline([(-1.27, top - 2.54 * i), (-0.508, top - 2.54 * i)], 0.1524)
+           for i in range(n + 1)],
+        pins=c["pins"] + [pin("passive", -5.08, top - 2.54 * n, 0, 3.81, "MP", "MP")],
+    )
+    return c
+
+
 SYMBOLS = [
+    dict(
+        name="PWR_FLAG", ref="#FLG", value="PWR_FLAG", ref_at=(0, 1.905), value_at=(0, 3.81),
+        descr="Power flag: marks a net as driven, for ERC", keywords="power flag",
+        fp_filters=None,
+        pin_numbers_hidden=True, pin_names=(0, True), in_pos_files=None, in_bom=False,
+        graphics=[polyline([(0, 0), (0, 1.27), (-1.016, 1.905), (0, 2.54),
+                            (1.016, 1.905), (0, 1.27)])],
+        pins=[pin("power_out", 0, 0, 90, 0, "pwr", "1")],
+    ),
     dict(
         name="R", ref="R", value="R", ref_at=(2.032, 0, 90), value_at=(0, 0, 90),
         fp_at=(-1.778, 0, 90),
@@ -424,6 +451,7 @@ SYMBOLS = [
               pin("passive", 5.08, 0, 180, 2.54, "2", "2")],
     ),
     connector(8),
+    connector_mp(8),
     connector(14),
     dict(
         name="DRV5055", ref="U", value="DRV5055", ref_at=(0, 6.35), value_at=(0, -6.35),
