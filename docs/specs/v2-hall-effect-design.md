@@ -280,4 +280,10 @@ host config away from the HE pins (step 1).
 1. HE board V1.1: fix the SOT-23 footprint (swap pads 1 and 2), re-route
    U1/U2, add a pin-order self-test, regenerate, reorder. Nothing else on
    the HE side can be measured until a sensor reads ~1.65 V at rest.
+   Done and reviewed end to end on 2026-10-10 (pinout against TI's
+   datasheet, J1 against the built MX board, fab rules, KiCad ERC/DRC);
+   the review's findings and the data behind the sensor-variant choice
+   are in `hardware/pcb/V1/README.md`, "Hall Effect input module".
+   Expect the output to rise on a press (the Jade's N pole faces the
+   PCB) from about 1.8 V to about 2.4–2.6 V with A3.
 2. Sensor variant (A3 or other): decided by the bench once sensors work.
