@@ -1,9 +1,22 @@
 # Hall Effect module: how it works (DRAFT for discussion)
 
-**Status:** first draft, 2026-10-10. Nothing here is decided until we have
+**Status:** draft, 2026-10-10, updated after the first discussion. Nothing here is decided until we have
 talked it through. It turns `docs/specs/v2-rapid-trigger.md` (the plan
 written before the board existed) into a design for the board that now
 exists, and lists the questions that need an answer before the code.
+
+**Decided so far (2026-10-10, first discussion)**
+
+| # | Topic | Decision |
+|---|---|---|
+| — | Priorities | **1. latency, 2. accuracy.** Where they conflict, latency wins; accuracy wins over convenience (UI simplicity, CPU, flash wear). |
+| 1 | Switches | **Gateron Jade Silent** (magnetic, silent dampers). Curve and default span come from bench strokes of this switch. |
+| 3 | Calibration | **Explicit first, automatic later** (§4). |
+| 4 | Default | **Behaves like MX out of the box:** a fixed actuation point, rapid trigger off, actuating at bottom-out (§5; exact meaning to confirm). |
+| 5 | Settings | The most accurate option: **per key, separate press and release sensitivity** (§5). |
+| 6 | Plain mode | **Yes**, and it is the default (decision 4). |
+| 7 | LCD travel | **Only while testing or calibrating**, never in normal use. |
+| — | IRAM | The HE key path runs from IRAM like MX's; only the fitted module's path runs (§2). |
 
 **What exists today**
 
@@ -35,7 +48,7 @@ exists, and lists the questions that need an answer before the code.
 | Rule | What it means for HE |
 |---|---|
 | Latency always wins | Sample → position → decision → HID submit on core 0, at the keypad task's priority, from IRAM, no logging or allocation. Filtering may add at most one sample period. |
-| A keyboard with no software | **An HE pad must type out of the box, with no calibration step in an app.** Calibration has to be automatic (§4). The app only refines it. |
+| A keyboard with no software | **An HE pad must type out of the box, before any calibration:** rest is measured at boot and a bench-measured default span applies until the explicit calibration runs (§4). |
 | App and pad update independently | Old app + new firmware: HE types with its stored or default settings. New app + old firmware: no Rapid Trigger UI (capability flag absent). |
 | Touchscreen is the third button | Untouched: the HE path changes K1/K2 only. |
 | Never BOOT/RESET | Unchanged; the A/B rollback covers HE builds too. |
@@ -61,9 +74,22 @@ boot: board_detect_module()
   like a switch press. `t_us` is the edge time for MX and the sample time for
   HE, so the latency stats keep meaning "physical event → USB submit".
 - **Swapping modules** needs a power cycle (replug); detection is boot-only,
-  as today. Worth showing on the LCD if the ID changes at runtime? (Q8)
-- **IRAM**: the hall task and the engine join `firmware/main/linker.lf`, like
-  the key path did in `1a3c038`.
+  as today (open question, §10.3).
+- **IRAM.** The hall task, the travel conversion and the engine join
+  `firmware/main/linker.lf`, like the key path did in `1a3c038`.
+  - *Can the MX path be unloaded when HE is fitted?* Not usefully. IRAM
+    placement is fixed when the firmware is linked, not at runtime. Copying
+    code into executable heap at boot would mean turning off the S3's
+    memory protection (`CONFIG_ESP_SYSTEM_MEMPROT_FEATURE`) and fighting
+    Xtensa literal pools, all to free about **2.5 KB**: what the MX-only
+    code takes in IRAM today (`keypad.c` 2488 B + `board.c` key reads 64 B,
+    from `build/opad-firmware.map`; the USB part, about 6.5 KB, serves both
+    modules). IRAM in use is about 86 KB of the S3's 512 KB internal SRAM.
+  - What matters for latency is that the **unused backend does not run**:
+    with HE fitted, no key GPIO interrupt, no keypad task wake-ups, and the
+    pins left analog. With MX fitted, the ADC is never started and the hall
+    task never created. Both paths stay resident in IRAM, so whichever runs
+    never waits on a flash cache miss.
 
 ## 3. Sampling
 
@@ -76,11 +102,16 @@ boot: board_detect_module()
   same 3.3 V, so `key / id` cancels it. Caveat: the divider's ~32 kΩ source
   impedance is high for a scanned ADC (README, "Module ID"); it only needs a
   slow average, but the bench has to show it settles.
-- **Rate and frames.** Target ≥ 4 kHz per key. Sketch: 30 kHz total over the
-  three channels, an 8-conversion frame per DMA interrupt (~0.27 ms), each
-  frame averaged per channel (oversampling instead of a slow filter). The DMA
-  callback only notifies the hall task. Wake rate ~3.7 kHz on core 0, to
-  check against the USB task's budget.
+- **Rate and frames.** Target ≥ 4 kHz per key. The ID line changes only as
+  fast as the supply, so it does not need an equal share: the S3's pattern
+  table holds 24 entries (`SOC_ADC_PATT_LEN_MAX`), so a pattern of
+  K1,K2 × 11 then ID × 2 gives the keys ~92 % of the conversions. Sketch:
+  ~30 kHz total, a frame per DMA interrupt of ~0.25 ms, each frame averaged
+  per channel (oversampling instead of a slow filter, so no added delay
+  beyond the frame). The DMA callback only notifies the hall task. Wake rate
+  ~4 kHz on core 0, to check against the USB task's budget.
+- **If the bench shows the supply is quiet enough,** the ID channel is
+  dropped and the keys get every conversion (latency first).
 - **Attenuation** 12 dB (about 0–3.1 V). DRV5055 at 3.3 V sits at 1.65 V with
   no field and swings by its sensitivity times the field, either way
   depending on magnet polarity.
@@ -94,15 +125,27 @@ boot: board_detect_module()
   distance, so equal raw steps are not equal travel. Start with a per-switch
   lookup table (16 points, from bench strokes), scaled between `rest` and
   `bottom` (v2-rapid-trigger §4).
-- **Automatic calibration (rule 2):**
-  - `rest`: averaged at boot while both readings are steady, then tracked
-    slowly while a key is up and still (temperature drift). Never tracked
-    while pressed or in PLAYING.
-  - `bottom` and sign: learned from the deepest presses seen. The first full
-    press after first boot sets them; until then a conservative default span
-    from the bench measurements applies. Saved to NVS in IDLE only.
-  - The app's guided calibration ("leave the keys up", "press each fully 5
-    times") just runs the same capture deliberately.
+- **Phase 1: explicit calibration (decision 3).** Rule 2 still holds: an
+  uncalibrated HE pad types.
+  - `rest`: averaged at every boot while both readings are steady. It is
+    accepted only if it is close to the stored one, so a key held down
+    while plugging in cannot poison it; otherwise the stored value is used.
+    This part is automatic from the start: it is trivial and safe.
+  - `bottom` and sign: set by an **explicit calibration** ("leave both keys
+    up", then "press each key fully 5 times"), started from the app or
+    `opadctl calibrate`, with live travel on the LCD while it runs
+    (decision 7). Saved to NVS, in IDLE only.
+  - Before the first calibration: the default span for Gateron Jade Silent
+    measured on the bench, so a new pad types at once.
+- **Phase 2: automatic calibration,** once phase 1 is proven on the pad:
+  `rest` tracked slowly while a key is up and still (temperature drift),
+  `bottom` refined from the deepest presses seen. Never while pressed or in
+  PLAYING; NVS writes only in IDLE.
+- **Silent switches.** The Jade Silent's damper compresses, so "bottomed
+  out" is not one reading: it depends on how hard the key is hit. The
+  calibration takes the typical deepest reading of the 5 presses, not the
+  single deepest, and the bench measures how much it moves between a soft
+  and a hard press.
 - **Resolution worry.** A3 is the least sensitive variant (≈16 mV/mT, README
   "Sensor sensitivity"), and the sensor reads through the board. Because the
   field rises steeply only near the bottom, resolution near the top of the
@@ -114,8 +157,19 @@ boot: board_detect_module()
 The state machine in v2-rapid-trigger §3.3 as written (actuation point,
 press and release sensitivity, top and bottom dead zones, continuous mode),
 in pure C with host tests in `firmware/test/host`, plus replays of bench
-traces. Per key settings, defaults from §3.2 there until the bench says
-otherwise.
+traces.
+
+- **Two modes per key:** plain (fixed actuation point, release a little above
+  it as hysteresis) and rapid trigger.
+- **Default: plain, at bottom-out, like MX (decision 4).** "At bottom-out"
+  has to sit slightly above the calibrated bottom, because of the silent
+  damper (§4): if the threshold were the bottom itself, a soft press would
+  never reach it. The margin comes from the bench. Rapid trigger is off
+  until turned on in the app.
+- **Settings per key, press and release sensitivity separate (decision 5).**
+  The two sensors and magnets never match exactly, so per-key values are the
+  accurate choice. The app may offer a "link" toggle as a convenience; the
+  firmware always stores four values.
 
 ## 6. Protocol (additive, both directions compatible)
 
@@ -132,9 +186,12 @@ deferred during gameplay).
 
 ## 7. App
 
-- **Rapid Trigger page**, shown only when `input_module` is HE: actuation
-  point, press/release sensitivity (linked by default?), continuous toggle,
-  live travel bars with the markers, calibration wizard.
+- **Rapid Trigger page**, shown only when `input_module` is HE: mode
+  (plain / rapid trigger) per key, actuation point, press and release
+  sensitivity, continuous toggle, live travel bars with the markers,
+  calibration wizard.
+- **LCD:** live travel only during calibration and the HE board test
+  (decision 7).
 - **Board test for HE** (extends `opad-model/src/board_test.rs`): each sensor
   at rest within the expected band around 1.65 V (absent sensor or cut
   trace reads at a rail), reversed cable, spare lines.
@@ -153,28 +210,23 @@ point). Validation as v2-rapid-trigger §V2-8.
 |---|---|---|
 | 1 | HE pins left analog in today's firmware (no pull-ups, no key ISR) | no |
 | 2 | Bench: rest noise, slow full strokes per key, fast taps, ID-line ratio | **yes, ~5 min** |
-| 3 | Rapid-trigger engine + host tests | no |
+| 3 | Rapid-trigger engine (plain + RT) + host tests | no |
 | 4 | Key event sink refactor (MX behaves byte-for-byte as today, latency rechecked) | quick MX check |
-| 5 | Hall backend: sampling, automatic calibration → **HE pad types with defaults** | yes |
-| 6 | Protocol + daemon + app page + HE board test | yes |
+| 5 | Hall backend in IRAM: sampling, rest at boot, default span → **HE pad types, plain at bottom-out** | yes |
+| 6 | Explicit calibration + protocol + daemon + app page + HE board test | yes |
 | 7 | Latency and tapping validation, docs | yes |
+| 8 | Automatic calibration (phase 2) | yes |
 
-## 10. Questions for you
+## 10. Still open
 
-1. **Switches:** which magnetic switches are in the module (Gateron KS-20,
-   Lekker, Geon Raw HE...)? Their magnet and travel set the curve.
-2. **Sensor variant:** were A3 (the default) fitted? If the bench shows A3 is
-   too coarse, do we plan an A2 batch?
-3. **Calibration:** automatic as in §4, with the app's wizard only refining
-   it. OK, or do you want calibration to be an explicit step?
-4. **Defaults:** actuation 1.20 mm, sensitivity 0.15 mm, continuous on (spec
-   §3.2), or your own?
-5. **Settings UI:** one sensitivity for press and release, or separate?
-   Per-key settings or both keys together?
-6. **Plain mode:** should HE also offer "no rapid trigger, just an adjustable
-   actuation point"?
-7. **LCD:** show live key travel on the screen outside maps (spec V2-5 says
-   optional, later)?
-8. **Hot swap:** is "swap the module, replug" acceptable, or should the pad
-   notice a swap while running?
-9. **The supply reference (§3):** fine to sample the ID line continuously?
+1. **Default actuation (decision 4):** confirm "plain mode, actuating just
+   above bottom-out". An MX switch actually actuates around mid-travel
+   (~2 mm), so if "like MX" meant *that*, the default is mid-travel instead.
+2. **Sensor variant:** the BOM fits A3 (`hardware/pcb/V1/README.md`,
+   "Sensor sensitivity": the variant that cannot saturate, expected to move
+   to A2). The bench answers it: under ~0.5 V of swing from rest to bottom,
+   the next batch should be A2. Nothing to decide before the bench.
+3. **Hot swap:** the module is detected at boot only, so after swapping MX ↔
+   HE the pad needs a replug. Fine, or should it notice a swap live?
+4. **Supply reference (§3):** sample the ID line at ~8 % of the
+   conversions, and drop it if the bench shows the supply is quiet?
