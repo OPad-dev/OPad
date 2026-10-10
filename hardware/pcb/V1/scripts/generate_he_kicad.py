@@ -232,7 +232,11 @@ def place_footprint(part, nets):
               ("Datasheet", "", "B.Fab", 0.0),
               ("Description", part.description, "B.Fab", 0.0),
               ("LCSC", part.lcsc, "B.Fab", 0.0),
-              ("MPN", ("%s %s" % (part.manufacturer, part.mpn)).strip(), "B.Fab", 0.0)]
+              # MPN holds the bare part number and MFG the manufacturer: that
+              # is what AISLER reads from a native board file (and JLCPCB's
+              # BOM is written separately, so nothing else depends on it).
+              ("MPN", part.mpn, "B.Fab", 0.0),
+              ("MFG", part.manufacturer, "B.Fab", 0.0)]
     for name, value, layer, dy in fields:
         prop = ["property", '"%s"' % name, '"%s"' % esc(value),
                 ["at", "0", "%g" % dy, angle],
@@ -248,7 +252,7 @@ def place_footprint(part, nets):
     out.append(["sheetfile", '"%s.kicad_sch"' % B.PROJECT])
     attrs = ["attr", "smd"]
     if not part.assembled:
-        attrs += ["exclude_from_pos_files", "exclude_from_bom"]
+        attrs += ["exclude_from_pos_files", "exclude_from_bom", "dnp"]
     out.append(attrs)
     out.extend(body)
 
@@ -516,7 +520,7 @@ def mounting_hole(ref, x, y):
              ["at", "0", "3.15", "0"], ["layer", '"F.Fab"'],
              ["uuid", '"%s"' % uid("hole/val/" + ref)],
              ["effects", ["font", ["size", "1", "1"], ["thickness", "0.15"]]]],
-            ["attr", "board_only", "exclude_from_pos_files", "exclude_from_bom"],
+            ["attr", "board_only", "exclude_from_pos_files", "exclude_from_bom", "dnp"],
             ["pad", '""', "np_thru_hole", "circle",
              ["at", "0", "0"],
              ["size", "%g" % B.MOUNT_DRILL, "%g" % B.MOUNT_DRILL],
@@ -533,8 +537,10 @@ def switch_position(ref, x, y):
     node = place_footprint(part, {})
     node = drop(node, {"attr"})
     node = [c for c in node if not (_on_layer(c, "F.CrtYd") or _on_layer(c, "B.CrtYd"))]
+    # dnp as well: ODB++ then carries .no_pop, so an assembler's import does
+    # not list the switch positions and holes as parts
     node.append(["attr", "board_only", "exclude_from_pos_files", "exclude_from_bom",
-                 "allow_missing_courtyard"])
+                 "dnp", "allow_missing_courtyard"])
     return node
 
 
@@ -642,8 +648,8 @@ def write_schematic():
         out.append(prop("Datasheet", "", sx, sy, hide=True))
         out.append(prop("Description", part.description, sx, sy, hide=True))
         out.append(prop("LCSC", part.lcsc, sx, sy, hide=True))
-        out.append(prop("MPN", ("%s %s" % (part.manufacturer, part.mpn)).strip(),
-                        sx, sy, hide=True))
+        out.append(prop("MPN", part.mpn, sx, sy, hide=True))
+        out.append(prop("MFG", part.manufacturer, sx, sy, hide=True))
         for number in pins:
             out.append('\t\t(pin "%s" (uuid "%s"))\n'
                        % (number, uid("pin/%s/%s" % (part.ref, number))))

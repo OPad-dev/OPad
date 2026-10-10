@@ -258,6 +258,10 @@ J_MOD is the only SMD part, on the bottom. The two sockets are through-hole on t
 - the JST's 8 contacts sit toward the inside of the board, with the plug opening at the board edge;
 - on the HE module U1 and U2 are at **180°**: the single lead (pin 3, GND) must point toward the board's front edge (the `OSUPAD HE` text), the two-lead side (pins 1 and 2) toward the connector, inside the silkscreen square. JLCPCB's preview shows the bottom as seen from below; with the connector edge away from you, pin 1 (VCC) is then the **right-hand** lead of the pair, next to the silkscreen dot. A SOT-23 cannot be placed mirrored, so if the pins sit on the pads the orientation is right; if a sensor shows rotated 90° or 180° with its leads off the pads, rotate it in the preview. Both sensors face the same way, so if one looks wrong they both are.
 
+### AISLER (HE module)
+
+AISLER reads the parts from a native board file or ODB++ and wants no BOM or centroid file. `scripts/export_he_aisler.py` writes `HE/production/aisler/`: `he_input_v1.kicad_pcb` with the zones filled and saved by KiCad (upload this single file), `he_input_v1-odb.zip` (the same board as ODB++, the alternative), the schematic PDF, a generic BOM for checking by eye, a `README.txt` with the order options, and `he_input_v1-aisler.zip` holding all of them. Every footprint carries `MPN` (bare part number, the field AISLER matches on), `MFG` and `LCSC`; TP1–TP3, the holes and the switch positions are excluded from the BOM and marked DNP so they do not show up as parts. Order as 2 layers, 1.6 mm, HASL or ENIG; the via ring is 0.2 mm, which their HASL rules need.
+
 ### PCBWay
 
 Use the files in `production/pcbway/`, not the JLCPCB ones:
@@ -328,12 +332,13 @@ V1/
     ├── verify_he_gerbers.py     HE module: rasterise the Gerbers, check the netlist for opens/shorts/islands
     ├── render_he_preview.py     HE module: top/bottom artwork previews
     ├── check_he_kicad.py        HE module: KiCad ERC + DRC (parity) through kicad-cli, optional
+    ├── export_he_aisler.py      HE module: filled native board + ODB++ for AISLER (reads parts from the board)
     └── strokefont.py            single-stroke vector font for generated silkscreen
 ```
 
 The shared library gained two footprints and three symbols for this module: `SW_MX_Hall_PlateMount_SolidCentre` (peg holes only, no stem hole), `TestPoint_Pad_1.0x1.0mm`, and the `TestPoint`, `Conn_01x08_1MP` and `PWR_FLAG` symbols.
 
-Each `production/` folder contains `-gerbers.zip`, `-BOM-JLCPCB.csv`, `-CPL-JLCPCB.csv`, `-schematic.pdf`, `-pcb.pdf`, `.step` (for the case CAD), top/bottom renders, and the ERC/DRC reports.
+Each `production/` folder contains `-gerbers.zip`, `-BOM-JLCPCB.csv`, `-CPL-JLCPCB.csv`, `-schematic.pdf`, `-pcb.pdf`, `.step` (for the case CAD), top/bottom renders, and the ERC/DRC reports. `HE/production/aisler/` holds the AISLER upload (see Ordering).
 
 - **Regenerating:** `python3 hardware/pcb/V1/scripts/generate_boards.py` rebuilds the schematics and boards from the netlist in the script and overwrites any edits made in KiCad. After editing in KiCad, only run `export_production.py`. It exports every board by default. Pass board folders to export only those, e.g. `export_production.py Carrier`.
 - **Requirements:** KiCad 10 (`kicad-cli` and the `pcbnew` Python module) for MX and the carrier. The KiCad libraries don't need to be installed: everything used is in `lib/`.

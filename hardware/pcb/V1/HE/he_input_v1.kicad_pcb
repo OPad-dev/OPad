@@ -119,11 +119,24 @@
 				(justify mirror)
 			)
 		)
-		(property "MPN" "JST SM08B-SRSS-TB(LF)(SN)"
+		(property "MPN" "SM08B-SRSS-TB(LF)(SN)"
 			(at 0 0 180)
 			(layer "B.Fab")
 			(hide yes)
 			(uuid "5ee11490-4970-51de-a5dc-f1a16da0c057")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(justify mirror)
+			)
+		)
+		(property "MFG" "JST"
+			(at 0 0 180)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "4939c4a2-c122-54aa-ab9a-def5539a38ae")
 			(effects
 				(font
 					(size 1 1)
@@ -336,11 +349,24 @@
 				(justify mirror)
 			)
 		)
-		(property "MPN" "Texas Instruments DRV5055A3QDBZR"
+		(property "MPN" "DRV5055A3QDBZR"
 			(at 0 0 0)
 			(layer "B.Fab")
 			(hide yes)
 			(uuid "3de0bfd5-542a-5c32-9dd0-6595f9d39280")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(justify mirror)
+			)
+		)
+		(property "MFG" "Texas Instruments"
+			(at 0 0 0)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "ac58a035-21e3-5672-8424-b50472171724")
 			(effects
 				(font
 					(size 1 1)
@@ -490,11 +516,24 @@
 				(justify mirror)
 			)
 		)
-		(property "MPN" "Texas Instruments DRV5055A3QDBZR"
+		(property "MPN" "DRV5055A3QDBZR"
 			(at 0 0 0)
 			(layer "B.Fab")
 			(hide yes)
 			(uuid "830883ac-9151-50d9-ae78-2c302d37d6de")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(justify mirror)
+			)
+		)
+		(property "MFG" "Texas Instruments"
+			(at 0 0 0)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "73d9124e-8024-5203-bb15-242ed0b1a4c1")
 			(effects
 				(font
 					(size 1 1)
@@ -644,11 +683,24 @@
 				(justify mirror)
 			)
 		)
-		(property "MPN" "YAGEO CC0603KRX7R9BB104"
+		(property "MPN" "CC0603KRX7R9BB104"
 			(at 0 0 180)
 			(layer "B.Fab")
 			(hide yes)
 			(uuid "60c99003-40f1-53d9-800f-014ec8a2de26")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(justify mirror)
+			)
+		)
+		(property "MFG" "YAGEO"
+			(at 0 0 180)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "d77f298e-2fd4-5798-a418-978ad9107aa0")
 			(effects
 				(font
 					(size 1 1)
@@ -788,11 +840,24 @@
 				(justify mirror)
 			)
 		)
-		(property "MPN" "YAGEO CC0603KRX7R9BB104"
+		(property "MPN" "CC0603KRX7R9BB104"
 			(at 0 0 180)
 			(layer "B.Fab")
 			(hide yes)
 			(uuid "5a975068-2ff8-5d7a-b842-fc71ccb1c049")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(justify mirror)
+			)
+		)
+		(property "MFG" "YAGEO"
+			(at 0 0 180)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "cdcc7353-0cd1-50cc-936f-eef175ed7a42")
 			(effects
 				(font
 					(size 1 1)
@@ -932,11 +997,24 @@
 				(justify mirror)
 			)
 		)
-		(property "MPN" "YAGEO CC0603KRX7R9BB104"
+		(property "MPN" "CC0603KRX7R9BB104"
 			(at 0 0 180)
 			(layer "B.Fab")
 			(hide yes)
 			(uuid "557bdb51-71a8-5e93-9ea2-6f0b82c6ee0d")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(justify mirror)
+			)
+		)
+		(property "MFG" "YAGEO"
+			(at 0 0 180)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "959ccfc9-53a6-512d-8517-3da9786a9940")
 			(effects
 				(font
 					(size 1 1)
@@ -1076,11 +1154,24 @@
 				(justify mirror)
 			)
 		)
-		(property "MPN" "UNI-ROYAL 0603WAF1003T5E"
+		(property "MPN" "0603WAF1003T5E"
 			(at 0 0 180)
 			(layer "B.Fab")
 			(hide yes)
 			(uuid "f4594ed2-d571-5346-b85f-ea99d37f5599")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(justify mirror)
+			)
+		)
+		(property "MFG" "UNI-ROYAL"
+			(at 0 0 180)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "ac88e19e-8afb-580f-a9c5-93984d1b7f27")
 			(effects
 				(font
 					(size 1 1)
@@ -1220,11 +1311,24 @@
 				(justify mirror)
 			)
 		)
-		(property "MPN" "UNI-ROYAL 0603WAF4702T5E"
+		(property "MPN" "0603WAF4702T5E"
 			(at 0 0 180)
 			(layer "B.Fab")
 			(hide yes)
 			(uuid "a4d118d7-1663-54d0-9d52-34bcce7e3feb")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(justify mirror)
+			)
+		)
+		(property "MFG" "UNI-ROYAL"
+			(at 0 0 180)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "6504bd1d-da1c-5980-a702-78ed6f495332")
 			(effects
 				(font
 					(size 1 1)
@@ -1377,9 +1481,22 @@
 				(justify mirror)
 			)
 		)
+		(property "MFG" ""
+			(at 0 0 180)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "f14f7a64-78b3-59f3-bda3-5ef1c2a74292")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(justify mirror)
+			)
+		)
 		(path "/535687a9-4236-5a33-917f-0ca05e31bfd4")
 		(sheetfile "he_input_v1.kicad_sch")
-		(attr smd exclude_from_pos_files exclude_from_bom)
+		(attr smd exclude_from_pos_files exclude_from_bom dnp)
 		(descr "1.0 x 1.0 mm SMD probe pad. Bare copper with a solder mask opening and no paste: nothing is assembled on it, so it is excluded from the position files.")
 		(tags "test point probe pad")
 		(fp_rect
@@ -1495,9 +1612,22 @@
 				(justify mirror)
 			)
 		)
+		(property "MFG" ""
+			(at 0 0 180)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "00094132-7d77-57b2-b778-bd73833cacd6")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(justify mirror)
+			)
+		)
 		(path "/1e0018f2-b026-5ea3-a500-dc3e25f407bb")
 		(sheetfile "he_input_v1.kicad_sch")
-		(attr smd exclude_from_pos_files exclude_from_bom)
+		(attr smd exclude_from_pos_files exclude_from_bom dnp)
 		(descr "1.0 x 1.0 mm SMD probe pad. Bare copper with a solder mask opening and no paste: nothing is assembled on it, so it is excluded from the position files.")
 		(tags "test point probe pad")
 		(fp_rect
@@ -1613,9 +1743,22 @@
 				(justify mirror)
 			)
 		)
+		(property "MFG" ""
+			(at 0 0 180)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "b816d8da-642a-581d-b434-3f35fffa9ee7")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(justify mirror)
+			)
+		)
 		(path "/89c3127c-b2c4-5e61-a12f-aaa63042c868")
 		(sheetfile "he_input_v1.kicad_sch")
-		(attr smd exclude_from_pos_files exclude_from_bom)
+		(attr smd exclude_from_pos_files exclude_from_bom dnp)
 		(descr "1.0 x 1.0 mm SMD probe pad. Bare copper with a solder mask opening and no paste: nothing is assembled on it, so it is excluded from the position files.")
 		(tags "test point probe pad")
 		(fp_rect
@@ -1677,7 +1820,7 @@
 				)
 			)
 		)
-		(attr board_only exclude_from_pos_files exclude_from_bom)
+		(attr board_only exclude_from_pos_files exclude_from_bom dnp)
 		(pad "" np_thru_hole circle
 			(at 0 0)
 			(size 2.2 2.2)
@@ -1714,7 +1857,7 @@
 				)
 			)
 		)
-		(attr board_only exclude_from_pos_files exclude_from_bom)
+		(attr board_only exclude_from_pos_files exclude_from_bom dnp)
 		(pad "" np_thru_hole circle
 			(at 0 0)
 			(size 2.2 2.2)
@@ -1805,6 +1948,19 @@
 				(justify mirror)
 			)
 		)
+		(property "MFG" ""
+			(at 0 0 180)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "315fcfb2-428f-51f2-bece-a10acdd7667e")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(justify mirror)
+			)
+		)
 		(path "/82b79fcc-0aae-546b-b73b-4786b7d5a94f")
 		(sheetfile "he_input_v1.kicad_sch")
 		(descr "MX magnetic switch position for Hall Effect keypads (Gateron KS-20, Magnetic Jade, Wooting Lekker, Geon Raw HE), plate mounted 5.0 mm above the PCB. Two 1.75 mm side alignment peg holes only: unlike SW_MX_Hall_PlateMount there is NO 4.0 mm centre hole, because the linear Hall sensor is mounted on the bottom copper exactly at the key centre and needs solid FR-4 under the stem magnet. Keep both copper layers clear over the centre so the magnetic flux is not damped by eddy currents.")
@@ -1871,7 +2027,7 @@
 			(uuid "a5b6c7d8-e9fa-40b1-c223-e0f1a2b3c4db")
 			(uuid "5d85931f-2776-586e-8b9f-96721a5e0611")
 		)
-		(attr board_only exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
+		(attr board_only exclude_from_pos_files exclude_from_bom dnp allow_missing_courtyard)
 	)
 	(footprint "osupad:SW_MX_Hall_PlateMount_SolidCentre"
 		(layer "B.Cu")
@@ -1955,6 +2111,19 @@
 				(justify mirror)
 			)
 		)
+		(property "MFG" ""
+			(at 0 0 180)
+			(layer "B.Fab")
+			(hide yes)
+			(uuid "405b8646-dd21-57dc-b02a-e823ea4c7c06")
+			(effects
+				(font
+					(size 1 1)
+					(thickness 0.15)
+				)
+				(justify mirror)
+			)
+		)
 		(path "/74b88d12-bbcb-589b-a5fc-e0c234d65c6f")
 		(sheetfile "he_input_v1.kicad_sch")
 		(descr "MX magnetic switch position for Hall Effect keypads (Gateron KS-20, Magnetic Jade, Wooting Lekker, Geon Raw HE), plate mounted 5.0 mm above the PCB. Two 1.75 mm side alignment peg holes only: unlike SW_MX_Hall_PlateMount there is NO 4.0 mm centre hole, because the linear Hall sensor is mounted on the bottom copper exactly at the key centre and needs solid FR-4 under the stem magnet. Keep both copper layers clear over the centre so the magnetic flux is not damped by eddy currents.")
@@ -2021,7 +2190,7 @@
 			(uuid "a5b6c7d8-e9fa-40b1-c223-e0f1a2b3c4db")
 			(uuid "ea0adde6-7571-5ba2-88c1-3d003533af03")
 		)
-		(attr board_only exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
+		(attr board_only exclude_from_pos_files exclude_from_bom dnp allow_missing_courtyard)
 	)
 	(gr_line
 		(start 113.5 93)
