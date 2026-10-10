@@ -1,7 +1,7 @@
 {
     "$schema": "https://schemas.kicad.org/erc.v1.json",
     "coordinate_units": "mm",
-    "date": "2026-09-14T20:51:11",
+    "date": "2026-10-10T17:51:01",
     "ignored_checks": [
         {
             "description": "Global label only appears once in the schematic",
@@ -30,7 +30,128 @@
         {
             "path": "/",
             "uuid_path": "/5a671330-cedf-477e-a8c5-11a24db8fd6a",
-            "violations": []
+            "violations": [
+                {
+                    "description": "Symbol 'Conn_01x08' doesn't match copy in library 'osupad'",
+                    "items": [
+                        {
+                            "description": "Symbol J1 [Conn_01x08]",
+                            "pos": {
+                                "x": 0.6096,
+                                "y": 0.6096
+                            },
+                            "uuid": "626866bc-014d-4fdf-829d-3a348412f707"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_mismatch"
+                },
+                {
+                    "description": "Symbol 'R' doesn't match copy in library 'osupad'",
+                    "items": [
+                        {
+                            "description": "Symbol R1 [R]",
+                            "pos": {
+                                "x": 1.0668,
+                                "y": 0.508
+                            },
+                            "uuid": "47c25be4-f450-45b6-b3cf-2cd258441d12"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_mismatch"
+                },
+                {
+                    "description": "Symbol 'R' doesn't match copy in library 'osupad'",
+                    "items": [
+                        {
+                            "description": "Symbol R2 [R]",
+                            "pos": {
+                                "x": 1.0668,
+                                "y": 0.762
+                            },
+                            "uuid": "943a3246-daa4-4d1c-a109-42271c6076d7"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_mismatch"
+                },
+                {
+                    "description": "Symbol 'SW_Push' doesn't match copy in library 'osupad'",
+                    "items": [
+                        {
+                            "description": "Symbol SW1 [SW_Push]",
+                            "pos": {
+                                "x": 1.3208,
+                                "y": 0.508
+                            },
+                            "uuid": "7e962c98-f3e2-49b3-a19d-83f6877d81c8"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_mismatch"
+                },
+                {
+                    "description": "Symbol 'SW_Push' doesn't match copy in library 'osupad'",
+                    "items": [
+                        {
+                            "description": "Symbol SW2 [SW_Push]",
+                            "pos": {
+                                "x": 1.3208,
+                                "y": 0.762
+                            },
+                            "uuid": "e9891d3e-5d4b-4a37-a7f0-ba140e9c67b8"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_mismatch"
+                },
+                {
+                    "description": "Symbol 'R' doesn't match copy in library 'osupad'",
+                    "items": [
+                        {
+                            "description": "Symbol R3 [R]",
+                            "pos": {
+                                "x": 1.5748,
+                                "y": 0.508
+                            },
+                            "uuid": "d0e853e7-b050-43cd-b7a4-968f9ac8a29c"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_mismatch"
+                },
+                {
+                    "description": "Symbol 'R' doesn't match copy in library 'osupad'",
+                    "items": [
+                        {
+                            "description": "Symbol R4 [R]",
+                            "pos": {
+                                "x": 1.5748,
+                                "y": 0.762
+                            },
+                            "uuid": "53156a1c-59c4-457e-aa12-fcf455073e82"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_mismatch"
+                },
+                {
+                    "description": "Symbol 'C' doesn't match copy in library 'osupad'",
+                    "items": [
+                        {
+                            "description": "Symbol C1 [C]",
+                            "pos": {
+                                "x": 1.8288,
+                                "y": 0.635
+                            },
+                            "uuid": "31c6b08e-40ea-42ad-9ea6-dcb3fa96385a"
+                        }
+                    ],
+                    "severity": "warning",
+                    "type": "lib_symbol_mismatch"
+                }
+            ]
         }
     ],
     "source": "mx_input_v1.kicad_sch"

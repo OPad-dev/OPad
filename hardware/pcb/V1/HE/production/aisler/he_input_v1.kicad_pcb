@@ -123,7 +123,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "042cdb34-f616-4fee-b830-f33f78f1de2a")
+			(uuid "0f305f8c-f3bd-4ecd-9f12-b6bc2281d592")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -134,7 +134,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "6b771eaf-8186-48a4-8810-47454942cf5b")
+			(uuid "2536a8ae-a1ae-4dc9-8e5b-b0e0ff36a94d")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -184,7 +184,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "6b19a400-8fa2-444e-93cf-7c6ac22efaff")
+			(uuid "7250bfe1-e5bd-447c-97a3-8b39b932d132")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -195,7 +195,7 @@
 			(at 0 0 0)
 			(layer "F.Fab")
 			(hide yes)
-			(uuid "1909a2c6-e291-485c-97bc-ebb93bd69ef2")
+			(uuid "101395e4-2609-4c0b-a17a-1fd00f4b0c82")
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2582,18 +2582,6 @@
 		(effects
 			(font
 				(size 0.7 0.7)
-				(thickness 0.15)
-			)
-			(justify mirror)
-		)
-	)
-	(gr_text "JLCJLCJLCJLC"
-		(at 124.614 70.9 0)
-		(layer "B.SilkS")
-		(uuid "8d759782-e2e8-55ff-92b8-20c28fdf969a")
-		(effects
-			(font
-				(size 0.8 0.8)
 				(thickness 0.15)
 			)
 			(justify mirror)

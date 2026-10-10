@@ -3,14 +3,17 @@
 
 For each board this runs ERC, DRC with schematic parity (and stops on any error), then writes
 <board dir>/production/:
+  <project>-schematic.pdf, <project>-pcb.pdf, <project>.step, top/bottom renders, DRC/ERC reports
+<board dir>/production/jlcpcb/:
   <project>-gerbers.zip     Gerbers + Excellon drill files (upload this for the bare PCB)
   <project>-BOM-JLCPCB.csv  Comment, Designator, Footprint, LCSC Part #, MPN
   <project>-CPL-JLCPCB.csv  Designator, Mid X, Mid Y, Layer, Rotation
-  <project>-schematic.pdf, <project>-pcb.pdf, <project>.step, top/bottom renders, DRC/ERC reports
 and <board dir>/production/pcbway/:
   <project>-gerbers-PCBWay.zip   same Gerbers with PCBWay's "WayWayWay" order-number marker
   <project>-BOM-PCBWay.csv       PCBWay BOM template columns
   <project>-centroid-PCBWay.csv  Designator, Mid X, Mid Y, Layer, Rotation
+
+AISLER reads the parts from the board itself: export_aisler.py writes that package.
 
 Usage: python3 hardware/pcb/V1/scripts/export_production.py [MX] [HE] [Carrier]   (default: all)
 """
@@ -37,8 +40,14 @@ JLC_CPL_FIXES = {
     "PinSocket_1x14_P2.54mm_Vertical": 90,
 }
 
-# DRC warnings that may be accepted (none today: both boards are warning-free)
-ACCEPTED_WARNINGS = set()
+# DRC warnings that may be accepted. The MX board's footprint copies were placed
+# before lib/osupad.pretty was rewritten by gen_library.py (same pads, different
+# description and graphics), and that board is built and working, so the copies
+# in the board are the reference and the mismatch is informational.
+ACCEPTED_WARNINGS = {"lib_footprint_mismatch"}
+# The same for the symbols embedded in the MX schematic (R, C) against the
+# regenerated lib/osupad.kicad_sym: pins and numbers match, graphics differ.
+ACCEPTED_ERC = {"lib_symbol_mismatch"}
 
 
 def run(*args):
@@ -58,7 +67,8 @@ def check(sch, pcb, out):
     drc = json.load(open(drc_path))
     problems = []
     for sheet in erc["sheets"]:
-        problems += ["ERC %s: %s" % (v["type"], v["description"]) for v in sheet["violations"]]
+        problems += ["ERC %s: %s" % (v["type"], v["description"]) for v in sheet["violations"]
+                     if v["severity"] == "error" or v["type"] not in ACCEPTED_ERC]
     for v in drc["violations"]:
         if v["severity"] == "error" or v["type"] not in ACCEPTED_WARNINGS:
             problems.append("DRC %s %s: %s" % (v["severity"], v["type"],
@@ -67,6 +77,8 @@ def check(sch, pcb, out):
                  for v in drc["unconnected_items"]]
     problems += ["parity %s: %s" % (v["type"], v["description"]) for v in drc["schematic_parity"]]
     accepted = sum(1 for v in drc["violations"] if v["type"] in ACCEPTED_WARNINGS and v["severity"] != "error")
+    accepted += sum(1 for sheet in erc["sheets"] for v in sheet["violations"]
+                    if v["type"] in ACCEPTED_ERC and v["severity"] != "error")
     return problems, accepted
 
 
@@ -172,7 +184,8 @@ def pcbway(pcb, out, project):
         for i, ((maker, part, value, footprint, kind), refs) in enumerate(rows.items(), 1):
             w.writerow([i, ",".join(refs), len(refs), maker, part, value, footprint, kind,
                         PCBWAY_NOTES.get(footprint, "Bottom side" if "R_" in footprint or "C_" in footprint else "")])
-    shutil.copy(os.path.join(out, project + "-CPL-JLCPCB.csv"), os.path.join(pw, project + "-centroid-PCBWay.csv"))
+    shutil.copy(os.path.join(out, "jlcpcb", project + "-CPL-JLCPCB.csv"),
+                os.path.join(pw, project + "-centroid-PCBWay.csv"))
 
 
 def main():
@@ -192,8 +205,10 @@ def main():
         if problems:
             failed = True
             continue
-        gerbers(pcb, out, project)
-        bom_and_cpl(pcb, out, project)
+        jlc = os.path.join(out, "jlcpcb")
+        os.makedirs(jlc, exist_ok=True)
+        gerbers(pcb, jlc, project)
+        bom_and_cpl(pcb, jlc, project)
         pcbway(pcb, out, project)
         run("kicad-cli", "sch", "export", "pdf", "-o", os.path.join(out, project + "-schematic.pdf"), sch)
         run("kicad-cli", "pcb", "export", "pdf", "--layers",

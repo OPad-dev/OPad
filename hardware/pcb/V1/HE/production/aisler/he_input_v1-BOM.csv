@@ -1,6 +1,6 @@
-Reference,Quantity,Value,Footprint,MFG,MPN,LCSC,Description
-"J1",1,MODULE,JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal,JST,SM08B-SRSS-TB(LF)(SN),C160407,"Module connector to controller carrier (JST SH 8-pin, horizontal)"
-"U1,U2",2,DRV5055A3,SOT-23,Texas Instruments,DRV5055A3QDBZR,C266128,"Ratiometric linear Hall effect sensor, key 1 (left)"
-"C1,C2,C3",3,100nF,C_0603_1608Metric,YAGEO,CC0603KRX7R9BB104,C14663,"3V3 bulk decoupling at the module connector"
-"R1",1,100k,R_0603_1608Metric,UNI-ROYAL,0603WAF1003T5E,C25803,"Module ID divider, top (HE V1 = 100k/47k = 1.06 V)"
-"R2",1,47k,R_0603_1608Metric,UNI-ROYAL,0603WAF4702T5E,C25819,"Module ID divider, bottom"
+Reference,Quantity,Value,Footprint,MFG,MPN,LCSC,Side,Type
+"U1,U2",2,DRV5055A3,SOT-23,Texas Instruments,DRV5055A3QDBZR,C266128,bottom,SMD
+"C2,C3,C1",3,100nF,C_0603_1608Metric,YAGEO,CC0603KRX7R9BB104,C14663,bottom,SMD
+"J1",1,MODULE,JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal,JST,SM08B-SRSS-TB(LF)(SN),C160407,bottom,SMD
+"R1",1,100k,R_0603_1608Metric,UNI-ROYAL,0603WAF1003T5E,C25803,bottom,SMD
+"R2",1,47k,R_0603_1608Metric,UNI-ROYAL,0603WAF4702T5E,C25819,bottom,SMD

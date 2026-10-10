@@ -2,7 +2,9 @@
 """Fabrication data for the osuPad Hall Effect input module (he_input_v1).
 
 Writes RS-274X Gerbers, Excellon drills, a Gerber job file, and the JLCPCB and
-PCBWay BOM / centroid files straight from ``he_board.py``.  No KiCad install is
+PCBWay BOM / centroid files straight from ``he_board.py``, one folder per fab:
+``HE/production/jlcpcb/`` and ``HE/production/pcbway/`` (AISLER's package comes
+from ``export_aisler.py``).  No KiCad install is
 required; ``he_board.check()`` runs first and the writer refuses to emit
 anything if the board does not pass its own design rules.
 
@@ -30,6 +32,7 @@ import strokefont
 
 V1 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(V1, "HE", "production")
+JLC_OUT = os.path.join(OUT, "jlcpcb")
 PCBWAY_OUT = os.path.join(OUT, "pcbway")
 
 SOFTWARE = "osuPad he_board.py"
@@ -550,15 +553,15 @@ def main():
         raise SystemExit("refusing to write fabrication data: %d selftest problem(s), "
                          "%d rule violation(s)" % (len(problems), len(errors)))
 
-    os.makedirs(OUT, exist_ok=True)
+    os.makedirs(JLC_OUT, exist_ok=True)
     os.makedirs(PCBWAY_OUT, exist_ok=True)
 
-    jlc_zip = build(OUT, B.JLC_MARKER, "")
+    jlc_zip = build(JLC_OUT, B.JLC_MARKER, "")
     way_zip = build(PCBWAY_OUT, B.PCBWAY_MARKER, "-PCBWay")
 
     files = [
-        (os.path.join(OUT, "%s-BOM-JLCPCB.csv" % B.PROJECT), make_bom_jlcpcb()),
-        (os.path.join(OUT, "%s-CPL-JLCPCB.csv" % B.PROJECT), make_cpl()),
+        (os.path.join(JLC_OUT, "%s-BOM-JLCPCB.csv" % B.PROJECT), make_bom_jlcpcb()),
+        (os.path.join(JLC_OUT, "%s-CPL-JLCPCB.csv" % B.PROJECT), make_cpl()),
         (os.path.join(PCBWAY_OUT, "%s-BOM-PCBWay.csv" % B.PROJECT), make_bom_pcbway()),
         (os.path.join(PCBWAY_OUT, "%s-centroid-PCBWay.csv" % B.PROJECT), make_cpl()),
     ]

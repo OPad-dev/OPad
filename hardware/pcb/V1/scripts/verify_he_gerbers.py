@@ -32,7 +32,7 @@ except ImportError:                                      # pragma: no cover
 import he_board as B
 
 V1 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ZIP = os.path.join(V1, "HE", "production", "%s-gerbers.zip" % B.PROJECT)
+ZIP = os.path.join(V1, "HE", "production", "jlcpcb", "%s-gerbers.zip" % B.PROJECT)
 
 DPMM = 40                      # raster resolution, pixels per mm
 PAD = 2.0                      # mm of margin around the board

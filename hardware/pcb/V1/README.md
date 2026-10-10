@@ -13,7 +13,9 @@ Modular hardware ecosystem joined by one 8-wire JST-SH cable:
 
 The input module is **swappable**: both the MX mechanical module and the Hall-effect (rapid trigger) module use the same outline, mounting holes, connector position and pinout, and plug into the same carrier and cable. The module reports which kind it is through an ID voltage on the connector (0.30 V for MX, 1.06 V for Hall Effect).
 
-Status: the MX module and the carrier pass ERC, DRC (zero errors, zero warnings) and schematic parity in KiCad 10.0.6. The Hall Effect module is generated and checked by its own toolchain (`scripts/he_board.py`, see below), which needs no KiCad install; it reports zero rule violations, its Gerbers verify clean against the netlist, and the generated KiCad files pass ERC and DRC with schematic parity in KiCad 10.0.6 (`scripts/check_he_kicad.py`; only "footprint does not match library" warnings remain, see Toolchain). Production files are in each board's `production/` folder.
+Production files live in each board's `production/` folder, one subfolder per fab: `jlcpcb/` (Gerbers, BOM, CPL), `pcbway/` (Gerbers with their order marker, BOM, centroid) and `aisler/` (native KiCad board and ODB++ with the parts in them). Renders, PDFs, STEP and the ERC/DRC reports sit next to them.
+
+Status: the MX module and the carrier pass ERC, DRC and schematic parity in KiCad 10.0.6 with zero errors; the carrier has zero warnings, the MX module only "does not match copy in library" warnings, because its footprint and symbol copies were placed before `lib/` was rewritten by `gen_library.py` (same pads and pins; that board is built and working, so `export_production.py` accepts them). The Hall Effect module is generated and checked by its own toolchain (`scripts/he_board.py`, see below), which needs no KiCad install; it reports zero rule violations, its Gerbers verify clean against the netlist, and the generated KiCad files pass ERC and DRC with schematic parity in KiCad 10.0.6 (`scripts/check_he_kicad.py`; only "footprint does not match library" warnings remain, see Toolchain).
 
 ---
 
@@ -197,7 +199,7 @@ Running `scripts/generate_boards.py` under KiCad's Python regenerates MX and the
 
 ### Bare PCBs (JLCPCB or PCBWay)
 
-Upload `production/<board>-gerbers.zip`. Both boards use standard options:
+Upload `production/jlcpcb/<board>-gerbers.zip` (JLCPCB) or `production/pcbway/<board>-gerbers-PCBWay.zip` (PCBWay). All boards use standard options:
 
 | Option | Value |
 |---|---|
@@ -216,7 +218,7 @@ The Gerbers include the board outline on its own layer (the carrier's window and
 
 ### Assembly (JLCPCB)
 
-Upload `production/<board>-BOM-JLCPCB.csv` and `production/<board>-CPL-JLCPCB.csv`.
+Upload `production/jlcpcb/<board>-BOM-JLCPCB.csv` and `production/jlcpcb/<board>-CPL-JLCPCB.csv`.
 
 **MX module**: assembly side **Bottom**.
 
@@ -258,13 +260,13 @@ J_MOD is the only SMD part, on the bottom. The two sockets are through-hole on t
 - the JST's 8 contacts sit toward the inside of the board, with the plug opening at the board edge;
 - on the HE module U1 and U2 are at **180°**: the single lead (pin 3, GND) must point toward the board's front edge (the `OSUPAD HE` text), the two-lead side (pins 1 and 2) toward the connector, inside the silkscreen square. JLCPCB's preview shows the bottom as seen from below; with the connector edge away from you, pin 1 (VCC) is then the **right-hand** lead of the pair, next to the silkscreen dot. A SOT-23 cannot be placed mirrored, so if the pins sit on the pads the orientation is right; if a sensor shows rotated 90° or 180° with its leads off the pads, rotate it in the preview. Both sensors face the same way, so if one looks wrong they both are.
 
-### AISLER (HE module)
+### AISLER
 
-AISLER reads the parts from a native board file or ODB++ and wants no BOM or centroid file. `scripts/export_he_aisler.py` writes `HE/production/aisler/`: `he_input_v1.kicad_pcb` with the zones filled and saved by KiCad (upload this single file), `he_input_v1-odb.zip` (the same board as ODB++, the alternative), the schematic PDF, a generic BOM for checking by eye, a `README.txt` with the order options, and `he_input_v1-aisler.zip` holding all of them. Every footprint carries `MPN` (bare part number, the field AISLER matches on), `MFG` and `LCSC`; TP1–TP3, the holes and the switch positions are excluded from the BOM and marked DNP so they do not show up as parts. Order as 2 layers, 1.6 mm, HASL or ENIG; the via ring is 0.2 mm, which their HASL rules need.
+AISLER reads the parts from a native board file or ODB++ and wants no BOM or centroid file. `scripts/export_aisler.py` writes `<board>/production/aisler/` for every board: `<board>.kicad_pcb` with the zones filled and saved by KiCad, the `JLCJLCJLCJLC` order text removed and `MPN` / `MFG` as separate fields (upload this single file); `<board>-odb.zip`, the same board as ODB++ (the alternative); the schematic PDF; a BOM for checking by eye; a `README.txt` with the order options; and `<board>-aisler.zip` holding all of them. `MPN` is the bare part number, the field AISLER matches on. On the HE module TP1–TP3, the holes and the switch positions are excluded from the BOM and marked DNP so they do not show up as parts. The copy passes KiCad's DRC with the project's rules before it is written. Order as 2 layers, 1.6 mm; the HE module's 0.7 mm vias meet their HASL rules, the MX and carrier's 0.6 mm vias (0.15 mm ring) do not, so order those with ENIG or ask.
 
 ### PCBWay
 
-Use the files in `production/pcbway/`, not the JLCPCB ones:
+Use the files in `production/pcbway/`, not the `jlcpcb/` ones:
 - `<board>-gerbers-PCBWay.zip`: the order-number marker is `WayWayWay` instead of `JLCJLCJLCJLC`.
 - `<board>-BOM-PCBWay.csv`: PCBWay's BOM template columns, with manufacturer, part number, type (SMD/THT) and placement notes.
 - `<board>-centroid-PCBWay.csv`: placement file.
@@ -332,15 +334,15 @@ V1/
     ├── verify_he_gerbers.py     HE module: rasterise the Gerbers, check the netlist for opens/shorts/islands
     ├── render_he_preview.py     HE module: top/bottom artwork previews
     ├── check_he_kicad.py        HE module: KiCad ERC + DRC (parity) through kicad-cli, optional
-    ├── export_he_aisler.py      HE module: filled native board + ODB++ for AISLER (reads parts from the board)
+    ├── export_aisler.py         every board: filled native board + ODB++ for AISLER (reads parts from the board)
     └── strokefont.py            single-stroke vector font for generated silkscreen
 ```
 
 The shared library gained two footprints and three symbols for this module: `SW_MX_Hall_PlateMount_SolidCentre` (peg holes only, no stem hole), `TestPoint_Pad_1.0x1.0mm`, and the `TestPoint`, `Conn_01x08_1MP` and `PWR_FLAG` symbols.
 
-Each `production/` folder contains `-gerbers.zip`, `-BOM-JLCPCB.csv`, `-CPL-JLCPCB.csv`, `-schematic.pdf`, `-pcb.pdf`, `.step` (for the case CAD), top/bottom renders, and the ERC/DRC reports. `HE/production/aisler/` holds the AISLER upload (see Ordering).
+Each `production/` folder contains `-schematic.pdf`, `-pcb.pdf`, `.step` (for the case CAD), top/bottom renders and the ERC/DRC reports, plus one subfolder per fab: `jlcpcb/` (`-gerbers.zip`, `-BOM-JLCPCB.csv`, `-CPL-JLCPCB.csv`), `pcbway/` (`-gerbers-PCBWay.zip`, `-BOM-PCBWay.csv`, `-centroid-PCBWay.csv`) and `aisler/` (native board, ODB++, `-aisler.zip`; see Ordering).
 
-- **Regenerating:** `python3 hardware/pcb/V1/scripts/generate_boards.py` rebuilds the schematics and boards from the netlist in the script and overwrites any edits made in KiCad. After editing in KiCad, only run `export_production.py`. It exports every board by default. Pass board folders to export only those, e.g. `export_production.py Carrier`.
+- **Regenerating:** `python3 hardware/pcb/V1/scripts/generate_boards.py` rebuilds the schematics and boards from the netlist in the script and overwrites any edits made in KiCad. After editing in KiCad, only run `export_production.py` (JLCPCB and PCBWay files, PDFs, STEP, renders) and `export_aisler.py`. Both export every board by default. Pass board folders to export only those, e.g. `export_production.py Carrier`.
 - **Requirements:** KiCad 10 (`kicad-cli` and the `pcbnew` Python module) for MX and the carrier. The KiCad libraries don't need to be installed: everything used is in `lib/`.
 - **Library:** every part in `lib/` is OPad's own drawing under the repository's MIT license. The standard parts are written by `scripts/gen_library.py` (pads and pins from the component datasheets; outlines, silkscreen, courtyards and symbol graphics computed by the script); edit the tables there and re-run it rather than editing those files in KiCad. The Kailh hot-swap, Hall switch and test-pad footprints are hand-drawn. Footprints reference KiCad's installed 3D models by path (`${KICAD10_3DMODEL_DIR}`); the models themselves are not in this repository.
 - **The HE module is the exception:** it is generated and verified with plain Python (3.9+), no KiCad and no `pcbnew`; Pillow is needed only for `verify_he_gerbers.py` and `render_he_preview.py`, and `kicad-cli` only for the optional `check_he_kicad.py`. Its `production/` folder has no `drc.json`/`erc.json`/PDF/STEP, because those come from `kicad-cli`; run `export_production.py` under a KiCad install if you want them. CI does not run the HE scripts; run them by hand before ordering.

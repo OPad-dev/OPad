@@ -27,7 +27,7 @@ from verify_he_gerbers import rasterise
 
 V1 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(V1, "HE", "production")
-ZIP = os.path.join(OUT, "%s-gerbers.zip" % B.PROJECT)
+ZIP = os.path.join(OUT, "jlcpcb", "%s-gerbers.zip" % B.PROJECT)
 
 SUBSTRATE = (26, 68, 40)
 COPPER = (38, 94, 52)
