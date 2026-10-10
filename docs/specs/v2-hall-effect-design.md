@@ -242,6 +242,20 @@ pin (pin 3) not soldered, wrong part on the reel, or wrong placement.
 Next: multimeter on U1/U2 (pin 1 = 3.3 V, pin 3 = 0 V and continuous to
 module GND, pin 2 = ~1.65 V with no magnet), and a look at the parts.
 
+Follow-up the same day, with a multimeter on the chip legs: VCC 3.36 V,
+GND 0.0 V (and continuous to the connector's ground tabs), OUT 2.90 V,
+on both sensors. Ruled out since: soldering, a second HE board (reads the
+same), the carrier (connectors only), the Waveshare side (GPIO10/GPIO7
+also go to the camera connector as CAM_D5/CAM_D6, with no parts on them,
+and no camera is fitted), a latch-up (a 10 s USB unplug changes nothing,
+no chip is warm), and a fake part (marking reads "55A3", TI's code for
+DRV5055A3). A switch magnet held directly on a chip moves its output by
+only ~20–30 mV, upwards only. Datasheet VQ at 3.3 V is 1.59–1.71 V. All
+four chips from the one JLCPCB order sit saturated high: the remaining
+suspect is the batch (damaged in assembly or defective). Next: a JLCPCB
+claim, and two or three DRV5055A3 from an authorised distributor fitted
+by hand to confirm.
+
 Also found: the daemon's config push on every connect re-arms the key pins
 and stopped the ADC conversions until restarted. The HE backend must keep
 host config away from the HE pins (step 1).

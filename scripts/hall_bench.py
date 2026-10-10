@@ -60,7 +60,7 @@ def main():
     out = sys.argv[3] if len(sys.argv) > 3 else None
 
     daemon = pause_daemon()
-    rows, spreads = [], {1: [], 2: [], 3: []}
+    rows, spreads = [], {1: [], 2: [], 3: [], 4: []}
     with serial.Serial(port, 115200, timeout=0.2) as s:
         s.reset_input_buffer()
         end = time.time() + seconds
