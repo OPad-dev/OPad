@@ -22,6 +22,7 @@
 #include "esp_timer.h"
 #include "tusb.h"
 #include "diag/diag.h"
+#include "diag/hall_bench.h"
 
 static const char *TAG = "app_main";
 
@@ -200,6 +201,11 @@ void app_main(void)
             ESP_LOGE(TAG, "usb_cdc_start_task failed: %s (continuing)", esp_err_to_name(err));
         }
     }
+
+#ifdef CONFIG_OSUPAD_HALL_BENCH
+    err = hall_bench_start();
+    ESP_LOGW(TAG, "HALL BENCH build: raw sensor stream on CDC (%s)", esp_err_to_name(err));
+#endif
 
     // 5. Persistent NVS Lifetime Counters (NON-FATAL)
     // Keypad starts with RAM counters at 0. counters_init adds NVS values

@@ -34,6 +34,7 @@ idf_component_register(
         "protocol/nanopb/pb_decode.c"
         "diag/diag.c"
         "diag/board_test.c"
+        "diag/hall_bench.c"
     INCLUDE_DIRS
         "."
         ".."

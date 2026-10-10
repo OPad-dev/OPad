@@ -24,6 +24,14 @@ menu "OPad Testing and Benchmark"
         help
             Stage B latency benchmarking: CDC task runs, but display updates are disabled.
 
+    config OSUPAD_HALL_BENCH
+        bool "Hall bench: stream the HE module's raw sensor readings over CDC"
+        default n
+        help
+            V2-0 measurement build (docs/specs/v2-rapid-trigger.md). Streams
+            text over the CDC port, so opad-daemon must be stopped. Read it with
+            scripts/hall_bench.py.
+
     config OSUPAD_BENCH_DEBUG_GPIO
         bool "Toggle debug GPIO right after HID submit"
         default n
