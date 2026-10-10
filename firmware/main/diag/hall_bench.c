@@ -29,13 +29,17 @@
 
 static const char *TAG = "hall_bench";
 
-#define BENCH_SAMPLE_HZ   40000      // both channels together
-#define BENCH_FRAME_CONVS 40         // 1 ms of conversions per DMA frame
+#define BENCH_SAMPLE_HZ   64000      // both channels together
+#define BENCH_FRAME_CONVS 64         // 1 ms of conversions per DMA frame
 #define BENCH_CH_KEY1     ADC_CHANNEL_9
 #define BENCH_CH_KEY2     ADC_CHANNEL_6
+#define BENCH_CH_ID       ADC_CHANNEL_7  // module ID divider, a known ~1.06 V on HE
+#define BENCH_CH_REF      ADC_CHANNEL_5  // GPIO6, a spare probe pad: pulled up, reads 3V3
 
 static adc_continuous_handle_t s_adc;
 static volatile uint32_t s_overflows;
+static esp_err_t s_start_err = ESP_OK;
+static const char *s_start_step = "ok";
 
 static bool IRAM_ATTR on_pool_ovf(adc_continuous_handle_t handle,
                                   const adc_continuous_evt_data_t *edata, void *user_data)
@@ -75,26 +79,78 @@ static void write_line(const char *line, int len)
     }
 }
 
+// The key driver re-arms the key pins whenever the host pushes a config (the
+// daemon does on every connect): put them back to plain analog inputs
+// Cycles the internal pulls once a second (floating, pull-down, pull-up,
+// announced as a P line): a sensor that drives its output barely notices
+// them, a line nothing drives follows them
+static void pins_analog(void)
+{
+    static const gpio_pull_mode_t modes[3] = {GPIO_FLOATING, GPIO_PULLDOWN_ONLY, GPIO_PULLUP_ONLY};
+    static uint32_t phase;
+    const gpio_num_t pins[2] = {GPIO_NUM_10, GPIO_NUM_7};
+    for (int i = 0; i < 2; i++) {
+        gpio_intr_disable(pins[i]);
+        gpio_set_intr_type(pins[i], GPIO_INTR_DISABLE);
+        gpio_set_pull_mode(pins[i], modes[phase % 3]);
+    }
+    char line[16];
+    int len = snprintf(line, sizeof(line), "P,%lu\n", (unsigned long)(phase % 3));
+    write_line(line, len);
+    phase++;
+}
+
 static void hall_bench_task(void *arg)
 {
     (void)arg;
     static adc_continuous_data_t parsed[BENCH_FRAME_CONVS * 4];
-    spread_t spread[2] = {0};
+    spread_t spread[4] = {0};
     int64_t next_stats_us = esp_timer_get_time() + 1000000;
     char line[96];
 
+    uint32_t read_errs = 0;
+    esp_err_t last_err = ESP_OK;
     while (1) {
-        uint32_t n = 0;
-        if (adc_continuous_read_parse(s_adc, parsed, BENCH_FRAME_CONVS, &n, 100) != ESP_OK) {
+        int64_t t = esp_timer_get_time();
+        if (s_start_err != ESP_OK) {
+            // Say why there is no stream, instead of staying silent
+            int len = snprintf(line, sizeof(line), "E,start,%s,%s\n", s_start_step,
+                               esp_err_to_name(s_start_err));
+            write_line(line, len);
+            vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
-        uint32_t sum[2] = {0};
-        uint32_t cnt[2] = {0};
+        uint32_t n = 0;
+        esp_err_t rerr = adc_continuous_read_parse(s_adc, parsed, BENCH_FRAME_CONVS, &n, 100);
+        if (rerr != ESP_OK) {
+            read_errs++;
+            last_err = rerr;
+            if (rerr == ESP_ERR_TIMEOUT) {
+                // The conversions stopped (something else touched ADC1):
+                // restart them, and say so on the next E line
+                adc_continuous_stop(s_adc);
+                esp_err_t serr = adc_continuous_start(s_adc);
+                int len = snprintf(line, sizeof(line), "E,restart,%lu,%s\n", (unsigned long)read_errs,
+                                   esp_err_to_name(serr));
+                write_line(line, len);
+            }
+            if (t >= next_stats_us) {
+                next_stats_us += 1000000;
+                int len = snprintf(line, sizeof(line), "E,read,%lu,%s\n", (unsigned long)read_errs,
+                                   esp_err_to_name(last_err));
+                write_line(line, len);
+            }
+            continue;
+        }
+        uint32_t sum[4] = {0};
+        uint32_t cnt[4] = {0};
         for (uint32_t i = 0; i < n; i++) {
             if (!parsed[i].valid) {
                 continue;
             }
-            int k = parsed[i].channel == BENCH_CH_KEY1 ? 0 : parsed[i].channel == BENCH_CH_KEY2 ? 1 : -1;
+            int k = parsed[i].channel == BENCH_CH_KEY1 ? 0 : parsed[i].channel == BENCH_CH_KEY2 ? 1
+                  : parsed[i].channel == BENCH_CH_ID ? 2
+                  : parsed[i].channel == BENCH_CH_REF ? 3 : -1;
             if (k < 0) {
                 continue;
             }
@@ -110,7 +166,8 @@ static void hall_bench_task(void *arg)
         }
         if (now >= next_stats_us) {
             next_stats_us += 1000000;
-            for (int k = 0; k < 2; k++) {
+            pins_analog();
+            for (int k = 0; k < 4; k++) {
                 spread_t *s = &spread[k];
                 if (s->n == 0) {
                     continue;
@@ -145,32 +202,40 @@ esp_err_t hall_bench_start(void)
         .max_store_buf_size = BENCH_FRAME_CONVS * SOC_ADC_DIGI_RESULT_BYTES * 8,
         .conv_frame_size = BENCH_FRAME_CONVS * SOC_ADC_DIGI_RESULT_BYTES,
     };
+    s_start_step = "new_handle";
     esp_err_t err = adc_continuous_new_handle(&hcfg, &s_adc);
-    if (err != ESP_OK) {
-        return err;
-    }
-    adc_digi_pattern_config_t pattern[2] = {
+    gpio_set_pull_mode(GPIO_NUM_8, GPIO_FLOATING);
+    adc_digi_pattern_config_t pattern[4] = {
         {.atten = ADC_ATTEN_DB_12, .channel = BENCH_CH_KEY1, .unit = ADC_UNIT_1, .bit_width = 12},
         {.atten = ADC_ATTEN_DB_12, .channel = BENCH_CH_KEY2, .unit = ADC_UNIT_1, .bit_width = 12},
+        {.atten = ADC_ATTEN_DB_12, .channel = BENCH_CH_ID, .unit = ADC_UNIT_1, .bit_width = 12},
+        {.atten = ADC_ATTEN_DB_12, .channel = BENCH_CH_REF, .unit = ADC_UNIT_1, .bit_width = 12},
     };
     adc_continuous_config_t cfg = {
-        .pattern_num = 2,
+        .pattern_num = 4,
         .adc_pattern = pattern,
         .sample_freq_hz = BENCH_SAMPLE_HZ,
         .conv_mode = ADC_CONV_SINGLE_UNIT_1,
         .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2,
     };
-    err = adc_continuous_config(s_adc, &cfg);
     if (err == ESP_OK) {
+        s_start_step = "config";
+        err = adc_continuous_config(s_adc, &cfg);
+    }
+    if (err == ESP_OK) {
+        s_start_step = "callbacks";
         adc_continuous_evt_cbs_t cbs = {.on_pool_ovf = on_pool_ovf};
         err = adc_continuous_register_event_callbacks(s_adc, &cbs, NULL);
     }
     if (err == ESP_OK) {
+        s_start_step = "start";
         err = adc_continuous_start(s_adc);
     }
+    // After the config: setting up the channel clears the pad's pulls
+    gpio_set_pull_mode(GPIO_NUM_6, GPIO_PULLUP_ONLY);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "ADC continuous setup failed: %s", esp_err_to_name(err));
-        return err;
+        ESP_LOGE(TAG, "ADC continuous setup failed at %s: %s", s_start_step, esp_err_to_name(err));
+        s_start_err = err;  // the task reports it on the stream
     }
     // Core 0 below the keypad task, as the real sampling task would sit
     BaseType_t res = xTaskCreatePinnedToCore(hall_bench_task, "hall_bench", 4096, NULL,

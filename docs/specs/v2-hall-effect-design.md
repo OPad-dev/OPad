@@ -12,10 +12,13 @@ exists, and lists the questions that need an answer before the code.
 | — | Priorities | **1. latency, 2. accuracy.** Where they conflict, latency wins; accuracy wins over convenience (UI simplicity, CPU, flash wear). |
 | 1 | Switches | **Gateron Jade Silent** (magnetic, silent dampers). Curve and default span come from bench strokes of this switch. |
 | 3 | Calibration | **Explicit first, automatic later** (§4). |
-| 4 | Default | **Behaves like MX out of the box:** a fixed actuation point, rapid trigger off, actuating at bottom-out (§5; exact meaning to confirm). |
+| 4 | Default | **Behaves like MX out of the box:** plain mode, a fixed actuation point at about mid-travel (an MX switch actuates at ~2.0 mm), release just above it, rapid trigger off. Exact point from the bench. |
 | 5 | Settings | The most accurate option: **per key, separate press and release sensitivity** (§5). |
 | 6 | Plain mode | **Yes**, and it is the default (decision 4). |
 | 7 | LCD travel | **Only while testing or calibrating**, never in normal use. |
+| 8 | Module swap | Checked at boot and, cheaply, while idle (never in a map); a change shows "replug the USB cable" on the LCD. In this enclosure the cable usually has to come out to swap anyway. |
+| — | Switch swap | Each switch's magnet gives its own key-up reading. A steady, clearly different one at boot means new switches: the LCD asks for a recalibration and the defaults apply until then. |
+| 9 | Supply reference | Adaptive: the pad watches its own supply noise and uses the ID-line correction only when it is needed. No user setting. |
 | — | IRAM | The HE key path runs from IRAM like MX's; only the fitted module's path runs (§2). |
 
 **What exists today**
@@ -161,11 +164,10 @@ traces.
 
 - **Two modes per key:** plain (fixed actuation point, release a little above
   it as hysteresis) and rapid trigger.
-- **Default: plain, at bottom-out, like MX (decision 4).** "At bottom-out"
-  has to sit slightly above the calibrated bottom, because of the silent
-  damper (§4): if the threshold were the bottom itself, a soft press would
-  never reach it. The margin comes from the bench. Rapid trigger is off
-  until turned on in the app.
+- **Default: plain, at about mid-travel, like an MX switch (decision 4).**
+  Rapid trigger is off until turned on in the app. (A threshold at the very
+  bottom would not work with the silent damper (§4): a soft press would
+  never reach it.)
 - **Settings per key, press and release sensitivity separate (decision 5).**
   The two sensors and magnets never match exactly, so per-key values are the
   accurate choice. The app may offer a "link" toggle as a convenience; the
@@ -217,16 +219,35 @@ point). Validation as v2-rapid-trigger §V2-8.
 | 7 | Latency and tapping validation, docs | yes |
 | 8 | Automatic calibration (phase 2) | yes |
 
-## 10. Still open
+## 10. Bench result: the fitted sensors do not sense (2026-10-10)
 
-1. **Default actuation (decision 4):** confirm "plain mode, actuating just
-   above bottom-out". An MX switch actually actuates around mid-travel
-   (~2 mm), so if "like MX" meant *that*, the default is mid-travel instead.
-2. **Sensor variant:** the BOM fits A3 (`hardware/pcb/V1/README.md`,
-   "Sensor sensitivity": the variant that cannot saturate, expected to move
-   to A2). The bench answers it: under ~0.5 V of swing from rest to bottom,
-   the next batch should be A2. Nothing to decide before the bench.
-3. **Hot swap:** the module is detected at boot only, so after swapping MX ↔
-   HE the pad needs a replug. Fine, or should it notice a swap live?
-4. **Supply reference (§3):** sample the ID line at ~8 % of the
-   conversions, and drop it if the bench shows the supply is quiet?
+Bench build on this pad, readings in raw 12-bit counts at 12 dB:
+
+| Line | Reading | Meaning |
+|---|---|---|
+| ID (GPIO8) | 1211 | 1.06 V: the ADC and the module's 3V3/GND are fine |
+| GPIO6 probe pad, internal pull-up | 4095 | 3.3 V is above full scale |
+| IN1 / IN2, keys up | ~3535 both | ≈ 3.06 V = the DRV5055's top limit (VL max = VCC − 0.2 V) |
+| IN1 / IN2, keys pressed fully | unchanged | no response to the magnet |
+| IN2 with the **switch removed** | unchanged | not the magnet: no field, still at the top |
+| IN1/IN2 with internal pull-down / pull-up | −12 / +2 counts | the line is actively driven, not open |
+
+A working DRV5055 outputs VCC/2 ≈ 1.65 V with no field. The datasheet's
+fault table (§7.1.4) gives "GND disconnects → output close to VCC", which
+fits. The design is not the cause: pinout matches the datasheet (SOT-23:
+1 VCC, 2 OUT, 3 GND), KiCad DRC finds no unconnected pad, the switch
+footprint has a solid centre, and the firmware never drives these lines
+(board test uses pulls only). Suspects, both sensors alike: sensor GND
+pin (pin 3) not soldered, wrong part on the reel, or wrong placement.
+Next: multimeter on U1/U2 (pin 1 = 3.3 V, pin 3 = 0 V and continuous to
+module GND, pin 2 = ~1.65 V with no magnet), and a look at the parts.
+
+Also found: the daemon's config push on every connect re-arms the key pins
+and stopped the ADC conversions until restarted. The HE backend must keep
+host config away from the HE pins (step 1).
+
+## 11. Still open
+
+1. Why both sensors sit at the top limit (§10). Nothing else on the HE
+   side can be measured until a working sensor reads ~1.65 V at rest.
+2. Sensor variant (A3 or other): decided by the bench once sensors work.
