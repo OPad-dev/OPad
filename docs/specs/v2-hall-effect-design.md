@@ -256,12 +256,28 @@ suspect is the batch (damaged in assembly or defective). Next: a JLCPCB
 claim, and two or three DRV5055A3 from an authorised distributor fitted
 by hand to confirm.
 
+**Root cause (found the same day): the SOT-23 footprint is mirrored.** TI's
+DBZ top view (datasheet Figure 4-1) has pin 1 top-left, pin 2 bottom-left,
+pin 3 right; turned so pins 1–2 are on top, pin 1 is on the right. The
+footprint in `hardware/pcb/V1/scripts/he_board.py` (`FOOTPRINTS[FP_SOT23]`)
+and `scripts/gen_library.py` (`lib/osupad.pretty/SOT-23.kicad_mod`) puts
+pin 1 on the left, i.e. the mirror image. The bottom-side transform then
+mirrors it correctly, so the copper ends up with top-side chirality: in the
+KiCad board (pcbnew API) U1 pad 1 (3V3) is at x = 129.425 and pad 2 (IN1)
+at 127.525, while a real chip on B.Cu with pin 3 on pad 3 has pin 1 at
+127.525. Every chip therefore sits with **VCC on the IN line and OUT on
+3V3**, powered backwards through its OUT→VCC protection diode: 3.36 V −
+~0.46 V = the 2.90 V measured on the "OUT" pad, driven low-impedance and
+nearly blind to the field. JLCPCB placed the parts correctly; DRC cannot see
+this (connectivity is right, only the package's pin order is mirrored).
+
 Also found: the daemon's config push on every connect re-arms the key pins
 and stopped the ADC conversions until restarted. The HE backend must keep
 host config away from the HE pins (step 1).
 
 ## 11. Still open
 
-1. Why both sensors sit at the top limit (§10). Nothing else on the HE
-   side can be measured until a working sensor reads ~1.65 V at rest.
+1. HE board V1.1: fix the SOT-23 footprint (swap pads 1 and 2), re-route
+   U1/U2, add a pin-order self-test, regenerate, reorder. Nothing else on
+   the HE side can be measured until a sensor reads ~1.65 V at rest.
 2. Sensor variant (A3 or other): decided by the bench once sensors work.
