@@ -61,7 +61,7 @@ import math
 
 PROJECT = "he_input_v1"
 TITLE = "osuPad Hall Effect Input Module V1"
-REV = "V1.0"
+REV = "V1.1"
 DATE = "2026-09-20"
 COMPANY = "osuPad"
 
@@ -130,9 +130,12 @@ FOOTPRINTS = {
                ("2", (0.775, 0.0), (0.9, 0.95))],
     FP_R0603: [("1", (-0.825, 0.0), (0.8, 0.95)),
                ("2", (0.825, 0.0), (0.8, 0.95))],
-    # SOT-23 / TO-236AB: pins 1 and 2 on one side, pin 3 opposite.
-    FP_SOT23: [("1", (-0.95, -1.0), (0.7, 1.0)),
-               ("2", (0.95, -1.0), (0.7, 1.0)),
+    # SOT-23 / TO-236AB: pins 1 and 2 on one side, pin 3 opposite. In KiCad's
+    # Y-down footprint frame with pins 1-2 facing -Y, pin 1 is at +X (TI DBZ
+    # top view, DRV5055 datasheet Figure 4-1). V1.0 had them swapped: the
+    # package was mirrored and every sensor sat with VCC on its output line.
+    FP_SOT23: [("1", (0.95, -1.0), (0.7, 1.0)),
+               ("2", (-0.95, -1.0), (0.7, 1.0)),
                ("3", (0.0, 1.0), (0.7, 1.0))],
     FP_JST8: [("%d" % (i + 1), (-3.5 + i, -2.0), (0.6, 1.55)) for i in range(8)]
              + [("MP1", (-4.8, 1.875), (1.2, 1.8)),
@@ -257,13 +260,13 @@ PARTS = [
          "3V3 bulk decoupling at the module connector",
          (182.88, 63.5)),
 
-    Part("C2", "100nF", FP_C0603, (19.0, 12.0), 0,
+    Part("C2", "100nF", FP_C0603, (13.95, 12.0), 0,
          {"1": NET_GND, "2": NET_3V3},
          "C14663", "CC0603KRX7R9BB104", "YAGEO",
          "Local supply decoupling for U1",
          (105.41, 50.8)),
 
-    Part("C3", "100nF", FP_C0603, (38.05, 12.0), 0,
+    Part("C3", "100nF", FP_C0603, (33.0, 12.0), 0,
          {"1": NET_GND, "2": NET_3V3},
          "C14663", "CC0603KRX7R9BB104", "YAGEO",
          "Local supply decoupling for U2",
@@ -310,8 +313,10 @@ PARTS_BY_REF = {p.ref: p for p in PARTS}
 P = lambda ref, pad: PARTS_BY_REF[ref].pad_pos(pad)
 
 VIA_3V3_J1 = (19.275, 17.2)     # below C1, feeds the F.Cu bus
-VIA_3V3_C2 = (19.775, 13.3)
-VIA_3V3_C3 = (38.825, 13.3)
+# C2/C3 sit on the pin-1 side of their sensor (V1.1), so the 3V3 stub and
+# the IN line leave the sensor on opposite sides and never cross
+VIA_3V3_C2 = (14.725, 13.3)
+VIA_3V3_C3 = (33.775, 13.3)
 VIA_3V3_R1 = (35.5, 21.0)
 
 TRACKS = [
@@ -324,7 +329,7 @@ TRACKS = [
     # F.Cu distribution bus
     (NET_3V3, [VIA_3V3_C2, (VIA_3V3_C2[0], 17.2), VIA_3V3_J1], POWER_W, "F"),
     (NET_3V3, [VIA_3V3_J1, (VIA_3V3_C3[0], 17.2), VIA_3V3_C3], POWER_W, "F"),
-    (NET_3V3, [(VIA_3V3_R1[0], 17.2), VIA_3V3_R1], POWER_W, "F"),
+    (NET_3V3, [(VIA_3V3_C3[0], 17.2), (VIA_3V3_R1[0], 17.2), VIA_3V3_R1], POWER_W, "F"),
 
     # ---- analog outputs --------------------------------------------------
     (NET_IN1, [P("U1", "2"), (P("U1", "2")[0], 16.0), (24.5, 16.0), P("J1", "3")], TRACK_W, "B"),
@@ -383,8 +388,8 @@ BOTTOM_SILK = [
     ("U1", 13.2, 9.5, 0.7, "center"),
     ("U2", 38.8, 9.5, 0.7, "center"),
     ("C1", 18.5, 20.4, 0.7, "center"),
-    ("C2", 19.0, 13.6, 0.7, "center"),
-    ("C3", 38.05, 13.6, 0.7, "center"),
+    ("C2", 13.95, 13.9, 0.7, "center"),
+    ("C3", 33.0, 13.9, 0.7, "center"),
     ("R1", 37.0, 21.0, 0.7, "center"),
     ("R2", 37.0, 19.0, 0.7, "center"),
     ("1", 22.5, 17.3, 0.7, "center"),          # J1 pin 1
@@ -702,6 +707,22 @@ def selftest():
         part = PARTS_BY_REF[ref]
         if part.centre != key:
             problems.append("%s is at %s, not on the key centre %s" % (ref, part.centre, key))
+    # Pin order of every SOT-23 against the real package, which DRC cannot
+    # see: seen from its marked top, a SOT-23 runs pin 1 -> 2 -> 3
+    # counter-clockwise (TI DBZ top view). A bottom-side part is seen from
+    # its top only from below, so in this module's top-view, Y-up frame the
+    # same walk must turn clockwise. V1.0 failed this and swapped VCC and OUT.
+    for part in PARTS:
+        if part.footprint != FP_SOT23:
+            continue
+        (x1, y1), (x2, y2), (x3, y3) = (part.pad_pos(n) for n in ("1", "2", "3"))
+        turn = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1)
+        clockwise = turn < 0
+        if clockwise != (part.side == "bottom"):
+            problems.append("%s: SOT-23 pins run %s seen from the top of the board, a "
+                            "mirrored package for a %s-side part" %
+                            (part.ref, "clockwise" if clockwise else "counter-clockwise",
+                             part.side))
     return problems
 
 

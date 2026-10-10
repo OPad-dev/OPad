@@ -66,6 +66,8 @@ With no module plugged in, GPIO8 floats. The firmware can enable the internal pu
 
 Same outline, mounting holes, connector position and pinout as the MX module, so the two are interchangeable on one cable. Instead of switching a pin to ground, each key has a **TI DRV5055A3 ratiometric linear Hall sensor** whose analog output tracks the magnet in the switch stem, which is what rapid trigger needs.
 
+> **V1.0 erratum (fixed in V1.1):** the V1.0 SOT-23 footprint was mirrored, so every assembled sensor sits with **VCC on its IN line and OUT on 3V3**. It powers itself backwards through its protection diode, reads a fixed ~2.9 V and barely reacts to a magnet. The connectivity was right, so neither DRC nor the assembler could catch it. V1.1 swaps pads 1 and 2 (`scripts/gen_library.py`, `scripts/he_board.py`), moves C2/C3 to the pin-1 side so the 3V3 stub and the IN line do not cross, and `he_board.py`'s self-test now checks every SOT-23's pin order against the real package. A V1.0 board works only with each sensor re-soldered upside down (marking towards the board), which mirrors its pin order back.
+
 ### Sensor architecture (the part that matters)
 
 This is **Architecture A: bottom-side SMT on solid FR-4.**
@@ -130,7 +132,7 @@ A3 is shipped as the default because it is the one variant that physically canno
 | 5 | ID | R1/R2 divider, 1.06 V → GPIO8 (ADC1_CH7) |
 | 6, 7, 8 | IO6 / IO4 / IO2 | TP1 / TP2 / TP3 probe pads, reserved for SPI |
 
-**DRV5055 SOT-23 pinout: 1 = VCC, 2 = OUT, 3 = GND** (TI DBZ package). Worth repeating because swapping 2 and 3 would put the output straight on ground.
+**DRV5055 SOT-23 pinout: 1 = VCC, 2 = OUT, 3 = GND** (TI DBZ package). Worth repeating because swapping 2 and 3 would put the output straight on ground. Turned so pins 1–2 face up, pin 1 is on the **right** in the top view; on this bottom-side board the self-test enforces it.
 
 ### Toolchain
 

@@ -135,7 +135,11 @@ FOOTPRINTS = [
         body=(-1.45, -0.65, 1.45, 0.65),
         pin1=True,
         model=None,
-        pads=[smd("1", -0.95, -1, 0.7, 1), smd("2", 0.95, -1, 0.7, 1), smd("3", 0, 1, 0.7, 1)],
+        # TI DBZ top view (DRV5055 datasheet Figure 4-1): pin 1 top-left, pin 2
+        # bottom-left, pin 3 right. Turned so pins 1-2 face up (-Y), pin 1 is on
+        # the right. V1.0 had pins 1 and 2 swapped, a mirrored package that put
+        # the HE sensors' VCC on their output line.
+        pads=[smd("1", 0.95, -1, 0.7, 1), smd("2", -0.95, -1, 0.7, 1), smd("3", 0, 1, 0.7, 1)],
     ),
     dict(
         name="JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal",
@@ -269,6 +273,8 @@ def footprint(fp):
             r = 0.15
             if by0 <= pad1["y"] <= by1:
                 dot = (sx0 - SILK_W / 2 - 0.15 - r, pad1["y"])
+            elif pad1["x"] > 0:
+                dot = (pad1["x"] + pad1["w"] / 2 + SILK_CLEAR + r + 0.05, pad1["y"])
             else:
                 dot = (pad1["x"] - pad1["w"] / 2 - SILK_CLEAR - r - 0.05, pad1["y"])
             items.append([Sym("fp_circle"), xy("center", *dot), xy("end", dot[0] + r, dot[1]),
