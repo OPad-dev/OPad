@@ -17,7 +17,7 @@ from the component datasheets (and IPC-7351 nominal for the 0603 chips); they
 are kept identical to what the V1 boards were designed with, so the boards stay
 valid. Every drawing (fab body, silkscreen, pin-1 markers, courtyards, symbol
 graphics) is computed here, so the whole library is original OPad work under
-the repository's MIT license.
+the hardware's CERN-OHL-S-2.0 licence.
 
 No KiCad needed. Run from anywhere:
 

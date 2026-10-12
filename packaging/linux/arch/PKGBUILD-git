@@ -5,7 +5,7 @@ pkgrel=1
 pkgdesc="Low-latency ESP32-S3 keypad manager, telemetry HUD, and tray applet for OPad (git master)"
 arch=('x86_64')
 url="https://github.com/OPad-dev/OPad"
-license=('MIT' 'LGPL-3.0-only' 'OFL-1.1')
+license=('GPL-3.0-or-later' 'LGPL-3.0-only' 'OFL-1.1')
 provides=('opad')
 conflicts=('opad')
 

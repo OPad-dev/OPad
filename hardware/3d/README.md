@@ -1,6 +1,6 @@
 # OPad ESP32-S3 — 3D Models & Enclosure CAD Reference
 
-This directory contains the ready-to-print/modify OPad enclosure for the **Waveshare ESP32-S3-Touch-LCD-2** and standard **MX mechanical switches**. Everything here is original OPad work under the repository's [MIT License](../../LICENSE).
+This directory contains the ready-to-print/modify OPad enclosure for the **Waveshare ESP32-S3-Touch-LCD-2** and standard **MX mechanical switches**. Everything here is original OPad work under the [CERN Open Hardware Licence v2, Strongly Reciprocal](../LICENSE) (`CERN-OHL-S-2.0`); its Python helper scripts are under `GPL-3.0-or-later`.
 
 ---
 
@@ -26,7 +26,7 @@ hardware/3d/
 
 Use **V1.1** with the V1 PCBs; see [`custom_case/V1.1/README.md`](custom_case/V1.1/README.md).
 
-Third-party models (the Waveshare board model and other keypads) are not stored in this repository, since they are not MIT licensed. Download them from their authors if you want them as a modelling reference; see section 4.
+Third-party models (the Waveshare board model and other keypads) are not stored in this repository, since their licences differ from OPad's. Download them from their authors if you want them as a modelling reference; see section 4.
 
 ---
 
@@ -63,7 +63,7 @@ Third-party models (the Waveshare board model and other keypads) are not stored 
 
 ---
 
-## 4. External References (not included, not MIT)
+## 4. External References (not included, not OPad's licence)
 - **Waveshare ESP32-S3-Touch-LCD-2**: official 3D CAD model and 2D drawings on the [Waveshare Wiki](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-2). No redistribution license is stated, so the files are not included here.
 - **`milk-crate`**: 2-key macropad by *somepin* ([GitHub](https://github.com/somepin/milk-crate), MIT License).
 - **`osu-keypad`**: 2-key keypad by *clay53* ([GitHub](https://github.com/clay53/Osu-Keypad), MIT License).

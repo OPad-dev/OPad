@@ -827,7 +827,7 @@ fn about_section() -> Element<'static, Message> {
             .spacing(8),
             row![
                 muted("License:").width(140),
-                text("MIT License (GFerreiroS)").size(13)
+                text("GPL-3.0-or-later (GFerreiroS)").size(13)
             ]
             .spacing(8),
             Space::new().height(4),
@@ -1408,7 +1408,7 @@ pub fn about<'a>(_app: &'a App) -> Element<'a, Message> {
             text("Open source licences").size(16).font(theme::FONT_BOLD),
             credit(
                 "OPad (app and firmware)",
-                "MIT License. Copyright (c) 2026 GFerreiroS."
+                "GNU GPL v3.0 or later. Copyright (c) 2026 GFerreiroS."
             ),
             credit(
                 "tosu (bundled osu! memory reader)",

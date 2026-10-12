@@ -299,7 +299,12 @@ OPad is an independent open-source hardware and software project. OPad is not af
 ---
 
 ## 📜 License
-Everything original to OPad is licensed under the [MIT License](LICENSE): the firmware, the desktop app (daemon, GUI, CLI), the PCB designs and footprints, the enclosure CAD, and the documentation.
+OPad is free and open source, software and hardware:
+
+- **Software** — the firmware, the desktop app (daemon, GUI, CLI), the protocol, the scripts and the documentation — is licensed under the [GNU General Public License v3.0 or later](LICENSE) (`GPL-3.0-or-later`).
+- **Hardware** — everything in [`hardware/`](hardware/): the PCB designs, footprints and symbols, the enclosure CAD and the production files — is licensed under the [CERN Open Hardware Licence v2, Strongly Reciprocal](hardware/LICENSE) (`CERN-OHL-S-2.0`). The scripts in `hardware/` that generate and check those files are software, under `GPL-3.0-or-later`.
+
+You may build, modify and sell OPad. If you distribute a modified version, of the software or of the hardware, you must publish its source under the same licence. Every file's licence is recorded in [`REUSE.toml`](REUSE.toml).
 
 Third-party components keep their own open licenses and ship with their notices:
 - [tosu](licenses/tosu/LICENSE) (LGPL-3.0), built from upstream source and bundled with the desktop packages, see the section above. Not stored in this repository.

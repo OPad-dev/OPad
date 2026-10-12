@@ -36,7 +36,7 @@ allow = [
 confidence-threshold = 0.8
 
 [licenses.private]
-# The workspace's own crates are MIT, and publish = false
+# The workspace's own crates are GPL-3.0-or-later, and publish = false
 ignore = true
 
 [bans]

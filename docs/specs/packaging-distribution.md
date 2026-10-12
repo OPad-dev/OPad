@@ -226,7 +226,7 @@ Note the R7 lesson: the Linux version was broken precisely by writing a *second*
 
 **Decision:** ship unsigned for the first release, and pursue free signing afterwards.
 
-**Free signing is genuinely available for this project.** [SignPath Foundation](https://signpath.org/) provides free OV code signing to open-source projects; OPad is MIT, so it qualifies. The private key lives on SignPath's HSM and signing runs as a step in the release pipeline, which also certifies that the signed binary was built from the public source tree.
+**Free signing is genuinely available for this project.** [SignPath Foundation](https://signpath.org/) provides free OV code signing to open-source projects; OPad is GPL-3.0-or-later (software) and CERN-OHL-S-2.0 (hardware), both OSI-approved, so it qualifies. The private key lives on SignPath's HSM and signing runs as a step in the release pipeline, which also certifies that the signed binary was built from the public source tree.
 
 **Prerequisites, in order — note that the first one does not exist yet:**
 1. **A public repository.** `git remote -v` is currently empty; nothing has ever been pushed. SignPath requires a publicly available codebase, so publishing the repo is a hard prerequisite, not a nice-to-have.
@@ -489,9 +489,9 @@ An AppImage covers every other distro with one artifact and is cheap to add once
 
 ### T-1. The licensing position
 
-**tosu is LGPL-3.0** (Mikhail Babynichev). OPad is MIT. These interact cleanly here, for a specific reason worth writing down so it is not re-litigated later:
+**tosu is LGPL-3.0** (Mikhail Babynichev). OPad is GPL-3.0-or-later. These interact cleanly here, for a specific reason worth writing down so it is not re-litigated later:
 
-**OPad does not link tosu in any way.** `desktop/crates/osupad-tosu/src/lib.rs` talks to it over a WebSocket at `ws://127.0.0.1:24050/websocket/v2` (`DEFAULT_TOSU_ENDPOINT`), and `spawn_tosu_supervisor` (`:275`) launches it as a **separate process**. Separate programs communicating over a socket are not a derivative work, and executing a program is not linking. **No copyleft obligation reaches OPad's own MIT-licensed code.** This is true whether or not tosu is bundled.
+**OPad does not link tosu in any way.** `desktop/crates/osupad-tosu/src/lib.rs` talks to it over a WebSocket at `ws://127.0.0.1:24050/websocket/v2` (`DEFAULT_TOSU_ENDPOINT`), and `spawn_tosu_supervisor` (`:275`) launches it as a **separate process**. Separate programs communicating over a socket are not a derivative work, and executing a program is not linking. **No copyleft obligation reaches OPad's own GPL-3.0-or-later code.** This is true whether or not tosu is bundled.
 
 **Redistribution is the only thing that creates obligations.** If an installer or package *ships the tosu binary*, that is conveying an LGPL-3.0 work, which requires shipping the license text and copyright notice, and providing the corresponding source (or a valid written offer / access from the same place the binary is offered). All of this is satisfiable — it is permitted, not forbidden — but it is an ongoing maintenance burden: every tosu version bump means re-checking the source offer.
 
@@ -517,7 +517,7 @@ Conveying tosu requires three things per artifact. None are difficult; all must 
 **Do:**
 1. **License text and notice.** Ship `licenses/tosu/LICENSE` (the full LGPL-3.0 text) and a `NOTICE` recording the upstream project, author (Mikhail Babynichev), copyright, the exact bundled version, and the release URL it came from. Installed alongside the binary on every platform.
 2. **Corresponding source.** LGPL-3.0 conveying obligations are satisfied by offering source from the same place the binary is offered. Publish, next to each OPad release artifact, the matching tosu source tarball or an explicit written offer naming the exact upstream tag. **Generate this automatically from the version the build pulled**, so it cannot drift from the binary actually shipped.
-3. **Distro metadata.** `.deb` needs `debian/copyright` listing LGPL-3.0 for the bundled component; `.rpm` needs the composite `License:` field. A package whose metadata claims MIT while shipping an LGPL binary is simply incorrect.
+3. **Distro metadata.** `.deb` needs `debian/copyright` listing LGPL-3.0 for the bundled component; `.rpm` needs the composite `License:` field. A package whose metadata names only OPad's licence while shipping an LGPL binary is simply incorrect.
 
 **Also required, and easy to forget:** LGPL-3.0 grants the user the right to **replace** the bundled component with their own version. The `$OSUPAD_TOSU_PATH` override and the "use my own tosu install" setting satisfy this in practice, so keep both working and mention them in the NOTICE.
 

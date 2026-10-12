@@ -3,7 +3,7 @@ LicenseRef-Unknown-ThirdParty
 The file carrying this identifier was obtained from a third party whose
 identity, and the licence under which the file may be used, are unknown.
 
-It is not covered by the MIT licence of this repository, and no rights to it
+It is not covered by the GPL-3.0-or-later licence of this repository, and no rights to it
 are granted by the OPad project.
 
 If you are the rights holder and want it removed or credited, open an issue at

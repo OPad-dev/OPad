@@ -6,12 +6,26 @@ SPDX-PackageName = "OPad"
 SPDX-PackageSupplier = "GFerreiroS <info@gferreiro.com>"
 SPDX-PackageDownloadLocation = "https://github.com/OPad-dev/OPad"
 
-# Everything OPad wrote: firmware, desktop, protocol, hardware, docs, packaging
+# Everything OPad wrote: firmware, desktop, protocol, docs, packaging
 [[annotations]]
 path = "**"
 precedence = "closest"
 SPDX-FileCopyrightText = "2026 GFerreiroS <info@gferreiro.com>"
-SPDX-License-Identifier = "MIT"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+# The hardware: PCBs, footprints, symbols, enclosure CAD and production files
+[[annotations]]
+path = "hardware/**"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 GFerreiroS <info@gferreiro.com>"
+SPDX-License-Identifier = "CERN-OHL-S-2.0"
+
+# ...except the scripts that generate and check it, which are software
+[[annotations]]
+path = "hardware/**/*.py"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 GFerreiroS <info@gferreiro.com>"
+SPDX-License-Identifier = "GPL-3.0-or-later"
 
 # Montserrat, bundled with the desktop GUI
 [[annotations]]

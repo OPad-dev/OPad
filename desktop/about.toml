@@ -23,6 +23,9 @@ targets = [
     "x86_64-unknown-linux-gnu",
     "x86_64-pc-windows-msvc",
 ]
+# The workspace's own crates (GPL-3.0-or-later, publish = false) are OPad, not
+# third-party; their licence ships as LICENSE
+private = { ignore = true }
 # Build and dev dependencies are not shipped
 ignore-build-dependencies = true
 ignore-dev-dependencies = true

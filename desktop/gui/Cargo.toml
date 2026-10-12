@@ -79,7 +79,7 @@ name = "opad"
 version = "1.0.0~rc"
 summary = "Low-latency ESP32-S3 keypad manager, telemetry HUD, and tray applet for osu!"
 description = "OPad desktop daemon, configuration GUI, and CLI utility."
-license = "MIT AND LGPL-3.0-only AND OFL-1.1"
+license = "GPL-3.0-or-later AND LGPL-3.0-only AND OFL-1.1"
 assets = [
     { source = "../target/release/opad-daemon", dest = "/usr/bin/opad-daemon", mode = "755" },
     { source = "../target/release/opad-gui", dest = "/usr/bin/opad-gui", mode = "755" },
