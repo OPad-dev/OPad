@@ -6,6 +6,7 @@
 //! exponentially so an outage does not turn into a retry storm either.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime};
 
 pub const DEFAULT_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
@@ -28,6 +29,14 @@ pub struct CheckSchedule {
     pub consecutive_failures: u32,
     #[serde(default)]
     pub last_error: Option<String>,
+    /// The channel `etag` belongs to. Switching channels fetches another
+    /// file, so an ETag from the old one must not be sent.
+    #[serde(default)]
+    pub channel: Option<String>,
+    /// Per channel, the highest feed serial accepted. A lower one is a
+    /// replayed feed and is refused (docs/specs/release-and-updates.md §5.2).
+    #[serde(default)]
+    pub serials: BTreeMap<String, u64>,
 }
 
 impl CheckSchedule {
@@ -62,6 +71,23 @@ impl CheckSchedule {
         if etag.is_some() {
             self.etag = etag;
         }
+    }
+
+    /// Follows a change of update channel: the next check is due at once and
+    /// unconditional. The serials are kept; each channel has its own.
+    pub fn switch_channel(&mut self, channel: &str) {
+        if self.channel.as_deref() != Some(channel) {
+            self.channel = Some(channel.to_string());
+            self.etag = None;
+            self.last_check = None;
+        }
+    }
+
+    /// The ETag to send, if it belongs to `channel`
+    pub fn etag_for(&self, channel: &str) -> Option<&str> {
+        self.etag
+            .as_deref()
+            .filter(|_| self.channel.as_deref() == Some(channel))
     }
 
     pub fn record_failure(&mut self, now: SystemTime, error: impl Into<String>) {
@@ -120,6 +146,25 @@ mod tests {
         s.record_success(at(0), Some("\"v1\"".into()));
         s.record_success(at(1), None);
         assert_eq!(s.etag.as_deref(), Some("\"v1\""));
+    }
+
+    #[test]
+    fn switching_channel_drops_the_etag_and_makes_a_check_due() {
+        let mut s = CheckSchedule::default();
+        s.switch_channel("stable");
+        s.record_success(at(1_000), Some("\"a\"".into()));
+        s.serials.insert("stable".into(), 7);
+        assert_eq!(s.etag_for("stable"), Some("\"a\""));
+        assert!(!s.due_at(at(1_001)));
+
+        s.switch_channel("beta");
+        assert_eq!(s.etag_for("beta"), None);
+        assert!(s.due_at(at(1_001)));
+        assert_eq!(
+            s.serials.get("stable"),
+            Some(&7),
+            "each channel keeps its serial"
+        );
     }
 
     #[test]

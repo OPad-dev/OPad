@@ -147,8 +147,20 @@ pub enum IpcRequest {
     },
     /// Apply a pending update. Only ever sent because a person pressed
     /// Install: the daemon never applies an app update on its own (§U-2).
+    /// For tosu it updates now, even with its automatic updates switched off.
     InstallUpdate {
         component: UpdateComponent,
+    },
+    /// Check the update feed now rather than at the daily check. Answered at
+    /// once with `UpdateCheckStarted`; `GetUpdateStatus` shows the result.
+    /// Added after IPC v1 shipped: an older daemon cannot parse it and closes
+    /// the connection, which the client shows as "not available".
+    CheckForUpdates,
+    /// Follow another update channel, `stable` or `beta`
+    /// (docs/specs/release-and-updates.md §9.1). Added after IPC v1 shipped,
+    /// like `CheckForUpdates`.
+    SetUpdateChannel {
+        channel: String,
     },
     /// What a firmware update would do, and everything currently stopping it
     /// (§U-3b). Reads state and writes nothing, so it is safe to poll.
@@ -225,6 +237,10 @@ pub struct FirmwareOffer {
     pub consent_text: Option<String>,
     /// Roughly how long the pad stops being a keyboard
     pub outage_seconds: u32,
+    /// Set when the newer firmware needs a newer app than this one: the app
+    /// is updated first (docs/specs/release-and-updates.md §3.2)
+    #[serde(default)]
+    pub needs_app: Option<String>,
 }
 
 /// The three independently-updatable things (§U). The firmware is listed here
@@ -250,6 +266,9 @@ pub struct ComponentUpdate {
     pub notify_only: bool,
     /// An update is downloaded and waiting for the user to press Install
     pub ready_to_install: bool,
+    /// The release page of the available version
+    #[serde(default)]
+    pub notes_url: Option<String>,
 }
 
 /// Daemon responses to clients
@@ -385,7 +404,18 @@ pub enum IpcResponse {
         /// ones and must be restarted (§U-2)
         #[serde(default)]
         restart_required: bool,
+        /// `stable` or `beta`; empty from a daemon predating channels
+        #[serde(default)]
+        channel: String,
+        /// A check is running right now
+        #[serde(default)]
+        checking: bool,
+        /// How the last install went, as a sentence, kept across restarts
+        #[serde(default)]
+        last_result: Option<String>,
     },
+    /// Answer to CheckForUpdates: the check runs in the background
+    UpdateCheckStarted,
     /// An update is being applied; the GUI should expect the daemon to go away
     UpdateStarted {
         component: UpdateComponent,

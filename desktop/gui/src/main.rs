@@ -184,6 +184,11 @@ pub struct UpdateView {
     pub last_check: Option<String>,
     pub last_error: Option<String>,
     pub restart_required: bool,
+    /// `stable` or `beta`
+    pub channel: String,
+    /// A check is running in the daemon
+    pub checking: bool,
+    pub last_result: Option<String>,
 }
 
 pub struct App {
@@ -255,6 +260,9 @@ pub struct App {
     /// of hours, so it is polled every UPDATE_STATUS_POLL, at once on opening
     /// Settings and after an update action; `None` forces the next poll.
     update_status_polled_at: Option<std::time::Instant>,
+    /// A check or install was just asked for and its result is not in yet:
+    /// poll the update state quickly until it is
+    update_busy: bool,
     /// Seq for entries the GUI logs itself (source Program), a separate
     /// numbering from the daemon's
     local_log_seq: u64,
@@ -279,6 +287,8 @@ pub struct App {
 /// How often the update state is re-asked while the window is open. Worst
 /// case the "restart to finish updating" banner shows this much late.
 const UPDATE_STATUS_POLL: Duration = Duration::from_secs(60);
+/// While a check or an install is running the answer is seconds away
+const UPDATE_STATUS_POLL_BUSY: Duration = Duration::from_secs(2);
 
 const NO_TRAY_BANNER: &str =
     "No system tray found; the app will quit when closed. The pad keeps working.";
@@ -372,6 +382,8 @@ pub enum Message {
     UpdateStatus(Result<IpcResponse, String>),
     ToggleUpdater(opad_ipc::UpdateComponent, bool),
     InstallUpdate(opad_ipc::UpdateComponent),
+    CheckForUpdates,
+    SetUpdateChannel(String),
     ResetLatency,
     ActionDone(Result<IpcResponse, String>),
     DismissBanner,
@@ -473,6 +485,7 @@ impl App {
             logs: Vec::new(),
             latest_log_seq: 0,
             update_status_polled_at: None,
+            update_busy: false,
             local_log_seq: 0,
             log_cleared_at: None,
             log_filter_level: None,
@@ -564,9 +577,15 @@ impl App {
         }
         // restart_required drives a banner on every page, but it changes
         // rarely: a slow poll, forced when Settings opens or an update ran
+        let busy = self.update_busy || self.updates.as_ref().is_some_and(|u| u.checking);
+        let update_poll = if busy {
+            UPDATE_STATUS_POLL_BUSY
+        } else {
+            UPDATE_STATUS_POLL
+        };
         let update_status_due = self
             .update_status_polled_at
-            .is_none_or(|t| t.elapsed() >= UPDATE_STATUS_POLL);
+            .is_none_or(|t| t.elapsed() >= update_poll);
         if page.is_some() && update_status_due {
             self.update_status_polled_at = Some(std::time::Instant::now());
             tasks.push(Task::perform(
@@ -1540,14 +1559,26 @@ impl App {
                     last_check,
                     last_error,
                     restart_required,
+                    channel,
+                    checking,
+                    last_result,
                 }) = res
                 {
+                    // An answer that is not "still checking" ends the fast polling
+                    self.update_busy = false;
                     self.updates = Some(UpdateView {
                         app,
                         tosu,
                         last_check,
                         last_error,
                         restart_required,
+                        channel: if channel.is_empty() {
+                            "stable".to_string()
+                        } else {
+                            channel
+                        },
+                        checking,
+                        last_result,
                     });
                 }
             }
@@ -1567,8 +1598,30 @@ impl App {
             }
             Message::InstallUpdate(component) => {
                 self.banner = Some("Installing the update...".into());
+                self.update_busy = true;
                 return Task::perform(
                     ipc::request(IpcRequest::InstallUpdate { component }),
+                    Message::ActionDone,
+                );
+            }
+            Message::CheckForUpdates => {
+                if let Some(u) = &mut self.updates {
+                    u.checking = true;
+                }
+                self.update_busy = true;
+                return Task::perform(
+                    ipc::request(IpcRequest::CheckForUpdates),
+                    Message::ActionDone,
+                );
+            }
+            Message::SetUpdateChannel(channel) => {
+                if let Some(u) = &mut self.updates {
+                    u.channel = channel.clone();
+                    u.checking = true;
+                }
+                self.update_busy = true;
+                return Task::perform(
+                    ipc::request(IpcRequest::SetUpdateChannel { channel }),
                     Message::ActionDone,
                 );
             }
@@ -1618,6 +1671,9 @@ impl App {
                     Ok(IpcResponse::SyncCompleted { success: true, .. }) => "Pad synced".into(),
                     Ok(IpcResponse::CountersReset { .. }) => "Lifetime counters reset".into(),
                     Ok(IpcResponse::HandshakeAck { .. }) => "Latency statistics reset".into(),
+                    Ok(IpcResponse::UpdateCheckStarted) => "Checking for updates...".into(),
+                    Ok(IpcResponse::UpdateStarted { .. }) => "Installing the update...".into(),
+                    Ok(IpcResponse::OperationDeferred { reason }) => reason,
                     Ok(IpcResponse::OperationRejected { reason }) => {
                         format!("Not possible right now: {}", reason)
                     }

@@ -30,13 +30,16 @@ pub mod gate;
 pub mod http;
 pub mod manifest;
 pub mod origin;
+pub mod rollout;
 pub mod schedule;
 pub mod tosu;
 pub mod verify;
 pub mod version;
 
 pub use gate::{may_update_now, DeferReason};
-pub use manifest::{Artifact, ArtifactKind, Component, ReleaseManifest, APP, FIRMWARE, TOSU};
+pub use manifest::{
+    Artifact, ArtifactKind, Component, ReleaseManifest, Rollout, APP, BETA, FIRMWARE, STABLE, TOSU,
+};
 pub use origin::{ApplyPolicy, InstallOrigin, PackageManager};
 pub use schedule::CheckSchedule;
 
@@ -62,6 +65,10 @@ pub enum UpdateError {
         expected: String,
         actual: String,
     },
+    /// The feed verified, but is not one this install may use: another
+    /// channel, expired, or older than one already accepted (§5.2)
+    #[error("Update feed refused: {0}")]
+    Feed(String),
     #[error("The release manifest is schema v{found}, this build understands v{supported}")]
     UnsupportedSchema { found: u32, supported: u32 },
     #[error("No {component} artifact published for {target}")]

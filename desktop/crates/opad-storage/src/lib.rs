@@ -365,6 +365,15 @@ impl Storage {
         Ok(())
     }
 
+    /// Removes a host-side value; removing one that is not there is not an
+    /// error. The same P1-3 write guard applies.
+    pub fn delete_app_state(&self, key: &str) -> Result<(), StorageError> {
+        self.check_writes_allowed()?;
+        self.conn
+            .execute("DELETE FROM app_state WHERE key = ?1", params![key])?;
+        Ok(())
+    }
+
     /// Custom layout JSON for a screen, if one was saved
     pub fn load_layout(&self, screen: u8) -> Result<Option<String>, StorageError> {
         self.conn

@@ -308,6 +308,52 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 }),
                 last_error: status.last_error,
                 restart_required: status.restart_required,
+                channel: status.channel,
+                checking: status.checking,
+                last_result: status.last_result,
+            }
+        }
+
+        IpcRequest::CheckForUpdates => {
+            if mode != RuntimeMode::Idle {
+                return IpcResponse::OperationDeferred {
+                    reason: "Updates are checked once the map has ended".to_string(),
+                };
+            }
+            let Some(updates) = updates else {
+                return IpcResponse::Error("The update worker is not running".to_string());
+            };
+            match updates.request_check() {
+                Ok(()) => IpcResponse::UpdateCheckStarted,
+                Err(e) => IpcResponse::Error(e),
+            }
+        }
+
+        IpcRequest::SetUpdateChannel { channel } => {
+            if channel != opad_update::STABLE && channel != opad_update::BETA {
+                return IpcResponse::OperationRejected {
+                    reason: format!("Unknown update channel {channel:?}; it is stable or beta"),
+                };
+            }
+            let Some(updates) = updates else {
+                return IpcResponse::Error("The update worker is not running".to_string());
+            };
+            let saved = {
+                let guard = storage.lock();
+                match guard.as_ref() {
+                    Some(s) => s.set_app_state(updater::CHANNEL_KEY, &channel),
+                    None => return IpcResponse::Error("Storage is unavailable".to_string()),
+                }
+            };
+            match saved {
+                Ok(()) => match updates.channel_changed() {
+                    Ok(()) => IpcResponse::UpdateCheckStarted,
+                    Err(e) => IpcResponse::Error(e),
+                },
+                // Mid-map this is a blocked storage write, not a failure
+                Err(e) => IpcResponse::OperationDeferred {
+                    reason: format!("Cannot save the update channel right now: {}", e),
+                },
             }
         }
 

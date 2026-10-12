@@ -121,6 +121,9 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 [Run]
 Filename: "{app}\{#MyAppDaemonName}"; Flags: nowait runhidden
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+; An in-app update runs this installer with /SILENT /RELAUNCH=1: the GUI it
+; closed comes back, to its tray, without a click
+Filename: "{app}\{#MyAppExeName}"; Parameters: "--tray"; Flags: nowait; Check: IsRelaunch
 
 [UninstallDelete]
 ; Strong uninstall (§W2-3): remove entire install directory and disposable state
@@ -131,6 +134,12 @@ Type: files; Name: "{userappdata}\osupad\daemon.log"
 Type: files; Name: "{userappdata}\osupad\tosu.log"
 
 [Code]
+// The in-app updater passes /RELAUNCH=1 (opad-update app::apply_command)
+function IsRelaunch: Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:RELAUNCH|0}') = '1');
+end;
+
 // Strong uninstall contract (§W2-3)
 // 1. Unconditionally remove Run autostart keys even if toggled inside the GUI.
 // 2. Prompt user before deleting lifetime counters and config in %APPDATA%\opad (default = keep).

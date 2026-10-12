@@ -47,6 +47,8 @@ jobs:
     secrets: inherit
     permissions:
       contents: write
+      pages: write
+      id-token: write
 
   firmware:
     name: Firmware release
@@ -58,3 +60,5 @@ jobs:
     secrets: inherit
     permissions:
       contents: write
+      pages: write
+      id-token: write

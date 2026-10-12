@@ -613,8 +613,10 @@ pub fn settings(app: &App) -> Element<'_, Message> {
     scrollable(content).into()
 }
 
-/// §U-0.4: every updater is switchable on its own, and shows what is
-/// installed, what is available and when it last managed to check.
+/// The update card (docs/specs/release-and-updates.md §15): the app and
+/// tosu, each with what is installed and what is available, the channel,
+/// *Check now*, and how the last install went. Every updater is switchable
+/// on its own (§U-0.4); the firmware has its own card beside this one.
 fn updates(app: &App) -> Element<'_, Message> {
     use opad_ipc::UpdateComponent;
 
@@ -630,7 +632,10 @@ fn updates(app: &App) -> Element<'_, Message> {
         .into();
     };
 
-    let line = |name: &'static str, c: &opad_ipc::ComponentUpdate, component: UpdateComponent| {
+    let line = |name: &'static str,
+                c: &opad_ipc::ComponentUpdate,
+                component: UpdateComponent,
+                install_label: &'static str| {
         let installed = c.installed.clone().unwrap_or_else(|| "unknown".into());
         let state = match (&c.available, c.notify_only) {
             // §U-2a: a package manager owns these files, so we report only
@@ -638,20 +643,20 @@ fn updates(app: &App) -> Element<'_, Message> {
             (Some(v), false) => format!("{} available", v),
             (None, _) => "up to date".to_string(),
         };
-        let mut r = row![
-            column![
-                text(format!("{} {}", name, installed)).size(13),
-                muted(state).size(11),
-            ]
-            .spacing(2),
-            Space::new().width(Length::Fill),
+        let mut info = column![
+            text(format!("{} {}", name, installed)).size(13),
+            muted(state).size(11),
         ]
-        .align_y(Alignment::Center);
+        .spacing(2);
+        if let (Some(_), Some(url)) = (&c.available, &c.notes_url) {
+            info = info.push(muted(format!("What's new: {}", url)).size(11));
+        }
+        let mut r = row![info, Space::new().width(Length::Fill)].align_y(Alignment::Center);
 
-        // §U-2: never automatic. A person presses this.
+        // §U-2: never automatic for the app. A person presses this.
         if c.ready_to_install {
             r = r.push(
-                button(text("Install now").size(12))
+                button(text(install_label).size(12))
                     .style(theme::primary)
                     .on_press(Message::InstallUpdate(component)),
             );
@@ -659,25 +664,68 @@ fn updates(app: &App) -> Element<'_, Message> {
         }
         r.push(
             checkbox(c.enabled)
-                .label("Check automatically")
+                .label(match component {
+                    UpdateComponent::App => "Check automatically",
+                    _ => "Update automatically",
+                })
                 .on_toggle(move |v| Message::ToggleUpdater(component, v)),
         )
     };
 
-    let checked = u
-        .last_check
-        .as_deref()
-        .map(|t| format!("Last checked {}", t))
-        .unwrap_or_else(|| "Not checked yet".to_string());
+    let checked = if u.checking {
+        "Checking for updates…".to_string()
+    } else {
+        u.last_check
+            .as_deref()
+            .map(|t| format!("Last checked {}", t))
+            .unwrap_or_else(|| "Not checked yet".to_string())
+    };
+    let mut check_btn = button(text("Check now").size(12)).style(theme::secondary);
+    if !u.checking {
+        check_btn = check_btn.on_press(Message::CheckForUpdates);
+    }
+
+    let channels = vec!["stable".to_string(), "beta".to_string()];
+    let channel_row = row![
+        muted("Channel").size(12),
+        pick_list(channels, Some(u.channel.clone()), Message::SetUpdateChannel)
+            .text_size(12)
+            .padding([4, 8]),
+        Space::new().width(Length::Fill),
+        muted(if u.channel == "beta" {
+            "Release candidates as soon as they are out"
+        } else {
+            "Final releases only"
+        })
+        .size(11),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center);
 
     let mut content = column![
         caption("SOFTWARE UPDATES"),
-        line("OPad", &u.app, UpdateComponent::App),
-        line("tosu", &u.tosu, UpdateComponent::Tosu),
-        muted(checked).size(11),
+        line("OPad", &u.app, UpdateComponent::App, "Install now"),
+        line("tosu", &u.tosu, UpdateComponent::Tosu, "Update now"),
+        channel_row,
+        row![
+            muted(checked).size(11),
+            Space::new().width(Length::Fill),
+            check_btn
+        ]
+        .align_y(Alignment::Center),
     ]
     .spacing(10);
 
+    if u.restart_required {
+        content = content.push(
+            text("OPad was updated. Restart it to finish: quit from the tray and open it again.")
+                .size(12)
+                .color(theme::YELLOW),
+        );
+    }
+    if let Some(r) = &u.last_result {
+        content = content.push(muted(format!("Last update: {}", r)).size(11));
+    }
     if let Some(e) = &u.last_error {
         content = content.push(muted(format!("Last check failed: {}", e)).size(11));
     }

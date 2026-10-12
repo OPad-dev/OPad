@@ -63,6 +63,7 @@ pub fn offer(
         )
     };
     let installed = device_info.as_ref().map(|i| i.firmware_version.clone());
+    let board = device_info.as_ref().map(|i| i.board_profile.clone());
 
     let mut out = FirmwareOffer {
         installed: installed.clone(),
@@ -98,6 +99,8 @@ pub fn offer(
     let action = match opad_update::firmware::plan(
         manifest,
         installed.as_deref(),
+        board.as_deref(),
+        env!("CARGO_PKG_VERSION"),
         may_update_now(mode, true),
     ) {
         Ok(a) => a,
@@ -107,16 +110,26 @@ pub fn offer(
         }
     };
 
-    if let FirmwareAction::Available {
-        installed,
-        available,
-        notes,
-        ..
-    } = action
-    {
-        out.consent_text = Some(consent_text(&installed, &available));
-        out.available = Some(available);
-        out.notes = notes;
+    match action {
+        FirmwareAction::Available {
+            installed,
+            available,
+            notes,
+            ..
+        } => {
+            out.consent_text = Some(consent_text(&installed, &available));
+            out.available = Some(available);
+            out.notes = notes;
+        }
+        // Shown, not offered: the app goes first (§3.2)
+        FirmwareAction::NeedsNewerApp { available, min_app } => {
+            out.blockers.push(format!(
+                "Firmware {available} needs OPad {min_app} or newer; update the app first"
+            ));
+            out.available = Some(available);
+            out.needs_app = Some(min_app);
+        }
+        _ => {}
     }
     out
 }
@@ -168,12 +181,13 @@ pub async fn install<D: DeviceLink>(
     pending_ops: &Arc<Mutex<crate::runtime::PendingOperations>>,
 ) -> Result<FirmwareUpdateOutcome, FirmwareUpdateError> {
     let storage_available = storage.lock().is_some();
-    let (mode, connected, installed, running_partition, guard) = {
+    let (mode, connected, installed, board, running_partition, guard) = {
         let st = state.lock();
         (
             st.mode,
             st.device_connected,
             st.device_info.as_ref().map(|i| i.firmware_version.clone()),
+            st.device_info.as_ref().map(|i| i.board_profile.clone()),
             st.device_info
                 .as_ref()
                 .and_then(|i| i.running_partition.clone()),
@@ -211,8 +225,13 @@ pub async fn install<D: DeviceLink>(
     let manifest = manifest.ok_or_else(|| {
         UpdateError::Http("No verified release manifest yet; check for updates first".to_string())
     })?;
-    let action =
-        opad_update::firmware::plan(manifest, installed.as_deref(), may_update_now(mode, true))?;
+    let action = opad_update::firmware::plan(
+        manifest,
+        installed.as_deref(),
+        board.as_deref(),
+        env!("CARGO_PKG_VERSION"),
+        may_update_now(mode, true),
+    )?;
     let FirmwareAction::Available {
         installed,
         available,
@@ -236,7 +255,7 @@ pub async fn install<D: DeviceLink>(
 
     // Step 3. Download, then verify the hash the signed manifest gave, then
     // verify the image is actually for this chip.
-    let client = opad_update::client::UpdateClient::new()?;
+    let client = opad_update::client::UpdateClient::for_artifacts()?;
     let bytes = client.fetch_artifact(&artifact).await?;
     let staging = opad_model::paths::state_dir()
         .map_err(|e| UpdateError::Io(std::io::Error::other(e.to_string())))?
@@ -437,13 +456,16 @@ mod tests {
                     url: "https://x/osupad-firmware.bin".to_string(),
                     sha256: "00".to_string(),
                     size: None,
+                    board: None,
                 }],
+                ..Default::default()
             },
         );
         ReleaseManifest {
             schema: 1,
             generated: "2026-09-17T00:00:00Z".to_string(),
             components,
+            ..Default::default()
         }
     }
 

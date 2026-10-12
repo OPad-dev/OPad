@@ -17,37 +17,47 @@ use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::path::Path;
 
-/// The minisign public key the release manifest is signed with.
+/// The throwaway test key (docs/specs/release-and-updates.md §5.4).
 ///
-/// The matching secret key is **not in this repository and must never be**. It
-/// lives at `~/.config/opad/opad-manifest.key` on the release machine, and
-/// `opad-manifest` (the signing tool beside this crate) is the only thing
-/// that reads it.
+/// **Both halves are in the repository** (`test-key/` beside this crate), so
+/// this key protects nothing: anyone can sign a feed with it. It exists so the
+/// whole update path, signature check included, runs before releases are
+/// signed for real. Every release signed with it is a pre-release on the beta
+/// feed only. When the real feed key exists (§19), it is added here, a release
+/// trusting both is published, and a later release drops this one.
+pub const TEST_KEY: &str = "RWTxRYKioocnnW3mtI0eGzkUy0lW+sn6/L+7CJITSv8xWvjdNUnCT/Jv";
+
+/// Every minisign public key a feed may be signed with. More than one only
+/// while moving from one key to the next (§5.4).
 ///
-/// An empty value here is not a soft failure: with no key there is nothing to
-/// verify against, so every update path fails closed rather than falling back
-/// to trusting the transport.
-///
-/// **This key is currently stored unencrypted** (`minisign -G -W`). See the
-/// warning in `bin/opad-manifest.rs` — it must be re-cut with a passphrase
-/// before the repository is published.
-pub const MANIFEST_PUBLIC_KEY: &str = "RWRsyn4Jum62+G0lLWDLbT9yjEO35ZEsWJ30iUmclHEc27zVZRer8qtG";
+/// An empty list is not a soft failure: with no key there is nothing to verify
+/// against, so every update path fails closed rather than falling back to
+/// trusting the transport.
+pub const TRUSTED_KEYS: &[&str] = &[TEST_KEY];
 
 /// True when this build can verify anything at all
 pub fn signing_configured() -> bool {
-    !MANIFEST_PUBLIC_KEY.trim().is_empty()
+    TRUSTED_KEYS.iter().any(|k| !k.trim().is_empty())
 }
 
-/// Verifies a detached minisign signature over the raw manifest bytes.
+/// Verifies a detached minisign signature over the raw feed bytes, against
+/// each trusted key in turn.
 ///
-/// Takes the bytes rather than a parsed manifest on purpose: the signature
-/// covers exactly what was served, so parsing must happen after this, never
-/// before, and never on a re-serialised copy.
+/// Takes the bytes rather than a parsed feed on purpose: the signature covers
+/// exactly what was served, so parsing must happen after this, never before,
+/// and never on a re-serialised copy.
 pub fn verify_manifest_signature(
     manifest_bytes: &[u8],
     signature: &str,
 ) -> Result<(), UpdateError> {
-    verify_with_key(MANIFEST_PUBLIC_KEY, manifest_bytes, signature)
+    let mut last = UpdateError::NoPublicKey;
+    for key in TRUSTED_KEYS {
+        match verify_with_key(key, manifest_bytes, signature) {
+            Ok(()) => return Ok(()),
+            Err(e) => last = e,
+        }
+    }
+    Err(last)
 }
 
 pub(crate) fn verify_with_key(
@@ -221,9 +231,40 @@ mod tests {
     fn this_build_has_a_usable_signing_key() {
         // A release that ships with no key, or with a key that does not parse,
         // has silently disabled all three updaters.
-        assert!(signing_configured(), "MANIFEST_PUBLIC_KEY is empty");
-        PublicKey::from_base64(MANIFEST_PUBLIC_KEY.trim())
-            .expect("MANIFEST_PUBLIC_KEY is not a valid minisign public key");
+        assert!(signing_configured(), "TRUSTED_KEYS is empty");
+        for key in TRUSTED_KEYS {
+            PublicKey::from_base64(key.trim())
+                .unwrap_or_else(|e| panic!("{key} is not a valid minisign public key: {e}"));
+        }
+    }
+
+    /// Signed with `test-key/opad-test.key` by the minisign CLI, the same way
+    /// update-feed.yml signs the feeds.
+    const TEST_KEY_FEED: &[u8] =
+        br#"{"schema":2,"channel":"beta","serial":1,"generated":"2026-10-12T00:00:00Z","components":{}}"#;
+    const TEST_KEY_SIGNATURE: &str = concat!(
+        "untrusted comment: signature from minisign secret key
+",
+        "RUTxRYKioocnnT+JX8kJqhdt96vnmgqFsUWSHnB5/3dwST0Cy1fE00E4ETiAIQoR2hBh6pUQTF/511mdpw2GQkwpauohnktc1gA=
+",
+        "trusted comment: opad test vector
+",
+        "bLmIFt8tc/CeLobZ+iSlqRkaEQnwVTeE0dnR9pvxf8UpZZdXT1h9BiyzrVxGAjbN60e73DGqiCsSnUjfdF64Ag==
+",
+    );
+
+    #[test]
+    fn a_feed_signed_with_a_trusted_key_verifies() {
+        verify_manifest_signature(TEST_KEY_FEED, TEST_KEY_SIGNATURE).unwrap();
+    }
+
+    #[test]
+    fn the_committed_test_key_is_the_trusted_one() {
+        let pubfile = include_str!("../test-key/opad-test.pub");
+        assert!(
+            pubfile.lines().any(|l| l.trim() == TEST_KEY),
+            "test-key/opad-test.pub and TEST_KEY disagree"
+        );
     }
 
     #[test]

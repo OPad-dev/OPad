@@ -5,6 +5,11 @@
 //! Everything is HTTPS-only, with a size ceiling so a hostile or broken server
 //! cannot make the daemon allocate without bound — the signature check comes
 //! after the download, so the download itself has to be survivable.
+//!
+//! The one exception is plain HTTP to this machine's loopback address, which
+//! `make feed-local` serves from (docs/specs/release-and-updates.md §11). The
+//! feed's signature and every file's hash are checked exactly the same way;
+//! a server on loopback is already code running on this machine.
 
 use crate::UpdateError;
 use std::time::Duration;
@@ -40,9 +45,18 @@ impl Http {
             .user_agent(USER_AGENT)
             .connect_timeout(CONNECT_TIMEOUT)
             .timeout(REQUEST_TIMEOUT)
-            // Redirects are followed, but `require_https` below is re-checked
-            // on the final URL, so a redirect cannot downgrade the transport.
-            .https_only(true)
+            // Redirects are followed only to HTTPS (or loopback), so one cannot
+            // downgrade the transport; the client-wide https_only would also
+            // refuse loopback HTTP, hence the policy instead
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                if attempt.previous().len() >= 10 {
+                    attempt.error("too many redirects")
+                } else if require_https(attempt.url().as_str()).is_ok() {
+                    attempt.follow()
+                } else {
+                    attempt.error("redirect to a non-HTTPS URL")
+                }
+            }))
             .build()
             .map_err(|e| UpdateError::Http(e.to_string()))?;
         Ok(Self { client })
@@ -66,14 +80,8 @@ impl Http {
             .await
             .map_err(|e| UpdateError::Http(format!("GET {url}: {e}")))?;
 
-        // Verify the final URL (after redirects) is HTTPS
-        if resp.url().scheme() != "https" {
-            return Err(UpdateError::Http(format!(
-                "GET {}: requires HTTPS but got {}",
-                resp.url(),
-                resp.url().scheme()
-            )));
-        }
+        // Verify the final URL (after redirects) is HTTPS, or loopback
+        require_https(resp.url().as_str())?;
 
         if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
             return Ok(Fetched::NotModified);
@@ -126,15 +134,33 @@ async fn read_capped(
     Ok(out)
 }
 
-/// Belt and braces alongside `https_only`: the check is cheap and it also
-/// catches a manifest that names a plain-HTTP artifact URL.
+/// Checked on every URL before a request and after redirects; it also
+/// catches a feed that names a plain-HTTP file.
 pub fn require_https(url: &str) -> Result<(), UpdateError> {
-    if url.starts_with("https://") {
+    if url.starts_with("https://") || is_loopback_http(url) {
         return Ok(());
     }
     Err(UpdateError::Http(format!(
         "{url} is not https; refusing to download over an unauthenticated transport"
     )))
+}
+
+/// `http://127.0.0.1…`, `http://localhost…` or `http://[::1]…`, matched on the
+/// whole host so `http://localhost.example.com` is not loopback
+fn is_loopback_http(url: &str) -> bool {
+    let Some(rest) = url.strip_prefix("http://") else {
+        return false;
+    };
+    let host_port = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if host_port.contains('@') {
+        return false;
+    }
+    let host = if let Some(v6) = host_port.strip_prefix('[') {
+        v6.split(']').next().unwrap_or("")
+    } else {
+        host_port.split(':').next().unwrap_or("")
+    };
+    matches!(host, "127.0.0.1" | "localhost" | "::1")
 }
 
 #[cfg(test)]
@@ -146,5 +172,15 @@ mod tests {
         assert!(require_https("http://example.com/manifest.json").is_err());
         assert!(require_https("ftp://example.com/x").is_err());
         assert!(require_https("https://example.com/manifest.json").is_ok());
+    }
+
+    #[test]
+    fn plain_http_to_loopback_is_allowed_for_local_feeds() {
+        assert!(require_https("http://127.0.0.1:8000/updates/beta.json").is_ok());
+        assert!(require_https("http://localhost:8000/x").is_ok());
+        assert!(require_https("http://[::1]:8000/x").is_ok());
+        assert!(require_https("http://localhost.example.com/x").is_err());
+        assert!(require_https("http://127.0.0.1.example.com/x").is_err());
+        assert!(require_https("http://user@127.0.0.1/x").is_err());
     }
 }

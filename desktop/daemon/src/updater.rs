@@ -1,14 +1,21 @@
-//! The update worker (§U-0, §U-1, §U-2).
+//! The update worker (docs/specs/release-and-updates.md §6, §8, §9).
 //!
 //! One task, woken on a slow tick, that does nothing at all unless the daemon
 //! is IDLE. That is deliberate and is the §U-0.1 rule in its strongest form:
 //! not merely "do not apply an update mid-map" but "do not even record that a
 //! check happened", because recording it is a storage write and P1-3 forbids
 //! those during PLAYING and COOLDOWN.
+//!
+//! It follows one channel's feed (stable or beta), sees it through this
+//! install's gradual-rollout bucket, updates tosu on its own when allowed, and
+//! applies an app update only when a person asks. How the last install went is
+//! kept in storage, so an install the daemon did not live to finish (the
+//! Windows installer stops it) is reported correctly after the restart.
 
 use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 use tracing::{debug, info, warn};
 
 use opad_ipc::{ComponentUpdate, UpdateComponent};
@@ -19,7 +26,8 @@ use opad_update::client::UpdateClient;
 use opad_update::manifest::current_target;
 use opad_update::tosu::{self, TosuAction};
 use opad_update::{
-    may_update_now, ApplyPolicy, CheckSchedule, InstallOrigin, ReleaseManifest, UpdateError,
+    may_update_now, rollout, ApplyPolicy, CheckSchedule, InstallOrigin, ReleaseManifest,
+    UpdateError, BETA, STABLE,
 };
 
 use crate::runtime::DaemonState;
@@ -29,9 +37,19 @@ use crate::runtime::DaemonState;
 /// after a laptop wakes up — the daily check actually runs.
 const TICK: Duration = Duration::from_secs(15 * 60);
 
+/// *Check now* runs at most this often, whatever the GUI sends
+const MANUAL_CHECK_MIN: Duration = Duration::from_secs(60);
+
 pub const SCHEDULE_KEY: &str = "update.schedule";
 pub const TOSU_ENABLED_KEY: &str = "update.tosu.enabled";
 pub const APP_ENABLED_KEY: &str = "update.app.enabled";
+/// `stable` (default) or `beta`
+pub const CHANNEL_KEY: &str = "update.channel";
+/// How the last install went ([`UpdateResult`])
+pub const LAST_RESULT_KEY: &str = "update.last_result";
+/// Written just before an install is applied, removed once it has returned.
+/// Still there at startup means the daemon did not see the install finish.
+pub const IN_PROGRESS_KEY: &str = "update.in_progress";
 
 /// What the GUI shows for each updater (§U-0.4)
 #[derive(Debug, Clone, Default)]
@@ -43,21 +61,31 @@ pub struct UpdateStatus {
     /// The app was replaced on disk, so the running daemon and GUI are the old
     /// binaries and must be restarted (§U-2)
     pub restart_required: bool,
+    pub channel: String,
+    /// A check is running right now
+    pub checking: bool,
+    /// How the last install went, as a sentence
+    pub last_result: Option<String>,
 }
 
 pub type SharedUpdateStatus = Arc<Mutex<UpdateStatus>>;
 
-/// A person pressed Install. The daemon never applies an app update on its own
-/// (§U-2), so this is the only way one is applied.
 #[derive(Debug, Clone, Copy)]
 pub enum UpdateCommand {
+    /// A person pressed Install. The daemon never applies an app update on
+    /// its own (§U-2), so this is the only way one is applied.
     Install(UpdateComponent),
+    /// *Check now*
+    Check,
+    /// The channel setting changed: drop the old channel's feed and check
+    ChannelChanged,
 }
 
-/// The last manifest that passed signature verification.
+/// The last feed that passed verification, as this install sees it (its
+/// rollout bucket applied).
 ///
-/// Shared rather than kept inside the worker because §U-3b's firmware flash is
-/// driven from an IPC handler, and it must use a manifest this daemon actually
+/// Shared rather than kept inside the worker because the firmware flash is
+/// driven from an IPC handler, and it must use a feed this daemon actually
 /// verified — never re-fetch one at the moment of flashing, where a failure
 /// would land between the consent and the write.
 pub type SharedManifest = Arc<Mutex<Option<ReleaseManifest>>>;
@@ -75,15 +103,97 @@ impl UpdateService {
         self.status.lock().clone()
     }
 
-    /// The verified manifest, or `None` if no check has succeeded yet.
+    /// The verified feed, or `None` if no check has succeeded yet.
     pub fn manifest(&self) -> Option<ReleaseManifest> {
         self.manifest.lock().clone()
     }
 
     pub fn request_install(&self, component: UpdateComponent) -> Result<(), String> {
+        self.send(UpdateCommand::Install(component))
+    }
+
+    pub fn request_check(&self) -> Result<(), String> {
+        self.send(UpdateCommand::Check)
+    }
+
+    /// Call after writing a new [`CHANNEL_KEY`]
+    pub fn channel_changed(&self) -> Result<(), String> {
+        self.send(UpdateCommand::ChannelChanged)
+    }
+
+    fn send(&self, command: UpdateCommand) -> Result<(), String> {
         self.commands
-            .send(UpdateCommand::Install(component))
+            .send(command)
             .map_err(|_| "The update worker is not running".to_string())
+    }
+}
+
+/// One install's outcome, kept in storage under [`LAST_RESULT_KEY`]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateResult {
+    pub component: String,
+    pub from: String,
+    pub to: String,
+    pub ok: bool,
+    pub message: String,
+    /// RFC 3339
+    pub at: String,
+}
+
+impl UpdateResult {
+    fn new(component: &str, from: &str, to: &str, ok: bool, message: impl Into<String>) -> Self {
+        Self {
+            component: component.to_string(),
+            from: from.to_string(),
+            to: to.to_string(),
+            ok,
+            message: message.into(),
+            at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        }
+    }
+
+    pub fn sentence(&self) -> String {
+        let name = match self.component.as_str() {
+            "app" => "OPad",
+            "tosu" => "tosu",
+            other => other,
+        };
+        if self.ok {
+            format!(
+                "{name} updated from {} to {} ({})",
+                self.from, self.to, self.at
+            )
+        } else {
+            format!(
+                "{name} update from {} to {} failed: {} ({})",
+                self.from, self.to, self.message, self.at
+            )
+        }
+    }
+}
+
+/// The install the daemon was applying, kept under [`IN_PROGRESS_KEY`]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InProgress {
+    pub component: String,
+    pub from: String,
+    pub to: String,
+}
+
+/// What an install still marked in progress at startup means. The Windows
+/// installer stops the daemon on purpose, so a missing "finished" is not
+/// itself a failure: what decides it is the version now running.
+pub fn resolve_interrupted(in_progress: &InProgress, running_version: &str) -> UpdateResult {
+    if in_progress.component == "app" && running_version == in_progress.to {
+        UpdateResult::new("app", &in_progress.from, &in_progress.to, true, "")
+    } else {
+        UpdateResult::new(
+            &in_progress.component,
+            &in_progress.from,
+            &in_progress.to,
+            false,
+            "it was interrupted before it finished; the previous version is still installed",
+        )
     }
 }
 
@@ -92,7 +202,15 @@ pub fn spawn_update_worker(
     storage: Arc<Mutex<Option<Storage>>>,
     tosu_supervisor: TosuSupervisor,
 ) -> UpdateService {
-    let status: SharedUpdateStatus = Arc::new(Mutex::new(UpdateStatus::default()));
+    let status: SharedUpdateStatus = Arc::new(Mutex::new(UpdateStatus {
+        channel: read_channel(&storage),
+        app: ComponentUpdate {
+            installed: Some(env!("CARGO_PKG_VERSION").to_string()),
+            enabled: read_flag(&storage, APP_ENABLED_KEY),
+            ..Default::default()
+        },
+        ..Default::default()
+    }));
     let shared_manifest: SharedManifest = Arc::new(Mutex::new(None));
     let (commands, mut command_rx) = tokio::sync::mpsc::unbounded_channel();
     let service = UpdateService {
@@ -101,55 +219,92 @@ pub fn spawn_update_worker(
         commands,
     };
 
+    recover_interrupted(&storage, &status);
+
     tokio::spawn(async move {
         // Spread the first check out a little: a machine that just booted is
         // busy, and every install checking at login is the pattern §U-0.6
         // warns about.
         tokio::time::sleep(Duration::from_secs(90)).await;
         let mut manifest: Option<ReleaseManifest> = None;
+        let mut last_manual: Option<Instant> = None;
 
         // An interval, not a sleep inside the loop: `tick()` fires immediately
         // the first time, so the first check happens at the 90 s mark above.
-        // A `sleep(TICK)` there would have made it 90 s *plus* a full tick, so
-        // a fresh install went its first quarter of an hour without ever
-        // checking — and the 90 s spread would have bought nothing.
         let mut ticker = tokio::time::interval(TICK);
 
         loop {
-            tokio::select! {
-                _ = ticker.tick() => {
-                    let have_cached = manifest.is_some();
-                    match tick(&daemon_state, &storage, &tosu_supervisor, &status, have_cached).await {
-                        Ok(m) => {
-                            if m.is_some() {
-                                shared_manifest.lock().clone_from(&m);
-                                manifest = m;
-                            }
+            let force = tokio::select! {
+                _ = ticker.tick() => false,
+                Some(command) = command_rx.recv() => match command {
+                    UpdateCommand::Check => {
+                        if last_manual.is_some_and(|t| t.elapsed() < MANUAL_CHECK_MIN) {
+                            debug!("Check now ignored: the last one was under a minute ago");
+                            continue;
                         }
-                        Err(e) => {
-                            warn!("Update check failed: {}", e);
+                        last_manual = Some(Instant::now());
+                        true
+                    }
+                    UpdateCommand::ChannelChanged => {
+                        let channel = read_channel(&storage);
+                        info!("Update channel is now {}", channel);
+                        status.lock().channel = channel;
+                        // The old channel's feed says nothing about this one
+                        manifest = None;
+                        shared_manifest.lock().take();
+                        true
+                    }
+                    UpdateCommand::Install(component) => {
+                        let result = match component {
+                            UpdateComponent::App => {
+                                install_app(manifest.as_ref(), &daemon_state, &storage, &status).await
+                            }
+                            UpdateComponent::Tosu => match &manifest {
+                                Some(m) => {
+                                    update_tosu(m, &daemon_state, &storage, &tosu_supervisor, &status, true).await
+                                }
+                                None => Err(UpdateError::Http(
+                                    "No verified update feed yet; check for updates first".to_string(),
+                                )),
+                            },
+                            // §U-3: an app update must never trigger a firmware
+                            // update. A flash is unreachable from here by design;
+                            // it goes through InstallFirmwareUpdate, which takes
+                            // consent and syncs the counters first.
+                            UpdateComponent::Firmware => Err(UpdateError::Http(
+                                "Firmware updates are not applied by the updater (§U-3)".to_string(),
+                            )),
+                        };
+                        if let Err(e) = result {
+                            warn!("Applying the update failed: {}", e);
                             status.lock().last_error = Some(e.to_string());
                         }
+                        continue;
                     }
+                },
+            };
+
+            status.lock().checking = true;
+            let have_cached = manifest.is_some();
+            let checked = check(
+                &daemon_state,
+                &storage,
+                &tosu_supervisor,
+                &status,
+                have_cached,
+                force,
+            )
+            .await;
+            status.lock().checking = false;
+            match checked {
+                Ok(Some(m)) => {
+                    shared_manifest.lock().replace(m.clone());
+                    manifest = Some(m);
                 }
-                Some(UpdateCommand::Install(component)) = command_rx.recv() => {
-                    let result = match component {
-                        UpdateComponent::App => {
-                            install_app(manifest.as_ref(), &daemon_state, &storage, &status).await
-                        }
-                        UpdateComponent::Tosu => Ok(()),
-                        // §U-3: an app update must never trigger a firmware
-                        // update. A flash is unreachable from here by design;
-                        // it goes through InstallFirmwareUpdate, which takes
-                        // consent and syncs the counters first.
-                        UpdateComponent::Firmware => Err(UpdateError::Http(
-                            "Firmware updates are not applied by the updater (§U-3)".to_string(),
-                        )),
-                    };
-                    if let Err(e) = result {
-                        warn!("Applying the update failed: {}", e);
-                        status.lock().last_error = Some(e.to_string());
-                    }
+                Ok(None) => {}
+                Err(e) => {
+                    warn!("Update check failed: {}", e);
+                    status.lock().last_error = Some(e.to_string());
                 }
             }
         }
@@ -158,17 +313,37 @@ pub fn spawn_update_worker(
     service
 }
 
-/// Returns the manifest when a fresh one was fetched, so the worker can keep
-/// it for a later Install command without re-fetching and re-verifying.
+/// Turns an install still marked in progress into a result, and clears the
+/// staging directory of anything it left behind.
+fn recover_interrupted(storage: &Arc<Mutex<Option<Storage>>>, status: &SharedUpdateStatus) {
+    let stored: Option<UpdateResult> = read_json(storage, LAST_RESULT_KEY);
+    if let Some(in_progress) = read_json::<InProgress>(storage, IN_PROGRESS_KEY) {
+        let result = resolve_interrupted(&in_progress, env!("CARGO_PKG_VERSION"));
+        info!("{}", result.sentence());
+        write_json(storage, LAST_RESULT_KEY, &result);
+        remove_key(storage, IN_PROGRESS_KEY);
+        status.lock().last_result = Some(result.sentence());
+        if let Ok(dir) = opad_model::paths::state_dir() {
+            let _ = std::fs::remove_dir_all(dir.join("updates"));
+        }
+    } else if let Some(result) = stored {
+        status.lock().last_result = Some(result.sentence());
+    }
+}
+
+/// Returns the feed when a fresh one was fetched, so the worker can keep it
+/// for a later Install command without re-fetching and re-verifying.
 /// `have_cached` is whether the worker already holds one; without it the
-/// check is unconditional (the stored ETag survives a restart, the manifest
-/// does not).
-async fn tick(
+/// check is unconditional (the stored ETag survives a restart, the feed does
+/// not). `force` is *Check now*: it skips the daily schedule, never the
+/// IDLE rule.
+async fn check(
     daemon_state: &Arc<Mutex<DaemonState>>,
     storage: &Arc<Mutex<Option<Storage>>>,
     tosu_supervisor: &TosuSupervisor,
     status: &SharedUpdateStatus,
     have_cached: bool,
+    force: bool,
 ) -> Result<Option<ReleaseManifest>, UpdateError> {
     let mode = daemon_state.lock().mode;
 
@@ -178,13 +353,15 @@ async fn tick(
         return Ok(None);
     }
 
+    let channel = read_channel(storage);
     let mut schedule: CheckSchedule = read_json(storage, SCHEDULE_KEY).unwrap_or_default();
+    schedule.switch_channel(&channel);
     let now = SystemTime::now();
-    if !schedule.due_at(now) {
+    if !force && !schedule.due_at(now) {
         return Ok(None);
     }
 
-    let client = UpdateClient::new()?;
+    let client = UpdateClient::new(&channel)?;
     let fetched = client.fetch_manifest(&mut schedule, now, have_cached).await;
     // The schedule is recorded whatever happened, so a failure backs off
     // instead of retrying on every tick.
@@ -195,37 +372,32 @@ async fn tick(
         s.last_error = schedule.last_error.clone();
     }
 
-    let Some(manifest) = fetched? else {
-        debug!("Release manifest unchanged since the last check");
+    let Some(feed) = fetched? else {
+        debug!("Update feed unchanged since the last check");
         return Ok(None);
     };
 
+    // What this install is offered: components still rolling out to others
+    // are left out (§9.2)
+    let install_id = daemon_state.lock().install_id.clone();
+    let feed = rollout::for_install(&feed, install_id.as_deref());
+
     // tosu updates itself; the app only reports, and waits to be told (§U-2).
-    if let Err(e) = update_tosu(
-        &client,
-        &manifest,
-        daemon_state,
-        storage,
-        tosu_supervisor,
-        status,
-    )
-    .await
+    if let Err(e) = update_tosu(&feed, daemon_state, storage, tosu_supervisor, status, false).await
     {
         warn!("tosu update failed: {}", e);
         status.lock().last_error = Some(e.to_string());
     }
 
-    // Reported, not propagated — exactly like the tosu arm above. A manifest
-    // that carries no app artifact for this platform (an unsupported arch, or
-    // a release that shipped one component late) must not throw the whole
-    // manifest away: the firmware offer (§U-3b) is read from it too, and
-    // losing it would silently disable firmware updates for a reason that has
-    // nothing to do with the firmware.
-    if let Err(e) = check_app(&manifest, daemon_state, storage, status) {
+    // Reported, not propagated — exactly like the tosu arm above. A feed that
+    // carries no app artifact for this platform (an unsupported arch, or a
+    // release that shipped one component late) must not throw the whole feed
+    // away: the firmware offer is read from it too.
+    if let Err(e) = check_app(&feed, daemon_state, storage, status) {
         warn!("App update check failed: {}", e);
         status.lock().last_error = Some(e.to_string());
     }
-    Ok(Some(manifest))
+    Ok(Some(feed))
 }
 
 /// Records whether an app update is available. Applies nothing: §U-2 is
@@ -249,11 +421,15 @@ fn check_app(
         current_target(),
         may_update_now(mode, enabled),
     )?;
+    let notes_url = manifest
+        .component(opad_update::APP)
+        .and_then(|c| c.notes_url.clone());
 
     {
         let mut s = status.lock();
         s.app.installed = Some(installed.to_string());
         s.app.enabled = enabled;
+        s.app.notes_url = None;
         match &action {
             AppAction::UpToDate { .. } | AppAction::Defer { .. } => {
                 s.app.available = None;
@@ -263,6 +439,7 @@ fn check_app(
             AppAction::NotifyOnly { available, notes } => {
                 s.app.available = Some(available.clone());
                 s.app.notes = notes.clone();
+                s.app.notes_url = notes_url;
                 s.app.notify_only = true;
                 s.app.ready_to_install = false;
             }
@@ -271,6 +448,7 @@ fn check_app(
             } => {
                 s.app.available = Some(available.clone());
                 s.app.notes = notes.clone();
+                s.app.notes_url = notes_url;
                 s.app.notify_only = false;
                 s.app.ready_to_install = true;
             }
@@ -295,14 +473,15 @@ async fn install_app(
     status: &SharedUpdateStatus,
 ) -> Result<(), UpdateError> {
     let manifest = manifest.ok_or_else(|| {
-        UpdateError::Http("No verified release manifest yet; check for updates first".to_string())
+        UpdateError::Http("No verified update feed yet; check for updates first".to_string())
     })?;
 
     let mode = daemon_state.lock().mode;
     let origin = InstallOrigin::detect();
+    let installed = env!("CARGO_PKG_VERSION");
     let action = app::plan(
         manifest,
-        env!("CARGO_PKG_VERSION"),
+        installed,
         origin,
         current_target(),
         may_update_now(mode, read_flag(storage, APP_ENABLED_KEY)),
@@ -320,7 +499,7 @@ async fn install_app(
         )));
     };
 
-    let client = UpdateClient::new()?;
+    let client = UpdateClient::for_artifacts()?;
     let bytes = client.fetch_artifact(&artifact).await?;
 
     // The verified bytes go to a file the apply step can hand to a package
@@ -339,6 +518,18 @@ async fn install_app(
     opad_update::download::stage_bytes(&target, &bytes, &artifact.sha256, &artifact.url)?
         .install_to(&target)?;
 
+    // Marked before applying: the Windows installer stops this daemon on
+    // purpose, and the next one reads this to say how it went
+    write_json(
+        storage,
+        IN_PROGRESS_KEY,
+        &InProgress {
+            component: "app".to_string(),
+            from: installed.to_string(),
+            to: available.clone(),
+        },
+    );
+
     // Blocking, and a package manager can sit on a polkit prompt for minutes:
     // off the runtime's worker threads
     let applied = {
@@ -354,6 +545,14 @@ async fn install_app(
     // no reason. Direct replacement consumes the file itself, so a missing one
     // is not an error.
     let _ = std::fs::remove_file(&target);
+
+    let result = match &applied {
+        Ok(()) => UpdateResult::new("app", installed, &available, true, ""),
+        Err(e) => UpdateResult::new("app", installed, &available, false, e.to_string()),
+    };
+    write_json(storage, LAST_RESULT_KEY, &result);
+    remove_key(storage, IN_PROGRESS_KEY);
+    status.lock().last_result = Some(result.sentence());
     applied?;
 
     {
@@ -472,39 +671,54 @@ fn copy_replace(staged: &std::path::Path, target: &std::path::Path) -> std::io::
     result
 }
 
+/// Updates the bundled tosu when the feed has a newer build. `force` is the
+/// GUI's *Update now*: it runs even with automatic tosu updates switched off,
+/// but never during a map.
 async fn update_tosu(
-    client: &UpdateClient,
     manifest: &ReleaseManifest,
     daemon_state: &Arc<Mutex<DaemonState>>,
     storage: &Arc<Mutex<Option<Storage>>>,
     supervisor: &TosuSupervisor,
     status: &SharedUpdateStatus,
+    force: bool,
 ) -> Result<(), UpdateError> {
     let enabled = read_flag(storage, TOSU_ENABLED_KEY);
     let bundled_dir = tosu::bundled_dir()?;
     let installed = tosu::installed_version(&bundled_dir);
+    let installed_revision = tosu::installed_revision(&bundled_dir);
     let origin = InstallOrigin::detect();
 
-    // Re-read the mode: fetching the manifest took time, and the user may have
+    // Re-read the mode: fetching the feed took time, and the user may have
     // started a map while it was in flight.
     let mode = daemon_state.lock().mode;
 
     let action = tosu::plan(
         manifest,
         installed.as_deref(),
+        installed_revision,
         origin,
         current_target(),
-        may_update_now(mode, enabled),
+        may_update_now(mode, enabled || force),
     )?;
 
     {
         let mut s = status.lock();
         s.tosu.installed = installed.clone();
-        s.tosu.available = manifest
+        s.tosu.available = match &action {
+            TosuAction::UpToDate { .. } => None,
+            _ => manifest
+                .component(opad_update::TOSU)
+                .map(|c| c.version.clone()),
+        };
+        s.tosu.notes_url = manifest
             .component(opad_update::TOSU)
-            .map(|c| c.version.clone());
+            .and_then(|c| c.notes_url.clone());
         s.tosu.enabled = enabled;
         s.tosu.notify_only = matches!(action, TosuAction::NotifyOnly { .. });
+        s.tosu.ready_to_install = matches!(
+            action,
+            TosuAction::Install { .. } | TosuAction::Defer { .. }
+        ) && !s.tosu.notify_only;
     }
 
     match action {
@@ -524,8 +738,17 @@ async fn update_tosu(
         TosuAction::Defer { reason } => {
             debug!("Deferring the tosu update: {}", reason);
         }
-        TosuAction::Install { from, to, artifact } => {
-            info!("Updating the bundled tosu from {} to {}", from, to);
+        TosuAction::Install {
+            from,
+            to,
+            revision,
+            artifact,
+        } => {
+            info!(
+                "Updating the bundled tosu from {} to {} (r{})",
+                from, to, revision
+            );
+            let client = UpdateClient::for_artifacts()?;
             let bytes = client.fetch_artifact(&artifact).await?;
 
             // Hold tosu down for the swap. Windows will not replace a running
@@ -540,12 +763,27 @@ async fn update_tosu(
                 &bytes,
                 &artifact,
                 &to,
+                revision,
                 upstream_tag.as_deref(),
             );
             supervisor.resume();
 
+            let shown_from = if from.is_empty() {
+                "an unrecorded version"
+            } else {
+                from.as_str()
+            };
             match result {
-                Ok(()) => info!("Bundled tosu updated to {}", to),
+                Ok(()) => {
+                    info!("Bundled tosu updated to {}", to);
+                    let done = UpdateResult::new("tosu", shown_from, &to, true, "");
+                    write_json(storage, LAST_RESULT_KEY, &done);
+                    let mut s = status.lock();
+                    s.last_result = Some(done.sentence());
+                    s.tosu.installed = Some(to);
+                    s.tosu.available = None;
+                    s.tosu.ready_to_install = false;
+                }
                 Err(e) => {
                     // The previous binary is untouched; say so and try again
                     // on the next cycle rather than leaving a broken install.
@@ -553,13 +791,37 @@ async fn update_tosu(
                         "tosu update to {} failed, keeping the current binary: {}",
                         to, e
                     );
-                    status.lock().last_error = Some(e.to_string());
+                    let failed = UpdateResult::new("tosu", shown_from, &to, false, e.to_string());
+                    write_json(storage, LAST_RESULT_KEY, &failed);
+                    {
+                        let mut s = status.lock();
+                        s.last_result = Some(failed.sentence());
+                        s.last_error = Some(e.to_string());
+                    }
                     return Err(e);
                 }
             }
         }
     }
     Ok(())
+}
+
+/// The update channel this install follows; anything unrecognised is stable
+pub fn read_channel(storage: &Arc<Mutex<Option<Storage>>>) -> String {
+    let guard = storage.lock();
+    match guard.as_ref().map(|s| s.get_app_state(CHANNEL_KEY)) {
+        Some(Ok(Some(v))) if v == BETA => BETA.to_string(),
+        _ => STABLE.to_string(),
+    }
+}
+
+fn remove_key(storage: &Arc<Mutex<Option<Storage>>>, key: &str) {
+    let guard = storage.lock();
+    if let Some(s) = guard.as_ref() {
+        if let Err(e) = s.delete_app_state(key) {
+            debug!("Could not remove {}: {}", key, e);
+        }
+    }
 }
 
 /// Reads a boolean setting, defaulting to enabled. A storage failure must not
@@ -604,7 +866,31 @@ fn write_json<T: serde::Serialize>(storage: &Arc<Mutex<Option<Storage>>>, key: &
 
 #[cfg(test)]
 mod tests {
-    use super::{copy_replace, replace_file};
+    use super::{copy_replace, replace_file, resolve_interrupted, InProgress};
+
+    fn in_progress(component: &str) -> InProgress {
+        InProgress {
+            component: component.to_string(),
+            from: "1.0.0".to_string(),
+            to: "1.1.0".to_string(),
+        }
+    }
+
+    #[test]
+    fn an_app_install_the_new_version_survived_is_a_success() {
+        // The Windows installer stops the daemon before it can record anything
+        let r = resolve_interrupted(&in_progress("app"), "1.1.0");
+        assert!(r.ok, "{r:?}");
+        assert!(r.sentence().contains("updated from 1.0.0 to 1.1.0"));
+    }
+
+    #[test]
+    fn an_install_that_left_the_old_version_running_was_interrupted() {
+        let r = resolve_interrupted(&in_progress("app"), "1.0.0");
+        assert!(!r.ok);
+        assert!(r.sentence().contains("interrupted"), "{}", r.sentence());
+        assert!(!resolve_interrupted(&in_progress("tosu"), "1.1.0").ok);
+    }
 
     #[test]
     fn a_staged_update_replaces_the_target() {

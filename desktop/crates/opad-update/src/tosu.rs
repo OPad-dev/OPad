@@ -34,6 +34,9 @@ pub const VERSION_FILE: &str = "VERSION";
 /// The §T-3 notice, rewritten on every swap so a self-updated install stays
 /// compliant instead of citing the version it originally shipped with.
 pub const NOTICE_FILE: &str = "NOTICE";
+/// Our build revision of the installed upstream version (`tosu-v4.26.2-r2`
+/// is revision 2). Absent means 0: the tosu the app package bundled.
+pub const REVISION_FILE: &str = "REVISION";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TosuAction {
@@ -49,6 +52,8 @@ pub enum TosuAction {
     Install {
         from: String,
         to: String,
+        /// Our build revision of `to`, recorded beside it
+        revision: u32,
         artifact: Artifact,
     },
 }
@@ -57,21 +62,24 @@ pub enum TosuAction {
 pub fn plan(
     manifest: &ReleaseManifest,
     installed: Option<&str>,
+    installed_revision: u32,
     origin: InstallOrigin,
     target: &str,
     gate: Result<(), DeferReason>,
 ) -> Result<TosuAction, UpdateError> {
-    let component = manifest
-        .component(TOSU)
-        .ok_or_else(|| UpdateError::NoArtifact {
-            component: TOSU.to_string(),
-            target: "any",
-        })?;
-
     let installed = installed.unwrap_or("").trim();
-    // Only a strictly newer manifest version is an update: a rolled-back
-    // manifest must not downgrade, and `v4.2.0` against `4.2.0` is cosmetic
-    if !installed.is_empty() && !is_newer(&component.version, installed) {
+    // A feed without tosu is normal (no tosu release yet, or a rollout this
+    // install is not in)
+    let Some(component) = manifest.component(TOSU) else {
+        return Ok(TosuAction::UpToDate {
+            version: installed.to_string(),
+        });
+    };
+
+    // Only a strictly newer version, or a rebuild of the same version with a
+    // higher revision, is an update: a rolled-back feed must not downgrade,
+    // and `v4.2.0` against `4.2.0` is cosmetic
+    if !installed.is_empty() && !is_newer_build(component, installed, installed_revision) {
         return Ok(TosuAction::UpToDate {
             version: installed.to_string(),
         });
@@ -101,8 +109,30 @@ pub fn plan(
     Ok(TosuAction::Install {
         from: installed.to_string(),
         to: component.version.clone(),
+        revision: component.revision,
         artifact: artifact.clone(),
     })
+}
+
+/// A newer upstream version, or the same one rebuilt with a higher revision
+fn is_newer_build(
+    component: &crate::manifest::Component,
+    installed: &str,
+    installed_revision: u32,
+) -> bool {
+    if is_newer(&component.version, installed) {
+        return true;
+    }
+    let same_version = !is_newer(installed, &component.version);
+    same_version && component.revision > installed_revision
+}
+
+/// The revision recorded next to the bundled binary; 0 when none is
+pub fn installed_revision(bundled_dir: &Path) -> u32 {
+    std::fs::read_to_string(bundled_dir.join(REVISION_FILE))
+        .ok()
+        .and_then(|t| t.trim().parse().ok())
+        .unwrap_or(0)
 }
 
 /// The version recorded next to the bundled binary, if there is one
@@ -133,6 +163,7 @@ pub fn install(
     binary_bytes: &[u8],
     artifact: &Artifact,
     version: &str,
+    revision: u32,
     upstream_tag: Option<&str>,
 ) -> Result<(), UpdateError> {
     let binary = bundled_dir.join(paths::TOSU_BINARY);
@@ -141,6 +172,12 @@ pub fn install(
 
     let notice = notice_text(version, upstream_tag, &artifact.url);
     write_atomic(&bundled_dir.join(NOTICE_FILE), notice.as_bytes())?;
+    // REVISION before VERSION: dying between the two leaves VERSION naming
+    // the old version, so the next check simply installs again
+    write_atomic(
+        &bundled_dir.join(REVISION_FILE),
+        format!("{revision}\n").as_bytes(),
+    )?;
     write_atomic(
         &bundled_dir.join(VERSION_FILE),
         format!("{version}\n").as_bytes(),
@@ -194,13 +231,16 @@ mod tests {
                     url: "https://example.invalid/tosu".to_string(),
                     sha256: "00".to_string(),
                     size: None,
+                    board: None,
                 }],
+                ..Default::default()
             },
         );
         ReleaseManifest {
             schema: 1,
             generated: "2026-09-16T00:00:00Z".to_string(),
             components,
+            ..Default::default()
         }
     }
 
@@ -209,6 +249,7 @@ mod tests {
         let action = plan(
             &manifest("4.1.0"),
             Some("4.1.0"),
+            0,
             InstallOrigin::User,
             "linux-x86_64",
             Ok(()),
@@ -228,6 +269,7 @@ mod tests {
         let action = plan(
             &manifest("4.1.0"),
             Some("4.2.0"),
+            0,
             InstallOrigin::User,
             "linux-x86_64",
             Ok(()),
@@ -244,6 +286,7 @@ mod tests {
             let action = plan(
                 &manifest(available),
                 Some(installed),
+                0,
                 InstallOrigin::User,
                 "linux-x86_64",
                 Ok(()),
@@ -258,6 +301,7 @@ mod tests {
         let action = plan(
             &manifest("4.1.0"),
             Some("4.2.0"),
+            0,
             InstallOrigin::Deb,
             "linux-x86_64",
             Ok(()),
@@ -278,6 +322,7 @@ mod tests {
             let action = plan(
                 &manifest("4.2.0"),
                 Some("4.1.0"),
+                0,
                 origin,
                 "linux-x86_64",
                 Ok(()),
@@ -299,6 +344,7 @@ mod tests {
         let action = plan(
             &manifest("4.2.0"),
             Some("4.1.0"),
+            0,
             InstallOrigin::User,
             "linux-x86_64",
             Err(DeferReason::Playing),
@@ -317,6 +363,7 @@ mod tests {
         let action = plan(
             &manifest("4.2.0"),
             Some("4.1.0"),
+            0,
             InstallOrigin::Deb,
             "linux-x86_64",
             Err(DeferReason::Playing),
@@ -330,13 +377,16 @@ mod tests {
         let action = plan(
             &manifest("4.2.0"),
             Some("4.1.0"),
+            0,
             InstallOrigin::User,
             "linux-x86_64",
             Ok(()),
         )
         .unwrap();
         match action {
-            TosuAction::Install { from, to, artifact } => {
+            TosuAction::Install {
+                from, to, artifact, ..
+            } => {
                 assert_eq!(from, "4.1.0");
                 assert_eq!(to, "4.2.0");
                 assert_eq!(artifact.url, "https://example.invalid/tosu");
@@ -350,6 +400,7 @@ mod tests {
         let action = plan(
             &manifest("4.2.0"),
             None,
+            0,
             InstallOrigin::Windows,
             "linux-x86_64",
             Ok(()),
@@ -363,12 +414,80 @@ mod tests {
         let err = plan(
             &manifest("4.2.0"),
             Some("4.1.0"),
+            0,
             InstallOrigin::User,
             "windows-aarch64",
             Ok(()),
         )
         .unwrap_err();
         assert!(matches!(err, UpdateError::NoArtifact { .. }));
+    }
+
+    #[test]
+    fn a_higher_revision_of_the_same_version_is_installed() {
+        let mut m = manifest("4.2.0");
+        m.components.get_mut(TOSU).unwrap().revision = 2;
+        let target = "linux-x86_64";
+        let install = |installed_revision| {
+            plan(
+                &m,
+                Some("4.2.0"),
+                installed_revision,
+                InstallOrigin::User,
+                target,
+                Ok(()),
+            )
+            .unwrap()
+        };
+        assert!(matches!(
+            install(1),
+            TosuAction::Install { revision: 2, .. }
+        ));
+        assert!(matches!(install(2), TosuAction::UpToDate { .. }));
+        assert!(matches!(install(3), TosuAction::UpToDate { .. }));
+        // An older version is never installed, whatever its revision
+        assert!(matches!(
+            plan(&m, Some("4.3.0"), 0, InstallOrigin::User, target, Ok(())).unwrap(),
+            TosuAction::UpToDate { .. }
+        ));
+    }
+
+    #[test]
+    fn a_feed_without_tosu_changes_nothing() {
+        let m = ReleaseManifest::default();
+        assert!(matches!(
+            plan(
+                &m,
+                Some("4.2.0"),
+                0,
+                InstallOrigin::User,
+                "linux-x86_64",
+                Ok(())
+            )
+            .unwrap(),
+            TosuAction::UpToDate { .. }
+        ));
+    }
+
+    #[test]
+    fn the_revision_is_recorded_beside_the_version() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            installed_revision(dir.path()),
+            0,
+            "a bundled tosu has no REVISION file"
+        );
+        let bytes = b"tosu";
+        let artifact = Artifact {
+            target: "linux-x86_64".to_string(),
+            kind: ArtifactKind::Binary,
+            url: "https://example.invalid/tosu".to_string(),
+            sha256: sha256_bytes(bytes),
+            size: None,
+            board: None,
+        };
+        install(dir.path(), bytes, &artifact, "4.2.0", 3, None).unwrap();
+        assert_eq!(installed_revision(dir.path()), 3);
     }
 
     #[test]
@@ -381,9 +500,10 @@ mod tests {
             url: "https://example.invalid/tosu-4.2.0".into(),
             sha256: sha256_bytes(bytes),
             size: None,
+            board: None,
         };
 
-        install(dir.path(), bytes, &artifact, "4.2.0", Some("v4.2.0")).unwrap();
+        install(dir.path(), bytes, &artifact, "4.2.0", 1, Some("v4.2.0")).unwrap();
 
         assert_eq!(
             std::fs::read(dir.path().join(paths::TOSU_BINARY)).unwrap(),
@@ -413,8 +533,9 @@ mod tests {
             url: "https://example.invalid/tosu".into(),
             sha256: sha256_bytes(b"what we were promised"),
             size: None,
+            board: None,
         };
-        let err = install(dir.path(), b"what we got", &artifact, "4.2.0", None).unwrap_err();
+        let err = install(dir.path(), b"what we got", &artifact, "4.2.0", 1, None).unwrap_err();
         assert!(matches!(err, UpdateError::HashMismatch { .. }));
 
         // "Never leave the directory without a working binary."
@@ -439,8 +560,9 @@ mod tests {
             url: "https://example.invalid/tosu".into(),
             sha256: sha256_bytes(bytes),
             size: None,
+            board: None,
         };
-        assert!(install(dir.path(), bytes, &artifact, "4.2.0", None).is_err());
+        assert!(install(dir.path(), bytes, &artifact, "4.2.0", 1, None).is_err());
 
         // The next check must still see 4.1.0 and retry
         assert_eq!(installed_version(dir.path()).as_deref(), Some("4.1.0"));

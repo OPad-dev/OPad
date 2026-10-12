@@ -1,0 +1,163 @@
+name: Update feed
+
+# Builds the update feeds (stable.json, beta.json) from the published
+# releases, signs them, and deploys them to GitHub Pages, where every OPad
+# install reads them (docs/specs/release-and-updates.md §5).
+#
+# Runs after every release, by hand (after editing updates/policy.json to
+# pull a release or change a rollout), and weekly: a feed expires 30 days
+# after it was built, so it must be republished before then.
+#
+# Until SIGNING_ENABLED is "true" the feeds are signed with the committed
+# test key (§5.4), which protects nothing. After that, with the real key in
+# the "release" environment, which waits for approval (§19).
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-feed
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the feeds
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        continue-on-error: true
+        with:
+          workspaces: desktop
+          key: opad-feed
+
+      - name: Build opad-feed
+        run: cargo build --release --locked -p opad-update --bin opad-feed --manifest-path desktop/Cargo.toml
+
+      - name: Published releases
+        run: |
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/releases" > releases.json
+          # SHA256SUMS of each release, in case the API gives no digest
+          mkdir -p sums
+          for tag in $(jq -r '.[] | select(.draft == false) | .tag_name' releases.json); do
+            gh release download "$tag" -p SHA256SUMS -O "sums/${tag}.SHA256SUMS" 2>/dev/null || true
+          done
+
+      - name: Build stable.json and beta.json
+        run: |
+          desktop/target/release/opad-feed github \
+            --releases releases.json --sums-dir sums --policy updates/policy.json \
+            --out-dir site/updates
+
+      - name: Keep opad-feed for signing
+        run: cp desktop/target/release/opad-feed site/.opad-feed
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: feed-unsigned
+          path: site
+          include-hidden-files: true
+
+  # Until §19: the committed test key. No secret, no approval.
+  sign-test:
+    name: Sign (test key)
+    needs: build
+    if: vars.SIGNING_ENABLED != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: feed-unsigned
+          path: site
+
+      - name: Install minisign
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends minisign
+
+      - name: Sign and verify
+        run: |
+          chmod +x site/.opad-feed
+          for channel in stable beta; do
+            minisign -S -s desktop/crates/opad-update/test-key/opad-test.key \
+              -m "site/updates/${channel}.json" -t "OPad ${channel} feed (TEST KEY)" < /dev/null
+            site/.opad-feed verify --feed "site/updates/${channel}.json" --channel "$channel"
+          done
+          rm site/.opad-feed
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  # §19: the real feed key, only after a person approves this job
+  sign-release:
+    name: Sign (release key)
+    needs: build
+    if: vars.SIGNING_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: feed-unsigned
+          path: site
+
+      - name: Install minisign
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends minisign
+
+      - name: Sign and verify
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+        run: |
+          umask 077
+          key="$(mktemp)"
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$key"
+          chmod +x site/.opad-feed
+          for channel in stable beta; do
+            # minisign reads the passphrase from stdin when it is not a terminal
+            printf '%s\n' "$MINISIGN_PASSWORD" | minisign -S -s "$key" \
+              -m "site/updates/${channel}.json" -t "OPad ${channel} feed"
+            site/.opad-feed verify --feed "site/updates/${channel}.json" --channel "$channel"
+          done
+          rm site/.opad-feed
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: [sign-test, sign-release]
+    if: always() && (needs.sign-test.result == 'success' || needs.sign-release.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v5

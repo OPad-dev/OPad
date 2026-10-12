@@ -76,12 +76,14 @@ pub fn plan(
     target: &str,
     gate: Result<(), DeferReason>,
 ) -> Result<AppAction, UpdateError> {
-    let component = manifest
-        .component(APP)
-        .ok_or_else(|| UpdateError::NoArtifact {
-            component: APP.to_string(),
-            target: "any",
-        })?;
+    // A feed without the app is normal: this install may not be in a
+    // gradual rollout yet (rollout::for_install drops it), or the feed is
+    // for a channel that has no app release yet
+    let Some(component) = manifest.component(APP) else {
+        return Ok(AppAction::UpToDate {
+            version: installed_version.to_string(),
+        });
+    };
 
     if !is_newer(&component.version, installed_version) {
         return Ok(AppAction::UpToDate {
@@ -127,8 +129,14 @@ pub fn plan(
 pub fn apply_command(policy: ApplyPolicy, file: &std::path::Path) -> Option<Vec<String>> {
     let path = file.display().to_string();
     match policy {
-        // Inno's CloseApplications stops the running processes for us
-        ApplyPolicy::Installer => Some(vec![path, "/SILENT".into(), "/NORESTART".into()]),
+        // Inno's CloseApplications stops the running processes for us, and
+        // /RELAUNCH=1 has it start the GUI again afterwards (installer.iss)
+        ApplyPolicy::Installer => Some(vec![
+            path,
+            "/SILENT".into(),
+            "/NORESTART".into(),
+            "/RELAUNCH=1".into(),
+        ]),
         ApplyPolicy::PackageManager(PackageManager::Apt) => Some(vec![
             "pkexec".into(),
             "apt-get".into(),
@@ -163,6 +171,7 @@ mod tests {
             url: url.to_string(),
             sha256: "00".to_string(),
             size: None,
+            board: None,
         };
         let mut components = BTreeMap::new();
         components.insert(
@@ -181,19 +190,41 @@ mod tests {
                         url: "https://x/osupad-setup.exe".to_string(),
                         sha256: "00".to_string(),
                         size: None,
+                        board: None,
                     },
                 ],
+                ..Default::default()
             },
         );
         ReleaseManifest {
             schema: 1,
             generated: "2026-09-16T00:00:00Z".to_string(),
             components,
+            ..Default::default()
         }
     }
 
     fn available(origin: InstallOrigin, target: &str) -> AppAction {
         plan(&manifest("1.1.0"), "1.0.0", origin, target, Ok(())).unwrap()
+    }
+
+    #[test]
+    fn a_feed_without_the_app_is_up_to_date_not_an_error() {
+        // The app may be held back by a gradual rollout (rollout::for_install)
+        let m = ReleaseManifest::default();
+        assert_eq!(
+            plan(
+                &m,
+                "1.0.0",
+                InstallOrigin::Windows,
+                "windows-x86_64",
+                Ok(())
+            )
+            .unwrap(),
+            AppAction::UpToDate {
+                version: "1.0.0".to_string()
+            }
+        );
     }
 
     #[test]
@@ -319,6 +350,10 @@ mod tests {
         assert!(
             cmd.contains(&"/NORESTART".to_string()),
             "an update must never reboot the machine out from under a player"
+        );
+        assert!(
+            cmd.contains(&"/RELAUNCH=1".to_string()),
+            "a silent install skips the GUI's [Run] entry; the updater asks for it back"
         );
     }
 

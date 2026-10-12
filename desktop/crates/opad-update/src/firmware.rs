@@ -29,6 +29,10 @@ use crate::{DeferReason, UpdateError};
 /// written from Windows and from Linux.
 pub const FIRMWARE_TARGET: &str = "esp32s3";
 
+/// The board the published images are built for, as the pad names itself in
+/// `HelloAck.board_profile` (`firmware/main/protocol/protocol.c`)
+pub const FIRMWARE_BOARD: &str = "waveshare_esp32s3_touch_lcd_2";
+
 /// Roughly how long the pad is not a keyboard, for the consent prompt. Erase
 /// plus write of a ~1 MB app image at 460800 baud, rounded up, plus the
 /// re-enumeration. Deliberately pessimistic: a prompt that under-promises is
@@ -45,6 +49,13 @@ pub enum FirmwareAction {
     },
     Defer {
         reason: DeferReason,
+    },
+    /// There is a newer image, but this app is older than the oldest one
+    /// that can drive it (`min_app`, docs/specs/release-and-updates.md §3.2).
+    /// The app is updated first; the firmware is offered afterwards.
+    NeedsNewerApp {
+        available: String,
+        min_app: String,
     },
     /// There is a newer image and it could be applied. **Nothing happens until
     /// a person consents** — this is an offer, not a decision.
@@ -152,9 +163,14 @@ pub fn blockers(p: Preconditions) -> Vec<Blocker> {
 /// or firmware too old to say, and in both cases the answer is [`FirmwareAction::Unknown`]:
 /// guessing that an unknown version is older would offer a downgrade as an
 /// update.
+/// `board` is what the pad reported as `board_profile`; empty or `None` from
+/// firmware that predates it, which only ever ran on the one board OPad had.
+/// `app_version` is this app's own version, for the feed's `min_app`.
 pub fn plan(
     manifest: &ReleaseManifest,
     installed: Option<&str>,
+    board: Option<&str>,
+    app_version: &str,
     gate: Result<(), DeferReason>,
 ) -> Result<FirmwareAction, UpdateError> {
     let Some(installed) = installed.map(str::trim).filter(|v| !v.is_empty()) else {
@@ -174,15 +190,37 @@ pub fn plan(
         });
     }
 
+    if let Some(min_app) = component.min_app.as_deref() {
+        if is_newer(min_app, app_version) {
+            return Ok(FirmwareAction::NeedsNewerApp {
+                available: component.version.clone(),
+                min_app: min_app.to_string(),
+            });
+        }
+    }
+
     if let Err(reason) = gate {
         return Ok(FirmwareAction::Defer { reason });
     }
 
-    let artifact = manifest
-        .artifact_for(FIRMWARE, FIRMWARE_TARGET, Some(ArtifactKind::Firmware))
+    // The image for this chip and this board. An artifact that names no
+    // board, or a pad too old to name one, matches: until a second board
+    // exists there is only one.
+    let board = board.map(str::trim).filter(|b| !b.is_empty());
+    let artifact = component
+        .artifacts
+        .iter()
+        .find(|a| {
+            a.target == FIRMWARE_TARGET
+                && a.kind == ArtifactKind::Firmware
+                && match (a.board.as_deref(), board) {
+                    (Some(wanted), Some(pad)) => wanted == pad,
+                    _ => true,
+                }
+        })
         .ok_or_else(|| UpdateError::NoArtifact {
             component: FIRMWARE.to_string(),
-            target: FIRMWARE_TARGET,
+            target: "this pad's chip and board",
         })?;
 
     Ok(FirmwareAction::Available {
@@ -230,19 +268,29 @@ mod tests {
                     url: "https://x/osupad-firmware.bin".to_string(),
                     sha256: "00".to_string(),
                     size: None,
+                    board: None,
                 }],
+                ..Default::default()
             },
         );
         ReleaseManifest {
             schema: 1,
             generated: "2026-09-17T00:00:00Z".to_string(),
             components,
+            ..Default::default()
         }
     }
 
     #[test]
     fn a_newer_image_is_offered_never_applied() {
-        let action = plan(&manifest("1.1.0", FIRMWARE_TARGET), Some("1.0.0"), Ok(())).unwrap();
+        let action = plan(
+            &manifest("1.1.0", FIRMWARE_TARGET),
+            Some("1.0.0"),
+            None,
+            "1.0.0",
+            Ok(()),
+        )
+        .unwrap();
         match action {
             FirmwareAction::Available {
                 installed,
@@ -261,7 +309,14 @@ mod tests {
     fn the_same_or_an_older_image_is_not_an_update() {
         for installed in ["1.1.0", "1.2.0"] {
             assert_eq!(
-                plan(&manifest("1.1.0", FIRMWARE_TARGET), Some(installed), Ok(())).unwrap(),
+                plan(
+                    &manifest("1.1.0", FIRMWARE_TARGET),
+                    Some(installed),
+                    None,
+                    "1.0.0",
+                    Ok(())
+                )
+                .unwrap(),
                 FirmwareAction::UpToDate {
                     version: installed.to_string()
                 }
@@ -275,7 +330,14 @@ mod tests {
         // we know nothing about.
         for installed in [None, Some(""), Some("   ")] {
             assert_eq!(
-                plan(&manifest("1.1.0", FIRMWARE_TARGET), installed, Ok(())).unwrap(),
+                plan(
+                    &manifest("1.1.0", FIRMWARE_TARGET),
+                    installed,
+                    None,
+                    "1.0.0",
+                    Ok(())
+                )
+                .unwrap(),
                 FirmwareAction::Unknown
             );
         }
@@ -287,9 +349,10 @@ mod tests {
             schema: 1,
             generated: "2026-09-17T00:00:00Z".to_string(),
             components: BTreeMap::new(),
+            ..Default::default()
         };
         assert_eq!(
-            plan(&m, Some("1.0.0"), Ok(())).unwrap(),
+            plan(&m, Some("1.0.0"), None, "1.0.0", Ok(())).unwrap(),
             FirmwareAction::UpToDate {
                 version: "1.0.0".to_string()
             }
@@ -300,7 +363,14 @@ mod tests {
     fn an_image_for_another_chip_is_not_silently_accepted() {
         // The manifest's target is the first of the two chip checks; the
         // image header is the second, in opad_device::flash.
-        let err = plan(&manifest("1.1.0", "esp32c3"), Some("1.0.0"), Ok(())).unwrap_err();
+        let err = plan(
+            &manifest("1.1.0", "esp32c3"),
+            Some("1.0.0"),
+            None,
+            "1.0.0",
+            Ok(()),
+        )
+        .unwrap_err();
         assert!(matches!(err, UpdateError::NoArtifact { .. }));
     }
 
@@ -311,12 +381,48 @@ mod tests {
                 plan(
                     &manifest("1.1.0", FIRMWARE_TARGET),
                     Some("1.0.0"),
+                    None,
+                    "1.0.0",
                     Err(reason)
                 )
                 .unwrap(),
                 FirmwareAction::Defer { reason }
             );
         }
+    }
+
+    #[test]
+    fn an_image_for_another_board_is_not_offered() {
+        let mut m = manifest("1.1.0", FIRMWARE_TARGET);
+        m.components.get_mut(FIRMWARE).unwrap().artifacts[0].board =
+            Some(FIRMWARE_BOARD.to_string());
+        // The board the image is for, or a pad too old to say: offered
+        for board in [Some(FIRMWARE_BOARD), None, Some("")] {
+            assert!(matches!(
+                plan(&m, Some("1.0.0"), board, "1.0.0", Ok(())).unwrap(),
+                FirmwareAction::Available { .. }
+            ));
+        }
+        // Another board: never the wrong image
+        let err = plan(&m, Some("1.0.0"), Some("some_other_board"), "1.0.0", Ok(())).unwrap_err();
+        assert!(matches!(err, UpdateError::NoArtifact { .. }));
+    }
+
+    #[test]
+    fn firmware_that_needs_a_newer_app_asks_for_the_app_first() {
+        let mut m = manifest("2.0.0", FIRMWARE_TARGET);
+        m.components.get_mut(FIRMWARE).unwrap().min_app = Some("1.5.0".to_string());
+        assert_eq!(
+            plan(&m, Some("1.0.0"), None, "1.4.0", Ok(())).unwrap(),
+            FirmwareAction::NeedsNewerApp {
+                available: "2.0.0".to_string(),
+                min_app: "1.5.0".to_string(),
+            }
+        );
+        assert!(matches!(
+            plan(&m, Some("1.0.0"), None, "1.5.0", Ok(())).unwrap(),
+            FirmwareAction::Available { .. }
+        ));
     }
 
     fn ok_preconditions() -> Preconditions {

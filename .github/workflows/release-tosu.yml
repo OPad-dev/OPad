@@ -174,3 +174,13 @@ jobs:
       - name: Upload to the release
         run: scripts/release/publish_release.sh "$TAG" staging "$PRERELEASE" never
 
+
+  feed:
+    name: Update feed
+    needs: publish
+    uses: ./.github/workflows/update-feed.yml
+    secrets: inherit
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
