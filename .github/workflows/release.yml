@@ -35,7 +35,7 @@ jobs:
       image: espressif/idf:v5.5.2
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Build firmware
         shell: bash
@@ -54,7 +54,7 @@ jobs:
           cp firmware/build/ota_data_initial.bin staging/
           cp firmware/THIRD_PARTY_NOTICES.md staging/FIRMWARE_THIRD_PARTY_NOTICES.md
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: firmware
           path: staging/*
@@ -64,7 +64,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install system dependencies
         run: |
@@ -82,15 +82,15 @@ jobs:
           tool: cargo-deb,cargo-generate-rpm,cargo-zigbuild,cargo-about
 
       - name: Setup Zig
-        uses: mlugg/setup-zig@v1
+        uses: mlugg/setup-zig@v2
         with:
           version: 0.13.0
 
-      - uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -200,13 +200,13 @@ jobs:
       - name: Stage Linux artifacts
         run: |
           ls dist/*.deb dist/*.rpm dist/*.AppImage  # fail if any is missing
-          VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' desktop/Cargo.toml | head -n 1)"
+          VERSION="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' desktop/Cargo.toml | head -n 1)"
           mkdir -p staging/tar/bin
           cp desktop/target/release/{opad-daemon,opad-gui,opadctl} staging/tar/bin/
           cp README.md LICENSE dist/THIRD_PARTY_NOTICES.html staging/tar/
           tar -czf "dist/opad-linux-x86_64-${VERSION}.tar.gz" -C staging/tar .
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux
           path: |
@@ -221,7 +221,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
@@ -230,11 +230,11 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -281,7 +281,7 @@ jobs:
           iscc packaging/windows/installer.iss
           cp build/installer/opad-setup.exe dist/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: dist/*.exe
@@ -291,7 +291,7 @@ jobs:
     needs: [build-firmware, build-linux, build-windows]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: staging
 
@@ -306,7 +306,7 @@ jobs:
       # A draft: nothing is public until the manifest signed over these files
       # has been checked against them (release-verify.yml)
       - name: Create draft release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           draft: true

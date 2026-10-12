@@ -1,0 +1,32 @@
+name: Release Please
+
+# Keeps one release pull request open per component (the app and the
+# firmware), with the version bump and a changelog written from the
+# conventional commits since that component's last release. Merging one
+# tags it and creates a draft release (release-please-config.json).
+#
+# Building and publishing the draft's files is wired up in phase 2 of
+# docs/specs/release-and-updates.md; until then, do not merge a release PR.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    name: Release PRs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

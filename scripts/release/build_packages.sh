@@ -66,7 +66,10 @@ fi
 echo ""
 echo "--- [3/5] Building RPM package (.rpm) ---"
 if command -v cargo-generate-rpm >/dev/null 2>&1; then
-    (cd "${REPO_ROOT}/desktop/gui" && cargo generate-rpm --auto-req disabled -o "${DIST_DIR}/")
+    # RPM orders "1.0.0~rc.1" before "1.0.0"; a SemVer "-rc.1" it would not
+    APP_VERSION="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' "${REPO_ROOT}/desktop/Cargo.toml" | head -n 1)"
+    (cd "${REPO_ROOT}/desktop/gui" && cargo generate-rpm --auto-req disabled \
+        -s "version = \"${APP_VERSION//-/\~}\"" -o "${DIST_DIR}/")
     echo "✓ RPM package built in dist/"
 else
     echo "ERROR: 'cargo-generate-rpm' not found in PATH!" >&2

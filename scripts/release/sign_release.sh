@@ -61,7 +61,7 @@ REPO_ARGS=()
 [ -n "${REPO}" ] && REPO_ARGS=(--repo "${REPO}")
 
 BASE_URL="${BASE_URL:-https://github.com/OPad-dev/OPad/releases/latest/download}"
-FW_VER="${FIRMWARE_VERSION:-$(sed -n 's/^set(PROJECT_VER "\(.*\)")$/\1/p' "${REPO_ROOT}/firmware/CMakeLists.txt" | head -n 1)}"
+FW_VER="${FIRMWARE_VERSION:-$(sed -n 's/^set(PROJECT_VER "\([^"]*\)").*/\1/p' "${REPO_ROOT}/firmware/CMakeLists.txt" | head -n 1)}"
 if [ -z "${FW_VER}" ]; then
     echo "ERROR: no firmware version (set FIRMWARE_VERSION)" >&2
     exit 1

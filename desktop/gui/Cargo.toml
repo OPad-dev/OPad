@@ -76,7 +76,8 @@ assets = [
 
 [package.metadata.generate-rpm]
 name = "opad"
-version = "1.0.0~rc"
+# No version here: RPM wants "1.0.0~rc.1" for the workspace's "1.0.0-rc.1", so
+# `make rpm` and build_packages.sh pass it with --set-metadata
 summary = "Low-latency ESP32-S3 keypad manager, telemetry HUD, and tray applet for osu!"
 description = "OPad desktop daemon, configuration GUI, and CLI utility."
 license = "GPL-3.0-or-later AND LGPL-3.0-only AND OFL-1.1"

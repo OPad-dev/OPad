@@ -45,6 +45,11 @@ TOSU_STANDALONE ?= 1
 TARGET_DIR ?= desktop/target/release
 BINS := opad-daemon opad-gui opadctl
 
+# The workspace version, and its RPM form: a SemVer pre-release "-rc.1" must be
+# "~rc.1" to sort before the final release
+APP_VERSION := $(shell sed -n 's/^version = "\([^"]*\)".*/\1/p' desktop/Cargo.toml | head -n 1)
+RPM_VERSION := $(subst -,~,$(APP_VERSION))
+
 .PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage deb rpm packages notices tosu-source tosu-notices lvgl espflash lazer-calculator lazer-calculator-source
 
 # L-4: Build AppDir / AppImage
@@ -57,7 +62,7 @@ deb: all tosu
 
 # L-3: Build RPM package (.rpm)
 rpm: all tosu
-	cd desktop/gui && cargo generate-rpm --auto-req disabled -o ../../dist/
+	cd desktop/gui && cargo generate-rpm --auto-req disabled -s 'version = "$(RPM_VERSION)"' -o ../../dist/
 
 # Build all packages
 packages:
@@ -315,6 +320,7 @@ check:
 	$(CARGO) clippy --manifest-path desktop/Cargo.toml --all-targets -- -D warnings
 	$(CARGO) test --manifest-path desktop/Cargo.toml
 	./firmware/test/host/run_tests.sh
+	python3 scripts/release/check_versions.py
 	@echo "✓ All checks passed!"
 
 # B-2: Clean build artifacts

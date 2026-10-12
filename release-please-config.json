@@ -1,0 +1,47 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "c0babc332c1b0214025b5dea105200cf23fb7feb",
+  "separate-pull-requests": true,
+  "draft": true,
+  "force-tag-creation": true,
+  "prerelease": true,
+  "prerelease-type": "rc",
+  "versioning": "prerelease",
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "revert", "section": "Reverts" },
+    { "type": "docs", "section": "Documentation", "hidden": true },
+    { "type": "chore", "section": "Miscellaneous", "hidden": true },
+    { "type": "refactor", "section": "Code Refactoring", "hidden": true },
+    { "type": "test", "section": "Tests", "hidden": true },
+    { "type": "build", "section": "Build System", "hidden": true },
+    { "type": "ci", "section": "Continuous Integration", "hidden": true }
+  ],
+  "packages": {
+    ".": {
+      "component": "app",
+      "release-type": "simple",
+      "include-component-in-tag": false,
+      "exclude-paths": ["firmware", "hardware"],
+      "extra-files": [
+        { "type": "generic", "path": "desktop/Cargo.toml" },
+        {
+          "type": "toml",
+          "path": "desktop/Cargo.lock",
+          "jsonpath": "$.package[?(@.name == 'opad-model' || @.name == 'opad-protocol' || @.name == 'opad-storage' || @.name == 'opad-ipc' || @.name == 'opad-tosu' || @.name == 'opad-update' || @.name == 'opad-device' || @.name == 'opad-ui-preview' || @.name == 'opad-layout' || @.name == 'opad-daemon' || @.name == 'opad-gui' || @.name == 'opadctl')].version"
+        }
+      ]
+    },
+    "firmware": {
+      "component": "firmware",
+      "release-type": "simple",
+      "include-component-in-tag": true,
+      "tag-separator": "-",
+      "extra-files": [
+        { "type": "generic", "path": "CMakeLists.txt" }
+      ]
+    }
+  }
+}

@@ -97,7 +97,7 @@ make -C "${REPO_ROOT}" tosu-source   # -> dist/tosu-<version>-source.tar.gz
 # workspace rather than a literal: it reads 1.0.0-rc until W4 passes (§0), and a
 # tarball claiming 1.0.0 while the binaries inside report 1.0.0-rc is the kind of
 # mismatch nobody notices until a bug report cites the wrong version.
-VERSION="$(sed -n 's/^version = "\(.*\)"$/\1/p' "${REPO_ROOT}/desktop/Cargo.toml" | head -n 1)"
+VERSION="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' "${REPO_ROOT}/desktop/Cargo.toml" | head -n 1)"
 if [ -z "${VERSION}" ]; then
     echo "ERROR: could not read the workspace version from desktop/Cargo.toml!" >&2
     exit 1

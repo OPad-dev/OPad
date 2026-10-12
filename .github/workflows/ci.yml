@@ -11,12 +11,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  versions:
+    name: Release versions agree
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      # SemVer in desktop/Cargo.toml and firmware/CMakeLists.txt, the same in
+      # .release-please-manifest.json and Cargo.lock, and every workspace
+      # crate listed for release-please's Cargo.lock bump
+      - name: Check versions
+        run: python3 scripts/release/check_versions.py
+
   rust:
     name: Rust (Format, Clippy, Tests)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install system dependencies
         run: |
@@ -65,7 +78,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -103,7 +116,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -135,7 +148,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install compiler
         run: |
@@ -152,10 +165,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
@@ -177,17 +190,33 @@ jobs:
       image: espressif/idf:v5.5.2
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
+      # The components the IDF component manager downloads, and ccache's
+      # object cache: most of a clean build is recompiling ESP-IDF itself
+      - name: Cache components and compiler output
+        uses: actions/cache@v6
+        with:
+          path: |
+            firmware/managed_components
+            .ccache
+          key: firmware-${{ hashFiles('firmware/dependencies.lock', 'firmware/sdkconfig.defaults') }}-${{ github.sha }}
+          restore-keys: |
+            firmware-${{ hashFiles('firmware/dependencies.lock', 'firmware/sdkconfig.defaults') }}-
 
       - name: Build firmware with ESP-IDF
         shell: bash
+        env:
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
         run: |
           . /opt/esp/idf/export.sh
+          if command -v ccache >/dev/null; then export IDF_CCACHE_ENABLE=1; fi
           cd firmware
           idf.py set-target esp32s3 build
+          if command -v ccache >/dev/null; then ccache --show-stats; fi
 
       - name: Upload firmware binaries
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: esp32s3-firmware-binaries
           path: |
@@ -200,7 +229,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Plain `reuse lint` can never pass: the easter-egg GIF is deliberately
       # kept under LicenseRef-Unknown-ThirdParty. This fails on anything else.
