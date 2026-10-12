@@ -309,7 +309,7 @@ by design (§2, central rule), and that refusal is worth testing rather than
 switching off. So until §19:
 
 - A **test key** is used. Both its halves are committed to the repository
-  (`desktop/crates/opad-update/tests/test-key/`), so it protects nothing: it
+  (`desktop/crates/opad-update/test-key/`), so it protects nothing: it
   only makes the feed well-formed so the real code path runs. It replaces the
   current key in `opad-update/src/verify.rs:34` in phase 3.
 - Every release made this way is a **pre-release** on the **beta** feed only.
@@ -355,9 +355,14 @@ would report them modified and the next upgrade would revert them
 
 ### 6.2 State machine
 
-Every transition is persisted (one app-state key in storage, written only
-while IDLE, P1-3), so a crash or a reboot at any point resumes or restarts
-cleanly instead of guessing.
+The states an update goes through. What is persisted (written only while
+IDLE, P1-3) is the part a crash or a restart must not lose: an install marked
+in progress before it is applied (`update.in_progress`) and how the last one
+went (`update.last_result`), in `desktop/daemon/src/updater.rs`. A daemon that
+starts with an install still marked in progress reports it from the version
+it is now running: the new one means it worked (the Windows installer stops
+the daemon on purpose), the old one means it was interrupted. Everything
+else is recomputed from the feed at the next check.
 
 ```
  Idle ──check──▶ Checking ──▶ UpToDate
@@ -381,11 +386,12 @@ cleanly instead of guessing.
                   Done
 ```
 
-Already in place: size limits, atomic writes with fsync and rename
+In place: size limits, atomic writes with fsync and rename
 (`opad-update/src/download.rs`), exponential backoff with a cap
 (`schedule.rs`), IDLE-only checks and applies (`gate.rs`), staging outside
-`/tmp` (`updater.rs`). New: persisted state, one-update-at-a-time lock,
-resumable downloads (HTTP Range), a free-space check before staging.
+`/tmp`, one update at a time (the worker handles one command after another),
+and the in-progress / last-result records above. **Not yet:** resumable
+downloads (HTTP Range) and a free-space check before staging.
 
 **No privilege escalation from the network.** The only privileged commands are
 the fixed ones in the table above (`app::apply_command`); nothing in a feed can
@@ -394,7 +400,8 @@ add or change a command.
 ### 6.3 Automatic install
 
 Opt-in, off by default, Windows and AppImage only, still IDLE-only and still
-subject to rollout. Everywhere else a person presses *Install*.
+subject to rollout. Everywhere else a person presses *Install*. **Not built
+yet** (open question 3): today every app update waits for *Install*.
 
 ---
 
@@ -524,8 +531,10 @@ Typical sequence: 10 % → (a few days, no reports) → 50 % → 100 %.
 ### 9.3 Pausing and pulling
 
 - **Pause:** set `percent` to 0 and republish the feed.
-- **Pull (yank):** list the version in `updates/yanked.toml`, republish. It
-  stops being offered at the next check.
+- **Pull (yank):** list it in `updates/policy.json` (`"yanked": ["app 1.2.0"]`)
+  and run `update-feed.yml` by hand. It stops being offered at the next check.
+  The same file holds rollouts (`"rollout": {"app 1.3.0": 10}`) and
+  `min_app` (`"min_app": {"firmware 2.0.0": "1.5.0"}`).
 - Neither undoes installs that already happened. The answer to a bad release
   is a fixed release (fix forward); nobody is downgraded automatically.
 
@@ -661,8 +670,8 @@ The Settings page gets one **Updates** card:
  [x] Update tosu automatically
 ```
 
-Plus each component's release notes, the result of the last update and a link
-to recovery help. *Check now* runs immediately when IDLE, at most once a
+Plus each component's release notes, the result of the last update and, after
+an app update, a notice to restart OPad (a *Restart* button is not built yet). *Check now* runs immediately when IDLE, at most once a
 minute.
 
 ---
@@ -761,6 +770,52 @@ Known limits:
 - The `Cargo.lock` bump could not be run locally (it is release-please's own
   code); the first release PR must show all twelve crates bumped.
 
+### 18.2 Phases 2–5 (written 2026-10-12, on Windows)
+
+| Phase | What exists now | Checked on Windows |
+|---|---|---|
+| 2 | `release-app.yml`, `release-firmware.yml`, `release-tosu.yml`, `scripts/release/publish_release.sh`; `release-please.yml` calls the first two | `actionlint` |
+| 3 | feed schema 2, `opad-feed`, `update-feed.yml`, test key, `TRUSTED_KEYS`, rollout, channel / *Check now* / tosu *Update now*, last result, GUI card, installer relaunch | clippy, all tests, `opad-feed local` → minisign → `opad-feed verify`, ISCC compile |
+| 4 | `make release-local` (`scripts/release/release_local.sh`, `local/`), `make feed-local` | `bash -n` only |
+| 5 | `build_repos.sh`, `test_repos.sh`, `sign-rpm`, repository upgrades in the app, `aur_bin.sh` + `PKGBUILD-bin.in`, attestations | clippy, tests, `aur_bin.sh` output |
+
+**Once on GitHub, before the first release:**
+
+- **Settings → Pages → Source: GitHub Actions** (the feed is deployed there).
+- **Settings → Actions → General → Workflow permissions:** *Read and write*,
+  and *Allow GitHub Actions to create and approve pull requests* (§18.1).
+- Run **Release tosu** by hand once (revision 1), so the feed has a tosu
+  build and `make release-local` has a `tosu.exe`.
+- Then merge the first release PRs; each release calls **Update feed**.
+  Check `https://opad-dev.github.io/OPad/updates/beta.json` appears.
+
+### 18.3 Pending for a session on Linux
+
+Written but never run, because they need Linux. In this order:
+
+1. **`make release-local`** on the Arch machine (Docker running):
+   - the Linux container build (`local/Dockerfile.linux`, `local/build_linux.sh`),
+     including `make tosu`'s nested container through the docker socket;
+   - `cargo xwin` for the Windows programs; the GUI crate builds LVGL C code
+     for the Designer preview, which is the likeliest thing to fail;
+   - Inno Setup in `amake/innosetup` with `/DSourceDir` and `/DTosuDir`;
+   - try cross-building `tosu.exe` with zig; until then it comes from the
+     latest `tosu-v*` release (`TOSU_EXE` overrides).
+2. **`make feed-local`**, then an end-to-end update: install an older build,
+   serve a newer one, `OPAD_MANIFEST_URL=http://127.0.0.1:8000/updates/beta.json`,
+   beta channel, *Check now*, *Install now* — for the AppImage, the tarball,
+   the `.deb` and the `.rpm` (in a VM or container with a desktop session for
+   `pkexec`). Also tosu *Update now*, and a firmware update on a real pad.
+   (The feed only offers something newer: build the "new" one with a higher
+   version in `desktop/Cargo.toml`, without committing it.)
+3. **`scripts/release/test_repos.sh`** over `dist-local/` (needs
+   `apt-ftparchive`, `createrepo_c`, `rpmsign`, Docker).
+4. **`opad-bin`**: `aur_bin.sh` over a real release `.deb`, then
+   `makepkg -si` and `makepkg --printsrcinfo | diff - .SRCINFO` on Arch.
+5. **The repository upgrade path in the app** (PackageKit and the `pkexec`
+   fallback) on Ubuntu and Fedora with the test repository added.
+6. Whatever fails in 1–5 is fixed and these lines removed.
+
 ---
 
 ## 19. Signing guide (for when you are ready)
@@ -830,6 +885,8 @@ Signs `stable.json` and `beta.json`; the app trusts its public half.
    gh secret set GPG_PRIVATE_KEY --env release < opad-repo.key.asc
    gh secret set GPG_PASSPHRASE --env release
    ```
+   It signs the repositories (`update-feed.yml`) and each `.rpm` itself
+   (`release-app.yml`'s `sign-rpm` job), which dnf's `gpgcheck=1` needs.
 3. Send `opad-archive-keyring.asc` (public) to be committed; the install
    instructions and the repo files point at it.
 4. Back up as in 19.2. Put a reminder in your calendar a month before the
@@ -847,12 +904,18 @@ Needs the repository to be **public**.
    SignPath create the project `opad` with a signing policy `release-signing`
    and an artifact configuration for `opad-setup-*.exe` and the `.exe`
    files inside it.
-3. Put on GitHub:
+3. In SignPath, give the signing policy **manual approval**: the token is a
+   repository secret (the Windows build job reads it), so SignPath's approval
+   is what stands between a workflow run and a signature.
+4. Put on GitHub:
    ```
-   gh secret set SIGNPATH_API_TOKEN --env release
+   gh secret set SIGNPATH_API_TOKEN
    gh variable set SIGNPATH_ORGANIZATION_ID --body "<your organisation id>"
    ```
-4. The signing step in `release-app.yml` is already there, switched off.
+5. The signing steps in `release-app.yml` are already there, switched off.
+   They expect two artifact configurations in SignPath: `programs` (a zip of
+   `opad-daemon.exe`, `opad-gui.exe`, `opadctl.exe`) and `installer`
+   (`opad-setup-*.exe`).
 
 ### 19.5 Turn signing on
 
@@ -871,6 +934,11 @@ is `true`; until then they are skipped. Then:
    `release-as` afterwards.
 3. **Settings → General → Releases → Enable release immutability**, so
    published files can never be replaced.
+4. Build provenance (`actions/attest`) runs from now on too. It needs the
+   repository to be public (on GitHub Free/Pro/Team).
+5. Add the repository instructions (§10.1, the comment at the top of
+   `scripts/release/build_repos.sh`) to the README: the repositories exist
+   only from this point.
 
 ### 19.6 Check that it worked
 
@@ -898,7 +966,7 @@ signatures.
 | Feed key, public | in the code | `desktop/crates/opad-update/src/verify.rs` |
 | Repo key, private | `GPG_PRIVATE_KEY`, `GPG_PASSPHRASE` | `release` environment + password manager + USB |
 | Repo key, public | `opad-archive-keyring.asc` | repository and Pages |
-| SignPath | `SIGNPATH_API_TOKEN`, `SIGNPATH_ORGANIZATION_ID` | `release` environment / repository variable |
+| SignPath | `SIGNPATH_API_TOKEN`, `SIGNPATH_ORGANIZATION_ID` | repository secret / repository variable |
 | The switch | `SIGNING_ENABLED` | repository variable |
 
 ### 19.8 If a key leaks or is lost
