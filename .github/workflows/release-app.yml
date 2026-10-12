@@ -278,6 +278,18 @@ jobs:
       - name: Build release binaries
         run: cargo build --release --locked --bins --manifest-path desktop/Cargo.toml
 
+      - name: Install cargo-about
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+
+      # The installer ships it beside the programs (installer.iss)
+      - name: Third-party notices
+        shell: bash
+        run: |
+          mkdir -p dist
+          (cd desktop && cargo about generate --offline --fail about.hbs -o ../dist/THIRD_PARTY_NOTICES.html)
+
       - name: Fetch espflash (pinned, checksummed)
         shell: bash
         run: |

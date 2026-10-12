@@ -1238,7 +1238,7 @@ fn resolve_flash_set(path: &Path, full: bool) -> Result<Vec<(u32, PathBuf)>> {
     // full flash that skips the partition table would leave the pad reading the
     // app at the old single-app offset (§U-3a).
     // Two layouts have to work: an ESP-IDF build directory, and the flat set of
-    // .bin files a release tarball ships (scripts/release/build_release.sh).
+    // .bin files a firmware release ships (release-firmware.yml).
     // A recovery flash is usually done from a release, not from a build tree.
     let bootloader = first_existing(&[
         build_dir.join("bootloader").join("bootloader.bin"),
@@ -1583,7 +1583,7 @@ mod tests {
 
     #[test]
     fn full_flash_accepts_the_flat_layout_a_release_ships() {
-        // dist/ from scripts/release/build_release.sh: no bootloader/ or
+        // A firmware release (release-firmware.yml): no bootloader/ or
         // partition_table/ subdirectories, everything side by side.
         let dir = std::env::temp_dir().join(format!("opadctl-flat-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();

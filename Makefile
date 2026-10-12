@@ -50,7 +50,7 @@ BINS := opad-daemon opad-gui opadctl
 APP_VERSION := $(shell sed -n 's/^version = "\([^"]*\)".*/\1/p' desktop/Cargo.toml | head -n 1)
 RPM_VERSION := $(subst -,~,$(APP_VERSION))
 
-.PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage deb rpm packages notices tosu-source tosu-notices lvgl espflash lazer-calculator lazer-calculator-source
+.PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage deb rpm packages notices tosu-source tosu-notices lvgl espflash lazer-calculator lazer-calculator-source release-local feed-local
 
 # L-4: Build AppDir / AppImage
 appimage: all
@@ -278,6 +278,17 @@ uninstall-user:
 	rm -f "$(AUTOSTARTDIR_USER)/opad-gui.desktop"
 	rm -rf "$(LIBDIR_USER)/opad"
 	@echo "✓ User uninstall complete."
+
+# Every installer, unsigned, into dist-local/, in containers (Linux host with
+# docker); see scripts/release/release_local.sh and
+# docs/specs/release-and-updates.md §11
+release-local:
+	scripts/release/release_local.sh
+
+# Serve an update feed over dist-local/ on 127.0.0.1:8000, signed with the
+# test key, to update an installed OPad from it
+feed-local:
+	scripts/release/feed_local.sh
 
 # B-2: Verification target
 # The espflash the packages bundle (lib/opad/bin/espflash), pinned and

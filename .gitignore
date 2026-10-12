@@ -40,3 +40,7 @@ dist/
 fp-info-cache
 \#auto_saved_files\#
 ~*.lck
+
+# make release-local
+dist-local/
+desktop/target-xwin/
