@@ -499,6 +499,14 @@ async fn install_app(
         )));
     };
 
+    // From our apt/dnf repository: the package manager fetches and checks
+    // the package against the repository key; nothing is downloaded here
+    if let ApplyPolicy::PackageManager(pm) = policy {
+        if app::repo_configured(pm) {
+            return upgrade_from_repo(pm, installed, &available, storage, status).await;
+        }
+    }
+
     let client = UpdateClient::for_artifacts()?;
     let bytes = client.fetch_artifact(&artifact).await?;
 
@@ -563,6 +571,70 @@ async fn install_app(
     }
     info!("OPad {} applied; a restart is needed to run it", available);
     Ok(())
+}
+
+/// Upgrades OPad from our repository (docs/specs/release-and-updates.md §6.1)
+async fn upgrade_from_repo(
+    pm: opad_update::PackageManager,
+    installed: &str,
+    available: &str,
+    storage: &Arc<Mutex<Option<Storage>>>,
+    status: &SharedUpdateStatus,
+) -> Result<(), UpdateError> {
+    let commands = app::repo_upgrade_commands(pm, in_path("pkcon"));
+    info!("Upgrading OPad {} from the {:?} repository", available, pm);
+    write_json(
+        storage,
+        IN_PROGRESS_KEY,
+        &InProgress {
+            component: "app".to_string(),
+            from: installed.to_string(),
+            to: available.to_string(),
+        },
+    );
+    let applied = tokio::task::spawn_blocking(move || {
+        use std::process::Command;
+        for cmd in &commands {
+            let status = Command::new(&cmd[0])
+                .args(&cmd[1..])
+                .status()
+                .map_err(|e| UpdateError::Io(std::io::Error::other(format!("{}: {e}", cmd[0]))))?;
+            if !status.success() {
+                // A cancelled password prompt lands here; nothing changed
+                return Err(UpdateError::Http(format!(
+                    "{} exited with {:?}; the running version is unchanged",
+                    cmd.join(" "),
+                    status.code()
+                )));
+            }
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| UpdateError::Io(std::io::Error::other(format!("apply step: {e}"))))
+    .and_then(|r| r);
+
+    let result = match &applied {
+        Ok(()) => UpdateResult::new("app", installed, available, true, ""),
+        Err(e) => UpdateResult::new("app", installed, available, false, e.to_string()),
+    };
+    write_json(storage, LAST_RESULT_KEY, &result);
+    remove_key(storage, IN_PROGRESS_KEY);
+    status.lock().last_result = Some(result.sentence());
+    applied?;
+    {
+        let mut s = status.lock();
+        s.restart_required = true;
+        s.app.ready_to_install = false;
+        s.app.installed = Some(available.to_string());
+    }
+    Ok(())
+}
+
+/// Whether `program` is on `$PATH`
+fn in_path(program: &str) -> bool {
+    std::env::var_os("PATH")
+        .is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(program).is_file()))
 }
 
 fn apply_downloaded(

@@ -7,7 +7,8 @@
 //! | origin | apply |
 //! |---|---|
 //! | Windows installer | run the new signed installer `/SILENT /NORESTART` |
-//! | `.deb` / `.rpm` | hand the file to apt/dnf through one `pkexec` prompt |
+//! | `.deb` / `.rpm` from our apt/dnf repository | upgrade from the repository (PackageKit, or `pkexec` apt/dnf) |
+//! | `.deb` / `.rpm` downloaded by hand | hand the file to apt/dnf through one `pkexec` prompt |
 //! | AUR | notify only; pacman owns those files |
 //! | `make install-user`, AppImage | replace the files directly |
 //!
@@ -154,6 +155,51 @@ pub fn apply_command(policy: ApplyPolicy, file: &std::path::Path) -> Option<Vec<
         // Handled by extracting over the prefix, not by running anything
         ApplyPolicy::DirectReplace => None,
         ApplyPolicy::NotifyOnly => None,
+    }
+}
+
+/// The files the install instructions write to add our repository
+/// (docs/specs/release-and-updates.md §10.1)
+pub const APT_SOURCES: &[&str] = &[
+    "/etc/apt/sources.list.d/opad.sources",
+    "/etc/apt/sources.list.d/opad.list",
+];
+pub const DNF_REPOS: &[&str] = &["/etc/yum.repos.d/opad.repo"];
+
+/// Whether this machine has our repository configured for `pm`. Then an
+/// update comes from the repository, signed by the repository key, and the
+/// system's own update tools see the same version the app installs.
+pub fn repo_configured(pm: PackageManager) -> bool {
+    let files = match pm {
+        PackageManager::Apt => APT_SOURCES,
+        PackageManager::Dnf => DNF_REPOS,
+    };
+    files.iter().any(|f| std::path::Path::new(f).exists())
+}
+
+/// The commands that upgrade OPad from our repository, run in order.
+///
+/// PackageKit is what the desktop's own update tools use: its polkit rules
+/// let the active user refresh the package lists without a password and ask
+/// once for the upgrade. Without it, one `pkexec` prompt runs the package
+/// manager directly. Fixed command lines only; nothing from a feed reaches
+/// them.
+pub fn repo_upgrade_commands(pm: PackageManager, packagekit: bool) -> Vec<Vec<String>> {
+    let v = |args: &[&str]| args.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+    if packagekit {
+        return vec![
+            v(&["pkcon", "refresh"]),
+            v(&["pkcon", "-y", "update", "opad"]),
+        ];
+    }
+    match pm {
+        PackageManager::Apt => vec![v(&[
+            "pkexec",
+            "/bin/sh",
+            "-c",
+            "apt-get update && apt-get install --only-upgrade -y opad",
+        ])],
+        PackageManager::Dnf => vec![v(&["pkexec", "dnf", "upgrade", "-y", "--refresh", "opad"])],
     }
 }
 
@@ -338,6 +384,30 @@ mod tests {
         assert_eq!(
             apply_command(ApplyPolicy::PackageManager(PackageManager::Dnf), rpm).unwrap(),
             vec!["pkexec", "dnf", "install", "-y", "/tmp/osupad.rpm"]
+        );
+    }
+
+    #[test]
+    fn a_repository_install_upgrades_from_the_repository_never_from_a_file() {
+        for pm in [PackageManager::Apt, PackageManager::Dnf] {
+            for packagekit in [true, false] {
+                let cmds = repo_upgrade_commands(pm, packagekit);
+                let last = cmds.last().unwrap();
+                assert!(last.iter().any(|a| a.contains("opad")), "{last:?}");
+                // Upgrade only: a repository update must never install
+                // something new or remove anything
+                assert!(cmds.iter().flatten().all(|a| !a.contains("remove")
+                    && !a.ends_with(".deb")
+                    && !a.ends_with(".rpm")));
+            }
+        }
+        assert_eq!(
+            repo_upgrade_commands(PackageManager::Apt, true)[0],
+            ["pkcon", "refresh"]
+        );
+        assert_eq!(
+            repo_upgrade_commands(PackageManager::Dnf, false)[0][0],
+            "pkexec"
         );
     }
 

@@ -1,0 +1,21 @@
+# What the .deb's postinst does (packaging/linux/deb/postinst), for opad-bin
+
+_opad_configure() {
+    if command -v udevadm >/dev/null 2>&1; then
+        udevadm control --reload-rules || true
+        udevadm trigger --subsystem-match=tty --subsystem-match=usb --subsystem-match=input || true
+    fi
+    # Lets tosu read osu!'s memory under Yama ptrace_scope 1-2; scoped to this
+    # one binary rather than lowering the sysctl
+    if [ -f /usr/lib/opad/tosu/tosu ] && command -v setcap >/dev/null 2>&1; then
+        setcap cap_sys_ptrace=eip /usr/lib/opad/tosu/tosu || true
+    fi
+}
+
+post_install() {
+    _opad_configure
+}
+
+post_upgrade() {
+    _opad_configure
+}

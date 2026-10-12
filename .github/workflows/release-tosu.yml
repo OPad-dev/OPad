@@ -150,6 +150,11 @@ jobs:
     name: Publish ${{ needs.check.outputs.tag }}
     needs: [check, build-linux, build-windows]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     env:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ needs.check.outputs.tag }}
@@ -170,6 +175,14 @@ jobs:
           cd staging
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
+
+      # §19: signed statement of which workflow built each file, from which
+      # commit (gh attestation verify). Needs a public repository.
+      - name: Build provenance
+        if: vars.SIGNING_ENABLED == 'true'
+        uses: actions/attest@v4
+        with:
+          subject-path: staging/*
 
       - name: Upload to the release
         run: scripts/release/publish_release.sh "$TAG" staging "$PRERELEASE" never

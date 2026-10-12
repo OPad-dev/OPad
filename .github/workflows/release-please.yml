@@ -49,6 +49,8 @@ jobs:
       contents: write
       pages: write
       id-token: write
+      attestations: write
+      artifact-metadata: write
 
   firmware:
     name: Firmware release
@@ -62,3 +64,5 @@ jobs:
       contents: write
       pages: write
       id-token: write
+      attestations: write
+      artifact-metadata: write

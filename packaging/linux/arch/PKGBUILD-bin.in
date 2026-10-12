@@ -1,0 +1,50 @@
+# Maintainer: GFerreiroS <info@gferreiro.com>
+#
+# Generated for each app release by scripts/release/aur_bin.sh from
+# packaging/linux/arch/PKGBUILD-bin.in; edit the template, not the output.
+# Repackages the release's .deb, which carries the glibc 2.31 binaries, the
+# standalone tosu and the pinned espflash, so nothing is built here.
+pkgname=opad-bin
+_pkgver=@VERSION@
+pkgver=@PKGVER@
+pkgrel=1
+pkgdesc="Low-latency ESP32-S3 keypad manager, telemetry HUD, and tray applet for OPad (release binaries)"
+arch=('x86_64')
+url="https://github.com/OPad-dev/OPad"
+license=('GPL-3.0-or-later' 'LGPL-3.0-only' 'OFL-1.1')
+depends=(
+    'vulkan-loader'
+    'wayland'
+    'libx11'
+    'libxcursor'
+    'libxkbcommon'
+    'libxi'
+    'libxrandr'
+    'dbus'
+)
+optdepends=(
+    'vulkan-driver: Hardware Vulkan acceleration for iced/wgpu GUI renderer'
+    'libcap: lets tosu read osu! under Yama ptrace_scope 1-2 (setcap at install)'
+)
+provides=('opad')
+conflicts=('opad' 'opad-git')
+install=opad-bin.install
+source=("opad_${_pkgver}_amd64.deb::${url}/releases/download/v${_pkgver}/opad_${_pkgver}_amd64.deb"
+        "opad-bin.install")
+sha256sums=('@SHA256@'
+            '@INSTALL_SHA256@')
+noextract=("opad_${_pkgver}_amd64.deb")
+
+package() {
+    cd "$srcdir"
+    # The .deb's data.tar.* (cargo-deb compresses it with xz)
+    bsdtar -xOf "opad_${_pkgver}_amd64.deb" 'data.tar.*' | bsdtar -xf - -C "$pkgdir"
+    # pacman owns these files now: the in-app updater only notifies (§6.1)
+    printf 'aur' > "$pkgdir/usr/lib/opad/install-origin"
+    if [ -f "$pkgdir/etc/opad/install-origin" ]; then
+        printf 'aur' > "$pkgdir/etc/opad/install-origin"
+    fi
+    install -Dm644 "$pkgdir/usr/share/doc/opad/Montserrat-OFL.txt" \
+        "$pkgdir/usr/share/licenses/$pkgname/Montserrat-OFL.txt" 2>/dev/null || true
+    install -Dm644 "$pkgdir/usr/lib/opad/tosu/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE.tosu"
+}

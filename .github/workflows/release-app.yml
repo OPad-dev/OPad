@@ -366,13 +366,65 @@ jobs:
           name: windows
           path: out/opad-setup-*.exe
 
+  # §19.3: dnf's gpgcheck=1 needs the package itself signed, so this happens
+  # before the checksums are taken. Skipped until signing is enabled.
+  sign-rpm:
+    name: Sign the .rpm
+    needs: build-linux
+    if: vars.SIGNING_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: linux
+          path: out
+
+      - name: Install rpm and gpg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends rpm gnupg
+
+      - name: Sign
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          umask 077
+          export GNUPGHOME="$(mktemp -d)"
+          pass="$(mktemp)"
+          trap 'rm -rf "$GNUPGHOME" "$pass"' EXIT
+          printf '%s\n' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          printf '%s' "$GPG_PASSPHRASE" > "$pass"
+          key="$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/ {print $10; exit}')"
+          rpmsign --define "_gpg_name ${key}" \
+            --define "_gpg_sign_cmd_extra_args --pinentry-mode loopback --passphrase-file ${pass}" \
+            --addsign out/*.rpm
+          rpm -qpi out/*.rpm | grep -i '^Signature'
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: out/*
+          overwrite: true
+
   publish:
     name: Publish ${{ inputs.tag }}
-    needs: [check, build-linux, build-windows]
+    needs: [check, build-linux, build-windows, sign-rpm]
+    # sign-rpm is skipped until signing is enabled
+    if: >-
+      !cancelled() && needs.build-linux.result == 'success' && needs.build-windows.result == 'success'
+      && (needs.sign-rpm.result == 'success' || needs.sign-rpm.result == 'skipped')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     env:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ inputs.tag }}
+      VERSION: ${{ needs.check.outputs.version }}
       PRERELEASE: ${{ needs.check.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v7
@@ -385,11 +437,26 @@ jobs:
           path: staging
           merge-multiple: true
 
+      # For the AUR (§10.1); pushing it there is a manual step
+      - name: opad-bin PKGBUILD
+        run: |
+          scripts/release/aur_bin.sh "$VERSION" "staging/opad_${VERSION}_amd64.deb" aur
+          cp aur/PKGBUILD staging/opad-bin.PKGBUILD
+          cp aur/.SRCINFO staging/opad-bin.SRCINFO
+
       - name: Checksums
         run: |
           cd staging
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
+
+      # §19: signed statement of which workflow built each file, from which
+      # commit (gh attestation verify). Needs a public repository.
+      - name: Build provenance
+        if: vars.SIGNING_ENABLED == 'true'
+        uses: actions/attest@v4
+        with:
+          subject-path: staging/*
 
       - name: Upload to the release
         run: scripts/release/publish_release.sh "$TAG" staging "$PRERELEASE" latest-if-final
