@@ -1,10 +1,11 @@
 # OPad — Releases, Update Feed and Updaters
 
-**Status:** draft for review (2026-10-12). Nothing new here is implemented yet;
-§2 and the "today" columns say what already exists.
+**Status:** accepted (2026-10-12). Phases 1–5 are implemented, with the parts
+that need Linux still to be run (§18.3); phase 6, signing, is the owner's (§19).
+§2's "Today" column describes the code before this work.
 **Amends:** `docs/specs/packaging-distribution.md` §7 L-0 (GitHub releases
 only), §9 U (updates) and §4 W2-2 (code signing). Where the two disagree, this
-document wins once it is accepted.
+document wins.
 
 ---
 
