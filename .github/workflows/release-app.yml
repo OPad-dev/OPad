@@ -1,70 +1,86 @@
-name: Release
+name: Release app
 
-# Builds everything a release publishes from a v* tag: firmware, Linux
-# packages (.deb, .rpm, AppImage, tarball) linked against glibc <= 2.31, the
-# Windows installer, third-party notices and tosu's corresponding source.
+# Builds and publishes one app release (tag vX.Y.Z): the Windows installer,
+# the Linux packages (glibc <= 2.31), the AppImage and the tarball, with
+# third-party notices and the bundled tosu's source. Started by
+# release-please.yml when an app release PR is merged, or by hand with a tag.
+# See docs/specs/release-and-updates.md §4.
 #
-# The release is left as a DRAFT. The manifest is signed offline, over these
-# exact files: scripts/release/sign_release.sh --tag <tag> downloads the
-# draft's assets, signs, uploads opad-manifest.json(.minisig) and starts
-# release-verify.yml, which checks every manifest artifact against the draft
-# and publishes it. This workflow never sees the signing key.
+# Signing steps run only when the repository variable SIGNING_ENABLED is
+# "true" (§19); until then every release is a pre-release.
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "App tag to build, e.g. v1.0.0-rc.1"
+        required: true
+        type: string
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
 
 env:
   ESPFLASH_VERSION: "4.6.0"
   ESPFLASH_WINDOWS_SHA256: "b2cb4656b067716fe2b3794cf0604b461b2476d06dee7f481704cb6c8495b11c"
   APPIMAGETOOL_VERSION: "1.9.1"
   APPIMAGETOOL_SHA256: "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
-  TOSU_VERSION: "v4.26.2"
   # The Designer must draw with the firmware's real LVGL, never the stub
   OPAD_REQUIRE_UI_PREVIEW: "1"
 
 jobs:
-  build-firmware:
-    name: Firmware (ESP-IDF)
+  check:
+    name: Tag matches the tree
     runs-on: ubuntu-latest
-    container:
-      image: espressif/idf:v5.5.2
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Build firmware
-        shell: bash
-        run: |
-          . /opt/esp/idf/export.sh
-          cd firmware
-          idf.py set-target esp32s3 build
-
-      - name: Stage firmware artifacts
-        shell: bash
-        run: |
-          mkdir -p staging
-          cp firmware/build/opad-firmware.bin staging/
-          cp firmware/build/bootloader/bootloader.bin staging/
-          cp firmware/build/partition_table/partition-table.bin staging/
-          cp firmware/build/ota_data_initial.bin staging/
-          cp firmware/THIRD_PARTY_NOTICES.md staging/FIRMWARE_THIRD_PARTY_NOTICES.md
-
-      - uses: actions/upload-artifact@v7
+      - uses: actions/checkout@v7
         with:
-          name: firmware
-          path: staging/*
+          ref: ${{ inputs.tag }}
+
+      - name: Check versions
+        run: |
+          out="$(python3 scripts/release/check_versions.py --tag "${{ inputs.tag }}")"
+          echo "$out"
+          grep -qx 'component=app' <<<"$out" || { echo "${{ inputs.tag }} is not an app tag" >&2; exit 1; }
+
+      - name: Version and channel
+        id: v
+        env:
+          SIGNING_ENABLED: ${{ vars.SIGNING_ENABLED }}
+        run: |
+          version="${{ inputs.tag }}"
+          version="${version#v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          # A SemVer pre-release is a pre-release; so is everything until
+          # releases are signed (§5.4)
+          if [[ "$version" == *-* || "$SIGNING_ENABLED" != "true" ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
 
   build-linux:
     name: Linux packages (glibc <= 2.31)
+    needs: check
     runs-on: ubuntu-22.04
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
 
       - name: Install system dependencies
         run: |
@@ -197,31 +213,36 @@ jobs:
           make tosu-source
           make lazer-calculator-source
 
+      # One file name per format, with the SemVer version in it. The package
+      # managers read the version from inside the package; GitHub would mangle
+      # the "~" cargo-deb and RPM put in theirs.
       - name: Stage Linux artifacts
         run: |
-          ls dist/*.deb dist/*.rpm dist/*.AppImage  # fail if any is missing
-          VERSION="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' desktop/Cargo.toml | head -n 1)"
-          mkdir -p staging/tar/bin
+          mkdir -p staging/tar/bin out
           cp desktop/target/release/{opad-daemon,opad-gui,opadctl} staging/tar/bin/
           cp README.md LICENSE dist/THIRD_PARTY_NOTICES.html staging/tar/
-          tar -czf "dist/opad-linux-x86_64-${VERSION}.tar.gz" -C staging/tar .
+          tar -czf "out/opad-linux-x86_64-${VERSION}.tar.gz" -C staging/tar .
+          mv dist/*.deb "out/opad_${VERSION}_amd64.deb"
+          mv dist/*.rpm "out/opad-${VERSION}.x86_64.rpm"
+          mv dist/*.AppImage "out/opad-${VERSION}-x86_64.AppImage"
+          mv dist/THIRD_PARTY_NOTICES.html dist/*-source.tar.gz out/
+          ls -l out
 
       - uses: actions/upload-artifact@v7
         with:
           name: linux
-          path: |
-            dist/*.deb
-            dist/*.rpm
-            dist/*.AppImage
-            dist/*.tar.gz
-            dist/THIRD_PARTY_NOTICES.html
+          path: out/*
 
   build-windows:
     name: Windows installer
+    needs: check
     runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
 
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
@@ -241,7 +262,8 @@ jobs:
       - name: Build bundled tosu (tosu.exe)
         shell: bash
         run: |
-          git clone --depth 1 --branch "${TOSU_VERSION}" https://github.com/KotRikD/tosu.git build/tosu-src
+          tosu_version="$(sed -n 's/^TOSU_VERSION ?= //p' Makefile)"
+          git clone --depth 1 --branch "${tosu_version}" https://github.com/KotRikD/tosu.git build/tosu-src
           (cd build/tosu-src && pnpm install --frozen-lockfile && pnpm --filter tosu run compile:win)
           mkdir -p build/tosu
           cp build/tosu-src/packages/tosu/dist/tosu.exe build/tosu/
@@ -256,17 +278,6 @@ jobs:
       - name: Build release binaries
         run: cargo build --release --locked --bins --manifest-path desktop/Cargo.toml
 
-      - name: Install cargo-about
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-about
-
-      - name: Third-party notices
-        shell: bash
-        run: |
-          mkdir -p dist
-          (cd desktop && cargo about generate --offline --fail about.hbs -o ../dist/THIRD_PARTY_NOTICES.html)
-
       - name: Fetch espflash (pinned, checksummed)
         shell: bash
         run: |
@@ -275,47 +286,99 @@ jobs:
           echo "${ESPFLASH_WINDOWS_SHA256}  espflash.zip" | sha256sum -c -
           unzip -o espflash.zip espflash.exe -d desktop/target/release
 
+      # §19.4. SignPath signs the programs before they go into the installer,
+      # then the installer itself (below). Skipped until signing is enabled.
+      - name: Collect the programs to sign
+        if: vars.SIGNING_ENABLED == 'true'
+        shell: bash
+        run: |
+          mkdir -p to-sign
+          cp desktop/target/release/{opad-daemon,opad-gui,opadctl}.exe to-sign/
+
+      - name: Upload the programs for signing
+        id: unsigned-bins
+        if: vars.SIGNING_ENABLED == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-programs
+          path: to-sign/*.exe
+
+      - name: Sign the programs (SignPath)
+        if: vars.SIGNING_ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: opad
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: programs
+          github-artifact-id: ${{ steps.unsigned-bins.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-programs
+
+      - name: Use the signed programs
+        if: vars.SIGNING_ENABLED == 'true'
+        shell: bash
+        run: cp signed-programs/*.exe desktop/target/release/
+
       - name: Build installer
         shell: bash
         run: |
+          mkdir -p out
           iscc packaging/windows/installer.iss
-          cp build/installer/opad-setup.exe dist/
+          cp build/installer/opad-setup.exe "out/opad-setup-${VERSION}.exe"
+
+      - name: Upload the installer for signing
+        id: unsigned-installer
+        if: vars.SIGNING_ENABLED == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-installer
+          path: out/opad-setup-*.exe
+
+      - name: Sign the installer (SignPath)
+        if: vars.SIGNING_ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: opad
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.unsigned-installer.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: out
 
       - uses: actions/upload-artifact@v7
         with:
           name: windows
-          path: dist/*.exe
+          path: out/opad-setup-*.exe
 
   publish:
-    name: Publish GitHub release
-    needs: [build-firmware, build-linux, build-windows]
+    name: Publish ${{ inputs.tag }}
+    needs: [check, build-linux, build-windows]
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+      PRERELEASE: ${{ needs.check.outputs.prerelease }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+
       - uses: actions/download-artifact@v8
         with:
+          pattern: "{linux,windows}"
           path: staging
+          merge-multiple: true
 
-      - name: Collect artifacts and checksums
+      - name: Checksums
         run: |
-          mkdir -p dist
-          find staging -type f -exec cp {} dist/ \;
-          cd dist
+          cd staging
           sha256sum * > SHA256SUMS
           cat SHA256SUMS
 
-      # A draft: nothing is public until the manifest signed over these files
-      # has been checked against them (release-verify.yml)
-      - name: Create draft release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: dist/*
-          draft: true
-          generate_release_notes: true
+      - name: Upload to the release
+        run: scripts/release/publish_release.sh "$TAG" staging "$PRERELEASE" latest-if-final
 
-      - name: Next step
-        run: |
-          {
-            echo "Draft release ${GITHUB_REF_NAME} created. On the signing machine run:"
-            echo ""
-            echo "    scripts/release/sign_release.sh --tag ${GITHUB_REF_NAME}"
-          } >> "$GITHUB_STEP_SUMMARY"

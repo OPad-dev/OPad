@@ -1,0 +1,145 @@
+name: Release firmware
+
+# Builds and publishes one firmware release (tag firmware-vX.Y.Z): the app
+# image the updater flashes, the recovery files, notices and the source of
+# everything compiled into the image. Never GitHub's "Latest": that is the
+# app (docs/specs/release-and-updates.md §4.1). Started by release-please.yml
+# when a firmware release PR is merged, or by hand with a tag.
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Firmware tag to build, e.g. firmware-v1.0.0-rc.1"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Tag matches the tree
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Check versions
+        run: |
+          out="$(python3 scripts/release/check_versions.py --tag "${{ inputs.tag }}")"
+          echo "$out"
+          grep -qx 'component=firmware' <<<"$out" || { echo "${{ inputs.tag }} is not a firmware tag" >&2; exit 1; }
+
+      - name: Version and channel
+        id: v
+        env:
+          SIGNING_ENABLED: ${{ vars.SIGNING_ENABLED }}
+        run: |
+          version="${{ inputs.tag }}"
+          version="${version#firmware-v}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* || "$SIGNING_ENABLED" != "true" ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Firmware (ESP-IDF v5.5.2)
+    needs: check
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v5.5.2
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+
+      - name: Build firmware
+        shell: bash
+        run: |
+          . /opt/esp/idf/export.sh
+          cd firmware
+          idf.py set-target esp32s3 build
+
+      - name: The image reports the tagged version
+        shell: bash
+        run: |
+          # What the build stamped into esp_app_desc_t, i.e. what HelloAck reports
+          reported="$(python3 -c "import json; print(json.load(open('firmware/build/project_description.json'))['project_version'])")"
+          echo "image version: ${reported:-<none>}"
+          [ "${reported}" = "${VERSION}" ] || { echo "ERROR: the image says ${reported:-nothing}, the tag ${VERSION}" >&2; exit 1; }
+
+      # GPL-3.0 corresponding source for the image: this repository's firmware
+      # and protocol at the tag, plus the ESP-IDF components the component
+      # manager downloaded at the versions in dependencies.lock
+      - name: Source bundle
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$PWD"
+          prefix="opad-firmware-${VERSION}"
+          git archive --format=tar --prefix="${prefix}/" HEAD \
+            firmware protocol LICENSE LICENSES REUSE.toml > source.tar
+          tar -rf source.tar --transform "s,^,${prefix}/," firmware/managed_components
+          gzip -9 source.tar
+
+      - name: Stage firmware artifacts
+        shell: bash
+        run: |
+          mkdir -p out
+          cp firmware/build/opad-firmware.bin out/
+          cp firmware/build/bootloader/bootloader.bin out/
+          cp firmware/build/partition_table/partition-table.bin out/
+          cp firmware/build/ota_data_initial.bin out/
+          cp firmware/THIRD_PARTY_NOTICES.md out/FIRMWARE_THIRD_PARTY_NOTICES.md
+          mv source.tar.gz "out/opad-firmware-${VERSION}-source.tar.gz"
+          ls -l out
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: firmware
+          path: out/*
+
+  publish:
+    name: Publish ${{ inputs.tag }}
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+      PRERELEASE: ${{ needs.check.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: firmware
+          path: staging
+
+      - name: Checksums
+        run: |
+          cd staging
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Upload to the release
+        run: scripts/release/publish_release.sh "$TAG" staging "$PRERELEASE" never
+

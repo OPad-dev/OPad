@@ -2,11 +2,10 @@ name: Release Please
 
 # Keeps one release pull request open per component (the app and the
 # firmware), with the version bump and a changelog written from the
-# conventional commits since that component's last release. Merging one
-# tags it and creates a draft release (release-please-config.json).
-#
-# Building and publishing the draft's files is wired up in phase 2 of
-# docs/specs/release-and-updates.md; until then, do not merge a release PR.
+# conventional commits since that component's last release. Merging one tags
+# it, creates a draft release (release-please-config.json), and starts the
+# workflow that builds, uploads and publishes it.
+# See docs/specs/release-and-updates.md §4.2.
 
 on:
   push:
@@ -24,9 +23,38 @@ jobs:
   release-please:
     name: Release PRs
     runs-on: ubuntu-latest
+    outputs:
+      app_created: ${{ steps.release.outputs.release_created }}
+      app_tag: ${{ steps.release.outputs.tag_name }}
+      firmware_created: ${{ steps.release.outputs['firmware--release_created'] }}
+      firmware_tag: ${{ steps.release.outputs['firmware--tag_name'] }}
     steps:
       - uses: googleapis/release-please-action@v5
         id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  # A tag pushed with GITHUB_TOKEN starts no workflow, so the builds are
+  # called from here rather than triggered by the tag
+  app:
+    name: App release
+    needs: release-please
+    if: needs.release-please.outputs.app_created == 'true'
+    uses: ./.github/workflows/release-app.yml
+    with:
+      tag: ${{ needs.release-please.outputs.app_tag }}
+    secrets: inherit
+    permissions:
+      contents: write
+
+  firmware:
+    name: Firmware release
+    needs: release-please
+    if: needs.release-please.outputs.firmware_created == 'true'
+    uses: ./.github/workflows/release-firmware.yml
+    with:
+      tag: ${{ needs.release-please.outputs.firmware_tag }}
+    secrets: inherit
+    permissions:
+      contents: write

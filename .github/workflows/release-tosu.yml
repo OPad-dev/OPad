@@ -1,0 +1,176 @@
+name: Release tosu
+
+# Builds the pinned tosu (TOSU_VERSION in the Makefile) for Linux and Windows
+# and publishes it as tosu-v<version>-r<revision>, so the bundled tosu can be
+# updated between app releases (docs/specs/release-and-updates.md §4.1, §8).
+# Run by hand after bumping the pin, or with a higher revision to rebuild the
+# same upstream version. Never GitHub's "Latest".
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: "Our build revision of this upstream version (1 for the first build)"
+        required: true
+        default: "1"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-tosu
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Version and tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Version and tag
+        id: v
+        env:
+          REVISION: ${{ inputs.revision }}
+          SIGNING_ENABLED: ${{ vars.SIGNING_ENABLED }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$REVISION" =~ ^[1-9][0-9]*$ ]] || { echo "revision must be a positive integer" >&2; exit 1; }
+          upstream="$(sed -n 's/^TOSU_VERSION ?= //p' Makefile)"
+          version="${upstream#v}"
+          tag="tosu-v${version}-r${REVISION}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "ERROR: $tag already exists; use a higher revision" >&2
+            exit 1
+          fi
+          # A tosu release is final upstream, but nothing is offered as stable
+          # before releases are signed (§5.4)
+          prerelease=$([ "$SIGNING_ENABLED" = "true" ] && echo false || echo true)
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "prerelease=${prerelease}" >> "$GITHUB_OUTPUT"
+          echo "Building $tag (pre-release: $prerelease)"
+
+  build-linux:
+    name: tosu for Linux (glibc <= 2.28)
+    needs: check
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential binutils
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.13.0
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # The same build the app packages bundle (see release-app.yml)
+      - name: Build tosu
+        run: make tosu
+
+      - name: Assert glibc <= 2.28
+        run: |
+          for bin in build/tosu/tosu build/tosu-src/packages/tosu/dist/*.node; do
+            [ -f "$bin" ] || { echo "ERROR: $bin is missing" >&2; exit 1; }
+            max_ver=$(objdump -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sort -V | tail -n 1)
+            echo "$bin: $max_ver"
+            if dpkg --compare-versions "${max_ver#GLIBC_}" gt "2.28"; then
+              echo "ERROR: $bin needs $max_ver, above glibc 2.28" >&2
+              exit 1
+            fi
+          done
+
+      - name: Sources and notices
+        run: |
+          make tosu-source
+          make lazer-calculator-source
+
+      - name: Stage
+        run: |
+          mkdir -p out
+          cp build/tosu/tosu out/tosu-linux-x86_64
+          cp licenses/tosu/LICENSE out/tosu-LICENSE
+          cp licenses/tosu/NOTICE out/tosu-NOTICE
+          cp licenses/tosu/THIRD_PARTY_NOTICES.txt out/tosu-THIRD_PARTY_NOTICES.txt
+          mv dist/*-source.tar.gz out/
+          ls -l out
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tosu-linux
+          path: out/*
+
+  build-windows:
+    name: tosu for Windows
+    needs: check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Build tosu.exe
+        shell: bash
+        run: |
+          tosu_version="$(sed -n 's/^TOSU_VERSION ?= //p' Makefile)"
+          git clone --depth 1 --branch "${tosu_version}" https://github.com/KotRikD/tosu.git build/tosu-src
+          (cd build/tosu-src && pnpm install --frozen-lockfile && pnpm --filter tosu run compile:win)
+          mkdir -p out
+          cp build/tosu-src/packages/tosu/dist/tosu.exe out/tosu-windows-x86_64.exe
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tosu-windows
+          path: out/*
+
+  publish:
+    name: Publish ${{ needs.check.outputs.tag }}
+    needs: [check, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.check.outputs.tag }}
+      PRERELEASE: ${{ needs.check.outputs.prerelease }}
+      # The tag does not exist yet: it is created on this commit
+      TARGET: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: tosu-*
+          path: staging
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          cd staging
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Upload to the release
+        run: scripts/release/publish_release.sh "$TAG" staging "$PRERELEASE" never
+
