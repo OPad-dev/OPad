@@ -2,6 +2,7 @@
 #include "ui/ui_store.h"
 #include "ui/easter_egg.h"
 #include "ui/core/ui_internal.h"
+#include "ui/core/ui_anim.h"
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
 #include "input/keypad.h"
 #include "runtime/runtime.h"
@@ -167,6 +168,9 @@ static void pad_timer_cb(lv_timer_t *timer)
     s_prev_runtime_state = st;
 
     int want = st == OSUPAD_STATE_PLAYING ? UI_SCREEN_PLAYING : UI_SCREEN_IDLE;
+    if (want == UI_SCREEN_PLAYING && ui_anim_active()) {
+        ui_anim_stop();  // a retry from the results screen: nothing extra during a map
+    }
     if (want != s_active_screen && s_screens[want]) {
         s_active_screen = want;
         lv_screen_load(s_screens[want]);
@@ -375,6 +379,18 @@ void ui_trigger_easter_egg(void)
     if (!s_ui_ok) return;
     lvgl_port_lock(0);
     easter_egg_trigger();
+    lvgl_port_unlock();
+}
+
+void ui_play_animation(uint8_t id, const char *grade)
+{
+    if (!s_ui_ok) return;
+    lvgl_port_lock(0);
+    if (id == 0) {
+        ui_anim_stop();
+    } else if (runtime_get_state() != OSUPAD_STATE_PLAYING && !easter_egg_is_active()) {
+        ui_anim_play(id, grade);
+    }
     lvgl_port_unlock();
 }
 

@@ -25,6 +25,7 @@ idf_component_register(
         "ui/core/ui_data.c"
         "ui/core/ui_screen.c"
         "ui/core/ui_defaults.c"
+        "ui/core/ui_anim.c"
         "runtime/runtime.c"
         "protocol/protocol.c"
         "protocol/frame_parser.c"

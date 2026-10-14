@@ -51,6 +51,9 @@ PB_BIND(osupad_SetLayout, osupad_SetLayout, 2)
 PB_BIND(osupad_LayoutAck, osupad_LayoutAck, AUTO)
 
 
+PB_BIND(osupad_PlayAnimation, osupad_PlayAnimation, AUTO)
+
+
 PB_BIND(osupad_CounterState, osupad_CounterState, AUTO)
 
 

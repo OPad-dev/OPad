@@ -45,6 +45,12 @@ bool ui_set_layout(uint8_t screen, const ui_layout_t *layout, char *err, size_t 
 void ui_trigger_easter_egg(void);
 
 /**
+ * Play a result animation (ui/core/ui_anim.h; 0 stops the one playing).
+ * Ignored while a map is played, and while the easter egg is on screen.
+ */
+void ui_play_animation(uint8_t id, const char *grade);
+
+/**
  * Brief swipe feedback: @p symbol and @p text slide (dx, dy = -1/0/1) and fade
  * out. Never call it while a map is played: gameplay draws nothing extra.
  */

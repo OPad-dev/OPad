@@ -56,6 +56,9 @@ message HelloAck {
     // The pad answers run_board_test with a BoardTestResult. False from
     // firmware predating it: the host then offers no board test.
     bool board_test = 12;
+    // Highest built-in result animation id the pad plays (PlayAnimation).
+    // 0 from firmware predating them: the host then sends no PlayAnimation.
+    uint32 builtin_animations = 13;
 }
 
 // Record a new owner in NVS (§W3-2). An NVS write, so the firmware must honour
@@ -240,6 +243,20 @@ message LayoutAck {
 }
 
 // -----------------------------------------------------------------------------
+// Result animations (issue #3). Ids: firmware/main/ui/core/ui_anim.h
+// -----------------------------------------------------------------------------
+
+// Play a short animation over the current screen, e.g. the grade on the
+// results screen. The pad ignores it during a map and stops it the moment a
+// map starts. 0 stops the one playing; 1..127 are built in (up to
+// HelloAck.builtin_animations); 128 + n is reserved for uploaded animations,
+// one slot per trigger, which a pad without that slot plays as built-in 1.
+message PlayAnimation {
+    uint32 animation = 1;
+    string grade = 2;        // "SS", "S", "A", ... as tosu names it: what the built-ins draw
+}
+
+// -----------------------------------------------------------------------------
 // Counter Synchronization & Recovery
 // -----------------------------------------------------------------------------
 
@@ -370,6 +387,7 @@ message HostToDevice {
         ClaimOwnership claim_ownership = 14;
         DetectPinRequest detect_pin = 15;
         bool run_board_test = 16;    // answered with BoardTestResult
+        PlayAnimation play_animation = 17;
     }
 }
 

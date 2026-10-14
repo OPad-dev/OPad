@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use opad_device::flash::{self, APP_PARTITION_OFFSET};
 use opad_ipc::{send_request, IpcRequest, IpcResponse, IpcStream, TapStatsSnapshot};
 use opad_model::board_test;
+use opad_model::result_anim;
 use opad_model::tap_rate::{self, TapChannel};
 use opad_model::JsonBackup;
 use std::io::Write;
@@ -126,6 +127,13 @@ enum Commands {
                     Key 2 = GPIO7, then test again"
         )]
         fix_pins: bool,
+    },
+    /// Play a result animation on the pad, as osu!'s results screen would
+    Animation {
+        #[arg(help = "pop, drop or burst (or an animation id); none stops the one playing")]
+        name: String,
+        #[arg(default_value = "S", help = "The grade it shows: SS, S, A, B, C or D")]
+        grade: String,
     },
     /// Perform initial system setup (udev permissions & directories)
     Setup,
@@ -846,6 +854,32 @@ async fn main() -> Result<()> {
                     println!("Run `opadctl board-test --fix-pins` to set the key pins.");
                 }
                 bail!("the board test found problems")
+            }
+        }
+
+        Commands::Animation { name, grade } => {
+            let animation = match name.to_ascii_lowercase().as_str() {
+                "none" => result_anim::NONE,
+                other => match result_anim::BUILTINS
+                    .iter()
+                    .find(|(_, n)| n.eq_ignore_ascii_case(other))
+                {
+                    Some((id, _)) => *id,
+                    None => other.parse().map_err(|_| {
+                        anyhow::anyhow!("Unknown animation {name:?}: pop, drop, burst or none")
+                    })?,
+                },
+            };
+            let req = IpcRequest::PlayAnimation {
+                animation,
+                grade: grade.to_ascii_uppercase(),
+            };
+            match send_request(daemon(&mut stream)?, &req).await? {
+                IpcResponse::AnimationPlayed => {
+                    println!("Playing {} on the pad", result_anim::name(animation));
+                }
+                IpcResponse::Error(e) => bail!("{}", e),
+                other => bail!("Unexpected response from daemon: {:?}", other),
             }
         }
 

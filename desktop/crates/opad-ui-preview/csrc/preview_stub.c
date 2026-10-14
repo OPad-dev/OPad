@@ -308,6 +308,15 @@ int preview_render(const ui_layout_t *layout, uint8_t *out_rgba)
     return 0;
 }
 
+int preview_render_animation(const ui_layout_t *layout, uint8_t id, const char *grade,
+                             uint32_t t_ms, uint8_t *out_rgba)
+{
+    (void)id;
+    (void)grade;
+    (void)t_ms;
+    return preview_render(layout, out_rgba);
+}
+
 size_t preview_sizeof_widget(void) { return sizeof(ui_widget_t); }
 size_t preview_sizeof_layout(void) { return sizeof(ui_layout_t); }
 

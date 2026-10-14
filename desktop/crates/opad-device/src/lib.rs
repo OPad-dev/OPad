@@ -314,6 +314,9 @@ pub struct DeviceManager {
     lost_writes: Arc<AtomicBool>,
     /// The connected pad answers `run_board_test` (HelloAck.board_test)
     board_test: Arc<AtomicBool>,
+    /// Highest built-in animation the connected pad plays
+    /// (HelloAck.builtin_animations); 0 = none
+    builtin_animations: Arc<AtomicU32>,
 }
 
 impl DeviceManager {
@@ -328,6 +331,7 @@ impl DeviceManager {
         let rehello = Arc::new(AtomicBool::new(false));
         let lost_writes = Arc::new(AtomicBool::new(false));
         let board_test = Arc::new(AtomicBool::new(false));
+        let builtin_animations = Arc::new(AtomicU32::new(0));
         tokio::spawn(async move { while cmd_rx.recv().await.is_some() {} });
         (
             Self {
@@ -341,6 +345,7 @@ impl DeviceManager {
                 rehello,
                 lost_writes,
                 board_test,
+                builtin_animations,
             },
             event_rx,
         )
@@ -366,6 +371,8 @@ impl DeviceManager {
         let lost_writes_clone = lost_writes.clone();
         let board_test = Arc::new(AtomicBool::new(false));
         let board_test_clone = board_test.clone();
+        let builtin_animations = Arc::new(AtomicU32::new(0));
+        let builtin_animations_clone = builtin_animations.clone();
 
         // Spawn background worker managing the serial port lifecycle
         tokio::task::spawn_blocking(move || {
@@ -540,6 +547,8 @@ impl DeviceManager {
                                             held = false;
                                             board_test_clone
                                                 .store(ack.board_test, Ordering::SeqCst);
+                                            builtin_animations_clone
+                                                .store(ack.builtin_animations, Ordering::SeqCst);
                                             if handshake.answered_in(msg_framing) {
                                                 debug!(
                                                     "{} speaks {:?} framing",
@@ -619,6 +628,7 @@ impl DeviceManager {
                 rehello,
                 lost_writes,
                 board_test,
+                builtin_animations,
             },
             event_rx,
         )
@@ -656,6 +666,12 @@ impl DeviceManager {
     /// False for firmware predating the board test.
     pub fn supports_board_test(&self) -> bool {
         self.board_test.load(Ordering::SeqCst)
+    }
+
+    /// Highest built-in result animation id the connected pad plays
+    /// ([`DeviceManager::play_animation`]); 0 for firmware predating them.
+    pub fn builtin_animations(&self) -> u32 {
+        self.builtin_animations.load(Ordering::SeqCst)
     }
 
     /// Re-send Hello. The pad answers with a fresh HelloAck, which re-emits
@@ -913,6 +929,21 @@ impl DeviceManager {
         self.send_msg(msg)
     }
 
+    /// Play a result animation over the pad's screen (0 stops it). The pad
+    /// ignores it while a map is played.
+    pub async fn play_animation(&self, animation: u32, grade: &str) -> Result<(), DeviceError> {
+        let msg = HostToDevice {
+            sequence_number: self.next_seq(),
+            payload: Some(host_to_device::Payload::PlayAnimation(
+                proto::PlayAnimation {
+                    animation,
+                    grade: grade.to_string(),
+                },
+            )),
+        };
+        self.send_msg(msg)
+    }
+
     pub async fn send_detect_pin(
         &self,
         key_id: u32,
@@ -987,6 +1018,8 @@ fn device_config_from(c: &proto::ConfigPayload) -> DeviceConfig {
         swipe_down_modifiers: c.swipe_down_modifiers,
         swipe_left_modifiers: c.swipe_left_modifiers,
         swipe_right_modifiers: c.swipe_right_modifiers,
+        // Not on the pad: the PC keeps its own (runtime.rs DeviceConnected)
+        result_animations: Default::default(),
     }
 }
 

@@ -332,6 +332,10 @@ pub fn parse_tosu_v2_json(json_str: &str) -> Option<GameplayTelemetry> {
         } || ["AT", "CN", "RX"]
             .iter()
             .any(|m| has_mod(text("/play/mods/name").as_deref().unwrap_or(""), m)),
+        // tosu's results screen has its own rank; the play's is the fallback
+        results_grade: (text("/state/name").as_deref() == Some("resultScreen"))
+            .then(|| text("/resultsScreen/rank").or_else(|| text("/play/rank/current")))
+            .flatten(),
         clock: match (live, first, last) {
             (Some(live_ms), Some(first_object_ms), Some(last_object_ms))
                 if last_object_ms > first_object_ms =>
@@ -947,6 +951,30 @@ mod tests {
         },
         "profile": { "name": "osu!player", "globalRank": 12345, "pp": 4321.0 }
     }"#;
+
+    #[test]
+    fn the_results_screen_reports_its_rank() {
+        let results = r#"{
+            "state": { "number": 7, "name": "resultScreen" },
+            "play": { "rank": { "current": "A" } },
+            "resultsScreen": { "rank": "SH" }
+        }"#;
+        let t = parse_tosu_v2_json(results).unwrap();
+        assert_eq!(t.results_grade.as_deref(), Some("SH"));
+        assert!(!t.is_playing);
+
+        // Without resultsScreen, the play's rank
+        let fallback = r#"{
+            "state": { "number": 7, "name": "resultScreen" },
+            "play": { "rank": { "current": "B" } }
+        }"#;
+        let t = parse_tosu_v2_json(fallback).unwrap();
+        assert_eq!(t.results_grade.as_deref(), Some("B"));
+
+        // Any other screen has none
+        let t = parse_tosu_v2_json(PLAYING_FRAME).unwrap();
+        assert_eq!(t.results_grade, None);
+    }
 
     fn value(t: &GameplayTelemetry, source: u8) -> &SourceValue {
         &t.values

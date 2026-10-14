@@ -110,7 +110,7 @@ static void bind_text(lv_obj_t *label, lv_obj_t *root, const ui_widget_t *w)
 
 // ---- Grade -------------------------------------------------------------------------
 
-static uint32_t grade_color(const char *grade)
+uint32_t ui_grade_color(const char *grade)
 {
     if (strcmp(grade, "XH") == 0 || strcmp(grade, "SSH") == 0 || strcmp(grade, "SH") == 0) return 0xDDE6F0;
     if (strcmp(grade, "X") == 0 || strcmp(grade, "SS") == 0) return 0xFFE066;
@@ -124,16 +124,20 @@ static uint32_t grade_color(const char *grade)
     }
 }
 
+const char *ui_grade_shown(const char *grade)
+{
+    if (strcmp(grade, "X") == 0 || strcmp(grade, "XH") == 0) return "SS";
+    if (strcmp(grade, "SH") == 0) return "S";
+    return grade;
+}
+
 static void grade_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
 {
     lv_obj_t *label = lv_observer_get_target_obj(observer);
     const ui_widget_t *w = lv_observer_get_user_data(observer);
     const char *grade = lv_subject_get_string(subject);
-    // osu! shows X/XH as SS
-    const char *shown = (strcmp(grade, "X") == 0 || strcmp(grade, "XH") == 0) ? "SS"
-                        : (strcmp(grade, "SH") == 0) ? "S" : grade;
-    lv_label_set_text_fmt(label, "%s%s%s", w->label, shown, w->suffix);
-    lv_obj_set_style_text_color(label, lv_color_hex(grade_color(grade)), 0);
+    lv_label_set_text_fmt(label, "%s%s%s", w->label, ui_grade_shown(grade), w->suffix);
+    lv_obj_set_style_text_color(label, lv_color_hex(ui_grade_color(grade)), 0);
     set_hidden_if_empty(lv_obj_get_user_data(label), w);
 }
 

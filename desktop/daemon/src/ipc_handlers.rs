@@ -1052,6 +1052,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 swipe_down_modifiers: backup.config.swipe_down_modifiers,
                 swipe_left_modifiers: backup.config.swipe_left_modifiers,
                 swipe_right_modifiers: backup.config.swipe_right_modifiers,
+                result_animations: backup.config.result_animations,
             };
 
             let new_counters = CounterState {
@@ -1306,6 +1307,28 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     gpio: 0,
                     success: false,
                 },
+            }
+        }
+
+        IpcRequest::PlayAnimation { animation, grade } => {
+            if let Some(refused) = refuse_if_pad_guarded(state) {
+                return refused;
+            }
+            if !device.is_connected() {
+                return IpcResponse::Error("The pad is not connected".to_string());
+            }
+            if device.builtin_animations() == 0 {
+                return IpcResponse::Error(
+                    "This pad's firmware has no result animations. Update the firmware, then try again."
+                        .to_string(),
+                );
+            }
+            if state.lock().mode == RuntimeMode::Playing {
+                return IpcResponse::Error("Not while a map is played".to_string());
+            }
+            match device.play_animation(animation, &grade).await {
+                Ok(()) => IpcResponse::AnimationPlayed,
+                Err(e) => IpcResponse::Error(format!("Could not reach the pad: {e}")),
             }
         }
 

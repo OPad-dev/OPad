@@ -201,6 +201,14 @@ pub enum IpcRequest {
     /// Added after IPC v1 shipped: an older daemon cannot parse it and closes
     /// the connection, which the client shows as "not available".
     RunBoardTest,
+    /// Play a result animation on the pad now, as the results screen would
+    /// (`opad_model::result_anim` ids; answered with `AnimationPlayed`, or
+    /// `Error` without a pad, with firmware predating animations, or during
+    /// a map). Added after IPC v1 shipped, like `RunBoardTest`.
+    PlayAnimation {
+        animation: u32,
+        grade: String,
+    },
 }
 
 /// The daemon's tap rate statistics (answer to `GetTapStats`)
@@ -431,6 +439,7 @@ pub enum IpcResponse {
     EasterEggTriggered,
     TapStats(TapStatsSnapshot),
     BoardTest(BoardTestReport),
+    AnimationPlayed,
     Error(String),
 }
 

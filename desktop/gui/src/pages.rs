@@ -7,6 +7,7 @@ use iced::widget::{
     Space,
 };
 use iced::{Alignment, Color, Element, Length};
+use opad_model::result_anim::{self, Trigger};
 use opad_model::swipe::{free_keys, swipe_choices, FreeKey, SwipeChoice, SwipeDir};
 use opad_model::ui_source::{self as src, SourceValue};
 use opad_model::{key_pin, KeyPin, KEY_PINS};
@@ -19,6 +20,23 @@ pub enum SettingsTab {
     Updates,
     AboutTosu,
     Diagnostics,
+}
+
+/// A result animation as the pickers list it, by id
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AnimChoice(pub u32);
+
+impl std::fmt::Display for AnimChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(result_anim::name(self.0))
+    }
+}
+
+fn anim_choices() -> Vec<AnimChoice> {
+    std::iter::once(result_anim::NONE)
+        .chain(result_anim::BUILTINS.iter().map(|(id, _)| *id))
+        .map(AnimChoice)
+        .collect()
 }
 
 pub(crate) fn grouped(n: u64) -> String {
@@ -471,6 +489,55 @@ pub fn settings(app: &App) -> Element<'_, Message> {
         .spacing(18),
     );
 
+    // One grade's animation, and a button that plays it on the pad now
+    let anim_cell = |trigger: Trigger| {
+        let id = app.result_animations.get(trigger);
+        let mut play = button(text("Play").size(13)).style(theme::secondary);
+        if app.device_connected && id != result_anim::NONE {
+            play = play.on_press(Message::PreviewAnimation(trigger));
+        }
+        column![
+            caption(trigger.label()),
+            row![
+                pick_list(anim_choices(), Some(AnimChoice(id)), move |c| {
+                    Message::ResultAnimation(trigger, c)
+                })
+                .width(Length::Fill)
+                .padding(10),
+                play.padding(10),
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center),
+        ]
+        .spacing(6)
+        .width(Length::FillPortion(1))
+    };
+
+    let result_anims = card(
+        column![
+            text("Result animations").size(18).font(theme::FONT_BOLD),
+            muted(
+                "Played on the pad when osu! shows the results of your own play, for the \
+                 grade you got. A replay, or results opened from song select, play nothing, \
+                 and the next map stops the animation at once. Play shows it on the pad now."
+            )
+            .size(12),
+            row![
+                anim_cell(Trigger::SS),
+                anim_cell(Trigger::S),
+                anim_cell(Trigger::A)
+            ]
+            .spacing(16),
+            row![
+                anim_cell(Trigger::B),
+                anim_cell(Trigger::C),
+                anim_cell(Trigger::D)
+            ]
+            .spacing(16),
+        ]
+        .spacing(18),
+    );
+
     let advanced = card(
         column![
             text("Advanced").size(18).font(theme::FONT_BOLD),
@@ -565,6 +632,7 @@ pub fn settings(app: &App) -> Element<'_, Message> {
                 content = content.push(w);
             }
             content = content.push(display);
+            content = content.push(result_anims);
             content = content.push(advanced);
             content = content.push(row![save_btn]);
         }

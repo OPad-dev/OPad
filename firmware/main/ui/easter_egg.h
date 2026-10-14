@@ -17,6 +17,9 @@ void easter_egg_init(void);
  */
 void easter_egg_trigger(void);
 
+/** Whether the easter egg is on screen right now. */
+bool easter_egg_is_active(void);
+
 #ifdef __cplusplus
 }
 #endif

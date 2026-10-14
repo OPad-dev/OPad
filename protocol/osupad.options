@@ -15,6 +15,7 @@ osupad.UiWidget.label max_size:32
 osupad.UiWidget.suffix max_size:12
 osupad.SetLayout.widgets max_count:32
 osupad.LayoutAck.message max_size:64
+osupad.PlayAnimation.grade max_size:4
 osupad.CounterState.device_id max_size:32
 osupad.CounterSyncResponse.message max_size:64
 osupad.LogEvent.tag max_size:16

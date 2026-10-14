@@ -17,6 +17,12 @@ bool ui_data_is_empty(uint8_t source);
 /** Format the current value (no prefix/suffix). Empty numeric values render as "-". */
 void ui_data_format(uint8_t source, uint8_t decimals, char *out, size_t len);
 
+/** 0xRRGGBB a grade is drawn in, from tosu's rank ("SS", "SH", "A", ...) */
+uint32_t ui_grade_color(const char *grade);
+
+/** The letters osu! shows for a rank: X/XH as SS, SH as S */
+const char *ui_grade_shown(const char *grade);
+
 #ifdef __cplusplus
 }
 #endif

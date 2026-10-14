@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 use opad_ipc::TapStatsSnapshot;
 use opad_layout::{Layout, Screen};
+use opad_model::result_anim::{self, Trigger};
 use opad_model::tap_rate::{
     self, AttemptStats, AttemptTracker, BeatmapRef, SongClock, TapHistory, DEFAULT_HISTORY_DAYS,
 };
@@ -206,6 +207,8 @@ pub enum RuntimeEvent {
         clock: Option<SongClock>,
         /// Someone else's play (a replay): not measured
         other_player: bool,
+        /// osu! is on the results screen with this rank
+        results_grade: Option<String>,
     },
     /// osu!'s K1/K2 key-down counters changed (tosu precise socket)
     TosuKeys(KeyCounts),
@@ -254,6 +257,11 @@ pub enum RuntimeAction {
         osu_active: bool,
     },
     SendDataUpdate(Vec<(u8, SourceValue)>),
+    /// The player's own play reached the results screen (issue #3)
+    PlayAnimation {
+        animation: u32,
+        grade: String,
+    },
     SendLayout(Screen, Layout),
     TriggerSync,
     /// Write this install's id into the pad's NVS (§W3-2). Only ever emitted
@@ -342,6 +350,13 @@ pub struct RuntimeController {
     press_source: PressSource,
     /// tosu presses held while the source is undecided
     tosu_pending: Vec<(u32, u32, Instant)>,
+    /// The player's own play is on (or just left) osu!'s play screen and did
+    /// not fail: its results screen gets an animation. Cleared by any other
+    /// screen, so results opened from song select, or a replay's, get none.
+    results_armed: bool,
+    /// The last tosu frame was the results screen: what it plays is decided
+    /// once, on its first frame
+    on_results_screen: bool,
 }
 
 impl RuntimeController {
@@ -429,6 +444,52 @@ impl RuntimeController {
             pad_epoch: None,
             press_source: PressSource::Undecided,
             tosu_pending: Vec::new(),
+            results_armed: false,
+            on_results_screen: false,
+        }
+    }
+
+    /// Arms on the player's own play and fires once when its results screen
+    /// shows. The pad drops it if it has no animations or a map started.
+    fn results_animation(
+        &mut self,
+        is_playing: bool,
+        failed: bool,
+        other_player: bool,
+        results_grade: Option<String>,
+        actions: &mut Vec<RuntimeAction>,
+    ) {
+        if is_playing {
+            self.results_armed = !other_player && !failed;
+            self.on_results_screen = false;
+            return;
+        }
+        let Some(grade) = results_grade else {
+            self.results_armed = false;
+            self.on_results_screen = false;
+            return;
+        };
+        // Decided once per visit, on its first frame
+        if std::mem::replace(&mut self.on_results_screen, true) {
+            return;
+        }
+        if !std::mem::take(&mut self.results_armed) {
+            info!("Results screen ({grade}): no animation, not right after the player's own play");
+            return;
+        }
+        let Some(trigger) = Trigger::from_grade(&grade) else {
+            info!("Results screen ({grade}): no animation for this grade");
+            return;
+        };
+        let animation = self.state.config.result_animations.get(trigger);
+        if animation == result_anim::NONE {
+            info!("Results screen ({grade}): animation set to None");
+        } else if self.state.device_connected && !self.state.foreign_pad {
+            info!(
+                "Results screen ({grade}): playing {}",
+                result_anim::name(animation)
+            );
+            actions.push(RuntimeAction::PlayAnimation { animation, grade });
         }
     }
 
@@ -689,6 +750,8 @@ impl RuntimeController {
                             self.state.config.tosu_endpoint.clone()
                         };
                     }
+                    // The pad does not keep these: they stay this PC's
+                    adopted.result_animations = self.state.config.result_animations;
                     self.state.config = adopted.clone();
                     actions.push(RuntimeAction::SaveDeviceConfig(adopted));
                 }
@@ -893,6 +956,7 @@ impl RuntimeController {
                 failed,
                 clock,
                 other_player,
+                results_grade,
             } => {
                 let current_mode = self.state.mode;
                 self.data_sync.ingest(values.iter().cloned());
@@ -965,6 +1029,15 @@ impl RuntimeController {
                         });
                     }
                 }
+                // After the host status: the play usually ends in this very
+                // frame, and the pad ignores animations until it hears so
+                self.results_animation(
+                    is_playing,
+                    failed,
+                    other_player,
+                    results_grade,
+                    &mut actions,
+                );
             }
 
             RuntimeEvent::TosuKeys(keys) => {

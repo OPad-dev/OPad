@@ -1,4 +1,5 @@
 use chrono::Utc;
+use opad_model::result_anim::ResultAnimations;
 use opad_model::{
     CounterState, DeviceConfig, DeviceInfo, SwipeAction, DEFAULT_SWIPE_DOWN, DEFAULT_SWIPE_LEFT,
     DEFAULT_SWIPE_RIGHT, DEFAULT_SWIPE_UP,
@@ -136,6 +137,9 @@ impl Storage {
         }
         if v < 15 {
             self.apply_v15()?;
+        }
+        if v < 16 {
+            self.apply_v16()?;
         }
         Ok(())
     }
@@ -338,6 +342,29 @@ impl Storage {
         Ok(())
     }
 
+    /// v16: the result animation picked per grade
+    /// ([`ResultAnimations::to_storage`]; empty = the defaults)
+    fn apply_v16(&self) -> Result<(), StorageError> {
+        // Re-run safe, like v11
+        let has_column: bool = self.conn.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('config') WHERE name = 'result_animations'",
+            [],
+            |row| row.get(0),
+        )?;
+        self.conn.execute_batch(&format!(
+            "BEGIN TRANSACTION;
+            {}
+            INSERT INTO schema_migrations (version, applied_at) VALUES (16, datetime('now'));
+            COMMIT;",
+            if has_column {
+                ""
+            } else {
+                "ALTER TABLE config ADD COLUMN result_animations TEXT NOT NULL DEFAULT '';"
+            }
+        ))?;
+        Ok(())
+    }
+
     /// Reads a host-side value written by [`Self::set_app_state`]
     pub fn get_app_state(&self, key: &str) -> Result<Option<String>, StorageError> {
         self.conn
@@ -451,7 +478,7 @@ impl Storage {
                     key1_gpio, key2_gpio, swipe_left_action, swipe_right_action,
                     swipe_left_key, swipe_right_key, swipe_up_action, swipe_down_action,
                     swipe_up_key, swipe_down_key, swipe_up_modifiers, swipe_down_modifiers,
-                    swipe_left_modifiers, swipe_right_modifiers
+                    swipe_left_modifiers, swipe_right_modifiers, result_animations
              FROM config WHERE id = 1",
                 [],
                 |row| {
@@ -488,6 +515,9 @@ impl Storage {
                         swipe_down_modifiers: row.get(18)?,
                         swipe_left_modifiers: row.get(19)?,
                         swipe_right_modifiers: row.get(20)?,
+                        result_animations: ResultAnimations::from_storage(
+                            &row.get::<_, String>(21)?,
+                        ),
                     })
                 },
             )
@@ -518,7 +548,8 @@ impl Storage {
                 swipe_up_modifiers = ?18,
                 swipe_down_modifiers = ?19,
                 swipe_left_modifiers = ?20,
-                swipe_right_modifiers = ?21
+                swipe_right_modifiers = ?21,
+                result_animations = ?22
              WHERE id = 1",
             params![
                 config.key1_hid_usage,
@@ -542,6 +573,7 @@ impl Storage {
                 config.swipe_down_modifiers,
                 config.swipe_left_modifiers,
                 config.swipe_right_modifiers,
+                config.result_animations.to_storage(),
             ],
         )?;
         Ok(())
@@ -1063,6 +1095,35 @@ mod tests {
         assert!(
             storage.get_app_state("update.schedule").is_ok(),
             "reads stay allowed"
+        );
+    }
+
+    #[test]
+    fn result_animations_round_trip_and_migrate() {
+        use opad_model::result_anim::{Trigger, DROP, NONE};
+
+        let storage = Storage::open_in_memory().expect("open");
+        let config = storage.load_config().unwrap();
+        assert_eq!(config.result_animations, ResultAnimations::default());
+
+        let mut updated = config.clone();
+        updated.result_animations.set(Trigger::SS, DROP);
+        updated.result_animations.set(Trigger::D, NONE);
+        storage.save_config(&updated).unwrap();
+        assert_eq!(storage.load_config().unwrap(), updated);
+
+        // A database from before result animations gets the defaults
+        storage
+            .conn
+            .execute_batch(
+                "ALTER TABLE config DROP COLUMN result_animations;
+                 DELETE FROM schema_migrations WHERE version >= 16;",
+            )
+            .unwrap();
+        storage.migrate().unwrap();
+        assert_eq!(
+            storage.load_config().unwrap().result_animations,
+            ResultAnimations::default()
         );
     }
 }

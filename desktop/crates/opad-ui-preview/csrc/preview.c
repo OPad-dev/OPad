@@ -1,6 +1,7 @@
 // Headless LVGL display for rendering OPad layouts on the host.
 
 #include "ui_core.h"
+#include "ui_anim.h"
 #include <string.h>
 #include <time.h>
 
@@ -34,13 +35,12 @@ void preview_init(void)
     ui_data_init();
 }
 
-// Build the layout, render one frame and write RGBA8888 into out (320*240*4 bytes).
-// Returns 0 on success, -1 if the layout is invalid.
-int preview_render(const ui_layout_t *layout, uint8_t *out_rgba)
+// Build the layout and load it as the screen. Returns false if the layout is invalid.
+static bool load_layout(const ui_layout_t *layout)
 {
     lv_obj_t *scr = ui_screen_create(layout);
     if (!scr) {
-        return -1;
+        return false;
     }
     lv_obj_t *old = lv_screen_active();
     lv_screen_load(scr);
@@ -49,8 +49,11 @@ int preview_render(const ui_layout_t *layout, uint8_t *out_rgba)
     }
     s_fake_ms += 1000;
     lv_obj_invalidate(scr);
-    lv_refr_now(s_disp);
+    return true;
+}
 
+static void copy_rgba(uint8_t *out_rgba)
+{
     for (int i = 0; i < UI_SCREEN_W * UI_SCREEN_H; i++) {
         uint16_t c = (uint16_t)(s_fb[2 * i] | (s_fb[2 * i + 1] << 8));
         uint8_t r = (c >> 11) & 0x1F, g = (c >> 5) & 0x3F, b = c & 0x1F;
@@ -59,6 +62,34 @@ int preview_render(const ui_layout_t *layout, uint8_t *out_rgba)
         out_rgba[4 * i + 2] = (uint8_t)((b * 527 + 23) >> 6);
         out_rgba[4 * i + 3] = 0xFF;
     }
+}
+
+// Build the layout, render one frame and write RGBA8888 into out (320*240*4 bytes).
+// Returns 0 on success, -1 if the layout is invalid.
+int preview_render(const ui_layout_t *layout, uint8_t *out_rgba)
+{
+    if (!load_layout(layout)) {
+        return -1;
+    }
+    lv_refr_now(s_disp);
+    copy_rgba(out_rgba);
+    return 0;
+}
+
+// Like preview_render, with result animation id over the screen as it is
+// t_ms after the animation starts (ui/core/ui_anim.h)
+int preview_render_animation(const ui_layout_t *layout, uint8_t id, const char *grade,
+                             uint32_t t_ms, uint8_t *out_rgba)
+{
+    if (!load_layout(layout)) {
+        return -1;
+    }
+    if (ui_anim_play(id, grade)) {
+        ui_anim_seek(t_ms);
+    }
+    lv_refr_now(s_disp);
+    copy_rgba(out_rgba);
+    ui_anim_stop();
     return 0;
 }
 

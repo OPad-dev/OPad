@@ -88,6 +88,7 @@ message DeviceToHost {
 | 12 | `EnterBootloader` | Instructs device to restart immediately into native USB ROM DFU bootloader for flashing. |
 | 14 | `ClaimOwnership` | Records which host install owns this pad (§W3-1, §W3-2). Carries a 16-byte `owner_id`. It is an NVS write, so the firmware honours it **only in IDLE**, never during `PLAYING` or `COOLDOWN` (P1-3); the host only ever sends it at connect time, which is already an IDLE-only moment. An all-zero `owner_id` is **refused**, so there is no wire path to unpairing — that is a documented reflash (§W3-4, `docs/recovery.md` §7). Re-claiming by the current owner writes nothing. |
 | 16 | `run_board_test` | Asks the pad to test the carrier and input module PCBs; answered with `BoardTestResult`. See [below](#boardtestresult-devicetohost-field-10-and-helloackboard_test-field-12). |
+| 17 | `PlayAnimation` | Plays a result animation over the screen (issue #3). Not answered. See [below](#playanimation-hosttodevice-field-17-and-helloackbuiltin_animations-field-13). |
 
 ### DataUpdate sources and widget flags
 
@@ -264,6 +265,30 @@ Compatibility: firmware predating the test reads field 16 as an unknown
 payload and does not answer; it also leaves `HelloAck.board_test` false, so the
 daemon refuses the request with "update the firmware" instead of waiting.
 Older hosts never send field 16 and skip field 10.
+
+### `PlayAnimation` (HostToDevice field 17) and `HelloAck.builtin_animations` (field 13)
+
+`PlayAnimation` has the pad draw a short animation over whatever screen is
+loaded (`firmware/main/ui/core/ui_anim.c`), on LVGL's top layer on core 1.
+
+| Field | Meaning |
+|---|---|
+| `animation` | 0 stops the one playing; 1–127 built in (1 Pop, 2 Drop, 3 Burst, `firmware/main/ui/core/ui_anim.h`); 128 + n is reserved for uploaded animations, one slot per trigger. An id the pad does not have plays Pop |
+| `grade` | tosu's rank (`"SS"`, `"SH"`, `"A"`, ...): the built-ins draw it in the grade's colour, X/XH as SS and SH as S |
+
+The pad ignores it while PLAYING, and stops a playing animation the moment it
+enters PLAYING (`firmware/main/ui/ui_port.c`), so nothing extra is drawn during
+a map. The daemon sends it on the first tosu frame of the results screen after
+the player's own play that did not fail, with the animation picked for that
+grade on the PC (`desktop/daemon/src/runtime.rs`). Since the play usually ends
+in that same frame, the daemon sends `HostStatus` with `playing` false first.
+
+`HelloAck.builtin_animations` is the highest built-in id the pad plays.
+
+Compatibility: firmware predating animations reads field 17 as an unknown
+payload and reports `builtin_animations` 0; the daemon then sends nothing and
+refuses the app's test request with "update the firmware". Older hosts never
+send field 17.
 
 ---
 

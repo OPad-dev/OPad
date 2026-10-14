@@ -39,6 +39,11 @@ pub enum DeviceCommand {
     DataUpdate(Vec<(u8, SourceValue)>),
     Layout(Screen, Layout),
     RequestStatus,
+    /// Dropped for a pad that has no result animations
+    PlayAnimation {
+        animation: u32,
+        grade: String,
+    },
 }
 
 async fn send_once<D: DeviceLink>(dm: &D, cmd: &DeviceCommand) -> Result<(), DeviceError> {
@@ -58,6 +63,12 @@ async fn send_once<D: DeviceLink>(dm: &D, cmd: &DeviceCommand) -> Result<(), Dev
         DeviceCommand::DataUpdate(changes) => dm.send_data_update(changes).await,
         DeviceCommand::Layout(screen, layout) => dm.send_layout(*screen, layout).await,
         DeviceCommand::RequestStatus => dm.request_status().await,
+        DeviceCommand::PlayAnimation { animation, grade } => {
+            if dm.builtin_animations() == 0 {
+                return Ok(());
+            }
+            dm.play_animation(*animation, grade).await
+        }
     }
 }
 
@@ -97,6 +108,7 @@ fn command_name(cmd: &DeviceCommand) -> &'static str {
         DeviceCommand::DataUpdate(_) => "telemetry",
         DeviceCommand::Layout(..) => "layout",
         DeviceCommand::RequestStatus => "status request",
+        DeviceCommand::PlayAnimation { .. } => "result animation",
     }
 }
 

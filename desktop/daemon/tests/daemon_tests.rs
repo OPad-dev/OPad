@@ -302,6 +302,7 @@ async fn test_playing_cooldown_playing_no_sync() {
             failed: false,
             clock: None,
             other_player: false,
+            results_grade: None,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "Test Map".to_string(),
@@ -319,6 +320,7 @@ async fn test_playing_cooldown_playing_no_sync() {
             failed: false,
             clock: None,
             other_player: false,
+            results_grade: None,
             is_playing: false,
             live_time_ms: 0.0,
             title: "Test Map".to_string(),
@@ -337,6 +339,7 @@ async fn test_playing_cooldown_playing_no_sync() {
             failed: false,
             clock: None,
             other_player: false,
+            results_grade: None,
             is_playing: true,
             live_time_ms: 500.0,
             title: "Test Map 2".to_string(),
@@ -370,6 +373,7 @@ async fn test_playing_cooldown_sync_idle_exactly_one_sync() {
             failed: false,
             clock: None,
             other_player: false,
+            results_grade: None,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "Test Map".to_string(),
@@ -386,6 +390,7 @@ async fn test_playing_cooldown_sync_idle_exactly_one_sync() {
             failed: false,
             clock: None,
             other_player: false,
+            results_grade: None,
             is_playing: false,
             live_time_ms: 0.0,
             title: "Test Map".to_string(),
@@ -1472,6 +1477,7 @@ async fn test_late_sync_result_does_not_leave_playing() {
             failed: false,
             clock: None,
             other_player: false,
+            results_grade: None,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "Map".to_string(),
@@ -1661,6 +1667,7 @@ async fn test_replug_during_play_keeps_the_state_machine_and_write_guard() {
             failed: false,
             clock: None,
             other_player: false,
+            results_grade: None,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "Hotplug Map".to_string(),
@@ -1715,6 +1722,7 @@ async fn test_replug_during_play_keeps_the_state_machine_and_write_guard() {
             failed: false,
             clock: None,
             other_player: false,
+            results_grade: None,
             is_playing: false,
             live_time_ms: 0.0,
             title: String::new(),
@@ -2326,6 +2334,7 @@ fn play_a_session(start: Instant) -> (RuntimeController, Instant) {
             failed: false,
             clock: None,
             other_player: false,
+            results_grade: None,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "A Map".to_string(),
@@ -2340,6 +2349,7 @@ fn play_a_session(start: Instant) -> (RuntimeController, Instant) {
             failed: false,
             clock: None,
             other_player: false,
+            results_grade: None,
             is_playing: false,
             live_time_ms: 0.0,
             title: "A Map".to_string(),
@@ -2414,6 +2424,7 @@ async fn backup_never_fires_during_a_map_or_a_cooldown() {
             failed: false,
             clock: None,
             other_player: false,
+            results_grade: None,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "A Map".to_string(),
@@ -2442,6 +2453,7 @@ async fn backup_never_fires_during_a_map_or_a_cooldown() {
             failed: false,
             clock: None,
             other_player: false,
+            results_grade: None,
             is_playing: false,
             live_time_ms: 0.0,
             title: "A Map".to_string(),
@@ -2473,6 +2485,7 @@ async fn a_map_starting_inside_the_window_cancels_the_pending_backup() {
             failed: false,
             clock: None,
             other_player: false,
+            results_grade: None,
             is_playing: true,
             live_time_ms: 500.0,
             title: "The Next Map".to_string(),
@@ -2498,6 +2511,7 @@ async fn a_map_starting_inside_the_window_cancels_the_pending_backup() {
             failed: false,
             clock: None,
             other_player: false,
+            results_grade: None,
             is_playing: false,
             live_time_ms: 0.0,
             title: "The Next Map".to_string(),
@@ -2571,6 +2585,7 @@ async fn a_failed_post_play_sync_still_gets_a_backup() {
             failed: false,
             clock: None,
             other_player: false,
+            results_grade: None,
             is_playing: true,
             live_time_ms: 1000.0,
             title: "A Map".to_string(),
@@ -2585,6 +2600,7 @@ async fn a_failed_post_play_sync_still_gets_a_backup() {
             failed: false,
             clock: None,
             other_player: false,
+            results_grade: None,
             is_playing: false,
             live_time_ms: 0.0,
             title: "A Map".to_string(),
@@ -2875,6 +2891,7 @@ fn a_map_played_on_a_foreign_pad_ends_without_a_sync() {
         failed: false,
         clock: None,
         other_player: false,
+        results_grade: None,
         is_playing: playing,
         live_time_ms: 1000.0,
         title: String::new(),
@@ -2918,6 +2935,7 @@ fn a_map_played_on_our_pad_still_ends_in_a_sync() {
         failed: false,
         clock: None,
         other_player: false,
+        results_grade: None,
         is_playing: playing,
         live_time_ms: 1000.0,
         title: String::new(),
@@ -3673,4 +3691,103 @@ async fn live_ui_values_include_the_tap_rate() {
     use opad_model::ui_source as src;
     assert!(values.contains(&(src::HISTORY_PPM_AVG, SourceValue::Number(194.0))));
     assert!(values.contains(&(src::PLAY_PPM, SourceValue::Clear)));
+}
+
+/// Issue #3: one telemetry frame on the play screen or the results screen
+fn screen(playing: bool, results_grade: Option<&str>, other_player: bool) -> RuntimeEvent {
+    RuntimeEvent::TosuTelemetry {
+        beatmap: Default::default(),
+        failed: false,
+        clock: None,
+        other_player,
+        results_grade: results_grade.map(str::to_string),
+        is_playing: playing,
+        live_time_ms: 1000.0,
+        title: String::new(),
+        values: Vec::new(),
+    }
+}
+
+fn animations(actions: &[RuntimeAction]) -> Vec<(u32, String)> {
+    actions
+        .iter()
+        .filter_map(|a| match a {
+            RuntimeAction::PlayAnimation { animation, grade } => Some((*animation, grade.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn the_players_results_screen_plays_the_grades_animation_once() {
+    use opad_model::result_anim::{Trigger, DROP};
+    let (mut controller, _) = left_alone_foreign_pad();
+    controller.state.foreign_pad = false;
+    controller
+        .state
+        .config
+        .result_animations
+        .set(Trigger::S, DROP);
+    let now = Instant::now();
+
+    controller.on_event(screen(true, None, false), now);
+    let actions = controller.on_event(screen(false, Some("SH"), false), now);
+    assert_eq!(animations(&actions), vec![(DROP, "SH".to_string())]);
+    // The play ends in the same frame: the pad must hear that first, or it
+    // drops the animation as one sent during a map
+    let stopped = actions.iter().position(|a| {
+        matches!(
+            a,
+            RuntimeAction::SendHostStatus {
+                is_playing: false,
+                ..
+            }
+        )
+    });
+    let animation = actions
+        .iter()
+        .position(|a| matches!(a, RuntimeAction::PlayAnimation { .. }));
+    assert!(stopped.is_some() && stopped < animation, "{actions:?}");
+
+    // Later frames of the same results screen play nothing more
+    let actions = controller.on_event(screen(false, Some("SH"), false), now);
+    assert!(animations(&actions).is_empty());
+}
+
+#[test]
+fn results_without_the_players_own_play_play_nothing() {
+    use opad_model::result_anim::{Trigger, NONE};
+    let (mut controller, _) = left_alone_foreign_pad();
+    controller.state.foreign_pad = false;
+    let now = Instant::now();
+
+    // A replay
+    controller.on_event(screen(true, None, true), now);
+    let actions = controller.on_event(screen(false, Some("A"), false), now);
+    assert!(animations(&actions).is_empty(), "{actions:?}");
+
+    // Results opened from song select after a play
+    controller.on_event(screen(true, None, false), now);
+    controller.on_event(screen(false, None, false), now);
+    let actions = controller.on_event(screen(false, Some("A"), false), now);
+    assert!(animations(&actions).is_empty(), "{actions:?}");
+
+    // A grade set to no animation
+    controller
+        .state
+        .config
+        .result_animations
+        .set(Trigger::A, NONE);
+    controller.on_event(screen(true, None, false), now);
+    let actions = controller.on_event(screen(false, Some("A"), false), now);
+    assert!(animations(&actions).is_empty(), "{actions:?}");
+}
+
+#[test]
+fn a_foreign_pad_gets_no_result_animation() {
+    let (mut controller, _) = left_alone_foreign_pad();
+    let now = Instant::now();
+    controller.on_event(screen(true, None, false), now);
+    let actions = controller.on_event(screen(false, Some("S"), false), now);
+    assert!(animations(&actions).is_empty(), "{actions:?}");
 }

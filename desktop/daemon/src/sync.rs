@@ -47,6 +47,14 @@ pub trait DeviceLink: Send + Sync {
     async fn run_board_test(&self) -> Result<(), DeviceError>;
     /// Whether the connected pad answers `run_board_test`
     fn supports_board_test(&self) -> bool;
+    /// Play a result animation over the pad's screen (0 stops it)
+    async fn play_animation(&self, _animation: u32, _grade: &str) -> Result<(), DeviceError> {
+        Ok(())
+    }
+    /// Highest built-in result animation the connected pad plays; 0 = none
+    fn builtin_animations(&self) -> u32 {
+        0
+    }
     fn subscribe(&self) -> broadcast::Receiver<DeviceEvent>;
     async fn pause_and_release(&self, timeout: Duration) -> bool;
     fn resume(&self);
@@ -128,6 +136,14 @@ impl DeviceLink for DeviceManager {
 
     fn supports_board_test(&self) -> bool {
         DeviceManager::supports_board_test(self)
+    }
+
+    async fn play_animation(&self, animation: u32, grade: &str) -> Result<(), DeviceError> {
+        self.play_animation(animation, grade).await
+    }
+
+    fn builtin_animations(&self) -> u32 {
+        DeviceManager::builtin_animations(self)
     }
 
     fn subscribe(&self) -> broadcast::Receiver<DeviceEvent> {

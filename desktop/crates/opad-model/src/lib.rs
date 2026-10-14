@@ -5,6 +5,7 @@ pub mod board_test;
 pub mod diag;
 pub mod log;
 pub mod paths;
+pub mod result_anim;
 pub mod swipe;
 pub mod tap_rate;
 pub mod ui_source;
@@ -349,6 +350,10 @@ pub struct DeviceConfig {
     pub swipe_left_modifiers: u32,
     #[serde(default)]
     pub swipe_right_modifiers: u32,
+    /// What the pad plays on osu!'s results screen, per grade. Kept on the
+    /// PC: the daemon picks the animation and sends `PlayAnimation`.
+    #[serde(default)]
+    pub result_animations: result_anim::ResultAnimations,
 }
 
 impl Default for DeviceConfig {
@@ -375,6 +380,7 @@ impl Default for DeviceConfig {
             swipe_down_modifiers: 0,
             swipe_left_modifiers: 0,
             swipe_right_modifiers: 0,
+            result_animations: result_anim::ResultAnimations::default(),
         }
     }
 }
@@ -506,6 +512,10 @@ pub struct GameplayTelemetry {
     /// not the player's, so its tap rate is not measured.
     #[serde(default)]
     pub other_player: bool,
+    /// osu! is on the results screen, showing this rank ("SS", "SH", "A",
+    /// ...). None on every other screen.
+    #[serde(default)]
+    pub results_grade: Option<String>,
 }
 
 /// tosu's key counters (`/websocket/v2/precise`), sent when either changes.
@@ -578,6 +588,9 @@ pub struct JsonBackupConfig {
     pub swipe_left_modifiers: u32,
     #[serde(default)]
     pub swipe_right_modifiers: u32,
+    /// Backups predating result animations restore the defaults
+    #[serde(default)]
+    pub result_animations: result_anim::ResultAnimations,
 }
 
 impl JsonBackup {
@@ -615,6 +628,7 @@ impl JsonBackup {
                 swipe_down_modifiers: config.swipe_down_modifiers,
                 swipe_left_modifiers: config.swipe_left_modifiers,
                 swipe_right_modifiers: config.swipe_right_modifiers,
+                result_animations: config.result_animations,
             },
         }
     }
@@ -668,6 +682,7 @@ impl JsonBackup {
             swipe_down_modifiers: self.config.swipe_down_modifiers,
             swipe_left_modifiers: self.config.swipe_left_modifiers,
             swipe_right_modifiers: self.config.swipe_right_modifiers,
+            result_animations: self.config.result_animations,
             ..DeviceConfig::default()
         }
         .validate()

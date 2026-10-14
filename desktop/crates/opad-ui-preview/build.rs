@@ -14,6 +14,8 @@ fn main() {
     );
     // ESP-IDF's managed component, or a checkout of the same version from
     // `make lvgl` (builds without ESP-IDF, e.g. release CI)
+    // Set in stub mode, for tests that need LVGL's drawing
+    println!("cargo::rustc-check-cfg=cfg(ui_preview_stub)");
     println!("cargo:rerun-if-env-changed=OPAD_LVGL_DIR");
     println!("cargo:rerun-if-env-changed=OPAD_REQUIRE_UI_PREVIEW");
     println!(
@@ -42,6 +44,7 @@ fn main() {
             "cargo:warning=LVGL sources or sdkconfig not found in {}. Compiling opad-ui-preview in stub mode.",
             firmware.display()
         );
+        println!("cargo:rustc-cfg=ui_preview_stub");
         println!("cargo:rerun-if-changed={}", ui_core.display());
         let mut build = cc::Build::new();
         build
@@ -88,7 +91,7 @@ fn main() {
     for file in c_files(&lvgl.join("src")) {
         build.file(file);
     }
-    for name in ["ui_data.c", "ui_screen.c", "ui_defaults.c"] {
+    for name in ["ui_data.c", "ui_screen.c", "ui_defaults.c", "ui_anim.c"] {
         build.file(ui_core.join(name));
     }
     build.file(manifest.join("csrc/preview.c"));

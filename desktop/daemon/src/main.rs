@@ -383,6 +383,7 @@ async fn main() -> Result<()> {
                     failed: telemetry.failed,
                     clock: telemetry.clock,
                     other_player: telemetry.other_player,
+                    results_grade: telemetry.results_grade,
                 });
             }
 
@@ -553,6 +554,11 @@ async fn main() -> Result<()> {
                     }
                     RuntimeAction::SendDataUpdate(changes) => {
                         let _ = device_cmd.send(DeviceCommand::DataUpdate(changes)).await;
+                    }
+                    RuntimeAction::PlayAnimation { animation, grade } => {
+                        let _ = device_cmd
+                            .send(DeviceCommand::PlayAnimation { animation, grade })
+                            .await;
                     }
                     RuntimeAction::SendLayout(screen, layout) => {
                         let _ = device_cmd.send(DeviceCommand::Layout(screen, layout)).await;

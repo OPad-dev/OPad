@@ -35,6 +35,7 @@ fn frame(is_playing: bool, live_time_ms: f64, failed: bool) -> RuntimeEvent {
         failed,
         clock: None,
         other_player: false,
+        results_grade: None,
     }
 }
 

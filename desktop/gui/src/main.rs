@@ -19,6 +19,7 @@ use iced::widget::{
 };
 use iced::{window, Alignment, Element, Length, Size, Subscription, Task};
 use opad_ipc::{CurrentBackupState, IpcRequest, IpcResponse};
+use opad_model::result_anim::{ResultAnimations, Trigger};
 use opad_model::swipe::{FreeKey, SwipeChoice, SwipeDir, SwipeSetting};
 use opad_model::ui_source::SourceValue;
 use opad_model::{
@@ -244,6 +245,8 @@ pub struct App {
     pub k2_gpio: u32,
     /// Each swipe direction, in SwipeDir::ALL order
     pub swipes: [SwipeSetting; 4],
+    /// Kept on this PC, so editable without a pad
+    pub result_animations: ResultAnimations,
     pub debounce: u32,
     pub brightness: u32,
     pub sleep_seconds: u32,
@@ -361,6 +364,9 @@ pub enum Message {
     Key2Pin(KeyPin),
     Swipe(SwipeDir, SwipeChoice),
     SwipeKey(SwipeDir, FreeKey),
+    ResultAnimation(Trigger, pages::AnimChoice),
+    /// Play the grade's animation on the pad now
+    PreviewAnimation(Trigger),
     Debounce(u32),
     Brightness(u32),
     SleepSeconds(u32),
@@ -470,6 +476,7 @@ impl App {
             k1_gpio: opad_model::DEFAULT_KEY1_GPIO,
             k2_gpio: opad_model::DEFAULT_KEY2_GPIO,
             swipes: SwipeDir::ALL.map(|d| DeviceConfig::default().swipe(d)),
+            result_animations: ResultAnimations::default(),
             debounce: 5000,
             brightness: 100,
             sleep_seconds: 600,
@@ -1215,6 +1222,16 @@ impl App {
                     s.modifiers = 0;
                 }
             }
+            Message::ResultAnimation(trigger, choice) => {
+                self.result_animations.set(trigger, choice.0);
+            }
+            Message::PreviewAnimation(trigger) => {
+                let request = IpcRequest::PlayAnimation {
+                    animation: self.result_animations.get(trigger),
+                    grade: trigger.label().to_string(),
+                };
+                return Task::perform(ipc::request(request), Message::ActionDone);
+            }
             Message::Debounce(v) => {
                 if self.device_connected {
                     self.debounce = v;
@@ -1491,6 +1508,7 @@ impl App {
                     brightness: self.brightness,
                     display_sleep_seconds: self.sleep_seconds,
                     gameplay_display_hz: self.gameplay_display_hz,
+                    result_animations: self.result_animations,
                     ..self.config.clone()
                 };
                 for dir in SwipeDir::ALL {
@@ -1671,6 +1689,7 @@ impl App {
                     Ok(IpcResponse::SyncCompleted { success: true, .. }) => "Pad synced".into(),
                     Ok(IpcResponse::CountersReset { .. }) => "Lifetime counters reset".into(),
                     Ok(IpcResponse::HandshakeAck { .. }) => "Latency statistics reset".into(),
+                    Ok(IpcResponse::AnimationPlayed) => "Playing on the pad".into(),
                     Ok(IpcResponse::UpdateCheckStarted) => "Checking for updates...".into(),
                     Ok(IpcResponse::UpdateStarted { .. }) => "Installing the update...".into(),
                     Ok(IpcResponse::OperationDeferred { reason }) => reason,
@@ -2855,6 +2874,7 @@ impl App {
         self.k1_gpio = config.key1_gpio;
         self.k2_gpio = config.key2_gpio;
         self.swipes = SwipeDir::ALL.map(|d| config.swipe(d));
+        self.result_animations = config.result_animations;
         self.debounce = config.debounce_us;
         self.brightness = config.brightness;
         self.sleep_seconds = config.display_sleep_seconds;

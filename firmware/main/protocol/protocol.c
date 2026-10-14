@@ -10,6 +10,7 @@
 #include "counters/counters.h"
 #include "ui/ui.h"
 #include "ui/ui_store.h"
+#include "ui/core/ui_anim.h"
 #include "runtime/runtime.h"
 #include "input/latency_stats.h"
 #include "input/press_log.h"
@@ -175,6 +176,8 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     msg.payload.hello_ack.key_press_times = true;
     // Answers run_board_test
     msg.payload.hello_ack.board_test = true;
+    // Plays PlayAnimation (issue #3)
+    msg.payload.hello_ack.builtin_animations = UI_ANIM_BUILTIN_COUNT;
 
     ESP_LOGI(TAG, "Sending HelloAck to host (Firmware: %s, Gen: %lu, Partition: %s, K1: GPIO%lu, K2: GPIO%lu)",
              app_desc->version, (unsigned long)snap.generation,
@@ -720,6 +723,16 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         }
         break;
 
+    case osupad_HostToDevice_play_animation_tag: {
+        // The host sends it on the results screen; a map that has started since wins
+        const osupad_PlayAnimation *pa = &msg->payload.play_animation;
+        if (runtime_get_state() != OSUPAD_STATE_PLAYING) {
+            ui_play_animation(pa->animation <= UINT8_MAX ? (uint8_t)pa->animation : UI_ANIM_POP,
+                              pa->grade);
+        }
+        break;
+    }
+
     default:
         diag_record(DIAG_EVENT_UNKNOWN_HOST_MSG, 0 /* DEBUG */, msg->which_payload, 0);
         ESP_LOGD(TAG, "Unhandled host message payload tag: %d", msg->which_payload);
@@ -736,7 +749,7 @@ static void on_frame_received(const uint8_t *payload, size_t payload_len, void *
         // nanopb accepts most varint garbage with no payload set: only a
         // recognised message is evidence of the host's framing
         if (!s_host_framing_known && msg.which_payload >= osupad_HostToDevice_hello_tag &&
-            msg.which_payload <= osupad_HostToDevice_run_board_test_tag) {
+            msg.which_payload <= osupad_HostToDevice_play_animation_tag) {
             s_host_framing = s_parser.last_format;
             s_host_framing_known = true;
         }

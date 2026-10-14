@@ -50,6 +50,13 @@ pub struct RawLayout {
 extern "C" {
     fn preview_init();
     fn preview_render(layout: *const RawLayout, out_rgba: *mut u8) -> i32;
+    fn preview_render_animation(
+        layout: *const RawLayout,
+        id: u8,
+        grade: *const std::ffi::c_char,
+        t_ms: u32,
+        out_rgba: *mut u8,
+    ) -> i32;
     fn preview_sizeof_widget() -> usize;
     fn preview_sizeof_layout() -> usize;
     fn ui_default_layout(screen: u8) -> *const RawLayout;
@@ -132,6 +139,24 @@ pub fn render(layout: &RawLayout) -> Option<Vec<u8>> {
     let _g = lvgl();
     let mut rgba = vec![0u8; SCREEN_W * SCREEN_H * 4];
     let rc = unsafe { preview_render(layout, rgba.as_mut_ptr()) };
+    (rc == 0).then_some(rgba)
+}
+
+/// Render a layout with a result animation over it as the pad draws it
+/// `t_ms` after the animation starts (`opad_model::result_anim` ids). The
+/// stub build without LVGL draws the layout alone.
+pub fn render_animation(
+    layout: &RawLayout,
+    animation: u8,
+    grade: &str,
+    t_ms: u32,
+) -> Option<Vec<u8>> {
+    let _g = lvgl();
+    let grade = std::ffi::CString::new(grade.replace('\0', "")).unwrap();
+    let mut rgba = vec![0u8; SCREEN_W * SCREEN_H * 4];
+    let rc = unsafe {
+        preview_render_animation(layout, animation, grade.as_ptr(), t_ms, rgba.as_mut_ptr())
+    };
     (rc == 0).then_some(rgba)
 }
 
@@ -405,6 +430,33 @@ mod tests {
                 default_layout(screen.to_wire()).unwrap()
             );
         }
+    }
+
+    #[test]
+    #[cfg_attr(ui_preview_stub, ignore = "the stub draws no animations")]
+    fn result_animations_draw_the_grade_and_leave_nothing_behind() {
+        use opad_model::result_anim::BUILTINS;
+        let layout = default_layout(SCREEN_IDLE).unwrap();
+        let plain = render(&layout).unwrap();
+        // S is drawn in 0xFFC933, which the idle screen does not use
+        let gold = |rgba: &[u8]| {
+            rgba.chunks(4)
+                .filter(|p| p[0] > 0xE0 && (0xB0..0xE0).contains(&p[1]) && p[2] < 0x70)
+                .count()
+        };
+        assert_eq!(gold(&plain), 0);
+        for (id, name) in BUILTINS {
+            let id = *id as u8;
+            let held = render_animation(&layout, id, "S", 1200).unwrap();
+            assert!(gold(&held) > 500, "{name}: {} gold pixels", gold(&held));
+            let ended = render_animation(&layout, id, "S", 2600).unwrap();
+            assert_eq!(gold(&ended), 0, "{name} faded out");
+        }
+        assert_eq!(
+            render(&layout).unwrap(),
+            plain,
+            "the next render has no animation"
+        );
     }
 
     #[test]

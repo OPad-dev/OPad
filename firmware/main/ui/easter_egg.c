@@ -79,6 +79,11 @@ static void easter_egg_anim_completed_cb(lv_anim_t *a)
     s_is_active = false;
 }
 
+bool easter_egg_is_active(void)
+{
+    return s_is_active;
+}
+
 void easter_egg_trigger(void)
 {
     if (s_is_active) {
