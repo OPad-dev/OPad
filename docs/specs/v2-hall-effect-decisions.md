@@ -23,6 +23,7 @@ single-conversion rest sd 5.9 / 5.3, about 0.875 mV per count at 12 dB.
 | Shared key-event path (`firmware/main/input/key_event.c`): counters, press log, HID report, latency stats for both backends | yes, MX moved onto it | no (needs ESP-IDF) | no: MX needs a recheck on the pad | no: MX latency to remeasure |
 | Frame parser (`firmware/main/input/he_frame.c`) | yes | yes (`test_he_frame.c`) | no | no |
 | ADC DMA backend + HID integration (`firmware/main/input/he_backend.c`, `CONFIG_OSUPAD_HE_BACKEND`, default off) | yes, provisional factory thresholds | no (needs ESP-IDF) | no | no |
+| Raw trace stream + analysis (`CONFIG_OSUPAD_HE_TRACE`, `scripts/he_trace.py`, `firmware/tools/he_replay.c`) | yes | analysis checked on a synthetic trace only | no | no |
 | Calibration, protocol, live travel | no | no | no | no |
 
 The engine and builder are compiled into the firmware but nothing calls them
@@ -152,6 +153,41 @@ No blind rest capture at boot.
 | E | Host-visible latency, missed sub-poll taps | MX ~70 µs edge → submit | USB capture on the host |
 | F | USB-only recovery details | A/B OTA with rollback until USB configures (`app_main.c`), 16 MB flash with ~11.9 MiB past the last partition (`partitions.csv`) | separate proposal before any partition change |
 | G | ADC stall watchdog timeout | proposal ~5 ms | stress with display, USB, NVS/OTA writes |
+
+## Reproducing the measurements
+
+### Raw noise and the rapid-trigger floor (OPEN A, D)
+
+Build the trace firmware (`CONFIG_OSUPAD_HE_TRACE`, in `firmware/main/Kconfig.projbuild`):
+
+```sh
+cd firmware
+printf 'CONFIG_OSUPAD_HE_BACKEND=y\nCONFIG_OSUPAD_HE_TRACE=y\n' > /tmp/sdkconfig.het
+idf.py -B build-het -D SDKCONFIG=build-het/sdkconfig \
+  -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;/tmp/sdkconfig.het" build
+opadctl flash build-het/opad-firmware.bin
+```
+
+Then record each condition on its own, nothing moving during the recording:
+
+```sh
+scripts/he_trace.py record /dev/ttyACM0 60 rest.bin        # both keys untouched
+scripts/he_trace.py record /dev/ttyACM0 60 held1.bin       # key 1 held still part way down
+scripts/he_trace.py record /dev/ttyACM0 1800 rest30.bin    # long rest run
+scripts/he_trace.py analyse rest.bin                       # again, later
+```
+
+The stream (`he_trace_task` in `firmware/main/input/he_backend.c`) carries
+every conversion with a frame sequence number, so lost frames show up; the
+pad's own counters (frames, late frames, longest gap, frame interrupt cost)
+come once a second. The analysis (`firmware/tools/he_replay.c`) reports
+spread and retrace per key for three estimators (newest conversion, mean of
+the newest two, mean of all eight) and replays the trace through the
+firmware's engine at sensitivities from 4 to 64 counts, counting false
+events with the key held PRESSED and RT_RELEASED. The floor for OPEN A is
+the smallest sensitivity with no false events over the longest hold, plus a
+margin we agree on. The trace build loads core 1 and USB, so its latency
+figures do not count.
 
 ## Superseded
 

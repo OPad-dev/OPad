@@ -44,3 +44,6 @@ fp-info-cache
 # make release-local
 dist-local/
 desktop/target-xwin/
+
+# Extra ESP-IDF build directories (measurement builds: build-he, build-hb, ...)
+firmware/build-*/

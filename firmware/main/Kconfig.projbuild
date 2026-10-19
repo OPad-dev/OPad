@@ -46,6 +46,17 @@ menu "OPad Testing and Benchmark"
             boot. Selects the IRAM-safe ADC interrupt, so frames keep coming
             while flash is written.
 
+    config OSUPAD_HE_TRACE
+        bool "Hall Effect trace: stream every raw conversion over CDC"
+        default n
+        depends on OSUPAD_HE_BACKEND
+        help
+            Measurement build for the rapid-trigger noise floor (OPEN A in
+            docs/specs/v2-hall-effect-decisions.md). Streams ~150 KB/s of
+            binary over the CDC port, so opad-daemon must let go of it; record
+            with scripts/he_trace.py. Latency measured in this build does not
+            count.
+
     config OSUPAD_BENCH_DEBUG_GPIO
         bool "Toggle debug GPIO right after HID submit"
         default n
