@@ -237,6 +237,9 @@ void app_main(void)
     } else if (module == BOARD_MODULE_HE) {
         ui_show_notice("Hall Effect module needs firmware v2.\nKeys are disabled.");
     }
+#ifdef CONFIG_OSUPAD_HALL_BENCH
+    hall_bench_show_ui();
+#endif
 
     // Apply brightness and sleep timeout to display & UI. Read again: the host
     // may have sent a config since dev_cfg was taken, and the keypad already
