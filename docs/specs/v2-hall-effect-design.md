@@ -41,8 +41,9 @@ exists, and lists the questions that need an answer before the code.
   first, whatever else we decide (§9, step 1).
 - A measurement build: `CONFIG_OSUPAD_HALL_BENCH` streams both sensors as 1 ms
   averages plus per-second spread (`firmware/main/diag/hall_bench.c`,
-  `scripts/hall_bench.py`). **No measurements yet**: the first run was cut
-  short (the daemon holds the port, and the GUI restarts the daemon once).
+  `scripts/hall_bench.py`); it also draws both sensors live on the LCD
+  (`hall_bench_show_ui`). First V1.1 readings in §10b; no recorded traces
+  yet.
 
 ---
 
@@ -275,6 +276,30 @@ Also found: the daemon's config push on every connect re-arms the key pins
 and stopped the ADC conversions until restarted. The HE backend must keep
 host config away from the HE pins (step 1).
 
+## 10b. Bench result: V1.1 sensors work (2026-10-19)
+
+First V1.1 board, read by hand: a multimeter on the chip legs, then the
+bench build's LCD view (`hall_bench_show_ui` in
+`firmware/main/diag/hall_bench.c`: 1 ms averages, rest averaged over the
+first 500 ms, volts through the ADC's curve-fitting calibration). No CSV
+traces were recorded, so the noise figure is what the display showed, not
+a measured spread.
+
+| What | Reading | Meaning |
+|---|---|---|
+| U1/U2 VCC, OUT (multimeter, no switch) | 3.3 V, 1.6–1.7 V on both | powered the right way round; V1.0 read 2.90 V on OUT |
+| IN1/IN2 at rest, switch fitted | ~1.80 V | VQ plus the stem magnet at rest |
+| Deepest change, pressed hard | +568 mV on both keys | ≈ 2.37 V at bottom-out; output rises on a press |
+| Flicker at rest (display) | ~10 mV (1.79–1.80 V) | under 2 % of the swing, ≈ 0.06 mm of 3.2 mm travel |
+| Key 1 vs Key 2, bare PCB | within ~10 mV | sensors and placement match |
+| Key 1 vs Key 2, in the case | Key 1 30–40 mV lower | the module sits unevenly in the case |
+| Between switch pairs | up to ~100 mV | magnet strength varies per switch |
+
+The swing is below the 2.4–2.6 V expected in §11 and leaves A3 well
+inside the ADC's accurate range (0–2.9 V at 12 dB). A2, at twice the
+sensitivity, would reach its 3.1 V limit near bottom-out. The case and
+per-switch differences are what the per-key calibration (§4) absorbs.
+
 ## 11. Still open
 
 1. HE board V1.1: fix the SOT-23 footprint (swap pads 1 and 2), re-route
@@ -286,4 +311,7 @@ host config away from the HE pins (step 1).
    are in `hardware/pcb/V1/README.md`, "Hall Effect input module".
    Expect the output to rise on a press (the Jade's N pole faces the
    PCB) from about 1.8 V to about 2.4–2.6 V with A3.
-2. Sensor variant (A3 or other): decided by the bench once sensors work.
+   Built and working on 2026-10-19 (§10b): it rises from about 1.80 V
+   by 568 mV.
+2. Sensor variant: A3 stays (§10b). Recorded traces (rest noise, slow
+   strokes, fast taps; §9 step 2) are still to do.
