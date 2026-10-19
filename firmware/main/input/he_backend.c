@@ -16,6 +16,14 @@
  * press again (he_rt_fault), so recovery never presses a key. Calibration is
  * never touched by any of this.
  *
+ * Module swaps: the key pins get the internal pull-up, which moves a working
+ * sensor's reading by ~2 counts (bench, v2-hall-effect-design.md §10). With
+ * nothing plugged in, or an MX module (its 10k pull-ups, switches to GND),
+ * every reading sits at a rail, so both keys fault as above and
+ * he_backend_keys_absent() turns true; the runtime then pauses the ADC to read
+ * the module ID (he_backend_probe_module): nothing plugged in or an MX
+ * module shows on the LCD, which asks for a restart for MX.
+ *
  * CONFIG_OSUPAD_HE_TRACE (measurement build only) also streams every raw
  * conversion over CDC for scripts/he_trace.py; see he_trace_task.
  */
@@ -32,7 +40,10 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "driver/gpio.h"
+#include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
 #ifdef CONFIG_OSUPAD_HE_TRACE
 #include "usb/usb_cdc.h"
 #include <string.h>
@@ -57,6 +68,8 @@ static const char *TAG = "he";
 #define HE_CHECK_TICKS          (pdMS_TO_TICKS(2) ? pdMS_TO_TICKS(2) : 1)
 #define HE_RESTART_BACKOFF_MIN_US 10000
 #define HE_RESTART_BACKOFF_MAX_US 1000000
+// Both keys without a valid reading this long: no HE module there any more
+#define HE_ABSENT_US            100000
 
 /*
  * PROVISIONAL factory thresholds, so an uncalibrated pad types for testing:
@@ -77,6 +90,18 @@ static const he_rt_params_t HE_PARAMS_NEVER = {
 };
 
 static adc_continuous_handle_t s_adc;
+// Started (he_task only). The ADC driver's ADC1 lock is a mutex taken by
+// adc_continuous_start and given back by adc_continuous_stop, so both must run
+// in the same task: he_task. Releasing it from another task trips FreeRTOS's
+// mutex-holder assert (a panic on every HE unplug, before this was so).
+static bool s_adc_ok;
+
+// Module probe handshake (he_backend_probe_module): the caller asks, he_task
+// stops the ADC and says so, the caller reads ID, says done, he_task starts it.
+typedef enum { PROBE_IDLE, PROBE_ASKED, PROBE_PAUSED, PROBE_DONE } probe_state_t;
+static volatile probe_state_t s_probe;
+static SemaphoreHandle_t s_probe_ack;
+static StaticSemaphore_t s_probe_ack_buf;
 #ifdef CONFIG_OSUPAD_HE_TRACE
 static volatile uint32_t s_trace_dropped;  // frames the ringbuffer had no room for
 static void he_trace_task(void *arg);
@@ -91,6 +116,7 @@ static he_rt_key_t s_keys[2];
 static bool s_down[2];
 static int64_t s_edge_us[2];         // frame time of the last change
 static bool s_key_faulted[2];
+static int64_t s_fault_since_us[2];
 static int64_t s_last_frame_us;
 static int64_t s_last_valid_us[2];
 static he_backend_stats_t s_stats = {.raw = {-1, -1}};
@@ -193,6 +219,9 @@ static esp_err_t adc_setup(void)
 #endif
     err = adc_continuous_config(s_adc, &cfg);
     if (err == ESP_OK) {
+        // After the config, which leaves the pads analog without pulls
+        gpio_set_pull_mode(GPIO_NUM_10, GPIO_PULLUP_ONLY);
+        gpio_set_pull_mode(GPIO_NUM_7, GPIO_PULLUP_ONLY);
         err = adc_continuous_register_event_callbacks(s_adc, &cbs, NULL);
     }
     if (err == ESP_OK) {
@@ -225,6 +254,9 @@ static void resync_health(int64_t now)
 
 static void fault_key_locked(int k, int64_t now)
 {
+    if (!s_key_faulted[k]) {
+        s_fault_since_us[k] = now;
+    }
     s_key_faulted[k] = true;
     if (he_rt_fault(&s_keys[k]) == HE_RT_UP) {
         s_down[k] = false;
@@ -365,6 +397,35 @@ static void he_trace_task(void *arg)
 }
 #endif
 
+// The module probe's side of the handshake; true while the ADC is paused for it
+static bool serve_probe(void)
+{
+    switch (s_probe) {
+    case PROBE_ASKED:
+        if (s_adc_ok) {
+            adc_continuous_stop(s_adc);  // frees ADC1 for the ID's oneshot read
+        }
+        s_probe = PROBE_PAUSED;
+        xSemaphoreGive(s_probe_ack);
+        return true;
+    case PROBE_PAUSED:
+        return true;
+    case PROBE_DONE:
+        if (s_adc_ok && adc_continuous_start(s_adc) != ESP_OK) {
+            s_adc_ok = false;  // the recovery below retries
+        }
+        portENTER_CRITICAL(&s_lock);
+        s_last_frame_us = esp_timer_get_time();  // the pause was not a stall
+        portEXIT_CRITICAL(&s_lock);
+        s_probe = PROBE_IDLE;
+        xSemaphoreGive(s_probe_ack);
+        return false;
+    case PROBE_IDLE:
+        break;
+    }
+    return false;
+}
+
 static void IRAM_ATTR he_task(void *arg)
 {
     (void)arg;
@@ -372,11 +433,10 @@ static void IRAM_ATTR he_task(void *arg)
     int64_t backoff_us = HE_RESTART_BACKOFF_MIN_US;
     int64_t retry_at_us = 0;
     int64_t healthy_since_us = 0;
-    bool adc_ok = false;
 
     esp_err_t err = adc_setup();
+    s_adc_ok = err == ESP_OK;
     if (err == ESP_OK) {
-        adc_ok = true;
         ESP_LOGI(TAG, "ADC1 continuous: %d conv/s, %d per frame, core %d", HE_SAMPLE_HZ, HE_FRAME_CONVS,
                  xPortGetCoreID());
     } else {
@@ -390,13 +450,16 @@ static void IRAM_ATTR he_task(void *arg)
         ulTaskNotifyTake(pdTRUE, HE_CHECK_TICKS);
         publish(reported);  // key changes first
 
+        if (serve_probe()) {
+            continue;  // paused for an ID reading: not a stall
+        }
         int64_t now = esp_timer_get_time();
-        if (adc_ok && check_health(now)) {
+        if (s_adc_ok && check_health(now)) {
             publish(reported);
-            adc_ok = false;
+            s_adc_ok = false;
             retry_at_us = now + backoff_us;
         }
-        if (!adc_ok && now >= retry_at_us) {
+        if (!s_adc_ok && now >= retry_at_us) {
             if (s_adc != NULL) {
                 adc_continuous_stop(s_adc);  // may already be stopped
                 err = adc_continuous_start(s_adc);
@@ -405,7 +468,7 @@ static void IRAM_ATTR he_task(void *arg)
             }
             now = esp_timer_get_time();
             if (err == ESP_OK) {
-                adc_ok = true;
+                s_adc_ok = true;
                 healthy_since_us = now;
                 portENTER_CRITICAL(&s_lock);
                 s_stats.restarts++;
@@ -415,7 +478,7 @@ static void IRAM_ATTR he_task(void *arg)
                 retry_at_us = now + backoff_us;
             }
             backoff_us = backoff_us * 2 > HE_RESTART_BACKOFF_MAX_US ? HE_RESTART_BACKOFF_MAX_US : backoff_us * 2;
-        } else if (adc_ok && backoff_us != HE_RESTART_BACKOFF_MIN_US &&
+        } else if (s_adc_ok && backoff_us != HE_RESTART_BACKOFF_MIN_US &&
                    now - healthy_since_us > HE_RESTART_BACKOFF_MAX_US) {
             backoff_us = HE_RESTART_BACKOFF_MIN_US;  // a second without trouble
         }
@@ -436,6 +499,7 @@ esp_err_t he_backend_start(void)
         }
         he_rt_init(&s_keys[k], &p);
     }
+    s_probe_ack = xSemaphoreCreateBinaryStatic(&s_probe_ack_buf);
     s_running = true;
     // Core 0 at the keypad task's priority, above TinyUSB, as the MX key path
     BaseType_t res = xTaskCreatePinnedToCore(he_task, "he_task", 4096, NULL, configMAX_PRIORITIES - 1,
@@ -462,6 +526,39 @@ void he_backend_set_params(uint8_t key_index, const he_rt_params_t *p)
     int32_t raw = s_stats.raw[key_index] >= 0 ? s_stats.raw[key_index] : INT32_MAX;
     he_rt_set_params(&s_keys[key_index], p, raw);
     portEXIT_CRITICAL(&s_lock);
+}
+
+bool he_backend_keys_absent(void)
+{
+    int64_t now = esp_timer_get_time();
+    portENTER_CRITICAL(&s_lock);
+    bool both = s_key_faulted[0] && s_key_faulted[1];
+    int64_t since = s_fault_since_us[0] > s_fault_since_us[1] ? s_fault_since_us[0] : s_fault_since_us[1];
+    portEXIT_CRITICAL(&s_lock);
+    return both && now - since >= HE_ABSENT_US;
+}
+
+// One caller at a time (the module monitor). he_task answers within a
+// couple of milliseconds; the timeouts only guard against a stuck task.
+#define PROBE_ACK_TICKS pdMS_TO_TICKS(500)
+
+esp_err_t he_backend_probe_module(int *out_open_mv, int *out_loaded_mv)
+{
+    if (!s_running || s_probe != PROBE_IDLE) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    s_probe = PROBE_ASKED;
+    xTaskNotifyGive(s_task);
+    if (xSemaphoreTake(s_probe_ack, PROBE_ACK_TICKS) != pdTRUE) {
+        s_probe = PROBE_IDLE;  // never paused
+        return ESP_ERR_TIMEOUT;
+    }
+    esp_err_t err = board_read_module_id(out_open_mv, out_loaded_mv);
+    board_module_id_release();  // the oneshot unit must not outlive the pause
+    s_probe = PROBE_DONE;
+    xTaskNotifyGive(s_task);
+    xSemaphoreTake(s_probe_ack, PROBE_ACK_TICKS);
+    return err;
 }
 
 void he_backend_get_stats(he_backend_stats_t *out)

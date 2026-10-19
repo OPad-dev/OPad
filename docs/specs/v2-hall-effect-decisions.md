@@ -72,6 +72,16 @@ limits what the HE backend can add to internal RAM.
   released and ignored until readings return; no frames for 5 ms releases
   both and restarts the ADC with a 10 ms → 1 s back-off. The board test skips
   its ID reading while HE owns ADC1.
+- **Module swaps while powered:** the key pins carry the internal pull-up
+  (a working sensor reads ~2 counts higher, bench §10 of the design doc), so
+  with nothing plugged in or an MX module every reading sits at a rail and
+  both keys fault. After 100 ms of that, the module monitor asks `he_task`
+  to pause the ADC for one module-ID reading (`he_backend_probe_module`):
+  nothing → the LCD says so; MX → a red notice asks for a restart (the app's
+  Restart, or a replug), since the key input is only chosen at boot
+  (`firmware/main/input/module_monitor.c`). Only `he_task` ever stops and
+  starts the ADC: the driver's ADC1 lock is a mutex, and releasing it from
+  another task panics (FreeRTOS's mutex-holder assert).
 - **Factory thresholds (provisional, OPEN C):** plain mode, actuation 50 %,
   hysteresis 10 % of a 450-count span from a 2086 rest, floors 32 counts. For
   testing only.

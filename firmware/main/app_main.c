@@ -213,7 +213,9 @@ void app_main(void)
 
 #ifdef CONFIG_OSUPAD_HE_BACKEND
     if (module == BOARD_MODULE_HE) {
-        // After TinyUSB: reports before the host configures USB are not delivered
+        // After TinyUSB: reports before the host configures USB are not delivered.
+        // The module ID read at boot left its oneshot unit open: ADC1 is HE's now
+        board_module_id_release();
         err = he_backend_start();
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "he_backend_start failed: %s (keys stay off)", esp_err_to_name(err));

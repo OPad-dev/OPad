@@ -15,6 +15,11 @@
  * when the boot module is seated again. A different module needs a restart
  * (the app's Restart, or a replug); the key input is only chosen at boot.
  *
+ * With HE input running, ADC1 belongs to it: no fast checks (a missing module
+ * already shows as both keys without valid readings, released within 5 ms),
+ * and the full reading pauses the ADC through he_backend_probe_module, only
+ * while both keys are absent.
+ *
  * Core 1 at priority 1, below the touch and LVGL tasks, so it never delays a
  * touch; a fast poll waits out a frame at worst.
  */
@@ -23,6 +28,7 @@
 #include "input/keypad.h"
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
 #include "ui/ui.h"
+#include "input/he_backend.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -59,7 +65,10 @@ static void act(module_watch_t *watch, uint8_t now, int open_mv)
         }
         break;
     case MODULE_WATCH_KEYS_ON:
-        if (boot == BOARD_MODULE_HE) {
+        if (boot == BOARD_MODULE_HE && he_backend_running()) {
+            ui_clear_notice();  // the sensors read again; keys return once seen up
+            ESP_LOGI(TAG, "HE module back");
+        } else if (boot == BOARD_MODULE_HE) {
             // Back to how it booted: this firmware cannot read an HE module
             ui_show_notice("Hall Effect module needs firmware v2.\nKeys are disabled.");
         } else {
@@ -71,6 +80,26 @@ static void act(module_watch_t *watch, uint8_t now, int open_mv)
     case MODULE_WATCH_KEEP:
         break;
     }
+}
+
+// The full reading. With HE input running: sensors that read are the HE
+// module, and only when both stop is the ADC paused for the ID
+static bool read_module(uint8_t *out, int *open_mv)
+{
+    int loaded_mv = -1;
+    if (he_backend_running()) {
+        if (!he_backend_keys_absent()) {
+            *out = BOARD_MODULE_HE;
+            return true;
+        }
+        if (he_backend_probe_module(open_mv, &loaded_mv) != ESP_OK) {
+            return false;
+        }
+    } else if (board_read_module_id(open_mv, &loaded_mv) != ESP_OK) {
+        return false;
+    }
+    *out = (uint8_t)board_module_from_id(*open_mv, loaded_mv);
+    return true;
 }
 
 static void module_monitor_task(void *arg)
@@ -86,15 +115,16 @@ static void module_monitor_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(FAST_POLL_MS));
 
         bool present;
-        if (!watch.keys_off && board_module_present_fast(&present) == ESP_OK && present != boot_present) {
+        if (!watch.keys_off && !he_backend_running() && board_module_present_fast(&present) == ESP_OK &&
+            present != boot_present) {
             act(&watch, present ? MODULE_WATCH_UNKNOWN : BOARD_MODULE_NONE, -1);
         }
 
         if (++polls % FULL_POLL_EVERY == 0) {
             int open_mv = -1;
-            int loaded_mv = -1;
-            if (board_read_module_id(&open_mv, &loaded_mv) == ESP_OK) {
-                act(&watch, (uint8_t)board_module_from_id(open_mv, loaded_mv), open_mv);
+            uint8_t now;
+            if (read_module(&now, &open_mv)) {
+                act(&watch, now, open_mv);
             }
         }
     }

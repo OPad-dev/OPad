@@ -52,10 +52,25 @@ void he_backend_set_params(uint8_t key_index, const he_rt_params_t *p);
 
 void he_backend_get_stats(he_backend_stats_t *out);
 
+/**
+ * @brief True when neither key has had a valid reading for a while: no HE
+ * module on the connector any more (nothing, or an MX module).
+ */
+bool he_backend_keys_absent(void);
+
+/**
+ * @brief Read the module ID (board_read_module_id) with the HE ADC paused for
+ * the ~8 ms it takes. For the runtime's module watch, only while
+ * he_backend_keys_absent(): the keys get no readings meanwhile.
+ */
+esp_err_t he_backend_probe_module(int *out_open_mv, int *out_loaded_mv);
+
 #else  // MX-only builds carry none of it
 
 static inline esp_err_t he_backend_start(void) { return ESP_ERR_NOT_SUPPORTED; }
 static inline bool he_backend_running(void) { return false; }
+static inline bool he_backend_keys_absent(void) { return false; }
+static inline esp_err_t he_backend_probe_module(int *o, int *l) { (void)o; (void)l; return ESP_ERR_NOT_SUPPORTED; }
 
 #endif
 
