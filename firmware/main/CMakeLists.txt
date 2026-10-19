@@ -36,6 +36,7 @@ idf_component_register(
         "diag/diag.c"
         "diag/board_test.c"
         "diag/hall_bench.c"
+        "diag/ui_perf_test.c"
     INCLUDE_DIRS
         "."
         ".."
@@ -60,4 +61,5 @@ idf_component_register(
         esp_tinyusb
         esp_app_format
         esp_adc
+        fatfs
 )

@@ -32,6 +32,35 @@ menu "OPad Testing and Benchmark"
             text over the CDC port, so opad-daemon must be stopped. Read it with
             scripts/hall_bench.py.
 
+    config OSUPAD_UI_PERF_TEST
+        bool "UI performance test: loop a GIF over the UI with FPS and memory overlays"
+        default n
+        help
+            Evaluation build for the display (not a product build). Loops
+            /sdcard/test.gif (or the built-in easter-egg GIF without a card)
+            over the normal UI, and shows LVGL's FPS/CPU and memory monitors.
+            Combine with OSUPAD_LVGL_PSRAM and OSUPAD_LCD_PCLK_80MHZ to compare.
+            Keys and touch keep working, so key latency can be checked with
+            opadctl status while it plays. Mounts the TF card (shares the LCD's
+            SPI bus: MISO GPIO40, CS GPIO41).
+
+    config OSUPAD_LVGL_PSRAM
+        bool "LVGL memory pool in PSRAM"
+        default n
+        help
+            Allocate LVGL's memory pool (CONFIG_LV_MEM_SIZE_KILOBYTES) from
+            PSRAM at boot instead of a static array in internal RAM. Frees the
+            pool's size in internal RAM; LVGL work that misses the cache gets
+            slower. The draw buffers stay in internal DMA RAM either way.
+
+    config OSUPAD_LCD_PCLK_80MHZ
+        bool "LCD SPI clock 80 MHz instead of 40 MHz"
+        default n
+        help
+            Halves the time to send a frame (full screen ~15 ms instead of
+            ~31 ms). Above the ST7789's rated 62.5 MHz write clock: check for
+            artifacts. ESP-IDF allows 80 MHz on the S3 through the GPIO matrix.
+
     config OSUPAD_BENCH_DEBUG_GPIO
         bool "Toggle debug GPIO right after HID submit"
         default n
