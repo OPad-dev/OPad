@@ -16,7 +16,7 @@ trap cleanup EXIT
 echo "=== Building and Running Firmware Host Unit Tests ==="
 
 # 1. Debounce tests (P0-2)
-echo "[1/11] Running test_debounce..."
+echo "[1/12] Running test_debounce..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/debounce.c" \
     "${HOST_TEST_DIR}/test_debounce.c" \
@@ -24,7 +24,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_debounce"
 
 # 2. Counter sync rules tests (P1-1 / §13)
-echo "[2/11] Running test_counters..."
+echo "[2/12] Running test_counters..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}/counters" \
     "${FW_MAIN}/counters/counter_sync_rules.c" \
     "${HOST_TEST_DIR}/test_counters.c" \
@@ -32,7 +32,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}/counters" \
 "${BIN_DIR}/test_counters"
 
 # 3. Config validation tests (P0-3)
-echo "[3/11] Running test_config..."
+echo "[3/12] Running test_config..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" -I "${FW_MAIN}/config" \
     "${FW_MAIN}/config/config_validate.c" \
     "${HOST_TEST_DIR}/test_config.c" \
@@ -47,7 +47,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" -I "${FW_MAIN}/config" \
 "${BIN_DIR}/test_config"
 
 # 4. Diag ring buffer tests (P2-1)
-echo "[4/11] Running test_diag..."
+echo "[4/12] Running test_diag..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/diag/diag.c" \
     "${HOST_TEST_DIR}/test_diag.c" \
@@ -55,7 +55,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_diag"
 
 # 5. Protocol frame parser tests
-echo "[5/11] Running test_frame_parser..."
+echo "[5/12] Running test_frame_parser..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" -I "${FW_MAIN}/protocol" \
     "${FW_MAIN}/protocol/frame_parser.c" \
     "${HOST_TEST_DIR}/test_frame_parser.c" \
@@ -63,7 +63,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" -I "${FW_MAIN}/protocol" \
 "${BIN_DIR}/test_frame_parser"
 
 # 6. Pad ownership decision tests (W3-2)
-echo "[6/11] Running test_owner..."
+echo "[6/12] Running test_owner..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/config/owner.c" \
     "${HOST_TEST_DIR}/test_owner.c" \
@@ -71,7 +71,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_owner"
 
 # 7. Key press log (tap rate, issue #2)
-echo "[7/11] Running test_press_log..."
+echo "[7/12] Running test_press_log..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/press_log.c" \
     "${HOST_TEST_DIR}/test_press_log.c" \
@@ -79,7 +79,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_press_log"
 
 # 8. Touchscreen swipe classifier
-echo "[8/11] Running test_gesture..."
+echo "[8/12] Running test_gesture..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/gesture.c" \
     "${HOST_TEST_DIR}/test_gesture.c" \
@@ -87,7 +87,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_gesture"
 
 # 9. Swipe feedback labels
-echo "[9/11] Running test_swipe_labels..."
+echo "[9/12] Running test_swipe_labels..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/swipe_labels.c" \
     "${HOST_TEST_DIR}/test_swipe_labels.c" \
@@ -95,7 +95,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_swipe_labels"
 
 # 10. Hall Effect decision engine and settings builder
-echo "[10/11] Running test_he_rt..."
+echo "[10/12] Running test_he_rt..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/he_rt.c" \
     "${FW_MAIN}/input/he_params.c" \
@@ -104,11 +104,19 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_he_rt"
 
 # 11. Input module swapped while powered
-echo "[11/11] Running test_module_watch..."
+echo "[11/12] Running test_module_watch..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/module_watch.c" \
     "${HOST_TEST_DIR}/test_module_watch.c" \
     -o "${BIN_DIR}/test_module_watch"
 "${BIN_DIR}/test_module_watch"
+
+# 12. Hall Effect DMA frame parser
+echo "[12/12] Running test_he_frame..."
+gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
+    "${FW_MAIN}/input/he_frame.c" \
+    "${HOST_TEST_DIR}/test_he_frame.c" \
+    -o "${BIN_DIR}/test_he_frame"
+"${BIN_DIR}/test_he_frame"
 
 echo "=== All firmware host unit tests passed! ==="

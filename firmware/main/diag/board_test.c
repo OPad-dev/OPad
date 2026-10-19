@@ -1,5 +1,6 @@
 #include "board_test.h"
 #include "input/keypad.h"
+#include "input/he_backend.h"
 #include "driver/gpio.h"
 #include "esp_rom_sys.h"
 #include "esp_log.h"
@@ -111,9 +112,15 @@ esp_err_t board_test_run(board_test_result_t *out)
         }
     }
 
-    // GPIO8 is never a key pin (not in KEY_GPIO_ALLOWED), so ID is always free
-    board_read_module_id(&r.id_mv, &r.id_loaded_mv);
-    r.module = board_module_from_id(r.id_mv, r.id_loaded_mv);
+    if (he_backend_running()) {
+        // ADC1 belongs to the HE input: a oneshot read would fail, and once
+        // stopped the conversions. The module is what boot found.
+        r.module = r.boot_module;
+    } else {
+        // GPIO8 is never a key pin (not in KEY_GPIO_ALLOWED), so ID is always free
+        board_read_module_id(&r.id_mv, &r.id_loaded_mv);
+        r.module = board_module_from_id(r.id_mv, r.id_loaded_mv);
+    }
 
     if (r.module == BOARD_MODULE_NONE &&
         r.key1_gpio != BOARD_REVERSE_PROBE_GPIO && r.key2_gpio != BOARD_REVERSE_PROBE_GPIO) {

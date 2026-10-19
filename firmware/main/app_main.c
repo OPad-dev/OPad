@@ -24,6 +24,7 @@
 #include "tusb.h"
 #include "diag/diag.h"
 #include "diag/hall_bench.h"
+#include "input/he_backend.h"
 
 static const char *TAG = "app_main";
 
@@ -120,7 +121,11 @@ void app_main(void)
         dev_cfg.key2_gpio = BOARD_MX_KEY2_GPIO;
         device_config_set(&dev_cfg);
     } else if (module == BOARD_MODULE_HE) {
+#ifdef CONFIG_OSUPAD_HE_BACKEND
+        ESP_LOGW(TAG, "Hall Effect module: experimental HE input, provisional thresholds");
+#else
         ESP_LOGW(TAG, "Hall Effect module: needs firmware v2, key input disabled");
+#endif
     }
 
     keypad_config_t k_cfg = {
@@ -206,6 +211,16 @@ void app_main(void)
         }
     }
 
+#ifdef CONFIG_OSUPAD_HE_BACKEND
+    if (module == BOARD_MODULE_HE) {
+        // After TinyUSB: reports before the host configures USB are not delivered
+        err = he_backend_start();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "he_backend_start failed: %s (keys stay off)", esp_err_to_name(err));
+        }
+    }
+#endif
+
 #ifdef CONFIG_OSUPAD_HALL_BENCH
     err = hall_bench_start();
     ESP_LOGW(TAG, "HALL BENCH build: raw sensor stream on CDC (%s)", esp_err_to_name(err));
@@ -236,7 +251,7 @@ void app_main(void)
     if (err != ESP_OK) {
         diag_record(DIAG_EVENT_LCD_INIT_FAILED, 3 /* ERROR */, (uint32_t)err, 0);
         ESP_LOGE(TAG, "ui_init failed: %s (continuing in headless mode)", esp_err_to_name(err));
-    } else if (module == BOARD_MODULE_HE) {
+    } else if (module == BOARD_MODULE_HE && !he_backend_running()) {
         ui_show_notice("Hall Effect module needs firmware v2.\nKeys are disabled.");
     }
 #ifdef CONFIG_OSUPAD_HALL_BENCH

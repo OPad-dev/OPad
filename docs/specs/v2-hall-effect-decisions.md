@@ -21,7 +21,9 @@ single-conversion rest sd 5.9 / 5.3, about 0.875 mV per count at 12 dB.
 | Decision engine (`firmware/main/input/he_rt.c`) | yes | yes (`firmware/test/host/test_he_rt.c`) | no | no |
 | Settings → thresholds (`firmware/main/input/he_params.c`) | yes | yes (same test) | no | no |
 | Shared key-event path (`firmware/main/input/key_event.c`): counters, press log, HID report, latency stats for both backends | yes, MX moved onto it | no (needs ESP-IDF) | no: MX needs a recheck on the pad | no: MX latency to remeasure |
-| ADC DMA backend, HID integration, calibration, protocol | no | no | no | no |
+| Frame parser (`firmware/main/input/he_frame.c`) | yes | yes (`test_he_frame.c`) | no | no |
+| ADC DMA backend + HID integration (`firmware/main/input/he_backend.c`, `CONFIG_OSUPAD_HE_BACKEND`, default off) | yes, provisional factory thresholds | no (needs ESP-IDF) | no | no |
+| Calibration, protocol, live travel | no | no | no | no |
 
 The engine and builder are compiled into the firmware but nothing calls them
 yet. The key-event move keeps every MX key-path function in IRAM
@@ -52,6 +54,26 @@ limits what the HE backend can add to internal RAM.
   (NVS, OTA), and frames are lost.
 - **Verification:** not yet measured on the pad (frame rate, overflows, 30 min
   stress).
+
+- **Backend as built (`he_backend.c`):** the engine runs in the frame
+  interrupt (`on_frame`, core 0, IRAM); the interrupt wakes `he_task` (core 0,
+  `configMAX_PRIORITIES - 1`, IRAM) only when a key changes, and the task calls
+  `key_event_report` as the MX keypad task does. No task wakes per frame. The
+  latency stats measure frame interrupt → USB submit; the newest conversion is
+  at most one conversion time (~16 µs) older than the interrupt. The driver's
+  ringbuffer is kept at 2 frames and never read: the key path reads the DMA
+  buffer in the interrupt. `CONFIG_OSUPAD_HE_BACKEND` selects
+  `ADC_CONTINUOUS_ISR_IRAM_SAFE`; everything the interrupt calls is in IRAM
+  and none of it references flash (checked with `nm`/`objdump` on
+  `build-he/opad-firmware.elf`). Static DIRAM with HE on: 91.5 % (29 KB left).
+- **Health (provisional, OPEN G):** checked every 2 ms by `he_task`. A key
+  with no valid conversion (readings at 0 or 4095 do not count) for 5 ms is
+  released and ignored until readings return; no frames for 5 ms releases
+  both and restarts the ADC with a 10 ms → 1 s back-off. The board test skips
+  its ID reading while HE owns ADC1.
+- **Factory thresholds (provisional, OPEN C):** plain mode, actuation 50 %,
+  hysteresis 10 % of a 450-count span from a 2086 rest, floors 32 counts. For
+  testing only.
 
 ### D2 — Filtering — Confirmed
 

@@ -7,6 +7,10 @@ archive: libmain.a
 entries:
     keypad:keypad_task (noflash)
     usb_hid (noflash)
+    # Hall Effect: called from the ADC frame interrupt, which also runs while
+    # flash is written (ADC_CONTINUOUS_ISR_IRAM_SAFE)
+    he_frame (noflash)
+    he_rt (noflash)
 
 [mapping:opad_keypath_tinyusb]
 archive: libespressif__tinyusb.a

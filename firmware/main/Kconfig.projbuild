@@ -32,6 +32,20 @@ menu "OPad Testing and Benchmark"
             text over the CDC port, so opad-daemon must be stopped. Read it with
             scripts/hall_bench.py.
 
+    config OSUPAD_HE_BACKEND
+        bool "Hall Effect key input (experimental)"
+        default n
+        depends on !OSUPAD_HALL_BENCH
+        select ADC_CONTINUOUS_ISR_IRAM_SAFE
+        help
+            With the HE module fitted, read both keys through ADC1 continuous
+            DMA and the rapid-trigger engine instead of turning key input off.
+            Uncalibrated, provisional thresholds only, not validated on a pad
+            yet (docs/specs/v2-hall-effect-decisions.md). MX pads are not
+            affected: nothing here runs unless the HE module is detected at
+            boot. Selects the IRAM-safe ADC interrupt, so frames keep coming
+            while flash is written.
+
     config OSUPAD_BENCH_DEBUG_GPIO
         bool "Toggle debug GPIO right after HID submit"
         default n
