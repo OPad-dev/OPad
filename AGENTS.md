@@ -43,6 +43,11 @@ details.
    other OTA slot and rolls back unless the host configures USB, and a pad that
    does not enumerate at all is recovered with `opadctl recover` and a replug
    (see `docs/recovery.md` §7.6–7.7).
+6. **Every key comes from a finger.** The pad sends a key only when a
+   switch is pressed or the touchscreen is touched. No macros, auto-tap,
+   scripted or timed input, and no host-to-pad message that makes the pad
+   press a key. Pull requests that add any of these are not accepted, not
+   even as an opt-in or a test mode.
 
 ## 2. Workflow
 
