@@ -281,16 +281,14 @@ host config away from the HE pins (step 1).
 First V1.1 board, read by hand: a multimeter on the chip legs, then the
 bench build's LCD view (`hall_bench_show_ui` in
 `firmware/main/diag/hall_bench.c`: 1 ms averages, rest averaged over the
-first 500 ms, volts through the ADC's curve-fitting calibration). No CSV
-traces were recorded, so the noise figure is what the display showed, not
-a measured spread.
+first 500 ms, volts through the ADC's curve-fitting calibration), then
+`scripts/hall_bench.py` traces (table below this one).
 
 | What | Reading | Meaning |
 |---|---|---|
 | U1/U2 VCC, OUT (multimeter, no switch) | 3.3 V, 1.6–1.7 V on both | powered the right way round; V1.0 read 2.90 V on OUT |
 | IN1/IN2 at rest, switch fitted | ~1.80 V | VQ plus the stem magnet at rest |
 | Deepest change, pressed hard | +568 mV on both keys | ≈ 2.37 V at bottom-out; output rises on a press |
-| Flicker at rest (display) | ~10 mV (1.79–1.80 V) | under 2 % of the swing, ≈ 0.06 mm of 3.2 mm travel |
 | Key 1 vs Key 2, bare PCB | within ~10 mV | sensors and placement match |
 | Key 1 vs Key 2, in the case | Key 1 30–40 mV lower | the module sits unevenly in the case |
 | Between switch pairs | up to ~100 mV | magnet strength varies per switch |
@@ -299,6 +297,26 @@ The swing is below the 2.4–2.6 V expected in §11 and leaves A3 well
 inside the ADC's accurate range (0–2.9 V at 12 dB). A2, at twice the
 sensitivity, would reach its 3.1 V limit near bottom-out. The case and
 per-switch differences are what the per-key calibration (§4) absorbs.
+
+Recorded traces, same board in the case, raw 12-bit counts at 12 dB
+(≈ 0.875 mV per count): 10 s at rest, 30 s of slow full strokes (3–4 per
+key), 15 s of streaming (both keys alternating, as in a map).
+
+| What | Key 1 | Key 2 |
+|---|---|---|
+| Rest, 1 ms average | 2084, sd 2.8, p-p 21 over 10 s | 2088, sd 2.6, p-p 18 |
+| Single conversions at rest | sd 5.9 | sd 5.3 |
+| Normal full press | 2530: 447 counts (≈ 390 mV) | 2590: 508 counts (≈ 445 mV) |
+| Streaming | 81 taps in 14.4 s, median 179 ms apart | 80 taps, median 181 ms apart |
+| Streaming, depth | peak median 2552; back to rest (±2) between every tap | peak median 2578; back to rest (±2) |
+| Streaming, rise 10→90 % | median 8 ms (5–15) | median 7 ms (4–19) |
+
+The 1 ms noise is 0.6 % of a normal press as sd and 4–5 % peak to
+peak, before any filtering beyond the 1 ms average: rapid-trigger
+sensitivities need a filter or a hysteresis band above that p-p. The
+stream kept 1000 samples/s, apart from about 200 ms at the start of
+each recording while the port opens (timestamps step 0 or 2 ms as often
+as each other, so no frames are lost). The traces are not in the repo.
 
 ## 11. Still open
 
@@ -313,5 +331,5 @@ per-switch differences are what the per-key calibration (§4) absorbs.
    PCB) from about 1.8 V to about 2.4–2.6 V with A3.
    Built and working on 2026-10-19 (§10b): it rises from about 1.80 V
    by 568 mV.
-2. Sensor variant: A3 stays (§10b). Recorded traces (rest noise, slow
-   strokes, fast taps; §9 step 2) are still to do.
+2. Sensor variant: A3 stays (§10b). §9 step 2 (rest noise, slow
+   strokes, fast taps) is done; the ID-line ratio is not.
