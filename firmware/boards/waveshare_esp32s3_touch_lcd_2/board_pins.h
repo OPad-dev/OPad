@@ -18,7 +18,11 @@
 
 #define BOARD_LCD_H_RES         320
 #define BOARD_LCD_V_RES         240
-#define BOARD_LCD_PIXEL_CLOCK_HZ (40 * 1000 * 1000)
+// 80 MHz: a full frame goes out in ~15 ms instead of ~31 ms, so redraws make
+// LVGL's 33 ms period with room to spare. Above the ST7789's rated 62.5 MHz
+// write clock; checked on the pad with no artifacts (2026-10-20, UI test
+// build D). ESP-IDF allows 80 MHz on the S3 through the GPIO matrix.
+#define BOARD_LCD_PIXEL_CLOCK_HZ (80 * 1000 * 1000)
 
 // -----------------------------------------------------------------------------
 // Onboard I2C (Touch CST816 & IMU QMI8658)
