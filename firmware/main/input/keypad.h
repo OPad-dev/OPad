@@ -117,8 +117,9 @@ typedef struct {
 esp_err_t keypad_line_test(keypad_line_test_t *out);
 
 /**
- * @brief Turn key input off (edges ignored, no presses reported) or back on.
- * Used when the connected input module is not one this firmware can read.
+ * @brief Turn key input off (keys released, pins parked analog with no
+ * interrupt) or back on (pins armed again). Used when the connected input
+ * module is not one this firmware can read, or was swapped while powered.
  */
 void keypad_set_input_enabled(bool enabled);
 

@@ -394,11 +394,17 @@ void ui_play_animation(uint8_t id, const char *grade)
     lvgl_port_unlock();
 }
 
+static lv_obj_t *s_notice_box;
+
 void ui_show_notice(const char *text)
 {
     if (!s_ui_ok || !text) return;
     lvgl_port_lock(0);
+    if (s_notice_box) {
+        lv_obj_delete(s_notice_box);  // replaced by the new message
+    }
     lv_obj_t *box = lv_obj_create(lv_layer_top());
+    s_notice_box = box;
     lv_obj_set_size(box, lv_pct(92), LV_SIZE_CONTENT);
     lv_obj_align(box, LV_ALIGN_BOTTOM_MID, 0, -8);
     lv_obj_set_style_bg_color(box, lv_color_hex(0x7A1F1F), 0);
@@ -413,6 +419,17 @@ void ui_show_notice(const char *text)
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_14, 0);
     lv_label_set_text(label, text);
+    lvgl_port_unlock();
+}
+
+void ui_clear_notice(void)
+{
+    if (!s_ui_ok) return;
+    lvgl_port_lock(0);
+    if (s_notice_box) {
+        lv_obj_delete(s_notice_box);
+        s_notice_box = NULL;
+    }
     lvgl_port_unlock();
 }
 

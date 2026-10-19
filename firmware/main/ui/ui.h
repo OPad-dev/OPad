@@ -56,8 +56,10 @@ void ui_play_animation(uint8_t id, const char *grade);
  */
 void ui_show_swipe(int dx, int dy, const char *symbol, const char *text);
 
-// A message that stays on top of every screen until reboot (e.g. an unsupported input module)
+// A message on top of every screen until ui_clear_notice or reboot (e.g. an
+// unsupported input module). A new one replaces the one shown.
 void ui_show_notice(const char *text);
+void ui_clear_notice(void);
 
 #ifdef __cplusplus
 }

@@ -315,6 +315,37 @@ static void detect_scan_step(detect_scan_t *scan)
     portEXIT_CRITICAL(&s_keypad_spinlock);
 }
 
+/*
+ * Input off: the pins are parked analog (no pull, no interrupt), so whatever
+ * drives them now, such as a Hall Effect module plugged in while powered,
+ * cannot fire the key ISR on this core. Input back on: armed again, and
+ * debouncing starts from the pins as they read then. Keypad task only, the
+ * one task that touches key GPIOs.
+ */
+static void apply_input_enabled(bool *parked)
+{
+    bool want_parked = !s_input_enabled;
+    if (want_parked == *parked) {
+        return;
+    }
+    portENTER_CRITICAL(&s_keypad_spinlock);
+    keypad_config_t cfg = s_config;
+    portEXIT_CRITICAL(&s_keypad_spinlock);
+    board_keys_set_analog(want_parked);
+    esp_err_t err = board_keys_set_gpio(cfg.key1_gpio, cfg.key2_gpio);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Key pins GPIO%u/GPIO%u: %s", cfg.key1_gpio, cfg.key2_gpio, esp_err_to_name(err));
+    }
+    *parked = want_parked;
+    if (!want_parked) {
+        // Let the pull-up settle first: a pin read too early is low, a press
+        esp_rom_delay_us(LINE_TEST_SETTLE_US);
+    }
+    if (!want_parked && restart_debounce_from_pins()) {
+        xTaskNotifyGive(s_input_task_handle);  // a key held through it is reported
+    }
+}
+
 static void keypad_task(void *pvParameters)
 {
     (void)pvParameters;
@@ -322,6 +353,8 @@ static void keypad_task(void *pvParameters)
 
     bool reported_state[KEY_ID_COUNT] = {false, false};
     detect_scan_t scan = {0};
+    // Off at boot (Hall Effect module): app_main parked the pins already
+    bool parked = !s_input_enabled;
 
     while (1) {
         // Calculate wait timeout based on smallest remaining lockout
@@ -362,6 +395,7 @@ static void keypad_task(void *pvParameters)
 
         ulTaskNotifyTake(pdTRUE, wait_ticks);
 
+        apply_input_enabled(&parked);
         now_us = esp_timer_get_time();
 
         // 1. Re-sample keys whose lockout has expired
@@ -711,8 +745,12 @@ void keypad_set_input_enabled(bool enabled)
     if (s_input_task_handle == NULL) {
         return; // keypad_init reads the pins with this in effect
     }
-    // Start again from the pins as they read now (released when off)
-    restart_debounce_from_pins();
+    if (!enabled) {
+        // Released at once; the keypad task parks the pins
+        restart_debounce_from_pins();
+    }
+    // On: the keypad task arms the pins first, then reads them (parked pins
+    // read low, which would look like both keys pressed)
     xTaskNotifyGive(s_input_task_handle);
 }
 

@@ -3,6 +3,8 @@
 #include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "esp_rom_sys.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
@@ -247,14 +249,32 @@ typedef struct {
     adc_cali_handle_t cali;
 } module_id_adc_t;
 
+// ADC1 oneshot takes one user at a time: the runtime's module poll and the
+// board test both read ID. Held from open to close.
+static SemaphoreHandle_t s_module_id_lock;
+static StaticSemaphore_t s_module_id_lock_buf;
+static portMUX_TYPE s_module_id_lock_init = portMUX_INITIALIZER_UNLOCKED;
+
+static void module_id_lock(void)
+{
+    portENTER_CRITICAL(&s_module_id_lock_init);
+    if (s_module_id_lock == NULL) {
+        s_module_id_lock = xSemaphoreCreateMutexStatic(&s_module_id_lock_buf);
+    }
+    portEXIT_CRITICAL(&s_module_id_lock_init);
+    xSemaphoreTake(s_module_id_lock, portMAX_DELAY);
+}
+
 static esp_err_t module_id_adc_open(module_id_adc_t *m)
 {
     *m = (module_id_adc_t){0};
+    module_id_lock();
     adc_oneshot_unit_init_cfg_t unit_cfg = {
         .unit_id = ADC_UNIT_1,
     };
     esp_err_t err = adc_oneshot_new_unit(&unit_cfg, &m->adc);
     if (err != ESP_OK) {
+        xSemaphoreGive(s_module_id_lock);
         return err;
     }
     adc_oneshot_chan_cfg_t chan_cfg = {
@@ -282,6 +302,7 @@ static void module_id_adc_close(module_id_adc_t *m)
     }
     adc_oneshot_del_unit(m->adc);
     gpio_reset_pin(BOARD_MODULE_ID_GPIO);
+    xSemaphoreGive(s_module_id_lock);
 }
 
 /*

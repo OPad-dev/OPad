@@ -10,6 +10,7 @@ idf_component_register(
         "input/touch_retry.c"
         "input/gesture.c"
         "input/swipe_labels.c"
+        "input/module_watch.c"
         "usb/usb_descriptors.c"
         "usb/usb_hid.c"
         "usb/usb_media.c"
