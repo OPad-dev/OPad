@@ -1,0 +1,139 @@
+# Hall Effect firmware: decision record
+
+**Started:** 2026-10-19. Supersedes the conflicting parts of
+`docs/specs/v2-rapid-trigger.md` (written before the board existed) and the
+"Decided so far" table of `docs/specs/v2-hall-effect-design.md`; see
+[Superseded](#superseded) for which.
+
+Statuses: **Confirmed** (owner decision, change only on new evidence),
+**Provisional** (in use for testing, not a product default), **Open** (needs
+measurement or an owner decision).
+
+Bench numbers below are from `docs/specs/v2-hall-effect-design.md` §10b
+(V1.1 board, Gateron Jade Silent, in the case): rest 2084 / 2088 counts,
+normal full press +447 / +508 counts, 1 ms-average rest sd 2.8 / 2.6,
+single-conversion rest sd 5.9 / 5.3, about 0.875 mV per count at 12 dB.
+
+## Implementation status
+
+| Part | Implemented | Host-tested | Hardware-tested | Performance-validated |
+|---|---|---|---|---|
+| Decision engine (`firmware/main/input/he_rt.c`) | yes | yes (`firmware/test/host/test_he_rt.c`) | no | no |
+| Settings → thresholds (`firmware/main/input/he_params.c`) | yes | yes (same test) | no | no |
+| ADC DMA backend, HID integration, calibration, protocol | no | no | no | no |
+
+The engine and builder are compiled into the firmware but nothing calls them
+yet, so the MX image is unchanged (same app size, 0xE7AA0, before and after).
+
+## Decisions
+
+### D1 — ADC sampling — Confirmed
+
+- **Decision:** ADC1 continuous (DMA), key 1 (GPIO10, CH9) and key 2 (GPIO7,
+  CH6) alternating, 64 000 conversions/s, 16 conversions (64 bytes) per DMA
+  frame = 250 µs, 12-bit, 12 dB. The decision uses the newest valid
+  conversion per key in each frame. The ID line is not sampled during play.
+- **Rationale:** ADC1 is the only S3 ADC with working DMA; 250 µs frames keep
+  the wait for a sample well under the 1 ms USB poll.
+- **Trade-offs:** newest-sample noise is single-conversion noise (sd ~5.5),
+  about twice the 1 ms-average noise the bench measured.
+- **Driver facts (ESP-IDF v5.5.2, `components/esp_adc/adc_continuous.c`):**
+  `on_conv_done` runs in the ADC ISR and gets the finished DMA buffer
+  directly; the driver also copies every frame into its ringbuffer from the
+  ISR; 5 DMA buffers rotate (`INTERNAL_BUF_NUM`), so a buffer is reused 1.25
+  ms after it completes; the S3 allows up to 83 333 conversions/s
+  (`SOC_ADC_SAMPLE_FREQ_THRES_HIGH`). `CONFIG_ADC_CONTINUOUS_ISR_IRAM_SAFE` is
+  off by default: without it the ISR cannot run while flash is being written
+  (NVS, OTA), and frames are lost.
+- **Verification:** not yet measured on the pad (frame rate, overflows, 30 min
+  stress).
+
+### D2 — Filtering — Confirmed
+
+- **Decision:** no moving average, no time-based debounce, no ID-line
+  correction on the key path. Noise is resisted by hysteresis (plain mode) and
+  rapid-trigger sensitivity, each held above a raw-count noise floor (OPEN A).
+- **Evidence:** the ID-line ratio made noise worse, subtraction helped only a
+  little (owner bench, 2026-10-19).
+
+### D3 — Travel representation — Confirmed
+
+- **Decision:** settings are in 0.1 % steps of the per-key calibrated span
+  (`HE_PCT_FULL` = 1000 in `he_params.h`), a share of the magnetic signal, never
+  shown as millimetres. Thresholds are converted to raw counts off the key
+  path; the key path is integer compare and subtract only (`he_rt_step`).
+- **The reading is never clamped** to the calibrated full press. A bottom dead
+  zone, when set, only stops the *peak* from following (`peak_cap`); with the
+  default of 0 nothing is capped.
+
+### D4 — Rapid trigger state machine — Confirmed semantics, thresholds Open
+
+Implemented in `he_rt.c`, per key:
+
+| State | Logically | Leaves on |
+|---|---|---|
+| ARMED | up | reading ≥ `actuation` → DOWN (only after the key has read ≤ `release` once since boot, a fault or a threshold change) |
+| PRESSED | down | reading ≤ region exit → UP, ARMED; rapid trigger: reading ≤ peak − `rt_release` → UP, RT_RELEASED |
+| RT_RELEASED | up | reading ≤ region exit → ARMED (no event); reading ≥ trough + `rt_press` → DOWN |
+
+- Region exit is `release` (actuation minus hysteresis) for plain mode and
+  normal rapid trigger, `top_reset` for continuous rapid trigger.
+- Defaults: rapid trigger **off**, continuous **off** even with rapid trigger
+  on, bottom dead zone 0. Actuation, sensitivities and top reset: OPEN A, C, D.
+- Threshold changes never press a key: they apply while the key is up, or at
+  its next release if held, and then the key must read ≤ `release` before it
+  can press (`he_rt_set_params`).
+- An ADC fault releases a held key and the key must read ≤ `release` before it
+  can press again (`he_rt_fault`).
+- **Provisional, to test on the pad:** a key held while the pad boots is not
+  reported until it has been released once. MX does report a held key at boot
+  (`restart_debounce_from_pins` in `keypad.c`).
+- Rapid trigger is refused without a valid calibration
+  (`HE_PARAMS_RT_NEEDS_CALIBRATION`); a setting that maps below the noise
+  floor is raised to it and reported, never applied silently.
+
+### D5 — Hardware — Confirmed
+
+DRV5055A3, ADC1, V1.1 HE board, current case. No A2, no external ADC unless a
+measured limit requires it. GPIO6/4/2 stay reserved.
+
+### D6 — USB delivery — Confirmed
+
+Latest state only, no transition FIFO, no minimum press length. The existing
+HID layer already works this way (`firmware/main/usb/usb_hid.c`): per-report
+`change_seq`/`sent_seq`, a submit carries the current key state, and a change
+that finds the endpoint busy is resent by `tud_hid_report_complete_cb` with
+whatever the state is then. Key 1 + touch and key 2 are on separate endpoints,
+so neither waits on the other. The HE backend calls the same
+`usb_hid_handle_key_event`.
+
+### D7 — Calibration — Confirmed policy, not implemented
+
+Explicit, per key, rest then 5 normal presses (median peak), reachable from
+the pad itself. Required before rapid trigger. Never invalidated automatically
+by unusual readings; sensor health is separate and never erases calibration.
+No blind rest capture at boot.
+
+## Open
+
+| ID | Question | Evidence so far | Needed |
+|---|---|---|---|
+| A | Minimum rapid-trigger movement (noise floor) | 1 ms-average p-p 17–24 counts; single-conversion sd 5.3–5.9 | raw 250 µs-frame traces at rest, held mid-travel, 30 min; replay false events vs floor |
+| B | 64 vs 80 kS/s | 80 kS/s is inside the S3 limit | only if A shows a benefit |
+| C | Default actuation point | subjective half press ≈ 23 % of key 1's span | strokes with the raw build |
+| D | Top reset region | as A | as A |
+| E | Host-visible latency, missed sub-poll taps | MX ~70 µs edge → submit | USB capture on the host |
+| F | USB-only recovery details | A/B OTA with rollback until USB configures (`app_main.c`), 16 MB flash with ~11.9 MiB past the last partition (`partitions.csv`) | separate proposal before any partition change |
+| G | ADC stall watchdog timeout | proposal ~5 ms | stress with display, USB, NVS/OTA writes |
+
+## Superseded
+
+| Earlier text | Now |
+|---|---|
+| v2-rapid-trigger §3.1: position in 0.01 mm, clamped to `[0, travel]` | D3: magnetic share, unclamped |
+| v2-rapid-trigger §3.2: `continuous_rt` default on, bottom dead zone 0.20 mm | D4: off, 0 |
+| v2-rapid-trigger §3.4 / §4: filtering, per-model curve, auto rest tracking | D2, D3; no automatic tracking |
+| v2-hall-effect-design decision 9: adaptive ID-line correction | D1/D2: no ID line during play |
+| v2-hall-effect-design "Switch swap": a different key-up reading at boot drops to defaults | D7: never invalidated automatically; may suggest recalibrating |
+| v2-hall-effect-design §4: rest averaged at every boot | D7: no blind rest capture at boot |
+| v2-hall-effect-design decision 8: module checked while idle | boot only, as today (`board_detect_module` in `app_main.c`) |

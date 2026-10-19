@@ -12,6 +12,8 @@ idf_component_register(
         "input/swipe_labels.c"
         "input/module_watch.c"
         "input/module_monitor.c"
+        "input/he_rt.c"
+        "input/he_params.c"
         "usb/usb_descriptors.c"
         "usb/usb_hid.c"
         "usb/usb_media.c"

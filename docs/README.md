@@ -78,6 +78,7 @@ Until that lands, treat the documents below as **possibly stale**; the code and
 * **[Remaining Work & Gap Analysis](specs/remaining-work-v1.md)** — As-built gap analysis and audit tracking for V1 release.
 * **[Packaging & Distribution Plan](specs/packaging-distribution.md)** — Build system, CI/CD, Windows/Linux packaging, and release delivery.
 * **[Rapid Trigger (Hall-Effect Keys) v2 Plan](specs/v2-rapid-trigger.md)** — Implementation blueprint for Hall-effect magnetic switches, ADC sampling pipeline, and continuous Rapid Trigger engine.
+* **[Hall Effect firmware decision record](specs/v2-hall-effect-decisions.md)** — Confirmed, provisional and open HE decisions, implementation status, and which earlier v2 text they replace.
 
 ---
 

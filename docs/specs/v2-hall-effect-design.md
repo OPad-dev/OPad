@@ -21,6 +21,11 @@ exists, and lists the questions that need an answer before the code.
 | 9 | Supply reference | Adaptive: the pad watches its own supply noise and uses the ID-line correction only when it is needed. No user setting. |
 | — | IRAM | The HE key path runs from IRAM like MX's; only the fitted module's path runs (§2). |
 
+**Superseded in part (2026-10-19):** `docs/specs/v2-hall-effect-decisions.md`
+is the decision record now. It replaces decision 8 (idle module checks),
+decision 9 (adaptive ID-line correction), the switch-swap row and §4's boot
+rest capture; see its "Superseded" table.
+
 **What exists today**
 
 - The HE module: two **TI DRV5055A3** ratiometric linear Hall sensors, one
