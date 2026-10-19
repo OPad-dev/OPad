@@ -24,11 +24,6 @@
 // build D). ESP-IDF allows 80 MHz on the S3 through the GPIO matrix.
 #define BOARD_LCD_PIXEL_CLOCK_HZ (80 * 1000 * 1000)
 
-// TF card slot, SPI mode on the LCD's bus: shares SCLK (GPIO39) and MOSI
-// (GPIO38), its own MISO and CS (Waveshare schematic, GPIO table)
-#define BOARD_SD_MISO_GPIO      GPIO_NUM_40
-#define BOARD_SD_CS_GPIO        GPIO_NUM_41
-
 // -----------------------------------------------------------------------------
 // Onboard I2C (Touch CST816 & IMU QMI8658)
 // -----------------------------------------------------------------------------
