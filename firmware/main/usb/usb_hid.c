@@ -81,7 +81,6 @@ esp_err_t usb_hid_init(void)
     s_key2_code = cfg.keycode2;
     s_key3_code = 0x35; // Default: '`' (Grave accent / Tilde for osu! Quick Retry)
 
-    keypad_set_state_callback(usb_hid_handle_key_event);
     ESP_LOGI(TAG, "USB HID keyboard initialized (Key1: 0x%02X, Key2: 0x%02X, TouchRetry: 0x%02X)",
              s_key1_code, s_key2_code, s_key3_code);
     return ESP_OK;

@@ -2,6 +2,7 @@
 #include "counters/counters.h"
 #include "counters/counter_sync_rules.h"
 #include "input/keypad.h"
+#include "input/key_event.h"
 #include "config/device_config.h"
 #include "ui/ui_store.h"
 #include "freertos/FreeRTOS.h"
@@ -86,8 +87,8 @@ static void runtime_supervisor_task(void *pvParameters)
         } else if (current == OSUPAD_STATE_IDLE) {
             device_config_flush();
             flush_layouts();
-            int64_t k1 = keypad_get_last_press_us(KEY_ID_1);
-            int64_t k2 = keypad_get_last_press_us(KEY_ID_2);
+            int64_t k1 = key_event_get_last_press_us(KEY_ID_1);
+            int64_t k2 = key_event_get_last_press_us(KEY_ID_2);
             int64_t last_press = k1 > k2 ? k1 : k2;
             // Host suspend (PC sleeping, possibly losing power) writes at once
             bool requested = counters_take_checkpoint_request();

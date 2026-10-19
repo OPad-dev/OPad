@@ -132,6 +132,7 @@ void app_main(void)
     };
 
     // 2. Initialize Keypad: switch GPIOs, usages and debouncing (FATAL if fails)
+    key_event_init();
     if (module == BOARD_MODULE_HE) {
         // Before the ISR is armed: Hall sensors drive analog levels on the key
         // pins, so they stay analog and no host config re-arms them
@@ -212,7 +213,7 @@ void app_main(void)
 
     // 5. Persistent NVS Lifetime Counters (NON-FATAL)
     // Keypad starts with RAM counters at 0. counters_init adds NVS values
-    // (keypad_add_lifetime_presses) rather than overwriting, so any keypresses
+    // (key_event_add_lifetime_presses) rather than overwriting, so any keypresses
     // that occurred between HID-ready and counters_init are preserved.
     err = counters_init();
     if (err != ESP_OK) {

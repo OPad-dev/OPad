@@ -20,10 +20,15 @@ single-conversion rest sd 5.9 / 5.3, about 0.875 mV per count at 12 dB.
 |---|---|---|---|---|
 | Decision engine (`firmware/main/input/he_rt.c`) | yes | yes (`firmware/test/host/test_he_rt.c`) | no | no |
 | Settings → thresholds (`firmware/main/input/he_params.c`) | yes | yes (same test) | no | no |
+| Shared key-event path (`firmware/main/input/key_event.c`): counters, press log, HID report, latency stats for both backends | yes, MX moved onto it | no (needs ESP-IDF) | no: MX needs a recheck on the pad | no: MX latency to remeasure |
 | ADC DMA backend, HID integration, calibration, protocol | no | no | no | no |
 
 The engine and builder are compiled into the firmware but nothing calls them
-yet, so the MX image is unchanged (same app size, 0xE7AA0, before and after).
+yet. The key-event move keeps every MX key-path function in IRAM
+(`gpio_isr_handler`, `keypad_task`, `key_event_press_accepted`,
+`key_event_report`, `usb_hid_handle_key_event`, checked with `nm` on
+`build/opad-firmware.elf`); static DIRAM use is 90 % (34 KB left), which
+limits what the HE backend can add to internal RAM.
 
 ## Decisions
 

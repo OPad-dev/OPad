@@ -17,8 +17,8 @@ extern "C" {
 
 // Accepted key-downs with their pad timestamps, for the host's tap rate (issue #2).
 //
-// One producer, the input path (key ISR and keypad task, serialised by the keypad
-// spinlock), and one consumer, the protocol task. Lock-free: pushing is one store
+// One producer, the input path of the fitted module (for MX the key ISR and keypad
+// task, serialised by the keypad spinlock), and one consumer, the protocol task. Lock-free: pushing is one store
 // and one atomic increment, so recording a press adds nothing measurable to the
 // input path. A full log drops the newest press and counts it.
 

@@ -4,7 +4,7 @@
 #include "ui/core/ui_internal.h"
 #include "ui/core/ui_anim.h"
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
-#include "input/keypad.h"
+#include "input/key_event.h"
 #include "runtime/runtime.h"
 #include "diag/diag.h"
 #include "usb/usb_cdc.h"
@@ -66,8 +66,8 @@ static void update_pad_sources(int64_t now_us)
 {
     uint64_t k1_life = 0, k2_life = 0;
     uint32_t k1_map = 0, k2_map = 0;
-    keypad_get_lifetime_presses(&k1_life, &k2_life);
-    keypad_get_map_presses(&k1_map, &k2_map);
+    key_event_get_lifetime_presses(&k1_life, &k2_life);
+    key_event_get_map_presses(&k1_map, &k2_map);
 
     ui_data_set_number(UI_SRC_PAD_K1_LIFETIME, (double)k1_life);
     ui_data_set_number(UI_SRC_PAD_K2_LIFETIME, (double)k2_life);
@@ -76,8 +76,8 @@ static void update_pad_sources(int64_t now_us)
     ui_data_set_number(UI_SRC_PAD_K2_MAP, k2_map);
     ui_data_set_number(UI_SRC_PAD_TOTAL_MAP, (double)k1_map + k2_map);
 
-    bool k1_down = keypad_is_pressed(KEY_ID_1) || (now_us - keypad_get_last_press_us(KEY_ID_1)) < KEY_FLASH_HOLD_US;
-    bool k2_down = keypad_is_pressed(KEY_ID_2) || (now_us - keypad_get_last_press_us(KEY_ID_2)) < KEY_FLASH_HOLD_US;
+    bool k1_down = key_event_is_down(KEY_ID_1) || (now_us - key_event_get_last_press_us(KEY_ID_1)) < KEY_FLASH_HOLD_US;
+    bool k2_down = key_event_is_down(KEY_ID_2) || (now_us - key_event_get_last_press_us(KEY_ID_2)) < KEY_FLASH_HOLD_US;
     ui_data_set_number(UI_SRC_PAD_K1_DOWN, k1_down);
     ui_data_set_number(UI_SRC_PAD_K2_DOWN, k2_down);
 

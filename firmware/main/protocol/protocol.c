@@ -7,6 +7,7 @@
 #include "config/device_config.h"
 #include "input/touch_retry.h"
 #include "input/keypad.h"
+#include "input/key_event.h"
 #include "counters/counters.h"
 #include "ui/ui.h"
 #include "ui/ui_store.h"
@@ -201,7 +202,7 @@ esp_err_t protocol_send_status(void)
     msg.payload.status.display_asleep = ui_is_asleep();
     msg.payload.status.lifetime_key1 = snap.lifetime_key1;
     msg.payload.status.lifetime_key2 = snap.lifetime_key2;
-    keypad_get_map_presses(&msg.payload.status.map_key1, &msg.payload.status.map_key2);
+    key_event_get_map_presses(&msg.payload.status.map_key1, &msg.payload.status.map_key2);
 
     latency_stats_t lat;
     latency_stats_get(&lat);
@@ -614,7 +615,7 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         const osupad_HostStatus *hs = &msg->payload.host_status;
         if (hs->play_id != s_play_id) {
             s_play_id = hs->play_id;
-            keypad_reset_map_presses();
+            key_event_reset_map_presses();
         }
         ui_set_tosu_connected(hs->tosu_connected);
         touch_retry_set_host_status(hs->tosu_connected, hs->osu_active);

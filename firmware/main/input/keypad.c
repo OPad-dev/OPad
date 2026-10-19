@@ -1,15 +1,12 @@
 #include "keypad.h"
 #include "debounce.h"
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
-#include "ui/ui.h"
 #include "usb/usb_hid.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_timer.h"
 #include "esp_log.h"
-#include <stdatomic.h>
-#include "input/latency_stats.h"
-#include "input/press_log.h"
+#include "input/key_event.h"
 #include "driver/gpio.h"
 #include "esp_rom_sys.h"
 #include "diag/diag.h"
@@ -50,20 +47,11 @@ static keypad_line_test_t s_line_test_result;
 
 static volatile bool s_key_state[KEY_ID_COUNT] = {false, false};
 static volatile int64_t s_last_transition_us[KEY_ID_COUNT] = {0, 0};
-static atomic_llong s_key1_last_press_us = 0;
-static atomic_llong s_key2_last_press_us = 0;
-
-static atomic_uint_least64_t s_key1_lifetime_presses = 0;
-static atomic_uint_least64_t s_key2_lifetime_presses = 0;
-// Presses in the current osu! attempt; zeroed by the host on every new play
-static atomic_uint_least32_t s_key1_map_presses = 0;
-static atomic_uint_least32_t s_key2_map_presses = 0;
 
 static TaskHandle_t s_input_task_handle = NULL;
 // Off when the input module is one v1 cannot read (Hall Effect): its analog
 // outputs on the key pins would otherwise register as presses
 static volatile bool s_input_enabled = true;
-static keypad_state_callback_t s_callback = NULL;
 
 static void IRAM_ATTR gpio_isr_handler(void *arg)
 {
@@ -90,17 +78,7 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
 
         // Counting rule: only accepted press transitions increment counters.
         if (action == DEBOUNCE_ACTION_PRESS) {
-            if (key_index == 0) {
-                atomic_fetch_add_explicit(&s_key1_lifetime_presses, 1, memory_order_relaxed);
-                atomic_fetch_add_explicit(&s_key1_map_presses, 1, memory_order_relaxed);
-                atomic_store_explicit(&s_key1_last_press_us, now, memory_order_relaxed);
-                press_log_push(1, now);
-            } else {
-                atomic_fetch_add_explicit(&s_key2_lifetime_presses, 1, memory_order_relaxed);
-                atomic_fetch_add_explicit(&s_key2_map_presses, 1, memory_order_relaxed);
-                atomic_store_explicit(&s_key2_last_press_us, now, memory_order_relaxed);
-                press_log_push(2, now);
-            }
+            key_event_press_accepted((uint8_t)key_index, now);
         }
 
         BaseType_t high_task_wakeup = pdFALSE;
@@ -433,19 +411,9 @@ static void keypad_task(void *pvParameters)
                     // including presses applied by resample. A glitch press that is later
                     // corrected will have been counted once; that is acceptable.
                     if (action == DEBOUNCE_ACTION_PRESS) {
-                        if (i == 0) {
-                            atomic_fetch_add_explicit(&s_key1_lifetime_presses, 1, memory_order_relaxed);
-                            atomic_fetch_add_explicit(&s_key1_map_presses, 1, memory_order_relaxed);
-                            atomic_store_explicit(&s_key1_last_press_us, now_us, memory_order_relaxed);
-                            // Confirmed by the resample, so up to one lockout
-                            // (debounce_us) after the edge it missed
-                            press_log_push(1, now_us);
-                        } else {
-                            atomic_fetch_add_explicit(&s_key2_lifetime_presses, 1, memory_order_relaxed);
-                            atomic_fetch_add_explicit(&s_key2_map_presses, 1, memory_order_relaxed);
-                            atomic_store_explicit(&s_key2_last_press_us, now_us, memory_order_relaxed);
-                            press_log_push(2, now_us);
-                        }
+                        // Confirmed by the resample, so up to one lockout
+                        // (debounce_us) after the edge it missed
+                        key_event_press_accepted((uint8_t)i, now_us);
                     }
                 }
                 portEXIT_CRITICAL(&s_keypad_spinlock);
@@ -466,21 +434,7 @@ static void keypad_task(void *pvParameters)
 
             if (current != reported_state[i]) {
                 reported_state[i] = current;
-                // HID report first; activity bookkeeping only after it is submitted
-                if (s_callback) {
-                    if (s_callback(i, current, edge_us)) {
-                        latency_stats_record((uint32_t)(esp_timer_get_time() - edge_us));
-                    } else {
-                        // Resent by the HID layer, which records the latency then
-                        latency_stats_record_deferred();
-                    }
-                }
-#if defined(CONFIG_OSUPAD_BENCH_DEBUG_GPIO) || defined(OSUPAD_BENCH_DEBUG_GPIO)
-                gpio_set_level(CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM, current ? 1 : 0);
-#endif
-                if (current) {
-                    ui_notify_activity();
-                }
+                key_event_report((uint8_t)i, current, edge_us);
             }
         }
 
@@ -564,19 +518,6 @@ esp_err_t keypad_init(const keypad_config_t *config)
         }
     }
 
-#if defined(CONFIG_OSUPAD_BENCH_DEBUG_GPIO) || defined(OSUPAD_BENCH_DEBUG_GPIO)
-    gpio_config_t dbg_io_conf = {
-        .pin_bit_mask = (1ULL << CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM),
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_ENABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config(&dbg_io_conf);
-    gpio_set_level(CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM, 0);
-    ESP_LOGI(TAG, "Debug GPIO initialized on pin %d", CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM);
-#endif
-
     // Initial state read
     bool k1_init = read_key_level(0);
     bool k2_init = read_key_level(1);
@@ -611,64 +552,6 @@ esp_err_t keypad_init(const keypad_config_t *config)
              (unsigned long)s_config.debounce_us, s_config.keycode1, s_config.key1_gpio,
              s_config.keycode2, s_config.key2_gpio);
     return ESP_OK;
-}
-
-void keypad_set_state_callback(keypad_state_callback_t cb)
-{
-    s_callback = cb;
-}
-
-bool keypad_is_pressed(keypad_key_id_t key_id)
-{
-    if (key_id < KEY_ID_COUNT) {
-        return s_key_state[key_id];
-    }
-    return false;
-}
-
-void keypad_get_lifetime_presses(uint64_t *key1_presses, uint64_t *key2_presses)
-{
-    if (key1_presses) {
-        *key1_presses = atomic_load_explicit(&s_key1_lifetime_presses, memory_order_relaxed);
-    }
-    if (key2_presses) {
-        *key2_presses = atomic_load_explicit(&s_key2_lifetime_presses, memory_order_relaxed);
-    }
-}
-
-void keypad_set_lifetime_presses(uint64_t key1_presses, uint64_t key2_presses)
-{
-    atomic_store_explicit(&s_key1_lifetime_presses, key1_presses, memory_order_relaxed);
-    atomic_store_explicit(&s_key2_lifetime_presses, key2_presses, memory_order_relaxed);
-}
-
-void keypad_add_lifetime_presses(uint64_t key1_presses, uint64_t key2_presses)
-{
-    atomic_fetch_add_explicit(&s_key1_lifetime_presses, key1_presses, memory_order_relaxed);
-    atomic_fetch_add_explicit(&s_key2_lifetime_presses, key2_presses, memory_order_relaxed);
-}
-
-void keypad_get_map_presses(uint32_t *key1_presses, uint32_t *key2_presses)
-{
-    if (key1_presses) {
-        *key1_presses = atomic_load_explicit(&s_key1_map_presses, memory_order_relaxed);
-    }
-    if (key2_presses) {
-        *key2_presses = atomic_load_explicit(&s_key2_map_presses, memory_order_relaxed);
-    }
-}
-
-void keypad_reset_map_presses(void)
-{
-    atomic_store_explicit(&s_key1_map_presses, 0, memory_order_relaxed);
-    atomic_store_explicit(&s_key2_map_presses, 0, memory_order_relaxed);
-}
-
-int64_t keypad_get_last_press_us(keypad_key_id_t key_id)
-{
-    if (key_id == KEY_ID_1) return atomic_load_explicit(&s_key1_last_press_us, memory_order_relaxed);
-    if (key_id == KEY_ID_2) return atomic_load_explicit(&s_key2_last_press_us, memory_order_relaxed);
-    return 0;
 }
 
 void keypad_set_config(const keypad_config_t *config)

@@ -1,6 +1,6 @@
 #include "counters.h"
 #include "counter_sync_rules.h"
-#include "input/keypad.h"
+#include "input/key_event.h"
 #include "runtime/runtime.h"
 #include "diag/diag.h"
 #include "nvs_flash.h"
@@ -31,7 +31,7 @@ static atomic_bool s_checkpoint_requested = false;
  */
 static void rebase_lifetime_presses(const counters_snapshot_t *from, uint64_t to_k1, uint64_t to_k2)
 {
-    keypad_add_lifetime_presses(to_k1 - from->lifetime_key1, to_k2 - from->lifetime_key2);
+    key_event_add_lifetime_presses(to_k1 - from->lifetime_key1, to_k2 - from->lifetime_key2);
 }
 
 static esp_err_t checkpoint_locked(bool force);
@@ -116,9 +116,9 @@ esp_err_t counters_init(void)
     nvs_close(handle);
 
     // Keypad starts with RAM counters at 0. counters_init adds NVS values
-    // (keypad_add_lifetime_presses) rather than overwriting, so any keypresses
+    // (key_event_add_lifetime_presses) rather than overwriting, so any keypresses
     // that occurred between HID-ready and counters_init are preserved.
-    keypad_add_lifetime_presses(k1, k2);
+    key_event_add_lifetime_presses(k1, k2);
 
     s_last_saved_key1 = k1;
     s_last_saved_key2 = k2;
@@ -140,7 +140,7 @@ void counters_get(counters_snapshot_t *snapshot)
 
     uint64_t ram_k1 = 0;
     uint64_t ram_k2 = 0;
-    keypad_get_lifetime_presses(&ram_k1, &ram_k2);
+    key_event_get_lifetime_presses(&ram_k1, &ram_k2);
 
     snapshot->generation = s_generation;
     snapshot->lifetime_key1 = ram_k1;
@@ -193,7 +193,7 @@ esp_err_t counters_sync_from_host(uint32_t generation, uint64_t k1, uint64_t k2,
 bool counters_is_dirty(void)
 {
     uint64_t k1 = 0, k2 = 0;
-    keypad_get_lifetime_presses(&k1, &k2);
+    key_event_get_lifetime_presses(&k1, &k2);
     return k1 != s_last_saved_key1 || k2 != s_last_saved_key2;
 }
 

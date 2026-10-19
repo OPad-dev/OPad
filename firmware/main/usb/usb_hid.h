@@ -46,7 +46,8 @@ void usb_hid_set_touch_key(uint8_t keycode, uint8_t modifiers);
 bool usb_hid_touch_key_delivered(void);
 
 /**
- * @brief Handler dispatched when keypad physical state changes.
+ * @brief Submit a key's new state. Returns true if it went out at once, false
+ * if it waits for the endpoint (then resent on completion). Via key_event_report.
  */
 bool usb_hid_handle_key_event(uint8_t key_index, bool pressed, int64_t edge_us);
 
