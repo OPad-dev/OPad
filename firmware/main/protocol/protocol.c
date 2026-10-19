@@ -615,9 +615,13 @@ static void handle_host_message(const osupad_HostToDevice *msg)
             s_play_id = hs->play_id;
             keypad_reset_map_presses();
         }
+#ifndef CONFIG_OSUPAD_UI_PERF_TEST  // the test drives the UI and state itself (ui_perf_test.c)
         ui_set_tosu_connected(hs->tosu_connected);
+#endif
         touch_retry_set_host_status(hs->tosu_connected, hs->osu_active);
+#ifndef CONFIG_OSUPAD_UI_PERF_TEST
         runtime_notify_gameplay(hs->playing);
+#endif
         break;
     }
 

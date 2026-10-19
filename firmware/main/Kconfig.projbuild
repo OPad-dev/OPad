@@ -33,16 +33,16 @@ menu "OPad Testing and Benchmark"
             scripts/hall_bench.py.
 
     config OSUPAD_UI_PERF_TEST
-        bool "UI performance test: loop a GIF over the UI with FPS and memory overlays"
+        bool "UI performance test: loop idle -> playing -> SS result with FPS and memory overlays"
         default n
         help
-            Evaluation build for the display (not a product build). Loops
-            /sdcard/test.gif (or the built-in easter-egg GIF without a card)
-            over the normal UI, and shows LVGL's FPS/CPU and memory monitors.
+            Evaluation build for the display (not a product build). Plays a
+            fake osu! session in a loop on the real screens: idle, a 25 s song
+            on the playing screen with tosu-like data at 10 Hz, then the SS
+            result animation. LVGL's FPS/CPU and memory monitors stay on top.
+            Host status from the daemon is ignored so it cannot end the fake
+            map; do not run osu!/tosu meanwhile. Keys and touch keep working.
             Combine with OSUPAD_LVGL_PSRAM and OSUPAD_LCD_PCLK_80MHZ to compare.
-            Keys and touch keep working, so key latency can be checked with
-            opadctl status while it plays. Mounts the TF card (shares the LCD's
-            SPI bus: MISO GPIO40, CS GPIO41).
 
     config OSUPAD_LVGL_PSRAM
         bool "LVGL memory pool in PSRAM"

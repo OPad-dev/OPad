@@ -4,12 +4,14 @@
  * the LCD at 40 vs 80 MHz (CONFIG_OSUPAD_LCD_PCLK_80MHZ) and the refresh
  * period (CONFIG_LV_DEF_REFR_PERIOD). Not a product build.
  *
- * Loops /sdcard/test.gif from the TF card, read whole into PSRAM first so
- * playing it never touches the card (which shares the LCD's SPI bus), or the
- * built-in easter-egg GIF without a card. LVGL's own monitors (sysmon,
- * enabled by sdkconfig.uitest) show FPS, CPU and memory in the corners; a
- * label at the top says which configuration this is and where the GIF came
- * from. Keys and touch keep working.
+ * Loops a fake osu! session on the real screens, driven the way the host
+ * drives them: the runtime state (runtime_notify_gameplay) picks the idle or
+ * playing screen in ui_port.c, and tosu-like values arrive every
+ * DATA_PERIOD_MS, the default gameplay display rate. One cycle:
+ *   IDLE_MS on the idle screen, a SONG_MS map on the playing screen, then the
+ *   SS result animation over the idle screen, cycling pop / drop / burst.
+ * LVGL's monitors (sdkconfig.uitest) show FPS/CPU and memory in the corners.
+ * Keys and touch keep working; the keycards show real presses.
  */
 #include "ui_perf_test.h"
 #include "sdkconfig.h"
@@ -17,108 +19,120 @@
 #ifdef CONFIG_OSUPAD_UI_PERF_TEST
 
 #include "ui/ui.h"
-#include "ui/easter_egg_gif.h"
+#include "ui/core/ui_anim.h"
+#include "runtime/runtime.h"
 #include "board_pins.h"
 #include "lvgl.h"
-#include "esp_heap_caps.h"
 #include "esp_log.h"
-#include "esp_vfs_fat.h"
-#include "driver/sdspi_host.h"
-#include "sdmmc_cmd.h"
-#include <stdio.h>
 
 static const char *TAG = "ui_perf";
 
-#define SD_MOUNT "/sdcard"
-#define SD_GIF   SD_MOUNT "/test.gif"
-#define SD_FREQ_KHZ 20000
+#define DATA_PERIOD_MS 100      // DEVICE_CONFIG_DEFAULT_GAMEPLAY_DISPLAY_HZ = 10
+#define IDLE_MS        8000
+#define SONG_MS        25000
+#define RESULT_MS      (UI_ANIM_DURATION_MS + 1400)
+#define CYCLE_MS       (IDLE_MS + SONG_MS + RESULT_MS)
 
-static lv_image_dsc_t s_sd_gif;
+#define SONG_OBJECTS   420
+#define SONG_FINAL_PP  712.0    // not ending in 67: that would start the easter egg
 
-// The whole file into PSRAM; false with the reason in `why`
-static bool load_sd_gif(char *why, size_t why_len)
+static uint32_t s_t_ms;         // position in the cycle
+static uint8_t s_anim = UI_ANIM_POP;
+
+static void set_idle_data(void)
 {
-    sdmmc_host_t host = SDSPI_HOST_DEFAULT();
-    host.slot = BOARD_LCD_SPI_HOST;  // the bus ui_init already set up
-    host.max_freq_khz = SD_FREQ_KHZ;
-    sdspi_device_config_t slot = SDSPI_DEVICE_CONFIG_DEFAULT();
-    slot.gpio_cs = BOARD_SD_CS_GPIO;
-    slot.host_id = host.slot;
-    esp_vfs_fat_sdmmc_mount_config_t mount = {
-        .format_if_mount_failed = false,
-        .max_files = 2,
-        .allocation_unit_size = 16 * 1024,
-    };
-    sdmmc_card_t *card = NULL;
-    esp_err_t err = esp_vfs_fat_sdspi_mount(SD_MOUNT, &host, &slot, &mount, &card);
-    if (err != ESP_OK) {
-        snprintf(why, why_len, "no TF card (%s)", esp_err_to_name(err));
-        return false;
-    }
-    FILE *f = fopen(SD_GIF, "rb");
-    if (!f) {
-        snprintf(why, why_len, "card has no test.gif");
-        return false;
-    }
-    fseek(f, 0, SEEK_END);
-    long size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    uint8_t *buf = size > 0 ? heap_caps_malloc((size_t)size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) : NULL;
-    if (!buf || fread(buf, 1, (size_t)size, f) != (size_t)size) {
-        fclose(f);
-        free(buf);
-        snprintf(why, why_len, "test.gif unreadable (%ld bytes)", size);
-        return false;
-    }
-    fclose(f);
-    s_sd_gif = (lv_image_dsc_t){
-        .header = {.magic = LV_IMAGE_HEADER_MAGIC, .cf = LV_COLOR_FORMAT_RAW},
-        .data_size = (uint32_t)size,
-        .data = buf,
-    };
-    snprintf(why, why_len, "test.gif from TF, %ld KB", size / 1024);
-    return true;
+    ui_data_set_number(UI_SRC_STATUS_TOSU, 1);
+    ui_data_set_number(UI_SRC_STATUS_OSU, 1);
+    ui_data_set_string(UI_SRC_PROFILE_NAME, "OPad tester");
+    ui_data_set_number(UI_SRC_PROFILE_RANK, 12345);
+    ui_data_set_number(UI_SRC_PROFILE_PP, 7021);
+    ui_data_set_string(UI_SRC_GAME_STATE, "Song select");
 }
 
-// The display would sleep after its timeout and hide the test
-static void keep_awake(lv_timer_t *t)
+static void set_song_start(void)
 {
-    (void)t;
-    ui_notify_activity();
+    ui_data_set_string(UI_SRC_MAP_TITLE, "Freedom Dive");
+    ui_data_set_string(UI_SRC_MAP_ARTIST, "xi");
+    ui_data_set_string(UI_SRC_MAP_DIFFICULTY, "FOUR DIMENSIONS");
+    ui_data_set_number(UI_SRC_MAP_STARS, 7.21);
+    ui_data_set_number(UI_SRC_MAP_LENGTH, SONG_MS);
+    ui_data_set_number(UI_SRC_MAP_MAX_COMBO, SONG_OBJECTS);
+    ui_data_set_string(UI_SRC_PLAY_MODS, "HDDT");
+    ui_data_set_string(UI_SRC_PLAY_GRADE, "SS");
+    ui_data_set_string(UI_SRC_GAME_STATE, "Playing");
+}
+
+// One 10 Hz update during the song, at t_ms into it
+static void set_song_data(uint32_t t_ms)
+{
+    double p = (double)t_ms / SONG_MS;
+    int32_t combo = (int32_t)(p * SONG_OBJECTS);
+    ui_data_set_number(UI_SRC_MAP_TIME_ELAPSED, t_ms);
+    ui_data_set_number(UI_SRC_MAP_TIME_REMAINING, SONG_MS - t_ms);
+    ui_data_set_number(UI_SRC_MAP_PROGRESS, p);
+    ui_data_set_number(UI_SRC_PLAY_PP, p * SONG_FINAL_PP);
+    ui_data_set_number(UI_SRC_PLAY_PP_FC, SONG_FINAL_PP);
+    ui_data_set_number(UI_SRC_PLAY_ACCURACY, 100.0);
+    ui_data_set_number(UI_SRC_PLAY_COMBO, combo);
+    ui_data_set_number(UI_SRC_PLAY_MAX_COMBO, combo);
+    ui_data_set_number(UI_SRC_PLAY_HITS_300, combo);
+    ui_data_set_number(UI_SRC_PLAY_SCORE, (double)combo * 23456);
+    ui_data_set_number(UI_SRC_PLAY_HEALTH, 1.0);
+    // A stream with some swing, so the numbers keep changing
+    int32_t ppm = 250 + (int32_t)((t_ms / 100) % 40);
+    ui_data_set_number(UI_SRC_PLAY_PPM, ppm);
+    ui_data_set_number(UI_SRC_PLAY_PPM_PEAK, 289);
+    ui_data_set_number(UI_SRC_PLAY_PPM_SONG, t_ms >= 1000 ? 262 : 0);
+}
+
+static void tick(lv_timer_t *timer)
+{
+    (void)timer;
+    uint32_t t = s_t_ms;
+    if (t == 0) {
+        set_idle_data();
+    }
+    if (t < IDLE_MS) {
+        // idle screen: nothing but the clock and the real key counters
+    } else if (t < IDLE_MS + SONG_MS) {
+        if (t == IDLE_MS) {
+            set_song_start();
+        }
+        runtime_notify_gameplay(true);  // within the 3 s it times out after
+        set_song_data(t - IDLE_MS);
+    } else if (t == IDLE_MS + SONG_MS) {
+        set_song_data(SONG_MS);
+        runtime_notify_gameplay(false);  // COOLDOWN: ui_port.c loads the idle screen
+        // As the host does on osu!'s results screen (PlayAnimation)
+        ui_anim_play(s_anim, "SS");
+        ESP_LOGI(TAG, "Result animation %u", s_anim);
+        s_anim = s_anim % UI_ANIM_BUILTIN_COUNT + 1;
+    }
+    ui_notify_activity();  // the screen would sleep after its timeout
+    s_t_ms = (t + DATA_PERIOD_MS) % CYCLE_MS;
 }
 
 void ui_perf_test_start(void)
 {
-    char source[64];
-    bool from_sd = load_sd_gif(source, sizeof(source));
-    ESP_LOGW(TAG, "UI perf test: %s", source);
-
+    ESP_LOGW(TAG, "UI perf test: idle %d s, song %d s, SS result", IDLE_MS / 1000, SONG_MS / 1000);
     if (!ui_lock()) {
         return;  // headless
     }
-    lv_obj_t *gif = lv_gif_create(lv_layer_top());
-    // A user GIF is opaque: RGB565 halves its canvas and skips blending.
-    // The easter egg has transparency, as in the product.
-    lv_gif_set_color_format(gif, from_sd ? LV_COLOR_FORMAT_RGB565 : LV_COLOR_FORMAT_ARGB8888);
-    lv_gif_set_src(gif, from_sd ? (const void *)&s_sd_gif : (const void *)&s_easter_egg_gif_dsc);
-    lv_gif_set_loop_count(gif, 0);
-    lv_obj_center(gif);
-
-    lv_obj_t *label = lv_label_create(lv_layer_top());
+    lv_obj_t *label = lv_label_create(lv_layer_sys());
     lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
     lv_obj_set_style_bg_color(label, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(label, LV_OPA_60, 0);
-    lv_label_set_text_fmt(label, "LVGL %s %d KB | LCD %d MHz | %d ms\n%s%s",
+    lv_label_set_text_fmt(label, "LVGL %s %d KB | LCD %d MHz | %d ms",
 #ifdef CONFIG_OSUPAD_LVGL_PSRAM
                           "PSRAM",
 #else
                           "internal",
 #endif
                           CONFIG_LV_MEM_SIZE_KILOBYTES, BOARD_LCD_PIXEL_CLOCK_HZ / 1000000,
-                          CONFIG_LV_DEF_REFR_PERIOD, source,
-                          lv_gif_is_loaded(gif) ? "" : " - FAILED TO LOAD (out of LVGL memory?)");
-    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 2);
-    lv_timer_create(keep_awake, 1000, NULL);
+                          CONFIG_LV_DEF_REFR_PERIOD);
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 0);
+    lv_timer_create(tick, DATA_PERIOD_MS, NULL);
     ui_unlock();
 }
 

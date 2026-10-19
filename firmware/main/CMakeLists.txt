@@ -61,5 +61,4 @@ idf_component_register(
         esp_tinyusb
         esp_app_format
         esp_adc
-        fatfs
 )
