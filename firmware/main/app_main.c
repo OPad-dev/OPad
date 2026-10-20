@@ -25,6 +25,7 @@
 #include "diag/diag.h"
 #include "diag/hall_bench.h"
 #include "input/he_backend.h"
+#include "input/he_cal.h"
 
 static const char *TAG = "app_main";
 
@@ -104,6 +105,7 @@ void app_main(void)
 
     // 1. Load device configuration from NVS (or fall back to defaults) (NON-FATAL)
     device_config_init();
+    he_cal_init();
     device_config_data_t dev_cfg;
     device_config_get(&dev_cfg);
 

@@ -33,6 +33,7 @@
 
 #include "input/he_frame.h"
 #include "input/he_params.h"
+#include "input/he_cal.h"
 #include "input/key_event.h"
 #include "esp_adc/adc_continuous.h"
 #include "esp_attr.h"
@@ -73,13 +74,9 @@ static const char *TAG = "he";
 
 /*
  * PROVISIONAL factory thresholds, so an uncalibrated pad types for testing:
- * plain mode, press at half the span, release 10 % above it. Rest and span
- * are the V1.1 bench means (keys 2084/2088 at rest, +447/+508 normal press,
- * docs/specs/v2-hall-effect-design.md §10b). The noise floors stand in for
- * OPEN A/D and are not validated. None of these is a product default yet
- * (OPEN C); the calibration manager replaces them.
+ * plain mode, press at half the span, release 10 % above it.
+ * None of these is a product default yet (OPEN C).
  */
-static const he_calibration_t HE_FACTORY_CAL = {.rest = 2086, .full = 2086 + 450, .valid = false};
 static const he_key_settings_t HE_FACTORY_SETTINGS = {.actuation = 500, .release_hyst = 100};
 static const he_limits_t HE_PROVISIONAL_LIMITS = {.min_movement = 32, .min_top_reset = 32};
 
@@ -491,8 +488,10 @@ esp_err_t he_backend_start(void)
         return ESP_ERR_INVALID_STATE;
     }
     for (int k = 0; k < 2; k++) {
+        he_calibration_t cal;
+        he_cal_get((uint8_t)k, &cal);
         he_rt_params_t p;
-        uint32_t r = he_params_build(&HE_FACTORY_SETTINGS, &HE_FACTORY_CAL, &HE_PROVISIONAL_LIMITS, &p);
+        uint32_t r = he_params_build(&HE_FACTORY_SETTINGS, &cal, &HE_PROVISIONAL_LIMITS, &p);
         if (HE_PARAMS_FAILED(r)) {
             ESP_LOGE(TAG, "Factory thresholds rejected (0x%lx): key %d stays up", (unsigned long)r, k + 1);
             p = HE_PARAMS_NEVER;
@@ -509,6 +508,24 @@ esp_err_t he_backend_start(void)
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
+}
+
+void he_backend_reload_params(void)
+{
+    if (!s_running) {
+        return;
+    }
+    for (int k = 0; k < 2; k++) {
+        he_calibration_t cal;
+        he_cal_get((uint8_t)k, &cal);
+        he_rt_params_t p;
+        uint32_t r = he_params_build(&HE_FACTORY_SETTINGS, &cal, &HE_PROVISIONAL_LIMITS, &p);
+        if (HE_PARAMS_FAILED(r)) {
+            ESP_LOGE(TAG, "Thresholds rejected (0x%lx): key %d stays up", (unsigned long)r, k + 1);
+            p = HE_PARAMS_NEVER;
+        }
+        he_backend_set_params((uint8_t)k, &p);
+    }
 }
 
 bool he_backend_running(void)

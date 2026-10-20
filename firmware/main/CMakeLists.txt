@@ -17,6 +17,8 @@ idf_component_register(
         "input/he_params.c"
         "input/he_frame.c"
         "input/he_backend.c"
+        "input/he_cal_record.c"
+        "input/he_cal.c"
         "usb/usb_descriptors.c"
         "usb/usb_hid.c"
         "usb/usb_media.c"

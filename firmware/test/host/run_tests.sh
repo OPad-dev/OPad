@@ -112,11 +112,19 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_module_watch"
 
 # 12. Hall Effect DMA frame parser
-echo "[12/12] Running test_he_frame..."
+echo "[12/13] Running test_he_frame..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/he_frame.c" \
     "${HOST_TEST_DIR}/test_he_frame.c" \
     -o "${BIN_DIR}/test_he_frame"
 "${BIN_DIR}/test_he_frame"
+
+# 13. Hall Effect calibration record tests
+echo "[13/13] Running test_he_cal..."
+gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
+    "${FW_MAIN}/input/he_cal_record.c" \
+    "${HOST_TEST_DIR}/test_he_cal.c" \
+    -o "${BIN_DIR}/test_he_cal"
+"${BIN_DIR}/test_he_cal"
 
 echo "=== All firmware host unit tests passed! ==="

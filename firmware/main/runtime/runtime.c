@@ -3,6 +3,7 @@
 #include "counters/counter_sync_rules.h"
 #include "input/keypad.h"
 #include "input/key_event.h"
+#include "input/he_cal.h"
 #include "config/device_config.h"
 #include "ui/ui_store.h"
 #include "freertos/FreeRTOS.h"
@@ -50,6 +51,7 @@ static void restart_now(void)
     counters_checkpoint(true);
     device_config_flush();
     flush_layouts();
+    he_cal_flush();
     esp_restart();
 }
 
@@ -82,11 +84,13 @@ static void runtime_supervisor_task(void *pvParameters)
                 counters_checkpoint(false);
                 device_config_flush();
                 flush_layouts();
+                he_cal_flush();
                 s_last_checkpoint_us = now;
             }
         } else if (current == OSUPAD_STATE_IDLE) {
             device_config_flush();
             flush_layouts();
+            he_cal_flush();
             int64_t k1 = key_event_get_last_press_us(KEY_ID_1);
             int64_t k2 = key_event_get_last_press_us(KEY_ID_2);
             int64_t last_press = k1 > k2 ? k1 : k2;
