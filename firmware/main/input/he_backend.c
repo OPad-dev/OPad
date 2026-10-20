@@ -34,6 +34,7 @@
 #include "input/he_frame.h"
 #include "input/he_params.h"
 #include "input/he_cal.h"
+#include "input/he_health.h"
 #include "input/key_event.h"
 #include "esp_adc/adc_continuous.h"
 #include "esp_attr.h"
@@ -90,11 +91,6 @@ static const he_rt_params_t HE_PARAMS_NEVER = {
 };
 
 static adc_continuous_handle_t s_adc;
-// Started (he_task only). The ADC driver's ADC1 lock is a mutex taken by
-// adc_continuous_start and given back by adc_continuous_stop, so both must run
-// in the same task: he_task. Releasing it from another task trips FreeRTOS's
-// mutex-holder assert (a panic on every HE unplug, before this was so).
-static bool s_adc_ok;
 
 // Module probe handshake (he_backend_probe_module): the caller asks, he_task
 // stops the ADC and says so, the caller reads ID, says done, he_task starts it.
@@ -115,10 +111,7 @@ static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
 static he_rt_key_t s_keys[2];
 static bool s_down[2];
 static int64_t s_edge_us[2];         // frame time of the last change
-static bool s_key_faulted[2];
-static int64_t s_fault_since_us[2];
-static int64_t s_last_frame_us;
-static int64_t s_last_valid_us[2];
+static he_health_t s_health;
 static he_backend_stats_t s_stats = {.raw = {-1, -1}};
 
 static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata,
@@ -134,7 +127,7 @@ static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continu
     bool changed = false;
     portENTER_CRITICAL_ISR(&s_lock);
     if (s_stats.frames > 0) {
-        int64_t gap = now - s_last_frame_us;
+        int64_t gap = now - s_health.last_frame_us;
         if (gap > 2 * HE_FRAME_US) {
             s_stats.late_frames++;
         }
@@ -142,7 +135,7 @@ static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continu
             s_stats.max_gap_us = (uint32_t)gap;
         }
     }
-    s_last_frame_us = now;
+    he_health_record_frame(&s_health, now);
     s_stats.frames++;
     s_stats.foreign_words += f.foreign;
     s_stats.railed_samples += f.railed;
@@ -150,9 +143,9 @@ static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continu
         if (f.newest[k] < 0) {
             continue;
         }
-        s_last_valid_us[k] = now;
+        he_health_record_valid(&s_health, k, now);
         s_stats.raw[k] = f.newest[k];
-        if (s_key_faulted[k]) {
+        if (he_health_is_key_faulted(&s_health, k)) {
             continue;
         }
         he_rt_event_t ev = he_rt_step(&s_keys[k], f.newest[k]);
@@ -244,20 +237,12 @@ static esp_err_t adc_setup(void)
 static void resync_health(int64_t now)
 {
     portENTER_CRITICAL(&s_lock);
-    s_last_frame_us = now;
-    for (int k = 0; k < 2; k++) {
-        s_last_valid_us[k] = now;
-        s_key_faulted[k] = false;
-    }
+    he_health_resync(&s_health, now);
     portEXIT_CRITICAL(&s_lock);
 }
 
 static void fault_key_locked(int k, int64_t now)
 {
-    if (!s_key_faulted[k]) {
-        s_fault_since_us[k] = now;
-    }
-    s_key_faulted[k] = true;
     if (he_rt_fault(&s_keys[k]) == HE_RT_UP) {
         s_down[k] = false;
         s_edge_us[k] = now;
@@ -283,27 +268,23 @@ static void IRAM_ATTR publish(bool reported[2])
 // True if the ADC has stopped delivering frames and needs a restart
 static bool check_health(int64_t now)
 {
-    bool stalled = false;
     portENTER_CRITICAL(&s_lock);
-    if (now - s_last_frame_us > HE_STALL_US) {
-        stalled = true;
+    he_health_check_result_t res = he_health_check(&s_health, now);
+    if (res.adc_stalled) {
         s_stats.stalls++;
         for (int k = 0; k < 2; k++) {
             fault_key_locked(k, now);
         }
     } else {
         for (int k = 0; k < 2; k++) {
-            bool stale = now - s_last_valid_us[k] > HE_STALL_US;
-            if (stale && !s_key_faulted[k]) {
+            if (res.key_fault_started[k]) {
                 s_stats.key_faults++;
                 fault_key_locked(k, now);
-            } else if (!stale && s_key_faulted[k]) {
-                s_key_faulted[k] = false;  // still has to be seen up (he_rt_fault)
             }
         }
     }
     portEXIT_CRITICAL(&s_lock);
-    return stalled;
+    return res.adc_stalled;
 }
 
 #ifdef CONFIG_OSUPAD_HE_TRACE
@@ -402,7 +383,7 @@ static bool serve_probe(void)
 {
     switch (s_probe) {
     case PROBE_ASKED:
-        if (s_adc_ok) {
+        if (s_health.adc_ok) {
             adc_continuous_stop(s_adc);  // frees ADC1 for the ID's oneshot read
         }
         s_probe = PROBE_PAUSED;
@@ -411,11 +392,11 @@ static bool serve_probe(void)
     case PROBE_PAUSED:
         return true;
     case PROBE_DONE:
-        if (s_adc_ok && adc_continuous_start(s_adc) != ESP_OK) {
-            s_adc_ok = false;  // the recovery below retries
+        if (s_health.adc_ok && adc_continuous_start(s_adc) != ESP_OK) {
+            s_health.adc_ok = false;  // the recovery below retries
         }
         portENTER_CRITICAL(&s_lock);
-        s_last_frame_us = esp_timer_get_time();  // the pause was not a stall
+        he_health_on_probe_done(&s_health, esp_timer_get_time());  // the pause was not a stall
         portEXIT_CRITICAL(&s_lock);
         s_probe = PROBE_IDLE;
         xSemaphoreGive(s_probe_ack);
@@ -430,21 +411,19 @@ static void IRAM_ATTR he_task(void *arg)
 {
     (void)arg;
     bool reported[2] = {false, false};
-    int64_t backoff_us = HE_RESTART_BACKOFF_MIN_US;
-    int64_t retry_at_us = 0;
-    int64_t healthy_since_us = 0;
+    int64_t now = esp_timer_get_time();
+    he_health_init(&s_health, now);
 
     esp_err_t err = adc_setup();
-    s_adc_ok = err == ESP_OK;
     if (err == ESP_OK) {
+        s_health.adc_ok = true;
         ESP_LOGI(TAG, "ADC1 continuous: %d conv/s, %d per frame, core %d", HE_SAMPLE_HZ, HE_FRAME_CONVS,
                  xPortGetCoreID());
     } else {
         ESP_LOGE(TAG, "ADC setup failed: %s, retrying", esp_err_to_name(err));
-        retry_at_us = esp_timer_get_time() + backoff_us;
+        he_health_on_adc_stalled(&s_health, now);
     }
-    healthy_since_us = esp_timer_get_time();
-    resync_health(healthy_since_us);
+    resync_health(now);
 
     while (1) {
         ulTaskNotifyTake(pdTRUE, HE_CHECK_TICKS);
@@ -453,13 +432,12 @@ static void IRAM_ATTR he_task(void *arg)
         if (serve_probe()) {
             continue;  // paused for an ID reading: not a stall
         }
-        int64_t now = esp_timer_get_time();
-        if (s_adc_ok && check_health(now)) {
+        now = esp_timer_get_time();
+        if (s_health.adc_ok && check_health(now)) {
             publish(reported);
-            s_adc_ok = false;
-            retry_at_us = now + backoff_us;
+            he_health_on_adc_stalled(&s_health, now);
         }
-        if (!s_adc_ok && now >= retry_at_us) {
+        if (he_health_should_retry_adc(&s_health, now)) {
             if (s_adc != NULL) {
                 adc_continuous_stop(s_adc);  // may already be stopped
                 err = adc_continuous_start(s_adc);
@@ -468,19 +446,15 @@ static void IRAM_ATTR he_task(void *arg)
             }
             now = esp_timer_get_time();
             if (err == ESP_OK) {
-                s_adc_ok = true;
-                healthy_since_us = now;
                 portENTER_CRITICAL(&s_lock);
                 s_stats.restarts++;
                 portEXIT_CRITICAL(&s_lock);
-                resync_health(now);
-            } else {
-                retry_at_us = now + backoff_us;
             }
-            backoff_us = backoff_us * 2 > HE_RESTART_BACKOFF_MAX_US ? HE_RESTART_BACKOFF_MAX_US : backoff_us * 2;
-        } else if (s_adc_ok && backoff_us != HE_RESTART_BACKOFF_MIN_US &&
-                   now - healthy_since_us > HE_RESTART_BACKOFF_MAX_US) {
-            backoff_us = HE_RESTART_BACKOFF_MIN_US;  // a second without trouble
+            portENTER_CRITICAL(&s_lock);
+            he_health_on_adc_restart_result(&s_health, now, err == ESP_OK);
+            portEXIT_CRITICAL(&s_lock);
+        } else {
+            he_health_step_backoff(&s_health, now);
         }
     }
 }
@@ -562,10 +536,9 @@ bool he_backend_keys_absent(void)
 {
     int64_t now = esp_timer_get_time();
     portENTER_CRITICAL(&s_lock);
-    bool both = s_key_faulted[0] && s_key_faulted[1];
-    int64_t since = s_fault_since_us[0] > s_fault_since_us[1] ? s_fault_since_us[0] : s_fault_since_us[1];
+    bool absent = he_health_keys_absent(&s_health, now);
     portEXIT_CRITICAL(&s_lock);
-    return both && now - since >= HE_ABSENT_US;
+    return absent;
 }
 
 // One caller at a time (the module monitor). he_task answers within a

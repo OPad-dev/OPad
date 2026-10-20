@@ -20,6 +20,7 @@ idf_component_register(
         "input/he_cal_record.c"
         "input/he_cal_capture.c"
         "input/he_cal.c"
+        "input/he_health.c"
         "usb/usb_descriptors.c"
         "usb/usb_hid.c"
         "usb/usb_media.c"
