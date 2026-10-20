@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "config/owner.h"
+#include "config/he_config_record.h"
 #include "input/he_params.h"
 
 #ifdef ESP_PLATFORM
@@ -18,7 +19,7 @@ typedef int esp_err_t;
 extern "C" {
 #endif
 
-#define DEVICE_CONFIG_VERSION               8
+#define DEVICE_CONFIG_VERSION               7
 #define DEVICE_CONFIG_DEFAULT_KEY1          0x1D // 'Z'
 #define DEVICE_CONFIG_DEFAULT_KEY2          0x1B // 'X'
 #define DEVICE_CONFIG_DEFAULT_DEBOUNCE_US   5000
@@ -29,14 +30,14 @@ extern "C" {
 #define DEVICE_CONFIG_DEFAULT_KEY2_GPIO     9    // Header P2, pin 12
 
 // PROVISIONAL factory defaults for HE keys (docs/specs/v2-hall-effect-decisions.md D4, OPEN C/D)
-#define DEVICE_CONFIG_DEFAULT_HE_ACTUATION     500 // 50.0% of calibrated span (provisional)
-#define DEVICE_CONFIG_DEFAULT_HE_HYSTERESIS    100 // 10.0% of calibrated span (provisional)
-#define DEVICE_CONFIG_DEFAULT_HE_TOP_RESET     100 // 10.0% of calibrated span (provisional)
-#define DEVICE_CONFIG_DEFAULT_HE_RT_PRESS      150 // 15.0% of calibrated span (provisional)
-#define DEVICE_CONFIG_DEFAULT_HE_RT_RELEASE    150 // 15.0% of calibrated span (provisional)
-#define DEVICE_CONFIG_DEFAULT_HE_BOTTOM_DZ     0   // Off
-#define DEVICE_CONFIG_DEFAULT_HE_RAPID_TRIGGER false
-#define DEVICE_CONFIG_DEFAULT_HE_CONTINUOUS    false
+#define DEVICE_CONFIG_DEFAULT_HE_ACTUATION     HE_CONFIG_DEFAULT_ACTUATION
+#define DEVICE_CONFIG_DEFAULT_HE_HYSTERESIS    HE_CONFIG_DEFAULT_HYSTERESIS
+#define DEVICE_CONFIG_DEFAULT_HE_TOP_RESET     HE_CONFIG_DEFAULT_TOP_RESET
+#define DEVICE_CONFIG_DEFAULT_HE_RT_PRESS      HE_CONFIG_DEFAULT_RT_PRESS
+#define DEVICE_CONFIG_DEFAULT_HE_RT_RELEASE    HE_CONFIG_DEFAULT_RT_RELEASE
+#define DEVICE_CONFIG_DEFAULT_HE_BOTTOM_DZ     HE_CONFIG_DEFAULT_BOTTOM_DZ
+#define DEVICE_CONFIG_DEFAULT_HE_RAPID_TRIGGER HE_CONFIG_DEFAULT_RAPID_TRIGGER
+#define DEVICE_CONFIG_DEFAULT_HE_CONTINUOUS    HE_CONFIG_DEFAULT_CONTINUOUS
 
 // What a swipe does. Values are osupad.proto's SwipeAction; 0 (keep current)
 // is wire only and never stored.
@@ -85,8 +86,6 @@ typedef struct __attribute__((packed)) {
     // v7: modifiers held with each swipe's key (HID modifier bits), in
     // gesture order: up, down, left, right
     uint8_t swipe_mods[4];
-    // v8: per-key Hall Effect settings
-    he_key_settings_t he_keys[2];
 } device_config_data_t;
 
 /**
@@ -99,6 +98,11 @@ esp_err_t device_config_init(void);
  * @brief Validate configuration parameters.
  */
 bool device_config_validate(const device_config_data_t *cfg, char *err_msg, size_t err_msg_len);
+
+/**
+ * @brief Validate Hall Effect key configuration parameters.
+ */
+bool device_config_validate_he(const he_key_settings_t in[2], char *err_msg, size_t err_msg_len);
 
 /**
  * @brief Header GPIOs a key switch can be wired to. The bench debug GPIO may be
@@ -133,6 +137,23 @@ esp_err_t device_config_set(const device_config_data_t *cfg);
  * @brief Flush dirty configuration to NVS if in IDLE state.
  */
 esp_err_t device_config_flush(void);
+
+/**
+ * @brief Get current Hall Effect key configuration snapshot.
+ */
+void device_config_get_he(he_key_settings_t out[2]);
+
+/**
+ * @brief Apply Hall Effect configuration to hardware and subsystems in RAM.
+ */
+void device_config_apply_he(const he_key_settings_t in[2]);
+
+/**
+ * @brief Set and save new Hall Effect key configuration.
+ * Applies to RAM immediately; if state is IDLE, commits to NVS immediately.
+ * If active (PLAYING or COOLDOWN), marks dirty and defers NVS write until IDLE.
+ */
+esp_err_t device_config_set_he(const he_key_settings_t in[2]);
 
 /**
  * @brief Copies the current owner id out. All zero when unclaimed.

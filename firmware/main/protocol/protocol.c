@@ -141,28 +141,31 @@ static void fill_config_payload(osupad_ConfigPayload *out, const device_config_d
     out->swipe_left_modifiers = cfg->swipe_mods[2];
     out->swipe_right_modifiers = cfg->swipe_mods[3];
 
+    he_key_settings_t he_keys[2];
+    device_config_get_he(he_keys);
+
     out->has_key1_he = true;
-    out->key1_he.actuation = cfg->he_keys[0].actuation;
-    out->key1_he.release_hyst = cfg->he_keys[0].release_hyst;
-    out->key1_he.top_reset = cfg->he_keys[0].top_reset;
-    out->key1_he.rt_press = cfg->he_keys[0].rt_press;
-    out->key1_he.rt_release = cfg->he_keys[0].rt_release;
+    out->key1_he.actuation = he_keys[0].actuation;
+    out->key1_he.release_hyst = he_keys[0].release_hyst;
+    out->key1_he.top_reset = he_keys[0].top_reset;
+    out->key1_he.rt_press = he_keys[0].rt_press;
+    out->key1_he.rt_release = he_keys[0].rt_release;
     out->key1_he.has_bottom_dead_zone = true;
-    out->key1_he.bottom_dead_zone = cfg->he_keys[0].bottom_dz;
-    out->key1_he.rt_mode = !cfg->he_keys[0].rapid_trigger ? osupad_HeRtMode_HE_RT_MODE_OFF :
-        cfg->he_keys[0].continuous ? osupad_HeRtMode_HE_RT_MODE_CONTINUOUS :
+    out->key1_he.bottom_dead_zone = he_keys[0].bottom_dz;
+    out->key1_he.rt_mode = !he_keys[0].rapid_trigger ? osupad_HeRtMode_HE_RT_MODE_OFF :
+        he_keys[0].continuous ? osupad_HeRtMode_HE_RT_MODE_CONTINUOUS :
         osupad_HeRtMode_HE_RT_MODE_NORMAL;
 
     out->has_key2_he = true;
-    out->key2_he.actuation = cfg->he_keys[1].actuation;
-    out->key2_he.release_hyst = cfg->he_keys[1].release_hyst;
-    out->key2_he.top_reset = cfg->he_keys[1].top_reset;
-    out->key2_he.rt_press = cfg->he_keys[1].rt_press;
-    out->key2_he.rt_release = cfg->he_keys[1].rt_release;
+    out->key2_he.actuation = he_keys[1].actuation;
+    out->key2_he.release_hyst = he_keys[1].release_hyst;
+    out->key2_he.top_reset = he_keys[1].top_reset;
+    out->key2_he.rt_press = he_keys[1].rt_press;
+    out->key2_he.rt_release = he_keys[1].rt_release;
     out->key2_he.has_bottom_dead_zone = true;
-    out->key2_he.bottom_dead_zone = cfg->he_keys[1].bottom_dz;
-    out->key2_he.rt_mode = !cfg->he_keys[1].rapid_trigger ? osupad_HeRtMode_HE_RT_MODE_OFF :
-        cfg->he_keys[1].continuous ? osupad_HeRtMode_HE_RT_MODE_CONTINUOUS :
+    out->key2_he.bottom_dead_zone = he_keys[1].bottom_dz;
+    out->key2_he.rt_mode = !he_keys[1].rapid_trigger ? osupad_HeRtMode_HE_RT_MODE_OFF :
+        he_keys[1].continuous ? osupad_HeRtMode_HE_RT_MODE_CONTINUOUS :
         osupad_HeRtMode_HE_RT_MODE_NORMAL;
 }
 
@@ -560,6 +563,8 @@ static void handle_host_message(const osupad_HostToDevice *msg)
             const osupad_ConfigPayload *c = &msg->payload.set_config.config;
             device_config_data_t dcfg;
             device_config_get(&dcfg);
+            he_key_settings_t he_keys[2];
+            device_config_get_he(he_keys);
 
             if (c->key1_hid_usage > 0) dcfg.key1_usage = c->key1_hid_usage;
             if (c->key2_hid_usage > 0) dcfg.key2_usage = c->key2_hid_usage;
@@ -587,48 +592,52 @@ static void handle_host_message(const osupad_HostToDevice *msg)
             }
 
             if (c->has_key1_he) {
-                if (c->key1_he.actuation > 0) dcfg.he_keys[0].actuation = (uint16_t)c->key1_he.actuation;
-                if (c->key1_he.release_hyst > 0) dcfg.he_keys[0].release_hyst = (uint16_t)c->key1_he.release_hyst;
-                if (c->key1_he.top_reset > 0) dcfg.he_keys[0].top_reset = (uint16_t)c->key1_he.top_reset;
-                if (c->key1_he.rt_press > 0) dcfg.he_keys[0].rt_press = (uint16_t)c->key1_he.rt_press;
-                if (c->key1_he.rt_release > 0) dcfg.he_keys[0].rt_release = (uint16_t)c->key1_he.rt_release;
-                if (c->key1_he.has_bottom_dead_zone) dcfg.he_keys[0].bottom_dz = (uint16_t)c->key1_he.bottom_dead_zone;
+                if (c->key1_he.actuation > 0) he_keys[0].actuation = (uint16_t)c->key1_he.actuation;
+                if (c->key1_he.release_hyst > 0) he_keys[0].release_hyst = (uint16_t)c->key1_he.release_hyst;
+                if (c->key1_he.top_reset > 0) he_keys[0].top_reset = (uint16_t)c->key1_he.top_reset;
+                if (c->key1_he.rt_press > 0) he_keys[0].rt_press = (uint16_t)c->key1_he.rt_press;
+                if (c->key1_he.rt_release > 0) he_keys[0].rt_release = (uint16_t)c->key1_he.rt_release;
+                if (c->key1_he.has_bottom_dead_zone) he_keys[0].bottom_dz = (uint16_t)c->key1_he.bottom_dead_zone;
                 if (c->key1_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_OFF) {
-                    dcfg.he_keys[0].rapid_trigger = false;
-                    dcfg.he_keys[0].continuous = false;
+                    he_keys[0].rapid_trigger = false;
+                    he_keys[0].continuous = false;
                 } else if (c->key1_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_NORMAL) {
-                    dcfg.he_keys[0].rapid_trigger = true;
-                    dcfg.he_keys[0].continuous = false;
+                    he_keys[0].rapid_trigger = true;
+                    he_keys[0].continuous = false;
                 } else if (c->key1_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_CONTINUOUS) {
-                    dcfg.he_keys[0].rapid_trigger = true;
-                    dcfg.he_keys[0].continuous = true;
+                    he_keys[0].rapid_trigger = true;
+                    he_keys[0].continuous = true;
                 }
             }
             if (c->has_key2_he) {
-                if (c->key2_he.actuation > 0) dcfg.he_keys[1].actuation = (uint16_t)c->key2_he.actuation;
-                if (c->key2_he.release_hyst > 0) dcfg.he_keys[1].release_hyst = (uint16_t)c->key2_he.release_hyst;
-                if (c->key2_he.top_reset > 0) dcfg.he_keys[1].top_reset = (uint16_t)c->key2_he.top_reset;
-                if (c->key2_he.rt_press > 0) dcfg.he_keys[1].rt_press = (uint16_t)c->key2_he.rt_press;
-                if (c->key2_he.rt_release > 0) dcfg.he_keys[1].rt_release = (uint16_t)c->key2_he.rt_release;
-                if (c->key2_he.has_bottom_dead_zone) dcfg.he_keys[1].bottom_dz = (uint16_t)c->key2_he.bottom_dead_zone;
+                if (c->key2_he.actuation > 0) he_keys[1].actuation = (uint16_t)c->key2_he.actuation;
+                if (c->key2_he.release_hyst > 0) he_keys[1].release_hyst = (uint16_t)c->key2_he.release_hyst;
+                if (c->key2_he.top_reset > 0) he_keys[1].top_reset = (uint16_t)c->key2_he.top_reset;
+                if (c->key2_he.rt_press > 0) he_keys[1].rt_press = (uint16_t)c->key2_he.rt_press;
+                if (c->key2_he.rt_release > 0) he_keys[1].rt_release = (uint16_t)c->key2_he.rt_release;
+                if (c->key2_he.has_bottom_dead_zone) he_keys[1].bottom_dz = (uint16_t)c->key2_he.bottom_dead_zone;
                 if (c->key2_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_OFF) {
-                    dcfg.he_keys[1].rapid_trigger = false;
-                    dcfg.he_keys[1].continuous = false;
+                    he_keys[1].rapid_trigger = false;
+                    he_keys[1].continuous = false;
                 } else if (c->key2_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_NORMAL) {
-                    dcfg.he_keys[1].rapid_trigger = true;
-                    dcfg.he_keys[1].continuous = false;
+                    he_keys[1].rapid_trigger = true;
+                    he_keys[1].continuous = false;
                 } else if (c->key2_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_CONTINUOUS) {
-                    dcfg.he_keys[1].rapid_trigger = true;
-                    dcfg.he_keys[1].continuous = true;
+                    he_keys[1].rapid_trigger = true;
+                    he_keys[1].continuous = true;
                 }
             }
 
             char err_msg[64] = "";
-            if (!device_config_validate(&dcfg, err_msg, sizeof(err_msg))) {
+            if (!device_config_validate(&dcfg, err_msg, sizeof(err_msg)) ||
+                !device_config_validate_he(he_keys, err_msg, sizeof(err_msg))) {
                 diag_record(DIAG_EVENT_CONFIG_REJECTED, 2 /* WARN */, 1, 0);
                 protocol_send_config_ack(msg->sequence_number, false, err_msg);
             } else {
                 esp_err_t err = device_config_set(&dcfg);
+                if (err == ESP_OK && (c->has_key1_he || c->has_key2_he)) {
+                    err = device_config_set_he(he_keys);
+                }
                 if (err != ESP_OK) {
                     diag_record(DIAG_EVENT_CONFIG_REJECTED, 2 /* WARN */, (uint32_t)err, 0);
                     protocol_send_config_ack(msg->sequence_number, false, "Failed to persist configuration");

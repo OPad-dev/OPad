@@ -19,6 +19,7 @@
 static const char *TAG = "dev_config";
 static const char *NVS_NAMESPACE = "osupad_cfg";
 static const char *NVS_KEY = "cfg";
+static const char *NVS_HE_KEY = "he_cfg";
 
 static device_config_data_t s_current_config = {
     .version = DEVICE_CONFIG_VERSION,
@@ -34,27 +35,28 @@ static device_config_data_t s_current_config = {
     .swipe_right_action = DEVICE_CONFIG_DEFAULT_SWIPE_RIGHT,
     .swipe_up_action = DEVICE_CONFIG_DEFAULT_SWIPE_UP,
     .swipe_down_action = DEVICE_CONFIG_DEFAULT_SWIPE_DOWN,
-    .he_keys = {
-        {
-            .actuation = DEVICE_CONFIG_DEFAULT_HE_ACTUATION,
-            .release_hyst = DEVICE_CONFIG_DEFAULT_HE_HYSTERESIS,
-            .top_reset = DEVICE_CONFIG_DEFAULT_HE_TOP_RESET,
-            .rt_press = DEVICE_CONFIG_DEFAULT_HE_RT_PRESS,
-            .rt_release = DEVICE_CONFIG_DEFAULT_HE_RT_RELEASE,
-            .bottom_dz = DEVICE_CONFIG_DEFAULT_HE_BOTTOM_DZ,
-            .rapid_trigger = DEVICE_CONFIG_DEFAULT_HE_RAPID_TRIGGER,
-            .continuous = DEVICE_CONFIG_DEFAULT_HE_CONTINUOUS,
-        },
-        {
-            .actuation = DEVICE_CONFIG_DEFAULT_HE_ACTUATION,
-            .release_hyst = DEVICE_CONFIG_DEFAULT_HE_HYSTERESIS,
-            .top_reset = DEVICE_CONFIG_DEFAULT_HE_TOP_RESET,
-            .rt_press = DEVICE_CONFIG_DEFAULT_HE_RT_PRESS,
-            .rt_release = DEVICE_CONFIG_DEFAULT_HE_RT_RELEASE,
-            .bottom_dz = DEVICE_CONFIG_DEFAULT_HE_BOTTOM_DZ,
-            .rapid_trigger = DEVICE_CONFIG_DEFAULT_HE_RAPID_TRIGGER,
-            .continuous = DEVICE_CONFIG_DEFAULT_HE_CONTINUOUS,
-        },
+};
+
+static he_key_settings_t s_current_he_keys[2] = {
+    {
+        .actuation = HE_CONFIG_DEFAULT_ACTUATION,
+        .release_hyst = HE_CONFIG_DEFAULT_HYSTERESIS,
+        .top_reset = HE_CONFIG_DEFAULT_TOP_RESET,
+        .rt_press = HE_CONFIG_DEFAULT_RT_PRESS,
+        .rt_release = HE_CONFIG_DEFAULT_RT_RELEASE,
+        .bottom_dz = HE_CONFIG_DEFAULT_BOTTOM_DZ,
+        .rapid_trigger = HE_CONFIG_DEFAULT_RAPID_TRIGGER,
+        .continuous = HE_CONFIG_DEFAULT_CONTINUOUS,
+    },
+    {
+        .actuation = HE_CONFIG_DEFAULT_ACTUATION,
+        .release_hyst = HE_CONFIG_DEFAULT_HYSTERESIS,
+        .top_reset = HE_CONFIG_DEFAULT_TOP_RESET,
+        .rt_press = HE_CONFIG_DEFAULT_RT_PRESS,
+        .rt_release = HE_CONFIG_DEFAULT_RT_RELEASE,
+        .bottom_dz = HE_CONFIG_DEFAULT_BOTTOM_DZ,
+        .rapid_trigger = HE_CONFIG_DEFAULT_RAPID_TRIGGER,
+        .continuous = HE_CONFIG_DEFAULT_CONTINUOUS,
     },
 };
 
@@ -71,11 +73,12 @@ static device_config_data_t s_current_config = {
 #define DEVICE_CONFIG_V5_SIZE (DEVICE_CONFIG_V4_SIZE + 1)
 // v6 blobs end before the swipe key modifiers; they load as none
 #define DEVICE_CONFIG_V6_SIZE offsetof(device_config_data_t, swipe_mods)
-// v7 blobs end before the per-key HE settings; they load with the HE defaults
-#define DEVICE_CONFIG_V7_SIZE offsetof(device_config_data_t, he_keys)
+// v7 blobs are the full device_config_data_t
+#define DEVICE_CONFIG_V7_SIZE sizeof(device_config_data_t)
 
 static bool s_dirty = false;
-// Guards s_current_config and s_dirty: written by the protocol task, read by the
+static bool s_he_dirty = false;
+// Guards s_current_config, s_current_he_keys, s_dirty, s_he_dirty: written by the protocol task, read by the
 // runtime task (flush) and others. Only copies happen under it, never NVS I/O.
 static portMUX_TYPE s_config_lock = portMUX_INITIALIZER_UNLOCKED;
 
@@ -122,16 +125,6 @@ static void set_defaults(device_config_data_t *cfg)
     cfg->swipe_up_key = 0;
     cfg->swipe_down_key = 0;
     memset(cfg->swipe_mods, 0, sizeof(cfg->swipe_mods));
-    for (int k = 0; k < 2; k++) {
-        cfg->he_keys[k].actuation = DEVICE_CONFIG_DEFAULT_HE_ACTUATION;
-        cfg->he_keys[k].release_hyst = DEVICE_CONFIG_DEFAULT_HE_HYSTERESIS;
-        cfg->he_keys[k].top_reset = DEVICE_CONFIG_DEFAULT_HE_TOP_RESET;
-        cfg->he_keys[k].rt_press = DEVICE_CONFIG_DEFAULT_HE_RT_PRESS;
-        cfg->he_keys[k].rt_release = DEVICE_CONFIG_DEFAULT_HE_RT_RELEASE;
-        cfg->he_keys[k].bottom_dz = DEVICE_CONFIG_DEFAULT_HE_BOTTOM_DZ;
-        cfg->he_keys[k].rapid_trigger = DEVICE_CONFIG_DEFAULT_HE_RAPID_TRIGGER;
-        cfg->he_keys[k].continuous = DEVICE_CONFIG_DEFAULT_HE_CONTINUOUS;
-    }
 }
 
 
@@ -193,9 +186,76 @@ void device_config_apply(const device_config_data_t *cfg)
     const uint8_t keys[4] = {cfg->swipe_up_key, cfg->swipe_down_key,
                              cfg->swipe_left_key, cfg->swipe_right_key};
     touch_retry_set_swipe_actions(actions, keys, cfg->swipe_mods);
+}
 
-    he_key_settings_t he_copy[2] = {cfg->he_keys[0], cfg->he_keys[1]};
+void device_config_apply_he(const he_key_settings_t in[2])
+{
+    if (!in) return;
+    he_key_settings_t he_copy[2] = {in[0], in[1]};
     he_backend_apply_settings(he_copy);
+}
+
+static esp_err_t write_he_to_nvs(const he_key_settings_t in[2])
+{
+    // STRICT SPEC INVARIANT: zero NVS writes during PLAYING and COOLDOWN
+    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+        ESP_LOGW(TAG, "HE NVS write blocked: state != IDLE (deferred to supervisor)");
+        portENTER_CRITICAL(&s_config_lock);
+        s_he_dirty = true;
+        portEXIT_CRITICAL(&s_config_lock);
+        return ESP_OK;
+    }
+
+    he_config_record_t rec;
+    he_config_record_pack(&rec, in);
+
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open NVS namespace '%s' for he_cfg: %s", NVS_NAMESPACE, esp_err_to_name(err));
+        return err;
+    }
+
+    err = nvs_set_blob(handle, NVS_HE_KEY, &rec, sizeof(rec));
+    if (err == ESP_OK) {
+        err = nvs_commit(handle);
+        if (err == ESP_OK) {
+            portENTER_CRITICAL(&s_config_lock);
+            s_he_dirty = false;
+            portEXIT_CRITICAL(&s_config_lock);
+            counters_record_nvs_write();
+            ESP_LOGI(TAG, "HE config persisted to NVS");
+        }
+    }
+    nvs_close(handle);
+    return err;
+}
+
+void device_config_get_he(he_key_settings_t out[2])
+{
+    if (out) {
+        portENTER_CRITICAL(&s_config_lock);
+        out[0] = s_current_he_keys[0];
+        out[1] = s_current_he_keys[1];
+        portEXIT_CRITICAL(&s_config_lock);
+    }
+}
+
+esp_err_t device_config_set_he(const he_key_settings_t in[2])
+{
+    if (!in) return ESP_ERR_INVALID_ARG;
+
+    he_key_settings_t next[2];
+    portENTER_CRITICAL(&s_config_lock);
+    s_current_he_keys[0] = in[0];
+    s_current_he_keys[1] = in[1];
+    next[0] = in[0];
+    next[1] = in[1];
+    portEXIT_CRITICAL(&s_config_lock);
+
+    device_config_apply_he(next);
+
+    return write_he_to_nvs(next);
 }
 
 esp_err_t device_config_init(void)
@@ -211,7 +271,9 @@ esp_err_t device_config_init(void)
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "NVS flash init failed in config: %s (using defaults)", esp_err_to_name(err));
         set_defaults(&s_current_config);
+        he_config_default_settings(s_current_he_keys);
         device_config_apply(&s_current_config);
+        device_config_apply_he(s_current_he_keys);
         return ESP_OK;
     }
 
@@ -222,10 +284,8 @@ esp_err_t device_config_init(void)
         set_defaults(&loaded);
         size_t len = sizeof(loaded);
         err = nvs_get_blob(handle, NVS_KEY, &loaded, &len);
-        nvs_close(handle);
 
         bool layout_ok = (len == sizeof(loaded) && loaded.version == DEVICE_CONFIG_VERSION) ||
-                         (len == DEVICE_CONFIG_V7_SIZE && loaded.version == 7) ||
                          (len == DEVICE_CONFIG_V6_SIZE && loaded.version == 6) ||
                          (len == DEVICE_CONFIG_V5_SIZE && loaded.version == 5) ||
                          (len == DEVICE_CONFIG_V4_SIZE && loaded.version == 4) ||
@@ -255,12 +315,34 @@ esp_err_t device_config_init(void)
             ESP_LOGW(TAG, "NVS config missing or invalid, using defaults");
             set_defaults(&s_current_config);
         }
+
+        // Load "he_cfg"
+        he_key_settings_t he_loaded[2];
+        he_config_record_t rec;
+        size_t he_len = sizeof(rec);
+        esp_err_t he_err = nvs_get_blob(handle, NVS_HE_KEY, &rec, &he_len);
+        if (he_err == ESP_OK && he_config_record_unpack(&rec, he_len, he_loaded)) {
+            s_current_he_keys[0] = he_loaded[0];
+            s_current_he_keys[1] = he_loaded[1];
+            ESP_LOGI(TAG, "Loaded HE config from NVS");
+        } else {
+            if (he_err != ESP_ERR_NVS_NOT_FOUND) {
+                ESP_LOGW(TAG, "NVS HE config corrupt or invalid, using defaults");
+            } else {
+                ESP_LOGI(TAG, "No NVS HE config found, using defaults");
+            }
+            he_config_default_settings(s_current_he_keys);
+        }
+
+        nvs_close(handle);
     } else {
         ESP_LOGI(TAG, "No NVS config found, using defaults");
         set_defaults(&s_current_config);
+        he_config_default_settings(s_current_he_keys);
     }
 
     device_config_apply(&s_current_config);
+    device_config_apply_he(s_current_he_keys);
     return ESP_OK;
 }
 
@@ -327,14 +409,28 @@ esp_err_t device_config_flush(void)
 {
     portENTER_CRITICAL(&s_config_lock);
     bool dirty = s_dirty;
+    bool he_dirty = s_he_dirty;
     portEXIT_CRITICAL(&s_config_lock);
-    if (!dirty) {
+    if (!dirty && !he_dirty) {
         return ESP_OK;
     }
     if (runtime_get_state() != OSUPAD_STATE_IDLE) {
         return ESP_OK;
     }
-    ESP_LOGI(TAG, "Flushing deferred config to NVS");
-    device_config_data_t cfg = config_snapshot();
-    return write_to_nvs(&cfg);
+    esp_err_t res = ESP_OK;
+    if (dirty) {
+        ESP_LOGI(TAG, "Flushing deferred config to NVS");
+        device_config_data_t cfg = config_snapshot();
+        res = write_to_nvs(&cfg);
+    }
+    if (he_dirty) {
+        ESP_LOGI(TAG, "Flushing deferred HE config to NVS");
+        he_key_settings_t he_keys[2];
+        device_config_get_he(he_keys);
+        esp_err_t err_he = write_he_to_nvs(he_keys);
+        if (res == ESP_OK) {
+            res = err_he;
+        }
+    }
+    return res;
 }

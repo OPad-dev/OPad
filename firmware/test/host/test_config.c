@@ -309,10 +309,11 @@ static void test_swipe_actions(void)
     printf("✓ test_swipe_actions passed\n");
 }
 
-static void test_he_settings_bounds(void)
+static void test_v7_blob_with_no_he_key(void)
 {
-    device_config_data_t cfg = {
-        .version = DEVICE_CONFIG_VERSION,
+    // A v7 blob in NVS has DEVICE_CONFIG_VERSION 7 and ends after swipe_mods
+    device_config_data_t v7 = {
+        .version = 7,
         .key1_usage = 0x1D,
         .key2_usage = 0x1B,
         .key1_gpio = DEVICE_CONFIG_DEFAULT_KEY1_GPIO,
@@ -320,76 +321,182 @@ static void test_he_settings_bounds(void)
         .debounce_us = 5000,
         .brightness = 80,
         .sleep_s = 600,
+        .gameplay_display_hz = 10,
         .swipe_left_action = SWIPE_ACTION_PREV_TRACK,
         .swipe_right_action = SWIPE_ACTION_NEXT_TRACK,
         .swipe_up_action = SWIPE_ACTION_VOLUME_UP,
         .swipe_down_action = SWIPE_ACTION_VOLUME_DOWN,
-        .he_keys = {
-            {
-                .actuation = 500,
-                .release_hyst = 100,
-                .top_reset = 100,
-                .rt_press = 150,
-                .rt_release = 150,
-                .bottom_dz = 0,
-                .rapid_trigger = false,
-                .continuous = false,
-            },
-            {
-                .actuation = 500,
-                .release_hyst = 100,
-                .top_reset = 100,
-                .rt_press = 150,
-                .rt_release = 150,
-                .bottom_dz = 0,
-                .rapid_trigger = false,
-                .continuous = false,
-            },
-        },
+        .swipe_mods = {0, 0, 0, 0},
     };
     char err[64] = {0};
-    assert(device_config_validate(&cfg, err, sizeof(err)));
+    assert(device_config_validate(&v7, err, sizeof(err)));
+    assert(sizeof(device_config_data_t) == offsetof(device_config_data_t, swipe_mods) + 4);
+
+    // Older firmware reads its v7 blob unchanged. When no "he_cfg" key is present,
+    // he_config_default_settings populates default HE settings:
+    he_key_settings_t he_keys[2];
+    he_config_default_settings(he_keys);
+    assert(device_config_validate_he(he_keys, err, sizeof(err)));
+    assert(he_keys[0].actuation == HE_CONFIG_DEFAULT_ACTUATION);
+    assert(he_keys[0].release_hyst == HE_CONFIG_DEFAULT_HYSTERESIS);
+    assert(he_keys[0].top_reset == HE_CONFIG_DEFAULT_TOP_RESET);
+    assert(he_keys[0].rt_press == HE_CONFIG_DEFAULT_RT_PRESS);
+    assert(he_keys[0].rt_release == HE_CONFIG_DEFAULT_RT_RELEASE);
+    assert(he_keys[0].bottom_dz == HE_CONFIG_DEFAULT_BOTTOM_DZ);
+    assert(!he_keys[0].rapid_trigger);
+    assert(!he_keys[0].continuous);
+
+    printf("✓ test_v7_blob_with_no_he_key passed\n");
+}
+
+static void test_corrupt_or_short_he_record(void)
+{
+    he_key_settings_t keys[2];
+    he_config_record_t rec;
+
+    // Default settings
+    he_config_default_settings(keys);
+    keys[0].actuation = 450;
+    he_config_record_pack(&rec, keys);
+
+    // NULL buffer
+    he_key_settings_t out[2];
+    assert(!he_config_record_unpack(NULL, sizeof(rec), out));
+    assert(out[0].actuation == HE_CONFIG_DEFAULT_ACTUATION);
+
+    // Short buffer
+    assert(!he_config_record_unpack(&rec, sizeof(rec) - 1, out));
+    assert(out[0].actuation == HE_CONFIG_DEFAULT_ACTUATION);
+
+    // Oversized buffer
+    uint8_t long_buf[sizeof(rec) + 4];
+    memcpy(long_buf, &rec, sizeof(rec));
+    assert(!he_config_record_unpack(long_buf, sizeof(long_buf), out));
+    assert(out[0].actuation == HE_CONFIG_DEFAULT_ACTUATION);
+
+    // Corrupted magic
+    he_config_record_t bad_magic = rec;
+    bad_magic.magic = 0xDEADBEEFu;
+    assert(!he_config_record_unpack(&bad_magic, sizeof(bad_magic), out));
+    assert(out[0].actuation == HE_CONFIG_DEFAULT_ACTUATION);
+
+    // Corrupted version
+    he_config_record_t bad_ver = rec;
+    bad_ver.version = 99;
+    assert(!he_config_record_unpack(&bad_ver, sizeof(bad_ver), out));
+    assert(out[0].actuation == HE_CONFIG_DEFAULT_ACTUATION);
+
+    // Corrupted CRC32
+    he_config_record_t bad_crc = rec;
+    bad_crc.crc32 ^= 0xFFFFFFFFu;
+    assert(!he_config_record_unpack(&bad_crc, sizeof(bad_crc), out));
+    assert(out[0].actuation == HE_CONFIG_DEFAULT_ACTUATION);
+
+    // Corrupted field with valid CRC
+    he_config_record_t bad_field = rec;
+    bad_field.keys[0].actuation = 1001; // out of range
+    bad_field.crc32 = he_config_crc32(&bad_field, offsetof(he_config_record_t, crc32));
+    assert(!he_config_record_unpack(&bad_field, sizeof(bad_field), out));
+    assert(out[0].actuation == HE_CONFIG_DEFAULT_ACTUATION);
+
+    printf("✓ test_corrupt_or_short_he_record passed\n");
+}
+
+static void test_he_record_round_trip(void)
+{
+    he_key_settings_t in[2] = {
+        {
+            .actuation = 400,
+            .release_hyst = 80,
+            .top_reset = 50,
+            .rt_press = 120,
+            .rt_release = 120,
+            .bottom_dz = 30,
+            .rapid_trigger = true,
+            .continuous = true,
+        },
+        {
+            .actuation = 600,
+            .release_hyst = 150,
+            .top_reset = 100,
+            .rt_press = 200,
+            .rt_release = 200,
+            .bottom_dz = 0,
+            .rapid_trigger = true,
+            .continuous = false,
+        },
+    };
+
+    he_config_record_t rec;
+    he_config_record_pack(&rec, in);
+
+    assert(rec.magic == HE_CONFIG_RECORD_MAGIC);
+    assert(rec.version == HE_CONFIG_RECORD_VERSION);
+    assert(rec.crc32 == he_config_crc32(&rec, offsetof(he_config_record_t, crc32)));
+
+    he_key_settings_t out[2];
+    bool ok = he_config_record_unpack(&rec, sizeof(rec), out);
+    assert(ok);
+
+    for (int k = 0; k < 2; k++) {
+        assert(out[k].actuation == in[k].actuation);
+        assert(out[k].release_hyst == in[k].release_hyst);
+        assert(out[k].top_reset == in[k].top_reset);
+        assert(out[k].rt_press == in[k].rt_press);
+        assert(out[k].rt_release == in[k].rt_release);
+        assert(out[k].bottom_dz == in[k].bottom_dz);
+        assert(out[k].rapid_trigger == in[k].rapid_trigger);
+        assert(out[k].continuous == in[k].continuous);
+    }
+
+    printf("✓ test_he_record_round_trip passed\n");
+}
+
+static void test_he_settings_bounds(void)
+{
+    he_key_settings_t keys[2];
+    he_config_default_settings(keys);
+
+    char err[64] = {0};
+    assert(device_config_validate_he(keys, err, sizeof(err)));
 
     // Actuation > 1000
-    cfg.he_keys[0].actuation = 1001;
-    assert(!device_config_validate(&cfg, err, sizeof(err)));
+    keys[0].actuation = 1001;
+    assert(!device_config_validate_he(keys, err, sizeof(err)));
     assert(strstr(err, "actuation") != NULL);
-    cfg.he_keys[0].actuation = 500;
+    keys[0].actuation = 500;
 
     // Hysteresis > 1000
-    cfg.he_keys[1].release_hyst = 1001;
-    assert(!device_config_validate(&cfg, err, sizeof(err)));
+    keys[1].release_hyst = 1001;
+    assert(!device_config_validate_he(keys, err, sizeof(err)));
     assert(strstr(err, "hysteresis") != NULL);
-    cfg.he_keys[1].release_hyst = 100;
+    keys[1].release_hyst = 100;
 
     // Top reset > 1000
-    cfg.he_keys[0].top_reset = 1001;
-    assert(!device_config_validate(&cfg, err, sizeof(err)));
+    keys[0].top_reset = 1001;
+    assert(!device_config_validate_he(keys, err, sizeof(err)));
     assert(strstr(err, "top_reset") != NULL);
-    cfg.he_keys[0].top_reset = 100;
+    keys[0].top_reset = 100;
 
     // rt_press > 1000
-    cfg.he_keys[1].rt_press = 1001;
-    assert(!device_config_validate(&cfg, err, sizeof(err)));
+    keys[1].rt_press = 1001;
+    assert(!device_config_validate_he(keys, err, sizeof(err)));
     assert(strstr(err, "rt_press") != NULL);
-    cfg.he_keys[1].rt_press = 150;
+    keys[1].rt_press = 150;
 
     // rt_release > 1000
-    cfg.he_keys[0].rt_release = 1001;
-    assert(!device_config_validate(&cfg, err, sizeof(err)));
+    keys[0].rt_release = 1001;
+    assert(!device_config_validate_he(keys, err, sizeof(err)));
     assert(strstr(err, "rt_release") != NULL);
-    cfg.he_keys[0].rt_release = 150;
+    keys[0].rt_release = 150;
 
     // bottom_dz > 1000
-    cfg.he_keys[1].bottom_dz = 1001;
-    assert(!device_config_validate(&cfg, err, sizeof(err)));
+    keys[1].bottom_dz = 1001;
+    assert(!device_config_validate_he(keys, err, sizeof(err)));
     assert(strstr(err, "bottom_dz") != NULL);
-    cfg.he_keys[1].bottom_dz = 0;
+    keys[1].bottom_dz = 0;
 
-    assert(device_config_validate(&cfg, err, sizeof(err)));
-
-    // Backward compatibility: offset of he_keys matches v7 size
-    assert(offsetof(device_config_data_t, he_keys) == offsetof(device_config_data_t, swipe_mods) + sizeof(cfg.swipe_mods));
+    assert(device_config_validate_he(keys, err, sizeof(err)));
 
     printf("✓ test_he_settings_bounds passed\n");
 }
@@ -404,6 +511,9 @@ int main(void)
     test_gameplay_display_hz_bounds();
     test_key_gpio_allow_list();
     test_swipe_actions();
+    test_v7_blob_with_no_he_key();
+    test_corrupt_or_short_he_record();
+    test_he_record_round_trip();
     test_he_settings_bounds();
     printf("All config validation unit tests passed successfully!\n");
     return 0;
