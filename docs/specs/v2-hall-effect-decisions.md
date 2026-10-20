@@ -129,9 +129,13 @@ Implemented in `he_rt.c`, per key:
   can press (`he_rt_set_params`).
 - An ADC fault releases a held key and the key must read ≤ `release` before it
   can press again (`he_rt_fault`).
-- **Provisional, to test on the pad:** a key held while the pad boots is not
-  reported until it has been released once. MX does report a held key at boot
-  (`restart_debounce_from_pins` in `keypad.c`).
+- **Confirmed (owner, 2026-10-20):** a key held while the pad boots is not
+  reported until it has been released once, calibrated or not. At boot a held
+  key and a stale calibration (switch swapped, reading drifted) give the same
+  reading; reporting it would let a stale calibration bring a key up stuck
+  down with nobody pressing it. MX does report a held key at boot
+  (`restart_debounce_from_pins` in `keypad.c`): a contact has no stored
+  reading to go stale.
 - Rapid trigger is refused without a valid calibration
   (`HE_PARAMS_RT_NEEDS_CALIBRATION`); a setting that maps below the noise
   floor is raised to it and reported, never applied silently.
@@ -151,12 +155,38 @@ whatever the state is then. Key 1 + touch and key 2 are on separate endpoints,
 so neither waits on the other. The HE backend calls the same
 `usb_hid_handle_key_event`.
 
-### D7 — Calibration — Confirmed policy; algorithm & storage implemented
+### D7 — Calibration — Confirmed policy; algorithm & storage implemented, entry point not built
 
 Explicit, per key, rest then 5 normal presses (median peak), reachable from
 the pad itself. Required before rapid trigger. Never invalidated automatically
 by unusual readings; sensor health is separate and never erases calibration.
 No blind rest capture at boot.
+
+**First use and entry point (owner, 2026-10-20):** HE pads ship uncalibrated
+and every pad calibrates on first use. Calibration belongs in the app; the pad
+does it itself only when no app is there.
+
+- **Locked until calibrated.** An HE pad without a valid calibration sends no
+  key at all (Z/X off, touch is never Quick Retry), swipes are off, and it
+  never switches to the playing screen. MX pads are unaffected. Basic typing
+  still needs no software (AGENTS.md §1.2): the pad calibrates itself.
+- **App connected:** the pad shows "Calibrate in the OPad app" with no
+  Calibrate button, and the daemon opens the GUI's calibration page directly.
+  Calibration then happens only in the app. An app too old to calibrate
+  counts as no app.
+- **No daemon ~5 s after boot:** a red screen recommends installing the app
+  first and shows the download URL as text (`https://opad.dev/download`; the
+  path is not final, so keep it in one place). A Calibrate button starts the on-pad flow. There is no "Later": the
+  screen stays until calibration succeeds. No QR code (the PC can't scan it),
+  and the pad never opens a browser: typing the URL would be scripted input
+  (§1.6), and WebUSB landing pages or a USB drive would add USB interfaces to
+  the keyboard path for a Chrome-only or click-to-open result.
+- **The button** is a rectangle on the touch coordinates: a finger that lands
+  in it and lifts without moving is a press; anything that moves is ignored.
+- **During calibration** nothing reaches the PC. Keys come back once it is
+  saved (or after a failed attempt, which returns to the lock screen).
+- **Recalibration, rapid trigger and every HE setting are app only.** The pad
+  has no HE settings of its own.
 
 - **Record & NVS storage (`firmware/main/input/he_cal_record.c`, `firmware/main/input/he_cal.c`):**
   Pure-C record `he_cal_record_t` with schema versioning (`HE_CAL_VERSION = 1`),
@@ -180,8 +210,8 @@ No blind rest capture at boot.
   provisional factory thresholds when valid. Rapid trigger remains disabled
   (`HE_PARAMS_RT_NEEDS_CALIBRATION`) until valid calibration is saved.
 - **Wizard UI & Entry Point:**
-  On-device UI / flow is deferred pending product UX decisions (how calibration is triggered
-  without the desktop app). No entry point exists yet (neither on pad nor over the wire),
+  Decided above (first use and entry point) but not built: no lock screen, no
+  on-pad flow and no calibration messages on the wire yet,
   so HelloAck sets `he_calibration = false`. Because rapid trigger requires an explicit valid
   calibration per D7 and `he_params_build`, rapid trigger cannot be enabled on any pad yet.
   Protocol reporting of calibration values is supported in `DeviceStatus.he_calibration`.
@@ -192,7 +222,7 @@ No blind rest capture at boot.
 |---|---|---|---|
 | A | Minimum rapid-trigger movement (noise floor) | 1 ms-average p-p 17–24 counts; single-conversion sd 5.3–5.9 | raw 250 µs-frame traces at rest, held mid-travel, 30 min; replay false events vs floor |
 | B | 64 vs 80 kS/s | 80 kS/s is inside the S3 limit | only if A shows a benefit |
-| C | Default actuation point | subjective half press ≈ 23 % of key 1's span | strokes with the raw build |
+| C | Default actuation point | subjective half press ≈ 23 % of key 1's span; 50 % stays test-only (owner, 2026-10-20) | strokes with the raw build |
 | D | Top reset region | as A | as A |
 | E | Host-visible latency, missed sub-poll taps | MX ~70 µs edge → submit | USB capture on the host |
 | F | USB-only recovery details | A/B OTA with rollback until USB configures (`app_main.c`), 16 MB flash with ~11.9 MiB past the last partition (`partitions.csv`) | separate proposal before any partition change |

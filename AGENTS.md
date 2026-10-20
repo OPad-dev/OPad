@@ -36,7 +36,10 @@ details.
    Nothing extra is drawn during a map, and swipes never put Alt or another
    key in the keyboard report mid-map. With no host or no tosu, every touch is
    Quick Retry. Keep it cheap on CPU (idle on the touch interrupt, poll only
-   while a finger is down).
+   while a finger is down). The one exception: an uncalibrated Hall Effect
+   pad is locked to its calibration screen, where touch is only that
+   screen's button, swipes are off and no key is sent
+   (`docs/specs/v2-hall-effect-decisions.md` D7).
 5. **Never the BOOT or RESET buttons.** Flashing, updating and recovering a
    pad all happen over USB or serial. Never tell anyone to press them, not even
    as a fallback. An update must not be able to strand a pad: it goes to the
