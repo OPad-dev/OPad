@@ -27,10 +27,10 @@ single-conversion rest sd 5.9 / 5.3, about 0.875 mV per count at 12 dB.
 | Calibration record & A/B NVS storage (`firmware/main/input/he_cal_record.c`, `firmware/main/input/he_cal.c`) | yes | yes (`firmware/test/host/test_he_cal.c`) | no | no |
 | Calibration capture algorithm (`firmware/main/input/he_cal_capture.c`) | yes | yes (`firmware/test/host/test_he_cal_capture.c`) | no | no |
 | Keypad keycode staging (`firmware/main/input/keypad.c`) | yes | yes (`firmware/test/host/test_keypad_staged.c`) | no | no |
-| Per-key HE settings in device config (`firmware/main/config/device_config.c`) | yes, blob v8 | yes (`firmware/test/host/test_config.c`) | no | no |
+| Per-key HE settings in dedicated NVS record (`firmware/main/config/he_config_record.c`, `device_config.c`) | yes, blob v7 retained + 'he_cfg' key | yes (`firmware/test/host/test_config.c`) | no | no |
 | Protocol & host integration (`protocol/osupad.proto`, `firmware/main/protocol/protocol.c`, `desktop/`) | yes (HelloAck capabilities, ConfigPayload HE settings, DeviceStatus calibration status) | yes (Rust workspace tests + host test_config) | no | no |
 | Raw trace stream + analysis (`CONFIG_OSUPAD_HE_TRACE`, `scripts/he_trace.py`, `firmware/tools/he_replay.c`) | yes | analysis checked on a synthetic trace only | no | no |
-| Calibration wizard UI on pad / app | no (UX open decision) | no | no | no |
+| Calibration wizard UI on pad / app | no entry point yet; rapid trigger cannot be enabled | no | no | no |
 
 The engine and builder are compiled into the firmware but nothing calls them
 yet. The key-event move keeps every MX key-path function in IRAM
@@ -159,10 +159,10 @@ by unusual readings; sensor health is separate and never erases calibration.
 No blind rest capture at boot.
 
 - **Record & NVS storage (`firmware/main/input/he_cal_record.c`, `firmware/main/input/he_cal.c`):**
-  Pure-C record `he_cal_record_t` with schema versioning (`HE_CAL_SCHEMA_VERSION = 1`),
+  Pure-C record `he_cal_record_t` with schema versioning (`HE_CAL_VERSION = 1`),
   per-key `rest`, `full`, `valid` flags, and a 32-bit CRC (`he_cal_crc32`).
   Stored in NVS namespace `"osupad_cal"` using an A/B slot ping-pong scheme with
-  64-bit monotonic sequence numbers. An interrupted write leaves the other slot intact.
+  32-bit monotonic sequence numbers. An interrupted write leaves the other slot intact.
   Corrupt or missing records fall back to uncalibrated factory defaults (`valid = false`)
   without erasing NVS. Writes are gated by runtime mode: deferred during `PLAYING` or
   `COOLDOWN`, executed only when `IDLE` (matching `device_config.c` and `counters.c`).
@@ -177,12 +177,14 @@ No blind rest capture at boot.
   `firmware/test/host/test_he_cal_capture.c` with synthetic bench noise.
 - **Boot and runtime integration:**
   Loaded at boot in `he_backend_start()` and fed into `he_params_build()`, replacing
-  `HE_FACTORY_CAL` when valid. Rapid trigger remains disabled (`HE_PARAMS_RT_NEEDS_CALIBRATION`)
-  until valid calibration is saved.
-- **Wizard UI:**
+  provisional factory thresholds when valid. Rapid trigger remains disabled
+  (`HE_PARAMS_RT_NEEDS_CALIBRATION`) until valid calibration is saved.
+- **Wizard UI & Entry Point:**
   On-device UI / flow is deferred pending product UX decisions (how calibration is triggered
-  without the desktop app). Protocol reporting of calibration status is supported in
-  `DeviceStatus.he_calibration` and capability in `HelloAck.he_calibration`.
+  without the desktop app). No entry point exists yet (neither on pad nor over the wire),
+  so HelloAck sets `he_calibration = false`. Because rapid trigger requires an explicit valid
+  calibration per D7 and `he_params_build`, rapid trigger cannot be enabled on any pad yet.
+  Protocol reporting of calibration values is supported in `DeviceStatus.he_calibration`.
 
 ## Open
 

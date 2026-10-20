@@ -1,6 +1,6 @@
 # Hall Effect Firmware & Desktop Suite: Overnight Session Report
 
-**Date:** 2026-10-21  
+**Date:** 2026-10-20  
 **Branch:** `feat/he-night` (worktree `osu-pad-esp32-night`, branched from `feat/he-engine` at `fb266c5`)  
 **Context:** Unattended overnight session implementing Hall Effect (HE) calibration, settings persistence, keycode staging fix, health state machine extraction, protocol/desktop integration, and documentation updates under strict latency and product rules (`AGENTS.md`).
 
@@ -8,7 +8,7 @@
 
 ## 1. Work Accomplished Commit-by-Commit
 
-The overnight session completed Tasks 3.1 through 3.7 with 7 conventional commits. Every commit was verified against `make check` (desktop tests, clippy `-D warnings`, rustfmt, firmware host tests) and both firmware builds (default MX and `CONFIG_OSUPAD_HE_BACKEND=y`).
+The overnight session completed Tasks 3.1 through 3.7 with conventional commits. Every commit was verified against `make check` (desktop tests, clippy `-D warnings`, rustfmt, firmware host tests) and both firmware builds (default MX and `CONFIG_OSUPAD_HE_BACKEND=y`).
 
 ### Commit 1: `459ff7e` — `feat(he): calibration record and A/B NVS storage`
 - **Task 3.1:** Per confirmed decision D7, implemented explicit per-key calibration storage that is separate from sensor health and never erased automatically.
@@ -25,11 +25,12 @@ The overnight session completed Tasks 3.1 through 3.7 with 7 conventional commit
 - **Validation Rules:** Rejects runs where signal does not rise (`median <= rest`), travel span is insufficient (`span < 250` counts), or peak variation exceeds limit (`|peak - median| > 120` counts).
 - **Host Tests:** Added 7 host unit tests in `firmware/test/host/test_he_cal_capture.c` using synthetic traces modeled on bench measurements (rest ~2086, normal press +450, noise sd ~5.6).
 
-### Commit 3: `5f5b3b5` — `feat(config): per-key Hall Effect settings in device_config`
-- **Task 3.3:** Appended `he_key_settings_t he_keys[2]` to `device_config_data_t` (`firmware/main/config/device_config.{c,h}`), bumping configuration version to 8.
-- **Backwards Compatibility:** Sized `DEVICE_CONFIG_V7_SIZE` allowing previous NVS blobs (v1 through v7) to load seamlessly with factory defaults. Defaults: rapid trigger OFF, continuous OFF, bottom dead zone 0, actuation 50.0% (500), release hysteresis 10.0% (100), top reset 10.0% (100), RT press 15.0% (150), RT release 15.0% (150).
+### Commit 3: `5f5b3b5` & follow-up `f92c144` — `fix(config): store Hall Effect settings under their own NVS key`
+- **Task 3.3:** Initially, `he_key_settings_t he_keys[2]` was appended to `device_config_data_t` bumping version to 8. Review identified that an OTA rollback to older firmware would fail with `ESP_ERR_NVS_INVALID_LENGTH` on the larger blob and wipe user settings to factory defaults (violating `AGENTS.md` §1.3 and §1.5).
+- **Fix Applied:** `device_config_data_t` was reverted to v7 (`DEVICE_CONFIG_VERSION 7`, exact 64-byte layout). Per-key Hall Effect settings are stored under their own dedicated NVS key (`he_cfg`) in a fixed packed record `he_config_record_t` with magic `0x48454346` ("HECF"), version 1, and CRC32 checksum.
+- **Backwards Compatibility:** Old firmware reading NVS sees its 64-byte v7 blob (`cfg`) completely unchanged and ignores `he_cfg`. New firmware loads default HE settings if `he_cfg` is missing or corrupt. Defaults: rapid trigger OFF, continuous OFF, bottom dead zone 0, actuation 50.0% (500), release hysteresis 10.0% (100), top reset 10.0% (100), RT press 15.0% (150), RT release 15.0% (150).
 - **Validation & Dynamic Application:** `config_validate.c` enforces `0..1000` (0.1% steps up to `HE_PCT_FULL`). Changes apply dynamically via `he_backend_apply_settings` -> `he_backend_set_params` (`firmware/main/input/he_backend.c`), which guarantees held keys never register phantom presses.
-- **Host Tests:** Added `test_he_settings_bounds` to `firmware/test/host/test_config.c`.
+- **Host Tests:** Added `test_v7_blob_with_no_he_key`, `test_corrupt_or_short_he_record`, `test_he_record_round_trip`, and `test_he_settings_bounds` to `firmware/test/host/test_config.c`.
 
 ### Commit 4: `9b52e29` — `fix(keypad): defer keycode changes until HE keys are released`
 - **Task 3.4:** Fixed phantom keypress bug on HE pads during runtime keycode reassignment (`firmware/main/input/keypad.c`).
@@ -164,17 +165,18 @@ Symbol placement was inspected on both ELF binaries using `xtensa-esp32s3-elf-nm
 | **Old Host + New Firmware** | New firmware transmits fields 15 & 16 in `HelloAck`, field 18 in `DeviceStatus`. | Old host ignores unknown protobuf field tags; keypad functions normally as standard 1000 Hz HID device. |
 | **SetConfig without HE Fields** | Host sends `SetConfig` with only MX debounce/keycodes or lighting parameters. | Firmware checks `has_key1_he` and `has_key2_he`; absent fields leave existing HE settings unchanged. |
 | **SetConfig with HE Fields (0 = keep current)** | Host updates one key's rapid trigger mode while passing 0 for travel thresholds. | Firmware applies mode changes while keeping current actuation/hysteresis values. |
-| **Old Config Blob (v1..v7) on New Firmware** | NVS contains config blob sized to `DEVICE_CONFIG_V7_SIZE` (version <= 7). | `device_config_init()` validates length, loads existing parameters, and populates `he_keys[2]` with defaults. |
-| **New Config Blob (v8) on Old Firmware** | Firmware downgraded from v8 to v7 with v8 blob present in NVS. | `nvs_get_blob` returns `ESP_ERR_NVS_INVALID_LENGTH`; old firmware cleanly logs warning and falls back to factory defaults without crashing or corrupting data. |
+| **Old Config Blob (v1..v7) on New Firmware** | NVS contains config blob sized to `DEVICE_CONFIG_V7_SIZE` (version <= 7). No `he_cfg` key present. | `device_config_init()` loads existing configuration unchanged and populates HE settings with defaults from `he_config_default_settings()`. |
+| **New Firmware Config on Old Firmware (Rollback)** | Firmware downgraded / rolled back to v7 or earlier with both `cfg` (v7) and `he_cfg` present in NVS. | Old firmware loads its 64-byte v7 blob (`cfg`) completely unchanged without length errors. It ignores the separate `he_cfg` key. User keycodes, pins, debounce, brightness, and swipe mappings are 100% preserved. |
 
 ---
 
 ## 6. What Was NOT Done & Why
 
-1. **On-Pad Calibration Wizard UI:** Creating an LVGL calibration flow on the 2-inch display requires product design decisions regarding navigation (single button/touch entry vs settings menu). Deferred to the owner.
-2. **Calibration Wizard Wire Protocol:** Interactive wizard messages (`StartCalibration`, `StrokeFeedback`, `CancelCalibration`) require UX alignment. Currently, pure-C capture and status reporting are fully operational.
-3. **Hardware Flashing & Validation:** No hardware was flashed, power-cycled, or probed tonight per the strict overnight rules.
-4. **Resolution of Open Questions (OPEN A–G):** All open questions remain provisional. No provisional values (e.g., 5 ms stall timeout, provisional noise floors) were promoted to permanent defaults.
+1. **Calibration Entry Point (No Rapid Trigger Enabled Yet):** While calibration capture (`he_cal_capture.c`) and A/B NVS storage (`he_cal.c`) are implemented and host-tested, **no entry point exists yet** (neither an on-pad UI screen/gesture nor an interactive protocol command to run capture). Because decision D7 and `he_params_build` require an explicit valid calibration to enable rapid trigger (`HE_PARAMS_RT_NEEDS_CALIBRATION`), **rapid trigger cannot be enabled on any pad yet**. `HelloAck.he_calibration` is advertised as `false` until an entry point exists.
+2. **On-Pad Calibration Wizard UI:** Creating an LVGL calibration flow on the 2-inch display requires product design decisions regarding navigation (single button/touch entry vs settings menu). Deferred to the owner.
+3. **Calibration Wizard Wire Protocol:** Interactive wizard messages (`StartCalibration`, `StrokeFeedback`, `CancelCalibration`) require UX alignment. Currently, pure-C capture and status reporting are fully operational.
+4. **Hardware Flashing & Validation:** No hardware was flashed, power-cycled, or probed tonight per the strict overnight rules.
+5. **Resolution of Open Questions (OPEN A–G):** All open questions remain provisional. No provisional values (e.g., 5 ms stall timeout, provisional noise floors) were promoted to permanent defaults.
 
 ---
 
@@ -184,7 +186,7 @@ The following items are ready for review and design decisions:
 
 ### Question 1: How should the on-pad calibration wizard be triggered?
 - **Option A (App-initiated only):** The desktop GUI provides a "Calibrate Keys" button that commands the pad into calibration mode over USB.
-  - *Trade-off:* Simplest on-pad UI, but violates product rule 2 (the pad should be fully usable without desktop software installed).
+  - *Trade-off:* Simplest on-pad UI; requires the desktop app to run calibration, but basic typing continues to work without software using factory thresholds (product rule 2).
 - **Option B (Long-touch gesture outside gameplay):** Holding two fingers on the touchscreen while idle for 3 seconds opens the calibration screen.
   - *Trade-off:* No software required; needs clear screen instructions and accidental trigger protection.
 - **Option C (Dedicated settings screen on swipe):** Add a settings page to the existing swipe navigation.
