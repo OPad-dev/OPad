@@ -145,7 +145,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_keypad_staged"
 
 # 16. Hall Effect health state machine tests
-echo "[16/16] Running test_he_health..."
+echo "[16/18] Running test_he_health..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/he_health.c" \
     "${FW_MAIN}/input/he_rt.c" \
@@ -153,5 +153,22 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${HOST_TEST_DIR}/test_he_health.c" \
     -o "${BIN_DIR}/test_he_health"
 "${BIN_DIR}/test_he_health"
+
+# 17. Hall Effect calibration button hit tests
+echo "[17/18] Running test_he_cal_button..."
+gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
+    "${FW_MAIN}/input/he_cal_button.c" \
+    "${HOST_TEST_DIR}/test_he_cal_button.c" \
+    -o "${BIN_DIR}/test_he_cal_button"
+"${BIN_DIR}/test_he_cal_button"
+
+# 18. Hall Effect calibration runner tests
+echo "[18/18] Running test_he_cal_runner..."
+gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
+    "${FW_MAIN}/input/he_cal_capture.c" \
+    "${FW_MAIN}/input/he_cal_runner.c" \
+    "${HOST_TEST_DIR}/test_he_cal_runner.c" \
+    -o "${BIN_DIR}/test_he_cal_runner"
+"${BIN_DIR}/test_he_cal_runner"
 
 echo "=== All firmware host unit tests passed! ==="
