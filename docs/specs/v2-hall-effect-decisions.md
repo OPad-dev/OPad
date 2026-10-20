@@ -19,12 +19,18 @@ single-conversion rest sd 5.9 / 5.3, about 0.875 mV per count at 12 dB.
 | Part | Implemented | Host-tested | Hardware-tested | Performance-validated |
 |---|---|---|---|---|
 | Decision engine (`firmware/main/input/he_rt.c`) | yes | yes (`firmware/test/host/test_he_rt.c`) | no | no |
-| Settings → thresholds (`firmware/main/input/he_params.c`) | yes | yes (same test) | no | no |
+| Settings → thresholds (`firmware/main/input/he_params.c`) | yes | yes (`firmware/test/host/test_he_rt.c`) | no | no |
 | Shared key-event path (`firmware/main/input/key_event.c`): counters, press log, HID report, latency stats for both backends | yes, MX moved onto it | no (needs ESP-IDF) | no: MX needs a recheck on the pad | no: MX latency to remeasure |
-| Frame parser (`firmware/main/input/he_frame.c`) | yes | yes (`test_he_frame.c`) | no | no |
-| ADC DMA backend + HID integration (`firmware/main/input/he_backend.c`, `CONFIG_OSUPAD_HE_BACKEND`, default off) | yes, provisional factory thresholds | no (needs ESP-IDF) | no | no |
+| Frame parser (`firmware/main/input/he_frame.c`) | yes | yes (`firmware/test/host/test_he_frame.c`) | no | no |
+| ADC DMA backend + HID integration (`firmware/main/input/he_backend.c`, `CONFIG_OSUPAD_HE_BACKEND`, default off) | yes, loads calibration from NVS | no (needs ESP-IDF) | no | no |
+| Health and back-off state machine (`firmware/main/input/he_health.c`) | yes | yes (`firmware/test/host/test_he_health.c`) | no | no |
+| Calibration record & A/B NVS storage (`firmware/main/input/he_cal_record.c`, `firmware/main/input/he_cal.c`) | yes | yes (`firmware/test/host/test_he_cal.c`) | no | no |
+| Calibration capture algorithm (`firmware/main/input/he_cal_capture.c`) | yes | yes (`firmware/test/host/test_he_cal_capture.c`) | no | no |
+| Keypad keycode staging (`firmware/main/input/keypad.c`) | yes | yes (`firmware/test/host/test_keypad_staged.c`) | no | no |
+| Per-key HE settings in device config (`firmware/main/config/device_config.c`) | yes, blob v8 | yes (`firmware/test/host/test_config.c`) | no | no |
+| Protocol & host integration (`protocol/osupad.proto`, `firmware/main/protocol/protocol.c`, `desktop/`) | yes (HelloAck capabilities, ConfigPayload HE settings, DeviceStatus calibration status) | yes (Rust workspace tests + host test_config) | no | no |
 | Raw trace stream + analysis (`CONFIG_OSUPAD_HE_TRACE`, `scripts/he_trace.py`, `firmware/tools/he_replay.c`) | yes | analysis checked on a synthetic trace only | no | no |
-| Calibration, protocol, live travel | no | no | no | no |
+| Calibration wizard UI on pad / app | no (UX open decision) | no | no | no |
 
 The engine and builder are compiled into the firmware but nothing calls them
 yet. The key-event move keeps every MX key-path function in IRAM
@@ -145,12 +151,38 @@ whatever the state is then. Key 1 + touch and key 2 are on separate endpoints,
 so neither waits on the other. The HE backend calls the same
 `usb_hid_handle_key_event`.
 
-### D7 — Calibration — Confirmed policy, not implemented
+### D7 — Calibration — Confirmed policy; algorithm & storage implemented
 
 Explicit, per key, rest then 5 normal presses (median peak), reachable from
 the pad itself. Required before rapid trigger. Never invalidated automatically
 by unusual readings; sensor health is separate and never erases calibration.
 No blind rest capture at boot.
+
+- **Record & NVS storage (`firmware/main/input/he_cal_record.c`, `firmware/main/input/he_cal.c`):**
+  Pure-C record `he_cal_record_t` with schema versioning (`HE_CAL_SCHEMA_VERSION = 1`),
+  per-key `rest`, `full`, `valid` flags, and a 32-bit CRC (`he_cal_crc32`).
+  Stored in NVS namespace `"osupad_cal"` using an A/B slot ping-pong scheme with
+  64-bit monotonic sequence numbers. An interrupted write leaves the other slot intact.
+  Corrupt or missing records fall back to uncalibrated factory defaults (`valid = false`)
+  without erasing NVS. Writes are gated by runtime mode: deferred during `PLAYING` or
+  `COOLDOWN`, executed only when `IDLE` (matching `device_config.c` and `counters.c`).
+  Tested in `firmware/test/host/test_he_cal.c`.
+- **Capture algorithm (`firmware/main/input/he_cal_capture.c`):**
+  Pure C state machine (`he_cal_capture_t`). Captures rest over a still window
+  (default 100 samples / 25 ms, noise spread ≤ 32 counts, rejected if reading is out
+  of physical rest bounds or moving). Detects 5 stroke peaks on the sample stream; selects
+  the **median** peak (ignoring extreme bottom-out / overtravel presses). Validates that
+  the signal rises on press (`peak > rest`), travel span exceeds `min_span` (≥ 100 counts),
+  and peak-to-peak consistency is within `max_peak_spread` (≤ 80 counts). Tested in
+  `firmware/test/host/test_he_cal_capture.c` with synthetic bench noise.
+- **Boot and runtime integration:**
+  Loaded at boot in `he_backend_start()` and fed into `he_params_build()`, replacing
+  `HE_FACTORY_CAL` when valid. Rapid trigger remains disabled (`HE_PARAMS_RT_NEEDS_CALIBRATION`)
+  until valid calibration is saved.
+- **Wizard UI:**
+  On-device UI / flow is deferred pending product UX decisions (how calibration is triggered
+  without the desktop app). Protocol reporting of calibration status is supported in
+  `DeviceStatus.he_calibration` and capability in `HelloAck.he_calibration`.
 
 ## Open
 
