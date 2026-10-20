@@ -75,8 +75,11 @@ static const char *TAG = "he";
 
 /*
  * PROVISIONAL factory thresholds, so an uncalibrated pad types for testing:
- * plain mode, press at half the span, release 10 % above it.
- * None of these is a product default yet (OPEN C).
+ * plain mode, press at half the span, release 10 % above it. Rest and span
+ * are the V1.1 bench means (keys 2084/2088 at rest, +447/+508 normal press,
+ * docs/specs/v2-hall-effect-design.md §10b). The noise floors stand in for
+ * OPEN A/D and are not validated. None of these is a product default yet
+ * (OPEN C); the calibration manager replaces them.
  */
 static const he_limits_t HE_PROVISIONAL_LIMITS = {.min_movement = 32, .min_top_reset = 32};
 static he_key_settings_t s_key_settings[2] = {
@@ -90,6 +93,10 @@ static const he_rt_params_t HE_PARAMS_NEVER = {
     .rt_press = 1, .rt_release = 1, .peak_cap = INT32_MAX,
 };
 
+// Started (he_task only). The ADC driver's ADC1 lock is a mutex taken by
+// adc_continuous_start and given back by adc_continuous_stop, so both must run
+// in the same task: he_task. Releasing it from another task trips FreeRTOS's
+// mutex-holder assert (a panic on every HE unplug, before this was so).
 static adc_continuous_handle_t s_adc;
 
 // Module probe handshake (he_backend_probe_module): the caller asks, he_task
