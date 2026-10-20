@@ -120,11 +120,19 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_he_frame"
 
 # 13. Hall Effect calibration record tests
-echo "[13/13] Running test_he_cal..."
+echo "[13/14] Running test_he_cal..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/he_cal_record.c" \
     "${HOST_TEST_DIR}/test_he_cal.c" \
     -o "${BIN_DIR}/test_he_cal"
 "${BIN_DIR}/test_he_cal"
+
+# 14. Hall Effect calibration capture algorithm tests
+echo "[14/14] Running test_he_cal_capture..."
+gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
+    "${FW_MAIN}/input/he_cal_capture.c" \
+    "${HOST_TEST_DIR}/test_he_cal_capture.c" \
+    -o "${BIN_DIR}/test_he_cal_capture"
+"${BIN_DIR}/test_he_cal_capture"
 
 echo "=== All firmware host unit tests passed! ==="
