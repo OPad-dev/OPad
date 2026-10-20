@@ -371,6 +371,12 @@ static void keypad_task(void *pvParameters)
             wait_ticks = DETECT_POLL_TICKS;
         }
 
+        // If a config change is staged waiting for keys to release (MX or HE),
+        // poll until both keys are released
+        if (s_config_staged && (wait_ticks == portMAX_DELAY || wait_ticks > pdMS_TO_TICKS(10))) {
+            wait_ticks = pdMS_TO_TICKS(10);
+        }
+
         ulTaskNotifyTake(pdTRUE, wait_ticks);
 
         apply_input_enabled(&parked);
@@ -438,13 +444,15 @@ static void keypad_task(void *pvParameters)
             }
         }
 
-        // 3. If both keys are currently released, apply any staged config change
+        // 3. If both keys are currently released (both MX switches and HE sensors),
+        // apply any staged config change
         bool move_pins = false;
         keypad_config_t applied;
         keypad_config_t previous;
         portENTER_CRITICAL(&s_keypad_spinlock);
         if (s_config_staged && !s_key_state[0] && !s_key_state[1] &&
-            !reported_state[0] && !reported_state[1]) {
+            !reported_state[0] && !reported_state[1] &&
+            !key_event_is_down(KEY_ID_1) && !key_event_is_down(KEY_ID_2)) {
             move_pins = s_staged_config.key1_gpio != s_config.key1_gpio ||
                         s_staged_config.key2_gpio != s_config.key2_gpio;
             applied = s_staged_config;

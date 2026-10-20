@@ -128,11 +128,18 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_he_cal"
 
 # 14. Hall Effect calibration capture algorithm tests
-echo "[14/14] Running test_he_cal_capture..."
+echo "[14/15] Running test_he_cal_capture..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/he_cal_capture.c" \
     "${HOST_TEST_DIR}/test_he_cal_capture.c" \
     -o "${BIN_DIR}/test_he_cal_capture"
 "${BIN_DIR}/test_he_cal_capture"
+
+# 15. Keypad config staging rule tests
+echo "[15/15] Running test_keypad_staged..."
+gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
+    "${HOST_TEST_DIR}/test_keypad_staged.c" \
+    -o "${BIN_DIR}/test_keypad_staged"
+"${BIN_DIR}/test_keypad_staged"
 
 echo "=== All firmware host unit tests passed! ==="
