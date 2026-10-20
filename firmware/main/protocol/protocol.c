@@ -147,6 +147,7 @@ static void fill_config_payload(osupad_ConfigPayload *out, const device_config_d
     out->key1_he.top_reset = cfg->he_keys[0].top_reset;
     out->key1_he.rt_press = cfg->he_keys[0].rt_press;
     out->key1_he.rt_release = cfg->he_keys[0].rt_release;
+    out->key1_he.has_bottom_dead_zone = true;
     out->key1_he.bottom_dead_zone = cfg->he_keys[0].bottom_dz;
     out->key1_he.rt_mode = !cfg->he_keys[0].rapid_trigger ? osupad_HeRtMode_HE_RT_MODE_OFF :
         cfg->he_keys[0].continuous ? osupad_HeRtMode_HE_RT_MODE_CONTINUOUS :
@@ -158,6 +159,7 @@ static void fill_config_payload(osupad_ConfigPayload *out, const device_config_d
     out->key2_he.top_reset = cfg->he_keys[1].top_reset;
     out->key2_he.rt_press = cfg->he_keys[1].rt_press;
     out->key2_he.rt_release = cfg->he_keys[1].rt_release;
+    out->key2_he.has_bottom_dead_zone = true;
     out->key2_he.bottom_dead_zone = cfg->he_keys[1].bottom_dz;
     out->key2_he.rt_mode = !cfg->he_keys[1].rapid_trigger ? osupad_HeRtMode_HE_RT_MODE_OFF :
         cfg->he_keys[1].continuous ? osupad_HeRtMode_HE_RT_MODE_CONTINUOUS :
@@ -590,7 +592,7 @@ static void handle_host_message(const osupad_HostToDevice *msg)
                 if (c->key1_he.top_reset > 0) dcfg.he_keys[0].top_reset = (uint16_t)c->key1_he.top_reset;
                 if (c->key1_he.rt_press > 0) dcfg.he_keys[0].rt_press = (uint16_t)c->key1_he.rt_press;
                 if (c->key1_he.rt_release > 0) dcfg.he_keys[0].rt_release = (uint16_t)c->key1_he.rt_release;
-                if (c->key1_he.bottom_dead_zone > 0) dcfg.he_keys[0].bottom_dz = (uint16_t)c->key1_he.bottom_dead_zone;
+                if (c->key1_he.has_bottom_dead_zone) dcfg.he_keys[0].bottom_dz = (uint16_t)c->key1_he.bottom_dead_zone;
                 if (c->key1_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_OFF) {
                     dcfg.he_keys[0].rapid_trigger = false;
                     dcfg.he_keys[0].continuous = false;
@@ -608,7 +610,7 @@ static void handle_host_message(const osupad_HostToDevice *msg)
                 if (c->key2_he.top_reset > 0) dcfg.he_keys[1].top_reset = (uint16_t)c->key2_he.top_reset;
                 if (c->key2_he.rt_press > 0) dcfg.he_keys[1].rt_press = (uint16_t)c->key2_he.rt_press;
                 if (c->key2_he.rt_release > 0) dcfg.he_keys[1].rt_release = (uint16_t)c->key2_he.rt_release;
-                if (c->key2_he.bottom_dead_zone > 0) dcfg.he_keys[1].bottom_dz = (uint16_t)c->key2_he.bottom_dead_zone;
+                if (c->key2_he.has_bottom_dead_zone) dcfg.he_keys[1].bottom_dz = (uint16_t)c->key2_he.bottom_dead_zone;
                 if (c->key2_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_OFF) {
                     dcfg.he_keys[1].rapid_trigger = false;
                     dcfg.he_keys[1].continuous = false;

@@ -120,6 +120,7 @@ typedef struct _osupad_HeKeySettings {
     uint32_t top_reset;
     uint32_t rt_press;
     uint32_t rt_release;
+    bool has_bottom_dead_zone;
     uint32_t bottom_dead_zone;
     osupad_HeRtMode rt_mode;
 } osupad_HeKeySettings;
@@ -505,7 +506,7 @@ extern "C" {
 #define osupad_DeviceStatus_init_default         {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, osupad_HeCalibrationStatus_init_default}
 #define osupad_HeCalibrationStatus_init_default  {0, 0, 0, 0, 0, 0}
 #define osupad_ConfigPayload_init_default        {0, 0, 0, 0, 0, 0, 0, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, 0, 0, 0, 0, false, osupad_HeKeySettings_init_default, false, osupad_HeKeySettings_init_default}
-#define osupad_HeKeySettings_init_default        {0, 0, 0, 0, 0, 0, _osupad_HeRtMode_MIN}
+#define osupad_HeKeySettings_init_default        {0, 0, 0, 0, 0, false, 0, _osupad_HeRtMode_MIN}
 #define osupad_SetConfig_init_default            {false, osupad_ConfigPayload_init_default}
 #define osupad_ConfigAck_init_default            {0, "", false, osupad_ConfigPayload_init_default}
 #define osupad_TimeSync_init_default             {0, 0, 0, 0, 0, 0}
@@ -535,7 +536,7 @@ extern "C" {
 #define osupad_DeviceStatus_init_zero            {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, osupad_HeCalibrationStatus_init_zero}
 #define osupad_HeCalibrationStatus_init_zero     {0, 0, 0, 0, 0, 0}
 #define osupad_ConfigPayload_init_zero           {0, 0, 0, 0, 0, 0, 0, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, 0, 0, 0, 0, false, osupad_HeKeySettings_init_zero, false, osupad_HeKeySettings_init_zero}
-#define osupad_HeKeySettings_init_zero           {0, 0, 0, 0, 0, 0, _osupad_HeRtMode_MIN}
+#define osupad_HeKeySettings_init_zero           {0, 0, 0, 0, 0, false, 0, _osupad_HeRtMode_MIN}
 #define osupad_SetConfig_init_zero               {false, osupad_ConfigPayload_init_zero}
 #define osupad_ConfigAck_init_zero               {0, "", false, osupad_ConfigPayload_init_zero}
 #define osupad_TimeSync_init_zero                {0, 0, 0, 0, 0, 0}
@@ -858,7 +859,7 @@ X(a, STATIC,   SINGULAR, UINT32,   release_hyst,      2) \
 X(a, STATIC,   SINGULAR, UINT32,   top_reset,         3) \
 X(a, STATIC,   SINGULAR, UINT32,   rt_press,          4) \
 X(a, STATIC,   SINGULAR, UINT32,   rt_release,        5) \
-X(a, STATIC,   SINGULAR, UINT32,   bottom_dead_zone,   6) \
+X(a, STATIC,   OPTIONAL, UINT32,   bottom_dead_zone,   6) \
 X(a, STATIC,   SINGULAR, UENUM,    rt_mode,           7)
 #define osupad_HeKeySettings_CALLBACK NULL
 #define osupad_HeKeySettings_DEFAULT NULL

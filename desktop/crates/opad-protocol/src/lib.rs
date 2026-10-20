@@ -3,6 +3,7 @@ pub mod proto {
 }
 
 use bytes::{Buf, BytesMut};
+pub use prost;
 use prost::Message;
 use thiserror::Error;
 

@@ -793,7 +793,7 @@ impl DeviceManager {
                         top_reset: k.top_reset,
                         rt_press: k.rt_press,
                         rt_release: k.rt_release,
-                        bottom_dead_zone: k.bottom_dead_zone,
+                        bottom_dead_zone: Some(k.bottom_dead_zone),
                         rt_mode: k.rt_mode.to_wire() as i32,
                     }),
                     key2_he: config.key2_he.map(|k| proto::HeKeySettings {
@@ -802,7 +802,7 @@ impl DeviceManager {
                         top_reset: k.top_reset,
                         rt_press: k.rt_press,
                         rt_release: k.rt_release,
-                        bottom_dead_zone: k.bottom_dead_zone,
+                        bottom_dead_zone: Some(k.bottom_dead_zone),
                         rt_mode: k.rt_mode.to_wire() as i32,
                     }),
                 }),
@@ -1069,7 +1069,7 @@ fn device_config_from(c: &proto::ConfigPayload) -> DeviceConfig {
             top_reset: k.top_reset,
             rt_press: k.rt_press,
             rt_release: k.rt_release,
-            bottom_dead_zone: k.bottom_dead_zone,
+            bottom_dead_zone: k.bottom_dead_zone.unwrap_or(0),
             rt_mode: opad_model::HeRtMode::from_wire(k.rt_mode as u32).unwrap_or_default(),
         }),
         key2_he: c.key2_he.as_ref().map(|k| opad_model::HeKeyConfig {
@@ -1078,7 +1078,7 @@ fn device_config_from(c: &proto::ConfigPayload) -> DeviceConfig {
             top_reset: k.top_reset,
             rt_press: k.rt_press,
             rt_release: k.rt_release,
-            bottom_dead_zone: k.bottom_dead_zone,
+            bottom_dead_zone: k.bottom_dead_zone.unwrap_or(0),
             rt_mode: opad_model::HeRtMode::from_wire(k.rt_mode as u32).unwrap_or_default(),
         }),
     }
@@ -2064,6 +2064,67 @@ mod tests {
             (cfg.swipe_up_action, cfg.swipe_down_action),
             (SwipeAction::VolumeDown, SwipeAction::Mute)
         );
+    }
+
+    #[test]
+    fn test_bottom_dead_zone_zero_can_be_set_and_decoded() {
+        let mut c = proto::ConfigPayload {
+            key1_he: Some(proto::HeKeySettings {
+                actuation: 500,
+                release_hyst: 100,
+                top_reset: 100,
+                rt_press: 150,
+                rt_release: 150,
+                bottom_dead_zone: Some(0),
+                rt_mode: 1,
+            }),
+            ..Default::default()
+        };
+        let cfg = device_config_from(&c);
+        let k1 = cfg.key1_he.expect("key1_he present");
+        assert_eq!(k1.bottom_dead_zone, 0);
+
+        // When bottom_dead_zone is None, defaults to 0
+        c.key1_he = Some(proto::HeKeySettings {
+            actuation: 500,
+            release_hyst: 100,
+            top_reset: 100,
+            rt_press: 150,
+            rt_release: 150,
+            bottom_dead_zone: None,
+            rt_mode: 1,
+        });
+        let cfg = device_config_from(&c);
+        assert_eq!(cfg.key1_he.unwrap().bottom_dead_zone, 0);
+
+        // Explicit non-zero also round-trips
+        c.key1_he = Some(proto::HeKeySettings {
+            actuation: 500,
+            release_hyst: 100,
+            top_reset: 100,
+            rt_press: 150,
+            rt_release: 150,
+            bottom_dead_zone: Some(150),
+            rt_mode: 1,
+        });
+        let cfg = device_config_from(&c);
+        assert_eq!(cfg.key1_he.unwrap().bottom_dead_zone, 150);
+
+        // Protobuf wire round-trip with prost
+        use opad_protocol::prost::Message;
+        let original = proto::HeKeySettings {
+            actuation: 500,
+            release_hyst: 100,
+            top_reset: 100,
+            rt_press: 150,
+            rt_release: 150,
+            bottom_dead_zone: Some(0),
+            rt_mode: 1,
+        };
+        let mut buf = Vec::new();
+        original.encode(&mut buf).unwrap();
+        let decoded = proto::HeKeySettings::decode(&buf[..]).unwrap();
+        assert_eq!(decoded.bottom_dead_zone, Some(0));
     }
 
     #[test]
