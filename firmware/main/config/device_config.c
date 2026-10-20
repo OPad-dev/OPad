@@ -2,6 +2,7 @@
 #include "input/keypad.h"
 #include "input/debounce.h"
 #include "input/touch_retry.h"
+#include "input/he_backend.h"
 #include "usb/usb_hid.h"
 #include "ui/ui.h"
 #include "runtime/runtime.h"
@@ -33,6 +34,28 @@ static device_config_data_t s_current_config = {
     .swipe_right_action = DEVICE_CONFIG_DEFAULT_SWIPE_RIGHT,
     .swipe_up_action = DEVICE_CONFIG_DEFAULT_SWIPE_UP,
     .swipe_down_action = DEVICE_CONFIG_DEFAULT_SWIPE_DOWN,
+    .he_keys = {
+        {
+            .actuation = DEVICE_CONFIG_DEFAULT_HE_ACTUATION,
+            .release_hyst = DEVICE_CONFIG_DEFAULT_HE_HYSTERESIS,
+            .top_reset = DEVICE_CONFIG_DEFAULT_HE_TOP_RESET,
+            .rt_press = DEVICE_CONFIG_DEFAULT_HE_RT_PRESS,
+            .rt_release = DEVICE_CONFIG_DEFAULT_HE_RT_RELEASE,
+            .bottom_dz = DEVICE_CONFIG_DEFAULT_HE_BOTTOM_DZ,
+            .rapid_trigger = DEVICE_CONFIG_DEFAULT_HE_RAPID_TRIGGER,
+            .continuous = DEVICE_CONFIG_DEFAULT_HE_CONTINUOUS,
+        },
+        {
+            .actuation = DEVICE_CONFIG_DEFAULT_HE_ACTUATION,
+            .release_hyst = DEVICE_CONFIG_DEFAULT_HE_HYSTERESIS,
+            .top_reset = DEVICE_CONFIG_DEFAULT_HE_TOP_RESET,
+            .rt_press = DEVICE_CONFIG_DEFAULT_HE_RT_PRESS,
+            .rt_release = DEVICE_CONFIG_DEFAULT_HE_RT_RELEASE,
+            .bottom_dz = DEVICE_CONFIG_DEFAULT_HE_BOTTOM_DZ,
+            .rapid_trigger = DEVICE_CONFIG_DEFAULT_HE_RAPID_TRIGGER,
+            .continuous = DEVICE_CONFIG_DEFAULT_HE_CONTINUOUS,
+        },
+    },
 };
 
 // v1 blobs end before key1_gpio; they load with the default pins
@@ -48,6 +71,8 @@ static device_config_data_t s_current_config = {
 #define DEVICE_CONFIG_V5_SIZE (DEVICE_CONFIG_V4_SIZE + 1)
 // v6 blobs end before the swipe key modifiers; they load as none
 #define DEVICE_CONFIG_V6_SIZE offsetof(device_config_data_t, swipe_mods)
+// v7 blobs end before the per-key HE settings; they load with the HE defaults
+#define DEVICE_CONFIG_V7_SIZE offsetof(device_config_data_t, he_keys)
 
 static bool s_dirty = false;
 // Guards s_current_config and s_dirty: written by the protocol task, read by the
@@ -97,6 +122,16 @@ static void set_defaults(device_config_data_t *cfg)
     cfg->swipe_up_key = 0;
     cfg->swipe_down_key = 0;
     memset(cfg->swipe_mods, 0, sizeof(cfg->swipe_mods));
+    for (int k = 0; k < 2; k++) {
+        cfg->he_keys[k].actuation = DEVICE_CONFIG_DEFAULT_HE_ACTUATION;
+        cfg->he_keys[k].release_hyst = DEVICE_CONFIG_DEFAULT_HE_HYSTERESIS;
+        cfg->he_keys[k].top_reset = DEVICE_CONFIG_DEFAULT_HE_TOP_RESET;
+        cfg->he_keys[k].rt_press = DEVICE_CONFIG_DEFAULT_HE_RT_PRESS;
+        cfg->he_keys[k].rt_release = DEVICE_CONFIG_DEFAULT_HE_RT_RELEASE;
+        cfg->he_keys[k].bottom_dz = DEVICE_CONFIG_DEFAULT_HE_BOTTOM_DZ;
+        cfg->he_keys[k].rapid_trigger = DEVICE_CONFIG_DEFAULT_HE_RAPID_TRIGGER;
+        cfg->he_keys[k].continuous = DEVICE_CONFIG_DEFAULT_HE_CONTINUOUS;
+    }
 }
 
 
@@ -158,6 +193,9 @@ void device_config_apply(const device_config_data_t *cfg)
     const uint8_t keys[4] = {cfg->swipe_up_key, cfg->swipe_down_key,
                              cfg->swipe_left_key, cfg->swipe_right_key};
     touch_retry_set_swipe_actions(actions, keys, cfg->swipe_mods);
+
+    he_key_settings_t he_copy[2] = {cfg->he_keys[0], cfg->he_keys[1]};
+    he_backend_apply_settings(he_copy);
 }
 
 esp_err_t device_config_init(void)
@@ -187,6 +225,7 @@ esp_err_t device_config_init(void)
         nvs_close(handle);
 
         bool layout_ok = (len == sizeof(loaded) && loaded.version == DEVICE_CONFIG_VERSION) ||
+                         (len == DEVICE_CONFIG_V7_SIZE && loaded.version == 7) ||
                          (len == DEVICE_CONFIG_V6_SIZE && loaded.version == 6) ||
                          (len == DEVICE_CONFIG_V5_SIZE && loaded.version == 5) ||
                          (len == DEVICE_CONFIG_V4_SIZE && loaded.version == 4) ||

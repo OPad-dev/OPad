@@ -77,8 +77,11 @@ static const char *TAG = "he";
  * plain mode, press at half the span, release 10 % above it.
  * None of these is a product default yet (OPEN C).
  */
-static const he_key_settings_t HE_FACTORY_SETTINGS = {.actuation = 500, .release_hyst = 100};
 static const he_limits_t HE_PROVISIONAL_LIMITS = {.min_movement = 32, .min_top_reset = 32};
+static he_key_settings_t s_key_settings[2] = {
+    {.actuation = 500, .release_hyst = 100, .top_reset = 100, .rt_press = 150, .rt_release = 150},
+    {.actuation = 500, .release_hyst = 100, .top_reset = 100, .rt_press = 150, .rt_release = 150},
+};
 
 // Thresholds that never press: `release` below any reading, so a key never arms
 static const he_rt_params_t HE_PARAMS_NEVER = {
@@ -491,7 +494,7 @@ esp_err_t he_backend_start(void)
         he_calibration_t cal;
         he_cal_get((uint8_t)k, &cal);
         he_rt_params_t p;
-        uint32_t r = he_params_build(&HE_FACTORY_SETTINGS, &cal, &HE_PROVISIONAL_LIMITS, &p);
+        uint32_t r = he_params_build(&s_key_settings[k], &cal, &HE_PROVISIONAL_LIMITS, &p);
         if (HE_PARAMS_FAILED(r)) {
             ESP_LOGE(TAG, "Factory thresholds rejected (0x%lx): key %d stays up", (unsigned long)r, k + 1);
             p = HE_PARAMS_NEVER;
@@ -510,6 +513,16 @@ esp_err_t he_backend_start(void)
     return ESP_OK;
 }
 
+void he_backend_apply_settings(const he_key_settings_t s[2])
+{
+    if (s == NULL) {
+        return;
+    }
+    s_key_settings[0] = s[0];
+    s_key_settings[1] = s[1];
+    he_backend_reload_params();
+}
+
 void he_backend_reload_params(void)
 {
     if (!s_running) {
@@ -519,7 +532,7 @@ void he_backend_reload_params(void)
         he_calibration_t cal;
         he_cal_get((uint8_t)k, &cal);
         he_rt_params_t p;
-        uint32_t r = he_params_build(&HE_FACTORY_SETTINGS, &cal, &HE_PROVISIONAL_LIMITS, &p);
+        uint32_t r = he_params_build(&s_key_settings[k], &cal, &HE_PROVISIONAL_LIMITS, &p);
         if (HE_PARAMS_FAILED(r)) {
             ESP_LOGE(TAG, "Thresholds rejected (0x%lx): key %d stays up", (unsigned long)r, k + 1);
             p = HE_PARAMS_NEVER;

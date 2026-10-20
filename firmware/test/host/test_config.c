@@ -309,6 +309,91 @@ static void test_swipe_actions(void)
     printf("✓ test_swipe_actions passed\n");
 }
 
+static void test_he_settings_bounds(void)
+{
+    device_config_data_t cfg = {
+        .version = DEVICE_CONFIG_VERSION,
+        .key1_usage = 0x1D,
+        .key2_usage = 0x1B,
+        .key1_gpio = DEVICE_CONFIG_DEFAULT_KEY1_GPIO,
+        .key2_gpio = DEVICE_CONFIG_DEFAULT_KEY2_GPIO,
+        .debounce_us = 5000,
+        .brightness = 80,
+        .sleep_s = 600,
+        .swipe_left_action = SWIPE_ACTION_PREV_TRACK,
+        .swipe_right_action = SWIPE_ACTION_NEXT_TRACK,
+        .swipe_up_action = SWIPE_ACTION_VOLUME_UP,
+        .swipe_down_action = SWIPE_ACTION_VOLUME_DOWN,
+        .he_keys = {
+            {
+                .actuation = 500,
+                .release_hyst = 100,
+                .top_reset = 100,
+                .rt_press = 150,
+                .rt_release = 150,
+                .bottom_dz = 0,
+                .rapid_trigger = false,
+                .continuous = false,
+            },
+            {
+                .actuation = 500,
+                .release_hyst = 100,
+                .top_reset = 100,
+                .rt_press = 150,
+                .rt_release = 150,
+                .bottom_dz = 0,
+                .rapid_trigger = false,
+                .continuous = false,
+            },
+        },
+    };
+    char err[64] = {0};
+    assert(device_config_validate(&cfg, err, sizeof(err)));
+
+    // Actuation > 1000
+    cfg.he_keys[0].actuation = 1001;
+    assert(!device_config_validate(&cfg, err, sizeof(err)));
+    assert(strstr(err, "actuation") != NULL);
+    cfg.he_keys[0].actuation = 500;
+
+    // Hysteresis > 1000
+    cfg.he_keys[1].release_hyst = 1001;
+    assert(!device_config_validate(&cfg, err, sizeof(err)));
+    assert(strstr(err, "hysteresis") != NULL);
+    cfg.he_keys[1].release_hyst = 100;
+
+    // Top reset > 1000
+    cfg.he_keys[0].top_reset = 1001;
+    assert(!device_config_validate(&cfg, err, sizeof(err)));
+    assert(strstr(err, "top_reset") != NULL);
+    cfg.he_keys[0].top_reset = 100;
+
+    // rt_press > 1000
+    cfg.he_keys[1].rt_press = 1001;
+    assert(!device_config_validate(&cfg, err, sizeof(err)));
+    assert(strstr(err, "rt_press") != NULL);
+    cfg.he_keys[1].rt_press = 150;
+
+    // rt_release > 1000
+    cfg.he_keys[0].rt_release = 1001;
+    assert(!device_config_validate(&cfg, err, sizeof(err)));
+    assert(strstr(err, "rt_release") != NULL);
+    cfg.he_keys[0].rt_release = 150;
+
+    // bottom_dz > 1000
+    cfg.he_keys[1].bottom_dz = 1001;
+    assert(!device_config_validate(&cfg, err, sizeof(err)));
+    assert(strstr(err, "bottom_dz") != NULL);
+    cfg.he_keys[1].bottom_dz = 0;
+
+    assert(device_config_validate(&cfg, err, sizeof(err)));
+
+    // Backward compatibility: offset of he_keys matches v7 size
+    assert(offsetof(device_config_data_t, he_keys) == offsetof(device_config_data_t, swipe_mods) + sizeof(cfg.swipe_mods));
+
+    printf("✓ test_he_settings_bounds passed\n");
+}
+
 int main(void)
 {
     test_null_config_rejected();
@@ -319,6 +404,7 @@ int main(void)
     test_gameplay_display_hz_bounds();
     test_key_gpio_allow_list();
     test_swipe_actions();
+    test_he_settings_bounds();
     printf("All config validation unit tests passed successfully!\n");
     return 0;
 }

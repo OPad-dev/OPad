@@ -103,5 +103,32 @@ bool device_config_validate(const device_config_data_t *cfg, char *err_msg, size
         if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "key1 and key2 share gpio %lu", (unsigned long)cfg->key1_gpio);
         return false;
     }
+    for (int k = 0; k < 2; k++) {
+        he_key_settings_t s = cfg->he_keys[k];
+        if (s.actuation > HE_PCT_FULL) {
+            if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "he_key[%d] actuation %u out of range [0, %d]", k, s.actuation, HE_PCT_FULL);
+            return false;
+        }
+        if (s.release_hyst > HE_PCT_FULL) {
+            if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "he_key[%d] hysteresis %u out of range [0, %d]", k, s.release_hyst, HE_PCT_FULL);
+            return false;
+        }
+        if (s.top_reset > HE_PCT_FULL) {
+            if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "he_key[%d] top_reset %u out of range [0, %d]", k, s.top_reset, HE_PCT_FULL);
+            return false;
+        }
+        if (s.rt_press > HE_PCT_FULL) {
+            if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "he_key[%d] rt_press %u out of range [0, %d]", k, s.rt_press, HE_PCT_FULL);
+            return false;
+        }
+        if (s.rt_release > HE_PCT_FULL) {
+            if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "he_key[%d] rt_release %u out of range [0, %d]", k, s.rt_release, HE_PCT_FULL);
+            return false;
+        }
+        if (s.bottom_dz > HE_PCT_FULL) {
+            if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "he_key[%d] bottom_dz %u out of range [0, %d]", k, s.bottom_dz, HE_PCT_FULL);
+            return false;
+        }
+    }
     return true;
 }

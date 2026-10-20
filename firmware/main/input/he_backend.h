@@ -12,6 +12,7 @@
 #include "esp_err.h"
 #include "sdkconfig.h"
 #include "input/he_rt.h"
+#include "input/he_params.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -51,6 +52,12 @@ bool he_backend_running(void);
 void he_backend_set_params(uint8_t key_index, const he_rt_params_t *p);
 
 /**
+ * @brief Apply new per-key HE settings (from device_config).
+ * Safe from any task; applies thresholds as he_rt_set_params describes.
+ */
+void he_backend_apply_settings(const he_key_settings_t s[2]);
+
+/**
  * @brief Rebuild thresholds using active calibration and current settings.
  * Safe from any task; applies thresholds as he_rt_set_params describes.
  */
@@ -76,6 +83,7 @@ esp_err_t he_backend_probe_module(int *out_open_mv, int *out_loaded_mv);
 static inline esp_err_t he_backend_start(void) { return ESP_ERR_NOT_SUPPORTED; }
 static inline bool he_backend_running(void) { return false; }
 static inline bool he_backend_keys_absent(void) { return false; }
+static inline void he_backend_apply_settings(const he_key_settings_t s[2]) { (void)s; }
 static inline void he_backend_reload_params(void) {}
 static inline esp_err_t he_backend_probe_module(int *o, int *l) { (void)o; (void)l; return ESP_ERR_NOT_SUPPORTED; }
 
