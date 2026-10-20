@@ -718,6 +718,7 @@ impl App {
                         // B's to add if it is wanted.
                         last_backup: _,
                         foreign_pad: _,
+                        he_calibration: _,
                     }) => {
                         let was_offline = !self.daemon_online;
                         let device_just_connected = !self.device_connected && device_connected;

@@ -62,6 +62,10 @@ message HelloAck {
     // The pad restarts when asked (HostToDevice.restart). False from firmware
     // predating it: the host then offers no restart.
     bool restart = 14;
+    // The pad has Hall Effect key input available.
+    bool he_input = 15;
+    // The pad supports Hall Effect calibration storage.
+    bool he_calibration = 16;
 }
 
 // Record a new owner in NVS (§W3-2). An NVS write, so the firmware must honour
@@ -90,6 +94,16 @@ message DeviceStatus {
     bool display_ok = 15;
     bool nvs_ok = 16;
     uint32 nvs_writes = 17;
+    HeCalibrationStatus he_calibration = 18;
+}
+
+message HeCalibrationStatus {
+    bool key1_calibrated = 1;
+    bool key2_calibrated = 2;
+    uint32 key1_rest = 3;
+    uint32 key1_full = 4;
+    uint32 key2_rest = 5;
+    uint32 key2_full = 6;
 }
 
 // -----------------------------------------------------------------------------
@@ -125,6 +139,28 @@ message ConfigPayload {
     uint32 swipe_down_modifiers = 20;
     uint32 swipe_left_modifiers = 21;
     uint32 swipe_right_modifiers = 22;
+    // Per-key Hall Effect settings. 0 = keep current
+    HeKeySettings key1_he = 23;
+    HeKeySettings key2_he = 24;
+}
+
+// Rapid trigger mode on the wire. 0 is wire-only keep current.
+enum HeRtMode {
+    HE_RT_MODE_KEEP = 0;           // Wire only: leave the current mode
+    HE_RT_MODE_OFF = 1;            // Plain mode
+    HE_RT_MODE_NORMAL = 2;         // Rapid trigger with top reset
+    HE_RT_MODE_CONTINUOUS = 3;     // Continuous rapid trigger
+}
+
+message HeKeySettings {
+    // Travel values in 0.1 % of calibrated span (1..1000). 0 = keep current
+    uint32 actuation = 1;
+    uint32 release_hyst = 2;
+    uint32 top_reset = 3;
+    uint32 rt_press = 4;
+    uint32 rt_release = 5;
+    uint32 bottom_dead_zone = 6;
+    HeRtMode rt_mode = 7;
 }
 
 // What a swipe does. Volume steps repeat along a long drag; every other

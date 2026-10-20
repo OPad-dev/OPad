@@ -246,6 +246,7 @@ async fn main() -> Result<()> {
                 incompatible,
                 last_backup,
                 pending_takeover,
+                he_calibration,
                 ..
             } = resp
             {
@@ -260,7 +261,7 @@ async fn main() -> Result<()> {
                     }
                 );
                 println!("Counters Source:  {:?}", counters_source);
-                if let Some(info) = device_info {
+                if let Some(info) = &device_info {
                     println!("Device ID:        {}", info.device_id);
                     println!("Board Profile:    {}", info.board_profile);
                     println!("Firmware Version: {}", info.firmware_version);
@@ -272,6 +273,19 @@ async fn main() -> Result<()> {
                         info.running_partition
                             .as_deref()
                             .unwrap_or("unknown (firmware predates the OTA layout)")
+                    );
+                    if info.he_input {
+                        println!("HE Input:         Available");
+                    }
+                    if info.he_calibration {
+                        println!("HE Calibration:   Supported");
+                    }
+                }
+                if let Some(cal) = &he_calibration {
+                    println!(
+                        "HE Calibrated:    K1: {}, K2: {}",
+                        if cal.key1_calibrated { "yes" } else { "no" },
+                        if cal.key2_calibrated { "yes" } else { "no" }
                     );
                 }
                 println!(

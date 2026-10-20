@@ -338,14 +338,25 @@ async fn main() -> Result<()> {
                         event_opt = Some(RuntimeEvent::DeviceCounters(c));
                     }
                     DeviceEvent::StatusUpdate(status) => {
-                        event_opt = Some(RuntimeEvent::DeviceLatency(opad_model::LatencyStats {
-                            samples: status.latency_samples,
-                            p50_us: status.latency_p50_us,
-                            p99_us: status.latency_p99_us,
-                            p999_us: status.latency_p999_us,
-                            max_us: status.latency_max_us,
-                            deferred_reports: status.hid_deferred_reports,
-                        }));
+                        let cal = status.he_calibration.map(|c| opad_model::HeCalibrationStatus {
+                            key1_calibrated: c.key1_calibrated,
+                            key2_calibrated: c.key2_calibrated,
+                            key1_rest: c.key1_rest,
+                            key1_full: c.key1_full,
+                            key2_rest: c.key2_rest,
+                            key2_full: c.key2_full,
+                        });
+                        event_opt = Some(RuntimeEvent::DeviceStatus {
+                            latency: opad_model::LatencyStats {
+                                samples: status.latency_samples,
+                                p50_us: status.latency_p50_us,
+                                p99_us: status.latency_p99_us,
+                                p999_us: status.latency_p999_us,
+                                max_us: status.latency_max_us,
+                                deferred_reports: status.hid_deferred_reports,
+                            },
+                            he_calibration: cal,
+                        });
                     }
                     DeviceEvent::CounterSyncResult { .. } => {}
                     DeviceEvent::ConfigAck { .. } => {}
@@ -725,6 +736,8 @@ mod tests {
                 firmware_version: "1.0.0".to_string(),
                 protocol_version: 1,
                 running_partition: None,
+                he_input: false,
+                he_calibration: false,
             }),
             counters: CounterState {
                 device_id: "OSUPAD-TEST".to_string(),
@@ -761,6 +774,7 @@ mod tests {
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
             last_backup: None,
+            he_calibration: None,
         }));
 
         // 1. GetStatus surfaces storage_error

@@ -428,6 +428,8 @@ mod tests {
                 firmware_version: firmware.to_string(),
                 protocol_version: 1,
                 running_partition: Some("ota_0".to_string()),
+                he_input: false,
+                he_calibration: false,
             }),
             CounterState::default(),
             Default::default(),

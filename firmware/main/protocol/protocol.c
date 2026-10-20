@@ -8,6 +8,7 @@
 #include "input/touch_retry.h"
 #include "input/keypad.h"
 #include "input/key_event.h"
+#include "input/he_cal.h"
 #include "counters/counters.h"
 #include "ui/ui.h"
 #include "ui/ui_store.h"
@@ -116,6 +117,53 @@ static esp_err_t send_envelope(const osupad_DeviceToHost *msg)
     return ESP_OK;
 }
 
+static void fill_config_payload(osupad_ConfigPayload *out, const device_config_data_t *cfg)
+{
+    out->key1_hid_usage = cfg->key1_usage;
+    out->key2_hid_usage = cfg->key2_usage;
+    out->debounce_us = cfg->debounce_us;
+    out->brightness = cfg->brightness;
+    out->display_sleep_seconds = cfg->sleep_s;
+    out->gameplay_display_hz = cfg->gameplay_display_hz ? cfg->gameplay_display_hz : 10;
+    out->press_color_rgb = 0;
+    out->key1_gpio = cfg->key1_gpio;
+    out->key2_gpio = cfg->key2_gpio;
+    out->swipe_left_action = (osupad_SwipeAction)cfg->swipe_left_action;
+    out->swipe_right_action = (osupad_SwipeAction)cfg->swipe_right_action;
+    out->swipe_left_key = cfg->swipe_left_key;
+    out->swipe_right_key = cfg->swipe_right_key;
+    out->swipe_up_action = (osupad_SwipeAction)cfg->swipe_up_action;
+    out->swipe_down_action = (osupad_SwipeAction)cfg->swipe_down_action;
+    out->swipe_up_key = cfg->swipe_up_key;
+    out->swipe_down_key = cfg->swipe_down_key;
+    out->swipe_up_modifiers = cfg->swipe_mods[0];
+    out->swipe_down_modifiers = cfg->swipe_mods[1];
+    out->swipe_left_modifiers = cfg->swipe_mods[2];
+    out->swipe_right_modifiers = cfg->swipe_mods[3];
+
+    out->has_key1_he = true;
+    out->key1_he.actuation = cfg->he_keys[0].actuation;
+    out->key1_he.release_hyst = cfg->he_keys[0].release_hyst;
+    out->key1_he.top_reset = cfg->he_keys[0].top_reset;
+    out->key1_he.rt_press = cfg->he_keys[0].rt_press;
+    out->key1_he.rt_release = cfg->he_keys[0].rt_release;
+    out->key1_he.bottom_dead_zone = cfg->he_keys[0].bottom_dz;
+    out->key1_he.rt_mode = !cfg->he_keys[0].rapid_trigger ? osupad_HeRtMode_HE_RT_MODE_OFF :
+        cfg->he_keys[0].continuous ? osupad_HeRtMode_HE_RT_MODE_CONTINUOUS :
+        osupad_HeRtMode_HE_RT_MODE_NORMAL;
+
+    out->has_key2_he = true;
+    out->key2_he.actuation = cfg->he_keys[1].actuation;
+    out->key2_he.release_hyst = cfg->he_keys[1].release_hyst;
+    out->key2_he.top_reset = cfg->he_keys[1].top_reset;
+    out->key2_he.rt_press = cfg->he_keys[1].rt_press;
+    out->key2_he.rt_release = cfg->he_keys[1].rt_release;
+    out->key2_he.bottom_dead_zone = cfg->he_keys[1].bottom_dz;
+    out->key2_he.rt_mode = !cfg->he_keys[1].rapid_trigger ? osupad_HeRtMode_HE_RT_MODE_OFF :
+        cfg->he_keys[1].continuous ? osupad_HeRtMode_HE_RT_MODE_CONTINUOUS :
+        osupad_HeRtMode_HE_RT_MODE_NORMAL;
+}
+
 esp_err_t protocol_send_hello_ack(uint32_t seq)
 {
     counters_snapshot_t snap;
@@ -152,27 +200,7 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     device_config_data_t cfg;
     device_config_get(&cfg);
     msg.payload.hello_ack.has_current_config = true;
-    msg.payload.hello_ack.current_config.key1_hid_usage = cfg.key1_usage;
-    msg.payload.hello_ack.current_config.key2_hid_usage = cfg.key2_usage;
-    msg.payload.hello_ack.current_config.debounce_us = cfg.debounce_us;
-    msg.payload.hello_ack.current_config.brightness = cfg.brightness;
-    msg.payload.hello_ack.current_config.display_sleep_seconds = cfg.sleep_s;
-    msg.payload.hello_ack.current_config.gameplay_display_hz = cfg.gameplay_display_hz ? cfg.gameplay_display_hz : 10;
-    msg.payload.hello_ack.current_config.press_color_rgb = 0;
-    msg.payload.hello_ack.current_config.key1_gpio = cfg.key1_gpio;
-    msg.payload.hello_ack.current_config.key2_gpio = cfg.key2_gpio;
-    msg.payload.hello_ack.current_config.swipe_left_action = (osupad_SwipeAction)cfg.swipe_left_action;
-    msg.payload.hello_ack.current_config.swipe_right_action = (osupad_SwipeAction)cfg.swipe_right_action;
-    msg.payload.hello_ack.current_config.swipe_left_key = cfg.swipe_left_key;
-    msg.payload.hello_ack.current_config.swipe_right_key = cfg.swipe_right_key;
-    msg.payload.hello_ack.current_config.swipe_up_action = (osupad_SwipeAction)cfg.swipe_up_action;
-    msg.payload.hello_ack.current_config.swipe_down_action = (osupad_SwipeAction)cfg.swipe_down_action;
-    msg.payload.hello_ack.current_config.swipe_up_key = cfg.swipe_up_key;
-    msg.payload.hello_ack.current_config.swipe_down_key = cfg.swipe_down_key;
-    msg.payload.hello_ack.current_config.swipe_up_modifiers = cfg.swipe_mods[0];
-    msg.payload.hello_ack.current_config.swipe_down_modifiers = cfg.swipe_mods[1];
-    msg.payload.hello_ack.current_config.swipe_left_modifiers = cfg.swipe_mods[2];
-    msg.payload.hello_ack.current_config.swipe_right_modifiers = cfg.swipe_mods[3];
+    fill_config_payload(&msg.payload.hello_ack.current_config, &cfg);
     // KeyPressBatch is sent while a map is played (issue #2)
     msg.payload.hello_ack.key_press_times = true;
     // Answers run_board_test
@@ -180,6 +208,12 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     // Plays PlayAnimation (issue #3)
     msg.payload.hello_ack.builtin_animations = UI_ANIM_BUILTIN_COUNT;
     msg.payload.hello_ack.restart = true;
+#ifdef CONFIG_OSUPAD_HE_BACKEND
+    msg.payload.hello_ack.he_input = true;
+#else
+    msg.payload.hello_ack.he_input = false;
+#endif
+    msg.payload.hello_ack.he_calibration = true;
 
     ESP_LOGI(TAG, "Sending HelloAck to host (Firmware: %s, Gen: %lu, Partition: %s, K1: GPIO%lu, K2: GPIO%lu)",
              app_desc->version, (unsigned long)snap.generation,
@@ -216,6 +250,18 @@ esp_err_t protocol_send_status(void)
     msg.payload.status.nvs_ok = counters_is_nvs_ok();
     msg.payload.status.nvs_writes = counters_get_nvs_writes();
 
+    he_calibration_t cal0 = {0};
+    he_calibration_t cal1 = {0};
+    he_cal_get(0, &cal0);
+    he_cal_get(1, &cal1);
+    msg.payload.status.has_he_calibration = true;
+    msg.payload.status.he_calibration.key1_calibrated = cal0.valid;
+    msg.payload.status.he_calibration.key1_rest = cal0.rest >= 0 ? (uint32_t)cal0.rest : 0;
+    msg.payload.status.he_calibration.key1_full = cal0.full >= 0 ? (uint32_t)cal0.full : 0;
+    msg.payload.status.he_calibration.key2_calibrated = cal1.valid;
+    msg.payload.status.he_calibration.key2_rest = cal1.rest >= 0 ? (uint32_t)cal1.rest : 0;
+    msg.payload.status.he_calibration.key2_full = cal1.full >= 0 ? (uint32_t)cal1.full : 0;
+
     return send_envelope(&msg);
 }
 
@@ -232,27 +278,7 @@ esp_err_t protocol_send_config_ack(uint32_t seq, bool success, const char *text)
         strncpy(msg.payload.config_ack.message, text, sizeof(msg.payload.config_ack.message) - 1);
     }
     msg.payload.config_ack.has_current_config = true;
-    msg.payload.config_ack.current_config.key1_hid_usage = cfg.key1_usage;
-    msg.payload.config_ack.current_config.key2_hid_usage = cfg.key2_usage;
-    msg.payload.config_ack.current_config.debounce_us = cfg.debounce_us;
-    msg.payload.config_ack.current_config.brightness = cfg.brightness;
-    msg.payload.config_ack.current_config.display_sleep_seconds = cfg.sleep_s;
-    msg.payload.config_ack.current_config.gameplay_display_hz = cfg.gameplay_display_hz ? cfg.gameplay_display_hz : 10;
-    msg.payload.config_ack.current_config.press_color_rgb = 0;
-    msg.payload.config_ack.current_config.key1_gpio = cfg.key1_gpio;
-    msg.payload.config_ack.current_config.key2_gpio = cfg.key2_gpio;
-    msg.payload.config_ack.current_config.swipe_left_action = (osupad_SwipeAction)cfg.swipe_left_action;
-    msg.payload.config_ack.current_config.swipe_right_action = (osupad_SwipeAction)cfg.swipe_right_action;
-    msg.payload.config_ack.current_config.swipe_left_key = cfg.swipe_left_key;
-    msg.payload.config_ack.current_config.swipe_right_key = cfg.swipe_right_key;
-    msg.payload.config_ack.current_config.swipe_up_action = (osupad_SwipeAction)cfg.swipe_up_action;
-    msg.payload.config_ack.current_config.swipe_down_action = (osupad_SwipeAction)cfg.swipe_down_action;
-    msg.payload.config_ack.current_config.swipe_up_key = cfg.swipe_up_key;
-    msg.payload.config_ack.current_config.swipe_down_key = cfg.swipe_down_key;
-    msg.payload.config_ack.current_config.swipe_up_modifiers = cfg.swipe_mods[0];
-    msg.payload.config_ack.current_config.swipe_down_modifiers = cfg.swipe_mods[1];
-    msg.payload.config_ack.current_config.swipe_left_modifiers = cfg.swipe_mods[2];
-    msg.payload.config_ack.current_config.swipe_right_modifiers = cfg.swipe_mods[3];
+    fill_config_payload(&msg.payload.config_ack.current_config, &cfg);
 
     return send_envelope(&msg);
 }
@@ -555,6 +581,43 @@ static void handle_host_message(const osupad_HostToDevice *msg)
                                       c->swipe_left_modifiers, c->swipe_right_modifiers};
             for (int i = 0; i < 4; i++) {
                 dcfg.swipe_mods[i] = (uint8_t)mods[i]; // HID modifiers are 8 bits
+            }
+
+            if (c->has_key1_he) {
+                if (c->key1_he.actuation > 0) dcfg.he_keys[0].actuation = (uint16_t)c->key1_he.actuation;
+                if (c->key1_he.release_hyst > 0) dcfg.he_keys[0].release_hyst = (uint16_t)c->key1_he.release_hyst;
+                if (c->key1_he.top_reset > 0) dcfg.he_keys[0].top_reset = (uint16_t)c->key1_he.top_reset;
+                if (c->key1_he.rt_press > 0) dcfg.he_keys[0].rt_press = (uint16_t)c->key1_he.rt_press;
+                if (c->key1_he.rt_release > 0) dcfg.he_keys[0].rt_release = (uint16_t)c->key1_he.rt_release;
+                if (c->key1_he.bottom_dead_zone > 0) dcfg.he_keys[0].bottom_dz = (uint16_t)c->key1_he.bottom_dead_zone;
+                if (c->key1_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_OFF) {
+                    dcfg.he_keys[0].rapid_trigger = false;
+                    dcfg.he_keys[0].continuous = false;
+                } else if (c->key1_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_NORMAL) {
+                    dcfg.he_keys[0].rapid_trigger = true;
+                    dcfg.he_keys[0].continuous = false;
+                } else if (c->key1_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_CONTINUOUS) {
+                    dcfg.he_keys[0].rapid_trigger = true;
+                    dcfg.he_keys[0].continuous = true;
+                }
+            }
+            if (c->has_key2_he) {
+                if (c->key2_he.actuation > 0) dcfg.he_keys[1].actuation = (uint16_t)c->key2_he.actuation;
+                if (c->key2_he.release_hyst > 0) dcfg.he_keys[1].release_hyst = (uint16_t)c->key2_he.release_hyst;
+                if (c->key2_he.top_reset > 0) dcfg.he_keys[1].top_reset = (uint16_t)c->key2_he.top_reset;
+                if (c->key2_he.rt_press > 0) dcfg.he_keys[1].rt_press = (uint16_t)c->key2_he.rt_press;
+                if (c->key2_he.rt_release > 0) dcfg.he_keys[1].rt_release = (uint16_t)c->key2_he.rt_release;
+                if (c->key2_he.bottom_dead_zone > 0) dcfg.he_keys[1].bottom_dz = (uint16_t)c->key2_he.bottom_dead_zone;
+                if (c->key2_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_OFF) {
+                    dcfg.he_keys[1].rapid_trigger = false;
+                    dcfg.he_keys[1].continuous = false;
+                } else if (c->key2_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_NORMAL) {
+                    dcfg.he_keys[1].rapid_trigger = true;
+                    dcfg.he_keys[1].continuous = false;
+                } else if (c->key2_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_CONTINUOUS) {
+                    dcfg.he_keys[1].rapid_trigger = true;
+                    dcfg.he_keys[1].continuous = true;
+                }
             }
 
             char err_msg[64] = "";

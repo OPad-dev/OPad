@@ -63,6 +63,8 @@ pub fn current(
             firmware_version: String::new(),
             protocol_version: 1,
             running_partition: None,
+            he_input: false,
+            he_calibration: false,
         });
     Some(JsonBackup::new(&info, &st.counters, &st.config))
 }
@@ -211,6 +213,8 @@ mod tests {
                 firmware_version: "1.0.0".into(),
                 protocol_version: 1,
                 running_partition: Some("ota_0".into()),
+                he_input: false,
+                he_calibration: false,
             },
             &CounterState {
                 device_id: "pad-1".into(),

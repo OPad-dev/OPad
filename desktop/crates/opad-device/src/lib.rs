@@ -787,6 +787,24 @@ impl DeviceManager {
                     swipe_down_modifiers: config.swipe_down_modifiers,
                     swipe_left_modifiers: config.swipe_left_modifiers,
                     swipe_right_modifiers: config.swipe_right_modifiers,
+                    key1_he: config.key1_he.map(|k| proto::HeKeySettings {
+                        actuation: k.actuation,
+                        release_hyst: k.release_hyst,
+                        top_reset: k.top_reset,
+                        rt_press: k.rt_press,
+                        rt_release: k.rt_release,
+                        bottom_dead_zone: k.bottom_dead_zone,
+                        rt_mode: k.rt_mode.to_wire() as i32,
+                    }),
+                    key2_he: config.key2_he.map(|k| proto::HeKeySettings {
+                        actuation: k.actuation,
+                        release_hyst: k.release_hyst,
+                        top_reset: k.top_reset,
+                        rt_press: k.rt_press,
+                        rt_release: k.rt_release,
+                        bottom_dead_zone: k.bottom_dead_zone,
+                        rt_mode: k.rt_mode.to_wire() as i32,
+                    }),
                 }),
             })),
         };
@@ -1045,6 +1063,24 @@ fn device_config_from(c: &proto::ConfigPayload) -> DeviceConfig {
         swipe_right_modifiers: c.swipe_right_modifiers,
         // Not on the pad: the PC keeps its own (runtime.rs DeviceConnected)
         result_animations: Default::default(),
+        key1_he: c.key1_he.as_ref().map(|k| opad_model::HeKeyConfig {
+            actuation: k.actuation,
+            release_hyst: k.release_hyst,
+            top_reset: k.top_reset,
+            rt_press: k.rt_press,
+            rt_release: k.rt_release,
+            bottom_dead_zone: k.bottom_dead_zone,
+            rt_mode: opad_model::HeRtMode::from_wire(k.rt_mode as u32).unwrap_or_default(),
+        }),
+        key2_he: c.key2_he.as_ref().map(|k| opad_model::HeKeyConfig {
+            actuation: k.actuation,
+            release_hyst: k.release_hyst,
+            top_reset: k.top_reset,
+            rt_press: k.rt_press,
+            rt_release: k.rt_release,
+            bottom_dead_zone: k.bottom_dead_zone,
+            rt_mode: opad_model::HeRtMode::from_wire(k.rt_mode as u32).unwrap_or_default(),
+        }),
     }
 }
 
@@ -1091,6 +1127,8 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     // rather than inventing a slot name for it
                     running_partition: (!ack.running_partition.is_empty())
                         .then(|| ack.running_partition.clone()),
+                    he_input: ack.he_input,
+                    he_calibration: ack.he_calibration,
                 };
                 // Ownership first, then counters: the connect handler decides
                 // between known pad, new pad, replacement and takeover from

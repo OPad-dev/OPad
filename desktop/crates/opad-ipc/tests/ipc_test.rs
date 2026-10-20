@@ -67,6 +67,8 @@ async fn test_ipc_roundtrip_requests() {
                                 firmware_version: "1.0.0".to_string(),
                                 protocol_version: 1,
                                 running_partition: None,
+                                he_input: false,
+                                he_calibration: false,
                             }),
                             counters: CounterState {
                                 device_id: "OSUPAD-TEST".to_string(),
@@ -90,6 +92,7 @@ async fn test_ipc_roundtrip_requests() {
                             incompatible: None,
                             last_backup: Some("2026-09-17T00:00:00Z".to_string()),
                             foreign_pad: false,
+                            he_calibration: None,
                         },
                         IpcRequest::PrepareFlash => IpcResponse::ReadyForFlash {
                             port: Some("/dev/ttyACM0".to_string()),
@@ -110,6 +113,8 @@ async fn test_ipc_roundtrip_requests() {
                                 firmware_version: "1.0.0".to_string(),
                                 protocol_version: 1,
                                 running_partition: None,
+                                he_input: false,
+                                he_calibration: false,
                             };
                             let counters = CounterState {
                                 device_id: "OSUPAD-TEST".to_string(),

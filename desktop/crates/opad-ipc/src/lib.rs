@@ -341,6 +341,9 @@ pub enum IpcResponse {
         /// answers "leave it alone", when `pending_takeover` is already gone.
         #[serde(default)]
         foreign_pad: bool,
+        /// Hall Effect calibration status from the connected pad
+        #[serde(default)]
+        he_calibration: Option<opad_model::HeCalibrationStatus>,
     },
     ConfigUpdated {
         config: DeviceConfig,

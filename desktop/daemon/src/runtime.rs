@@ -110,6 +110,7 @@ pub struct DaemonState {
     /// restores its counters from this PC; its default config is not adopted.
     pub nvs_restore_pending: bool,
     pub tap: TapState,
+    pub he_calibration: Option<opad_model::HeCalibrationStatus>,
 }
 
 impl DaemonState {
@@ -190,7 +191,10 @@ pub enum RuntimeEvent {
     DeviceOwnership(Vec<u8>),
     DeviceDisconnected,
     DeviceCounters(CounterState),
-    DeviceLatency(LatencyStats),
+    DeviceStatus {
+        latency: LatencyStats,
+        he_calibration: Option<opad_model::HeCalibrationStatus>,
+    },
     DeviceLayoutAck {
         screen: u8,
         success: bool,
@@ -413,6 +417,7 @@ impl RuntimeController {
                 },
                 period_unsaved: false,
             },
+            he_calibration: None,
         };
 
         Self {
@@ -889,6 +894,7 @@ impl RuntimeController {
                 self.state.incompatible = None;
                 self.state.pending_takeover = None;
                 self.state.foreign_pad = false;
+                self.state.he_calibration = None;
             }
 
             RuntimeEvent::DeviceCounters(c) => {
@@ -904,8 +910,14 @@ impl RuntimeController {
                 self.state.esp_counters = Some(self.state.counters.clone());
             }
 
-            RuntimeEvent::DeviceLatency(stats) => {
-                self.state.latency = Some(stats);
+            RuntimeEvent::DeviceStatus {
+                latency,
+                he_calibration,
+            } => {
+                self.state.latency = Some(latency);
+                if he_calibration.is_some() {
+                    self.state.he_calibration = he_calibration;
+                }
             }
 
             RuntimeEvent::DeviceLayoutAck { .. } => {}

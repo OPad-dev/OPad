@@ -518,6 +518,8 @@ impl Storage {
                         result_animations: ResultAnimations::from_storage(
                             &row.get::<_, String>(21)?,
                         ),
+                        key1_he: None,
+                        key2_he: None,
                     })
                 },
             )
@@ -622,6 +624,8 @@ impl Storage {
                 firmware_version: firmware_version.unwrap_or_default(),
                 protocol_version: 1,
                 running_partition: None,
+                he_input: false,
+                he_calibration: false,
             };
             let counters = CounterState {
                 device_id,
@@ -773,6 +777,8 @@ mod tests {
             firmware_version: "1.0.0".to_string(),
             protocol_version: 1,
             running_partition: None,
+            he_input: false,
+            he_calibration: false,
         };
         let counters = CounterState {
             device_id: "test-dev-01".to_string(),
@@ -857,6 +863,8 @@ mod tests {
             firmware_version: "1.0.0".to_string(),
             protocol_version: 1,
             running_partition: None,
+            he_input: false,
+            he_calibration: false,
         };
         let counters = CounterState::default();
         assert!(matches!(
@@ -880,6 +888,8 @@ mod tests {
             firmware_version: "1.0.0".to_string(),
             protocol_version: 1,
             running_partition: None,
+            he_input: false,
+            he_calibration: false,
         };
         let counters1 = CounterState {
             device_id: "dev-01".to_string(),

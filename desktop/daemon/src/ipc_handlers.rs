@@ -171,6 +171,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 incompatible: st.incompatible.clone(),
                 last_backup: st.last_backup.clone(),
                 foreign_pad: st.foreign_pad,
+                he_calibration: st.he_calibration,
             }
         }
 
@@ -1053,6 +1054,8 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 swipe_left_modifiers: backup.config.swipe_left_modifiers,
                 swipe_right_modifiers: backup.config.swipe_right_modifiers,
                 result_animations: backup.config.result_animations,
+                key1_he: None,
+                key2_he: None,
             };
 
             let new_counters = CounterState {
@@ -1086,6 +1089,8 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     firmware_version: last_firmware_version,
                     protocol_version: 1,
                     running_partition: None,
+                    he_input: false,
+                    he_calibration: false,
                 };
                 let _ = s.save_device_state(&info, &new_counters);
             }

@@ -220,6 +220,10 @@ async fn test_daemon_connection_states_and_reconnect() {
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
         running_partition: None,
+
+        he_input: false,
+
+        he_calibration: false,
     };
     let actions = controller.on_event(RuntimeEvent::DeviceConnected(dev_info.clone(), None), now);
     assert!(controller.state.device_connected);
@@ -454,6 +458,10 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
         running_partition: None,
+
+        he_input: false,
+
+        he_calibration: false,
     };
     let initial_counters = CounterState {
         device_id: "OSUPAD-SAFE".to_string(),
@@ -498,6 +506,8 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
             last_backup: None,
+
+            he_calibration: None,
         }));
 
         // Set storage writes blocked guard
@@ -671,6 +681,10 @@ async fn test_reconcile_and_replacement_scenarios() {
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
         running_partition: None,
+
+        he_input: false,
+
+        he_calibration: false,
     };
 
     // Case A: PC generation > ESP generation -> PC wins and is sent to ESP
@@ -722,6 +736,8 @@ async fn test_reconcile_and_replacement_scenarios() {
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
             last_backup: None,
+
+            he_calibration: None,
         }));
 
         let res = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
@@ -781,6 +797,8 @@ async fn test_reconcile_and_replacement_scenarios() {
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
             last_backup: None,
+
+            he_calibration: None,
         }));
 
         let res = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
@@ -817,6 +835,10 @@ async fn test_reconcile_and_replacement_scenarios() {
             firmware_version: "1.0.0".to_string(),
             protocol_version: 1,
             running_partition: None,
+
+            he_input: false,
+
+            he_calibration: false,
         };
         controller.state.counters.counter_generation = 1;
         controller.state.counters.lifetime_key1 = 5;
@@ -840,6 +862,10 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
         running_partition: None,
+
+        he_input: false,
+
+        he_calibration: false,
     };
     let initial_counters = CounterState {
         device_id: "OSUPAD-RETRY".to_string(),
@@ -883,6 +909,8 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
         last_backup: None,
+
+        he_calibration: None,
     }));
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
@@ -909,6 +937,10 @@ async fn a_non_monotonic_rejection_is_retried_with_the_pads_current_counters() {
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
         running_partition: None,
+
+        he_input: false,
+
+        he_calibration: false,
     };
     let snapshot = CounterState {
         device_id: "OSUPAD-RACE".to_string(),
@@ -954,6 +986,8 @@ async fn a_non_monotonic_rejection_is_retried_with_the_pads_current_counters() {
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
         last_backup: None,
+
+        he_calibration: None,
     }));
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
@@ -980,6 +1014,10 @@ async fn test_json_validation_preview_and_confirm() {
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
         running_partition: None,
+
+        he_input: false,
+
+        he_calibration: false,
     };
     let current_counters = CounterState {
         device_id: "OSUPAD-JSON".to_string(),
@@ -1014,6 +1052,8 @@ async fn test_json_validation_preview_and_confirm() {
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
         last_backup: None,
+
+        he_calibration: None,
     }));
 
     // 1. Preview with counter rollback & generation bump warnings
@@ -1122,6 +1162,8 @@ async fn test_ipc_handshake_mismatch_and_protocol_version() {
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
         last_backup: None,
+
+        he_calibration: None,
     }));
 
     // Protocol mismatch rejected
@@ -1235,6 +1277,8 @@ async fn test_install_update_is_refused_outside_idle() {
             ui_values: Vec::new(),
             custom_layouts: HashMap::new(),
             last_backup: None,
+
+            he_calibration: None,
         }));
 
         let resp = handle_ipc_request(
@@ -1290,6 +1334,8 @@ async fn test_firmware_is_not_an_enableable_updater() {
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
         last_backup: None,
+
+        he_calibration: None,
     }));
 
     let resp = handle_ipc_request(
@@ -1408,6 +1454,10 @@ fn pad_info(id: &str) -> DeviceInfo {
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
         running_partition: None,
+
+        he_input: false,
+
+        he_calibration: false,
     }
 }
 
@@ -1649,6 +1699,10 @@ async fn test_replug_during_play_keeps_the_state_machine_and_write_guard() {
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
         running_partition: None,
+
+        he_input: false,
+
+        he_calibration: false,
     };
     let mut controller = RuntimeController::new(
         DeviceConfig::default(),
@@ -1765,6 +1819,10 @@ fn pad(device_id: &str) -> DeviceInfo {
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
         running_partition: None,
+
+        he_input: false,
+
+        he_calibration: false,
     }
 }
 
@@ -2098,6 +2156,10 @@ fn firmware_update_fixture(mode: RuntimeMode, connected: bool) -> IpcFixture {
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
         running_partition: Some("ota_0".to_string()),
+
+        he_input: false,
+
+        he_calibration: false,
     };
     let counters = CounterState {
         device_id: "OSUPAD-FW".to_string(),
@@ -2135,6 +2197,8 @@ fn firmware_update_fixture(mode: RuntimeMode, connected: bool) -> IpcFixture {
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
         last_backup: None,
+
+        he_calibration: None,
     }));
 
     (
@@ -2632,6 +2696,10 @@ async fn test_device_connected_with_config_adopts_device_config() {
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
         running_partition: None,
+
+        he_input: false,
+
+        he_calibration: false,
     };
     let dev_cfg = DeviceConfig {
         key1_hid_usage: 0x1D,
@@ -3285,6 +3353,10 @@ async fn a_counter_reset_while_disconnected_survives_the_next_connect() {
             firmware_version: "1.0.0".to_string(),
             protocol_version: 1,
             running_partition: None,
+
+            he_input: false,
+
+            he_calibration: false,
         };
         let pad_counters = CounterState {
             device_id: info.device_id.clone(),
@@ -3384,6 +3456,10 @@ async fn a_queued_counter_reset_is_kept_for_its_own_pad() {
             firmware_version: "1.0.0".to_string(),
             protocol_version: 1,
             running_partition: None,
+
+            he_input: false,
+
+            he_calibration: false,
         }),
         other.clone(),
     )));
@@ -3426,6 +3502,8 @@ fn idle_state(
         ui_values: Vec::new(),
         custom_layouts: HashMap::new(),
         last_backup: None,
+
+        he_calibration: None,
     }
 }
 

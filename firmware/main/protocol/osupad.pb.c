@@ -18,7 +18,13 @@ PB_BIND(osupad_ClaimOwnership, osupad_ClaimOwnership, AUTO)
 PB_BIND(osupad_DeviceStatus, osupad_DeviceStatus, AUTO)
 
 
+PB_BIND(osupad_HeCalibrationStatus, osupad_HeCalibrationStatus, AUTO)
+
+
 PB_BIND(osupad_ConfigPayload, osupad_ConfigPayload, AUTO)
+
+
+PB_BIND(osupad_HeKeySettings, osupad_HeKeySettings, AUTO)
 
 
 PB_BIND(osupad_SetConfig, osupad_SetConfig, AUTO)
@@ -88,6 +94,8 @@ PB_BIND(osupad_HostToDevice, osupad_HostToDevice, 2)
 
 
 PB_BIND(osupad_DeviceToHost, osupad_DeviceToHost, 2)
+
+
 
 
 

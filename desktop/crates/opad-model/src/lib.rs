@@ -65,6 +65,12 @@ pub struct DeviceInfo {
     /// thing as "this pad needs a serial reflash before OTA is possible".
     #[serde(default)]
     pub running_partition: Option<String>,
+    /// The pad has Hall Effect key input hardware available
+    #[serde(default)]
+    pub he_input: bool,
+    /// The pad supports Hall Effect calibration storage
+    #[serde(default)]
+    pub he_calibration: bool,
 }
 
 /// Press counters maintained on both device and host (§12, §13)
@@ -354,6 +360,95 @@ pub struct DeviceConfig {
     /// PC: the daemon picks the animation and sends `PlayAnimation`.
     #[serde(default)]
     pub result_animations: result_anim::ResultAnimations,
+    /// Per-key Hall Effect settings (None = not configured/default factory)
+    #[serde(default)]
+    pub key1_he: Option<HeKeyConfig>,
+    #[serde(default)]
+    pub key2_he: Option<HeKeyConfig>,
+}
+
+/// Rapid trigger mode on the wire
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum HeRtMode {
+    #[default]
+    Off,
+    Normal,
+    Continuous,
+}
+
+impl HeRtMode {
+    pub fn to_wire(self) -> u32 {
+        match self {
+            HeRtMode::Off => 1,
+            HeRtMode::Normal => 2,
+            HeRtMode::Continuous => 3,
+        }
+    }
+
+    pub fn from_wire(value: u32) -> Option<Self> {
+        match value {
+            1 => Some(HeRtMode::Off),
+            2 => Some(HeRtMode::Normal),
+            3 => Some(HeRtMode::Continuous),
+            _ => None,
+        }
+    }
+}
+
+/// Per-key Hall Effect settings
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeKeyConfig {
+    pub actuation: u32,
+    pub release_hyst: u32,
+    pub top_reset: u32,
+    pub rt_press: u32,
+    pub rt_release: u32,
+    pub bottom_dead_zone: u32,
+    pub rt_mode: HeRtMode,
+}
+
+impl Default for HeKeyConfig {
+    fn default() -> Self {
+        Self {
+            actuation: 500,
+            release_hyst: 100,
+            top_reset: 100,
+            rt_press: 150,
+            rt_release: 150,
+            bottom_dead_zone: 0,
+            rt_mode: HeRtMode::Off,
+        }
+    }
+}
+
+impl HeKeyConfig {
+    pub fn validate(&self, name: &str) -> Result<(), String> {
+        if self.actuation > 1000
+            || self.release_hyst > 1000
+            || self.top_reset > 1000
+            || self.rt_press > 1000
+            || self.rt_release > 1000
+            || self.bottom_dead_zone > 1000
+        {
+            return Err(format!(
+                "HE settings for {} must be 0..1000 (0.1% steps)",
+                name
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Hall Effect per-key calibration status from DeviceStatus
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct HeCalibrationStatus {
+    pub key1_calibrated: bool,
+    pub key2_calibrated: bool,
+    pub key1_rest: u32,
+    pub key1_full: u32,
+    pub key2_rest: u32,
+    pub key2_full: u32,
 }
 
 impl Default for DeviceConfig {
@@ -381,6 +476,8 @@ impl Default for DeviceConfig {
             swipe_left_modifiers: 0,
             swipe_right_modifiers: 0,
             result_animations: result_anim::ResultAnimations::default(),
+            key1_he: None,
+            key2_he: None,
         }
     }
 }
@@ -438,6 +535,12 @@ impl DeviceConfig {
             if mods > 0xFF {
                 return Err(format!("Invalid {} swipe modifiers: 0x{:X}", side, mods));
             }
+        }
+        if let Some(he) = &self.key1_he {
+            he.validate("key 1")?;
+        }
+        if let Some(he) = &self.key2_he {
+            he.validate("key 2")?;
         }
         validate_key_gpios(self.key1_gpio, self.key2_gpio)
     }
@@ -701,6 +804,8 @@ mod tests {
                 firmware_version: "1.0.0".to_string(),
                 protocol_version: 1,
                 running_partition: None,
+                he_input: false,
+                he_calibration: false,
             },
             &CounterState {
                 device_id: "OSUPAD-TEST".to_string(),
@@ -885,5 +990,39 @@ mod tests {
         let mut b = valid_backup();
         b.exported_at = chrono::Utc::now() + chrono::Duration::days(2);
         assert!(b.validate().is_err());
+    }
+
+    #[test]
+    fn test_he_rt_mode_wire() {
+        assert_eq!(HeRtMode::Off.to_wire(), 1);
+        assert_eq!(HeRtMode::Normal.to_wire(), 2);
+        assert_eq!(HeRtMode::Continuous.to_wire(), 3);
+        assert_eq!(HeRtMode::from_wire(1), Some(HeRtMode::Off));
+        assert_eq!(HeRtMode::from_wire(2), Some(HeRtMode::Normal));
+        assert_eq!(HeRtMode::from_wire(3), Some(HeRtMode::Continuous));
+        assert_eq!(HeRtMode::from_wire(0), None);
+        assert_eq!(HeRtMode::from_wire(4), None);
+    }
+
+    #[test]
+    fn test_he_key_config_validation() {
+        let mut cfg = DeviceConfig::default();
+        assert!(cfg.validate().is_ok());
+
+        cfg.key1_he = Some(HeKeyConfig::default());
+        assert!(cfg.validate().is_ok());
+
+        cfg.key1_he = Some(HeKeyConfig {
+            actuation: 1001,
+            ..Default::default()
+        });
+        assert!(cfg.validate().is_err());
+
+        cfg.key1_he = Some(HeKeyConfig {
+            actuation: 500,
+            rt_press: 1001,
+            ..Default::default()
+        });
+        assert!(cfg.validate().is_err());
     }
 }

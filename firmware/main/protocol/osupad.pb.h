@@ -33,6 +33,14 @@ typedef enum _osupad_LogLevel {
     osupad_LogLevel_LOG_LEVEL_ERROR = 3
 } osupad_LogLevel;
 
+/* Rapid trigger mode on the wire. 0 is wire-only keep current. */
+typedef enum _osupad_HeRtMode {
+    osupad_HeRtMode_HE_RT_MODE_KEEP = 0, /* Wire only: leave the current mode */
+    osupad_HeRtMode_HE_RT_MODE_OFF = 1, /* Plain mode */
+    osupad_HeRtMode_HE_RT_MODE_NORMAL = 2, /* Rapid trigger with top reset */
+    osupad_HeRtMode_HE_RT_MODE_CONTINUOUS = 3 /* Continuous rapid trigger */
+} osupad_HeRtMode;
+
 /* What a swipe does. Volume steps repeat along a long drag; every other
  action fires once per touch. Keyboard keys (SWIPE_ACTION_KEY) are never
  sent while a map is played: the keyboard report then carries only K1, K2
@@ -73,6 +81,15 @@ typedef struct _osupad_ClaimOwnership {
     osupad_ClaimOwnership_owner_id_t owner_id; /* 16 bytes */
 } osupad_ClaimOwnership;
 
+typedef struct _osupad_HeCalibrationStatus {
+    bool key1_calibrated;
+    bool key2_calibrated;
+    uint32_t key1_rest;
+    uint32_t key1_full;
+    uint32_t key2_rest;
+    uint32_t key2_full;
+} osupad_HeCalibrationStatus;
+
 typedef struct _osupad_DeviceStatus {
     uint32_t uptime_seconds;
     osupad_DeviceState state;
@@ -92,7 +109,20 @@ typedef struct _osupad_DeviceStatus {
     bool display_ok;
     bool nvs_ok;
     uint32_t nvs_writes;
+    bool has_he_calibration;
+    osupad_HeCalibrationStatus he_calibration;
 } osupad_DeviceStatus;
+
+typedef struct _osupad_HeKeySettings {
+    /* Travel values in 0.1 % of calibrated span (1..1000). 0 = keep current */
+    uint32_t actuation;
+    uint32_t release_hyst;
+    uint32_t top_reset;
+    uint32_t rt_press;
+    uint32_t rt_release;
+    uint32_t bottom_dead_zone;
+    osupad_HeRtMode rt_mode;
+} osupad_HeKeySettings;
 
 typedef struct _osupad_ConfigPayload {
     uint32_t key1_hid_usage; /* Default: 0x1D ('Z') */
@@ -122,6 +152,11 @@ typedef struct _osupad_ConfigPayload {
     uint32_t swipe_down_modifiers;
     uint32_t swipe_left_modifiers;
     uint32_t swipe_right_modifiers;
+    /* Per-key Hall Effect settings. 0 = keep current */
+    bool has_key1_he;
+    osupad_HeKeySettings key1_he;
+    bool has_key2_he;
+    osupad_HeKeySettings key2_he;
 } osupad_ConfigPayload;
 
 typedef PB_BYTES_ARRAY_T(16) osupad_HelloAck_owner_id_t;
@@ -154,6 +189,10 @@ typedef struct _osupad_HelloAck {
     /* The pad restarts when asked (HostToDevice.restart). False from firmware
  predating it: the host then offers no restart. */
     bool restart;
+    /* The pad has Hall Effect key input available. */
+    bool he_input;
+    /* The pad supports Hall Effect calibration storage. */
+    bool he_calibration;
 } osupad_HelloAck;
 
 typedef struct _osupad_SetConfig {
@@ -405,6 +444,10 @@ extern "C" {
 #define _osupad_LogLevel_MAX osupad_LogLevel_LOG_LEVEL_ERROR
 #define _osupad_LogLevel_ARRAYSIZE ((osupad_LogLevel)(osupad_LogLevel_LOG_LEVEL_ERROR+1))
 
+#define _osupad_HeRtMode_MIN osupad_HeRtMode_HE_RT_MODE_KEEP
+#define _osupad_HeRtMode_MAX osupad_HeRtMode_HE_RT_MODE_CONTINUOUS
+#define _osupad_HeRtMode_ARRAYSIZE ((osupad_HeRtMode)(osupad_HeRtMode_HE_RT_MODE_CONTINUOUS+1))
+
 #define _osupad_SwipeAction_MIN osupad_SwipeAction_SWIPE_ACTION_KEEP
 #define _osupad_SwipeAction_MAX osupad_SwipeAction_SWIPE_ACTION_VOLUME_DOWN
 #define _osupad_SwipeAction_ARRAYSIZE ((osupad_SwipeAction)(osupad_SwipeAction_SWIPE_ACTION_VOLUME_DOWN+1))
@@ -418,10 +461,13 @@ extern "C" {
 
 #define osupad_DeviceStatus_state_ENUMTYPE osupad_DeviceState
 
+
 #define osupad_ConfigPayload_swipe_left_action_ENUMTYPE osupad_SwipeAction
 #define osupad_ConfigPayload_swipe_right_action_ENUMTYPE osupad_SwipeAction
 #define osupad_ConfigPayload_swipe_up_action_ENUMTYPE osupad_SwipeAction
 #define osupad_ConfigPayload_swipe_down_action_ENUMTYPE osupad_SwipeAction
+
+#define osupad_HeKeySettings_rt_mode_ENUMTYPE osupad_HeRtMode
 
 
 
@@ -452,10 +498,12 @@ extern "C" {
 
 /* Initializer values for message structs */
 #define osupad_Hello_init_default                {0, ""}
-#define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_default, 0, 0, 0, 0}
+#define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_default, 0, 0, 0, 0, 0, 0}
 #define osupad_ClaimOwnership_init_default       {{0, {0}}}
-#define osupad_DeviceStatus_init_default         {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-#define osupad_ConfigPayload_init_default        {0, 0, 0, 0, 0, 0, 0, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, 0, 0, 0, 0}
+#define osupad_DeviceStatus_init_default         {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, osupad_HeCalibrationStatus_init_default}
+#define osupad_HeCalibrationStatus_init_default  {0, 0, 0, 0, 0, 0}
+#define osupad_ConfigPayload_init_default        {0, 0, 0, 0, 0, 0, 0, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, 0, 0, 0, 0, false, osupad_HeKeySettings_init_default, false, osupad_HeKeySettings_init_default}
+#define osupad_HeKeySettings_init_default        {0, 0, 0, 0, 0, 0, _osupad_HeRtMode_MIN}
 #define osupad_SetConfig_init_default            {false, osupad_ConfigPayload_init_default}
 #define osupad_ConfigAck_init_default            {0, "", false, osupad_ConfigPayload_init_default}
 #define osupad_TimeSync_init_default             {0, 0, 0, 0, 0, 0}
@@ -480,10 +528,12 @@ extern "C" {
 #define osupad_HostToDevice_init_default         {0, 0, {osupad_Hello_init_default}}
 #define osupad_DeviceToHost_init_default         {0, 0, {osupad_HelloAck_init_default}}
 #define osupad_Hello_init_zero                   {0, ""}
-#define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_zero, 0, 0, 0, 0}
+#define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_zero, 0, 0, 0, 0, 0, 0}
 #define osupad_ClaimOwnership_init_zero          {{0, {0}}}
-#define osupad_DeviceStatus_init_zero            {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
-#define osupad_ConfigPayload_init_zero           {0, 0, 0, 0, 0, 0, 0, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, 0, 0, 0, 0}
+#define osupad_DeviceStatus_init_zero            {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, osupad_HeCalibrationStatus_init_zero}
+#define osupad_HeCalibrationStatus_init_zero     {0, 0, 0, 0, 0, 0}
+#define osupad_ConfigPayload_init_zero           {0, 0, 0, 0, 0, 0, 0, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, 0, 0, 0, 0, false, osupad_HeKeySettings_init_zero, false, osupad_HeKeySettings_init_zero}
+#define osupad_HeKeySettings_init_zero           {0, 0, 0, 0, 0, 0, _osupad_HeRtMode_MIN}
 #define osupad_SetConfig_init_zero               {false, osupad_ConfigPayload_init_zero}
 #define osupad_ConfigAck_init_zero               {0, "", false, osupad_ConfigPayload_init_zero}
 #define osupad_TimeSync_init_zero                {0, 0, 0, 0, 0, 0}
@@ -512,6 +562,12 @@ extern "C" {
 #define osupad_Hello_protocol_version_tag        1
 #define osupad_Hello_client_version_tag          2
 #define osupad_ClaimOwnership_owner_id_tag       1
+#define osupad_HeCalibrationStatus_key1_calibrated_tag 1
+#define osupad_HeCalibrationStatus_key2_calibrated_tag 2
+#define osupad_HeCalibrationStatus_key1_rest_tag 3
+#define osupad_HeCalibrationStatus_key1_full_tag 4
+#define osupad_HeCalibrationStatus_key2_rest_tag 5
+#define osupad_HeCalibrationStatus_key2_full_tag 6
 #define osupad_DeviceStatus_uptime_seconds_tag   1
 #define osupad_DeviceStatus_state_tag            2
 #define osupad_DeviceStatus_brightness_tag       3
@@ -529,6 +585,14 @@ extern "C" {
 #define osupad_DeviceStatus_display_ok_tag       15
 #define osupad_DeviceStatus_nvs_ok_tag           16
 #define osupad_DeviceStatus_nvs_writes_tag       17
+#define osupad_DeviceStatus_he_calibration_tag   18
+#define osupad_HeKeySettings_actuation_tag       1
+#define osupad_HeKeySettings_release_hyst_tag    2
+#define osupad_HeKeySettings_top_reset_tag       3
+#define osupad_HeKeySettings_rt_press_tag        4
+#define osupad_HeKeySettings_rt_release_tag      5
+#define osupad_HeKeySettings_bottom_dead_zone_tag 6
+#define osupad_HeKeySettings_rt_mode_tag         7
 #define osupad_ConfigPayload_key1_hid_usage_tag  1
 #define osupad_ConfigPayload_key2_hid_usage_tag  2
 #define osupad_ConfigPayload_debounce_us_tag     3
@@ -550,6 +614,8 @@ extern "C" {
 #define osupad_ConfigPayload_swipe_down_modifiers_tag 20
 #define osupad_ConfigPayload_swipe_left_modifiers_tag 21
 #define osupad_ConfigPayload_swipe_right_modifiers_tag 22
+#define osupad_ConfigPayload_key1_he_tag         23
+#define osupad_ConfigPayload_key2_he_tag         24
 #define osupad_HelloAck_protocol_version_tag     1
 #define osupad_HelloAck_firmware_version_tag     2
 #define osupad_HelloAck_board_profile_tag        3
@@ -564,6 +630,8 @@ extern "C" {
 #define osupad_HelloAck_board_test_tag           12
 #define osupad_HelloAck_builtin_animations_tag   13
 #define osupad_HelloAck_restart_tag              14
+#define osupad_HelloAck_he_input_tag             15
+#define osupad_HelloAck_he_calibration_tag       16
 #define osupad_SetConfig_config_tag              1
 #define osupad_ConfigAck_success_tag             1
 #define osupad_ConfigAck_message_tag             2
@@ -708,7 +776,9 @@ X(a, STATIC,   OPTIONAL, MESSAGE,  current_config,   10) \
 X(a, STATIC,   SINGULAR, BOOL,     key_press_times,  11) \
 X(a, STATIC,   SINGULAR, BOOL,     board_test,       12) \
 X(a, STATIC,   SINGULAR, UINT32,   builtin_animations,  13) \
-X(a, STATIC,   SINGULAR, BOOL,     restart,          14)
+X(a, STATIC,   SINGULAR, BOOL,     restart,          14) \
+X(a, STATIC,   SINGULAR, BOOL,     he_input,         15) \
+X(a, STATIC,   SINGULAR, BOOL,     he_calibration,   16)
 #define osupad_HelloAck_CALLBACK NULL
 #define osupad_HelloAck_DEFAULT NULL
 #define osupad_HelloAck_current_config_MSGTYPE osupad_ConfigPayload
@@ -735,9 +805,21 @@ X(a, STATIC,   SINGULAR, UINT32,   latency_max_us,   13) \
 X(a, STATIC,   SINGULAR, UINT32,   hid_deferred_reports,  14) \
 X(a, STATIC,   SINGULAR, BOOL,     display_ok,       15) \
 X(a, STATIC,   SINGULAR, BOOL,     nvs_ok,           16) \
-X(a, STATIC,   SINGULAR, UINT32,   nvs_writes,       17)
+X(a, STATIC,   SINGULAR, UINT32,   nvs_writes,       17) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  he_calibration,   18)
 #define osupad_DeviceStatus_CALLBACK NULL
 #define osupad_DeviceStatus_DEFAULT NULL
+#define osupad_DeviceStatus_he_calibration_MSGTYPE osupad_HeCalibrationStatus
+
+#define osupad_HeCalibrationStatus_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, BOOL,     key1_calibrated,   1) \
+X(a, STATIC,   SINGULAR, BOOL,     key2_calibrated,   2) \
+X(a, STATIC,   SINGULAR, UINT32,   key1_rest,         3) \
+X(a, STATIC,   SINGULAR, UINT32,   key1_full,         4) \
+X(a, STATIC,   SINGULAR, UINT32,   key2_rest,         5) \
+X(a, STATIC,   SINGULAR, UINT32,   key2_full,         6)
+#define osupad_HeCalibrationStatus_CALLBACK NULL
+#define osupad_HeCalibrationStatus_DEFAULT NULL
 
 #define osupad_ConfigPayload_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   key1_hid_usage,    1) \
@@ -760,9 +842,24 @@ X(a, STATIC,   SINGULAR, UINT32,   swipe_down_key,   18) \
 X(a, STATIC,   SINGULAR, UINT32,   swipe_up_modifiers,  19) \
 X(a, STATIC,   SINGULAR, UINT32,   swipe_down_modifiers,  20) \
 X(a, STATIC,   SINGULAR, UINT32,   swipe_left_modifiers,  21) \
-X(a, STATIC,   SINGULAR, UINT32,   swipe_right_modifiers,  22)
+X(a, STATIC,   SINGULAR, UINT32,   swipe_right_modifiers,  22) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  key1_he,          23) \
+X(a, STATIC,   OPTIONAL, MESSAGE,  key2_he,          24)
 #define osupad_ConfigPayload_CALLBACK NULL
 #define osupad_ConfigPayload_DEFAULT NULL
+#define osupad_ConfigPayload_key1_he_MSGTYPE osupad_HeKeySettings
+#define osupad_ConfigPayload_key2_he_MSGTYPE osupad_HeKeySettings
+
+#define osupad_HeKeySettings_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   actuation,         1) \
+X(a, STATIC,   SINGULAR, UINT32,   release_hyst,      2) \
+X(a, STATIC,   SINGULAR, UINT32,   top_reset,         3) \
+X(a, STATIC,   SINGULAR, UINT32,   rt_press,          4) \
+X(a, STATIC,   SINGULAR, UINT32,   rt_release,        5) \
+X(a, STATIC,   SINGULAR, UINT32,   bottom_dead_zone,   6) \
+X(a, STATIC,   SINGULAR, UENUM,    rt_mode,           7)
+#define osupad_HeKeySettings_CALLBACK NULL
+#define osupad_HeKeySettings_DEFAULT NULL
 
 #define osupad_SetConfig_FIELDLIST(X, a) \
 X(a, STATIC,   OPTIONAL, MESSAGE,  config,            1)
@@ -1010,7 +1107,9 @@ extern const pb_msgdesc_t osupad_Hello_msg;
 extern const pb_msgdesc_t osupad_HelloAck_msg;
 extern const pb_msgdesc_t osupad_ClaimOwnership_msg;
 extern const pb_msgdesc_t osupad_DeviceStatus_msg;
+extern const pb_msgdesc_t osupad_HeCalibrationStatus_msg;
 extern const pb_msgdesc_t osupad_ConfigPayload_msg;
+extern const pb_msgdesc_t osupad_HeKeySettings_msg;
 extern const pb_msgdesc_t osupad_SetConfig_msg;
 extern const pb_msgdesc_t osupad_ConfigAck_msg;
 extern const pb_msgdesc_t osupad_TimeSync_msg;
@@ -1040,7 +1139,9 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_HelloAck_fields &osupad_HelloAck_msg
 #define osupad_ClaimOwnership_fields &osupad_ClaimOwnership_msg
 #define osupad_DeviceStatus_fields &osupad_DeviceStatus_msg
+#define osupad_HeCalibrationStatus_fields &osupad_HeCalibrationStatus_msg
 #define osupad_ConfigPayload_fields &osupad_ConfigPayload_msg
+#define osupad_HeKeySettings_fields &osupad_HeKeySettings_msg
 #define osupad_SetConfig_fields &osupad_SetConfig_msg
 #define osupad_ConfigAck_fields &osupad_ConfigAck_msg
 #define osupad_TimeSync_fields &osupad_TimeSync_msg
@@ -1069,8 +1170,8 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define OSUPAD_OSUPAD_PB_H_MAX_SIZE              osupad_HostToDevice_size
 #define osupad_BoardTestResult_size              147
 #define osupad_ClaimOwnership_size               18
-#define osupad_ConfigAck_size                    186
-#define osupad_ConfigPayload_size                117
+#define osupad_ConfigAck_size                    269
+#define osupad_ConfigPayload_size                199
 #define osupad_CounterState_size                 61
 #define osupad_CounterSyncRequest_size           65
 #define osupad_CounterSyncResponse_size          130
@@ -1078,10 +1179,12 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_DataValue_size                    71
 #define osupad_DetectPinRequest_size             18
 #define osupad_DetectPinResponse_size            14
-#define osupad_DeviceStatus_size                 98
+#define osupad_DeviceStatus_size                 129
 #define osupad_DeviceToHost_size                 889
 #define osupad_GameplayDisplayState_size         196
-#define osupad_HelloAck_size                     300
+#define osupad_HeCalibrationStatus_size          28
+#define osupad_HeKeySettings_size                38
+#define osupad_HelloAck_size                     388
 #define osupad_Hello_size                        39
 #define osupad_HostStatus_size                   12
 #define osupad_HostToDevice_size                 4309
@@ -1091,7 +1194,7 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_LogEventBatch_size                880
 #define osupad_LogEvent_size                     108
 #define osupad_PlayAnimation_size                11
-#define osupad_SetConfig_size                    119
+#define osupad_SetConfig_size                    202
 #define osupad_SetLayout_size                    4300
 #define osupad_TimeSync_size                     36
 #define osupad_UiWidget_size                     131
