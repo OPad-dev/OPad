@@ -213,7 +213,8 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
 #else
     msg.payload.hello_ack.he_input = false;
 #endif
-    msg.payload.hello_ack.he_calibration = true;
+    // Storage and capture logic exist, but no entry point exists yet
+    msg.payload.hello_ack.he_calibration = false;
 
     ESP_LOGI(TAG, "Sending HelloAck to host (Firmware: %s, Gen: %lu, Partition: %s, K1: GPIO%lu, K2: GPIO%lu)",
              app_desc->version, (unsigned long)snap.generation,

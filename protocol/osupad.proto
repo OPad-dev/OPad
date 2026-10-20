@@ -62,9 +62,11 @@ message HelloAck {
     // The pad restarts when asked (HostToDevice.restart). False from firmware
     // predating it: the host then offers no restart.
     bool restart = 14;
-    // The pad has Hall Effect key input available.
+    // Firmware is built with CONFIG_OSUPAD_HE_BACKEND. Does not mean an HE
+    // module is currently plugged in (see HelloAck.running_module or device status).
     bool he_input = 15;
-    // The pad supports Hall Effect calibration storage.
+    // The pad supports Hall Effect calibration storage and has an entry point
+    // to perform it. False until an interactive calibration path exists.
     bool he_calibration = 16;
 }
 
