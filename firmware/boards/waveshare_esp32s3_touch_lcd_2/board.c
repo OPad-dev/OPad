@@ -5,6 +5,7 @@
 #include "esp_rom_sys.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
@@ -249,8 +250,9 @@ typedef struct {
     adc_cali_handle_t cali;
 } module_id_adc_t;
 
-// ADC1 oneshot takes one user at a time: the runtime's module poll and the
-// board test both read ID. Held from open to close.
+// ADC1 oneshot takes one user at a time: the module monitor and the board
+// test both read ID. Held from open to close. The unit stays open between
+// reads (the monitor checks every 5 ms) until board_module_id_release().
 static SemaphoreHandle_t s_module_id_lock;
 static StaticSemaphore_t s_module_id_lock_buf;
 static portMUX_TYPE s_module_id_lock_init = portMUX_INITIALIZER_UNLOCKED;
@@ -265,10 +267,17 @@ static void module_id_lock(void)
     xSemaphoreTake(s_module_id_lock, portMAX_DELAY);
 }
 
+static module_id_adc_t s_module_id_adc;
+static bool s_module_id_adc_open;
+
 static esp_err_t module_id_adc_open(module_id_adc_t *m)
 {
-    *m = (module_id_adc_t){0};
     module_id_lock();
+    if (s_module_id_adc_open) {
+        *m = s_module_id_adc;
+        return ESP_OK;
+    }
+    *m = (module_id_adc_t){0};
     adc_oneshot_unit_init_cfg_t unit_cfg = {
         .unit_id = ADC_UNIT_1,
     };
@@ -292,17 +301,56 @@ static esp_err_t module_id_adc_open(module_id_adc_t *m)
     if (adc_cali_create_scheme_curve_fitting(&cali_cfg, &m->cali) != ESP_OK) {
         m->cali = NULL;
     }
+    s_module_id_adc = *m;
+    s_module_id_adc_open = true;
     return ESP_OK;
 }
 
+// Done with ID for now: the unit stays open, ID keeps its pull-down (a
+// floating pin then reads ~0 V, ready for board_module_present_fast)
 static void module_id_adc_close(module_id_adc_t *m)
 {
-    if (m->cali) {
-        adc_cali_delete_scheme_curve_fitting(m->cali);
-    }
-    adc_oneshot_del_unit(m->adc);
-    gpio_reset_pin(BOARD_MODULE_ID_GPIO);
+    (void)m;
+    gpio_pullup_dis(BOARD_MODULE_ID_GPIO);
+    gpio_pulldown_en(BOARD_MODULE_ID_GPIO);
     xSemaphoreGive(s_module_id_lock);
+}
+
+void board_module_id_release(void)
+{
+    module_id_lock();
+    if (s_module_id_adc_open) {
+        if (s_module_id_adc.cali) {
+            adc_cali_delete_scheme_curve_fitting(s_module_id_adc.cali);
+        }
+        adc_oneshot_del_unit(s_module_id_adc.adc);
+        gpio_reset_pin(BOARD_MODULE_ID_GPIO);
+        s_module_id_adc_open = false;
+    }
+    xSemaphoreGive(s_module_id_lock);
+}
+
+// A floating ID with its pull-down reads ~0 V; either module's divider holds
+// it at 0.25 V (MX) or 0.6 V (HE): board_module_from_id's 120 mV line
+#define MODULE_PRESENT_MIN_MV 120
+
+esp_err_t board_module_present_fast(bool *out_present)
+{
+    module_id_adc_t m;
+    esp_err_t err = module_id_adc_open(&m);
+    if (err != ESP_OK) {
+        return err;
+    }
+    gpio_pullup_dis(BOARD_MODULE_ID_GPIO);
+    gpio_pulldown_en(BOARD_MODULE_ID_GPIO);  // already on after a read; settles in microseconds
+    esp_rom_delay_us(20);
+    int raw = 0;
+    err = adc_oneshot_read(m.adc, ADC_CHANNEL_7, &raw);
+    module_id_adc_close(&m);
+    if (err == ESP_OK) {
+        *out_present = raw * 3100 / 4095 >= MODULE_PRESENT_MIN_MV;  // linear is plenty here
+    }
+    return err;
 }
 
 /*
@@ -326,11 +374,11 @@ esp_err_t board_read_module_id(int *out_open_mv, int *out_loaded_mv)
     // oneshot_config_channel leaves the pad's pulls alone
     gpio_pulldown_en(BOARD_MODULE_ID_GPIO);
     gpio_pullup_dis(BOARD_MODULE_ID_GPIO);
-    esp_rom_delay_us(2000);
+    vTaskDelay(pdMS_TO_TICKS(2) ? pdMS_TO_TICKS(2) : 1);
     int loaded_mv = read_module_id_mv(m.adc, m.cali);
 
     gpio_pulldown_dis(BOARD_MODULE_ID_GPIO);
-    esp_rom_delay_us(2000);
+    vTaskDelay(pdMS_TO_TICKS(2) ? pdMS_TO_TICKS(2) : 1);
     int open_mv = read_module_id_mv(m.adc, m.cali);
     module_id_adc_close(&m);
 

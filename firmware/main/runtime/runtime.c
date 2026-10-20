@@ -2,9 +2,6 @@
 #include "counters/counters.h"
 #include "counters/counter_sync_rules.h"
 #include "input/keypad.h"
-#include "input/module_watch.h"
-#include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
-#include "ui/ui.h"
 #include "config/device_config.h"
 #include "ui/ui_store.h"
 #include "freertos/FreeRTOS.h"
@@ -37,58 +34,6 @@ static void flush_layouts(void)
     }
 }
 
-// Module ID polls: every 200 ms, so the keys are off before a module swapped
-// while powered can chatter (input/module_watch.h). The key input is only
-// chosen at boot, so a different module asks for a restart. A read takes
-// ~7.5 ms of this task, the lowest priority on core 1.
-#define MODULE_POLL_EVERY 2
-
-static void show_module_notice(board_module_type_t now)
-{
-    if (now == BOARD_MODULE_NONE) {
-        ui_show_notice("Input module unplugged.\nKeys are off until it is back.");
-    } else {
-        ui_show_notice(now == BOARD_MODULE_HE
-                           ? "Hall Effect module connected.\nRestart the pad to use it\n(Restart in the OPad app, or replug USB)."
-                           : "MX module connected.\nRestart the pad to use it\n(Restart in the OPad app, or replug USB).");
-    }
-}
-
-static void watch_module(module_watch_t *watch)
-{
-    int open_mv = -1;
-    int loaded_mv = -1;
-    if (board_read_module_id(&open_mv, &loaded_mv) != ESP_OK) {
-        return;  // no reading, nothing decided
-    }
-    board_module_type_t now = board_module_from_id(open_mv, loaded_mv);
-    board_module_type_t boot = board_boot_module();
-    switch (module_watch_step(watch, (uint8_t)now)) {
-    case MODULE_WATCH_KEYS_OFF:
-        keypad_set_input_enabled(false);
-        ESP_LOGW(TAG, "Input module changed (ID %d mV): keys off", open_mv);
-        show_module_notice(now);
-        break;
-    case MODULE_WATCH_CHANGED:
-        if (now != boot) {
-            show_module_notice(now);
-        }
-        break;
-    case MODULE_WATCH_KEYS_ON:
-        if (boot == BOARD_MODULE_HE) {
-            // Back to how it booted: this firmware cannot read an HE module
-            ui_show_notice("Hall Effect module needs firmware v2.\nKeys are disabled.");
-        } else {
-            keypad_set_input_enabled(true);
-            ui_clear_notice();
-            ESP_LOGI(TAG, "Boot module back: keys on");
-        }
-        break;
-    case MODULE_WATCH_KEEP:
-        break;
-    }
-}
-
 // A freshly flashed image is confirmed once a host configures USB (app_main.c);
 // restarting before that would make the bootloader roll it back
 static bool image_confirmed(void)
@@ -112,19 +57,8 @@ static void runtime_supervisor_task(void *pvParameters)
     (void)pvParameters;
     ESP_LOGI(TAG, "Runtime supervisor task started");
 
-    // Every pad, also one that booted with nothing on ID: a carrier booted
-    // without its module would otherwise take an HE module's analog outputs on
-    // its digital key pins as two held keys. A hand-wired pad's ID always
-    // reads nothing, so it is never touched.
-    module_watch_t watch;
-    module_watch_init(&watch, (uint8_t)board_boot_module());
-    uint32_t tick = 0;
-
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(100));
-        if (++tick % MODULE_POLL_EVERY == 0) {
-            watch_module(&watch);
-        }
         // IDLE: counters are never written in a map or its cooldown
         if (atomic_load(&s_restart_requested) && atomic_load(&s_state) == OSUPAD_STATE_IDLE &&
             image_confirmed()) {

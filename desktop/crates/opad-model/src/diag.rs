@@ -23,22 +23,25 @@ pub const DIAG_EVENT_CDC_WRITE_DROPPED: u32 = 19;
 pub const DIAG_EVENT_BUFFER_OVERFLOW: u32 = 20;
 pub const DIAG_EVENT_UNKNOWN_HOST_MSG: u32 = 21;
 
+/// The pad's boot reason: ESP-IDF's `esp_reset_reason_t`, which the firmware
+/// sends in DIAG_EVENT_BOOT (`esp_reset_reason()` in `firmware/main/app_main.c`)
 pub fn reset_reason_to_str(reason: u32) -> &'static str {
     match reason {
         1 => "POWERON_RESET",
+        2 => "EXT_RESET",
         3 => "SW_RESET",
-        4 => "OWDT_RESET",
-        5 => "DEEPSLEEP_RESET",
-        6 => "SDIO_RESET",
-        7 => "TG0WDT_SYS_RESET",
-        8 => "TG1WDT_SYS_RESET",
-        9 => "RTCWDT_SYS_RESET",
-        10 => "INTRUSION_RESET",
-        11 => "TGWDT_CPU_RESET",
-        12 => "SW_CPU_RESET",
-        13 => "RTCWDT_CPU_RESET",
-        14 => "RTCWDT_BROWN_OUT_RESET",
-        15 => "RTCWDT_RTC_RESET",
+        4 => "PANIC",
+        5 => "INT_WDT",
+        6 => "TASK_WDT",
+        7 => "WDT",
+        8 => "DEEPSLEEP",
+        9 => "BROWNOUT",
+        10 => "SDIO",
+        11 => "USB",
+        12 => "JTAG",
+        13 => "EFUSE",
+        14 => "PWR_GLITCH",
+        15 => "CPU_LOCKUP",
         _ => "UNKNOWN",
     }
 }
@@ -105,6 +108,8 @@ mod tests {
     fn test_format_diag_event() {
         let msg = format_diag_event(DIAG_EVENT_BOOT, 1, 0);
         assert!(msg.contains("POWERON_RESET"));
+        // esp_reset_reason_t 4 is a panic, not a watchdog
+        assert!(format_diag_event(DIAG_EVENT_BOOT, 4, 0).contains("PANIC"));
 
         let msg = format_diag_event(DIAG_EVENT_HID_MOUNTED, 0, 0);
         assert_eq!(msg, "USB HID mounted");

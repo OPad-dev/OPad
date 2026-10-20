@@ -9,6 +9,7 @@
 #include "config/device_config.h"
 #include "input/keypad.h"
 #include "input/touch_retry.h"
+#include "input/module_monitor.h"
 #include "input/latency_stats.h"
 #include "usb/usb_descriptors.h"
 #include "usb/usb_hid.h"
@@ -256,6 +257,14 @@ void app_main(void)
     }
 #else
     ESP_LOGW(TAG, "BENCHMARK STAGE B: Display UI and Backlight Disabled");
+#endif
+
+#ifndef CONFIG_OSUPAD_HALL_BENCH  // the bench owns ADC1 in continuous mode
+    // 9. Input module swapped while powered: keys off, LCD notice (core 1, NON-FATAL)
+    err = module_monitor_start();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "module_monitor_start failed: %s (continuing)", esp_err_to_name(err));
+    }
 #endif
 
     ESP_LOGI(TAG, "OPad initialized and ready");

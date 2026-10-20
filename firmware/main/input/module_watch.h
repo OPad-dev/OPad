@@ -26,6 +26,8 @@
 extern "C" {
 #endif
 
+// Something is on the ID line, not identified yet (a fast presence check)
+#define MODULE_WATCH_UNKNOWN 0xFF
 #define MODULE_WATCH_RESTORE_READS 3
 
 typedef enum {

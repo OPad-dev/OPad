@@ -129,6 +129,19 @@ board_module_type_t board_boot_module(void);
 esp_err_t board_read_module_id(int *out_open_mv, int *out_loaded_mv);
 
 /**
+ * @brief Whether anything is on the ID line, from one conversion with the
+ *        pull-down on (~50 us): for noticing a module plugged in or out fast.
+ *        It cannot tell MX from HE; board_read_module_id does that.
+ */
+esp_err_t board_module_present_fast(bool *out_present);
+
+/**
+ * @brief Close the ADC1 oneshot unit the ID reads keep open, so ADC1
+ *        continuous mode (HE input) can take the ADC again.
+ */
+void board_module_id_release(void);
+
+/**
  * @brief Which module an ID reading names (the thresholds board_detect_module uses).
  */
 board_module_type_t board_module_from_id(int open_mv, int loaded_mv);
