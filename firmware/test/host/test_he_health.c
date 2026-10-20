@@ -211,11 +211,19 @@ static void test_probe_pause_not_counted_as_stall(void)
     int64_t pause_end = 1000 + 20000;
     he_health_on_probe_done(&h, pause_end);
 
-    // When check_health runs immediately after probe done, no stall occurs!
+    // Pinning test: he_health_on_probe_done only refreshes last_frame_us,
+    // leaving last_valid_us untouched.
+    assert(h.last_frame_us == pause_end);
+    assert(h.last_valid_us[0] == 1000);
+    assert(h.last_valid_us[1] == 1000);
+
+    // When check_health runs immediately after probe done:
+    // - The pause is NOT counted as an ADC stall (now - last_frame_us <= HE_STALL_US)
+    // - Keys are faulted because no conversions occurred during the 20 ms pause
     he_health_check_result_t res = he_health_check(&h, pause_end + 100);
     assert(!res.adc_stalled);
-    assert(!res.key_fault_started[0] && !res.key_fault_started[1]);
-    assert(!h.key_faulted[0] && !h.key_faulted[1]);
+    assert(res.key_fault_started[0] && res.key_fault_started[1]);
+    assert(h.key_faulted[0] && h.key_faulted[1]);
 }
 
 static void test_keys_absent(void)

@@ -123,9 +123,4 @@ void he_health_on_probe_done(he_health_t *h, int64_t now)
         return;
     }
     h->last_frame_us = now;
-    for (int k = 0; k < 2; k++) {
-        if (!h->key_faulted[k]) {
-            h->last_valid_us[k] = now;
-        }
-    }
 }
