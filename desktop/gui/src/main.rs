@@ -1408,6 +1408,29 @@ impl App {
                         },
                     );
                 }
+                diagnostics::DiagnosticsMessage::RestartPad => {
+                    self.diagnostics.restart_running = true;
+                    return Task::perform(
+                        async {
+                            // An older daemon cannot parse the request and drops the connection
+                            match ipc::request(IpcRequest::RestartPad).await {
+                                Ok(IpcResponse::PadRestarting) => Ok(()),
+                                Ok(IpcResponse::Error(e)) => Err(e),
+                                Ok(other) => Err(format!("Unexpected response: {:?}", other)),
+                                Err(_) => Err("The daemon did not answer; it may predate \
+                                               restarting the pad. Replug the pad's USB cable."
+                                    .to_string()),
+                            }
+                        },
+                        |res| {
+                            Message::Diagnostics(diagnostics::DiagnosticsMessage::RestartDone(res))
+                        },
+                    );
+                }
+                diagnostics::DiagnosticsMessage::RestartDone(res) => {
+                    self.diagnostics.restart_running = false;
+                    self.diagnostics.restart = Some(res);
+                }
                 diagnostics::DiagnosticsMessage::BoardTestDone(res) => {
                     self.diagnostics.board_test_running = false;
                     self.diagnostics.board_test = Some(res);

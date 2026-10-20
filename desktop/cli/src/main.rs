@@ -135,6 +135,9 @@ enum Commands {
         #[arg(default_value = "S", help = "The grade it shows: SS, S, A, B, C or D")]
         grade: String,
     },
+    /// Restart the pad, e.g. after swapping its input module. It saves its
+    /// counters and restarts once no map is being played
+    Restart,
     /// Perform initial system setup (udev permissions & directories)
     Setup,
     /// Hidden command: trigger freaky 67 easter egg on the pad
@@ -877,6 +880,16 @@ async fn main() -> Result<()> {
             match send_request(daemon(&mut stream)?, &req).await? {
                 IpcResponse::AnimationPlayed => {
                     println!("Playing {} on the pad", result_anim::name(animation));
+                }
+                IpcResponse::Error(e) => bail!("{}", e),
+                other => bail!("Unexpected response from daemon: {:?}", other),
+            }
+        }
+
+        Commands::Restart => {
+            match send_request(daemon(&mut stream)?, &IpcRequest::RestartPad).await? {
+                IpcResponse::PadRestarting => {
+                    println!("The pad is restarting; it reconnects in a few seconds");
                 }
                 IpcResponse::Error(e) => bail!("{}", e),
                 other => bail!("Unexpected response from daemon: {:?}", other),

@@ -11,6 +11,8 @@
 #include "freertos/task.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+#include "esp_ota_ops.h"
+#include "esp_system.h"
 #include <stdatomic.h>
 
 static const char *TAG = "runtime";
@@ -21,6 +23,7 @@ static int64_t s_cooldown_start_us = 0;
 static int64_t s_last_checkpoint_us = 0;
 
 static atomic_llong s_last_gameplay_us = ATOMIC_VAR_INIT(0);
+static atomic_bool s_restart_requested = ATOMIC_VAR_INIT(false);
 
 static const int64_t COOLDOWN_DURATION_US = 5000000; // 5 seconds
 // Host streams gameplay at >=1 Hz; leave PLAYING if it stops (daemon/tosu died)
@@ -34,16 +37,21 @@ static void flush_layouts(void)
     }
 }
 
-// Module ID polls on a pad that booted with MX: every 200 ms, so the keys are
-// off before a module swapped while powered can chatter (input/module_watch.h).
-// A read takes ~7.5 ms of this task, the lowest priority on core 1.
+// Module ID polls: every 200 ms, so the keys are off before a module swapped
+// while powered can chatter (input/module_watch.h). The key input is only
+// chosen at boot, so a different module asks for a restart. A read takes
+// ~7.5 ms of this task, the lowest priority on core 1.
 #define MODULE_POLL_EVERY 2
 
 static void show_module_notice(board_module_type_t now)
 {
-    ui_show_notice(now == BOARD_MODULE_HE
-                       ? "Hall Effect module connected.\nUnplug and replug the USB cable to use it."
-                       : "Input module unplugged.\nKeys are off until it is back.");
+    if (now == BOARD_MODULE_NONE) {
+        ui_show_notice("Input module unplugged.\nKeys are off until it is back.");
+    } else {
+        ui_show_notice(now == BOARD_MODULE_HE
+                           ? "Hall Effect module connected.\nRestart the pad to use it\n(Restart in the OPad app, or replug USB)."
+                           : "MX module connected.\nRestart the pad to use it\n(Restart in the OPad app, or replug USB).");
+    }
 }
 
 static void watch_module(module_watch_t *watch)
@@ -54,6 +62,7 @@ static void watch_module(module_watch_t *watch)
         return;  // no reading, nothing decided
     }
     board_module_type_t now = board_module_from_id(open_mv, loaded_mv);
+    board_module_type_t boot = board_boot_module();
     switch (module_watch_step(watch, (uint8_t)now)) {
     case MODULE_WATCH_KEYS_OFF:
         keypad_set_input_enabled(false);
@@ -61,16 +70,41 @@ static void watch_module(module_watch_t *watch)
         show_module_notice(now);
         break;
     case MODULE_WATCH_CHANGED:
-        show_module_notice(now);
+        if (now != boot) {
+            show_module_notice(now);
+        }
         break;
     case MODULE_WATCH_KEYS_ON:
-        keypad_set_input_enabled(true);
-        ui_clear_notice();
-        ESP_LOGI(TAG, "MX module back: keys on");
+        if (boot == BOARD_MODULE_HE) {
+            // Back to how it booted: this firmware cannot read an HE module
+            ui_show_notice("Hall Effect module needs firmware v2.\nKeys are disabled.");
+        } else {
+            keypad_set_input_enabled(true);
+            ui_clear_notice();
+            ESP_LOGI(TAG, "Boot module back: keys on");
+        }
         break;
     case MODULE_WATCH_KEEP:
         break;
     }
+}
+
+// A freshly flashed image is confirmed once a host configures USB (app_main.c);
+// restarting before that would make the bootloader roll it back
+static bool image_confirmed(void)
+{
+    esp_ota_img_states_t st;
+    return esp_ota_get_state_partition(esp_ota_get_running_partition(), &st) != ESP_OK ||
+           st != ESP_OTA_IMG_PENDING_VERIFY;
+}
+
+static void restart_now(void)
+{
+    ESP_LOGW(TAG, "Restarting (host request)");
+    counters_checkpoint(true);
+    device_config_flush();
+    flush_layouts();
+    esp_restart();
 }
 
 static void runtime_supervisor_task(void *pvParameters)
@@ -78,17 +112,23 @@ static void runtime_supervisor_task(void *pvParameters)
     (void)pvParameters;
     ESP_LOGI(TAG, "Runtime supervisor task started");
 
-    // Hand-wired pads read as no module and have no ID line to watch; an HE
-    // pad's keys are off anyway on this firmware
-    bool watch_on = board_boot_module() == BOARD_MODULE_MX;
+    // Every pad, also one that booted with nothing on ID: a carrier booted
+    // without its module would otherwise take an HE module's analog outputs on
+    // its digital key pins as two held keys. A hand-wired pad's ID always
+    // reads nothing, so it is never touched.
     module_watch_t watch;
     module_watch_init(&watch, (uint8_t)board_boot_module());
     uint32_t tick = 0;
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(100));
-        if (watch_on && ++tick % MODULE_POLL_EVERY == 0) {
+        if (++tick % MODULE_POLL_EVERY == 0) {
             watch_module(&watch);
+        }
+        // IDLE: counters are never written in a map or its cooldown
+        if (atomic_load(&s_restart_requested) && atomic_load(&s_state) == OSUPAD_STATE_IDLE &&
+            image_confirmed()) {
+            restart_now();
         }
         int64_t now = esp_timer_get_time();
         osupad_state_t current = (osupad_state_t)atomic_load(&s_state);
@@ -153,6 +193,11 @@ esp_err_t runtime_init(void)
 osupad_state_t runtime_get_state(void)
 {
     return (osupad_state_t)atomic_load(&s_state);
+}
+
+void runtime_request_restart(void)
+{
+    atomic_store(&s_restart_requested, true);
 }
 
 void runtime_notify_gameplay(bool is_playing)

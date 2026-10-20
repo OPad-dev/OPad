@@ -15,7 +15,8 @@
  * the old module out reads as "none" well before a new one is in, so the keys
  * are off before anything can chatter. They come back only after
  * MODULE_WATCH_RESTORE_READS readings of the boot module in a row (the same
- * module seated again). A different module needs a replug, as at boot.
+ * module seated again). A different module needs a restart (the app's
+ * Restart, or a replug), as the key input is only chosen at boot.
  */
 
 #include <stdbool.h>

@@ -317,6 +317,8 @@ pub struct DeviceManager {
     /// Highest built-in animation the connected pad plays
     /// (HelloAck.builtin_animations); 0 = none
     builtin_animations: Arc<AtomicU32>,
+    /// The connected pad restarts when asked (HelloAck.restart)
+    restart: Arc<AtomicBool>,
 }
 
 impl DeviceManager {
@@ -332,6 +334,7 @@ impl DeviceManager {
         let lost_writes = Arc::new(AtomicBool::new(false));
         let board_test = Arc::new(AtomicBool::new(false));
         let builtin_animations = Arc::new(AtomicU32::new(0));
+        let restart = Arc::new(AtomicBool::new(false));
         tokio::spawn(async move { while cmd_rx.recv().await.is_some() {} });
         (
             Self {
@@ -346,6 +349,7 @@ impl DeviceManager {
                 lost_writes,
                 board_test,
                 builtin_animations,
+                restart,
             },
             event_rx,
         )
@@ -373,6 +377,8 @@ impl DeviceManager {
         let board_test_clone = board_test.clone();
         let builtin_animations = Arc::new(AtomicU32::new(0));
         let builtin_animations_clone = builtin_animations.clone();
+        let restart = Arc::new(AtomicBool::new(false));
+        let restart_clone = restart.clone();
 
         // Spawn background worker managing the serial port lifecycle
         tokio::task::spawn_blocking(move || {
@@ -549,6 +555,7 @@ impl DeviceManager {
                                                 .store(ack.board_test, Ordering::SeqCst);
                                             builtin_animations_clone
                                                 .store(ack.builtin_animations, Ordering::SeqCst);
+                                            restart_clone.store(ack.restart, Ordering::SeqCst);
                                             if handshake.answered_in(msg_framing) {
                                                 debug!(
                                                     "{} speaks {:?} framing",
@@ -629,6 +636,7 @@ impl DeviceManager {
                 lost_writes,
                 board_test,
                 builtin_animations,
+                restart,
             },
             event_rx,
         )
@@ -660,6 +668,12 @@ impl DeviceManager {
 
     pub fn is_connected(&self) -> bool {
         self.is_connected.load(Ordering::SeqCst)
+    }
+
+    /// Whether the connected pad restarts on [`DeviceManager::restart_pad`].
+    /// False for firmware predating it.
+    pub fn supports_restart(&self) -> bool {
+        self.restart.load(Ordering::SeqCst)
     }
 
     /// Whether the connected pad answers [`DeviceManager::run_board_test`].
@@ -925,6 +939,17 @@ impl DeviceManager {
         let msg = HostToDevice {
             sequence_number: self.next_seq(),
             payload: Some(host_to_device::Payload::RunBoardTest(true)),
+        };
+        self.send_msg(msg)
+    }
+
+    /// Ask the pad to restart (it picks its key input for the module fitted
+    /// then). It saves its counters and restarts once idle, never in a map or
+    /// its cooldown; it does not answer, it reconnects.
+    pub async fn restart_pad(&self) -> Result<(), DeviceError> {
+        let msg = HostToDevice {
+            sequence_number: self.next_seq(),
+            payload: Some(host_to_device::Payload::Restart(true)),
         };
         self.send_msg(msg)
     }

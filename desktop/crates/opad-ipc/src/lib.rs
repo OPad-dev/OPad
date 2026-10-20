@@ -209,6 +209,12 @@ pub enum IpcRequest {
         animation: u32,
         grade: String,
     },
+    /// Restart the pad, e.g. after swapping its input module (detected only
+    /// at boot). Answered with `PadRestarting` once asked; the pad saves its
+    /// counters, restarts when idle and reconnects. `Error` without a pad,
+    /// with firmware predating it, or during a map. Added after IPC v1
+    /// shipped, like `RunBoardTest`.
+    RestartPad,
 }
 
 /// The daemon's tap rate statistics (answer to `GetTapStats`)
@@ -440,6 +446,8 @@ pub enum IpcResponse {
     TapStats(TapStatsSnapshot),
     BoardTest(BoardTestReport),
     AnimationPlayed,
+    /// The pad was asked to restart (answer to `RestartPad`)
+    PadRestarting,
     Error(String),
 }
 

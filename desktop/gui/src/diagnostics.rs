@@ -402,6 +402,8 @@ pub enum DiagnosticsMessage {
     BoardTestDone(Result<BoardTestReport, String>),
     /// Set Key 1 = GPIO10 and Key 2 = GPIO7, then test again
     UseCarrierKeyPins,
+    RestartPad,
+    RestartDone(Result<(), String>),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -429,6 +431,9 @@ pub struct DiagnosticsState {
     pub board_test_running: bool,
     /// The last board test: the pad's report, or why there is none
     pub board_test: Option<Result<BoardTestReport, String>>,
+    pub restart_running: bool,
+    /// The last restart request: asked, or why not
+    pub restart: Option<Result<(), String>>,
 }
 
 impl Default for DiagnosticsState {
@@ -445,6 +450,8 @@ impl Default for DiagnosticsState {
             last_ping_ms: None,
             board_test_running: false,
             board_test: None,
+            restart_running: false,
+            restart: None,
         }
     }
 }
@@ -1288,7 +1295,44 @@ impl DiagnosticsState {
         .width(Length::Fill)
         .style(theme::card);
 
-        column![intro, results, press_hint].spacing(16).into()
+        column![intro, results, press_hint, self.view_restart(app)]
+            .spacing(16)
+            .into()
+    }
+
+    fn view_restart<'a>(&'a self, app: &'a App) -> Element<'a, Message> {
+        let can_run = app.device_connected && !self.restart_running;
+        let restart_btn = button(text("Restart Pad").size(13))
+            .padding([8, 16])
+            .style(theme::secondary)
+            .on_press_maybe(
+                can_run.then_some(Message::Diagnostics(DiagnosticsMessage::RestartPad)),
+            );
+        let status: Element<'a, Message> = match &self.restart {
+            _ if !app.device_connected => muted("Connect the pad first.").size(12).into(),
+            None => Space::new().width(0).into(),
+            Some(Ok(())) => muted("Restarting; it reconnects in a few seconds.")
+                .size(12)
+                .into(),
+            Some(Err(e)) => text(e.clone()).size(12).color(theme::RED).into(),
+        };
+        container(
+            column![
+                text("Restart the Pad").size(15).font(theme::FONT_BOLD),
+                muted(
+                    "The pad picks its key input (MX or Hall Effect) when it starts. After \
+                     swapping the input module, restart it here or replug its USB cable. It \
+                     saves its counters first, and waits until no map is being played."
+                )
+                .size(12),
+                row![restart_btn, Space::new().width(12), status].align_y(Alignment::Center),
+            ]
+            .spacing(10),
+        )
+        .padding(16)
+        .width(Length::Fill)
+        .style(theme::card)
+        .into()
     }
 
     fn view_export_bundle<'a>(&'a self, app: &'a App) -> Element<'a, Message> {

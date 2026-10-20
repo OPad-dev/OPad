@@ -55,6 +55,13 @@ pub trait DeviceLink: Send + Sync {
     fn builtin_animations(&self) -> u32 {
         0
     }
+    async fn restart_pad(&self) -> Result<(), DeviceError> {
+        Ok(())
+    }
+    /// The connected pad restarts when asked
+    fn supports_restart(&self) -> bool {
+        false
+    }
     fn subscribe(&self) -> broadcast::Receiver<DeviceEvent>;
     async fn pause_and_release(&self, timeout: Duration) -> bool;
     fn resume(&self);
@@ -144,6 +151,14 @@ impl DeviceLink for DeviceManager {
 
     fn builtin_animations(&self) -> u32 {
         DeviceManager::builtin_animations(self)
+    }
+
+    async fn restart_pad(&self) -> Result<(), DeviceError> {
+        self.restart_pad().await
+    }
+
+    fn supports_restart(&self) -> bool {
+        DeviceManager::supports_restart(self)
     }
 
     fn subscribe(&self) -> broadcast::Receiver<DeviceEvent> {

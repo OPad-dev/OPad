@@ -59,6 +59,9 @@ message HelloAck {
     // Highest built-in result animation id the pad plays (PlayAnimation).
     // 0 from firmware predating them: the host then sends no PlayAnimation.
     uint32 builtin_animations = 13;
+    // The pad restarts when asked (HostToDevice.restart). False from firmware
+    // predating it: the host then offers no restart.
+    bool restart = 14;
 }
 
 // Record a new owner in NVS (§W3-2). An NVS write, so the firmware must honour
@@ -388,6 +391,10 @@ message HostToDevice {
         DetectPinRequest detect_pin = 15;
         bool run_board_test = 16;    // answered with BoardTestResult
         PlayAnimation play_animation = 17;
+        // Restart the pad, e.g. after swapping its input module, which is
+        // only detected at boot. It saves its counters and restarts once idle
+        // (never in a map or its cooldown); no answer, it reconnects.
+        bool restart = 18;
     }
 }
 

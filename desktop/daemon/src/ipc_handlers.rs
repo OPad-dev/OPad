@@ -1332,6 +1332,28 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
         }
 
+        IpcRequest::RestartPad => {
+            if let Some(refused) = refuse_if_pad_guarded(state) {
+                return refused;
+            }
+            if !device.is_connected() {
+                return IpcResponse::Error("The pad is not connected".to_string());
+            }
+            if !device.supports_restart() {
+                return IpcResponse::Error(
+                    "This pad's firmware cannot restart on request. Replug its USB cable instead."
+                        .to_string(),
+                );
+            }
+            if state.lock().mode == RuntimeMode::Playing {
+                return IpcResponse::Error("Not while a map is played".to_string());
+            }
+            match device.restart_pad().await {
+                Ok(()) => IpcResponse::PadRestarting,
+                Err(e) => IpcResponse::Error(format!("Could not reach the pad: {e}")),
+            }
+        }
+
         IpcRequest::TriggerEasterEgg => {
             let _ = device
                 .send_data_update(&[(67, opad_model::ui_source::SourceValue::Number(67.0))])

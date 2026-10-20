@@ -151,6 +151,9 @@ typedef struct _osupad_HelloAck {
     /* Highest built-in result animation id the pad plays (PlayAnimation).
  0 from firmware predating them: the host then sends no PlayAnimation. */
     uint32_t builtin_animations;
+    /* The pad restarts when asked (HostToDevice.restart). False from firmware
+ predating it: the host then offers no restart. */
+    bool restart;
 } osupad_HelloAck;
 
 typedef struct _osupad_SetConfig {
@@ -361,6 +364,10 @@ typedef struct _osupad_HostToDevice {
         osupad_DetectPinRequest detect_pin;
         bool run_board_test; /* answered with BoardTestResult */
         osupad_PlayAnimation play_animation;
+        /* Restart the pad, e.g. after swapping its input module, which is
+     only detected at boot. It saves its counters and restarts once idle
+     (never in a map or its cooldown); no answer, it reconnects. */
+        bool restart;
     } payload;
 } osupad_HostToDevice;
 
@@ -445,7 +452,7 @@ extern "C" {
 
 /* Initializer values for message structs */
 #define osupad_Hello_init_default                {0, ""}
-#define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_default, 0, 0, 0}
+#define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_default, 0, 0, 0, 0}
 #define osupad_ClaimOwnership_init_default       {{0, {0}}}
 #define osupad_DeviceStatus_init_default         {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_ConfigPayload_init_default        {0, 0, 0, 0, 0, 0, 0, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, 0, 0, 0, 0}
@@ -473,7 +480,7 @@ extern "C" {
 #define osupad_HostToDevice_init_default         {0, 0, {osupad_Hello_init_default}}
 #define osupad_DeviceToHost_init_default         {0, 0, {osupad_HelloAck_init_default}}
 #define osupad_Hello_init_zero                   {0, ""}
-#define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_zero, 0, 0, 0}
+#define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_zero, 0, 0, 0, 0}
 #define osupad_ClaimOwnership_init_zero          {{0, {0}}}
 #define osupad_DeviceStatus_init_zero            {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_ConfigPayload_init_zero           {0, 0, 0, 0, 0, 0, 0, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, _osupad_SwipeAction_MIN, _osupad_SwipeAction_MIN, 0, 0, 0, 0, 0, 0}
@@ -556,6 +563,7 @@ extern "C" {
 #define osupad_HelloAck_key_press_times_tag      11
 #define osupad_HelloAck_board_test_tag           12
 #define osupad_HelloAck_builtin_animations_tag   13
+#define osupad_HelloAck_restart_tag              14
 #define osupad_SetConfig_config_tag              1
 #define osupad_ConfigAck_success_tag             1
 #define osupad_ConfigAck_message_tag             2
@@ -667,6 +675,7 @@ extern "C" {
 #define osupad_HostToDevice_detect_pin_tag       15
 #define osupad_HostToDevice_run_board_test_tag   16
 #define osupad_HostToDevice_play_animation_tag   17
+#define osupad_HostToDevice_restart_tag          18
 #define osupad_DeviceToHost_sequence_number_tag  1
 #define osupad_DeviceToHost_hello_ack_tag        2
 #define osupad_DeviceToHost_status_tag           3
@@ -698,7 +707,8 @@ X(a, STATIC,   SINGULAR, STRING,   running_partition,   9) \
 X(a, STATIC,   OPTIONAL, MESSAGE,  current_config,   10) \
 X(a, STATIC,   SINGULAR, BOOL,     key_press_times,  11) \
 X(a, STATIC,   SINGULAR, BOOL,     board_test,       12) \
-X(a, STATIC,   SINGULAR, UINT32,   builtin_animations,  13)
+X(a, STATIC,   SINGULAR, UINT32,   builtin_animations,  13) \
+X(a, STATIC,   SINGULAR, BOOL,     restart,          14)
 #define osupad_HelloAck_CALLBACK NULL
 #define osupad_HelloAck_DEFAULT NULL
 #define osupad_HelloAck_current_config_MSGTYPE osupad_ConfigPayload
@@ -957,7 +967,8 @@ X(a, STATIC,   ONEOF,    BOOL,     (payload,request_logs,payload.request_logs), 
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,claim_ownership,payload.claim_ownership),  14) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,detect_pin,payload.detect_pin),  15) \
 X(a, STATIC,   ONEOF,    BOOL,     (payload,run_board_test,payload.run_board_test),  16) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,play_animation,payload.play_animation),  17)
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,play_animation,payload.play_animation),  17) \
+X(a, STATIC,   ONEOF,    BOOL,     (payload,restart,payload.restart),  18)
 #define osupad_HostToDevice_CALLBACK NULL
 #define osupad_HostToDevice_DEFAULT NULL
 #define osupad_HostToDevice_payload_hello_MSGTYPE osupad_Hello
@@ -1070,7 +1081,7 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_DeviceStatus_size                 98
 #define osupad_DeviceToHost_size                 889
 #define osupad_GameplayDisplayState_size         196
-#define osupad_HelloAck_size                     298
+#define osupad_HelloAck_size                     300
 #define osupad_Hello_size                        39
 #define osupad_HostStatus_size                   12
 #define osupad_HostToDevice_size                 4309

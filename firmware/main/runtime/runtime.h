@@ -33,6 +33,13 @@ osupad_state_t runtime_get_state(void);
 void runtime_notify_gameplay(bool is_playing);
 
 /**
+ * @brief Restart the pad (the host asked, e.g. after an input module swap).
+ * Done by the runtime task once IDLE and the running image is confirmed:
+ * counters, config and layouts are saved first. Safe from any task.
+ */
+void runtime_request_restart(void);
+
+/**
  * @brief Get total system uptime in seconds.
  */
 uint32_t runtime_get_uptime_seconds(void);
