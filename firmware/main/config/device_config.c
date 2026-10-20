@@ -60,22 +60,6 @@ static he_key_settings_t s_current_he_keys[2] = {
     },
 };
 
-// v1 blobs end before key1_gpio; they load with the default pins
-#define DEVICE_CONFIG_V1_SIZE offsetof(device_config_data_t, key1_gpio)
-// v2 blobs end before owner_id; they load unclaimed, which is correct — a pad
-// that predates §W3-2 has never been claimed by anyone
-#define DEVICE_CONFIG_V2_SIZE offsetof(device_config_data_t, owner_id)
-// v3 blobs end before the swipe actions; they load with the defaults
-#define DEVICE_CONFIG_V3_SIZE offsetof(device_config_data_t, swipe_left_action)
-// v4 blobs end before the up/down actions; they load with the defaults
-#define DEVICE_CONFIG_V4_SIZE offsetof(device_config_data_t, swipe_up_action)
-// v5 blobs add one byte, "up/down inverted", read into swipe_up_action
-#define DEVICE_CONFIG_V5_SIZE (DEVICE_CONFIG_V4_SIZE + 1)
-// v6 blobs end before the swipe key modifiers; they load as none
-#define DEVICE_CONFIG_V6_SIZE offsetof(device_config_data_t, swipe_mods)
-// v7 blobs are the full device_config_data_t
-#define DEVICE_CONFIG_V7_SIZE sizeof(device_config_data_t)
-
 static bool s_dirty = false;
 static bool s_he_dirty = false;
 // Guards s_current_config, s_current_he_keys, s_dirty, s_he_dirty: written by the protocol task, read by the
@@ -247,6 +231,12 @@ esp_err_t device_config_set_he(const he_key_settings_t in[2])
 
     he_key_settings_t next[2];
     portENTER_CRITICAL(&s_config_lock);
+    // The app echoes the HE fields back in every SetConfig: no write when unchanged
+    bool unchanged = !s_he_dirty && he_config_settings_equal(s_current_he_keys, in);
+    if (unchanged) {
+        portEXIT_CRITICAL(&s_config_lock);
+        return ESP_OK;
+    }
     s_current_he_keys[0] = in[0];
     s_current_he_keys[1] = in[1];
     next[0] = in[0];
@@ -285,13 +275,7 @@ esp_err_t device_config_init(void)
         size_t len = sizeof(loaded);
         err = nvs_get_blob(handle, NVS_KEY, &loaded, &len);
 
-        bool layout_ok = (len == sizeof(loaded) && loaded.version == DEVICE_CONFIG_VERSION) ||
-                         (len == DEVICE_CONFIG_V6_SIZE && loaded.version == 6) ||
-                         (len == DEVICE_CONFIG_V5_SIZE && loaded.version == 5) ||
-                         (len == DEVICE_CONFIG_V4_SIZE && loaded.version == 4) ||
-                         (len == DEVICE_CONFIG_V3_SIZE && loaded.version == 3) ||
-                         (len == DEVICE_CONFIG_V2_SIZE && loaded.version == 2) ||
-                         (len == DEVICE_CONFIG_V1_SIZE && loaded.version == 1);
+        bool layout_ok = device_config_blob_layout_ok(len, loaded.version);
         if (err == ESP_OK && layout_ok && loaded.version == 5) {
             bool inverted = loaded.swipe_up_action != 0;
             loaded.swipe_up_action = inverted ? SWIPE_ACTION_VOLUME_DOWN : SWIPE_ACTION_VOLUME_UP;

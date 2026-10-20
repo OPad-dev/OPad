@@ -634,13 +634,20 @@ static void handle_host_message(const osupad_HostToDevice *msg)
                 diag_record(DIAG_EVENT_CONFIG_REJECTED, 2 /* WARN */, 1, 0);
                 protocol_send_config_ack(msg->sequence_number, false, err_msg);
             } else {
+                // Two NVS records: both are applied, and the ack says which one did not save
                 esp_err_t err = device_config_set(&dcfg);
-                if (err == ESP_OK && (c->has_key1_he || c->has_key2_he)) {
-                    err = device_config_set_he(he_keys);
+                esp_err_t he_err = ESP_OK;
+                if (c->has_key1_he || c->has_key2_he) {
+                    he_err = device_config_set_he(he_keys);
                 }
-                if (err != ESP_OK) {
-                    diag_record(DIAG_EVENT_CONFIG_REJECTED, 2 /* WARN */, (uint32_t)err, 0);
-                    protocol_send_config_ack(msg->sequence_number, false, "Failed to persist configuration");
+                if (err != ESP_OK || he_err != ESP_OK) {
+                    diag_record(DIAG_EVENT_CONFIG_REJECTED, 2 /* WARN */,
+                                (uint32_t)(err != ESP_OK ? err : he_err), 0);
+                    protocol_send_config_ack(msg->sequence_number, false,
+                                             err != ESP_OK && he_err != ESP_OK
+                                                 ? "Failed to persist configuration"
+                                             : err != ESP_OK ? "Failed to persist configuration (HE settings saved)"
+                                                             : "Failed to persist HE settings (rest saved)");
                 } else {
                     protocol_send_config_ack(msg->sequence_number, true, "Configuration applied successfully");
                 }

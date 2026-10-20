@@ -191,7 +191,7 @@ typedef struct _osupad_HelloAck {
  predating it: the host then offers no restart. */
     bool restart;
     /* Firmware is built with CONFIG_OSUPAD_HE_BACKEND. Does not mean an HE
- module is currently plugged in (see HelloAck.running_module or device status). */
+ module is plugged in: BoardTestResult.module says what is. */
     bool he_input;
     /* The pad supports Hall Effect calibration storage and has an entry point
  to perform it. False until an interactive calibration path exists. */

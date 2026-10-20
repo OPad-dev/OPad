@@ -106,6 +106,31 @@ bool device_config_validate(const device_config_data_t *cfg, char *err_msg, size
     return true;
 }
 
+// v1 blobs end before key1_gpio; they load with the default pins
+#define DEVICE_CONFIG_V1_SIZE offsetof(device_config_data_t, key1_gpio)
+// v2 blobs end before owner_id; they load unclaimed, which is correct — a pad
+// that predates §W3-2 has never been claimed by anyone
+#define DEVICE_CONFIG_V2_SIZE offsetof(device_config_data_t, owner_id)
+// v3 blobs end before the swipe actions; they load with the defaults
+#define DEVICE_CONFIG_V3_SIZE offsetof(device_config_data_t, swipe_left_action)
+// v4 blobs end before the up/down actions; they load with the defaults
+#define DEVICE_CONFIG_V4_SIZE offsetof(device_config_data_t, swipe_up_action)
+// v5 blobs add one byte, "up/down inverted", read into swipe_up_action
+#define DEVICE_CONFIG_V5_SIZE (DEVICE_CONFIG_V4_SIZE + 1)
+// v6 blobs end before the swipe key modifiers; they load as none
+#define DEVICE_CONFIG_V6_SIZE offsetof(device_config_data_t, swipe_mods)
+
+bool device_config_blob_layout_ok(size_t len, uint32_t version)
+{
+    return (len == sizeof(device_config_data_t) && version == DEVICE_CONFIG_VERSION) ||
+           (len == DEVICE_CONFIG_V6_SIZE && version == 6) ||
+           (len == DEVICE_CONFIG_V5_SIZE && version == 5) ||
+           (len == DEVICE_CONFIG_V4_SIZE && version == 4) ||
+           (len == DEVICE_CONFIG_V3_SIZE && version == 3) ||
+           (len == DEVICE_CONFIG_V2_SIZE && version == 2) ||
+           (len == DEVICE_CONFIG_V1_SIZE && version == 1);
+}
+
 bool device_config_validate_he(const he_key_settings_t in[2], char *err_msg, size_t err_msg_len)
 {
     if (!in) {

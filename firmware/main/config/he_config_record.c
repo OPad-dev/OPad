@@ -32,6 +32,20 @@ void he_config_default_settings(he_key_settings_t settings[2])
     }
 }
 
+bool he_config_settings_equal(const he_key_settings_t a[2], const he_key_settings_t b[2])
+{
+    // Field by field: he_key_settings_t may have padding
+    for (int k = 0; k < 2; k++) {
+        if (a[k].actuation != b[k].actuation || a[k].release_hyst != b[k].release_hyst ||
+            a[k].top_reset != b[k].top_reset || a[k].rt_press != b[k].rt_press ||
+            a[k].rt_release != b[k].rt_release || a[k].bottom_dz != b[k].bottom_dz ||
+            a[k].rapid_trigger != b[k].rapid_trigger || a[k].continuous != b[k].continuous) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool he_config_validate_settings(const he_key_settings_t *s, char *err_msg, size_t err_msg_len)
 {
     if (!s) {

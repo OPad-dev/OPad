@@ -100,6 +100,12 @@ esp_err_t device_config_init(void);
 bool device_config_validate(const device_config_data_t *cfg, char *err_msg, size_t err_msg_len);
 
 /**
+ * @brief True if an NVS blob of `len` bytes claiming `version` is a layout
+ * this firmware reads (the current one or an older, shorter one).
+ */
+bool device_config_blob_layout_ok(size_t len, uint32_t version);
+
+/**
  * @brief Validate Hall Effect key configuration parameters.
  */
 bool device_config_validate_he(const he_key_settings_t in[2], char *err_msg, size_t err_msg_len);

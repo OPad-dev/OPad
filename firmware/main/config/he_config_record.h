@@ -52,6 +52,11 @@ uint32_t he_config_crc32(const void *data, size_t len);
 void he_config_default_settings(he_key_settings_t settings[2]);
 
 /**
+ * True if both keys' settings match.
+ */
+bool he_config_settings_equal(const he_key_settings_t a[2], const he_key_settings_t b[2]);
+
+/**
  * Validate a key settings struct against allowable bounds.
  */
 bool he_config_validate_settings(const he_key_settings_t *settings, char *err_msg, size_t err_msg_len);

@@ -311,42 +311,54 @@ static void test_swipe_actions(void)
 
 static void test_v7_blob_with_no_he_key(void)
 {
-    // A v7 blob in NVS has DEVICE_CONFIG_VERSION 7 and ends after swipe_mods
-    device_config_data_t v7 = {
-        .version = 7,
-        .key1_usage = 0x1D,
-        .key2_usage = 0x1B,
-        .key1_gpio = DEVICE_CONFIG_DEFAULT_KEY1_GPIO,
-        .key2_gpio = DEVICE_CONFIG_DEFAULT_KEY2_GPIO,
-        .debounce_us = 5000,
-        .brightness = 80,
-        .sleep_s = 600,
-        .gameplay_display_hz = 10,
-        .swipe_left_action = SWIPE_ACTION_PREV_TRACK,
-        .swipe_right_action = SWIPE_ACTION_NEXT_TRACK,
-        .swipe_up_action = SWIPE_ACTION_VOLUME_UP,
-        .swipe_down_action = SWIPE_ACTION_VOLUME_DOWN,
-        .swipe_mods = {0, 0, 0, 0},
-    };
-    char err[64] = {0};
-    assert(device_config_validate(&v7, err, sizeof(err)));
-    assert(sizeof(device_config_data_t) == offsetof(device_config_data_t, swipe_mods) + 4);
+    // Firmware from before the HE work stores and reads exactly this 64-byte
+    // v7 blob. Growing it is what broke rollbacks; HE settings live in he_cfg.
+    assert(DEVICE_CONFIG_VERSION == 7);
+    assert(sizeof(device_config_data_t) == 64);
 
-    // Older firmware reads its v7 blob unchanged. When no "he_cfg" key is present,
-    // he_config_default_settings populates default HE settings:
+    // The loader (device_config_init) takes the 64-byte v7 blob and older,
+    // shorter layouts, and nothing else
+    assert(device_config_blob_layout_ok(64, 7));
+    assert(device_config_blob_layout_ok(offsetof(device_config_data_t, swipe_mods), 6));
+    assert(device_config_blob_layout_ok(offsetof(device_config_data_t, key1_gpio), 1));
+    assert(!device_config_blob_layout_ok(64, 6));
+    assert(!device_config_blob_layout_ok(64 + 2 * sizeof(he_key_settings_t), 8));
+    assert(!device_config_blob_layout_ok(63, 7));
+
+    // No he_cfg key: device_config_init fails nvs_get_blob and keeps the
+    // defaults the unpack leaves behind
     he_key_settings_t he_keys[2];
-    he_config_default_settings(he_keys);
+    memset(he_keys, 0xAB, sizeof(he_keys));
+    assert(!he_config_record_unpack(NULL, 0, he_keys));
+    char err[64] = {0};
     assert(device_config_validate_he(he_keys, err, sizeof(err)));
-    assert(he_keys[0].actuation == HE_CONFIG_DEFAULT_ACTUATION);
-    assert(he_keys[0].release_hyst == HE_CONFIG_DEFAULT_HYSTERESIS);
-    assert(he_keys[0].top_reset == HE_CONFIG_DEFAULT_TOP_RESET);
-    assert(he_keys[0].rt_press == HE_CONFIG_DEFAULT_RT_PRESS);
-    assert(he_keys[0].rt_release == HE_CONFIG_DEFAULT_RT_RELEASE);
-    assert(he_keys[0].bottom_dz == HE_CONFIG_DEFAULT_BOTTOM_DZ);
-    assert(!he_keys[0].rapid_trigger);
-    assert(!he_keys[0].continuous);
+    for (int k = 0; k < 2; k++) {
+        assert(he_keys[k].actuation == HE_CONFIG_DEFAULT_ACTUATION);
+        assert(he_keys[k].release_hyst == HE_CONFIG_DEFAULT_HYSTERESIS);
+        assert(he_keys[k].top_reset == HE_CONFIG_DEFAULT_TOP_RESET);
+        assert(he_keys[k].rt_press == HE_CONFIG_DEFAULT_RT_PRESS);
+        assert(he_keys[k].rt_release == HE_CONFIG_DEFAULT_RT_RELEASE);
+        assert(he_keys[k].bottom_dz == HE_CONFIG_DEFAULT_BOTTOM_DZ);
+        assert(!he_keys[k].rapid_trigger);
+        assert(!he_keys[k].continuous);
+    }
 
     printf("✓ test_v7_blob_with_no_he_key passed\n");
+}
+
+static void test_he_settings_equal(void)
+{
+    he_key_settings_t a[2];
+    he_key_settings_t b[2];
+    he_config_default_settings(a);
+    he_config_default_settings(b);
+    assert(he_config_settings_equal(a, b));
+    b[1].bottom_dz = 50;
+    assert(!he_config_settings_equal(a, b));
+    b[1].bottom_dz = a[1].bottom_dz;
+    b[0].continuous = !a[0].continuous;
+    assert(!he_config_settings_equal(a, b));
+    printf("✓ test_he_settings_equal passed\n");
 }
 
 static void test_corrupt_or_short_he_record(void)
@@ -512,6 +524,7 @@ int main(void)
     test_key_gpio_allow_list();
     test_swipe_actions();
     test_v7_blob_with_no_he_key();
+    test_he_settings_equal();
     test_corrupt_or_short_he_record();
     test_he_record_round_trip();
     test_he_settings_bounds();
