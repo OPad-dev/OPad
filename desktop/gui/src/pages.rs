@@ -366,9 +366,7 @@ pub fn settings(app: &App) -> Element<'_, Message> {
                 muted("Presses within this window after a switch change are ignored.").size(12),
             ]
             .spacing(8),
-            if app.device_info.as_ref().is_some_and(|i| i.he_calibration)
-                || app.he_calibration.is_some()
-            {
+            if app.device_info.as_ref().is_some_and(|i| i.he_calibration) {
                 Element::from(
                     column![
                         row![

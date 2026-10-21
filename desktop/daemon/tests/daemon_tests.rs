@@ -3885,6 +3885,12 @@ fn a_foreign_pad_gets_no_result_animation() {
 fn uncalibrated_he_pad_launches_gui_calibration_once() {
     let (mut controller, _) = left_alone_foreign_pad();
     controller.state.foreign_pad = false;
+    controller
+        .state
+        .device_info
+        .as_mut()
+        .unwrap()
+        .he_calibration = true;
     let now = Instant::now();
 
     // 1. Status with locked calibration triggers LaunchGuiCalibration
@@ -3930,6 +3936,12 @@ fn uncalibrated_he_pad_launches_gui_calibration_once() {
 fn calibrated_he_pad_does_not_launch_gui_calibration() {
     let (mut controller, _) = left_alone_foreign_pad();
     controller.state.foreign_pad = false;
+    controller
+        .state
+        .device_info
+        .as_mut()
+        .unwrap()
+        .he_calibration = true;
     let now = Instant::now();
 
     let actions = controller.on_event(
@@ -3958,4 +3970,34 @@ fn calibrated_he_pad_does_not_launch_gui_calibration() {
     );
     assert!(!actions_mx.contains(&RuntimeAction::LaunchGuiCalibration));
     assert!(!controller.cal_gui_launched);
+}
+
+#[test]
+fn pre_calibration_firmware_status_does_not_launch_or_offer_calibration() {
+    // Firmware from e23a43e..83c821d sends HeCalibrationStatus on every pad
+    // (MX ones too) but HelloAck.he_calibration = false.
+    let (mut controller, _) = left_alone_foreign_pad();
+    controller.state.foreign_pad = false;
+    assert!(
+        !controller
+            .state
+            .device_info
+            .as_ref()
+            .unwrap()
+            .he_calibration
+    );
+    let actions = controller.on_event(
+        RuntimeEvent::DeviceStatus {
+            latency: opad_model::LatencyStats::default(),
+            he_calibration: Some(opad_model::HeCalibrationStatus {
+                key1_calibrated: false,
+                key2_calibrated: false,
+                ..Default::default()
+            }),
+        },
+        Instant::now(),
+    );
+    assert!(!actions.contains(&RuntimeAction::LaunchGuiCalibration));
+    assert!(!controller.cal_gui_launched);
+    assert!(controller.state.he_calibration.is_none());
 }

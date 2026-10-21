@@ -925,7 +925,18 @@ impl RuntimeController {
                 he_calibration,
             } => {
                 self.state.latency = Some(latency);
-                if let Some(cal) = &he_calibration {
+                // Only HelloAck.he_calibration says the pad can calibrate.
+                // Firmware from before the calibration flow (e23a43e..83c821d)
+                // sends HeCalibrationStatus on every pad, MX ones included,
+                // with both keys uncalibrated.
+                let capable = self
+                    .state
+                    .device_info
+                    .as_ref()
+                    .is_some_and(|i| i.he_calibration);
+                if !capable {
+                    self.state.he_calibration = None;
+                } else if let Some(cal) = &he_calibration {
                     let uncalibrated =
                         cal.is_locked || !cal.key1_calibrated || !cal.key2_calibrated;
                     self.state.he_calibration = he_calibration;
