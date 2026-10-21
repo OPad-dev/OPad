@@ -334,7 +334,7 @@ mod platform {
                 .expect("claim() started the pipe");
 
             // Back to back, as a double-click launches them
-            for page in [Some("logs"), None, Some("diagnostics")] {
+            for page in [Some("logs"), None, Some("diagnostics"), Some("calibrate")] {
                 let started = std::time::Instant::now();
                 assert!(!claim(page), "a later launch hands off and exits");
                 assert!(
@@ -378,6 +378,27 @@ mod tests {
         let mut msg = String::new();
         stream.read_to_string(&mut msg).unwrap();
         assert_eq!(super::show_target(&msg).as_deref(), Some("logs"));
+    }
+
+    #[test]
+    fn calibration_launch_reaches_the_running_gui() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("gui.sock");
+        let Claim::Primary(Some(listener)) = claim_at(&path, None) else {
+            panic!("the first launch must own the socket");
+        };
+        assert!(matches!(
+            claim_at(&path, Some("calibrate")),
+            Claim::Secondary
+        ));
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut msg = String::new();
+        stream.read_to_string(&mut msg).unwrap();
+        let target = super::show_target(&msg).unwrap();
+        assert_eq!(
+            crate::Page::from_token(&target),
+            Some(crate::Page::Calibration)
+        );
     }
 
     #[test]

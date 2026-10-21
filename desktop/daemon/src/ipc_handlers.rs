@@ -1371,21 +1371,29 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     "This pad does not support Hall Effect calibration.".to_string(),
                 );
             }
-            if state.lock().mode == RuntimeMode::Playing {
-                return IpcResponse::Error("Not while a map is played".to_string());
+            if state.lock().mode != RuntimeMode::Idle {
+                return IpcResponse::Error("Calibration is only allowed in IDLE".to_string());
             }
+            // Clear before enqueueing: a fast progress event must not be
+            // erased by the IPC completion that follows it.
+            state.lock().latest_he_progress = None;
             match device.start_he_calibration().await {
-                Ok(()) => {
-                    state.lock().latest_he_progress = None;
-                    IpcResponse::HeCalibrationStarted
-                }
+                Ok(()) => IpcResponse::HeCalibrationStarted,
                 Err(e) => IpcResponse::Error(format!("Could not start calibration: {e}")),
             }
         }
 
         IpcRequest::CancelHeCalibration => {
+            if let Some(refused) = refuse_if_pad_guarded(state) {
+                return refused;
+            }
             if !device.is_connected() {
                 return IpcResponse::Error("The pad is not connected".to_string());
+            }
+            if !device.supports_he_calibration() {
+                return IpcResponse::Error(
+                    "This pad does not support Hall Effect calibration.".to_string(),
+                );
             }
             match device.cancel_he_calibration().await {
                 Ok(()) => IpcResponse::HeCalibrationCancelled,

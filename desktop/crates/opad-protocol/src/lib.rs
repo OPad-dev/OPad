@@ -211,6 +211,7 @@ mod tests {
             Some(proto::host_to_device::Payload::Hello(h)) => {
                 assert_eq!(h.protocol_version, 1);
                 assert_eq!(h.client_version, "1.0.0");
+                assert!(h.he_calibration);
             }
             _ => panic!("Unexpected payload"),
         }
@@ -470,6 +471,13 @@ mod tests {
         let decoded = decode_host_message(&mut buf).unwrap().unwrap();
         assert_eq!(decoded, start);
 
+        let cancel = HostToDevice {
+            sequence_number: 44,
+            payload: Some(host_to_device::Payload::CancelHeCalibration(true)),
+        };
+        let mut buf = BytesMut::from(&encode_host_message(&cancel).unwrap()[..]);
+        assert_eq!(decode_host_message(&mut buf).unwrap().unwrap(), cancel);
+
         let prog = DeviceToHost {
             sequence_number: 43,
             payload: Some(device_to_host::Payload::HeCalibrationProgress(
@@ -511,5 +519,32 @@ mod tests {
             }
             other => panic!("expected HelloAck, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn old_hello_defaults_to_no_calibration_and_ignores_the_new_capability() {
+        // A projection of the pre-flow Hello schema. Prost skips the unknown
+        // tag 3 in the new Hello, as the older device decoder does.
+        #[derive(Clone, PartialEq, prost::Message)]
+        struct OldHello {
+            #[prost(uint32, tag = "1")]
+            protocol_version: u32,
+            #[prost(string, tag = "2")]
+            client_version: String,
+        }
+        let old = OldHello {
+            protocol_version: 1,
+            client_version: "old-app".into(),
+        };
+        let new = proto::Hello::decode(old.encode_to_vec().as_slice()).unwrap();
+        assert!(!new.he_calibration);
+        let new = proto::Hello {
+            he_calibration: true,
+            ..new
+        };
+        assert_eq!(
+            OldHello::decode(new.encode_to_vec().as_slice()).unwrap(),
+            old
+        );
     }
 }

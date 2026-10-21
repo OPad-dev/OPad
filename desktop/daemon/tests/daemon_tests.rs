@@ -35,6 +35,9 @@ struct MockDeviceLink {
     /// When set, the mock applies the firmware's own acceptance rules against
     /// these counters and reports them back, as the pad does
     device_counters: Arc<Mutex<Option<CounterState>>>,
+    he_capable: bool,
+    cal_requests: Mutex<Vec<&'static str>>,
+    progress_on_start: Option<Arc<Mutex<DaemonState>>>,
 }
 
 impl MockDeviceLink {
@@ -50,11 +53,34 @@ impl MockDeviceLink {
             sync_seq: Arc::new(AtomicU32::new(1)),
             claimed_owners: Arc::new(Mutex::new(Vec::new())),
             device_counters: Arc::new(Mutex::new(None)),
+            he_capable: false,
+            cal_requests: Mutex::new(Vec::new()),
+            progress_on_start: None,
         }
     }
 }
 
 impl DeviceLink for MockDeviceLink {
+    fn supports_he_calibration(&self) -> bool {
+        self.he_capable
+    }
+
+    async fn start_he_calibration(&self) -> Result<(), DeviceError> {
+        self.cal_requests.lock().push("start");
+        if let Some(state) = &self.progress_on_start {
+            state.lock().latest_he_progress = Some(opad_model::HeCalibrationProgress {
+                stage: opad_model::HeCalStage::Rest,
+                ..Default::default()
+            });
+        }
+        Ok(())
+    }
+
+    async fn cancel_he_calibration(&self) -> Result<(), DeviceError> {
+        self.cal_requests.lock().push("cancel");
+        Ok(())
+    }
+
     async fn send_time_sync(&self) -> Result<(), DeviceError> {
         Ok(())
     }
@@ -3933,7 +3959,7 @@ fn uncalibrated_he_pad_launches_gui_calibration_once() {
 }
 
 #[test]
-fn calibrated_he_pad_does_not_launch_gui_calibration() {
+fn calibrated_he_and_mx_pads_do_not_launch_gui_calibration() {
     let (mut controller, _) = left_alone_foreign_pad();
     controller.state.foreign_pad = false;
     controller
@@ -3961,6 +3987,12 @@ fn calibrated_he_pad_does_not_launch_gui_calibration() {
     assert!(!controller.cal_gui_launched);
 
     // MX pad (he_calibration: None in DeviceStatus) never launches calibration GUI
+    controller
+        .state
+        .device_info
+        .as_mut()
+        .unwrap()
+        .he_calibration = false;
     let actions_mx = controller.on_event(
         RuntimeEvent::DeviceStatus {
             latency: opad_model::LatencyStats::default(),
@@ -4000,4 +4032,134 @@ fn pre_calibration_firmware_status_does_not_launch_or_offer_calibration() {
     assert!(!actions.contains(&RuntimeAction::LaunchGuiCalibration));
     assert!(!controller.cal_gui_launched);
     assert!(controller.state.he_calibration.is_none());
+}
+
+#[test]
+fn reconnect_allows_one_new_calibration_launch_and_clears_progress() {
+    let (mut controller, mut info) = left_alone_foreign_pad();
+    info.he_calibration = true;
+    let now = Instant::now();
+    for _ in 0..2 {
+        controller.on_event(RuntimeEvent::DeviceConnected(info.clone(), None), now);
+        for repeat in 0..3 {
+            let actions = controller.on_event(
+                RuntimeEvent::DeviceStatus {
+                    latency: Default::default(),
+                    he_calibration: Some(opad_model::HeCalibrationStatus {
+                        is_locked: true,
+                        ..Default::default()
+                    }),
+                },
+                now,
+            );
+            assert_eq!(
+                actions.contains(&RuntimeAction::LaunchGuiCalibration),
+                repeat == 0
+            );
+        }
+        controller.on_event(
+            RuntimeEvent::DeviceHeCalibrationProgress(opad_model::HeCalibrationProgress {
+                stage: opad_model::HeCalStage::Rest,
+                ..Default::default()
+            }),
+            now,
+        );
+        assert!(controller.state.latest_he_progress.is_some());
+        controller.on_event(RuntimeEvent::DeviceDisconnected, now);
+        assert!(controller.state.latest_he_progress.is_none());
+    }
+    // Late frames after disconnect and unsupported/MX HelloAck cannot leak progress.
+    let progress = opad_model::HeCalibrationProgress {
+        stage: opad_model::HeCalStage::Success,
+        ..Default::default()
+    };
+    assert!(controller
+        .on_event(
+            RuntimeEvent::DeviceHeCalibrationProgress(progress.clone()),
+            now
+        )
+        .is_empty());
+    assert!(controller.state.latest_he_progress.is_none());
+    info.he_calibration = false;
+    controller.on_event(RuntimeEvent::DeviceConnected(info, None), now);
+    assert!(controller
+        .on_event(RuntimeEvent::DeviceHeCalibrationProgress(progress), now)
+        .is_empty());
+    assert!(controller.state.latest_he_progress.is_none());
+}
+
+#[tokio::test]
+async fn calibration_ipc_checks_connection_capability_ownership_and_idle() {
+    for (connected, capable, foreign, mode, start) in [
+        (false, true, false, RuntimeMode::Idle, true),
+        (true, false, false, RuntimeMode::Idle, true),
+        (true, true, true, RuntimeMode::Idle, true),
+        (true, true, false, RuntimeMode::Playing, true),
+        (true, true, false, RuntimeMode::Cooldown, true),
+        (false, true, false, RuntimeMode::Idle, false),
+        (true, false, false, RuntimeMode::Idle, false),
+        (true, true, true, RuntimeMode::Idle, false),
+    ] {
+        let (state, storage, mut device, logs, pending) = firmware_update_fixture(mode, connected);
+        device.he_capable = capable;
+        state.lock().foreign_pad = foreign;
+        let req = if start {
+            IpcRequest::StartHeCalibration
+        } else {
+            IpcRequest::CancelHeCalibration
+        };
+        let response =
+            handle_ipc_request(req, &state, &storage, &device, &logs, &pending, None).await;
+        assert!(matches!(response, IpcResponse::Error(_)), "{response:?}");
+        assert!(device.cal_requests.lock().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn calibration_start_preserves_fast_progress_and_cancel_is_forwarded() {
+    let (state, storage, mut device, logs, pending) =
+        firmware_update_fixture(RuntimeMode::Idle, true);
+    device.he_capable = true;
+    device.progress_on_start = Some(state.clone());
+    let response = handle_ipc_request(
+        IpcRequest::StartHeCalibration,
+        &state,
+        &storage,
+        &device,
+        &logs,
+        &pending,
+        None,
+    )
+    .await;
+    assert!(matches!(response, IpcResponse::HeCalibrationStarted));
+    assert_eq!(
+        state.lock().latest_he_progress.as_ref().unwrap().stage,
+        opad_model::HeCalStage::Rest
+    );
+    let response = handle_ipc_request(
+        IpcRequest::GetHeCalibrationProgress,
+        &state,
+        &storage,
+        &device,
+        &logs,
+        &pending,
+        None,
+    )
+    .await;
+    assert!(matches!(
+        response,
+        IpcResponse::HeCalibrationProgress(Some(_))
+    ));
+    let response = handle_ipc_request(
+        IpcRequest::CancelHeCalibration,
+        &state,
+        &storage,
+        &device,
+        &logs,
+        &pending,
+        None,
+    )
+    .await;
+    assert!(matches!(response, IpcResponse::HeCalibrationCancelled));
+    assert_eq!(*device.cal_requests.lock(), vec!["start", "cancel"]);
 }

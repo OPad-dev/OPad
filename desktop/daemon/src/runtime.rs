@@ -936,9 +936,10 @@ impl RuntimeController {
                     .is_some_and(|i| i.he_calibration);
                 if !capable {
                     self.state.he_calibration = None;
-                } else if let Some(cal) = &he_calibration {
-                    let uncalibrated =
-                        cal.is_locked || !cal.key1_calibrated || !cal.key2_calibrated;
+                } else {
+                    let uncalibrated = he_calibration.as_ref().is_some_and(|cal| {
+                        cal.is_locked || !cal.key1_calibrated || !cal.key2_calibrated
+                    });
                     self.state.he_calibration = he_calibration;
                     if uncalibrated && !self.cal_gui_launched {
                         self.cal_gui_launched = true;
@@ -948,6 +949,15 @@ impl RuntimeController {
             }
 
             RuntimeEvent::DeviceHeCalibrationProgress(prog) => {
+                if !self.state.device_connected
+                    || !self
+                        .state
+                        .device_info
+                        .as_ref()
+                        .is_some_and(|i| i.he_calibration)
+                {
+                    return actions;
+                }
                 let success = prog.stage == opad_model::HeCalStage::Success;
                 self.state.latest_he_progress = Some(prog);
                 if success {

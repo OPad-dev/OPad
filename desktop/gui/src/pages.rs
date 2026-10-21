@@ -1617,6 +1617,13 @@ pub fn calibration(app: &App) -> Element<'_, Message> {
         return scrollable(content).into();
     }
 
+    if !app.device_info.as_ref().is_some_and(|i| i.he_calibration) {
+        return scrollable(content.push(card(text(
+            "This pad does not support Hall Effect calibration.",
+        ))))
+        .into();
+    }
+
     let progress = app.cal_progress.as_ref();
     let stage = progress
         .map(|p| p.stage)

@@ -290,6 +290,7 @@ pub struct App {
     pub cal_progress: Option<opad_model::HeCalibrationProgress>,
     pub cal_status_msg: Option<String>,
     pub cal_starting: bool,
+    cal_epoch: u64,
 }
 
 /// Shown when no tray host appeared: closing the window then quits the app
@@ -357,11 +358,11 @@ pub enum Message {
     FirmwareUpdateResult(Result<IpcResponse, String>),
     // Hall Effect Calibration
     StartCalibration,
-    StartCalibrationDone(Result<IpcResponse, String>),
+    StartCalibrationDone(u64, Result<IpcResponse, String>),
     CancelCalibration,
-    CancelCalibrationDone(Result<IpcResponse, String>),
+    CancelCalibrationDone(u64, Result<IpcResponse, String>),
     PollCalibration,
-    CalibrationProgress(Result<IpcResponse, String>),
+    CalibrationProgress(u64, Result<IpcResponse, String>),
     // Daemon and tosu recovery
     StartDaemon,
     DaemonStarted(Result<(), String>),
@@ -523,6 +524,7 @@ impl App {
             cal_progress: None,
             cal_status_msg: None,
             cal_starting: false,
+            cal_epoch: 0,
         };
         app.log_event(
             LogSource::Program,
@@ -743,6 +745,11 @@ impl App {
                     }) => {
                         let was_offline = !self.daemon_online;
                         let device_just_connected = !self.device_connected && device_connected;
+                        if device_just_connected || !device_connected {
+                            self.cal_epoch = self.cal_epoch.wrapping_add(1);
+                            self.cal_progress = None;
+                            self.cal_starting = false;
+                        }
                         self.daemon_online = true;
                         self.daemon_spawn_attempted = false;
                         if self.banner.as_deref() == Some("Launched opad-daemon. Connecting...") {
@@ -783,6 +790,9 @@ impl App {
                     _ => {
                         self.daemon_online = false;
                         self.device_connected = false;
+                        self.cal_epoch = self.cal_epoch.wrapping_add(1);
+                        self.cal_progress = None;
+                        self.cal_starting = false;
                         self.tosu_connected = false;
                         if !self.daemon_spawn_attempted {
                             self.daemon_spawn_attempted = true;
@@ -1081,15 +1091,21 @@ impl App {
                 }
             },
             Message::StartCalibration => {
+                self.cal_epoch = self.cal_epoch.wrapping_add(1);
                 self.cal_starting = true;
+                self.cal_progress = None;
                 self.cal_status_msg = Some("Starting calibration on pad...".to_string());
+                let epoch = self.cal_epoch;
                 return Task::perform(
                     ipc::request(IpcRequest::StartHeCalibration),
-                    Message::StartCalibrationDone,
+                    move |response| Message::StartCalibrationDone(epoch, response),
                 );
             }
-            Message::StartCalibrationDone(res) => {
-                self.cal_starting = false;
+            Message::StartCalibrationDone(epoch, res) => {
+                if epoch != self.cal_epoch {
+                    return Task::none();
+                }
+                self.cal_starting = matches!(res, Ok(IpcResponse::HeCalibrationStarted));
                 match res {
                     Ok(IpcResponse::HeCalibrationStarted) => {
                         self.cal_status_msg = None;
@@ -1104,25 +1120,33 @@ impl App {
                 }
             }
             Message::CancelCalibration => {
+                self.cal_epoch = self.cal_epoch.wrapping_add(1);
+                self.cal_starting = false;
                 self.cal_status_msg = Some("Cancelling calibration...".to_string());
+                let epoch = self.cal_epoch;
                 return Task::perform(
                     ipc::request(IpcRequest::CancelHeCalibration),
-                    Message::CancelCalibrationDone,
+                    move |response| Message::CancelCalibrationDone(epoch, response),
                 );
             }
-            Message::CancelCalibrationDone(res) => match res {
-                Ok(IpcResponse::HeCalibrationCancelled) => {
-                    self.cal_status_msg = Some("Calibration cancelled.".to_string());
-                    self.cal_progress = None;
+            Message::CancelCalibrationDone(epoch, res) => {
+                if epoch != self.cal_epoch {
+                    return Task::none();
                 }
-                Ok(IpcResponse::Error(e)) => {
-                    self.cal_status_msg = Some(format!("Error: {e}"));
+                match res {
+                    Ok(IpcResponse::HeCalibrationCancelled) => {
+                        self.cal_status_msg = Some("Calibration cancelled.".to_string());
+                        self.cal_progress = None;
+                    }
+                    Ok(IpcResponse::Error(e)) => {
+                        self.cal_status_msg = Some(format!("Error: {e}"));
+                    }
+                    Err(e) => {
+                        self.cal_status_msg = Some(format!("Daemon error: {e}"));
+                    }
+                    _ => {}
                 }
-                Err(e) => {
-                    self.cal_status_msg = Some(format!("Daemon error: {e}"));
-                }
-                _ => {}
-            },
+            }
             Message::PollCalibration => {
                 if !self.device_connected {
                     if self.cal_progress.is_some() {
@@ -1131,13 +1155,20 @@ impl App {
                     }
                     return Task::none();
                 }
+                let epoch = self.cal_epoch;
                 return Task::perform(
                     ipc::request(IpcRequest::GetHeCalibrationProgress),
-                    Message::CalibrationProgress,
+                    move |response| Message::CalibrationProgress(epoch, response),
                 );
             }
-            Message::CalibrationProgress(res) => {
+            Message::CalibrationProgress(epoch, res) => {
+                if epoch != self.cal_epoch {
+                    return Task::none();
+                }
                 if let Ok(IpcResponse::HeCalibrationProgress(prog)) = res {
+                    if prog.is_some() {
+                        self.cal_starting = false;
+                    }
                     self.cal_progress = prog;
                 }
             }
@@ -3191,11 +3222,65 @@ mod tests {
         assert_eq!(Page::from_token("testing"), Some(Page::Diagnostics));
         assert_eq!(Page::from_token("licenses"), Some(Page::About));
         assert_eq!(Page::from_token("ppm"), Some(Page::Stats));
+        assert_eq!(Page::from_token("calibrate"), Some(Page::Calibration));
+        assert_eq!(Page::from_token("calibration"), Some(Page::Calibration));
+        assert_eq!(Page::Calibration.token(), "calibrate");
         assert_eq!(Page::from_token("nowhere"), None);
     }
 
     fn entry(seq: u64) -> LogEntry {
         LogEntry::new(seq, LogSource::Host, LogLevel::Info, "daemon", "x")
+    }
+
+    #[tokio::test]
+    async fn calibration_ignores_replies_from_before_start_or_cancel() {
+        // Construct the app and drive its real update handler. Returned iced
+        // tasks are not executed: no window, daemon connection or pad is used.
+        let (mut app, _) = App::new(true, Some(Page::Calibration));
+        app.device_connected = true;
+        let old_epoch = app.cal_epoch;
+        let _ = app.update(Message::StartCalibration);
+        let epoch = app.cal_epoch;
+        assert!(app.cal_starting);
+        let _ = app.update(Message::CalibrationProgress(
+            old_epoch,
+            Ok(IpcResponse::HeCalibrationProgress(Some(
+                opad_model::HeCalibrationProgress {
+                    stage: opad_model::HeCalStage::Success,
+                    ..Default::default()
+                },
+            ))),
+        ));
+        assert!(app.cal_progress.is_none());
+        assert!(app.cal_starting);
+        let _ = app.update(Message::StartCalibrationDone(
+            epoch,
+            Ok(IpcResponse::HeCalibrationStarted),
+        ));
+        assert!(app.cal_starting, "wait for real progress after enqueueing");
+        let _ = app.update(Message::CalibrationProgress(
+            epoch,
+            Ok(IpcResponse::HeCalibrationProgress(Some(
+                opad_model::HeCalibrationProgress {
+                    stage: opad_model::HeCalStage::Rest,
+                    ..Default::default()
+                },
+            ))),
+        ));
+        assert_eq!(
+            app.cal_progress.as_ref().unwrap().stage,
+            opad_model::HeCalStage::Rest
+        );
+        assert!(!app.cal_starting);
+        let _ = app.update(Message::CancelCalibration);
+        let _ = app.update(Message::StartCalibrationDone(
+            epoch,
+            Ok(IpcResponse::HeCalibrationStarted),
+        ));
+        assert!(
+            !app.cal_starting,
+            "late start completion cannot undo cancel"
+        );
     }
 
     #[test]
