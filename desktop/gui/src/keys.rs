@@ -53,6 +53,9 @@ pub struct KeysState {
     edit: Option<[HeKeyConfig; 2]>,
     dirty: bool,
     live: Option<HeLiveSample>,
+    /// What the live view draws: each key's reading through a One Euro
+    /// filter. Display only; the pad decides presses from raw readings.
+    smooth: [OneEuro; 2],
     live_supported: bool,
     live_inflight: bool,
 }
@@ -81,6 +84,66 @@ impl KeysState {
     pub fn stop_live(&mut self) {
         self.live = None;
         self.live_inflight = false;
+        self.smooth = Default::default();
+    }
+
+    fn take_sample(&mut self, sample: Option<HeLiveSample>, now: std::time::Instant) {
+        self.live = sample;
+        match sample {
+            Some(s) => {
+                for (k, raw) in [s.key1_raw, s.key2_raw].into_iter().enumerate() {
+                    if raw > 0 {
+                        self.smooth[k].filter(raw as f32, now);
+                    } else {
+                        self.smooth[k] = OneEuro::default();
+                    }
+                }
+            }
+            // Paused (a map) or gone: start fresh rather than glide from a stale value
+            None => self.smooth = Default::default(),
+        }
+    }
+}
+
+/// One Euro filter (Casiez, Roussel & Vogel, CHI 2012), as pen tablets use:
+/// the cutoff rises with speed, so a still key loses its sensor noise while
+/// a fast press is followed with almost no lag. Tuned in raw counts: rest
+/// noise is ~5-6 counts sd (decision record, V1.1 bench), a fast press moves
+/// ~450 counts in a few tens of ms.
+#[derive(Debug, Default, Clone, Copy)]
+struct OneEuro {
+    value: Option<f32>,
+    speed: f32,
+    at: Option<std::time::Instant>,
+}
+
+impl OneEuro {
+    /// Cutoff for a still key, Hz: low, so the noise is averaged away
+    const MIN_CUTOFF: f32 = 1.5;
+    /// Extra cutoff per count/s of movement
+    const BETA: f32 = 0.006;
+    /// Cutoff for the speed estimate itself, Hz
+    const SPEED_CUTOFF: f32 = 1.0;
+
+    fn alpha(cutoff: f32, dt: f32) -> f32 {
+        let tau = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
+        1.0 / (1.0 + tau / dt)
+    }
+
+    fn filter(&mut self, x: f32, now: std::time::Instant) -> f32 {
+        let (Some(prev), Some(at)) = (self.value, self.at) else {
+            self.value = Some(x);
+            self.at = Some(now);
+            return x;
+        };
+        let dt = now.duration_since(at).as_secs_f32().max(1e-3);
+        let speed = (x - prev) / dt;
+        self.speed += Self::alpha(Self::SPEED_CUTOFF, dt) * (speed - self.speed);
+        let cutoff = Self::MIN_CUTOFF + Self::BETA * self.speed.abs();
+        let v = prev + Self::alpha(cutoff, dt) * (x - prev);
+        self.value = Some(v);
+        self.at = Some(now);
+        v
     }
 }
 
@@ -120,12 +183,12 @@ pub fn update(app: &mut App, msg: KeysMessage) -> Task<Message> {
             match *result {
                 Ok(IpcResponse::HeLive { supported, sample }) => {
                     state.live_supported = supported;
-                    state.live = sample;
+                    state.take_sample(sample, std::time::Instant::now());
                 }
                 // An older daemon closes the connection on GetHeLive
                 _ => {
                     state.live_supported = false;
-                    state.live = None;
+                    state.take_sample(None, std::time::Instant::now());
                 }
             }
             Task::none()
@@ -340,15 +403,15 @@ fn live_view<'a>(app: &'a App, key: usize, c: HeKeyConfig) -> Element<'a, Messag
         .he_calibration
         .as_ref()
         .and_then(|cal| cal_span(cal, key));
-    let (raw, down) = match sample {
-        Some(s) if key == 0 => (s.key1_raw, s.key1_down),
-        Some(s) => (s.key2_raw, s.key2_down),
-        None => (0, false),
+    // Pressed comes from the pad as is; only the drawn position is smoothed
+    let down = match sample {
+        Some(s) if key == 0 => s.key1_down,
+        Some(s) => s.key2_down,
+        None => false,
     };
-    let depth = match (span, raw) {
-        (Some((rest, full)), r) if r > 0 => {
-            Some((r as f32 - rest as f32) / (full as f32 - rest as f32))
-        }
+    let shown = app.keys.smooth[key].value;
+    let depth = match (span, shown) {
+        (Some((rest, full)), Some(r)) => Some((r - rest as f32) / (full as f32 - rest as f32)),
         _ => None,
     };
     let status = if !app.keys.live_supported {
@@ -386,7 +449,7 @@ fn live_view<'a>(app: &'a App, key: usize, c: HeKeyConfig) -> Element<'a, Messag
 pub fn view(app: &App) -> Element<'_, Message> {
     let mut content = column![
         heading("Keys"),
-        muted("Where the keys press and release, and rapid trigger. Depths are a share of each key's calibrated travel."),
+        muted("Where the keys press and release, and rapid trigger. Depths are a share of each key's calibrated travel. The moving switches are smoothed for display; the pad presses on raw readings."),
     ]
     .spacing(14);
 
@@ -731,6 +794,59 @@ mod tests {
         s.edit_settings(KeysMessage::Revert, pad(500, 500));
         assert!(!s.dirty);
         assert_eq!(s.edit.unwrap()[0].actuation, 500);
+    }
+
+    /// Deterministic noise with sd ~5.6 counts, like the V1.1 bench at rest
+    fn noise(seed: &mut u32) -> f32 {
+        let mut sum = 0i32;
+        for _ in 0..6 {
+            *seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            sum += ((*seed >> 24) & 7) as i32;
+        }
+        (sum - 21) as f32
+    }
+
+    fn sd(v: &[f32]) -> f32 {
+        let m = v.iter().sum::<f32>() / v.len() as f32;
+        (v.iter().map(|x| (x - m).powi(2)).sum::<f32>() / v.len() as f32).sqrt()
+    }
+
+    #[test]
+    fn smoothing_removes_rest_noise() {
+        let t0 = std::time::Instant::now();
+        let step = std::time::Duration::from_millis(33);
+        let mut f = OneEuro::default();
+        let mut seed = 1;
+        let (mut raw, mut out) = (vec![], vec![]);
+        for i in 0..300 {
+            let x = 2086.0 + noise(&mut seed);
+            let y = f.filter(x, t0 + step * i);
+            if i >= 30 {
+                raw.push(x);
+                out.push(y);
+            }
+        }
+        assert!(
+            sd(&out) < sd(&raw) * 0.5,
+            "raw sd {} shown sd {}",
+            sd(&raw),
+            sd(&out)
+        );
+    }
+
+    #[test]
+    fn smoothing_follows_a_fast_press_within_two_frames() {
+        let t0 = std::time::Instant::now();
+        let step = std::time::Duration::from_millis(33);
+        let mut f = OneEuro::default();
+        for i in 0..30 {
+            f.filter(2086.0, t0 + step * i);
+        }
+        // A full press arrives between two polls: a 450-count step
+        let first = f.filter(2536.0, t0 + step * 30) - 2086.0;
+        let second = f.filter(2536.0, t0 + step * 31) - 2086.0;
+        assert!(first > 450.0 * 0.6, "first frame shows {first}");
+        assert!(second > 450.0 * 0.9, "second frame shows {second}");
     }
 
     #[test]
