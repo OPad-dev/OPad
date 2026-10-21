@@ -56,26 +56,37 @@ uint32_t he_params_build(const he_key_settings_t *s, const he_calibration_t *cal
         p.continuous = false;
     }
 
+    // Below these the sensor's own noise could press a key or hold it down.
+    // no_floor (the owner's per-key choice) uses the settings as they are.
+    int32_t rest_floor = s->no_floor ? 1 : lim->min_top_reset;
+    int32_t move_floor = s->no_floor ? 1 : lim->min_movement;
+
     int32_t top = pct_to_counts(span, clamp_pct(s->top_reset, &result));
-    if (top < lim->min_top_reset) {
+    if (top < rest_floor) {
         result |= HE_PARAMS_TOP_RESET_RAISED;
-        top = lim->min_top_reset;
+        top = rest_floor;
     }
     p.top_reset = cal->rest + top;
 
-    int32_t hyst = movement(span, clamp_pct(s->release_hyst, &result), lim->min_movement,
+    int32_t hyst = movement(span, clamp_pct(s->release_hyst, &result), move_floor,
                             HE_PARAMS_HYST_RAISED, &result);
     p.actuation = cal->rest + pct_to_counts(span, clamp_pct(s->actuation, &result));
-    if (p.actuation - hyst < p.top_reset) {
-        // The release point must clear the noise at rest, or a key could stay down
+    // The release point must clear the noise at rest, or a key could stay
+    // down. Continuous rapid trigger leaves at top_reset, so there it must
+    // also sit at or above that; otherwise top_reset is not used.
+    int32_t release_min = p.continuous ? p.top_reset : cal->rest + rest_floor;
+    if (p.actuation - hyst < release_min) {
         result |= HE_PARAMS_ACTUATION_RAISED;
-        p.actuation = p.top_reset + hyst;
+        p.actuation = release_min + hyst;
     }
     p.release = p.actuation - hyst;
+    if (p.top_reset > p.release) {
+        p.top_reset = p.release;  // unused outside continuous; keeps the ordering
+    }
 
-    p.rt_press = movement(span, clamp_pct(s->rt_press, &result), lim->min_movement,
+    p.rt_press = movement(span, clamp_pct(s->rt_press, &result), move_floor,
                           HE_PARAMS_RT_PRESS_RAISED, &result);
-    p.rt_release = movement(span, clamp_pct(s->rt_release, &result), lim->min_movement,
+    p.rt_release = movement(span, clamp_pct(s->rt_release, &result), move_floor,
                             HE_PARAMS_RT_RELEASE_RAISED, &result);
     if (!p.rapid_trigger) {
         // Unused in plain mode: report only what applies

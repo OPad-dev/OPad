@@ -139,6 +139,18 @@ Implemented in `he_rt.c`, per key:
 - Rapid trigger is refused without a valid calibration
   (`HE_PARAMS_RT_NEEDS_CALIBRATION`); a setting that maps below the noise
   floor is raised to it and reported, never applied silently.
+- **Release floor (owner, 2026-10-21):** in plain mode and normal rapid
+  trigger the release point (actuation minus hysteresis) only has to clear
+  the noise floor above rest (`min_top_reset`); the top reset setting
+  bounds it only in continuous rapid trigger, where it is the exit. Before,
+  top reset floored it in every mode, so a 1 % actuation silently pressed
+  at ~20 % (`firmware/main/input/he_params.c`). The app shows the real press
+  point (`he_effective` in `desktop/crates/opad-model`), from the floors the
+  pad reports in `HeCalibrationStatus`.
+- **Allow below the noise floor (owner, 2026-10-21):** per key, off by
+  default, in the app's Advanced settings. It drops both floors to 1 count so
+  every setting is used as is, down to a true 1 %; the sensor's noise can then
+  press the key by itself. Stored in the `he_cfg` record's flags.
 
 ### D5 — Hardware — Confirmed
 

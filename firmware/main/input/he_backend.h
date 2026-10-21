@@ -92,6 +92,12 @@ bool he_backend_is_locked(void);
 bool he_backend_is_calibrating(void);
 
 /**
+ * @brief The noise floors thresholds are built with (he_limits_t), in raw
+ * counts, for the app to show where a key really presses.
+ */
+he_limits_t he_backend_noise_floors(void);
+
+/**
  * @brief Start interactive calibration. Temporarily suppresses PC keypresses
  * and enables sample tapping in the frame ISR.
  * Waits for the reporting task and USB callbacks before capture starts.
@@ -127,6 +133,7 @@ static inline void he_backend_reload_params(void) {}
 static inline esp_err_t he_backend_probe_module(int *o, int *l) { (void)o; (void)l; return ESP_ERR_NOT_SUPPORTED; }
 static inline bool he_backend_is_locked(void) { return false; }
 static inline bool he_backend_is_calibrating(void) { return false; }
+static inline he_limits_t he_backend_noise_floors(void) { return (he_limits_t){0}; }
 static inline esp_err_t he_backend_start_calibration(void) { return ESP_ERR_NOT_SUPPORTED; }
 static inline void he_backend_cancel_calibration(void) {}
 static inline esp_err_t he_backend_finish_calibration(const he_calibration_t r[2]) { (void)r; return ESP_ERR_NOT_SUPPORTED; }

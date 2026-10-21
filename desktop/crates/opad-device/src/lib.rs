@@ -854,6 +854,7 @@ impl DeviceManager {
                         rt_release: k.rt_release,
                         bottom_dead_zone: Some(k.bottom_dead_zone),
                         rt_mode: k.rt_mode.to_wire() as i32,
+                        allow_below_noise_floor: Some(k.allow_below_noise_floor),
                     }),
                     key2_he: config.key2_he.map(|k| proto::HeKeySettings {
                         actuation: k.actuation,
@@ -863,6 +864,7 @@ impl DeviceManager {
                         rt_release: k.rt_release,
                         bottom_dead_zone: Some(k.bottom_dead_zone),
                         rt_mode: k.rt_mode.to_wire() as i32,
+                        allow_below_noise_floor: Some(k.allow_below_noise_floor),
                     }),
                 }),
             })),
@@ -1184,6 +1186,7 @@ fn device_config_from(c: &proto::ConfigPayload) -> DeviceConfig {
             rt_release: k.rt_release,
             bottom_dead_zone: k.bottom_dead_zone.unwrap_or(0),
             rt_mode: opad_model::HeRtMode::from_wire(k.rt_mode as u32).unwrap_or_default(),
+            allow_below_noise_floor: k.allow_below_noise_floor.unwrap_or(false),
         }),
         key2_he: c.key2_he.as_ref().map(|k| opad_model::HeKeyConfig {
             actuation: k.actuation,
@@ -1193,6 +1196,7 @@ fn device_config_from(c: &proto::ConfigPayload) -> DeviceConfig {
             rt_release: k.rt_release,
             bottom_dead_zone: k.bottom_dead_zone.unwrap_or(0),
             rt_mode: opad_model::HeRtMode::from_wire(k.rt_mode as u32).unwrap_or_default(),
+            allow_below_noise_floor: k.allow_below_noise_floor.unwrap_or(false),
         }),
     }
 }
@@ -2196,6 +2200,7 @@ mod tests {
                 rt_release: 150,
                 bottom_dead_zone: Some(0),
                 rt_mode: 1,
+                allow_below_noise_floor: None,
             }),
             ..Default::default()
         };
@@ -2212,6 +2217,7 @@ mod tests {
             rt_release: 150,
             bottom_dead_zone: None,
             rt_mode: 1,
+            allow_below_noise_floor: None,
         });
         let cfg = device_config_from(&c);
         assert_eq!(cfg.key1_he.unwrap().bottom_dead_zone, 0);
@@ -2225,6 +2231,7 @@ mod tests {
             rt_release: 150,
             bottom_dead_zone: Some(150),
             rt_mode: 1,
+            allow_below_noise_floor: None,
         });
         let cfg = device_config_from(&c);
         assert_eq!(cfg.key1_he.unwrap().bottom_dead_zone, 150);
@@ -2239,6 +2246,7 @@ mod tests {
             rt_release: 150,
             bottom_dead_zone: Some(0),
             rt_mode: 1,
+            allow_below_noise_floor: None,
         };
         let mut buf = Vec::new();
         original.encode(&mut buf).unwrap();

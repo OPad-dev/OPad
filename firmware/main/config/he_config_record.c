@@ -29,6 +29,7 @@ void he_config_default_settings(he_key_settings_t settings[2])
         settings[k].bottom_dz = HE_CONFIG_DEFAULT_BOTTOM_DZ;
         settings[k].rapid_trigger = HE_CONFIG_DEFAULT_RAPID_TRIGGER;
         settings[k].continuous = HE_CONFIG_DEFAULT_CONTINUOUS;
+        settings[k].no_floor = false;
     }
 }
 
@@ -39,7 +40,8 @@ bool he_config_settings_equal(const he_key_settings_t a[2], const he_key_setting
         if (a[k].actuation != b[k].actuation || a[k].release_hyst != b[k].release_hyst ||
             a[k].top_reset != b[k].top_reset || a[k].rt_press != b[k].rt_press ||
             a[k].rt_release != b[k].rt_release || a[k].bottom_dz != b[k].bottom_dz ||
-            a[k].rapid_trigger != b[k].rapid_trigger || a[k].continuous != b[k].continuous) {
+            a[k].rapid_trigger != b[k].rapid_trigger || a[k].continuous != b[k].continuous ||
+            a[k].no_floor != b[k].no_floor) {
             return false;
         }
     }
@@ -87,7 +89,7 @@ void he_config_record_pack(he_config_record_t *rec, const he_key_settings_t sett
     memset(rec, 0, sizeof(*rec));
     rec->magic = HE_CONFIG_RECORD_MAGIC;
     rec->version = HE_CONFIG_RECORD_VERSION;
-    rec->reserved = 0;
+    rec->flags = 0;
     for (int k = 0; k < 2; k++) {
         rec->keys[k].actuation = settings[k].actuation;
         rec->keys[k].release_hyst = settings[k].release_hyst;
@@ -97,6 +99,9 @@ void he_config_record_pack(he_config_record_t *rec, const he_key_settings_t sett
         rec->keys[k].bottom_dz = settings[k].bottom_dz;
         rec->keys[k].rapid_trigger = settings[k].rapid_trigger ? 1 : 0;
         rec->keys[k].continuous = settings[k].continuous ? 1 : 0;
+        if (settings[k].no_floor) {
+            rec->flags |= (uint16_t)(1u << k);
+        }
     }
     rec->crc32 = he_config_crc32(rec, offsetof(he_config_record_t, crc32));
 }
@@ -143,6 +148,7 @@ bool he_config_record_unpack(const void *buf, size_t len, he_key_settings_t sett
         settings[k].bottom_dz = rec->keys[k].bottom_dz;
         settings[k].rapid_trigger = rec->keys[k].rapid_trigger != 0;
         settings[k].continuous = rec->keys[k].continuous != 0;
+        settings[k].no_floor = (rec->flags >> k) & 1u;
     }
 
     return true;

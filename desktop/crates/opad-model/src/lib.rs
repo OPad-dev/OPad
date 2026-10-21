@@ -406,6 +406,10 @@ pub struct HeKeyConfig {
     pub rt_release: u32,
     pub bottom_dead_zone: u32,
     pub rt_mode: HeRtMode,
+    /// Use every setting as is, below the pad's noise floors too; the
+    /// sensor's noise can then press the key by itself
+    #[serde(default)]
+    pub allow_below_noise_floor: bool,
 }
 
 impl Default for HeKeyConfig {
@@ -418,8 +422,69 @@ impl Default for HeKeyConfig {
             rt_release: 150,
             bottom_dead_zone: 0,
             rt_mode: HeRtMode::Off,
+            allow_below_noise_floor: false,
         }
     }
+}
+
+/// Where a key really presses and releases, as the pad builds its
+/// thresholds from the settings (firmware/main/input/he_params.c,
+/// `he_params_build`), in shares of the calibrated span (1.0 = full press)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HeEffective {
+    pub press: f32,
+    pub release: f32,
+    pub top_reset: f32,
+    /// The press point sits deeper than the setting asked, to keep the
+    /// release point above its floor
+    pub press_raised: bool,
+}
+
+/// `he_params_build` on the host, so the app shows the real press point
+/// before saving. `floors` are the pad's noise floors in counts (rest,
+/// movement) from `HeCalibrationStatus`; `None` means firmware predating
+/// them, which floored release at the top reset depth with 32-count floors
+/// and had no per-key opt-out. Keep in step with he_params.c; the test
+/// vectors below match firmware/test/host/test_he_rt.c.
+pub fn he_effective(
+    s: &HeKeyConfig,
+    rest: u32,
+    full: u32,
+    floors: Option<(u32, u32)>,
+) -> Option<HeEffective> {
+    if full <= rest {
+        return None;
+    }
+    let span = (full - rest) as i64;
+    let counts = |pct: u32| (span * pct.min(1000) as i64 + 500) / 1000;
+    let (rest_floor, move_floor, legacy) = match floors {
+        Some((r, m)) if r > 0 && m > 0 => {
+            if s.allow_below_noise_floor {
+                (1, 1, false)
+            } else {
+                (r as i64, m as i64, false)
+            }
+        }
+        _ => (32, 32, true),
+    };
+    let continuous = s.rt_mode == HeRtMode::Continuous;
+    let top = counts(s.top_reset).max(rest_floor);
+    let hyst = counts(s.release_hyst).max(move_floor);
+    let asked = counts(s.actuation);
+    let release_min = if legacy || continuous {
+        top
+    } else {
+        rest_floor
+    };
+    let press = asked.max(release_min + hyst);
+    let release = press - hyst;
+    let share = |c: i64| c as f32 / span as f32;
+    Some(HeEffective {
+        press: share(press),
+        release: share(release),
+        top_reset: share(top.min(release)),
+        press_raised: press > asked,
+    })
 }
 
 impl HeKeyConfig {
@@ -464,6 +529,12 @@ pub struct HeCalibrationStatus {
     pub is_locked: bool,
     #[serde(default)]
     pub is_calibrating: bool,
+    /// The pad's noise floors in raw counts (release above rest, every
+    /// movement setting); 0 from firmware predating them
+    #[serde(default)]
+    pub noise_floor_rest: u32,
+    #[serde(default)]
+    pub noise_floor_movement: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -855,6 +926,56 @@ impl JsonBackup {
 
 #[cfg(test)]
 mod tests {
+
+    // Same settings and calibration as firmware/test/host/test_he_rt.c
+    // (rest 2084, full 2530, floors 32/32), so both sides must agree
+    fn he(actuation: u32, hyst: u32, top: u32, mode: HeRtMode, no_floor: bool) -> HeKeyConfig {
+        HeKeyConfig {
+            actuation,
+            release_hyst: hyst,
+            top_reset: top,
+            rt_mode: mode,
+            allow_below_noise_floor: no_floor,
+            ..HeKeyConfig::default()
+        }
+    }
+
+    fn counts(e: HeEffective) -> (i64, i64) {
+        let c = |f: f32| (f * 446.0).round() as i64;
+        (c(e.press), c(e.release))
+    }
+
+    #[test]
+    fn he_effective_matches_the_firmware_floors() {
+        let floors = Some((32, 32));
+        let e = he_effective(&he(10, 100, 100, HeRtMode::Off, false), 2084, 2530, floors).unwrap();
+        assert_eq!(counts(e), (32 + 45, 32));
+        assert!(e.press_raised);
+        let e = he_effective(
+            &he(10, 100, 150, HeRtMode::Continuous, false),
+            2084,
+            2530,
+            floors,
+        )
+        .unwrap();
+        assert_eq!(counts(e), (67 + 45, 67));
+        let e = he_effective(&he(10, 10, 100, HeRtMode::Off, true), 2084, 2530, floors).unwrap();
+        assert_eq!(counts(e), (5, 1));
+        let e = he_effective(&he(10, 10, 100, HeRtMode::Off, false), 2084, 2530, floors).unwrap();
+        assert_eq!(counts(e), (64, 32));
+        // Nothing raised when the setting clears the floors
+        let e = he_effective(&he(500, 100, 100, HeRtMode::Off, false), 2084, 2530, floors).unwrap();
+        assert_eq!(counts(e), (223, 178));
+        assert!(!e.press_raised);
+    }
+
+    #[test]
+    fn he_effective_on_firmware_without_floors_uses_the_old_rule() {
+        // Older firmware floored release at top reset and ignored the opt-out
+        let e = he_effective(&he(10, 100, 100, HeRtMode::Off, true), 2084, 2530, None).unwrap();
+        assert_eq!(counts(e), (90, 45));
+    }
+
     use super::*;
 
     fn valid_backup() -> JsonBackup {

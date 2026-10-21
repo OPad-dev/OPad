@@ -575,6 +575,11 @@ bool he_backend_is_locked(void)
     return he_cal_is_locked_decision(s_running, cal[0].valid, cal[1].valid);
 }
 
+he_limits_t he_backend_noise_floors(void)
+{
+    return HE_PROVISIONAL_LIMITS;
+}
+
 bool he_backend_is_calibrating(void)
 {
     portENTER_CRITICAL(&s_lock);

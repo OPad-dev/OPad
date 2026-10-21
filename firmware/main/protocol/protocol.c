@@ -171,6 +171,8 @@ static void fill_config_payload(osupad_ConfigPayload *out, const device_config_d
     out->key1_he.rt_release = he_keys[0].rt_release;
     out->key1_he.has_bottom_dead_zone = true;
     out->key1_he.bottom_dead_zone = he_keys[0].bottom_dz;
+    out->key1_he.has_allow_below_noise_floor = true;
+    out->key1_he.allow_below_noise_floor = he_keys[0].no_floor;
     out->key1_he.rt_mode = !he_keys[0].rapid_trigger ? osupad_HeRtMode_HE_RT_MODE_OFF :
         he_keys[0].continuous ? osupad_HeRtMode_HE_RT_MODE_CONTINUOUS :
         osupad_HeRtMode_HE_RT_MODE_NORMAL;
@@ -183,6 +185,8 @@ static void fill_config_payload(osupad_ConfigPayload *out, const device_config_d
     out->key2_he.rt_release = he_keys[1].rt_release;
     out->key2_he.has_bottom_dead_zone = true;
     out->key2_he.bottom_dead_zone = he_keys[1].bottom_dz;
+    out->key2_he.has_allow_below_noise_floor = true;
+    out->key2_he.allow_below_noise_floor = he_keys[1].no_floor;
     out->key2_he.rt_mode = !he_keys[1].rapid_trigger ? osupad_HeRtMode_HE_RT_MODE_OFF :
         he_keys[1].continuous ? osupad_HeRtMode_HE_RT_MODE_CONTINUOUS :
         osupad_HeRtMode_HE_RT_MODE_NORMAL;
@@ -290,6 +294,9 @@ esp_err_t protocol_send_status(void)
         msg.payload.status.he_calibration.key2_full = cal1.full >= 0 ? (uint32_t)cal1.full : 0;
         msg.payload.status.he_calibration.is_locked = he_backend_is_locked();
         msg.payload.status.he_calibration.is_calibrating = he_backend_is_calibrating();
+        he_limits_t floors = he_backend_noise_floors();
+        msg.payload.status.he_calibration.noise_floor_rest = (uint32_t)floors.min_top_reset;
+        msg.payload.status.he_calibration.noise_floor_movement = (uint32_t)floors.min_movement;
     }
 
     return send_envelope(&msg);
@@ -623,6 +630,7 @@ static void handle_host_message(const osupad_HostToDevice *msg)
                 if (c->key1_he.rt_press > 0) he_keys[0].rt_press = (uint16_t)c->key1_he.rt_press;
                 if (c->key1_he.rt_release > 0) he_keys[0].rt_release = (uint16_t)c->key1_he.rt_release;
                 if (c->key1_he.has_bottom_dead_zone) he_keys[0].bottom_dz = (uint16_t)c->key1_he.bottom_dead_zone;
+                if (c->key1_he.has_allow_below_noise_floor) he_keys[0].no_floor = c->key1_he.allow_below_noise_floor;
                 if (c->key1_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_OFF) {
                     he_keys[0].rapid_trigger = false;
                     he_keys[0].continuous = false;
@@ -641,6 +649,7 @@ static void handle_host_message(const osupad_HostToDevice *msg)
                 if (c->key2_he.rt_press > 0) he_keys[1].rt_press = (uint16_t)c->key2_he.rt_press;
                 if (c->key2_he.rt_release > 0) he_keys[1].rt_release = (uint16_t)c->key2_he.rt_release;
                 if (c->key2_he.has_bottom_dead_zone) he_keys[1].bottom_dz = (uint16_t)c->key2_he.bottom_dead_zone;
+                if (c->key2_he.has_allow_below_noise_floor) he_keys[1].no_floor = c->key2_he.allow_below_noise_floor;
                 if (c->key2_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_OFF) {
                     he_keys[1].rapid_trigger = false;
                     he_keys[1].continuous = false;

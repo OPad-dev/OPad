@@ -113,6 +113,13 @@ message HeCalibrationStatus {
     uint32 key2_full = 6;
     bool is_locked = 7;
     bool is_calibrating = 8;
+    // The pad's noise floors in raw counts: a release point at least
+    // noise_floor_rest above rest, and every movement setting (hysteresis,
+    // rapid trigger sensitivities) at least noise_floor_movement, unless a
+    // key allows below them (HeKeySettings.allow_below_noise_floor). 0 from
+    // firmware predating them, whose release floor is the top reset depth.
+    uint32 noise_floor_rest = 9;
+    uint32 noise_floor_movement = 10;
 }
 
 // -----------------------------------------------------------------------------
@@ -170,6 +177,9 @@ message HeKeySettings {
     uint32 rt_release = 5;
     optional uint32 bottom_dead_zone = 6;
     HeRtMode rt_mode = 7;
+    // Use every setting as is, below the noise floors too; the sensor's noise
+    // can then press the key by itself. Absent = keep current.
+    optional bool allow_below_noise_floor = 8;
 }
 
 // What a swipe does. Volume steps repeat along a long drag; every other

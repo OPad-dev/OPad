@@ -457,6 +457,7 @@ static void test_params_validation(void)
             .rt_press = (uint16_t)(noise(700) + 700), .rt_release = (uint16_t)(noise(700) + 700),
             .top_reset = (uint16_t)(noise(700) + 700), .bottom_dz = (uint16_t)(noise(700) + 700),
             .rapid_trigger = noise(1) > 0, .continuous = noise(1) > 0,
+            .no_floor = noise(1) > 0,
         };
         he_calibration_t c = {.rest = 1500 + noise(500), .valid = noise(1) >= 0};
         c.full = c.rest + 1 + (noise(600) + 600);
@@ -467,15 +468,56 @@ static void test_params_validation(void)
             assert(c.full <= c.rest);
             continue;
         }
-        assert(p.top_reset >= c.rest + LIM.min_top_reset);
+        int32_t rest_floor = s.no_floor ? 1 : LIM.min_top_reset;
+        int32_t move_floor = s.no_floor ? 1 : LIM.min_movement;
+        assert(p.top_reset >= c.rest + rest_floor);
+        assert(p.release >= c.rest + rest_floor);
         assert(p.top_reset <= p.release && p.release < p.actuation);
-        assert(p.actuation - p.release >= LIM.min_movement);
+        assert(p.actuation - p.release >= move_floor);
         assert(p.actuation <= p.peak_cap);
-        assert(p.rt_press >= LIM.min_movement && p.rt_release >= LIM.min_movement);
+        assert(p.rt_press >= move_floor && p.rt_release >= move_floor);
         assert(!p.continuous || p.rapid_trigger);
         assert(!p.rapid_trigger || c.valid);
     }
     printf("✓ test_params_validation passed\n");
+}
+
+// 19. A low actuation point is held off rest by the noise floor alone, not by
+// the top reset setting (plain and normal rapid trigger); continuous rapid
+// trigger still keeps release at top reset. no_floor uses settings as given.
+static void test_low_actuation_floors(void)
+{
+    he_rt_params_t p;
+    he_key_settings_t s = plain_settings();
+    s.actuation = 10;  // 1 %; hysteresis 10 % = 45 counts at this span
+    uint32_t r = he_params_build(&s, &CAL, &LIM, &p);
+    assert(r & HE_PARAMS_ACTUATION_RAISED);
+    assert(p.release == REST + TEST_TOP_FLOOR && p.actuation == REST + TEST_TOP_FLOOR + 45);
+
+    s = rt_settings(false);
+    s.actuation = 10;
+    r = he_params_build(&s, &CAL, &LIM, &p);
+    assert(p.release == REST + TEST_TOP_FLOOR && p.actuation == REST + TEST_TOP_FLOOR + 45);
+
+    s = rt_settings(true);  // top reset 15 % = 67 counts
+    s.actuation = 10;
+    r = he_params_build(&s, &CAL, &LIM, &p);
+    assert(p.top_reset == REST + 67 && p.release == p.top_reset && p.actuation == REST + 67 + 45);
+
+    // No floor: 1 % actuation with 1 % hysteresis is used as is
+    s = plain_settings();
+    s.actuation = 10;
+    s.release_hyst = 10;
+    s.no_floor = true;
+    r = he_params_build(&s, &CAL, &LIM, &p);
+    assert(p.release == REST + 1 && p.actuation == REST + 5);
+
+    // Without it the same settings keep the floors
+    s.no_floor = false;
+    r = he_params_build(&s, &CAL, &LIM, &p);
+    assert(r & HE_PARAMS_HYST_RAISED && r & HE_PARAMS_ACTUATION_RAISED);
+    assert(p.release == REST + TEST_TOP_FLOOR && p.actuation == REST + TEST_TOP_FLOOR + TEST_FLOOR);
+    printf("✓ test_low_actuation_floors passed\n");
 }
 
 static void pending(const char *name, const char *why)
@@ -486,6 +528,7 @@ static void pending(const char *name, const char *why)
 int main(void)
 {
     test_param_reload_preserves_release_requirement();
+    test_low_actuation_floors();
     test_untouched_never_presses();
     test_full_press_and_release();
     test_stationary_keeps_state();

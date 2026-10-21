@@ -347,6 +347,8 @@ async fn main() -> Result<()> {
                             key2_full: c.key2_full,
                             is_locked: c.is_locked,
                             is_calibrating: c.is_calibrating,
+                            noise_floor_rest: c.noise_floor_rest,
+                            noise_floor_movement: c.noise_floor_movement,
                         });
                         event_opt = Some(RuntimeEvent::DeviceStatus {
                             latency: opad_model::LatencyStats {

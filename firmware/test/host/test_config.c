@@ -436,11 +436,14 @@ static void test_he_record_round_trip(void)
             .bottom_dz = 0,
             .rapid_trigger = true,
             .continuous = false,
+            .no_floor = true,
         },
     };
 
     he_config_record_t rec;
     he_config_record_pack(&rec, in);
+    // Only key 2 asked for no floor: bit 1 of the header's flags
+    assert(rec.flags == 2u);
 
     assert(rec.magic == HE_CONFIG_RECORD_MAGIC);
     assert(rec.version == HE_CONFIG_RECORD_VERSION);
@@ -459,7 +462,14 @@ static void test_he_record_round_trip(void)
         assert(out[k].bottom_dz == in[k].bottom_dz);
         assert(out[k].rapid_trigger == in[k].rapid_trigger);
         assert(out[k].continuous == in[k].continuous);
+        assert(out[k].no_floor == in[k].no_floor);
     }
+
+    // A record from firmware predating the flag (flags 0) loads with floors
+    rec.flags = 0;
+    rec.crc32 = he_config_crc32(&rec, offsetof(he_config_record_t, crc32));
+    assert(he_config_record_unpack(&rec, sizeof(rec), out));
+    assert(!out[0].no_floor && !out[1].no_floor);
 
     printf("✓ test_he_record_round_trip passed\n");
 }

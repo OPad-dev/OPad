@@ -36,7 +36,10 @@ typedef struct __attribute__((packed)) {
 typedef struct __attribute__((packed)) {
     uint32_t magic;
     uint16_t version;
-    uint16_t reserved;
+    // Bit k: key k uses no noise floor (he_key_settings_t.no_floor). Added
+    // without a version bump: firmware that predates it ignores this field,
+    // so after a rollback those keys simply get the safe floors back.
+    uint16_t flags;
     he_key_config_record_t keys[2];
     uint32_t crc32;
 } he_config_record_t;

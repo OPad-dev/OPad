@@ -36,6 +36,9 @@ typedef struct {
     uint16_t bottom_dz;     // the peak stops following this close to a full press; 0 = off
     bool rapid_trigger;
     bool continuous;        // only with rapid_trigger
+    // Owner's choice per key (app, Advanced): drop the noise floors to 1 count,
+    // so any setting is used as is. The sensor's noise can then press the key.
+    bool no_floor;
 } he_key_settings_t;
 
 typedef struct {
@@ -59,7 +62,7 @@ typedef struct {
 #define HE_PARAMS_RT_RELEASE_RAISED    (1u << 5)  // to min_movement
 #define HE_PARAMS_HYST_RAISED          (1u << 6)  // to min_movement
 #define HE_PARAMS_TOP_RESET_RAISED     (1u << 7)  // to min_top_reset
-#define HE_PARAMS_ACTUATION_RAISED     (1u << 8)  // release would sit below top_reset
+#define HE_PARAMS_ACTUATION_RAISED     (1u << 8)  // release would sit below its floor
 #define HE_PARAMS_BOTTOM_DZ_REDUCED    (1u << 9)  // its cap would sit below actuation
 
 #define HE_PARAMS_FAILED(r) (((r) & (HE_PARAMS_BAD_CALIBRATION | HE_PARAMS_BAD_LIMITS)) != 0)

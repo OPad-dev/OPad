@@ -16,7 +16,10 @@ use iced::{
     Alignment, Color, Element, Length, Pixels, Point, Rectangle, Renderer, Size, Task, Theme,
 };
 use opad_ipc::{IpcRequest, IpcResponse};
-use opad_model::{DeviceConfig, HeCalibrationStatus, HeKeyConfig, HeLiveSample, HeRtMode};
+use opad_model::{
+    he_effective, DeviceConfig, HeCalibrationStatus, HeEffective, HeKeyConfig, HeLiveSample,
+    HeRtMode,
+};
 
 /// One setting of [`HeKeyConfig`], in the pad's 0.1 % units
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +42,8 @@ pub enum KeysMessage {
     Set(usize, Field, u32),
     RapidTrigger(usize, bool),
     Continuous(usize, bool),
+    /// Allow this key below the pad's noise floors
+    NoFloor(usize, bool),
     Save,
     Revert,
     PollLive,
@@ -121,14 +126,22 @@ impl KeysState {
     }
 
     fn take_sample(&mut self, sample: Option<HeLiveSample>, now: std::time::Instant) {
+        let was_down = self.live.map(|s| [s.key1_down, s.key2_down]);
         self.live = sample;
         match sample {
             Some(s) => {
+                let down = [s.key1_down, s.key2_down];
                 for (k, raw) in [s.key1_raw, s.key2_raw].into_iter().enumerate() {
-                    if raw > 0 {
-                        self.smooth[k].filter(raw as f32, now);
-                    } else {
+                    if raw == 0 {
                         self.smooth[k] = OneEuro::default();
+                    } else if was_down.is_some_and(|d| d[k] != down[k]) {
+                        // The pad just pressed or released: show the real depth
+                        // at that moment, then smooth on from there
+                        self.smooth[k] = OneEuro::at(raw as f32, now);
+                        self.held[k] = Some(raw as f32);
+                        self.drawn[k] = Some(raw as f32);
+                    } else {
+                        self.smooth[k].filter(raw as f32, now);
                     }
                 }
             }
@@ -179,6 +192,15 @@ impl OneEuro {
     /// Cutoff for the speed estimate itself, Hz: low, so noise does not
     /// read as movement and open the filter up
     const SPEED_CUTOFF: f32 = 0.7;
+
+    /// Settled at `x`: no speed, so the next readings are smoothed from here
+    fn at(x: f32, now: std::time::Instant) -> Self {
+        Self {
+            value: Some(x),
+            speed: 0.0,
+            at: Some(now),
+        }
+    }
 
     fn alpha(cutoff: f32, dt: f32) -> f32 {
         let tau = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
@@ -305,6 +327,10 @@ impl KeysState {
                 });
                 self.dirty = true;
             }
+            KeysMessage::NoFloor(key, on) => {
+                apply(edit, key, &|c| c.allow_below_noise_floor = on);
+                self.dirty = true;
+            }
             KeysMessage::Continuous(key, on) => {
                 apply(edit, key, &|c| {
                     if c.rt_mode != HeRtMode::Off {
@@ -336,7 +362,7 @@ fn pct(v: u32) -> String {
 
 fn setting<'a>(
     label: &'a str,
-    hint: &'a str,
+    hint: impl Into<String>,
     value: u32,
     range: std::ops::RangeInclusive<u32>,
     on_change: impl Fn(u32) -> Message + 'a,
@@ -348,18 +374,49 @@ fn setting<'a>(
             text(pct(value)).size(14)
         ],
         slider(range, value, on_change).step(5u32),
-        muted(hint).size(12),
+        muted(hint.into()).size(12),
     ]
     .spacing(6)
     .into()
 }
 
+/// Where the pad really presses this key with these settings
+fn effective(app: &App, key: usize, c: &HeKeyConfig) -> Option<HeEffective> {
+    let cal = app.he_calibration.as_ref()?;
+    let (rest, full) = cal_span(cal, key)?;
+    let floors =
+        (cal.noise_floor_rest > 0).then_some((cal.noise_floor_rest, cal.noise_floor_movement));
+    he_effective(c, rest, full, floors)
+}
+
+/// The pad reports its noise floors, so it honours a per-key opt-out
+fn floors_known(app: &App) -> bool {
+    app.he_calibration
+        .as_ref()
+        .is_some_and(|c| c.noise_floor_rest > 0)
+}
+
 fn key_controls<'a>(app: &'a App, key: usize, c: HeKeyConfig) -> Element<'a, Message> {
     let set = move |field: Field| move |v| Message::Keys(KeysMessage::Set(key, field, v));
     let rt_on = c.rt_mode != HeRtMode::Off;
+    let eff = effective(app, key, &c);
+    let actuation_hint = match eff {
+        Some(e) if e.press_raised => {
+            let why = if !floors_known(app) {
+                // Older firmware: release may not sit below the top reset
+                "the release point may not sit below the top reset"
+            } else if c.allow_below_noise_floor {
+                "the release point sits that far above it; a smaller release distance (Advanced) goes lower"
+            } else {
+                "the release point has to clear the sensor's noise. Advanced can allow lower"
+            };
+            format!("Presses at {:.1} %: {why}.", e.press * 100.0)
+        }
+        _ => "How deep the key goes before it presses.".to_string(),
+    };
     let mut col = column![setting(
         "ACTUATION POINT",
-        "How deep the key goes before it presses.",
+        actuation_hint,
         c.actuation,
         10..=950,
         set(Field::Actuation),
@@ -446,6 +503,22 @@ fn key_controls<'a>(app: &'a App, key: usize, c: HeKeyConfig) -> Element<'a, Mes
             0..=300,
             set(Field::BottomDeadZone),
         ));
+        if floors_known(app) {
+            col = col.push(
+                row![
+                    column![
+                        text("Allow below the noise floor").size(15),
+                        muted("Uses every setting as is, down to 1 %. The sensor's own noise can then press this key by itself.")
+                            .size(12),
+                    ]
+                    .spacing(2)
+                    .width(Length::Fill),
+                    toggler(c.allow_below_noise_floor)
+                        .on_toggle(move |on| Message::Keys(KeysMessage::NoFloor(key, on))),
+                ]
+                .align_y(Alignment::Center),
+            );
+        }
     }
     col.into()
 }
@@ -492,6 +565,7 @@ fn live_view<'a>(app: &'a App, key: usize, c: HeKeyConfig) -> Element<'a, Messag
             depth,
             down,
             settings: c,
+            effective: effective(app, key, &c),
         })
         .width(Length::Fixed(SWITCH_W * SWITCH_SCALE))
         .height(Length::Fixed(SWITCH_H * SWITCH_SCALE)),
@@ -637,6 +711,8 @@ struct SwitchView {
     depth: Option<f32>,
     down: bool,
     settings: HeKeyConfig,
+    /// Where the pad really presses and releases (the settings may be raised)
+    effective: Option<HeEffective>,
 }
 
 /// Canvas size the drawing is laid out for
@@ -912,17 +988,26 @@ impl canvas::Program<Message> for SwitchView {
             line(rgba(0x3A3A4C, 1.0), 2.0),
         );
         let s = &self.settings;
+        // The real points, as the pad builds them; the settings as asked only
+        // without a calibration to compute them from
+        let (press, release, top_reset) = match self.effective {
+            Some(e) => (e.press, e.release, e.top_reset),
+            None => (
+                s.actuation as f32 / 1000.0,
+                s.actuation.saturating_sub(s.release_hyst) as f32 / 1000.0,
+                s.top_reset as f32 / 1000.0,
+            ),
+        };
         let mut marks: Vec<(f32, Color, &str)> = vec![
             (0.0, rgba(0x8C8CA6, 1.0), "rest"),
-            (s.actuation as f32 / 1000.0, theme::PINK, "press"),
+            (press, theme::PINK, "press"),
             (1.0, rgba(0x8C8CA6, 1.0), "full"),
         ];
         if s.rt_mode == HeRtMode::Off {
-            let release = s.actuation.saturating_sub(s.release_hyst) as f32 / 1000.0;
             marks.push((release, theme::MUTED, "release"));
         }
         if s.rt_mode == HeRtMode::Continuous {
-            marks.push((s.top_reset as f32 / 1000.0, theme::CYAN, "reset"));
+            marks.push((top_reset, theme::CYAN, "reset"));
         }
         if s.bottom_dead_zone > 0 {
             let dz = 1.0 - s.bottom_dead_zone.min(1000) as f32 / 1000.0;
@@ -1114,6 +1199,33 @@ mod tests {
             .iter()
             .fold((f32::MAX, f32::MIN), |(a, b), &x| (a.min(x), b.max(x)));
         assert!(hi - lo < 0.5, "still key moved {} counts", hi - lo);
+    }
+
+    #[test]
+    fn the_drawing_snaps_to_the_real_depth_when_the_pad_presses() {
+        let mut s = KeysState::default();
+        let t0 = std::time::Instant::now();
+        let reading = std::time::Duration::from_millis(20);
+        let sample = |raw: u32, down: bool| HeLiveSample {
+            key2_raw: raw,
+            key2_down: down,
+            ..Default::default()
+        };
+        for i in 0..20 {
+            s.take_sample(Some(sample(2087, false)), t0 + reading * i);
+        }
+        s.advance(iced::time::Instant::now());
+        // A fast press: the pad reports down at 2191 on the next reading
+        s.take_sample(Some(sample(2191, true)), t0 + reading * 20);
+        assert_eq!(
+            s.drawn[1],
+            Some(2191.0),
+            "drawn at the real depth when it presses"
+        );
+        assert_eq!(s.held[1], Some(2191.0));
+        // Without an edge, a jump is smoothed as before
+        s.take_sample(Some(sample(2400, true)), t0 + reading * 21);
+        assert!(s.smooth[1].value.unwrap() < 2400.0);
     }
 
     #[test]
