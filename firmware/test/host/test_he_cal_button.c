@@ -76,6 +76,16 @@ static void test_land_outside(void)
     printf("✓ test_land_outside passed\n");
 }
 
+static void test_release_sample_counts_toward_excursion(void)
+{
+    he_cal_button_t btn;
+    he_cal_button_init(&btn, BTN_X, BTN_Y, BTN_W, BTN_H, BTN_MAX_DIST);
+    he_cal_button_feed_touch(&btn, true, 100, 190);
+    assert(!he_cal_button_feed_touch(&btn, false, 130, 190));
+    he_cal_button_feed_touch(&btn, true, 100, 190);
+    assert(he_cal_button_feed_touch(&btn, false, 129, 190));
+}
+
 static void test_lift_outside(void)
 {
     he_cal_button_t btn;
@@ -151,6 +161,7 @@ int main(void)
     test_clean_click();
     test_excursion_exceeded();
     test_land_outside();
+    test_release_sample_counts_toward_excursion();
     test_lift_outside();
     test_boundary_inclusive();
     test_reset_and_successive_clicks();

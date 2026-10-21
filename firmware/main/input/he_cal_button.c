@@ -44,16 +44,16 @@ bool he_cal_button_feed_touch(he_cal_button_t *btn, bool down, int16_t x, int16_
         return false;
     }
 
-    // Touch is already down
-    if (down) {
+    // Include the final coordinate: the last movement may arrive with release.
+    {
         int16_t dx = (int16_t)abs(x - btn->down_x);
         int16_t dy = (int16_t)abs(y - btn->down_y);
         int16_t dist = dx > dy ? dx : dy;
         if (dist > btn->max_excursion) {
             btn->max_excursion = dist;
         }
-        return false;
     }
+    if (down) return false;
 
     // Touch was released (finger lifted)
     btn->is_down = false;

@@ -376,6 +376,9 @@ static void touch_retry_task(void *arg)
 
     bool pressed = false;
     bool cal_gated = false;
+    bool cal_button_touch = false;
+    int16_t cal_x = -1;
+    int16_t cal_y = -1;
     uint8_t release_debounce = 0;
     touch_mode_t mode = TOUCH_MODE_RETRY;
     bool retry_held = false;
@@ -401,8 +404,11 @@ static void touch_retry_task(void *arg)
             s_touch_pressed = true;
             down_us = esp_timer_get_time();
             cal_gated = he_cal_suppress_input(he_backend_is_locked(), he_backend_is_calibrating());
+            cal_button_touch = cal_gated;
+            cal_x = s.has_pos ? s.x : -1;
+            cal_y = s.has_pos ? s.y : -1;
             if (cal_gated) {
-                he_cal_ui_touch_sample(true, s.x, s.y);
+                he_cal_ui_touch_sample(true, cal_x, cal_y);
                 continue;
             }
             mode = touch_mode_now();
@@ -427,20 +433,29 @@ static void touch_retry_task(void *arg)
         // touch count is what keeps the key held) and follow the finger.
         vTaskDelay(pdMS_TO_TICKS(TOUCH_POLL_MS));
         touch_sample_t s = touch_read();
+        // Check on up reads too: a pending tap must not escape a lock that
+        // started just as the finger lifted. Latch until the physical release.
+        if (!cal_gated && he_cal_suppress_input(he_backend_is_locked(), he_backend_is_calibrating())) {
+            cal_gated = true;
+            cal_button_touch = false; // it began on another screen
+            retry_pending = false;
+            tracking = false;
+            if (retry_held) {
+                usb_hid_set_touch_retry(false);
+                retry_held = false;
+            }
+            // Calibration must never generate release_alt's F24 press.
+            usb_hid_set_touch_key(0, 0);
+            alt_held = false;
+        }
+        if (s.has_pos) {
+            cal_x = s.x;
+            cal_y = s.y;
+        }
         if (s.down) {
             release_debounce = 0;
-            if (!cal_gated && he_cal_suppress_input(he_backend_is_locked(), he_backend_is_calibrating())) {
-                cal_gated = true;
-                retry_pending = false;
-                tracking = false;
-                if (retry_held) {
-                    usb_hid_set_touch_retry(false);
-                    retry_held = false;
-                }
-                release_alt(&alt_held);
-            }
             if (cal_gated) {
-                he_cal_ui_touch_sample(true, s.x, s.y);
+                if (cal_button_touch) he_cal_ui_touch_sample(true, cal_x, cal_y);
                 continue;
             }
             if (tracking && s.has_pos) {
@@ -479,7 +494,9 @@ static void touch_retry_task(void *arg)
             tracking = false;
             if (cal_gated) {
                 cal_gated = false;
-                he_cal_ui_touch_sample(false, s.x, s.y);
+                // Up reads have no position. Use the last actual contact.
+                if (cal_button_touch) he_cal_ui_touch_sample(false, cal_x, cal_y);
+                cal_button_touch = false;
                 continue;
             }
             if (retry_pending) {
