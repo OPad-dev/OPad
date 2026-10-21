@@ -4,6 +4,9 @@
 #include "usb/usb_media.h"
 #include "input/gesture.h"
 #include "input/swipe_labels.h"
+#include "input/he_backend.h"
+#include "input/he_cal_runner.h"
+#include "ui/he_cal_ui.h"
 #include "config/device_config.h"
 #include "runtime/runtime.h"
 #include "ui/ui.h"
@@ -372,6 +375,7 @@ static void touch_retry_task(void *arg)
              BOARD_TOUCH_INT_GPIO);
 
     bool pressed = false;
+    bool cal_gated = false;
     uint8_t release_debounce = 0;
     touch_mode_t mode = TOUCH_MODE_RETRY;
     bool retry_held = false;
@@ -396,6 +400,11 @@ static void touch_retry_task(void *arg)
             release_debounce = 0;
             s_touch_pressed = true;
             down_us = esp_timer_get_time();
+            cal_gated = he_cal_suppress_input(he_backend_is_locked(), he_backend_is_calibrating());
+            if (cal_gated) {
+                he_cal_ui_touch_sample(true, s.x, s.y);
+                continue;
+            }
             mode = touch_mode_now();
             swipes = 0;
             // Without a host, every touch is Quick Retry at once, as always
@@ -420,6 +429,20 @@ static void touch_retry_task(void *arg)
         touch_sample_t s = touch_read();
         if (s.down) {
             release_debounce = 0;
+            if (!cal_gated && he_cal_suppress_input(he_backend_is_locked(), he_backend_is_calibrating())) {
+                cal_gated = true;
+                retry_pending = false;
+                tracking = false;
+                if (retry_held) {
+                    usb_hid_set_touch_retry(false);
+                    retry_held = false;
+                }
+                release_alt(&alt_held);
+            }
+            if (cal_gated) {
+                he_cal_ui_touch_sample(true, s.x, s.y);
+                continue;
+            }
             if (tracking && s.has_pos) {
                 if (!tracker_started) {
                     gesture_begin(&tracker, s.x, s.y);
@@ -454,6 +477,11 @@ static void touch_retry_task(void *arg)
             pressed = false;
             s_touch_pressed = false;
             tracking = false;
+            if (cal_gated) {
+                cal_gated = false;
+                he_cal_ui_touch_sample(false, s.x, s.y);
+                continue;
+            }
             if (retry_pending) {
                 retry_pending = false;
                 tap_retry();

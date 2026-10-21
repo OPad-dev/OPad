@@ -102,6 +102,11 @@ void protocol_poll_detect_pin(void);
  */
 void protocol_send_key_presses(void);
 
+/**
+ * @brief Send live Hall Effect calibration progress to host over CDC.
+ */
+esp_err_t protocol_send_he_calibration_progress(const osupad_HeCalibrationProgress *prog);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1,6 +1,8 @@
 #include "ui.h"
 #include "ui/ui_store.h"
 #include "ui/easter_egg.h"
+#include "ui/he_cal_ui.h"
+#include "input/he_backend.h"
 #include "ui/core/ui_internal.h"
 #include "ui/core/ui_anim.h"
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
@@ -168,6 +170,9 @@ static void pad_timer_cb(lv_timer_t *timer)
     s_prev_runtime_state = st;
 
     int want = st == OSUPAD_STATE_PLAYING ? UI_SCREEN_PLAYING : UI_SCREEN_IDLE;
+    if (he_backend_is_locked() || he_backend_is_calibrating()) {
+        want = UI_SCREEN_IDLE;
+    }
     if (want == UI_SCREEN_PLAYING && ui_anim_active()) {
         ui_anim_stop();  // a retry from the results screen: nothing extra during a map
     }
@@ -258,6 +263,7 @@ esp_err_t ui_init(void)
     }
     s_active_screen = UI_SCREEN_IDLE;
     lv_screen_load(s_screens[UI_SCREEN_IDLE]);
+    he_cal_ui_init();
     lv_timer_create(pad_timer_cb, PAD_TIMER_PERIOD_MS, NULL);
     lvgl_port_unlock();
 

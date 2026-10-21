@@ -34,6 +34,7 @@
 #include "input/he_frame.h"
 #include "input/he_params.h"
 #include "input/he_cal.h"
+#include "input/he_cal_runner.h"
 #include "input/he_health.h"
 #include "input/key_event.h"
 #include "esp_adc/adc_continuous.h"
@@ -121,6 +122,10 @@ static int64_t s_edge_us[2];         // frame time of the last change
 static he_health_t s_health;
 static he_backend_stats_t s_stats = {.raw = {-1, -1}};
 
+static volatile bool s_calibrating = false;
+static volatile int32_t s_cal_sample[2] = {-1, -1};
+static volatile uint32_t s_cal_sample_seq = 0;
+
 static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata,
                                void *user_data)
 {
@@ -146,6 +151,11 @@ static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continu
     s_stats.frames++;
     s_stats.foreign_words += f.foreign;
     s_stats.railed_samples += f.railed;
+    if (__builtin_expect(s_calibrating, 0)) {
+        s_cal_sample[0] = f.newest[0];
+        s_cal_sample[1] = f.newest[1];
+        s_cal_sample_seq++;
+    }
     for (int k = 0; k < 2; k++) {
         if (f.newest[k] < 0) {
             continue;
@@ -471,13 +481,18 @@ esp_err_t he_backend_start(void)
     if (s_running) {
         return ESP_ERR_INVALID_STATE;
     }
+    he_calibration_t cal[2];
+    he_cal_get_all(cal);
+    bool locked = he_cal_is_locked_decision(true, cal[0].valid, cal[1].valid);
     for (int k = 0; k < 2; k++) {
-        he_calibration_t cal;
-        he_cal_get((uint8_t)k, &cal);
         he_rt_params_t p;
-        uint32_t r = he_params_build(&s_key_settings[k], &cal, &HE_PROVISIONAL_LIMITS, &p);
-        if (HE_PARAMS_FAILED(r)) {
-            ESP_LOGE(TAG, "Factory thresholds rejected (0x%lx): key %d stays up", (unsigned long)r, k + 1);
+        uint32_t r = he_params_build(&s_key_settings[k], &cal[k], &HE_PROVISIONAL_LIMITS, &p);
+        if (locked || HE_PARAMS_FAILED(r)) {
+            if (locked) {
+                ESP_LOGI(TAG, "Key %d locked (uncalibrated): HE_PARAMS_NEVER", k + 1);
+            } else {
+                ESP_LOGE(TAG, "Factory thresholds rejected (0x%lx): key %d stays up", (unsigned long)r, k + 1);
+            }
             p = HE_PARAMS_NEVER;
         }
         he_rt_init(&s_keys[k], &p);
@@ -509,17 +524,83 @@ void he_backend_reload_params(void)
     if (!s_running) {
         return;
     }
+    he_calibration_t cal[2];
+    he_cal_get_all(cal);
+    bool suppress = he_cal_suppress_input(
+        he_cal_is_locked_decision(s_running, cal[0].valid, cal[1].valid),
+        s_calibrating);
     for (int k = 0; k < 2; k++) {
-        he_calibration_t cal;
-        he_cal_get((uint8_t)k, &cal);
         he_rt_params_t p;
-        uint32_t r = he_params_build(&s_key_settings[k], &cal, &HE_PROVISIONAL_LIMITS, &p);
-        if (HE_PARAMS_FAILED(r)) {
-            ESP_LOGE(TAG, "Thresholds rejected (0x%lx): key %d stays up", (unsigned long)r, k + 1);
+        uint32_t r = he_params_build(&s_key_settings[k], &cal[k], &HE_PROVISIONAL_LIMITS, &p);
+        if (suppress || HE_PARAMS_FAILED(r)) {
             p = HE_PARAMS_NEVER;
         }
         he_backend_set_params((uint8_t)k, &p);
     }
+}
+
+bool he_backend_is_locked(void)
+{
+    he_calibration_t cal[2];
+    he_cal_get_all(cal);
+    return he_cal_is_locked_decision(s_running, cal[0].valid, cal[1].valid);
+}
+
+bool he_backend_is_calibrating(void)
+{
+    return s_calibrating;
+}
+
+void he_backend_start_calibration(void)
+{
+    s_calibrating = true;
+    he_backend_reload_params();
+    if (s_running) {
+        int64_t now = esp_timer_get_time();
+        bool changed = false;
+        portENTER_CRITICAL(&s_lock);
+        for (int k = 0; k < 2; k++) {
+            bool was_down = s_down[k];
+            fault_key_locked(k, now);
+            if (was_down && !s_down[k]) {
+                changed = true;
+            }
+        }
+        portEXIT_CRITICAL(&s_lock);
+        if (changed && s_task != NULL) {
+            xTaskNotifyGive(s_task);
+        }
+    }
+}
+
+void he_backend_cancel_calibration(void)
+{
+    s_calibrating = false;
+    he_backend_reload_params();
+}
+
+esp_err_t he_backend_finish_calibration(const he_calibration_t results[2])
+{
+    if (!results) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t err = he_cal_set(results);
+    s_calibrating = false;
+    he_backend_reload_params();
+    return err;
+}
+
+void he_backend_get_cal_sample(int32_t raw[2], uint32_t *seq)
+{
+    portENTER_CRITICAL(&s_lock);
+    if (raw) {
+        raw[0] = s_cal_sample[0];
+        raw[1] = s_cal_sample[1];
+    }
+    if (seq) {
+        *seq = s_cal_sample_seq;
+    }
+    portEXIT_CRITICAL(&s_lock);
 }
 
 bool he_backend_running(void)

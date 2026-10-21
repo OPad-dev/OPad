@@ -9,6 +9,8 @@
 #include "input/keypad.h"
 #include "input/key_event.h"
 #include "input/he_cal.h"
+#include "input/he_backend.h"
+#include "ui/he_cal_ui.h"
 #include "counters/counters.h"
 #include "ui/ui.h"
 #include "ui/ui_store.h"
@@ -215,11 +217,11 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     msg.payload.hello_ack.restart = true;
 #ifdef CONFIG_OSUPAD_HE_BACKEND
     msg.payload.hello_ack.he_input = true;
+    msg.payload.hello_ack.he_calibration = he_backend_running();
 #else
     msg.payload.hello_ack.he_input = false;
-#endif
-    // Storage and capture logic exist, but no entry point exists yet
     msg.payload.hello_ack.he_calibration = false;
+#endif
 
     ESP_LOGI(TAG, "Sending HelloAck to host (Firmware: %s, Gen: %lu, Partition: %s, K1: GPIO%lu, K2: GPIO%lu)",
              app_desc->version, (unsigned long)snap.generation,
@@ -256,17 +258,21 @@ esp_err_t protocol_send_status(void)
     msg.payload.status.nvs_ok = counters_is_nvs_ok();
     msg.payload.status.nvs_writes = counters_get_nvs_writes();
 
-    he_calibration_t cal0 = {0};
-    he_calibration_t cal1 = {0};
-    he_cal_get(0, &cal0);
-    he_cal_get(1, &cal1);
-    msg.payload.status.has_he_calibration = true;
-    msg.payload.status.he_calibration.key1_calibrated = cal0.valid;
-    msg.payload.status.he_calibration.key1_rest = cal0.rest >= 0 ? (uint32_t)cal0.rest : 0;
-    msg.payload.status.he_calibration.key1_full = cal0.full >= 0 ? (uint32_t)cal0.full : 0;
-    msg.payload.status.he_calibration.key2_calibrated = cal1.valid;
-    msg.payload.status.he_calibration.key2_rest = cal1.rest >= 0 ? (uint32_t)cal1.rest : 0;
-    msg.payload.status.he_calibration.key2_full = cal1.full >= 0 ? (uint32_t)cal1.full : 0;
+    if (he_backend_running()) {
+        he_calibration_t cal0 = {0};
+        he_calibration_t cal1 = {0};
+        he_cal_get(0, &cal0);
+        he_cal_get(1, &cal1);
+        msg.payload.status.has_he_calibration = true;
+        msg.payload.status.he_calibration.key1_calibrated = cal0.valid;
+        msg.payload.status.he_calibration.key1_rest = cal0.rest >= 0 ? (uint32_t)cal0.rest : 0;
+        msg.payload.status.he_calibration.key1_full = cal0.full >= 0 ? (uint32_t)cal0.full : 0;
+        msg.payload.status.he_calibration.key2_calibrated = cal1.valid;
+        msg.payload.status.he_calibration.key2_rest = cal1.rest >= 0 ? (uint32_t)cal1.rest : 0;
+        msg.payload.status.he_calibration.key2_full = cal1.full >= 0 ? (uint32_t)cal1.full : 0;
+        msg.payload.status.he_calibration.is_locked = he_backend_is_locked();
+        msg.payload.status.he_calibration.is_calibrating = he_backend_is_calibrating();
+    }
 
     return send_envelope(&msg);
 }
@@ -536,6 +542,7 @@ static void handle_host_message(const osupad_HostToDevice *msg)
 {
     switch (msg->which_payload) {
     case osupad_HostToDevice_hello_tag:
+        he_cal_ui_set_app_capable(msg->payload.hello.he_calibration);
         protocol_send_hello_ack(msg->sequence_number);
         break;
 
@@ -823,6 +830,18 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         }
         break;
 
+    case osupad_HostToDevice_start_he_calibration_tag:
+        if (msg->payload.start_he_calibration) {
+            he_cal_ui_start_calibration(true);
+        }
+        break;
+
+    case osupad_HostToDevice_cancel_he_calibration_tag:
+        if (msg->payload.cancel_he_calibration) {
+            he_cal_ui_cancel_calibration();
+        }
+        break;
+
     default:
         diag_record(DIAG_EVENT_UNKNOWN_HOST_MSG, 0 /* DEBUG */, msg->which_payload, 0);
         ESP_LOGD(TAG, "Unhandled host message payload tag: %d", msg->which_payload);
@@ -839,7 +858,7 @@ static void on_frame_received(const uint8_t *payload, size_t payload_len, void *
         // nanopb accepts most varint garbage with no payload set: only a
         // recognised message is evidence of the host's framing
         if (!s_host_framing_known && msg.which_payload >= osupad_HostToDevice_hello_tag &&
-            msg.which_payload <= osupad_HostToDevice_restart_tag) {
+            msg.which_payload <= osupad_HostToDevice_cancel_he_calibration_tag) {
             s_host_framing = s_parser.last_format;
             s_host_framing_known = true;
         }
@@ -882,6 +901,7 @@ void protocol_reset_rx(void)
     frame_parser_reset(&s_parser);
     // Called when the host closes the port: the next one may frame differently
     s_host_framing_known = false;
+    he_cal_ui_on_host_disconnect();
 }
 
 void protocol_poll_detect_pin(void)
@@ -899,4 +919,16 @@ bool protocol_rx_idle(void)
 {
     expire_stale_partial(esp_timer_get_time());
     return frame_parser_is_idle(&s_parser);
+}
+
+esp_err_t protocol_send_he_calibration_progress(const osupad_HeCalibrationProgress *prog)
+{
+    if (!prog) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+    msg.sequence_number = s_out_sequence++;
+    msg.which_payload = osupad_DeviceToHost_he_calibration_progress_tag;
+    msg.payload.he_calibration_progress = *prog;
+    return send_envelope(&msg);
 }

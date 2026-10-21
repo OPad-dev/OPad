@@ -78,6 +78,38 @@ bool he_backend_keys_absent(void);
  */
 esp_err_t he_backend_probe_module(int *out_open_mv, int *out_loaded_mv);
 
+/**
+ * @brief True if the backend is running and either key has no valid saved calibration.
+ * When locked, keypresses to the PC are suppressed (thresholds set to HE_PARAMS_NEVER).
+ */
+bool he_backend_is_locked(void);
+
+/**
+ * @brief True if interactive calibration is currently running.
+ */
+bool he_backend_is_calibrating(void);
+
+/**
+ * @brief Start interactive calibration. Temporarily suppresses PC keypresses
+ * and enables sample tapping in the frame ISR.
+ */
+void he_backend_start_calibration(void);
+
+/**
+ * @brief Cancel interactive calibration, restoring normal thresholds.
+ */
+void he_backend_cancel_calibration(void);
+
+/**
+ * @brief Finish calibration: saves the new calibration in NVS and updates thresholds.
+ */
+esp_err_t he_backend_finish_calibration(const he_calibration_t results[2]);
+
+/**
+ * @brief Read the newest raw sample pair tapped from the frame ISR during calibration.
+ */
+void he_backend_get_cal_sample(int32_t raw[2], uint32_t *seq);
+
 #else  // MX-only builds carry none of it
 
 static inline esp_err_t he_backend_start(void) { return ESP_ERR_NOT_SUPPORTED; }
@@ -86,6 +118,12 @@ static inline bool he_backend_keys_absent(void) { return false; }
 static inline void he_backend_apply_settings(const he_key_settings_t s[2]) { (void)s; }
 static inline void he_backend_reload_params(void) {}
 static inline esp_err_t he_backend_probe_module(int *o, int *l) { (void)o; (void)l; return ESP_ERR_NOT_SUPPORTED; }
+static inline bool he_backend_is_locked(void) { return false; }
+static inline bool he_backend_is_calibrating(void) { return false; }
+static inline void he_backend_start_calibration(void) {}
+static inline void he_backend_cancel_calibration(void) {}
+static inline esp_err_t he_backend_finish_calibration(const he_calibration_t r[2]) { (void)r; return ESP_ERR_NOT_SUPPORTED; }
+static inline void he_backend_get_cal_sample(int32_t r[2], uint32_t *s) { if (r) { r[0] = -1; r[1] = -1; } if (s) *s = 0; }
 
 #endif
 
