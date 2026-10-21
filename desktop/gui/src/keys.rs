@@ -493,8 +493,8 @@ fn live_view<'a>(app: &'a App, key: usize, c: HeKeyConfig) -> Element<'a, Messag
             down,
             settings: c,
         })
-        .width(Length::Fixed(SWITCH_W))
-        .height(Length::Fixed(SWITCH_H)),
+        .width(Length::Fixed(SWITCH_W * SWITCH_SCALE))
+        .height(Length::Fixed(SWITCH_H * SWITCH_SCALE)),
         text(match depth {
             Some(d) => format!("{:.0} %", (d * 100.0).clamp(-99.0, 199.0)),
             None => "-".to_string(),
@@ -597,28 +597,27 @@ pub fn view(app: &App) -> Element<'_, Message> {
         ));
     }
 
-    let mut actions = row![muted(
-        "Values are provisional until tested on the pad: the noise floor that limits the smallest sensitivity is not measured yet, and the pad raises any setting below it."
-    )
-    .size(12)
-    .width(Length::Fill)]
+    // Pinned under the scrolling part, so Save is never scrolled away;
+    // greyed out until something changes
+    let dirty = app.keys.dirty;
+    let actions = row![
+        muted(
+            "Values are provisional until tested on the pad: the noise floor that limits the smallest sensitivity is not measured yet, and the pad raises any setting below it."
+        )
+        .size(12)
+        .width(Length::Fill),
+        button(text("Revert").size(13))
+            .style(theme::secondary)
+            .on_press_maybe(dirty.then_some(Message::Keys(KeysMessage::Revert))),
+        button(text("Save to pad").size(13))
+            .style(theme::primary)
+            .on_press_maybe(dirty.then_some(Message::Keys(KeysMessage::Save))),
+    ]
     .spacing(10)
     .align_y(Alignment::Center);
-    if app.keys.dirty {
-        actions = actions
-            .push(
-                button(text("Revert").size(13))
-                    .style(theme::secondary)
-                    .on_press(Message::Keys(KeysMessage::Revert)),
-            )
-            .push(
-                button(text("Save to pad").size(13))
-                    .style(theme::primary)
-                    .on_press(Message::Keys(KeysMessage::Save)),
-            );
-    }
-    content = content.push(actions);
-    scrollable(content).into()
+    column![scrollable(content).height(Length::Fill), actions]
+        .spacing(12)
+        .into()
 }
 
 fn card<'a>(content: impl Into<Element<'a, Message>>) -> container::Container<'a, Message> {
@@ -641,8 +640,11 @@ struct SwitchView {
 }
 
 /// Canvas size the drawing is laid out for
-const SWITCH_W: f32 = 230.0;
+const SWITCH_W: f32 = 260.0;
 const SWITCH_H: f32 = 250.0;
+/// Drawn at this size so both keys' columns fit the default window
+/// (1360x860) without scrolling; labels keep their on-screen size
+const SWITCH_SCALE: f32 = 0.72;
 /// Keycap travel in pixels from rest to a calibrated full press
 const TRAVEL_PX: f32 = 40.0;
 
@@ -692,6 +694,9 @@ impl canvas::Program<Message> for SwitchView {
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
+        frame.scale(SWITCH_SCALE);
+        // On-screen text size, undoing the scale
+        let px = |size: f32| Pixels(size / SWITCH_SCALE);
         let line = |c: Color, width: f32| Stroke::default().with_color(c).with_width(width);
         let cx = 85.0;
         let depth = self.depth.unwrap_or(0.0).clamp(-0.1, 1.15);
@@ -932,13 +937,13 @@ impl canvas::Program<Message> for SwitchView {
                 &Path::line(Point::new(gx - 5.0, y), Point::new(gx + 5.0, y)),
                 line(color, 1.5),
             );
-            let label_y = (y - 6.0).max(next_free);
-            next_free = label_y + 11.0;
+            let label_y = (y - 6.0 / SWITCH_SCALE).max(next_free);
+            next_free = label_y + 12.0 / SWITCH_SCALE;
             frame.fill_text(canvas::Text {
                 content: label.to_string(),
                 position: Point::new(gx + 9.0, label_y),
                 color,
-                size: Pixels(10.0),
+                size: px(10.0),
                 ..canvas::Text::default()
             });
         }
@@ -954,7 +959,7 @@ impl canvas::Program<Message> for SwitchView {
                 content: "no reading".to_string(),
                 position: Point::new(12.0, 4.0),
                 color: theme::MUTED,
-                size: Pixels(11.0),
+                size: px(11.0),
                 ..canvas::Text::default()
             });
         }
