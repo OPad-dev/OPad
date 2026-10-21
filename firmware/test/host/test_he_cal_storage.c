@@ -2,6 +2,8 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
+#include <pthread.h>
+#include <time.h>
 #include "input/he_cal.h"
 #include "input/he_cal_record.h"
 #include "runtime/runtime.h"
@@ -15,6 +17,7 @@ static he_cal_record_t pending;
 static int pending_slot;
 static int fail_at; // 1 = open, 2 = set_blob, 3 = commit
 static unsigned writes;
+static bool exercise_concurrency;
 static osupad_state_t mode = OSUPAD_STATE_IDLE;
 
 osupad_state_t runtime_get_state(void) { return mode; }
@@ -43,6 +46,10 @@ esp_err_t nvs_set_blob(nvs_handle_t h, const char *key, const void *in, size_t l
     pending_slot = strcmp(key, "cal_a") == 0 ? 0 : 1;
     memcpy(&pending, in, len);
     assert(he_cal_record_validate(&pending));
+    if (exercise_concurrency) {
+        const struct timespec delay = {.tv_nsec = 1000000};
+        nanosleep(&delay, NULL); // expose interleaved set_blob/commit transactions
+    }
     return ESP_OK;
 }
 
@@ -66,6 +73,12 @@ static void expect_active(const he_calibration_t expected[2])
         assert(got[k].full == expected[k].full);
         assert(got[k].valid == expected[k].valid);
     }
+}
+
+static void *save_repeatedly(void *calibration)
+{
+    for (int i = 0; i < 10; i++) assert(he_cal_save(calibration) == ESP_OK);
+    return NULL;
 }
 
 int main(void)
@@ -118,6 +131,19 @@ int main(void)
     assert(!he_cal_is_dirty());
     assert(he_cal_init() == ESP_OK);
     expect_active(old);
+    exercise_concurrency = true;
+    pthread_t writers[2];
+    assert(pthread_create(&writers[0], NULL, save_repeatedly, (void *)old) == 0);
+    assert(pthread_create(&writers[1], NULL, save_repeatedly, (void *)next) == 0);
+    for (int i = 0; i < 2; i++) assert(pthread_join(writers[i], NULL) == 0);
+    assert(writes == 23);
+    assert(he_cal_record_validate(&slots[0]) && he_cal_record_validate(&slots[1]));
+    assert((slots[0].seq == 23 && slots[1].seq == 22) ||
+           (slots[1].seq == 23 && slots[0].seq == 22));
+    he_calibration_t latest[2];
+    he_cal_get_all(latest);
+    assert(he_cal_init() == ESP_OK);
+    expect_active(latest);
     puts("Calibration storage keeps old values after open/set/commit failures.");
     return 0;
 }
