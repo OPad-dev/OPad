@@ -195,6 +195,7 @@ mod tests {
             payload: Some(proto::host_to_device::Payload::Hello(proto::Hello {
                 protocol_version: 1,
                 client_version: "1.0.0".to_string(),
+                he_calibration: true,
             })),
         };
 
@@ -456,5 +457,59 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!((m.sequence_number, framing), (9, Framing::Legacy));
+    }
+
+    #[test]
+    fn he_calibration_messages_round_trip_and_old_firmware_defaults_false() {
+        use crate::proto::*;
+        let start = HostToDevice {
+            sequence_number: 42,
+            payload: Some(host_to_device::Payload::StartHeCalibration(true)),
+        };
+        let mut buf = BytesMut::from(&encode_host_message(&start).unwrap()[..]);
+        let decoded = decode_host_message(&mut buf).unwrap().unwrap();
+        assert_eq!(decoded, start);
+
+        let prog = DeviceToHost {
+            sequence_number: 43,
+            payload: Some(device_to_host::Payload::HeCalibrationProgress(
+                HeCalibrationProgress {
+                    stage: HeCalStage::Success as i32,
+                    key_index: 0,
+                    presses_done: 5,
+                    error: HeCalError::None as i32,
+                    error_message: String::new(),
+                    raw_value: 2050,
+                    key1_rest: 2040,
+                    key1_full: 2560,
+                    key2_rest: 2050,
+                    key2_full: 2580,
+                },
+            )),
+        };
+        let mut buf = BytesMut::from(&encode_device_message(&prog).unwrap()[..]);
+        let decoded = decode_device_message(&mut buf).unwrap().unwrap();
+        assert_eq!(decoded, prog);
+
+        // Old firmware HelloAck without he_calibration decodes as false
+        let old_ack = DeviceToHost {
+            sequence_number: 1,
+            payload: Some(device_to_host::Payload::HelloAck(HelloAck {
+                protocol_version: 1,
+                firmware_version: "1.0.0".to_string(),
+                board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+                device_id: "OSUPAD-OLD".to_string(),
+                ..Default::default()
+            })),
+        };
+        let mut buf = BytesMut::from(&encode_device_message(&old_ack).unwrap()[..]);
+        let decoded = decode_device_message(&mut buf).unwrap().unwrap();
+        match decoded.payload {
+            Some(device_to_host::Payload::HelloAck(ack)) => {
+                assert!(!ack.he_calibration);
+                assert!(!ack.he_input);
+            }
+            other => panic!("expected HelloAck, got {other:?}"),
+        }
     }
 }

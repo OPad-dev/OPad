@@ -90,10 +90,17 @@ PB_BIND(osupad_DetectPinResponse, osupad_DetectPinResponse, AUTO)
 PB_BIND(osupad_BoardTestResult, osupad_BoardTestResult, AUTO)
 
 
+PB_BIND(osupad_HeCalibrationProgress, osupad_HeCalibrationProgress, AUTO)
+
+
 PB_BIND(osupad_HostToDevice, osupad_HostToDevice, 2)
 
 
 PB_BIND(osupad_DeviceToHost, osupad_DeviceToHost, 2)
+
+
+
+
 
 
 

@@ -32,6 +32,8 @@ enum LogLevel {
 message Hello {
     uint32 protocol_version = 1;
     string client_version = 2;
+    // Host supports interactive Hall Effect calibration flow
+    bool he_calibration = 3;
 }
 
 message HelloAck {
@@ -65,8 +67,8 @@ message HelloAck {
     // Firmware is built with CONFIG_OSUPAD_HE_BACKEND. Does not mean an HE
     // module is plugged in: BoardTestResult.module says what is.
     bool he_input = 15;
-    // The pad supports Hall Effect calibration storage and has an entry point
-    // to perform it. False until an interactive calibration path exists.
+    // The pad has an active Hall Effect input backend and supports interactive
+    // Hall Effect calibration. False on MX pads or firmware without HE calibration.
     bool he_calibration = 16;
 }
 
@@ -106,6 +108,8 @@ message HeCalibrationStatus {
     uint32 key1_full = 4;
     uint32 key2_rest = 5;
     uint32 key2_full = 6;
+    bool is_locked = 7;
+    bool is_calibrating = 8;
 }
 
 // -----------------------------------------------------------------------------
@@ -407,6 +411,45 @@ message BoardTestResult {
 }
 
 // -----------------------------------------------------------------------------
+// Hall Effect Calibration Flow
+// -----------------------------------------------------------------------------
+
+enum HeCalStage {
+    HE_CAL_STAGE_NONE = 0;
+    HE_CAL_STAGE_REST = 1;
+    HE_CAL_STAGE_KEY1 = 2;
+    HE_CAL_STAGE_KEY2 = 3;
+    HE_CAL_STAGE_SUCCESS = 4;
+    HE_CAL_STAGE_FAILED = 5;
+}
+
+enum HeCalError {
+    HE_CAL_ERROR_NONE = 0;
+    HE_CAL_ERROR_REST_NOT_STILL = 1;
+    HE_CAL_ERROR_REST_OUT_OF_RANGE = 2;
+    HE_CAL_ERROR_REST_PRESSED = 3;
+    HE_CAL_ERROR_SIGNAL_NOT_RISING = 4;
+    HE_CAL_ERROR_SPAN_TOO_SMALL = 5;
+    HE_CAL_ERROR_PEAKS_INCONSISTENT = 6;
+    HE_CAL_ERROR_TOO_FEW_PEAKS = 7;
+    HE_CAL_ERROR_TOO_MANY_PEAKS = 8;
+    HE_CAL_ERROR_TIMEOUT = 9;
+}
+
+message HeCalibrationProgress {
+    HeCalStage stage = 1;
+    uint32 key_index = 2;         // 1 = Key 1, 2 = Key 2 (0 during rest/idle/complete)
+    uint32 presses_done = 3;      // 0..5
+    HeCalError error = 4;
+    string error_message = 5;
+    uint32 raw_value = 6;
+    uint32 key1_rest = 7;         // Populated on HE_CAL_STAGE_SUCCESS
+    uint32 key1_full = 8;         // Populated on HE_CAL_STAGE_SUCCESS
+    uint32 key2_rest = 9;         // Populated on HE_CAL_STAGE_SUCCESS
+    uint32 key2_full = 10;        // Populated on HE_CAL_STAGE_SUCCESS
+}
+
+// -----------------------------------------------------------------------------
 // Top-Level Envelopes
 // -----------------------------------------------------------------------------
 
@@ -433,6 +476,9 @@ message HostToDevice {
         // only detected at boot. It saves its counters and restarts once idle
         // (never in a map or its cooldown); no answer, it reconnects.
         bool restart = 18;
+        // Interactive Hall Effect calibration commands
+        bool start_he_calibration = 19;
+        bool cancel_he_calibration = 20;
     }
 }
 
@@ -448,5 +494,6 @@ message DeviceToHost {
         DetectPinResponse detect_pin_resp = 8;
         KeyPressBatch key_presses = 9;
         BoardTestResult board_test = 10;
+        HeCalibrationProgress he_calibration_progress = 11;
     }
 }
