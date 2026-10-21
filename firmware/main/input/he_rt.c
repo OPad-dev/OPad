@@ -103,7 +103,12 @@ void he_rt_set_params(he_rt_key_t *k, const he_rt_params_t *p, int32_t raw)
     k->pending = *p;
     k->has_pending = true;
     if (k->state != HE_RT_PRESSED) {
+        // A settings/calibration reload is not a new sensor observation. Its
+        // raw argument may predate a fault (even after health is resynced).
+        // Only he_rt_step may satisfy an outstanding release requirement.
+        bool need_release = k->need_release;
         take_pending(k, raw);
+        k->need_release |= need_release;
     }
 }
 

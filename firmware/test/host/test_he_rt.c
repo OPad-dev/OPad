@@ -332,6 +332,38 @@ static void test_param_change_no_phantom(void)
     printf("✓ test_param_change_no_phantom passed\n");
 }
 
+static void test_param_reload_preserves_release_requirement(void)
+{
+    for (int mode = 0; mode < 3; mode++) {
+        he_rt_params_t p = build(mode == 0 ? plain_settings() : rt_settings(mode == 2));
+        for (int was_down = 0; was_down < 2; was_down++) {
+            he_rt_key_t k;
+            he_rt_init(&k, &p);
+            // Boot/reload must also wait for an actual post-reload sample.
+            he_rt_set_params(&k, &p, REST);
+            assert(k.need_release);
+            assert(he_rt_step(&k, REST + 450) == HE_RT_NONE);
+            assert(he_rt_step(&k, REST) == HE_RT_NONE);
+            if (was_down) assert(he_rt_step(&k, REST + 450) == HE_RT_DOWN);
+            assert(he_rt_fault(&k) == (was_down ? HE_RT_UP : HE_RT_NONE));
+            assert(k.need_release);
+            // The backend can retain a pre-fault rest reading across ADC
+            // restart/resync. Repeated reloads cannot use it to re-arm.
+            for (int reload = 0; reload < 3; reload++) {
+                he_rt_set_params(&k, &p, REST);
+                assert(k.need_release);
+            }
+            for (int frame = 0; frame < 20; frame++) {
+                assert(he_rt_step(&k, REST + 450) == HE_RT_NONE);
+            }
+            assert(he_rt_step(&k, REST) == HE_RT_NONE);
+            assert(!k.need_release);
+            assert(he_rt_step(&k, REST + 450) == HE_RT_DOWN);
+        }
+    }
+    printf("✓ test_param_reload_preserves_release_requirement passed\n");
+}
+
 // 14. A fault releases a held key; recovery does not press it again
 static void test_fault_releases_no_phantom(void)
 {
@@ -453,6 +485,7 @@ static void pending(const char *name, const char *why)
 
 int main(void)
 {
+    test_param_reload_preserves_release_requirement();
     test_untouched_never_presses();
     test_full_press_and_release();
     test_stationary_keeps_state();

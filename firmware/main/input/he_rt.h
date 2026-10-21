@@ -87,7 +87,9 @@ he_rt_event_t he_rt_step(he_rt_key_t *k, int32_t raw);
  * key is up, otherwise on its next release, so a held key keeps its press. A
  * key it is applied to goes back to ARMED and, if it reads deeper than the new
  * `release` (`raw`), must come up past it before it can press: a threshold
- * change never presses a key by itself.
+ * change never presses a key by itself. An outstanding boot/fault/reload
+ * release requirement survives this call, even if `raw` looks released; only
+ * a subsequent he_rt_step observation can satisfy it.
  */
 void he_rt_set_params(he_rt_key_t *k, const he_rt_params_t *p, int32_t raw);
 
