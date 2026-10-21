@@ -114,6 +114,14 @@ esp_err_t board_keys_set_gpio(int key1_gpio, int key2_gpio)
     return ESP_OK;
 }
 
+// 8-bit LEDC duty for a brightness. 100 % is 256 (always on), not 255: with
+// 255 the pin still switches every 200 us, and GPIO1 is an ADC1 pin next to
+// the HE key channels, where those edges show up as spikes on the readings.
+static uint32_t backlight_duty(uint8_t percent)
+{
+    return percent >= 100 ? 256 : (percent * 255u) / 100u;
+}
+
 esp_err_t board_backlight_init(void)
 {
     ESP_LOGI(TAG, "Initializing Backlight PWM (LEDC)...");
@@ -138,7 +146,7 @@ esp_err_t board_backlight_init(void)
         .timer_sel      = LEDC_TIMER_0,
         .intr_type      = LEDC_INTR_DISABLE,
         .gpio_num       = BOARD_LCD_BL_GPIO,
-        .duty           = (s_backlight_percent * 255) / 100,
+        .duty           = backlight_duty(s_backlight_percent),
         .hpoint         = 0,
     };
     err = ledc_channel_config(&ledc_channel);
@@ -204,8 +212,7 @@ void board_backlight_set(uint8_t percent)
         percent = 100;
     }
     s_backlight_percent = percent;
-    uint32_t duty = (percent * 255) / 100;
-    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, backlight_duty(percent));
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 }
 
