@@ -46,6 +46,8 @@ esp_err_t he_cal_set(const he_calibration_t in[2]);
 /**
  * @brief Commit interactive calibration before publishing it in RAM.
  * IDLE only; a write failure keeps the previous active calibration.
+ * Reboot still selects the newest valid NVS record, including a candidate
+ * that set_blob persisted before a later error was reported.
  * The caller reloads backend thresholds after checking the result.
  */
 esp_err_t he_cal_save(const he_calibration_t in[2]);

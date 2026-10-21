@@ -235,8 +235,9 @@ esp_err_t he_cal_save(const he_calibration_t in[2])
     esp_err_t err = runtime_get_state() == OSUPAD_STATE_IDLE ?
         persist_locked(in) : ESP_ERR_INVALID_STATE;
     if (err == ESP_OK) {
-        // Publish both keys only after the other slot was committed. Failure
-        // leaves the old RAM calibration and its valid NVS slot untouched.
+        // Publish only after both NVS calls succeed. An error keeps old RAM
+        // and the other slot; set_blob may already have persisted the candidate,
+        // so an error alone does not promise rollback across reboot.
         portENTER_CRITICAL(&s_cal_lock);
         s_active_cal[0] = in[0];
         s_active_cal[1] = in[1];

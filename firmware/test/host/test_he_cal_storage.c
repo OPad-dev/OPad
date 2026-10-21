@@ -13,8 +13,6 @@
 // transactions, validation and publication, backed by two in-memory slots.
 static he_cal_record_t slots[2];
 static bool valid[2];
-static he_cal_record_t pending;
-static int pending_slot;
 static int fail_at; // 1 = open, 2 = set_blob, 3 = commit
 static unsigned writes;
 static bool exercise_concurrency;
@@ -41,11 +39,14 @@ esp_err_t nvs_get_blob(nvs_handle_t h, const char *key, void *out, size_t *len)
 
 esp_err_t nvs_set_blob(nvs_handle_t h, const char *key, const void *in, size_t len)
 {
-    assert(h == NVS_READWRITE && len == sizeof(pending));
+    assert(h == NVS_READWRITE && len == sizeof(he_cal_record_t));
     if (fail_at == 2) return ESP_FAIL;
-    pending_slot = strcmp(key, "cal_a") == 0 ? 0 : 1;
-    memcpy(&pending, in, len);
-    assert(he_cal_record_validate(&pending));
+    // IDF v5.5.2 set_blob writes immediately; commit is currently a no-op
+    // for a valid handle (nvs_api.cpp / nvs_handle_simple.cpp).
+    int slot = strcmp(key, "cal_a") == 0 ? 0 : 1;
+    memcpy(&slots[slot], in, len);
+    valid[slot] = true;
+    assert(he_cal_record_validate(&slots[slot]));
     if (exercise_concurrency) {
         const struct timespec delay = {.tv_nsec = 1000000};
         nanosleep(&delay, NULL); // expose interleaved set_blob/commit transactions
@@ -57,8 +58,6 @@ esp_err_t nvs_commit(nvs_handle_t h)
 {
     assert(h == NVS_READWRITE);
     if (fail_at == 3) return ESP_FAIL;
-    slots[pending_slot] = pending;
-    valid[pending_slot] = true;
     return ESP_OK;
 }
 
@@ -99,14 +98,26 @@ int main(void)
     expect_active(old);
     assert(writes == 1);
 
-    for (fail_at = 1; fail_at <= 3; fail_at++) {
+    unsigned expected_writes = 1;
+    for (int failure = 1; failure <= 3; failure++) {
+        fail_at = failure;
         assert(he_cal_save(next) == ESP_FAIL);
         expect_active(old);
         assert(!he_cal_is_dirty());
         assert(he_cal_flush() == ESP_OK);
-        assert(writes == 1);
+        assert(writes == expected_writes);
         assert(he_cal_init() == ESP_OK);
-        expect_active(old);
+        if (failure == 3) {
+            // Defensive injected commit error: RAM stayed old, but set_blob
+            // had already persisted a valid newer record. Do not promise
+            // rollback across reboot merely because commit returned error.
+            expect_active(next);
+            fail_at = 0;
+            assert(he_cal_save(old) == ESP_OK);
+            expected_writes++;
+        } else {
+            expect_active(old);
+        }
     }
     fail_at = 0;
     mode = OSUPAD_STATE_PLAYING;
@@ -114,10 +125,10 @@ int main(void)
     mode = OSUPAD_STATE_COOLDOWN;
     assert(he_cal_save(next) == ESP_ERR_INVALID_STATE);
     expect_active(old);
-    assert(writes == 1);
+    assert(writes == expected_writes);
     mode = OSUPAD_STATE_IDLE;
     assert(he_cal_save(next) == ESP_OK);
-    assert(writes == 2);
+    assert(writes == ++expected_writes);
     assert(valid[0] && valid[1]);
     assert(he_cal_init() == ESP_OK);
     expect_active(next);
@@ -125,25 +136,26 @@ int main(void)
     // Existing deferred API still flushes once IDLE, serialized with saves.
     mode = OSUPAD_STATE_PLAYING;
     assert(he_cal_set(old) == ESP_OK && he_cal_is_dirty());
-    assert(he_cal_flush() == ESP_OK && writes == 2);
+    assert(he_cal_flush() == ESP_OK && writes == expected_writes);
     mode = OSUPAD_STATE_IDLE;
-    assert(he_cal_flush() == ESP_OK && writes == 3);
+    assert(he_cal_flush() == ESP_OK && writes == ++expected_writes);
     assert(!he_cal_is_dirty());
     assert(he_cal_init() == ESP_OK);
     expect_active(old);
+    uint32_t before_seq = slots[0].seq > slots[1].seq ? slots[0].seq : slots[1].seq;
     exercise_concurrency = true;
     pthread_t writers[2];
     assert(pthread_create(&writers[0], NULL, save_repeatedly, (void *)old) == 0);
     assert(pthread_create(&writers[1], NULL, save_repeatedly, (void *)next) == 0);
     for (int i = 0; i < 2; i++) assert(pthread_join(writers[i], NULL) == 0);
-    assert(writes == 23);
+    assert(writes == expected_writes + 20);
     assert(he_cal_record_validate(&slots[0]) && he_cal_record_validate(&slots[1]));
-    assert((slots[0].seq == 23 && slots[1].seq == 22) ||
-           (slots[1].seq == 23 && slots[0].seq == 22));
+    assert((slots[0].seq == before_seq + 20 && slots[1].seq == before_seq + 19) ||
+           (slots[1].seq == before_seq + 20 && slots[0].seq == before_seq + 19));
     he_calibration_t latest[2];
     he_cal_get_all(latest);
     assert(he_cal_init() == ESP_OK);
     expect_active(latest);
-    puts("Calibration storage keeps old values after open/set/commit failures.");
+    puts("Calibration storage preserves RAM on errors; reboot follows persisted records.");
     return 0;
 }
