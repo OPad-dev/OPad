@@ -61,6 +61,9 @@ pub struct KeysState {
     /// Where the stems are drawn: glides towards `smooth` every frame, so
     /// the motion has no steps between the ~50 readings a second
     drawn: [Option<f32>; 2],
+    /// The filtered reading with jitter suppression: moves only once the
+    /// reading leaves a dead zone around it, so a still key stays still
+    held: [Option<f32>; 2],
     last_frame: Option<iced::time::Instant>,
     live_supported: bool,
     live_inflight: bool,
@@ -92,6 +95,7 @@ impl KeysState {
         self.live_inflight = false;
         self.smooth = Default::default();
         self.drawn = [None; 2];
+        self.held = [None; 2];
         self.last_frame = None;
     }
 
@@ -105,7 +109,11 @@ impl KeysState {
         // a press, slow enough to hide the 20 ms steps between readings
         let follow = 1.0 - (-dt / DRAW_TAU_S).exp();
         for k in 0..2 {
-            self.drawn[k] = match (self.drawn[k], self.smooth[k].value) {
+            self.held[k] = match (self.held[k], self.smooth[k].value) {
+                (Some(h), Some(v)) => Some(hold(h, v)),
+                (_, v) => v,
+            };
+            self.drawn[k] = match (self.drawn[k], self.held[k]) {
                 (Some(d), Some(t)) => Some(d + (t - d) * follow),
                 (_, t) => t,
             };
@@ -137,6 +145,24 @@ impl KeysState {
 /// ~450 counts in a few tens of ms.
 /// Time constant of the drawn stem's glide towards the filtered reading
 const DRAW_TAU_S: f32 = 0.025;
+
+/// Jitter suppression, in raw counts (~1.3 % of a 450-count stroke): what
+/// the One Euro filter lets through at rest stays inside it, so a still key
+/// is drawn perfectly still. Smaller movements are not drawn; the pad still
+/// sees them.
+const HOLD_COUNTS: f32 = 6.0;
+
+/// Move the held value only as far as needed to keep the reading within
+/// HOLD_COUNTS of it: no steps, and nothing at all inside the dead zone
+fn hold(held: f32, value: f32) -> f32 {
+    if value > held + HOLD_COUNTS {
+        value - HOLD_COUNTS
+    } else if value < held - HOLD_COUNTS {
+        value + HOLD_COUNTS
+    } else {
+        held
+    }
+}
 
 #[derive(Debug, Default, Clone, Copy)]
 struct OneEuro {
@@ -884,6 +910,51 @@ mod tests {
             .collect();
         assert!(shown[0] > 450.0 * 0.4, "first reading shows {}", shown[0]);
         assert!(shown[2] > 450.0 * 0.85, "third reading shows {}", shown[2]);
+    }
+
+    #[test]
+    fn a_still_key_is_drawn_perfectly_still() {
+        let mut s = KeysState::default();
+        let t0 = std::time::Instant::now();
+        let f0 = iced::time::Instant::now();
+        let reading = std::time::Duration::from_millis(20);
+        let frame = std::time::Duration::from_micros(16_667);
+        let mut seed = 7;
+        let mut drawn = vec![];
+        // 10 s at rest: readings at 50/s, frames at 60/s
+        for i in 0..500u32 {
+            let raw = (2086.0 + noise(&mut seed)) as u32;
+            s.take_sample(
+                Some(HeLiveSample {
+                    key1_raw: raw,
+                    ..Default::default()
+                }),
+                t0 + reading * i,
+            );
+            s.advance(f0 + frame * (i * 6 / 5));
+            if i >= 100 {
+                drawn.push(s.drawn[0].unwrap());
+            }
+        }
+        let (lo, hi) = drawn
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(a, b), &x| (a.min(x), b.max(x)));
+        assert!(hi - lo < 0.5, "still key moved {} counts", hi - lo);
+    }
+
+    #[test]
+    fn jitter_suppression_still_follows_a_press_closely() {
+        let mut h = 2086.0;
+        for v in [2090.0, 2083.0, 2091.0] {
+            h = hold(h, v);
+        }
+        assert_eq!(h, 2086.0, "noise inside the dead zone is ignored");
+        h = hold(h, 2536.0);
+        assert_eq!(
+            h,
+            2536.0 - HOLD_COUNTS,
+            "a press is followed to within the dead zone"
+        );
     }
 
     #[test]
