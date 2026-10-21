@@ -53,8 +53,9 @@ static int32_t median(int32_t values[5])
     return values[2];
 }
 
-static void test_frame_batches_preserve_real_peaks(void)
+static void test_frame_batches_preserve_real_peaks(bool mixed_durations)
 {
+    rng = 42;
     stream_t s = {0};
     he_cal_runner_init(&s.runner, NULL);
     he_cal_runner_init(&s.old, NULL);
@@ -72,8 +73,8 @@ static void test_frame_batches_preserve_real_peaks(void)
     for (int key = 0; key < 2; key++) {
         int32_t peaks[5];
         for (int p = 0; p < 5; p++) {
-            unsigned len = 80 + 40 * (unsigned)p; // 20, 30, 40, 50, 60 ms
-            rest(&s, 117); // peaks fall between the 20 ms reads
+            unsigned len = mixed_durations ? 80 + 40 * (unsigned)p : 240; // 20..60 ms or 60 ms
+            rest(&s, mixed_durations ? 117 : 160); // peaks fall between the 20 ms reads
             peaks[p] = 0;
             for (unsigned t = 0; t <= len; t++) {
                 unsigned triangle = t <= len / 2 ? t : len - t;
@@ -82,7 +83,7 @@ static void test_frame_batches_preserve_real_peaks(void)
                 int32_t other = 2086 + noise();
                 frame(&s, key == 0 ? raw : other, key == 1 ? raw : other);
             }
-            rest(&s, 320);
+            rest(&s, mixed_durations ? 320 : 319); // keep the fixed-duration case on the same read phase
         }
         truth[key] = median(peaks);
     }
@@ -99,6 +100,13 @@ static void test_frame_batches_preserve_real_peaks(void)
     assert(s.old.stage != HE_RUNNER_SUCCESS ||
            abs(s.old.results[0].full - truth[0]) > 3 ||
            abs(s.old.results[1].full - truth[1]) > 3);
+    if (!mixed_durations) {
+        // Consistent sampling bias can even pass the old peak-consistency
+        // check and save a full position that is substantially too low.
+        assert(s.old.stage == HE_RUNNER_SUCCESS);
+        assert(truth[0] - s.old.results[0].full > 100);
+        assert(truth[1] - s.old.results[1].full > 100);
+    }
 }
 
 static void test_rest_extrema_and_lost_data_fail_closed(void)
@@ -133,7 +141,8 @@ static void test_rest_extrema_and_lost_data_fail_closed(void)
 
 int main(void)
 {
-    test_frame_batches_preserve_real_peaks();
+    test_frame_batches_preserve_real_peaks(true);
+    test_frame_batches_preserve_real_peaks(false);
     test_rest_extrema_and_lost_data_fail_closed();
     puts("All calibration sampling tests passed.");
     return 0;
