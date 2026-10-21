@@ -493,8 +493,8 @@ fn live_view<'a>(app: &'a App, key: usize, c: HeKeyConfig) -> Element<'a, Messag
             down,
             settings: c,
         })
-        .width(Length::Fixed(170.0))
-        .height(Length::Fixed(250.0)),
+        .width(Length::Fixed(SWITCH_W))
+        .height(Length::Fixed(SWITCH_H)),
         text(match depth {
             Some(d) => format!("{:.0} %", (d * 100.0).clamp(-99.0, 199.0)),
             None => "-".to_string(),
@@ -628,14 +628,56 @@ fn card<'a>(content: impl Into<Element<'a, Message>>) -> container::Container<'a
         .style(theme::card)
 }
 
-/// A switch cut in half: housing, stem, spring and magnet, with the sensor
-/// under it. The stem sits at the key's live depth; the lines mark where the
-/// settings press, release and reset.
+/// A magnetic switch cut in half, front view: keycap shell on the cross
+/// mount, translucent top housing, stem with the magnet in its foot, spring
+/// on the centre pole, bottom housing with its pegs, and the Hall sensor on
+/// the PCB under the magnet. The stem sits at the key's (smoothed) depth;
+/// the ticks on the right mark where the settings press, release and reset.
 struct SwitchView {
     /// 0 = rest, 1 = calibrated full press; `None` without a reading
     depth: Option<f32>,
     down: bool,
     settings: HeKeyConfig,
+}
+
+/// Canvas size the drawing is laid out for
+const SWITCH_W: f32 = 230.0;
+const SWITCH_H: f32 = 250.0;
+/// Keycap travel in pixels from rest to a calibrated full press
+const TRAVEL_PX: f32 = 40.0;
+
+fn rgba(hex: u32, a: f32) -> Color {
+    Color::from_rgba8((hex >> 16) as u8, (hex >> 8) as u8, hex as u8, a)
+}
+
+fn rect(x0: f32, y0: f32, x1: f32, y1: f32) -> Path {
+    Path::rectangle(Point::new(x0, y0), Size::new(x1 - x0, y1 - y0))
+}
+
+fn rounded(x0: f32, y0: f32, x1: f32, y1: f32, r: f32) -> Path {
+    Path::new(|b| {
+        b.rounded_rectangle(
+            Point::new(x0, y0),
+            Size::new(x1 - x0, y1 - y0),
+            iced::border::Radius::from(r),
+        )
+    })
+}
+
+fn polygon(points: &[(f32, f32)]) -> Path {
+    Path::new(|b| {
+        b.move_to(Point::new(points[0].0, points[0].1));
+        for &(x, y) in &points[1..] {
+            b.line_to(Point::new(x, y));
+        }
+        b.close();
+    })
+}
+
+fn vertical(y0: f32, y1: f32, top: Color, bottom: Color) -> canvas::gradient::Linear {
+    canvas::gradient::Linear::new(Point::new(0.0, y0), Point::new(0.0, y1))
+        .add_stop(0.0, top)
+        .add_stop(1.0, bottom)
 }
 
 impl canvas::Program<Message> for SwitchView {
@@ -650,140 +692,267 @@ impl canvas::Program<Message> for SwitchView {
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
-        let w = bounds.width;
         let line = |c: Color, width: f32| Stroke::default().with_color(c).with_width(width);
-
-        // Travel runs from y0 (rest) to y1 (full press) for the stem's top
-        let (x0, x1) = (34.0, w - 34.0);
-        let (y0, y1) = (40.0_f32, 130.0_f32);
-        let travel = y1 - y0;
+        let cx = 85.0;
         let depth = self.depth.unwrap_or(0.0).clamp(-0.1, 1.15);
-        let stem_top = y0 + depth * travel;
+        let off = depth * TRAVEL_PX;
 
-        // Keycap stand-in and stem
-        let stem_w = 34.0;
-        let sx = w / 2.0 - stem_w / 2.0;
-        let stem_color = if self.down { theme::PINK } else { theme::MUTED };
+        // PCB with the Hall sensor right under the magnet
         frame.fill(
-            &Path::rectangle(
-                Point::new(sx - 26.0, stem_top - 22.0),
-                Size::new(stem_w + 52.0, 14.0),
-            ),
-            theme::CARD_HOVER,
+            &rect(12.0, 222.0, 158.0, 230.0),
+            vertical(222.0, 230.0, rgba(0x1F7A4A, 1.0), rgba(0x125233, 1.0)),
         );
+        for x in [cx - 34.0, cx, cx + 34.0] {
+            frame.fill(&rect(x - 7.0, 222.0, x + 7.0, 224.0), rgba(0xC9A24A, 1.0));
+        }
+        if self.down {
+            frame.fill(
+                &rounded(cx - 13.0, 209.0, cx + 13.0, 224.0, 4.0),
+                rgba(0xFF66AA, 0.35),
+            );
+        }
         frame.fill(
-            &Path::rectangle(Point::new(sx, stem_top - 8.0), Size::new(stem_w, 64.0)),
-            stem_color,
+            &rounded(cx - 8.0, 213.0, cx + 8.0, 221.0, 1.5),
+            rgba(0x15151C, 1.0),
         );
-        // Magnet at the stem's foot
-        frame.fill(
-            &Path::rectangle(
-                Point::new(sx + 6.0, stem_top + 48.0),
-                Size::new(stem_w - 12.0, 8.0),
-            ),
-            theme::CYAN,
-        );
-
-        // Housing: top plate with the stem opening, side walls, floor
-        let floor = y1 + 80.0;
-        let border = line(theme::BORDER, 3.0);
+        for x in [cx - 6.0, cx, cx + 6.0] {
+            frame.fill(&rect(x - 1.0, 221.0, x + 1.0, 223.0), rgba(0xB8B8C4, 1.0));
+        }
         frame.stroke(
-            &Path::line(Point::new(x0, y0 + 10.0), Point::new(sx - 4.0, y0 + 10.0)),
-            border,
+            &rounded(cx - 8.0, 213.0, cx + 8.0, 221.0, 1.5),
+            line(
+                if self.down {
+                    theme::PINK
+                } else {
+                    rgba(0x44445A, 1.0)
+                },
+                1.0,
+            ),
         );
+
+        // Bottom housing (section): walls, floor, centre pole, pegs into the PCB
+        let housing = rgba(0x2E2E40, 1.0);
+        frame.fill(&rect(cx - 54.0, 138.0, cx - 48.0, 202.0), housing);
+        frame.fill(&rect(cx + 48.0, 138.0, cx + 54.0, 202.0), housing);
+        frame.fill(&rect(cx - 54.0, 194.0, cx + 54.0, 202.0), housing);
+        frame.fill(&rect(cx - 6.0, 202.0, cx - 2.0, 228.0), housing);
+        frame.fill(&rect(cx + 2.0, 202.0, cx + 6.0, 228.0), housing);
+        for x in [cx - 34.0, cx + 34.0] {
+            frame.fill(&rect(x - 3.0, 202.0, x + 3.0, 226.0), housing);
+        }
+        frame.stroke(
+            &polygon(&[
+                (cx - 54.0, 138.0),
+                (cx - 54.0, 202.0),
+                (cx + 54.0, 202.0),
+                (cx + 54.0, 138.0),
+            ]),
+            line(rgba(0x45455C, 1.0), 1.0),
+        );
+
+        // Spring on the centre pole: back of each coil, pole, front of each coil
+        let spring_top = 112.0 + off;
+        let spring_bottom = 194.0;
+        let turns = 8;
+        let pitch = (spring_bottom - spring_top) / turns as f32;
+        let coil = |frame: &mut Frame, front: bool| {
+            for t in 0..turns {
+                let y = spring_top + pitch * t as f32;
+                let (from, to) = if front {
+                    ((cx - 13.0, y + pitch * 0.5), (cx + 13.0, y + pitch))
+                } else {
+                    ((cx + 13.0, y), (cx - 13.0, y + pitch * 0.5))
+                };
+                frame.stroke(
+                    &Path::line(Point::new(from.0, from.1), Point::new(to.0, to.1)),
+                    line(
+                        if front {
+                            rgba(0xD2D2DE, 1.0)
+                        } else {
+                            rgba(0x6A6A7C, 1.0)
+                        },
+                        2.2,
+                    ),
+                );
+            }
+        };
+        coil(&mut frame, false);
+        frame.fill(
+            &rounded(cx - 4.0, 122.0, cx + 4.0, 196.0, 2.0),
+            vertical(122.0, 196.0, rgba(0x4A4A60, 1.0), rgba(0x34344A, 1.0)),
+        );
+        coil(&mut frame, true);
+
+        // Field lines from the magnet to the sensor, stronger as it closes in
+        let strength = depth.clamp(0.0, 1.0);
+        let field = rgba(0x66CCFF, 0.10 + 0.45 * strength);
+        let magnet_bottom = 112.0 + off;
+        for bend in [-30.0, -14.0, 0.0, 14.0, 30.0] {
+            let curve = Path::new(|b| {
+                b.move_to(Point::new(cx + bend * 0.3, magnet_bottom));
+                b.quadratic_curve_to(
+                    Point::new(cx + bend, (magnet_bottom + 213.0) / 2.0),
+                    Point::new(cx + bend * 0.15, 213.0),
+                );
+            });
+            frame.stroke(&curve, line(field, 1.0));
+        }
+
+        // Stem: neck through the top housing, body with the magnet in its foot
+        let stem = vertical(
+            52.0 + off,
+            112.0 + off,
+            rgba(0xFF8CC0, 1.0),
+            rgba(0xE0538F, 1.0),
+        );
+        frame.fill(&rect(cx - 9.0, 52.0 + off, cx + 9.0, 86.0 + off), stem);
+        frame.fill(
+            &rounded(cx - 22.0, 84.0 + off, cx + 22.0, 112.0 + off, 3.0),
+            stem,
+        );
+        frame.fill(
+            &rect(cx - 22.0, 88.0 + off, cx - 18.0, 108.0 + off),
+            rgba(0xFFB3D6, 1.0),
+        );
+        frame.fill(
+            &rect(cx + 18.0, 88.0 + off, cx + 22.0, 108.0 + off),
+            rgba(0xFFB3D6, 1.0),
+        );
+        // Magnet: north half facing the sensor
+        frame.fill(
+            &rect(cx - 13.0, 100.0 + off, cx + 13.0, 106.0 + off),
+            rgba(0x4B7BD8, 1.0),
+        );
+        frame.fill(
+            &rect(cx - 13.0, 106.0 + off, cx + 13.0, 112.0 + off),
+            rgba(0xD84B4B, 1.0),
+        );
+        frame.stroke(
+            &rect(cx - 13.0, 100.0 + off, cx + 13.0, 112.0 + off),
+            line(rgba(0x1A1A24, 0.6), 1.0),
+        );
+
+        // Top housing (section), translucent smoke
+        let smoke = rgba(0xBEC3DC, 0.16);
+        let edge = line(rgba(0xFFFFFF, 0.30), 1.0);
+        let left = polygon(&[
+            (cx - 54.0, 142.0),
+            (cx - 54.0, 84.0),
+            (cx - 45.0, 74.0),
+            (cx - 11.0, 74.0),
+            (cx - 11.0, 80.0),
+            (cx - 47.0, 80.0),
+            (cx - 47.0, 142.0),
+        ]);
+        let right = polygon(&[
+            (cx + 54.0, 142.0),
+            (cx + 54.0, 84.0),
+            (cx + 45.0, 74.0),
+            (cx + 11.0, 74.0),
+            (cx + 11.0, 80.0),
+            (cx + 47.0, 80.0),
+            (cx + 47.0, 142.0),
+        ]);
+        frame.fill(&left, smoke);
+        frame.fill(&right, smoke);
+        frame.stroke(&left, edge);
+        frame.stroke(&right, edge);
+
+        // Cross mount up into the keycap
+        frame.fill(
+            &rect(cx - 4.0, 31.0 + off, cx + 4.0, 54.0 + off),
+            rgba(0xFF8CC0, 1.0),
+        );
+        frame.fill(
+            &rect(cx - 10.0, 40.0 + off, cx + 10.0, 45.0 + off),
+            rgba(0xFF8CC0, 1.0),
+        );
+
+        // Keycap shell (section)
+        let cap = polygon(&[
+            (cx - 60.0, 24.0 + off),
+            (cx + 60.0, 24.0 + off),
+            (cx + 66.0, 68.0 + off),
+            (cx + 61.0, 68.0 + off),
+            (cx + 55.0, 31.0 + off),
+            (cx - 55.0, 31.0 + off),
+            (cx - 61.0, 68.0 + off),
+            (cx - 66.0, 68.0 + off),
+        ]);
+        frame.fill(
+            &cap,
+            vertical(
+                24.0 + off,
+                68.0 + off,
+                rgba(0x4A4A60, 1.0),
+                rgba(0x2A2A38, 1.0),
+            ),
+        );
+        frame.stroke(&cap, line(rgba(0x5E5E78, 1.0), 1.0));
         frame.stroke(
             &Path::line(
-                Point::new(sx + stem_w + 4.0, y0 + 10.0),
-                Point::new(x1, y0 + 10.0),
+                Point::new(cx - 58.0, 25.0 + off),
+                Point::new(cx + 58.0, 25.0 + off),
             ),
-            border,
-        );
-        frame.stroke(
-            &Path::line(Point::new(x0, y0 + 10.0), Point::new(x0, floor)),
-            border,
-        );
-        frame.stroke(
-            &Path::line(Point::new(x1, y0 + 10.0), Point::new(x1, floor)),
-            border,
-        );
-        frame.stroke(
-            &Path::line(Point::new(x0, floor), Point::new(x1, floor)),
-            border,
+            line(rgba(0xFFFFFF, 0.18), 1.0),
         );
 
-        // Spring between the stem's foot and the floor, compressing as it goes down
-        let spring_top = stem_top + 56.0;
-        let coils = 6;
-        let step = (floor - spring_top) / (coils as f32 * 2.0);
-        let spring = Path::new(|p| {
-            p.move_to(Point::new(w / 2.0, spring_top));
-            for i in 1..=coils * 2 {
-                let x = if i % 2 == 0 {
-                    w / 2.0 - 12.0
-                } else {
-                    w / 2.0 + 12.0
-                };
-                p.line_to(Point::new(x, spring_top + step * i as f32));
-            }
-        });
-        frame.stroke(&spring, line(theme::OFF, 2.0));
-
-        // Hall sensor on the PCB under the switch
-        frame.fill(
-            &Path::rectangle(
-                Point::new(w / 2.0 - 14.0, floor + 6.0),
-                Size::new(28.0, 8.0),
-            ),
-            theme::YELLOW,
+        // Travel gauge beside the switch: the switch is drawn to scale, where
+        // settings 10 % apart would be 4 px apart, so they are marked here,
+        // magnified, with a pointer at the key's current depth
+        let (gx, g0, g1) = (cx + 80.0, 24.0, 204.0);
+        let gy = |v: f32| g0 + v.clamp(-0.1, 1.15) * (g1 - g0) / 1.15;
+        frame.stroke(
+            &Path::line(Point::new(gx, gy(0.0)), Point::new(gx, gy(1.0))),
+            line(rgba(0x3A3A4C, 1.0), 2.0),
         );
-        frame.fill(
-            &Path::rectangle(
-                Point::new(x0 - 10.0, floor + 14.0),
-                Size::new(x1 - x0 + 20.0, 4.0),
-            ),
-            theme::GREEN,
-        );
-
-        // Threshold marks on the right wall, at stem-top depth
-        let mark = |frame: &mut Frame, at: u32, color: Color, label: &str| {
-            let y = y0 + (at as f32 / 1000.0) * travel;
+        let s = &self.settings;
+        let mut marks: Vec<(f32, Color, &str)> = vec![
+            (0.0, rgba(0x8C8CA6, 1.0), "rest"),
+            (s.actuation as f32 / 1000.0, theme::PINK, "press"),
+            (1.0, rgba(0x8C8CA6, 1.0), "full"),
+        ];
+        if s.rt_mode == HeRtMode::Off {
+            let release = s.actuation.saturating_sub(s.release_hyst) as f32 / 1000.0;
+            marks.push((release, theme::MUTED, "release"));
+        }
+        if s.rt_mode == HeRtMode::Continuous {
+            marks.push((s.top_reset as f32 / 1000.0, theme::CYAN, "reset"));
+        }
+        if s.bottom_dead_zone > 0 {
+            let dz = 1.0 - s.bottom_dead_zone.min(1000) as f32 / 1000.0;
+            marks.push((dz, theme::YELLOW, "dead zone"));
+        }
+        marks.sort_by(|a, b| a.0.total_cmp(&b.0));
+        // Labels at least a line apart; the tick itself stays exact
+        let mut next_free = f32::MIN;
+        for (at, color, label) in marks {
+            let y = gy(at);
             frame.stroke(
-                &Path::line(Point::new(x0 - 6.0, y), Point::new(x1 + 6.0, y)),
-                line(color, 1.0),
+                &Path::line(Point::new(gx - 5.0, y), Point::new(gx + 5.0, y)),
+                line(color, 1.5),
             );
+            let label_y = (y - 6.0).max(next_free);
+            next_free = label_y + 11.0;
             frame.fill_text(canvas::Text {
                 content: label.to_string(),
-                position: Point::new(x1 + 8.0, y - 6.0),
+                position: Point::new(gx + 9.0, label_y),
                 color,
                 size: Pixels(10.0),
                 ..canvas::Text::default()
             });
-        };
-        let s = &self.settings;
-        mark(&mut frame, s.actuation, theme::PINK, "act");
-        if s.rt_mode == HeRtMode::Off {
-            mark(
-                &mut frame,
-                s.actuation.saturating_sub(s.release_hyst),
-                theme::MUTED,
-                "rel",
-            );
         }
-        if s.rt_mode == HeRtMode::Continuous {
-            mark(&mut frame, s.top_reset, theme::CYAN, "reset");
-        }
-        if s.bottom_dead_zone > 0 {
-            mark(
-                &mut frame,
-                1000 - s.bottom_dead_zone.min(1000),
-                theme::YELLOW,
-                "dz",
+        if self.depth.is_some() {
+            let y = gy(depth);
+            frame.fill(
+                &polygon(&[(gx - 3.0, y), (gx - 11.0, y - 5.0), (gx - 11.0, y + 5.0)]),
+                if self.down { theme::PINK } else { theme::WHITE },
             );
         }
         if self.depth.is_none() {
             frame.fill_text(canvas::Text {
                 content: "no reading".to_string(),
-                position: Point::new(x0, 6.0),
+                position: Point::new(12.0, 4.0),
                 color: theme::MUTED,
                 size: Pixels(11.0),
                 ..canvas::Text::default()
