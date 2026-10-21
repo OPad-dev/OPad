@@ -3,6 +3,7 @@
 #include "input/he_cal_runner.h"
 #include "input/he_backend.h"
 #include "input/he_cal.h"
+#include "input/touch_retry.h"
 #include "input/gesture.h"
 #include "runtime/runtime.h"
 #include "usb/usb_cdc.h"
@@ -78,7 +79,7 @@ static void update_boxes_visibility(bool visible, uint8_t count)
     }
 }
 
-// OPEN (Report §Questions for the owner #3): Exact wording, layout and styling
+// OPEN: docs/history/2026-10-21-he-calibration-report.md §8, Q3. Exact wording, layout and styling
 // of the lock, calibration and error screens are provisional pending owner review.
 static void show_lock_screen(int64_t now_us)
 {
@@ -405,7 +406,7 @@ static void he_cal_ui_timer_cb(lv_timer_t *timer)
         return;
     }
 
-    // OPEN (Report §Questions for the owner #1 & #2): On-pad cancel gesture and
+    // OPEN: docs/history/2026-10-21-he-calibration-report.md §8, Q1/Q2. On-pad cancel gesture and
     // walk-away timeout during KEY1/KEY2 stages are left open pending owner decision.
     const he_cal_samples_t *samples = he_backend_take_cal_samples();
     if (samples) {
@@ -531,7 +532,9 @@ bool he_cal_ui_start_calibration(bool from_app)
         runtime_get_state() == OSUPAD_STATE_IDLE,
         he_backend_is_calibrating(),
         &reason);
-    if (chk != HE_CAL_START_OK) {
+    bool touch_reserved = chk == HE_CAL_START_OK && touch_retry_reserve_calibration();
+    if (chk == HE_CAL_START_OK && !touch_reserved) reason = "Release the touchscreen first";
+    if (!touch_reserved) {
         if (from_app) {
             osupad_HeCalibrationProgress p = osupad_HeCalibrationProgress_init_zero;
             p.stage = osupad_HeCalStage_HE_CAL_STAGE_FAILED;
@@ -548,6 +551,7 @@ bool he_cal_ui_start_calibration(bool from_app)
     he_runner_progress_t prog;
     he_cal_runner_start(&s_runner);
     he_backend_start_calibration();
+    touch_retry_finish_calibration_start();
     s_success_until_us = 0;
     s_fail_until_us = 0;
     s_disconnect_failed = false;

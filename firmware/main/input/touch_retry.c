@@ -6,6 +6,7 @@
 #include "input/swipe_labels.h"
 #include "input/he_backend.h"
 #include "input/he_cal_runner.h"
+#include "input/he_cal_touch_guard.h"
 #include "ui/he_cal_ui.h"
 #include "config/device_config.h"
 #include "runtime/runtime.h"
@@ -34,6 +35,7 @@ static const char *TAG = "touch_retry";
 #define CST816_REG_AUTO_SLEEP   0xFE
 
 static volatile bool s_touch_pressed = false;
+static he_cal_touch_guard_t s_cal_guard;
 static TaskHandle_t s_touch_task = NULL;
 static bool s_auto_sleep_disabled = false;
 static i2c_master_bus_handle_t s_bus = NULL;
@@ -199,6 +201,7 @@ static void wait_touch_key_delivered(void)
 // modifiers go down first and come up last, as from a keyboard.
 static void tap_keyboard_key(uint8_t key, uint8_t mods)
 {
+    // s_cal_guard stays busy throughout this sequence and release_alt.
     if (mods) {
         usb_hid_set_touch_key(0, mods);
         wait_touch_key_delivered();
@@ -403,7 +406,9 @@ static void touch_retry_task(void *arg)
             release_debounce = 0;
             s_touch_pressed = true;
             down_us = esp_timer_get_time();
-            cal_gated = he_cal_suppress_input(he_backend_is_locked(), he_backend_is_calibrating());
+            bool start_reserved = he_cal_touch_begin(&s_cal_guard);
+            cal_gated = start_reserved ||
+                        he_cal_suppress_input(he_backend_is_locked(), he_backend_is_calibrating());
             cal_button_touch = cal_gated;
             cal_x = s.has_pos ? s.x : -1;
             cal_y = s.has_pos ? s.y : -1;
@@ -494,6 +499,8 @@ static void touch_retry_task(void *arg)
             tracking = false;
             if (cal_gated) {
                 cal_gated = false;
+                // The button callback can start calibration on this release.
+                he_cal_touch_end(&s_cal_guard);
                 // Up reads have no position. Use the last actual contact.
                 if (cal_button_touch) he_cal_ui_touch_sample(false, cal_x, cal_y);
                 cal_button_touch = false;
@@ -510,6 +517,7 @@ static void touch_retry_task(void *arg)
                 ESP_LOGI(TAG, "Touch up -> Quick Retry released");
             }
             release_alt(&alt_held);
+            he_cal_touch_end(&s_cal_guard);
             // An INT edge seen during the press leaves a notification pending;
             // it costs one confirming read on the next loop and nothing more.
         }
@@ -642,4 +650,14 @@ esp_err_t touch_retry_init(void)
 bool touch_retry_is_pressed(void)
 {
     return s_touch_pressed;
+}
+
+bool touch_retry_reserve_calibration(void)
+{
+    return he_cal_touch_reserve_start(&s_cal_guard);
+}
+
+void touch_retry_finish_calibration_start(void)
+{
+    he_cal_touch_finish_start(&s_cal_guard);
 }
