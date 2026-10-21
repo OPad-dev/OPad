@@ -7,10 +7,12 @@
  * Captures explicit per-key calibration:
  * 1. Rest: averaged over a still window where peak-to-peak spread is within
  *    the configured spread and absolute rest bounds. A steady partial press
- *    inside those bounds cannot be distinguished from rest by this algorithm.
+ *    inside those bounds looks like rest here; step 2 catches it afterwards.
  * 2. Full press: user presses fully 5 times. Detects the 5 peaks, selects the
  *    median peak (softer than bottoming out hard into the damper), and validates
- *    span, signal direction, and peak consistency.
+ *    span, signal direction, and peak consistency. A key that comes back up
+ *    clearly below the measured rest (rest_pressed_margin) was held during
+ *    rest: HE_CAL_ERR_REST_PRESSED.
  *
  * Pure C, no ESP-IDF/FreeRTOS, host-tested with synthetic and bench-shaped traces.
  */
@@ -56,6 +58,7 @@ typedef struct {
     int32_t  press_arm_span;      // Movement above rest to arm peak detector (e.g. 120)
     int32_t  release_arm_span;    // Return towards rest to confirm peak (e.g. 60)
     int32_t  max_peak_diff;       // Max allowable deviation from median peak (e.g. 120)
+    int32_t  rest_pressed_margin; // A release this far below rest means rest was held (e.g. 72)
 } he_cal_capture_cfg_t;
 
 typedef struct {
@@ -75,6 +78,7 @@ typedef struct {
     int32_t current_stroke_peak;
     uint8_t peak_count;
     int32_t peaks[HE_CAL_MAX_PEAKS];
+    int32_t press_min;            // lowest reading while pressing, for HE_CAL_ERR_REST_PRESSED
 
     he_calibration_t result;
 } he_cal_capture_t;

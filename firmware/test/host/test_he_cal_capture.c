@@ -232,6 +232,57 @@ static void test_reject_rest_out_of_range(void)
     printf("✓ test_reject_rest_out_of_range passed (%s)\n", he_cal_error_to_name(err));
 }
 
+// Rest taken with the key held ~200 counts down: rest itself passes, but the
+// key then comes fully up between presses, far below that "rest"
+static void test_reject_rest_taken_while_held(void)
+{
+    int32_t rest_samples[100];
+    make_rest(rest_samples, 100, 2086 + 200);
+
+    int32_t press_samples[500];
+    size_t press_len = 0;
+    for (int i = 0; i < 5; i++) {
+        press_len += make_stroke(press_samples + press_len,
+                                 sizeof(press_samples) / sizeof(press_samples[0]) - press_len,
+                                 2086, 2086 + 760);
+    }
+
+    he_cal_capture_cfg_t cfg;
+    he_cal_capture_default_cfg(&cfg);
+    he_calibration_t cal = {0};
+    he_cal_error_t err = he_cal_capture_process(&cfg, rest_samples, 100, press_samples, press_len, &cal);
+    assert(err == HE_CAL_ERR_REST_PRESSED);
+    assert(!cal.valid);
+    printf("✓ test_reject_rest_taken_while_held passed\n");
+}
+
+// A released key's noise over a long session (4 kHz, ~1 s between presses)
+// never reaches the margin, and a key held less than the margin is accepted
+static void test_rest_pressed_no_false_alarm(void)
+{
+    static int32_t press_samples[5 * (4000 + 40)];
+    int32_t rest_samples[100];
+    const int32_t offsets[2] = {0, 40};
+    for (int o = 0; o < 2; o++) {
+        make_rest(rest_samples, 100, 2086 + offsets[o]);
+        size_t press_len = 0;
+        for (int i = 0; i < 5; i++) {
+            make_rest(press_samples + press_len, 4000, 2086);
+            press_len += 4000;
+            press_len += make_stroke(press_samples + press_len,
+                                     sizeof(press_samples) / sizeof(press_samples[0]) - press_len,
+                                     2086, 2086 + 450);
+        }
+        he_cal_capture_cfg_t cfg;
+        he_cal_capture_default_cfg(&cfg);
+        he_calibration_t cal = {0};
+        he_cal_error_t err = he_cal_capture_process(&cfg, rest_samples, 100, press_samples, press_len, &cal);
+        assert(err == HE_CAL_ERR_NONE);
+        assert(cal.valid);
+    }
+    printf("✓ test_rest_pressed_no_false_alarm passed\n");
+}
+
 int main(void)
 {
     printf("=== Running Hall Effect Calibration Capture Host Tests ===\n");
@@ -242,6 +293,8 @@ int main(void)
     test_reject_signal_not_rising();
     test_reject_rest_not_still();
     test_reject_rest_out_of_range();
+    test_reject_rest_taken_while_held();
+    test_rest_pressed_no_false_alarm();
     printf("All Hall Effect calibration capture tests passed successfully!\n");
     return 0;
 }

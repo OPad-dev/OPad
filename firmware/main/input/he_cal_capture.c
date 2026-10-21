@@ -16,6 +16,10 @@ void he_cal_capture_default_cfg(he_cal_capture_cfg_t *cfg)
     cfg->press_arm_span = 120;
     cfg->release_arm_span = 60;
     cfg->max_peak_diff = 120;
+    // Twice the allowed rest spread: a released key's noise (sd ~5.6) stays
+    // well inside it, a key held about 1/6 of a 450-count stroke does not.
+    // PROVISIONAL until checked on the pad.
+    cfg->rest_pressed_margin = 72;
 }
 
 void he_cal_capture_init(he_cal_capture_t *cap, const he_cal_capture_cfg_t *cfg)
@@ -32,6 +36,7 @@ void he_cal_capture_init(he_cal_capture_t *cap, const he_cal_capture_cfg_t *cfg)
     cap->stage = HE_CAL_STAGE_REST;
     cap->rest_min = INT32_MAX;
     cap->rest_max = INT32_MIN;
+    cap->press_min = INT32_MAX;
 }
 
 bool he_cal_capture_feed_rest(he_cal_capture_t *cap, int32_t raw)
@@ -88,6 +93,15 @@ static void sort_peaks(int32_t *p, uint8_t n)
 
 static bool finish_press_evaluation(he_cal_capture_t *cap)
 {
+    // Between strokes the key comes fully up. Coming up well below the
+    // measured rest means rest was taken with the key partly held, so every
+    // threshold built from it would be off: fail before judging the peaks.
+    if (cap->press_min < cap->calculated_rest - cap->cfg.rest_pressed_margin) {
+        cap->stage = HE_CAL_STAGE_FAILED;
+        cap->error = HE_CAL_ERR_REST_PRESSED;
+        return false;
+    }
+
     if (cap->peak_count < cap->cfg.target_peaks) {
         cap->stage = HE_CAL_STAGE_FAILED;
         cap->error = HE_CAL_ERR_TOO_FEW_PEAKS;
@@ -140,6 +154,10 @@ bool he_cal_capture_feed_press(he_cal_capture_t *cap, int32_t raw)
 
     int32_t press_threshold = cap->calculated_rest + cap->cfg.press_arm_span;
     int32_t release_threshold = cap->calculated_rest + cap->cfg.release_arm_span;
+
+    if (raw < cap->press_min) {
+        cap->press_min = raw;
+    }
 
     if (!cap->in_stroke) {
         if (raw >= press_threshold) {
