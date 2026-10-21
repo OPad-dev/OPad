@@ -276,8 +276,10 @@ Line formats, readings relative to the calibrated rest in raw counts:
 A armed, P pressed, R rapid-trigger released); `he.pre` the 12 readings
 before it, oldest first (`x` = no reading in that frame); `he.sec`
 `K1 min..max avg K2 ...`; `he.adc` per-second deltas; `he.cfg` thresholds
-whenever they are rebuilt; `he.ctx` state, animation, temperature and any
-lines or edges lost.
+whenever they are rebuilt; `he.touch` finger down/up and the touch
+controller's mode; `he.ctx` state, animation, touch time and touch-controller
+reads that second, temperature, and edges/lines lost. Presses carry their own
+frame time (the `[ms]` field). Analyse with `scripts/he_debug_log.py`.
 
 ## Reproducing the measurements
 
