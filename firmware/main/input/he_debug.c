@@ -9,6 +9,7 @@
 #include "input/he_cal.h"
 #include "runtime/runtime.h"
 #include "ui/core/ui_anim.h"
+#include "input/touch_retry.h"
 #include "driver/temperature_sensor.h"
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
@@ -92,7 +93,8 @@ void IRAM_ATTR he_debug_isr_edge(uint8_t key, he_rt_event_t ev, he_rt_state_t fr
     portEXIT_CRITICAL_ISR(&s_isr_lock);
 }
 
-static void push_line(const char *tag, uint8_t level, const char *msg)
+// `ms`: when it happened on the pad's clock (a press: the frame it was made in)
+static void push_line_at(const char *tag, uint8_t level, const char *msg, uint32_t ms)
 {
     portENTER_CRITICAL(&s_line_lock);
     if (s_lines == NULL || s_line_count == s_line_cap) {
@@ -105,7 +107,7 @@ static void push_line(const char *tag, uint8_t level, const char *msg)
     l->tag[sizeof(l->tag) - 1] = '\0';
     strncpy(l->msg, msg, sizeof(l->msg) - 1);
     l->msg[sizeof(l->msg) - 1] = '\0';
-    l->ms = (uint32_t)(esp_timer_get_time() / 1000);
+    l->ms = ms;
     l->level = level;
     s_line_count++;
     portEXIT_CRITICAL(&s_line_lock);
@@ -118,7 +120,7 @@ void he_debug_line(const char *tag, uint8_t level, const char *fmt, ...)
     va_start(ap, fmt);
     vsnprintf(msg, sizeof(msg), fmt, ap);
     va_end(ap);
-    push_line(tag, level, msg);
+    push_line_at(tag, level, msg, (uint32_t)(esp_timer_get_time() / 1000));
 }
 
 size_t he_debug_take(he_debug_line_t *out, size_t max)
@@ -174,17 +176,22 @@ static void format_edge(const edge_t *e)
     int32_t r = rest_of(e->key);
     he_rt_params_t p;
     he_backend_debug_params(e->key, &p);
-    he_debug_line("he.edge", 1, "K%u %s %c>%c raw%+d act%+d rel%+d top%+d pk%+d", e->key + 1,
-                  e->ev == HE_RT_DOWN ? "DOWN" : "UP", state_letter(e->from), state_letter(e->to),
-                  clamp999(e->raw - r), clamp999(p.actuation - r), clamp999(p.release - r),
-                  clamp999(p.top_reset - r), clamp999(e->extreme - r));
+    // Stamped with the frame's own time, not when this task got to it (every
+    // 20 ms), so presses can be lined up against touches and each other
+    uint32_t at_ms = (uint32_t)(e->at_us / 1000);
+    char edge[64];
+    snprintf(edge, sizeof(edge), "K%u %s %c>%c raw%+d act%+d rel%+d top%+d pk%+d", e->key + 1,
+             e->ev == HE_RT_DOWN ? "DOWN" : "UP", state_letter(e->from), state_letter(e->to),
+             clamp999(e->raw - r), clamp999(p.actuation - r), clamp999(p.release - r), clamp999(p.top_reset - r),
+             clamp999(e->extreme - r));
+    push_line_at("he.edge", 1, edge, at_ms);
     char pre[64];
     int n = snprintf(pre, sizeof(pre), "K%u", e->key + 1);
     for (int i = 0; i < HE_DEBUG_PRE && n < (int)sizeof(pre); i++) {
         n += e->pre[i] < 0 ? snprintf(pre + n, sizeof(pre) - n, " x")
                            : snprintf(pre + n, sizeof(pre) - n, " %+d", clamp999(e->pre[i] - r));
     }
-    push_line("he.pre", 1, pre);
+    push_line_at("he.pre", 1, pre, at_ms);
 }
 
 static const char *state_name(osupad_state_t s)
@@ -211,6 +218,10 @@ static void debug_task(void *arg)
     int64_t next_sec = esp_timer_get_time() + 1000000;
     osupad_state_t last_state = runtime_get_state();
     bool last_anim = ui_anim_active();
+    bool last_touch = touch_retry_is_pressed();
+    uint32_t touch_ticks = 0;  // 20 ms ticks with a finger on the screen, this second
+    uint32_t prev_reads = touch_retry_debug_reads();
+    he_debug_line("he.touch", 1, "controller %s", touch_retry_debug_int_wakeup() ? "INT wake" : "polled at 100 Hz");
     he_debug_line("he.ctx", 1, "debug log started, state %s", state_name(last_state));
     for (uint8_t k = 0; k < 2; k++) {
         he_rt_params_t p;
@@ -243,6 +254,14 @@ static void debug_task(void *arg)
             last_state = st;
             last_anim = anim;
         }
+        // A finger on the touchscreen: the touch controller is polled over I2C
+        // while it stays down, a suspect for interference on the key readings
+        bool touch = touch_retry_is_pressed();
+        if (touch != last_touch) {
+            he_debug_line("he.touch", 1, touch ? "finger down" : "finger up");
+            last_touch = touch;
+        }
+        touch_ticks += touch;
 
         int64_t now = esp_timer_get_time();
         if (now < next_sec) {
@@ -293,8 +312,12 @@ static void debug_task(void *arg)
         if (have_temp) {
             snprintf(temp_s, sizeof(temp_s), "%d", (int)(temp + (temp < 0 ? -0.5f : 0.5f)));
         }
-        he_debug_line("he.ctx", 1, "state %s anim %d temp %sC lost edges %lu lines %lu", state_name(st), anim,
-                      temp_s, (unsigned long)lost_edges, (unsigned long)lost_lines);
+        uint32_t reads = touch_retry_debug_reads();
+        he_debug_line("he.ctx", 1, "state %s anim %d touch %lums i2c %lu temp %sC lost %lu/%lu", state_name(st),
+                      anim, (unsigned long)(touch_ticks * 20), (unsigned long)(reads - prev_reads), temp_s,
+                      (unsigned long)lost_edges, (unsigned long)lost_lines);
+        prev_reads = reads;
+        touch_ticks = 0;
     }
 }
 

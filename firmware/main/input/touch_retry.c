@@ -147,8 +147,18 @@ static void IRAM_ATTR touch_int_isr(void *arg)
 }
 
 // One sample: the active-low INT level or a non-zero touch count means down.
+#ifdef CONFIG_OSUPAD_HE_DEBUG
+// HE debug firmware: I2C reads of the touch controller, finger or not
+static volatile uint32_t s_debug_reads;
+uint32_t touch_retry_debug_reads(void) { return s_debug_reads; }
+bool touch_retry_debug_int_wakeup(void) { return s_int_wakeup; }
+#endif
+
 static touch_sample_t touch_read(void)
 {
+#ifdef CONFIG_OSUPAD_HE_DEBUG
+    s_debug_reads++;  // touch task only
+#endif
     touch_sample_t s = {0};
     bool int_active = (gpio_get_level(BOARD_TOUCH_INT_GPIO) == 0);
 
