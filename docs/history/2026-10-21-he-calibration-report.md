@@ -496,6 +496,10 @@ SDK (`idf.py --version`, SDK `git describe --tags --exact-match HEAD` and
 
 ### Q1. Cancel the on-pad flow
 
+**Owner decision (2026-10-21): no on-pad cancel.** The current behaviour
+stays; the app can still cancel an app-started run.
+
+
 Options: retain no on-pad cancellation; add a visible Cancel button; or define
 a long-hold gesture. Recommendation: keep the current behavior until a visible
 button is approved. A gesture needs a separate conflict review with touch
@@ -504,6 +508,11 @@ CDC-disconnect cancellation (`firmware/main/ui/he_cal_ui.c`).
 
 ### Q2. Walk-away timeout
 
+**Owner decision (2026-10-21): no timeout.** The flow stays on its current
+step until it gets its presses. `HE_CAL_ERROR_TIMEOUT` stays reserved and is
+never sent (`protocol/osupad.proto`).
+
+
 Options: none (current); 60 s without a captured press; or 120 s without a
 captured press. Recommendation: 60 s of inactivity, returning to the lock
 screen and preserving old calibration, once approved. Nothing currently
@@ -511,6 +520,13 @@ sends `HE_CAL_ERROR_TIMEOUT`; no timer was invented here
 (`protocol/osupad.proto`, `firmware/main/ui/he_cal_ui.c`).
 
 ### Q3. Wording and design
+
+**Owner decision (2026-10-21):** use the plain sentence-case texts proposed
+in review; the owner may adjust them later. Applied in
+`firmware/main/ui/he_cal_ui.c` and `he_cal_runner_error_string`
+(`firmware/main/input/he_cal_runner.c`); colours and layout unchanged. Not
+yet seen on the 320×240 screen.
+
 
 Options: approve the current provisional screen/error text; approve revised
 copy and layout before implementation; or supply a specific visual reference.
@@ -544,6 +560,18 @@ publisher race is Q8 (`firmware/test/host/test_he_cal_touch_guard.c`,
 
 ### Q5. A steady partial press during rest
 
+**Owner decision (2026-10-21): add a check, the best way available.**
+Implemented after this review: while pressing, the capture records each
+key's lowest reading; if the key comes back up more than
+`rest_pressed_margin` (72 counts, provisional) below the measured rest, rest
+was taken with the key held and the attempt fails with
+`HE_CAL_ERR_REST_PRESSED` (`firmware/main/input/he_cal_capture.c`,
+`test_reject_rest_taken_while_held`, `test_rest_pressed_no_false_alarm` in
+`firmware/test/host/test_he_cal_capture.c`). A hold shallower than the margin,
+or a finger that never lets the key fully up, is still not detected. The text
+below describes the state before the fix.
+
+
 The algorithm can reject motion and a mean outside 1500..2500; it cannot know
 that an in-range steady value is a partially held key. `HE_CAL_ERR_REST_PRESSED`
 has a name/mapping but is not emitted by capture. No automatic invalidation or
@@ -557,6 +585,10 @@ that any held key fails rest was not supported by code
 (`docs/testing-checklist.md`).
 
 ### Q6. Confirm the governing touch exception before integration
+
+**Answered (2026-10-21): intended.** The owner decided the lock (D7). The
+sentence exists only on `feat/he-night` and reaches `main` with the merge.
+
 
 The worktree's `AGENTS.md` §1.4 explicitly excepts an uncalibrated HE pad from
 Quick Retry/swipes, citing D7. The AGENTS text supplied with the initiating

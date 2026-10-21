@@ -36,7 +36,7 @@ The backend calls the engine from `on_frame` and builds thresholds at start
 and reload (`firmware/main/input/he_backend.c`). The key-event move keeps every MX key-path function in IRAM
 (`gpio_isr_handler`, `keypad_task`, `key_event_press_accepted`,
 `key_event_report`, `usb_hid_handle_key_event`, checked with `nm` on
-`build/opad-firmware.elf`); static DIRAM use is 90 % (34 KB left), which
+`build/opad-firmware.elf`); static DIRAM use is 90.4 % (32 KB left, `idf.py size`, 2026-10-21), which
 limits what the HE backend can add to internal RAM.
 
 ## Decisions
@@ -72,7 +72,7 @@ limits what the HE backend can add to internal RAM.
   buffer in the interrupt. `CONFIG_OSUPAD_HE_BACKEND` selects
   `ADC_CONTINUOUS_ISR_IRAM_SAFE`; everything the interrupt calls is in IRAM
   and none of it references flash (checked with `nm`/`objdump` on
-  `build-he/opad-firmware.elf`). Static DIRAM with HE on: 91.5 % (29 KB left).
+  `build-he/opad-firmware.elf`). Static DIRAM with HE on: 93.4 % (22 KB left, `idf.py size`, 2026-10-21; the calibration sample buffers take ~4 KB).
 - **Health (provisional, OPEN G):** checked every 2 ms by `he_task`. A key
   with no valid conversion (readings at 0 or 4095 do not count) for 5 ms is
   released and ignored until readings return; no frames for 5 ms releases
@@ -187,6 +187,13 @@ does it itself only when no app is there.
   saved (or after a failed attempt, which returns to the lock screen).
 - **Recalibration, rapid trigger and every HE setting are app only.** The pad
   has no HE settings of its own.
+- **No cancel on the pad and no timeout (owner, 2026-10-21).** A step waits
+  for its presses however long it takes; only the app can cancel a run it
+  started.
+- **A key held during rest is caught (owner, 2026-10-21).** If a key comes
+  back up more than `rest_pressed_margin` (72 counts, provisional) below the
+  measured rest while pressing, rest was taken with it held and the attempt
+  fails (`HE_CAL_ERR_REST_PRESSED`, `firmware/main/input/he_cal_capture.c`).
 
 - **Record & NVS storage (`firmware/main/input/he_cal_record.c`, `firmware/main/input/he_cal.c`):**
   Pure-C record `he_cal_record_t` with schema versioning (`HE_CAL_VERSION = 1`),

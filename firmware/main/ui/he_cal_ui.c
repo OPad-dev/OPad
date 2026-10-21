@@ -79,8 +79,8 @@ static void update_boxes_visibility(bool visible, uint8_t count)
     }
 }
 
-// OPEN: docs/history/2026-10-21-he-calibration-report.md §8, Q3. Exact wording, layout and styling
-// of the lock, calibration and error screens are provisional pending owner review.
+// Wording approved by the owner 2026-10-21 (Q3 in
+// docs/history/2026-10-21-he-calibration-report.md); they may still adjust it.
 static void show_lock_screen(int64_t now_us)
 {
     if (!s_overlay) return;
@@ -92,28 +92,28 @@ static void show_lock_screen(int64_t now_us)
         BOOT_APP_WAIT_US);
 
     lv_obj_set_style_bg_color(s_overlay, lv_color_hex(0x5A1010), 0); // Dark Red
-    lv_label_set_text(s_title_label, "KEYS NOT CALIBRATED");
+    lv_label_set_text(s_title_label, "Keys not calibrated");
     update_boxes_visibility(false, 0);
 
     switch (mode) {
     case HE_LOCK_SCREEN_USE_APP:
         lv_label_set_text(s_prompt_label, "Calibrate in the OPad app");
-        lv_label_set_text(s_info_label, "The desktop app is open.");
+        lv_label_set_text(s_info_label, "on your PC");
         atomic_store(&s_btn_active, false);
         lv_obj_add_flag(s_btn_obj, LV_OBJ_FLAG_HIDDEN);
         break;
     case HE_LOCK_SCREEN_WAIT_FOR_APP:
-        lv_label_set_text(s_prompt_label, "Waiting for OPad app...");
-        lv_label_set_text(s_info_label, "Connecting to PC host");
+        lv_label_set_text(s_prompt_label, "Looking for the OPad app...");
+        lv_label_set_text(s_info_label, "");
         atomic_store(&s_btn_active, false);
         lv_obj_add_flag(s_btn_obj, LV_OBJ_FLAG_HIDDEN);
         break;
     case HE_LOCK_SCREEN_NO_APP_BUTTON:
     default:
-        lv_label_set_text(s_prompt_label, "Install the OPad app first:");
+        lv_label_set_text(s_prompt_label, "For the best setup, get the app:");
         lv_label_set_text(s_info_label, OPAD_DOWNLOAD_URL);
         atomic_store(&s_btn_active, true);
-        lv_label_set_text(s_btn_label, "Calibrate");
+        lv_label_set_text(s_btn_label, "Calibrate here");
         lv_obj_remove_flag(s_btn_obj, LV_OBJ_FLAG_HIDDEN);
         break;
     }
@@ -168,11 +168,11 @@ static void update_calibration_screen(void)
 
     if (s_disconnect_failed) {
         lv_obj_set_style_bg_color(s_overlay, lv_color_hex(0x5A1010), 0); // Red
-        lv_label_set_text(s_title_label, "CALIBRATION FAILED");
-        lv_label_set_text(s_prompt_label, "App disconnected");
-        lv_label_set_text(s_info_label, "Please retry");
+        lv_label_set_text(s_title_label, "Calibration failed");
+        lv_label_set_text(s_prompt_label, "The OPad app disconnected");
+        lv_label_set_text(s_info_label, "");
         update_boxes_visibility(false, 0);
-        lv_label_set_text(s_btn_label, "Retry");
+        lv_label_set_text(s_btn_label, "Try again");
         bool button = he_backend_is_locked() && !atomic_load(&s_app_capable);
         if (button) lv_obj_remove_flag(s_btn_obj, LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(s_btn_obj, LV_OBJ_FLAG_HIDDEN);
@@ -187,27 +187,27 @@ static void update_calibration_screen(void)
 
     switch (prog.stage) {
     case HE_RUNNER_REST:
-        lv_label_set_text(s_title_label, "CALIBRATING: REST");
-        lv_label_set_text(s_prompt_label, "Release keys...");
-        lv_label_set_text(s_info_label, "Measuring sensor noise floor");
+        lv_label_set_text(s_title_label, "Calibrating");
+        lv_label_set_text(s_prompt_label, "Take your fingers off both keys");
+        lv_label_set_text(s_info_label, "");
         update_boxes_visibility(false, 0);
         lv_obj_add_flag(s_btn_obj, LV_OBJ_FLAG_HIDDEN);
         atomic_store(&s_btn_active, false);
         break;
 
     case HE_RUNNER_KEY1:
-        lv_label_set_text(s_title_label, "KEY 1 CALIBRATION");
-        lv_label_set_text(s_prompt_label, "Press Key 1 fully 5 times");
-        lv_label_set_text(s_info_label, "Release fully between presses");
+        lv_label_set_text(s_title_label, "Key 1");
+        lv_label_set_text(s_prompt_label, "Press key 1 all the way, 5 times");
+        lv_label_set_text(s_info_label, "Let it come fully up each time");
         update_boxes_visibility(true, prog.presses_done);
         lv_obj_add_flag(s_btn_obj, LV_OBJ_FLAG_HIDDEN);
         atomic_store(&s_btn_active, false);
         break;
 
     case HE_RUNNER_KEY2:
-        lv_label_set_text(s_title_label, "KEY 2 CALIBRATION");
-        lv_label_set_text(s_prompt_label, "Press Key 2 fully 5 times");
-        lv_label_set_text(s_info_label, "Release fully between presses");
+        lv_label_set_text(s_title_label, "Key 2");
+        lv_label_set_text(s_prompt_label, "Press key 2 all the way, 5 times");
+        lv_label_set_text(s_info_label, "Let it come fully up each time");
         update_boxes_visibility(true, prog.presses_done);
         lv_obj_add_flag(s_btn_obj, LV_OBJ_FLAG_HIDDEN);
         atomic_store(&s_btn_active, false);
@@ -215,9 +215,9 @@ static void update_calibration_screen(void)
 
     case HE_RUNNER_SUCCESS:
         lv_obj_set_style_bg_color(s_overlay, lv_color_hex(0x1B381E), 0); // Green Tint
-        lv_label_set_text(s_title_label, "SUCCESS");
-        lv_label_set_text(s_prompt_label, "Calibrated!");
-        lv_label_set_text(s_info_label, "Saved. Pad is ready.");
+        lv_label_set_text(s_title_label, "Done!");
+        lv_label_set_text(s_prompt_label, "Your keys are ready");
+        lv_label_set_text(s_info_label, "");
         update_boxes_visibility(false, 0);
         lv_obj_add_flag(s_btn_obj, LV_OBJ_FLAG_HIDDEN);
         atomic_store(&s_btn_active, false);
@@ -226,17 +226,17 @@ static void update_calibration_screen(void)
     case HE_RUNNER_FAILED: {
         bool app = atomic_load(&s_app_capable) || !he_backend_is_locked();
         lv_obj_set_style_bg_color(s_overlay, lv_color_hex(0x5A1010), 0); // Red
-        lv_label_set_text(s_title_label, "CALIBRATION FAILED");
+        lv_label_set_text(s_title_label, "Calibration failed");
         lv_label_set_text(s_prompt_label, s_system_error ? s_system_error :
                           (prog.error_desc ? prog.error_desc : "Failed"));
         update_boxes_visibility(false, 0);
         if (app) {
-            lv_label_set_text(s_info_label, "Retry in the OPad app");
+            lv_label_set_text(s_info_label, "Try again in the OPad app");
             lv_obj_add_flag(s_btn_obj, LV_OBJ_FLAG_HIDDEN);
             atomic_store(&s_btn_active, false);
         } else {
-            lv_label_set_text(s_info_label, "Please retry");
-            lv_label_set_text(s_btn_label, "Retry");
+            lv_label_set_text(s_info_label, "");
+            lv_label_set_text(s_btn_label, "Try again");
             lv_obj_remove_flag(s_btn_obj, LV_OBJ_FLAG_HIDDEN);
             atomic_store(&s_btn_active, true);
         }
@@ -406,8 +406,8 @@ static void he_cal_ui_timer_cb(lv_timer_t *timer)
         return;
     }
 
-    // OPEN: docs/history/2026-10-21-he-calibration-report.md §8, Q1/Q2. On-pad cancel gesture and
-    // walk-away timeout during KEY1/KEY2 stages are left open pending owner decision.
+    // No on-pad cancel and no walk-away timeout (owner, 2026-10-21; Q1/Q2 in
+    // docs/history/2026-10-21-he-calibration-report.md): a step waits for its presses.
     const he_cal_samples_t *samples = he_backend_take_cal_samples();
     if (samples) {
         if (samples->lost) s_system_error = "Calibration samples lost";

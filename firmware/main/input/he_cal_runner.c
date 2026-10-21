@@ -46,29 +46,29 @@ void he_cal_runner_cancel(he_cal_runner_t *r)
     r->error_key = 255;
 }
 
-// OPEN: exact friendly error wording; docs/history/2026-10-21-he-calibration-report.md
-// §8 "Questions for the owner", Q3.
+// Shown on the pad (owner-approved wording, 2026-10-21; Q3 in
+// docs/history/2026-10-21-he-calibration-report.md). One 16 px line each.
 const char *he_cal_runner_error_string(he_cal_error_t err)
 {
     switch (err) {
     case HE_CAL_ERR_NONE:
         return "None";
     case HE_CAL_ERR_REST_NOT_STILL:
-        return "Noisy rest";
+        return "Keep both keys still while resting";
     case HE_CAL_ERR_REST_OUT_OF_RANGE:
-        return "Rest out of range";
+        return "Sensor reading looks wrong";
     case HE_CAL_ERR_REST_PRESSED:
-        return "Key held during rest";
+        return "A key was pressed while resting";
     case HE_CAL_ERR_SIGNAL_NOT_RISING:
-        return "Signal not rising";
+        return "The key didn't register";
     case HE_CAL_ERR_SPAN_TOO_SMALL:
-        return "Not pressed enough";
+        return "Press each key all the way down";
     case HE_CAL_ERR_PEAKS_INCONSISTENT:
-        return "Presses uneven";
+        return "Press the same way every time";
     case HE_CAL_ERR_TOO_FEW_PEAKS:
-        return "Too few presses";
+        return "Press exactly 5 times";
     case HE_CAL_ERR_TOO_MANY_PEAKS:
-        return "Too many presses";
+        return "Press exactly 5 times";
     default:
         return "Calibration failed";
     }

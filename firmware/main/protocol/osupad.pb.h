@@ -88,7 +88,8 @@ typedef enum _osupad_HeCalError {
     osupad_HeCalError_HE_CAL_ERROR_PEAKS_INCONSISTENT = 6,
     osupad_HeCalError_HE_CAL_ERROR_TOO_FEW_PEAKS = 7,
     osupad_HeCalError_HE_CAL_ERROR_TOO_MANY_PEAKS = 8,
-    /* Reserved: no firmware sends it yet (the walk-away timeout is undecided). */
+    /* Never sent: calibration has no timeout (owner decision). Kept so the
+ value is not reused. */
     osupad_HeCalError_HE_CAL_ERROR_TIMEOUT = 9
 } osupad_HeCalError;
 

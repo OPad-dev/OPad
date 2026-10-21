@@ -117,7 +117,7 @@ static void test_rest_noisy_fails(void)
     he_runner_progress_t prog;
     he_cal_runner_get_progress(&runner, &prog);
     assert(prog.stage == HE_RUNNER_FAILED);
-    assert(strcmp(prog.error_desc, "Noisy rest") == 0);
+    assert(strcmp(prog.error_desc, "Keep both keys still while resting") == 0);
 
     printf("✓ test_rest_noisy_fails passed\n");
 }
@@ -146,7 +146,7 @@ static void test_span_too_small_fails(void)
     he_runner_progress_t prog;
     he_cal_runner_get_progress(&runner, &prog);
     assert(prog.stage == HE_RUNNER_FAILED);
-    assert(strcmp(prog.error_desc, "Not pressed enough") == 0);
+    assert(strcmp(prog.error_desc, "Press each key all the way down") == 0);
 
     printf("✓ test_span_too_small_fails passed\n");
 }
