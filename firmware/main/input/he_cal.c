@@ -69,28 +69,31 @@ esp_err_t he_cal_init(void)
     nvs_close(handle);
 
     int active = he_cal_record_select_active(&slot_a, a_valid, &slot_b, b_valid);
+    const he_cal_record_t *chosen = active == 0 ? &slot_a : active == 1 ? &slot_b : NULL;
+    he_calibration_t loaded[2];
     portENTER_CRITICAL(&s_cal_lock);
-    if (active == 0) {
-        he_cal_record_unpack(&slot_a, s_active_cal);
-        s_active_slot = 0;
-        s_active_seq = slot_a.seq;
-        ESP_LOGI(TAG, "Loaded calibration from slot A (seq=%lu): K1=[%ld..%ld, v=%d], K2=[%ld..%ld, v=%d]",
-                 (unsigned long)slot_a.seq, (long)s_active_cal[0].rest, (long)s_active_cal[0].full,
-                 s_active_cal[0].valid, (long)s_active_cal[1].rest, (long)s_active_cal[1].full,
-                 s_active_cal[1].valid);
-    } else if (active == 1) {
-        he_cal_record_unpack(&slot_b, s_active_cal);
-        s_active_slot = 1;
-        s_active_seq = slot_b.seq;
-        ESP_LOGI(TAG, "Loaded calibration from slot B (seq=%lu): K1=[%ld..%ld, v=%d], K2=[%ld..%ld, v=%d]",
-                 (unsigned long)slot_b.seq, (long)s_active_cal[0].rest, (long)s_active_cal[0].full,
-                 s_active_cal[0].valid, (long)s_active_cal[1].rest, (long)s_active_cal[1].full,
-                 s_active_cal[1].valid);
+    if (chosen) {
+        he_cal_record_unpack(chosen, s_active_cal);
+        s_active_slot = active;
+        s_active_seq = chosen->seq;
     } else {
         set_factory_defaults_locked();
+    }
+    loaded[0] = s_active_cal[0];
+    loaded[1] = s_active_cal[1];
+    portEXIT_CRITICAL(&s_cal_lock);
+
+    // Logging takes locks, so never inside the critical section (a first
+    // printf there aborts: newlib initialises its lock lazily)
+    if (chosen) {
+        ESP_LOGI(TAG, "Loaded calibration from slot %c (seq=%lu): K1=[%ld..%ld, v=%d], K2=[%ld..%ld, v=%d]",
+                 active == 0 ? 'A' : 'B', (unsigned long)chosen->seq, (long)loaded[0].rest,
+                 (long)loaded[0].full, loaded[0].valid, (long)loaded[1].rest, (long)loaded[1].full,
+                 loaded[1].valid);
+    } else {
         ESP_LOGI(TAG, "No valid calibration record in NVS, using factory defaults");
     }
-    portEXIT_CRITICAL(&s_cal_lock);
+    (void)loaded;  // host tests build ESP_LOGI as nothing
 
     return ESP_OK;
 }
