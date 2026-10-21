@@ -50,6 +50,15 @@ static bool s_host_framing_known = false;
 static frame_format_t s_host_framing = FRAME_FORMAT_MARKED;
 static uint32_t s_out_sequence = 1;
 
+// Live key view (he_live_view): streamed until this time, 0 = off. Written and
+// read only by the CDC protocol task.
+#define HE_LIVE_KEEPALIVE_US 2000000
+#define HE_LIVE_PERIOD_US    20000
+static int64_t s_live_until_us;
+#ifdef CONFIG_OSUPAD_HE_BACKEND
+static int64_t s_live_sent_us;
+#endif
+
 // UI producers publish the latest progress; only the CDC task frames/writes it.
 // This keeps framing state, output sequence and whole-frame TX single-owner.
 static portMUX_TYPE s_progress_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -226,6 +235,7 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
 #ifdef CONFIG_OSUPAD_HE_BACKEND
     msg.payload.hello_ack.he_input = true;
     msg.payload.hello_ack.he_calibration = he_backend_running();
+    msg.payload.hello_ack.he_live = he_backend_running();
 #else
     msg.payload.hello_ack.he_input = false;
     msg.payload.hello_ack.he_calibration = false;
@@ -850,6 +860,13 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         }
         break;
 
+    case osupad_HostToDevice_he_live_view_tag:
+        // Same task as protocol_poll_he_live, so no lock
+        s_live_until_us = msg->payload.he_live_view && he_backend_running()
+                              ? esp_timer_get_time() + HE_LIVE_KEEPALIVE_US
+                              : 0;
+        break;
+
     default:
         diag_record(DIAG_EVENT_UNKNOWN_HOST_MSG, 0 /* DEBUG */, msg->which_payload, 0);
         ESP_LOGD(TAG, "Unhandled host message payload tag: %d", msg->which_payload);
@@ -910,6 +927,7 @@ void protocol_reset_rx(void)
     // Called when the host closes the port: the next one may frame differently
     s_host_framing_known = false;
     he_cal_ui_on_host_disconnect();
+    s_live_until_us = 0;
     portENTER_CRITICAL(&s_progress_lock);
     s_progress_pending = false;
     portEXIT_CRITICAL(&s_progress_lock);
@@ -963,4 +981,38 @@ void protocol_poll_he_calibration(void)
         }
         portEXIT_CRITICAL(&s_progress_lock);
     }
+}
+
+bool protocol_he_live_active(void)
+{
+    return s_live_until_us != 0;
+}
+
+void protocol_poll_he_live(void)
+{
+#ifdef CONFIG_OSUPAD_HE_BACKEND
+    if (s_live_until_us == 0) {
+        return;
+    }
+    int64_t now = esp_timer_get_time();
+    if (now >= s_live_until_us) {
+        s_live_until_us = 0;  // the host stopped asking
+        return;
+    }
+    // Never during a map or its cooldown; resumes after if the host still asks
+    if (runtime_get_state() != OSUPAD_STATE_IDLE || now - s_live_sent_us < HE_LIVE_PERIOD_US) {
+        return;
+    }
+    s_live_sent_us = now;
+    he_backend_stats_t st;
+    he_backend_get_stats(&st);
+    osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+    msg.sequence_number = s_out_sequence++;
+    msg.which_payload = osupad_DeviceToHost_he_live_sample_tag;
+    msg.payload.he_live_sample.key1_raw = st.raw[0] > 0 ? (uint32_t)st.raw[0] : 0;
+    msg.payload.he_live_sample.key2_raw = st.raw[1] > 0 ? (uint32_t)st.raw[1] : 0;
+    msg.payload.he_live_sample.key1_down = key_event_is_down(KEY_ID_1);
+    msg.payload.he_live_sample.key2_down = key_event_is_down(KEY_ID_2);
+    (void)send_envelope(&msg);  // a lost sample is replaced by the next one
+#endif
 }

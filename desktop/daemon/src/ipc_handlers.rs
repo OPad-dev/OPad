@@ -1406,6 +1406,20 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             IpcResponse::HeCalibrationProgress(prog)
         }
 
+        IpcRequest::GetHeLive => {
+            // A pad this install leaves alone (§W3-3) is sent nothing
+            if refuse_if_pad_guarded(state).is_some() || !device.supports_he_live() {
+                return IpcResponse::HeLive {
+                    supported: false,
+                    sample: None,
+                };
+            }
+            IpcResponse::HeLive {
+                supported: true,
+                sample: device.he_live_poll(),
+            }
+        }
+
         IpcRequest::TriggerEasterEgg => {
             let _ = device
                 .send_data_update(&[(67, opad_model::ui_source::SourceValue::Number(67.0))])

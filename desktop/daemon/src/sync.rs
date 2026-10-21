@@ -71,6 +71,14 @@ pub trait DeviceLink: Send + Sync {
     fn supports_he_calibration(&self) -> bool {
         false
     }
+    /// The connected pad streams the live key view
+    fn supports_he_live(&self) -> bool {
+        false
+    }
+    /// Keep the live key view going and return the newest current sample
+    fn he_live_poll(&self) -> Option<opad_model::HeLiveSample> {
+        None
+    }
     fn subscribe(&self) -> broadcast::Receiver<DeviceEvent>;
     async fn pause_and_release(&self, timeout: Duration) -> bool;
     fn resume(&self);
@@ -176,6 +184,14 @@ impl DeviceLink for DeviceManager {
 
     async fn cancel_he_calibration(&self) -> Result<(), DeviceError> {
         self.cancel_he_calibration().await
+    }
+
+    fn supports_he_live(&self) -> bool {
+        DeviceManager::supports_he_live(self)
+    }
+
+    fn he_live_poll(&self) -> Option<opad_model::HeLiveSample> {
+        DeviceManager::he_live_poll(self)
     }
 
     fn supports_he_calibration(&self) -> bool {

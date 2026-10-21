@@ -70,6 +70,9 @@ message HelloAck {
     // The pad has an active Hall Effect input backend and supports interactive
     // Hall Effect calibration. False on MX pads or firmware without HE calibration.
     bool he_calibration = 16;
+    // The pad streams HeLiveSample while the host keeps asking (he_live_view).
+    // False on MX pads and firmware predating it: the host then shows no live view.
+    bool he_live = 17;
 }
 
 // Record a new owner in NVS (§W3-2). An NVS write, so the firmware must honour
@@ -459,6 +462,16 @@ message HeCalibrationProgress {
     uint32 key2_full = 10;        // Populated on HE_CAL_STAGE_SUCCESS
 }
 
+// One live reading per key, for the app's key view (he_live_view). Raw ADC
+// counts as the engine sees them; the host turns them into travel with
+// DeviceStatus.he_calibration. Never sent during a map or its cooldown.
+message HeLiveSample {
+    uint32 key1_raw = 1;          // 0 = no reading yet
+    uint32 key2_raw = 2;
+    bool key1_down = 3;           // what the pad reports to the PC
+    bool key2_down = 4;
+}
+
 // -----------------------------------------------------------------------------
 // Top-Level Envelopes
 // -----------------------------------------------------------------------------
@@ -489,6 +502,10 @@ message HostToDevice {
         // Interactive Hall Effect calibration commands
         bool start_he_calibration = 19;
         bool cancel_he_calibration = 20;
+        // true: stream HeLiveSample about 50 times a second for the next 2 s;
+        // send it again to keep the stream going. false: stop now. Ignored on
+        // MX pads, and nothing is streamed during a map or its cooldown.
+        bool he_live_view = 21;
     }
 }
 
@@ -505,5 +522,6 @@ message DeviceToHost {
         KeyPressBatch key_presses = 9;
         BoardTestResult board_test = 10;
         HeCalibrationProgress he_calibration_progress = 11;
+        HeLiveSample he_live_sample = 12;
     }
 }

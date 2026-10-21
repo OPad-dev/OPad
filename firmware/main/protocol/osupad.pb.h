@@ -226,6 +226,9 @@ typedef struct _osupad_HelloAck {
     /* The pad has an active Hall Effect input backend and supports interactive
  Hall Effect calibration. False on MX pads or firmware without HE calibration. */
     bool he_calibration;
+    /* The pad streams HeLiveSample while the host keeps asking (he_live_view).
+ False on MX pads and firmware predating it: the host then shows no live view. */
+    bool he_live;
 } osupad_HelloAck;
 
 typedef struct _osupad_SetConfig {
@@ -435,6 +438,16 @@ typedef struct _osupad_HeCalibrationProgress {
     uint32_t key2_full; /* Populated on HE_CAL_STAGE_SUCCESS */
 } osupad_HeCalibrationProgress;
 
+/* One live reading per key, for the app's key view (he_live_view). Raw ADC
+ counts as the engine sees them; the host turns them into travel with
+ DeviceStatus.he_calibration. Never sent during a map or its cooldown. */
+typedef struct _osupad_HeLiveSample {
+    uint32_t key1_raw; /* 0 = no reading yet */
+    uint32_t key2_raw;
+    bool key1_down; /* what the pad reports to the PC */
+    bool key2_down;
+} osupad_HeLiveSample;
+
 typedef struct _osupad_HostToDevice {
     uint32_t sequence_number;
     pb_size_t which_payload;
@@ -462,6 +475,10 @@ typedef struct _osupad_HostToDevice {
         /* Interactive Hall Effect calibration commands */
         bool start_he_calibration;
         bool cancel_he_calibration;
+        /* true: stream HeLiveSample about 50 times a second for the next 2 s;
+     send it again to keep the stream going. false: stop now. Ignored on
+     MX pads, and nothing is streamed during a map or its cooldown. */
+        bool he_live_view;
     } payload;
 } osupad_HostToDevice;
 
@@ -479,6 +496,7 @@ typedef struct _osupad_DeviceToHost {
         osupad_KeyPressBatch key_presses;
         osupad_BoardTestResult board_test;
         osupad_HeCalibrationProgress he_calibration_progress;
+        osupad_HeLiveSample he_live_sample;
     } payload;
 } osupad_DeviceToHost;
 
@@ -563,9 +581,10 @@ extern "C" {
 
 
 
+
 /* Initializer values for message structs */
 #define osupad_Hello_init_default                {0, "", 0}
-#define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_default, 0, 0, 0, 0, 0, 0}
+#define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_default, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_ClaimOwnership_init_default       {{0, {0}}}
 #define osupad_DeviceStatus_init_default         {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, osupad_HeCalibrationStatus_init_default}
 #define osupad_HeCalibrationStatus_init_default  {0, 0, 0, 0, 0, 0, 0, 0}
@@ -593,10 +612,11 @@ extern "C" {
 #define osupad_DetectPinResponse_init_default    {0, 0, 0}
 #define osupad_BoardTestResult_init_default      {0, "", _osupad_InputModule_MIN, _osupad_InputModule_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_HeCalibrationProgress_init_default {_osupad_HeCalStage_MIN, 0, 0, _osupad_HeCalError_MIN, "", 0, 0, 0, 0, 0}
+#define osupad_HeLiveSample_init_default         {0, 0, 0, 0}
 #define osupad_HostToDevice_init_default         {0, 0, {osupad_Hello_init_default}}
 #define osupad_DeviceToHost_init_default         {0, 0, {osupad_HelloAck_init_default}}
 #define osupad_Hello_init_zero                   {0, "", 0}
-#define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_zero, 0, 0, 0, 0, 0, 0}
+#define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_zero, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_ClaimOwnership_init_zero          {{0, {0}}}
 #define osupad_DeviceStatus_init_zero            {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, osupad_HeCalibrationStatus_init_zero}
 #define osupad_HeCalibrationStatus_init_zero     {0, 0, 0, 0, 0, 0, 0, 0}
@@ -624,6 +644,7 @@ extern "C" {
 #define osupad_DetectPinResponse_init_zero       {0, 0, 0}
 #define osupad_BoardTestResult_init_zero         {0, "", _osupad_InputModule_MIN, _osupad_InputModule_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_HeCalibrationProgress_init_zero   {_osupad_HeCalStage_MIN, 0, 0, _osupad_HeCalError_MIN, "", 0, 0, 0, 0, 0}
+#define osupad_HeLiveSample_init_zero            {0, 0, 0, 0}
 #define osupad_HostToDevice_init_zero            {0, 0, {osupad_Hello_init_zero}}
 #define osupad_DeviceToHost_init_zero            {0, 0, {osupad_HelloAck_init_zero}}
 
@@ -704,6 +725,7 @@ extern "C" {
 #define osupad_HelloAck_restart_tag              14
 #define osupad_HelloAck_he_input_tag             15
 #define osupad_HelloAck_he_calibration_tag       16
+#define osupad_HelloAck_he_live_tag              17
 #define osupad_SetConfig_config_tag              1
 #define osupad_ConfigAck_success_tag             1
 #define osupad_ConfigAck_message_tag             2
@@ -808,6 +830,10 @@ extern "C" {
 #define osupad_HeCalibrationProgress_key1_full_tag 8
 #define osupad_HeCalibrationProgress_key2_rest_tag 9
 #define osupad_HeCalibrationProgress_key2_full_tag 10
+#define osupad_HeLiveSample_key1_raw_tag         1
+#define osupad_HeLiveSample_key2_raw_tag         2
+#define osupad_HeLiveSample_key1_down_tag        3
+#define osupad_HeLiveSample_key2_down_tag        4
 #define osupad_HostToDevice_sequence_number_tag  1
 #define osupad_HostToDevice_hello_tag            2
 #define osupad_HostToDevice_set_config_tag       3
@@ -828,6 +854,7 @@ extern "C" {
 #define osupad_HostToDevice_restart_tag          18
 #define osupad_HostToDevice_start_he_calibration_tag 19
 #define osupad_HostToDevice_cancel_he_calibration_tag 20
+#define osupad_HostToDevice_he_live_view_tag     21
 #define osupad_DeviceToHost_sequence_number_tag  1
 #define osupad_DeviceToHost_hello_ack_tag        2
 #define osupad_DeviceToHost_status_tag           3
@@ -839,6 +866,7 @@ extern "C" {
 #define osupad_DeviceToHost_key_presses_tag      9
 #define osupad_DeviceToHost_board_test_tag       10
 #define osupad_DeviceToHost_he_calibration_progress_tag 11
+#define osupad_DeviceToHost_he_live_sample_tag   12
 
 /* Struct field encoding specification for nanopb */
 #define osupad_Hello_FIELDLIST(X, a) \
@@ -864,7 +892,8 @@ X(a, STATIC,   SINGULAR, BOOL,     board_test,       12) \
 X(a, STATIC,   SINGULAR, UINT32,   builtin_animations,  13) \
 X(a, STATIC,   SINGULAR, BOOL,     restart,          14) \
 X(a, STATIC,   SINGULAR, BOOL,     he_input,         15) \
-X(a, STATIC,   SINGULAR, BOOL,     he_calibration,   16)
+X(a, STATIC,   SINGULAR, BOOL,     he_calibration,   16) \
+X(a, STATIC,   SINGULAR, BOOL,     he_live,          17)
 #define osupad_HelloAck_CALLBACK NULL
 #define osupad_HelloAck_DEFAULT NULL
 #define osupad_HelloAck_current_config_MSGTYPE osupad_ConfigPayload
@@ -1149,6 +1178,14 @@ X(a, STATIC,   SINGULAR, UINT32,   key2_full,        10)
 #define osupad_HeCalibrationProgress_CALLBACK NULL
 #define osupad_HeCalibrationProgress_DEFAULT NULL
 
+#define osupad_HeLiveSample_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   key1_raw,          1) \
+X(a, STATIC,   SINGULAR, UINT32,   key2_raw,          2) \
+X(a, STATIC,   SINGULAR, BOOL,     key1_down,         3) \
+X(a, STATIC,   SINGULAR, BOOL,     key2_down,         4)
+#define osupad_HeLiveSample_CALLBACK NULL
+#define osupad_HeLiveSample_DEFAULT NULL
+
 #define osupad_HostToDevice_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   sequence_number,   1) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,hello,payload.hello),   2) \
@@ -1169,7 +1206,8 @@ X(a, STATIC,   ONEOF,    BOOL,     (payload,run_board_test,payload.run_board_tes
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,play_animation,payload.play_animation),  17) \
 X(a, STATIC,   ONEOF,    BOOL,     (payload,restart,payload.restart),  18) \
 X(a, STATIC,   ONEOF,    BOOL,     (payload,start_he_calibration,payload.start_he_calibration),  19) \
-X(a, STATIC,   ONEOF,    BOOL,     (payload,cancel_he_calibration,payload.cancel_he_calibration),  20)
+X(a, STATIC,   ONEOF,    BOOL,     (payload,cancel_he_calibration,payload.cancel_he_calibration),  20) \
+X(a, STATIC,   ONEOF,    BOOL,     (payload,he_live_view,payload.he_live_view),  21)
 #define osupad_HostToDevice_CALLBACK NULL
 #define osupad_HostToDevice_DEFAULT NULL
 #define osupad_HostToDevice_payload_hello_MSGTYPE osupad_Hello
@@ -1195,7 +1233,8 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,layout_ack,payload.layout_ack),   7)
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,detect_pin_resp,payload.detect_pin_resp),   8) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,key_presses,payload.key_presses),   9) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,board_test,payload.board_test),  10) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,he_calibration_progress,payload.he_calibration_progress),  11)
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,he_calibration_progress,payload.he_calibration_progress),  11) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,he_live_sample,payload.he_live_sample),  12)
 #define osupad_DeviceToHost_CALLBACK NULL
 #define osupad_DeviceToHost_DEFAULT NULL
 #define osupad_DeviceToHost_payload_hello_ack_MSGTYPE osupad_HelloAck
@@ -1208,6 +1247,7 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,he_calibration_progress,payload.he_c
 #define osupad_DeviceToHost_payload_key_presses_MSGTYPE osupad_KeyPressBatch
 #define osupad_DeviceToHost_payload_board_test_MSGTYPE osupad_BoardTestResult
 #define osupad_DeviceToHost_payload_he_calibration_progress_MSGTYPE osupad_HeCalibrationProgress
+#define osupad_DeviceToHost_payload_he_live_sample_MSGTYPE osupad_HeLiveSample
 
 extern const pb_msgdesc_t osupad_Hello_msg;
 extern const pb_msgdesc_t osupad_HelloAck_msg;
@@ -1238,6 +1278,7 @@ extern const pb_msgdesc_t osupad_DetectPinRequest_msg;
 extern const pb_msgdesc_t osupad_DetectPinResponse_msg;
 extern const pb_msgdesc_t osupad_BoardTestResult_msg;
 extern const pb_msgdesc_t osupad_HeCalibrationProgress_msg;
+extern const pb_msgdesc_t osupad_HeLiveSample_msg;
 extern const pb_msgdesc_t osupad_HostToDevice_msg;
 extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 
@@ -1271,6 +1312,7 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_DetectPinResponse_fields &osupad_DetectPinResponse_msg
 #define osupad_BoardTestResult_fields &osupad_BoardTestResult_msg
 #define osupad_HeCalibrationProgress_fields &osupad_HeCalibrationProgress_msg
+#define osupad_HeLiveSample_fields &osupad_HeLiveSample_msg
 #define osupad_HostToDevice_fields &osupad_HostToDevice_msg
 #define osupad_DeviceToHost_fields &osupad_DeviceToHost_msg
 
@@ -1293,7 +1335,8 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_HeCalibrationProgress_size        95
 #define osupad_HeCalibrationStatus_size          32
 #define osupad_HeKeySettings_size                38
-#define osupad_HelloAck_size                     388
+#define osupad_HeLiveSample_size                 16
+#define osupad_HelloAck_size                     391
 #define osupad_Hello_size                        41
 #define osupad_HostStatus_size                   12
 #define osupad_HostToDevice_size                 4309

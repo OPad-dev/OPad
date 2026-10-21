@@ -323,6 +323,23 @@ pub struct DeviceManager {
     restart: Arc<AtomicBool>,
     /// The connected pad supports Hall Effect calibration (HelloAck.he_calibration)
     he_calibration: Arc<AtomicBool>,
+    /// Live key view: whether the pad streams it, the newest sample, and when
+    /// the stream was last asked to keep going
+    he_live: Arc<HeLiveState>,
+}
+
+/// How long a live sample counts as current. The pad sends one every 20 ms,
+/// so an older one means it stopped (a map started, or it went away).
+const HE_LIVE_FRESH: Duration = Duration::from_millis(300);
+/// The pad keeps streaming for 2 s after each request
+/// (HostToDevice.he_live_view); asking every second keeps it going.
+const HE_LIVE_KEEPALIVE: Duration = Duration::from_secs(1);
+
+#[derive(Default)]
+struct HeLiveState {
+    supported: AtomicBool,
+    latest: Mutex<Option<(opad_model::HeLiveSample, Instant)>>,
+    requested_at: Mutex<Option<Instant>>,
 }
 
 impl DeviceManager {
@@ -340,6 +357,7 @@ impl DeviceManager {
         let builtin_animations = Arc::new(AtomicU32::new(0));
         let restart = Arc::new(AtomicBool::new(false));
         let he_calibration = Arc::new(AtomicBool::new(false));
+        let he_live = Arc::new(HeLiveState::default());
         tokio::spawn(async move { while cmd_rx.recv().await.is_some() {} });
         (
             Self {
@@ -356,6 +374,7 @@ impl DeviceManager {
                 builtin_animations,
                 restart,
                 he_calibration,
+                he_live,
             },
             event_rx,
         )
@@ -387,6 +406,8 @@ impl DeviceManager {
         let restart_clone = restart.clone();
         let he_calibration = Arc::new(AtomicBool::new(false));
         let he_calibration_clone = he_calibration.clone();
+        let he_live = Arc::new(HeLiveState::default());
+        let he_live_clone = he_live.clone();
 
         // Spawn background worker managing the serial port lifecycle
         tokio::task::spawn_blocking(move || {
@@ -566,6 +587,9 @@ impl DeviceManager {
                                             restart_clone.store(ack.restart, Ordering::SeqCst);
                                             he_calibration_clone
                                                 .store(ack.he_calibration, Ordering::SeqCst);
+                                            he_live_clone
+                                                .supported
+                                                .store(ack.he_live, Ordering::SeqCst);
                                             if handshake.answered_in(msg_framing) {
                                                 debug!(
                                                     "{} speaks {:?} framing",
@@ -584,6 +608,16 @@ impl DeviceManager {
                                             .accepts_frames(is_conn_clone.load(Ordering::SeqCst))
                                         {
                                             // Nothing is trusted before the handshake
+                                            continue;
+                                        }
+                                        // ~50 a second while the live view is open:
+                                        // kept here for polling, not broadcast
+                                        if let Some(proto::device_to_host::Payload::HeLiveSample(
+                                            live,
+                                        )) = &msg.payload
+                                        {
+                                            *he_live_clone.latest.lock().unwrap() =
+                                                Some((he_live_sample_from(live), Instant::now()));
                                             continue;
                                         }
                                         handle_device_message(&msg, &event_tx_clone);
@@ -625,6 +659,9 @@ impl DeviceManager {
                 builtin_animations_clone.store(0, Ordering::SeqCst);
                 restart_clone.store(false, Ordering::SeqCst);
                 he_calibration_clone.store(false, Ordering::SeqCst);
+                he_live_clone.supported.store(false, Ordering::SeqCst);
+                *he_live_clone.latest.lock().unwrap() = None;
+                *he_live_clone.requested_at.lock().unwrap() = None;
 
                 // Drain any pending commands on disconnect so they are never replayed to a new connection
                 while cmd_rx.try_recv().is_ok() {}
@@ -652,6 +689,7 @@ impl DeviceManager {
                 builtin_animations,
                 restart,
                 he_calibration,
+                he_live,
             },
             event_rx,
         )
@@ -1002,6 +1040,42 @@ impl DeviceManager {
         self.send_msg(msg)
     }
 
+    /// The connected pad streams the live key view (HelloAck.he_live). False
+    /// for MX pads and firmware predating it.
+    pub fn supports_he_live(&self) -> bool {
+        self.he_live.supported.load(Ordering::SeqCst)
+    }
+
+    /// Keep the pad's live key view going (at most one request a second) and
+    /// return its newest sample, if it is current. `None` while the pad sends
+    /// nothing, e.g. during a map or its cooldown.
+    pub fn he_live_poll(&self) -> Option<opad_model::HeLiveSample> {
+        if !self.supports_he_live() {
+            return None;
+        }
+        let due = {
+            let mut at = self.he_live.requested_at.lock().unwrap();
+            let due = at.is_none_or(|t| t.elapsed() >= HE_LIVE_KEEPALIVE);
+            if due {
+                *at = Some(Instant::now());
+            }
+            due
+        };
+        if due {
+            let msg = HostToDevice {
+                sequence_number: self.next_seq(),
+                payload: Some(host_to_device::Payload::HeLiveView(true)),
+            };
+            // A lost request only delays the stream until the next one
+            let _ = self.send_msg(msg);
+        }
+        let latest = self.he_live.latest.lock().unwrap();
+        latest
+            .as_ref()
+            .filter(|(_, at)| at.elapsed() <= HE_LIVE_FRESH)
+            .map(|(sample, _)| *sample)
+    }
+
     /// Ask the pad to cancel active Hall Effect calibration.
     pub async fn cancel_he_calibration(&self) -> Result<(), DeviceError> {
         let msg = HostToDevice {
@@ -1260,6 +1334,8 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     received: Instant::now(),
                 });
             }
+            // The reader keeps live samples for he_live_poll before this point
+            proto::device_to_host::Payload::HeLiveSample(_) => {}
             proto::device_to_host::Payload::HeCalibrationProgress(prog) => {
                 let _ = tx.send(DeviceEvent::HeCalibrationProgress(prog.clone()));
             }
@@ -2224,5 +2300,14 @@ mod write_tests {
         };
         let err = write_frame(&mut stuck, b"x", Duration::from_millis(30)).unwrap_err();
         assert_eq!(err.kind(), std::io::ErrorKind::TimedOut);
+    }
+}
+
+fn he_live_sample_from(s: &proto::HeLiveSample) -> opad_model::HeLiveSample {
+    opad_model::HeLiveSample {
+        key1_raw: s.key1_raw,
+        key2_raw: s.key2_raw,
+        key1_down: s.key1_down,
+        key2_down: s.key2_down,
     }
 }

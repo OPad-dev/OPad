@@ -110,6 +110,15 @@ esp_err_t protocol_send_he_calibration_progress(const osupad_HeCalibrationProgre
 // CDC task only: frame and transmit queued progress, retrying a full TX FIFO.
 void protocol_poll_he_calibration(void);
 
+/**
+ * Live key view (HostToDevice.he_live_view): sends a HeLiveSample every 20 ms
+ * while the host keeps asking, never during a map or its cooldown. CDC task.
+ */
+void protocol_poll_he_live(void);
+
+/** True while the host has the live key view open: the CDC task polls faster. */
+bool protocol_he_live_active(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -221,6 +221,10 @@ pub enum IpcRequest {
     CancelHeCalibration,
     /// Poll current Hall Effect calibration progress
     GetHeCalibrationProgress,
+    /// The live key view: keeps the pad streaming (it stops 2 s after the
+    /// last request) and answers with `HeLive`. Poll it only while the view
+    /// is on screen.
+    GetHeLive,
 }
 
 /// The daemon's tap rate statistics (answer to `GetTapStats`)
@@ -460,6 +464,13 @@ pub enum IpcResponse {
     HeCalibrationStarted,
     HeCalibrationCancelled,
     HeCalibrationProgress(Option<opad_model::HeCalibrationProgress>),
+    /// Answer to `GetHeLive`. `supported` is false for MX pads, firmware
+    /// predating the live view, or no pad; `sample` is `None` while the pad
+    /// sends nothing (a map or its cooldown, or the stream just starting).
+    HeLive {
+        supported: bool,
+        sample: Option<opad_model::HeLiveSample>,
+    },
     Error(String),
 }
 

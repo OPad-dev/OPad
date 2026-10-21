@@ -93,6 +93,9 @@ PB_BIND(osupad_BoardTestResult, osupad_BoardTestResult, AUTO)
 PB_BIND(osupad_HeCalibrationProgress, osupad_HeCalibrationProgress, AUTO)
 
 
+PB_BIND(osupad_HeLiveSample, osupad_HeLiveSample, AUTO)
+
+
 PB_BIND(osupad_HostToDevice, osupad_HostToDevice, 2)
 
 

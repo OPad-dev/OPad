@@ -440,6 +440,17 @@ impl HeKeyConfig {
     }
 }
 
+/// One live reading per key from the pad's live key view (HeLiveSample).
+/// Raw counts as the pad's engine sees them; 0 = no reading.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct HeLiveSample {
+    pub key1_raw: u32,
+    pub key2_raw: u32,
+    /// What the pad reports to the PC
+    pub key1_down: bool,
+    pub key2_down: bool,
+}
+
 /// Hall Effect per-key calibration status from DeviceStatus
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct HeCalibrationStatus {

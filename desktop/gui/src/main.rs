@@ -4,6 +4,7 @@ mod chrome;
 mod designer;
 mod diagnostics;
 mod ipc;
+mod keys;
 mod pages;
 #[cfg(target_os = "linux")]
 mod platform_linux;
@@ -76,6 +77,8 @@ pub enum Page {
     Diagnostics,
     About,
     Calibration,
+    /// Hall Effect actuation and rapid trigger (pads with an HE backend)
+    Keys,
 }
 
 impl Page {
@@ -85,7 +88,7 @@ impl Page {
     /// `--page` names and their aliases. The first name for each page is the
     /// token a second launch sends to the running instance, so both ends of
     /// the single-instance handoff read this one table.
-    const TOKENS: [(&'static str, Page); 16] = [
+    const TOKENS: [(&'static str, Page); 18] = [
         ("dashboard", Page::Dashboard),
         ("stats", Page::Stats),
         ("ppm", Page::Stats),
@@ -102,6 +105,8 @@ impl Page {
         ("licenses", Page::About),
         ("calibrate", Page::Calibration),
         ("calibration", Page::Calibration),
+        ("keys", Page::Keys),
+        ("rapid-trigger", Page::Keys),
     ];
 
     pub fn from_token(token: &str) -> Option<Page> {
@@ -288,6 +293,7 @@ pub struct App {
     pub stats: stats::StatsState,
     pub he_calibration: Option<opad_model::HeCalibrationStatus>,
     pub cal_progress: Option<opad_model::HeCalibrationProgress>,
+    pub keys: keys::KeysState,
     pub cal_status_msg: Option<String>,
     pub cal_starting: bool,
     cal_epoch: u64,
@@ -362,6 +368,7 @@ pub enum Message {
     CancelCalibration,
     CancelCalibrationDone(u64, Result<IpcResponse, String>),
     PollCalibration,
+    Keys(keys::KeysMessage),
     CalibrationProgress(u64, Result<IpcResponse, String>),
     // Daemon and tosu recovery
     StartDaemon,
@@ -522,6 +529,7 @@ impl App {
             stats: stats::StatsState::default(),
             he_calibration: None,
             cal_progress: None,
+            keys: keys::KeysState::default(),
             cal_status_msg: None,
             cal_starting: false,
             cal_epoch: 0,
@@ -695,6 +703,9 @@ impl App {
         match message {
             Message::Navigate(page) => {
                 self.page = page;
+                if page != Page::Keys {
+                    self.keys.stop_live();
+                }
                 if page == Page::Settings {
                     // The Updates panel lives here; show it fresh
                     self.update_status_polled_at = None;
@@ -779,6 +790,11 @@ impl App {
                         {
                             self.config_loaded = true;
                             self.adopt_config(&config);
+                        }
+                        if device_connected {
+                            self.keys.adopt(&config);
+                        } else {
+                            self.keys.stop_live();
                         }
                         self.config = config;
 
@@ -1147,6 +1163,7 @@ impl App {
                     _ => {}
                 }
             }
+            Message::Keys(msg) => return keys::update(self, msg),
             Message::PollCalibration => {
                 if !self.device_connected {
                     if self.cal_progress.is_some() {
@@ -2003,6 +2020,13 @@ impl App {
                 .map(Message::Diagnostics),
             );
         }
+        if self.window.is_some() && self.page == Page::Keys {
+            // The live switch view: the pad sends ~50 samples/s
+            subscriptions.push(
+                iced::time::every(Duration::from_millis(33))
+                    .map(|_| Message::Keys(keys::KeysMessage::PollLive)),
+            );
+        }
         if self.window.is_some() && self.page == Page::Calibration {
             subscriptions.push(
                 iced::time::every(Duration::from_millis(100)).map(|_| Message::PollCalibration),
@@ -2017,6 +2041,14 @@ impl App {
         } else {
             Page::ALL.to_vec()
         };
+        // Only a pad whose HE backend runs has keys to tune
+        if self.device_connected && self.device_info.as_ref().is_some_and(|i| i.he_calibration) {
+            let at = pages_vec
+                .iter()
+                .position(|(p, _)| *p == Page::Device)
+                .map_or(pages_vec.len(), |i| i + 1);
+            pages_vec.insert(at, (Page::Keys, "Keys"));
+        }
         if self.page == Page::Calibration {
             pages_vec.push((Page::Calibration, "Calibration"));
         }
@@ -2114,6 +2146,7 @@ impl App {
             Page::Diagnostics => self.diagnostics.view(self),
             Page::About => pages::about(self),
             Page::Calibration => pages::calibration(self),
+            Page::Keys => keys::view(self),
         };
 
         let mut main = column![]
@@ -3225,6 +3258,9 @@ mod tests {
         assert_eq!(Page::from_token("calibrate"), Some(Page::Calibration));
         assert_eq!(Page::from_token("calibration"), Some(Page::Calibration));
         assert_eq!(Page::Calibration.token(), "calibrate");
+        assert_eq!(Page::from_token("keys"), Some(Page::Keys));
+        assert_eq!(Page::from_token("rapid-trigger"), Some(Page::Keys));
+        assert_eq!(Page::Keys.token(), "keys");
         assert_eq!(Page::from_token("nowhere"), None);
     }
 
