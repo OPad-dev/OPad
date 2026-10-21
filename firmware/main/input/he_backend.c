@@ -75,12 +75,13 @@ static const char *TAG = "he";
 #define HE_ABSENT_US            100000
 
 /*
- * PROVISIONAL factory thresholds, so an uncalibrated pad types for testing:
+ * PROVISIONAL settings used to build thresholds after calibration:
  * plain mode, press at half the span, release 10 % above it. Rest and span
  * are the V1.1 bench means (keys 2084/2088 at rest, +447/+508 normal press,
  * docs/specs/v2-hall-effect-design.md §10b). The noise floors stand in for
  * OPEN A/D and are not validated. None of these is a product default yet
- * (OPEN C); the calibration manager replaces them.
+ * (OPEN C). Calibration supplies rest/full; uncalibrated pads stay locked
+ * with HE_PARAMS_NEVER rather than typing with the factory fallback span.
  */
 static const he_limits_t HE_PROVISIONAL_LIMITS = {.min_movement = 32, .min_top_reset = 32};
 static he_key_settings_t s_key_settings[2] = {
@@ -128,6 +129,10 @@ static bool s_calibrating;
 static he_cal_samples_t s_cal_buffers[2];
 static he_cal_samples_t *s_cal_write = &s_cal_buffers[0];
 static he_cal_samples_t *s_cal_read = &s_cal_buffers[1];
+// Task-side parameter transactions (settings, start/cancel/finish). Never
+// taken by on_frame, he_task or publish; those use only s_lock.
+static StaticSemaphore_t s_params_mutex_buf;
+static SemaphoreHandle_t s_params_mutex;
 
 static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata,
                                void *user_data)
@@ -482,6 +487,7 @@ esp_err_t he_backend_start(void)
     if (s_running) {
         return ESP_ERR_INVALID_STATE;
     }
+    s_params_mutex = xSemaphoreCreateRecursiveMutexStatic(&s_params_mutex_buf);
     he_calibration_t cal[2];
     he_cal_get_all(cal);
     bool locked = he_cal_is_locked_decision(true, cal[0].valid, cal[1].valid);
@@ -515,9 +521,11 @@ void he_backend_apply_settings(const he_key_settings_t s[2])
     if (s == NULL) {
         return;
     }
+    if (s_running) xSemaphoreTakeRecursive(s_params_mutex, portMAX_DELAY);
     s_key_settings[0] = s[0];
     s_key_settings[1] = s[1];
     he_backend_reload_params();
+    if (s_running) xSemaphoreGiveRecursive(s_params_mutex);
 }
 
 void he_backend_reload_params(void)
@@ -525,6 +533,7 @@ void he_backend_reload_params(void)
     if (!s_running) {
         return;
     }
+    xSemaphoreTakeRecursive(s_params_mutex, portMAX_DELAY);
     he_calibration_t cal[2];
     he_cal_get_all(cal);
     bool suppress = he_cal_suppress_input(
@@ -538,10 +547,12 @@ void he_backend_reload_params(void)
         }
         he_backend_set_params((uint8_t)k, &p);
     }
+    xSemaphoreGiveRecursive(s_params_mutex);
 }
 
 bool he_backend_is_locked(void)
 {
+    if (!s_running) return false;
     he_calibration_t cal[2];
     he_cal_get_all(cal);
     return he_cal_is_locked_decision(s_running, cal[0].valid, cal[1].valid);
@@ -557,36 +568,40 @@ bool he_backend_is_calibrating(void)
 
 void he_backend_start_calibration(void)
 {
+    if (!s_running) return;
+    xSemaphoreTakeRecursive(s_params_mutex, portMAX_DELAY);
     he_cal_samples_reset(s_cal_write);
     he_cal_samples_reset(s_cal_read);
-    portENTER_CRITICAL(&s_lock);
-    s_calibrating = true;
-    portEXIT_CRITICAL(&s_lock);
-    he_backend_reload_params();
     if (s_running) {
         int64_t now = esp_timer_get_time();
         bool changed = false;
         portENTER_CRITICAL(&s_lock);
         for (int k = 0; k < 2; k++) {
             bool was_down = s_down[k];
+            he_rt_set_params(&s_keys[k], &HE_PARAMS_NEVER, INT32_MAX);
             fault_key_locked(k, now);
             if (was_down && !s_down[k]) {
                 changed = true;
             }
         }
+        s_calibrating = true;
         portEXIT_CRITICAL(&s_lock);
         if (changed && s_task != NULL) {
             xTaskNotifyGive(s_task);
         }
     }
+    xSemaphoreGiveRecursive(s_params_mutex);
 }
 
 void he_backend_cancel_calibration(void)
 {
+    if (!s_running) return;
+    xSemaphoreTakeRecursive(s_params_mutex, portMAX_DELAY);
     portENTER_CRITICAL(&s_lock);
     s_calibrating = false;
     portEXIT_CRITICAL(&s_lock);
     he_backend_reload_params();
+    xSemaphoreGiveRecursive(s_params_mutex);
 }
 
 esp_err_t he_backend_finish_calibration(const he_calibration_t results[2])
@@ -594,11 +609,14 @@ esp_err_t he_backend_finish_calibration(const he_calibration_t results[2])
     if (!results) {
         return ESP_ERR_INVALID_ARG;
     }
-    esp_err_t err = he_cal_set(results);
+    if (!s_running) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTakeRecursive(s_params_mutex, portMAX_DELAY);
+    esp_err_t err = he_cal_save(results);
     portENTER_CRITICAL(&s_lock);
     s_calibrating = false;
     portEXIT_CRITICAL(&s_lock);
     he_backend_reload_params();
+    xSemaphoreGiveRecursive(s_params_mutex);
     return err;
 }
 

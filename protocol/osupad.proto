@@ -439,15 +439,18 @@ enum HeCalError {
     HE_CAL_ERROR_TIMEOUT = 9;
 }
 
-// Sent by the pad on every stage change and press. A start the pad refuses
-// (not IDLE, already calibrating, no HE backend) is answered with
-// stage = FAILED, error = NONE and the reason in error_message.
+// Latest progress, periodically refreshed while calibrating and on transitions;
+// intermediate updates may coalesce before CDC sends them. Refused starts
+// (not IDLE, already calibrating, no HE backend, unavailable UI), save failures
+// and lost frame samples use stage = FAILED, error = NONE, with error_message.
 message HeCalibrationProgress {
     HeCalStage stage = 1;
     uint32 key_index = 2;         // 1 = Key 1, 2 = Key 2 (0 during rest/idle/complete)
     uint32 presses_done = 3;      // 0..5
     HeCalError error = 4;
     string error_message = 5;
+    // Latest consumed frame reading for key_index (key 1 when key_index = 0).
+    // 0 means no reading yet; valid frame readings exclude ADC rails.
     uint32 raw_value = 6;
     uint32 key1_rest = 7;         // Populated on HE_CAL_STAGE_SUCCESS
     uint32 key1_full = 8;         // Populated on HE_CAL_STAGE_SUCCESS

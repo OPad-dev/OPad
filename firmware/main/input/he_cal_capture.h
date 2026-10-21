@@ -6,7 +6,8 @@
  *
  * Captures explicit per-key calibration:
  * 1. Rest: averaged over a still window where peak-to-peak spread is within
- *    the noise floor. Never taken while pressed or railed.
+ *    the configured spread and absolute rest bounds. A steady partial press
+ *    inside those bounds cannot be distinguished from rest by this algorithm.
  * 2. Full press: user presses fully 5 times. Detects the 5 peaks, selects the
  *    median peak (softer than bottoming out hard into the damper), and validates
  *    span, signal direction, and peak consistency.

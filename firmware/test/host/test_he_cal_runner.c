@@ -209,14 +209,14 @@ static void test_lock_screen_mode(void)
     printf("✓ test_lock_screen_mode passed\n");
 }
 
-static void test_no_key_during_lock_or_calibration(void)
+static void test_input_suppression_decision(void)
 {
     assert(!he_cal_suppress_input(false, false));
     assert(he_cal_suppress_input(true, false));
     assert(he_cal_suppress_input(false, true));
     assert(he_cal_suppress_input(true, true));
 
-    printf("✓ test_no_key_during_lock_or_calibration passed\n");
+    printf("✓ test_input_suppression_decision passed\n");
 }
 
 static void test_start_refusals(void)
@@ -310,7 +310,7 @@ int main(void)
     test_cancel();
     test_lock_decision();
     test_lock_screen_mode();
-    test_no_key_during_lock_or_calibration();
+    test_input_suppression_decision();
     test_start_refusals();
     test_failures_and_cancel_keep_old_calibration();
     printf("All Hall Effect calibration runner tests passed successfully!\n");

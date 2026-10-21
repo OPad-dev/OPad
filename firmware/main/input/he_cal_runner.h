@@ -8,7 +8,7 @@
  * 1. Rest: collects 64 samples at rest for both channels simultaneously.
  * 2. Key 1: detects 5 presses on Key 1, evaluates median peak and consistency.
  * 3. Key 2: detects 5 presses on Key 2, evaluates median peak and consistency.
- * 4. Completion: yields two validated he_calibration_t structs ready for he_cal_set().
+ * 4. Completion: yields two validated he_calibration_t structs ready for he_cal_save().
  *
  * Pure C, no ESP-IDF/FreeRTOS dependencies, host-testable.
  */

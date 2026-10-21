@@ -8,6 +8,7 @@
 #include "nvs.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/portmacro.h"
+#include "freertos/semphr.h"
 #include <string.h>
 
 static const char *TAG = "he_cal";
@@ -20,6 +21,10 @@ static he_calibration_t s_active_cal[2];
 static int s_active_slot = -1;  // 0 = A, 1 = B, -1 = neither
 static uint32_t s_active_seq = 0;
 static bool s_dirty = false;
+// NVS runs outside the spinlock; serialize whole transactions with the
+// runtime supervisor's deferred flushes. No ISR or key task takes this mutex.
+static StaticSemaphore_t s_write_mutex_buf;
+static SemaphoreHandle_t s_write_mutex;
 
 static void set_factory_defaults_locked(void)
 {
@@ -35,6 +40,7 @@ static void set_factory_defaults_locked(void)
 
 esp_err_t he_cal_init(void)
 {
+    if (!s_write_mutex) s_write_mutex = xSemaphoreCreateMutexStatic(&s_write_mutex_buf);
     portENTER_CRITICAL(&s_cal_lock);
     set_factory_defaults_locked();
     portEXIT_CRITICAL(&s_cal_lock);
@@ -118,19 +124,9 @@ bool he_cal_is_dirty(void)
     return dirty;
 }
 
-esp_err_t he_cal_flush(void)
+static esp_err_t persist_locked(const he_calibration_t snapshot[2])
 {
     portENTER_CRITICAL(&s_cal_lock);
-    if (!s_dirty) {
-        portEXIT_CRITICAL(&s_cal_lock);
-        return ESP_OK;
-    }
-    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
-        portEXIT_CRITICAL(&s_cal_lock);
-        ESP_LOGW(TAG, "Calibration NVS write deferred: state != IDLE");
-        return ESP_OK;
-    }
-    he_calibration_t snapshot[2] = {s_active_cal[0], s_active_cal[1]};
     int cur_slot = s_active_slot;
     uint32_t cur_seq = s_active_seq;
     portEXIT_CRITICAL(&s_cal_lock);
@@ -155,7 +151,6 @@ esp_err_t he_cal_flush(void)
             portENTER_CRITICAL(&s_cal_lock);
             s_active_slot = next_slot;
             s_active_seq = next_seq;
-            s_dirty = false;
             portEXIT_CRITICAL(&s_cal_lock);
             counters_record_nvs_write();
             ESP_LOGI(TAG, "Calibration persisted to NVS slot %c (seq=%lu): K1=[%ld..%ld, v=%d], K2=[%ld..%ld, v=%d]",
@@ -172,26 +167,57 @@ esp_err_t he_cal_flush(void)
     return err;
 }
 
-esp_err_t he_cal_set(const he_calibration_t in[2])
+static esp_err_t flush_locked(void)
 {
-    if (!in) {
-        return ESP_ERR_INVALID_ARG;
+    portENTER_CRITICAL(&s_cal_lock);
+    bool dirty = s_dirty;
+    he_calibration_t snapshot[2] = {s_active_cal[0], s_active_cal[1]};
+    portEXIT_CRITICAL(&s_cal_lock);
+    if (!dirty || runtime_get_state() != OSUPAD_STATE_IDLE) return ESP_OK;
+    esp_err_t err = persist_locked(snapshot);
+    if (err == ESP_OK) {
+        portENTER_CRITICAL(&s_cal_lock);
+        s_dirty = false;
+        portEXIT_CRITICAL(&s_cal_lock);
     }
+    return err;
+}
+
+esp_err_t he_cal_flush(void)
+{
+    xSemaphoreTake(s_write_mutex, portMAX_DELAY);
+    esp_err_t err = flush_locked();
+    xSemaphoreGive(s_write_mutex);
+    return err;
+}
+
+static bool calibration_valid(const he_calibration_t in[2])
+{
+    if (!in) return false;
     for (int k = 0; k < 2; k++) {
         if (in[k].valid) {
             if (in[k].rest < 0 || in[k].rest > 4095 ||
                 in[k].full < 0 || in[k].full > 4095 ||
                 in[k].full <= in[k].rest) {
-                return ESP_ERR_INVALID_ARG;
+                return false;
             }
         }
     }
+    return true;
+}
+
+esp_err_t he_cal_set(const he_calibration_t in[2])
+{
+    if (!calibration_valid(in)) return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(s_write_mutex, portMAX_DELAY);
 
     portENTER_CRITICAL(&s_cal_lock);
     s_active_cal[0] = in[0];
     s_active_cal[1] = in[1];
     s_dirty = true;
     portEXIT_CRITICAL(&s_cal_lock);
+    esp_err_t err = flush_locked();
+    xSemaphoreGive(s_write_mutex);
 
 #ifdef CONFIG_OSUPAD_HE_BACKEND
     if (he_backend_running()) {
@@ -199,5 +225,24 @@ esp_err_t he_cal_set(const he_calibration_t in[2])
     }
 #endif
 
-    return he_cal_flush();
+    return err;
+}
+
+esp_err_t he_cal_save(const he_calibration_t in[2])
+{
+    if (!calibration_valid(in)) return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(s_write_mutex, portMAX_DELAY);
+    esp_err_t err = runtime_get_state() == OSUPAD_STATE_IDLE ?
+        persist_locked(in) : ESP_ERR_INVALID_STATE;
+    if (err == ESP_OK) {
+        // Publish both keys only after the other slot was committed. Failure
+        // leaves the old RAM calibration and its valid NVS slot untouched.
+        portENTER_CRITICAL(&s_cal_lock);
+        s_active_cal[0] = in[0];
+        s_active_cal[1] = in[1];
+        s_dirty = false;
+        portEXIT_CRITICAL(&s_cal_lock);
+    }
+    xSemaphoreGive(s_write_mutex);
+    return err;
 }

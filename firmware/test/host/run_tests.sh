@@ -180,4 +180,13 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     -o "${BIN_DIR}/test_he_cal_sampling"
 "${BIN_DIR}/test_he_cal_sampling"
 
+# 20. Real calibration storage transactions with injected NVS failures
+echo "[20/20] Running test_he_cal_storage..."
+gcc -Wall -Wextra -Werror -pthread -I "${HOST_TEST_DIR}/cal_stubs" -I "${FW_MAIN}" \
+    "${FW_MAIN}/input/he_cal_record.c" \
+    "${FW_MAIN}/input/he_cal.c" \
+    "${HOST_TEST_DIR}/test_he_cal_storage.c" \
+    -o "${BIN_DIR}/test_he_cal_storage"
+"${BIN_DIR}/test_he_cal_storage"
+
 echo "=== All firmware host unit tests passed! ==="

@@ -34,7 +34,8 @@ void he_cal_ui_set_app_capable(bool capable);
 /**
  * @brief Inform calibration UI that the host disconnected (CDC closed or unplugged).
  * Immediately clears capable-host status, cancels any app-started calibration
- * while keeping existing saved calibration untouched, and shows the no-app screen.
+ * while keeping existing saved calibration untouched. After a 2 s failure
+ * display, a locked pad shows the no-app screen; a calibrated pad resumes normally.
  */
 void he_cal_ui_on_host_disconnect(void);
 

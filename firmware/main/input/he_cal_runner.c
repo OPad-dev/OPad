@@ -161,7 +161,7 @@ bool he_cal_runner_feed_samples(he_cal_runner_t *r, const he_cal_samples_t *samp
     }
     if (samples->lost) {
         r->stage = HE_RUNNER_FAILED;
-        r->error = HE_CAL_ERR_TOO_FEW_PEAKS;
+        r->error = HE_CAL_ERR_NONE; // transport failure, not a capture decision
         return true;
     }
     bool changed = false;

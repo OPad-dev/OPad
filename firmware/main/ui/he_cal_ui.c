@@ -18,6 +18,7 @@
 static const char *TAG = "he_cal_ui";
 
 // send_proto_progress() casts he_cal_error_t straight to osupad_HeCalError
+_Static_assert((int)HE_CAL_ERR_NONE == (int)osupad_HeCalError_HE_CAL_ERROR_NONE, "HeCalError");
 _Static_assert((int)HE_CAL_ERR_REST_NOT_STILL == (int)osupad_HeCalError_HE_CAL_ERROR_REST_NOT_STILL, "HeCalError");
 _Static_assert((int)HE_CAL_ERR_REST_OUT_OF_RANGE == (int)osupad_HeCalError_HE_CAL_ERROR_REST_OUT_OF_RANGE, "HeCalError");
 _Static_assert((int)HE_CAL_ERR_REST_PRESSED == (int)osupad_HeCalError_HE_CAL_ERROR_REST_PRESSED, "HeCalError");
@@ -53,6 +54,10 @@ static bool s_app_started = false;
 static bool s_disconnect_failed = false;
 static int64_t s_success_until_us = 0;
 static int64_t s_fail_until_us = 0;
+static const char *s_system_error;
+static int64_t s_last_progress_us;
+static bool s_touch_down;
+static bool s_button_touch_allowed;
 
 static void update_boxes_visibility(bool visible, uint8_t count)
 {
@@ -145,14 +150,15 @@ static void send_proto_progress(const he_runner_progress_t *prog, const he_calib
     p.key_index = prog->active_key;
     p.presses_done = prog->presses_done;
     p.error = (osupad_HeCalError)prog->error;
-    if (prog->error_desc) {
-        strncpy(p.error_message, prog->error_desc, sizeof(p.error_message) - 1);
+    const char *error = s_system_error ? s_system_error : prog->error_desc;
+    if (error) {
+        strncpy(p.error_message, error, sizeof(p.error_message) - 1);
     }
     // last_raw is -1 until the first sample; 0 means "no reading" to the app
     int32_t raw = (prog->active_key == 2) ? prog->last_raw[1] : prog->last_raw[0];
     p.raw_value = raw >= 0 ? (uint32_t)raw : 0;
 
-    protocol_send_he_calibration_progress(&p);
+    if (atomic_load(&s_app_capable)) protocol_send_he_calibration_progress(&p);
 }
 
 static void update_calibration_screen(void)
@@ -166,8 +172,10 @@ static void update_calibration_screen(void)
         lv_label_set_text(s_info_label, "Please retry");
         update_boxes_visibility(false, 0);
         lv_label_set_text(s_btn_label, "Retry");
-        lv_obj_remove_flag(s_btn_obj, LV_OBJ_FLAG_HIDDEN);
-        atomic_store(&s_btn_active, true);
+        bool button = he_backend_is_locked() && !atomic_load(&s_app_capable);
+        if (button) lv_obj_remove_flag(s_btn_obj, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(s_btn_obj, LV_OBJ_FLAG_HIDDEN);
+        atomic_store(&s_btn_active, button);
         return;
     }
 
@@ -215,10 +223,11 @@ static void update_calibration_screen(void)
         break;
 
     case HE_RUNNER_FAILED: {
-        bool app = atomic_load(&s_app_capable);
+        bool app = atomic_load(&s_app_capable) || !he_backend_is_locked();
         lv_obj_set_style_bg_color(s_overlay, lv_color_hex(0x5A1010), 0); // Red
         lv_label_set_text(s_title_label, "CALIBRATION FAILED");
-        lv_label_set_text(s_prompt_label, prog.error_desc ? prog.error_desc : "Failed");
+        lv_label_set_text(s_prompt_label, s_system_error ? s_system_error :
+                          (prog.error_desc ? prog.error_desc : "Failed"));
         update_boxes_visibility(false, 0);
         if (app) {
             lv_label_set_text(s_info_label, "Retry in the OPad app");
@@ -360,7 +369,7 @@ static void he_cal_ui_timer_cb(lv_timer_t *timer)
     bool locked = he_backend_is_locked();
     bool calibrating = he_backend_is_calibrating();
 
-    // Handling success hold duration (1 second "Calibrated!" display before unmasking)
+    // Hold the success overlay for 1 s. Keys unlock as soon as saving succeeds.
     if (s_success_until_us > 0) {
         if (now_us >= s_success_until_us) {
             s_success_until_us = 0;
@@ -380,6 +389,7 @@ static void he_cal_ui_timer_cb(lv_timer_t *timer)
         }
         s_disconnect_failed = false;
         s_fail_until_us = 0;
+        s_system_error = NULL;
         he_cal_runner_cancel(&s_runner);
     }
 
@@ -399,30 +409,41 @@ static void he_cal_ui_timer_cb(lv_timer_t *timer)
     // walk-away timeout during KEY1/KEY2 stages are left open pending owner decision.
     const he_cal_samples_t *samples = he_backend_take_cal_samples();
     if (samples) {
+        if (samples->lost) s_system_error = "Calibration samples lost";
         bool changed = he_cal_runner_feed_samples(&s_runner, samples);
-        if (changed) {
+        if (changed || now_us - s_last_progress_us >= 100000) {
             he_runner_progress_t prog;
-            he_cal_runner_get_progress(&s_runner, &prog);
 
             if (s_runner.stage == HE_RUNNER_SUCCESS) {
                 he_calibration_t saved[2];
-                he_cal_get_all(saved);
-                if (he_cal_runner_apply_to_saved(&s_runner, saved)) {
-                    he_backend_finish_calibration(saved);
+                esp_err_t err = ESP_FAIL;
+                if (he_cal_runner_get_results(&s_runner, saved)) {
+                    err = he_backend_finish_calibration(saved);
+                }
+                if (err == ESP_OK) {
                     ESP_LOGI(TAG, "Calibration successful: K1=%ld..%ld, K2=%ld..%ld",
                              (long)saved[0].rest, (long)saved[0].full,
                              (long)saved[1].rest, (long)saved[1].full);
+                    he_cal_runner_get_progress(&s_runner, &prog);
+                    send_proto_progress(&prog, saved);
+                    s_success_until_us = now_us + 1000000; // Hold for 1 second
+                } else {
+                    s_runner.stage = HE_RUNNER_FAILED;
+                    s_runner.error = HE_CAL_ERR_NONE;
+                    s_system_error = "Could not save calibration";
                 }
-                send_proto_progress(&prog, saved);
-                s_success_until_us = now_us + 1000000; // Hold for 1 second
-            } else if (s_runner.stage == HE_RUNNER_FAILED) {
+            }
+            if (s_runner.stage == HE_RUNNER_FAILED) {
                 // Restore previous calibration immediately (or stay locked if none)
                 he_backend_cancel_calibration();
                 s_fail_until_us = now_us + 2000000;
+                he_cal_runner_get_progress(&s_runner, &prog);
                 send_proto_progress(&prog, NULL);
-            } else {
+            } else if (s_runner.stage != HE_RUNNER_SUCCESS) {
+                he_cal_runner_get_progress(&s_runner, &prog);
                 send_proto_progress(&prog, NULL);
             }
+            s_last_progress_us = now_us;
         }
     }
 
@@ -431,6 +452,7 @@ static void he_cal_ui_timer_cb(lv_timer_t *timer)
 
 esp_err_t he_cal_ui_init(void)
 {
+    if (!he_backend_running()) return ESP_OK; // no calibration timer on MX
     s_boot_time_us = esp_timer_get_time();
     he_cal_button_init(&s_btn_tracker, CAL_BTN_X, CAL_BTN_Y, CAL_BTN_W, CAL_BTN_H, GESTURE_SWIPE_PX);
     he_cal_runner_init(&s_runner, NULL);
@@ -442,34 +464,67 @@ esp_err_t he_cal_ui_init(void)
 
 void he_cal_ui_set_app_capable(bool capable)
 {
+    if (!ui_lock()) {
+        atomic_store(&s_app_capable, capable);
+        return;
+    }
     atomic_store(&s_app_capable, capable);
+    if (capable) {
+        atomic_store(&s_btn_active, false);
+        s_button_touch_allowed = false;
+        he_cal_button_reset(&s_btn_tracker);
+    }
+    ui_unlock();
 }
 
 void he_cal_ui_on_host_disconnect(void)
 {
-    bool locked_ui = ui_lock();
+    if (!ui_lock()) return;
     handle_disconnect_locked(esp_timer_get_time());
-    if (locked_ui) {
-        ui_unlock();
-    }
+    ui_unlock();
 }
 
 void he_cal_ui_touch_sample(bool down, int16_t x, int16_t y)
 {
+    if (!ui_lock()) return;
+    if (down && !s_touch_down) {
+        s_button_touch_allowed = atomic_load(&s_btn_active);
+    }
+    s_touch_down = down;
     if (!atomic_load(&s_btn_active)) {
+        s_button_touch_allowed = false;
         he_cal_button_reset(&s_btn_tracker);
+        ui_unlock();
         return;
     }
 
-    bool click = he_cal_button_feed_touch(&s_btn_tracker, down, x, y);
+    bool click = s_button_touch_allowed && he_cal_button_feed_touch(&s_btn_tracker, down, x, y);
+    if (!down) s_button_touch_allowed = false;
     if (click) {
         ESP_LOGI(TAG, "Calibration button touched -> starting calibration");
         he_cal_ui_start_calibration(false);
     }
+    ui_unlock();
 }
 
 bool he_cal_ui_start_calibration(bool from_app)
 {
+    if (!ui_lock()) {
+        if (from_app) {
+            osupad_HeCalibrationProgress p = osupad_HeCalibrationProgress_init_zero;
+            p.stage = osupad_HeCalStage_HE_CAL_STAGE_FAILED;
+            strncpy(p.error_message, "Calibration UI unavailable", sizeof(p.error_message) - 1);
+            protocol_send_he_calibration_progress(&p);
+        }
+        return false;
+    }
+    // Recheck under the same recursive LVGL lock as timer/cancel/finish.
+    // A click queued before a capable app arrived cannot start the pad flow.
+    if (!from_app && (!he_backend_is_locked() || atomic_load(&s_app_capable) ||
+                      !atomic_load(&s_btn_active))) {
+        ui_unlock();
+        return false;
+    }
     const char *reason = NULL;
     he_cal_start_check_t chk = he_cal_can_start(
         he_backend_running(),
@@ -486,37 +541,41 @@ bool he_cal_ui_start_calibration(bool from_app)
             }
             protocol_send_he_calibration_progress(&p);
         }
+        ui_unlock();
         return false;
     }
 
     he_runner_progress_t prog;
-    bool locked_ui = ui_lock();
     he_cal_runner_start(&s_runner);
     he_backend_start_calibration();
     s_success_until_us = 0;
     s_fail_until_us = 0;
     s_disconnect_failed = false;
     s_app_started = from_app;
+    s_system_error = NULL;
+    s_last_progress_us = esp_timer_get_time();
+    atomic_store(&s_btn_active, false);
+    he_cal_button_reset(&s_btn_tracker);
     he_cal_runner_get_progress(&s_runner, &prog);
-    if (locked_ui) {
-        ui_unlock();
-    }
 
     send_proto_progress(&prog, NULL);
+    ui_unlock();
     return true;
 }
 
 void he_cal_ui_cancel_calibration(void)
 {
-    bool locked_ui = ui_lock();
+    if (!ui_lock()) return;
     he_cal_runner_cancel(&s_runner);
     he_backend_cancel_calibration();
     s_success_until_us = 0;
     s_fail_until_us = 0;
     s_disconnect_failed = false;
     s_app_started = false;
-    if (locked_ui) {
-        ui_unlock();
-    }
+    s_system_error = NULL;
+    he_runner_progress_t prog;
+    he_cal_runner_get_progress(&s_runner, &prog);
+    send_proto_progress(&prog, NULL);
+    ui_unlock();
 }
 

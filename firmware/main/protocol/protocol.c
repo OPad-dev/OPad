@@ -26,6 +26,8 @@
 #include "diag/diag.h"
 #include "diag/board_test.h"
 #include "frame_parser.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
 #include <string.h>
 
 static const char *TAG = "protocol";
@@ -47,6 +49,12 @@ static int64_t s_last_rx_us = 0;
 static bool s_host_framing_known = false;
 static frame_format_t s_host_framing = FRAME_FORMAT_MARKED;
 static uint32_t s_out_sequence = 1;
+
+// UI producers publish the latest progress; only the CDC task frames/writes it.
+// This keeps framing state, output sequence and whole-frame TX single-owner.
+static portMUX_TYPE s_progress_lock = portMUX_INITIALIZER_UNLOCKED;
+static osupad_HeCalibrationProgress s_progress;
+static bool s_progress_pending;
 
 static void get_device_mac_string(char *buf, size_t max_len)
 {
@@ -902,6 +910,9 @@ void protocol_reset_rx(void)
     // Called when the host closes the port: the next one may frame differently
     s_host_framing_known = false;
     he_cal_ui_on_host_disconnect();
+    portENTER_CRITICAL(&s_progress_lock);
+    s_progress_pending = false;
+    portEXIT_CRITICAL(&s_progress_lock);
 }
 
 void protocol_poll_detect_pin(void)
@@ -926,9 +937,30 @@ esp_err_t protocol_send_he_calibration_progress(const osupad_HeCalibrationProgre
     if (!prog) {
         return ESP_ERR_INVALID_ARG;
     }
+    portENTER_CRITICAL(&s_progress_lock);
+    s_progress = *prog;
+    s_progress_pending = true;
+    portEXIT_CRITICAL(&s_progress_lock);
+    return ESP_OK;
+}
+
+void protocol_poll_he_calibration(void)
+{
     osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+    portENTER_CRITICAL(&s_progress_lock);
+    bool pending = s_progress_pending;
+    msg.payload.he_calibration_progress = s_progress;
+    s_progress_pending = false;
+    portEXIT_CRITICAL(&s_progress_lock);
+    if (!pending) return;
     msg.sequence_number = s_out_sequence++;
     msg.which_payload = osupad_DeviceToHost_he_calibration_progress_tag;
-    msg.payload.he_calibration_progress = *prog;
-    return send_envelope(&msg);
+    if (send_envelope(&msg) != ESP_OK) {
+        portENTER_CRITICAL(&s_progress_lock);
+        if (!s_progress_pending) {
+            s_progress = msg.payload.he_calibration_progress;
+            s_progress_pending = true;
+        }
+        portEXIT_CRITICAL(&s_progress_lock);
+    }
 }

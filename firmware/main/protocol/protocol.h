@@ -103,9 +103,12 @@ void protocol_poll_detect_pin(void);
 void protocol_send_key_presses(void);
 
 /**
- * @brief Send live Hall Effect calibration progress to host over CDC.
+ * @brief Queue the latest HE calibration progress (thread-safe; coalesces).
  */
 esp_err_t protocol_send_he_calibration_progress(const osupad_HeCalibrationProgress *prog);
+
+// CDC task only: frame and transmit queued progress, retrying a full TX FIFO.
+void protocol_poll_he_calibration(void);
 
 #ifdef __cplusplus
 }

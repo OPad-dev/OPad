@@ -415,15 +415,18 @@ typedef struct _osupad_BoardTestResult {
     uint64_t bridged_gpios; /* spare pins that follow a neighbour driven low */
 } osupad_BoardTestResult;
 
-/* Sent by the pad on every stage change and press. A start the pad refuses
- (not IDLE, already calibrating, no HE backend) is answered with
- stage = FAILED, error = NONE and the reason in error_message. */
+/* Latest progress, periodically refreshed while calibrating and on transitions;
+ intermediate updates may coalesce before CDC sends them. Refused starts
+ (not IDLE, already calibrating, no HE backend, unavailable UI), save failures
+ and lost frame samples use stage = FAILED, error = NONE, with error_message. */
 typedef struct _osupad_HeCalibrationProgress {
     osupad_HeCalStage stage;
     uint32_t key_index; /* 1 = Key 1, 2 = Key 2 (0 during rest/idle/complete) */
     uint32_t presses_done; /* 0..5 */
     osupad_HeCalError error;
     char error_message[48];
+    /* Latest consumed frame reading for key_index (key 1 when key_index = 0).
+ 0 means no reading yet; valid frame readings exclude ADC rails. */
     uint32_t raw_value;
     uint32_t key1_rest; /* Populated on HE_CAL_STAGE_SUCCESS */
     uint32_t key1_full; /* Populated on HE_CAL_STAGE_SUCCESS */
