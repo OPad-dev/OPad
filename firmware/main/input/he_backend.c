@@ -58,6 +58,8 @@ static const char *TAG = "he";
 #define HE_FRAME_CONVS  16     // 8 per key, one frame every 250 us
 #define HE_FRAME_US     (1000000 * HE_FRAME_CONVS / HE_SAMPLE_HZ)
 #define HE_FRAME_BYTES  (HE_FRAME_CONVS * SOC_ADC_DIGI_RESULT_BYTES)
+_Static_assert(HE_SAMPLE_HZ == HE_FRAME_CONVS * HE_CAL_SAMPLE_HZ,
+               "Calibration sample-count windows require a 4 kHz frame stream");
 #ifdef CONFIG_OSUPAD_HE_TRACE
 #define HE_STORE_FRAMES 64     // 16 ms for he_trace_task to drain
 #else
@@ -276,6 +278,8 @@ static void fault_key_locked(int k, int64_t now)
 // cost the MX path ~170 us (linker.lf)
 static void IRAM_ATTR publish(bool reported[2])
 {
+    // OPEN: calibration start can cross the snapshot/report interval below;
+    // docs/history/2026-10-21-he-calibration-report.md §8, Q8.
     for (int k = 0; k < 2; k++) {
         portENTER_CRITICAL(&s_lock);
         bool down = s_down[k];
@@ -642,7 +646,8 @@ void he_backend_set_params(uint8_t key_index, const he_rt_params_t *p)
         return;
     }
     portENTER_CRITICAL(&s_lock);
-    // No reading yet: treat the key as deep, so it must be seen up first
+    // No reading yet: treat the key as deep. This reading can predate a fault;
+    // he_rt_set_params preserves need_release until a fresh he_rt_step.
     int32_t raw = s_stats.raw[key_index] >= 0 ? s_stats.raw[key_index] : INT32_MAX;
     he_rt_set_params(&s_keys[key_index], p, raw);
     portEXIT_CRITICAL(&s_lock);

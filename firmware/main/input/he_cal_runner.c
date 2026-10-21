@@ -46,7 +46,8 @@ void he_cal_runner_cancel(he_cal_runner_t *r)
     r->error_key = 255;
 }
 
-// OPEN: exact friendly error wording for on-pad and app display (see report §7 Q3)
+// OPEN: exact friendly error wording; docs/history/2026-10-21-he-calibration-report.md
+// §8 "Questions for the owner", Q3.
 const char *he_cal_runner_error_string(he_cal_error_t err)
 {
     switch (err) {

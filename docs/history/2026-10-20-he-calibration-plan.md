@@ -5,6 +5,10 @@ Author: GFerreiroS
 Branch: `feat/he-night`
 Worktree: `~/Documents/projects/esp32/osu-pad-esp32-night`
 
+Implementation corrections on 2026-10-21 are recorded in
+`docs/history/2026-10-21-he-calibration-report.md`. This plan describes intended
+and implemented code paths; it is not evidence of operation on hardware.
+
 ---
 
 ## 1. Overview & Requirements Citations
@@ -15,7 +19,7 @@ This plan implements the Hall Effect calibration lock screen, on-pad calibration
 - **Product Rule 1 (Latency always wins):** Nothing joins the keypress path. The frame ISR `on_frame` in `firmware/main/input/he_backend.c` incurs only a single predictable branch (`__builtin_expect(s_calibrating, 0)`) when not calibrating. When locked or calibrating, keypresses to the PC are suppressed by configuring thresholds to `HE_PARAMS_NEVER` (`actuation = INT32_MAX, release = -1`), adding zero branches to `he_rt_step()` or `key_event_report()`.
 - **Product Rule 2 (Keyboard with no software):** The pad can be fully calibrated on-pad via the touchscreen without any desktop software installed.
 - **Product Rule 3 (Independent updates):** Compatibility both ways (new app + old firmware, old app + new firmware, MX pads unaffected).
-- **Product Rule 4 (Touchscreen as third button):** Touchscreen Quick Retry and swipes are gated while locked; lock screen button requires landing inside, moving < `GESTURE_SWIPE_PX` (30 px from `firmware/main/input/gesture.h:12`), and releasing inside.
+- **Product Rule 4 (Touchscreen as third button):** Touchscreen Quick Retry and swipes are gated while locked; lock screen button requires landing inside, moving < `GESTURE_SWIPE_PX` (30 px from `firmware/main/input/gesture.h`), and releasing inside.
 - **Product Rule 5 (Never BOOT/RESET):** No hardware buttons involved.
 - **Product Rule 6 (Every key from a finger):** No macros or automated host key generation.
 
@@ -23,10 +27,10 @@ This plan implements the Hall Effect calibration lock screen, on-pad calibration
 
 ## 2. Doc Discrepancy Correction
 
-`docs/specs/v2-hall-effect-decisions.md` D7 states:
+At base commit `0fbcb6d`, `docs/specs/v2-hall-effect-decisions.md` D7 stated:
 > "Captures rest over a still window (default 100 samples / 25 ms, noise spread ≤ 32 counts... travel span exceeds min_span (≥ 100 counts), and peak-to-peak consistency is within max_peak_spread (≤ 80 counts)."
 
-However, `firmware/main/input/he_cal_capture.c:10-19` (`he_cal_capture_default_cfg()`) defines the authoritative values based on V1.1 bench measurements:
+However, `firmware/main/input/he_cal_capture.c` (`he_cal_capture_default_cfg()`) defines the configured values:
 - `rest_window_samples = 64` (64 frame samples at 4 kHz = 16 ms;
   `firmware/main/input/he_cal_capture.c`, `he_backend.c`)
 - `rest_max_spread = 36` counts
@@ -47,13 +51,13 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
 
 ### 3.1 New & Modified Fields
 
-1. `message Hello` (`protocol/osupad.proto:32`):
+1. `message Hello` (`protocol/osupad.proto`):
    - `bool he_calibration = 3;` (host indicates it supports HE calibration flow)
 
-2. `message HelloAck` (`protocol/osupad.proto:39`):
+2. `message HelloAck` (`protocol/osupad.proto`):
    - `bool he_calibration = 16;` (set to `he_backend_running()`, i.e. `true` only when the HE backend is active at runtime and interactive calibration is available)
 
-3. `message HeCalibrationStatus` (`protocol/osupad.proto:104`):
+3. `message HeCalibrationStatus` (`protocol/osupad.proto`):
    - Existing fields 1..6: `key1_calibrated`, `key2_calibrated`, `key1_rest`, `key1_full`, `key2_rest`, `key2_full`
    - `bool is_locked = 7;` (pad is currently locked due to missing calibration)
    - `bool is_calibrating = 8;` (pad is currently executing calibration)
@@ -100,11 +104,11 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
    }
    ```
 
-6. `HostToDevice` Envelope (`protocol/osupad.proto:413`):
+6. `HostToDevice` Envelope (`protocol/osupad.proto`):
    - `bool start_he_calibration = 19;`
    - `bool cancel_he_calibration = 20;`
 
-7. `DeviceToHost` Envelope (`protocol/osupad.proto:439`):
+7. `DeviceToHost` Envelope (`protocol/osupad.proto`):
    - `HeCalibrationProgress he_calibration_progress = 11;`
 
 8. `protocol/osupad.options`:
@@ -118,7 +122,7 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
 |---|---|---|
 | **Old App (pre-calibration UI)** | Pad behaves as before. Uncalibrated keys use provisional factory defaults. | Pad is locked if HE uncalibrated. Red lock screen displayed on pad with download URL `https://opad.dev/download` and on-pad Calibrate button. Old app connects, receives `DeviceStatus`, ignores unknown fields, does not crash. Pad can be calibrated on-pad without the app. |
 | **New App (with calibration UI)** | App receives `HelloAck.he_calibration == false` and shows no calibration entry (`desktop/gui/src/pages.rs`, Keypad settings); the daemon ignores any `HeCalibrationStatus` from that firmware (`desktop/daemon/src/runtime.rs`, `DeviceStatus` handler). No crash. | App receives `HelloAck.he_calibration == true`. If uncalibrated, daemon auto-launches GUI on `Page::Calibration`. Full bidirectional live calibration supported. Settings page shows "Recalibrate" button. |
-| **MX Module / MX Firmware** | Normal operation. | `he_backend_running() == false`. Lock is inactive, `he_calibration` is false, no calibration UI or lock screen shown. MX keypath is completely identical. |
+| **MX Module / MX Firmware** | Normal operation. | `he_backend_running() == false`. Lock is inactive, `he_calibration` is false, no calibration UI or timer is created (`firmware/main/ui/he_cal_ui.c`, `firmware/main/protocol/protocol.c`). MX key reporting is not edited by this batch (`firmware/main/input/keypad.c`, `key_event.c`); latency still needs hardware measurement. |
 
 ---
 
@@ -144,9 +148,15 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
   - The runner discards 64 frame samples (16 ms) to settle, then averages 64
     frame samples (16 ms) at rest. The timer delays presentation, not sampling
     (`firmware/main/input/he_cal_runner.c`, `he_cal_capture.c`).
-  - `he_backend_start_calibration()` and `he_backend_cancel_calibration()`.
+  - `he_backend_start_calibration()` and `he_backend_cancel_calibration()`
+    serialize with settings/finish through a task-only mutex; the ISR uses
+    only its existing `s_lock` (`firmware/main/input/he_backend.c`).
 - `firmware/main/input/touch_retry.c`:
   - Gated during lock or calibration: suppresses Quick Retry (`usb_hid_set_touch_retry(true)`) and swipes (`handle_swipe`).
+  - App start refuses a current contact through release cleanup. An atomic
+    start reservation gates a racing new touch before backend suppression
+    becomes visible (`firmware/main/input/he_cal_touch_guard.h`, `touch_retry.c`,
+    `firmware/main/ui/he_cal_ui.c`; report §8 Q4).
   - Passes touch coordinates to `he_cal_ui_touch_sample()` (`firmware/main/ui/he_cal_ui.h`).
 
 ### 5.3 Firmware UI
@@ -154,7 +164,7 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
   - URL constant: `#define OPAD_DOWNLOAD_URL "https://opad.dev/download"`
   - Red lock screen (dark red `0x5A1010` background, `firmware/main/ui/he_cal_ui.c`).
   - 5-second timer from boot: Calibrate button appears after 5s if no capable app connected. If capable app connects (`s_app_capable`), button is hidden and "Calibrate in the OPad app" is displayed.
-  - Interactive calibration screen: step prompts ("Release keys...", "Press Key 1 fully 5 times", "Press Key 2 fully 5 times"), 5-box visual progress indicator per key, 1-second "Calibrated!" success message, or error message with "Retry" button.
+  - Interactive calibration screen: step prompts ("Release keys...", "Press Key 1 fully 5 times", "Press Key 2 fully 5 times"), 5-box visual progress indicator per key, 1-second "Calibrated!" success message, or 2-second failure message. An on-pad Retry is offered only while locked without a capable app (`firmware/main/ui/he_cal_ui.c`).
 - `firmware/main/ui/ui_port.c`:
   - Interlocks with `pad_timer_cb()`: when `he_backend_is_locked()` is true, prevents loading `UI_SCREEN_PLAYING`.
 
@@ -174,7 +184,7 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
 - `desktop/crates/opad-model/src/lib.rs`:
   - Exposes `HeCalibrationProgress`, `HeCalStage`, `HeCalError` types.
 - `desktop/crates/opad-ipc/src/lib.rs`:
-  - Adds `IpcRequest::StartHeCalibration`, `IpcRequest::CancelHeCalibration`, `IpcRequest::GetCalibrationProgress`.
+  - Adds `IpcRequest::StartHeCalibration`, `IpcRequest::CancelHeCalibration`, `IpcRequest::GetHeCalibrationProgress` (`desktop/crates/opad-ipc/src/lib.rs`).
   - Adds `IpcResponse::HeCalibrationProgress`.
 - `desktop/daemon/src/runtime.rs` & `desktop/daemon/src/ipc_handlers.rs`:
   - Tracks HE calibration status. When uncalibrated HE pad connects, launches `opad-gui --page calibrate`.
@@ -184,9 +194,16 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
   - Renders live calibration page: 0..5 press visual boxes, stage transitions, cancel button, retry on error, and calibrated rest/full counts on success.
   - Settings page: adds "Recalibrate Keys" button when connected to HE pad.
   - Walk-away timeout and on-pad cancel gesture are left open with `// OPEN:` comments and documented in the report's "Questions for the owner" section.
-  - Disconnect handling: cancels and shows warning if pad is unplugged or app disconnects during calibration.
+  - A CDC host disconnect cancels an app-started flow; a flow begun on-pad
+    continues. The GUI reports device disconnection. Closing only the GUI
+    leaves the daemon's CDC connection alive and does not cancel firmware
+    calibration (`firmware/main/ui/he_cal_ui.c`, `desktop/gui/src/main.rs`).
 
 ### 5.6 Test Checklist & Verification
 - `docs/testing-checklist.md`:
-  - Adds manual verification rows for HE lock screen, button hit test, app launch, calibration flow, recalibration, cancel, and timeout.
+  - Adds manual verification rows HE-CAL-01..HE-CAL-11 for the lock screen,
+    button, app launch, calibration, cancellation, module compatibility,
+    touch/start interleaving and stale parameter-reload release arming.
+    There is no timeout test or implementation; that policy is undecided
+    (`docs/testing-checklist.md`, `firmware/main/ui/he_cal_ui.c`).
 - Host tests in `firmware/test/host/run_tests.sh` and `cargo test` across all desktop crates.
