@@ -45,6 +45,16 @@ static void test_excursion_exceeded(void)
     bool click = he_cal_button_feed_touch(&btn, false, 130, 190);
     assert(!click); // Rejected because excursion >= BTN_MAX_DIST (30)
 
+    // Exact boundary: 29 px (< 30) succeeds
+    he_cal_button_feed_touch(&btn, true, 100, 190);
+    he_cal_button_feed_touch(&btn, true, 129, 190);
+    assert(he_cal_button_feed_touch(&btn, false, 129, 190));
+
+    // Exact boundary: 30 px (== 30) is rejected
+    he_cal_button_feed_touch(&btn, true, 100, 190);
+    he_cal_button_feed_touch(&btn, true, 130, 190);
+    assert(!he_cal_button_feed_touch(&btn, false, 130, 190));
+
     printf("✓ test_excursion_exceeded passed\n");
 }
 

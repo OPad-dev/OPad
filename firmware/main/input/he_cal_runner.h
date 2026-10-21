@@ -92,6 +92,51 @@ bool he_cal_runner_get_results(const he_cal_runner_t *r, he_calibration_t out[2]
  */
 const char *he_cal_runner_error_string(he_cal_error_t err);
 
+typedef enum {
+    HE_LOCK_SCREEN_WAIT_FOR_APP = 0, // Within boot grace window and no capable host yet
+    HE_LOCK_SCREEN_USE_APP,          // Calibration-capable host connected ("Calibrate in the OPad app", no button)
+    HE_LOCK_SCREEN_NO_APP_BUTTON,    // No capable host after grace window (or host disconnected): red screen + URL + Calibrate button
+} he_lock_screen_mode_t;
+
+typedef enum {
+    HE_CAL_START_OK = 0,
+    HE_CAL_START_REFUSED_NOT_HE,
+    HE_CAL_START_REFUSED_NOT_IDLE,
+    HE_CAL_START_REFUSED_BUSY,
+} he_cal_start_check_t;
+
+/**
+ * @brief Pure decision: is the pad locked waiting for calibration?
+ * Locked iff the HE backend is running and either key lacks a valid calibration.
+ * Never locked on MX (he_running == false).
+ */
+bool he_cal_is_locked_decision(bool he_running, bool key1_valid, bool key2_valid);
+
+/**
+ * @brief Pure decision: should key and touch/swipe input be suppressed from reaching the PC?
+ * True whenever the pad is locked or actively calibrating.
+ */
+bool he_cal_suppress_input(bool locked, bool calibrating);
+
+/**
+ * @brief Pure decision: which lock-screen variant to display.
+ */
+he_lock_screen_mode_t he_cal_lock_screen_mode(bool capable_host_connected,
+                                              bool host_ever_disconnected,
+                                              int64_t elapsed_since_boot_us,
+                                              int64_t boot_wait_us);
+
+/**
+ * @brief Pure decision: can calibration be started right now?
+ */
+he_cal_start_check_t he_cal_can_start(bool he_running, bool is_idle, bool already_calibrating, const char **reason_out);
+
+/**
+ * @brief Apply runner results to saved calibration only if stage == HE_RUNNER_SUCCESS.
+ * Leaves saved[0..1] untouched on failure or cancel.
+ */
+bool he_cal_runner_apply_to_saved(const he_cal_runner_t *r, he_calibration_t saved[2]);
+
 #ifdef __cplusplus
 }
 #endif

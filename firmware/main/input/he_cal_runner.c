@@ -44,6 +44,7 @@ void he_cal_runner_cancel(he_cal_runner_t *r)
     r->error_key = 255;
 }
 
+// OPEN: exact friendly error wording for on-pad and app display (see report §7 Q3)
 const char *he_cal_runner_error_string(he_cal_error_t err)
 {
     switch (err) {
@@ -196,5 +197,68 @@ bool he_cal_runner_get_results(const he_cal_runner_t *r, he_calibration_t out[2]
     }
     out[0] = r->results[0];
     out[1] = r->results[1];
+    return true;
+}
+
+bool he_cal_is_locked_decision(bool he_running, bool key1_valid, bool key2_valid)
+{
+    if (!he_running) {
+        return false;
+    }
+    return !key1_valid || !key2_valid;
+}
+
+bool he_cal_suppress_input(bool locked, bool calibrating)
+{
+    return locked || calibrating;
+}
+
+he_lock_screen_mode_t he_cal_lock_screen_mode(bool capable_host_connected,
+                                              bool host_ever_disconnected,
+                                              int64_t elapsed_since_boot_us,
+                                              int64_t boot_wait_us)
+{
+    if (capable_host_connected) {
+        return HE_LOCK_SCREEN_USE_APP;
+    }
+    if (host_ever_disconnected || elapsed_since_boot_us >= boot_wait_us) {
+        return HE_LOCK_SCREEN_NO_APP_BUTTON;
+    }
+    return HE_LOCK_SCREEN_WAIT_FOR_APP;
+}
+
+he_cal_start_check_t he_cal_can_start(bool he_running, bool is_idle, bool already_calibrating, const char **reason_out)
+{
+    if (!he_running) {
+        if (reason_out) {
+            *reason_out = "Hall Effect backend is not running";
+        }
+        return HE_CAL_START_REFUSED_NOT_HE;
+    }
+    if (!is_idle) {
+        if (reason_out) {
+            *reason_out = "Calibration is only allowed in IDLE";
+        }
+        return HE_CAL_START_REFUSED_NOT_IDLE;
+    }
+    if (already_calibrating) {
+        if (reason_out) {
+            *reason_out = "Calibration is already in progress";
+        }
+        return HE_CAL_START_REFUSED_BUSY;
+    }
+    if (reason_out) {
+        *reason_out = NULL;
+    }
+    return HE_CAL_START_OK;
+}
+
+bool he_cal_runner_apply_to_saved(const he_cal_runner_t *r, he_calibration_t saved[2])
+{
+    if (!r || !saved || r->stage != HE_RUNNER_SUCCESS) {
+        return false;
+    }
+    saved[0] = r->results[0];
+    saved[1] = r->results[1];
     return true;
 }

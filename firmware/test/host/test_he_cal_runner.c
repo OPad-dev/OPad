@@ -168,6 +168,139 @@ static void test_cancel(void)
     printf("✓ test_cancel passed\n");
 }
 
+static void test_lock_decision(void)
+{
+    // Never locked on MX (he_running == false)
+    assert(!he_cal_is_locked_decision(false, false, false));
+    assert(!he_cal_is_locked_decision(false, true, false));
+    assert(!he_cal_is_locked_decision(false, false, true));
+    assert(!he_cal_is_locked_decision(false, true, true));
+
+    // Locked when HE running and either key uncalibrated
+    assert(he_cal_is_locked_decision(true, false, false));
+    assert(he_cal_is_locked_decision(true, true, false));
+    assert(he_cal_is_locked_decision(true, false, true));
+
+    // Unlocked when both keys are calibrated
+    assert(!he_cal_is_locked_decision(true, true, true));
+
+    printf("✓ test_lock_decision passed\n");
+}
+
+static void test_lock_screen_mode(void)
+{
+    const int64_t wait_us = 5000000;
+
+    // 1. Capable host connected -> USE_APP regardless of boot time
+    assert(he_cal_lock_screen_mode(true, false, 0, wait_us) == HE_LOCK_SCREEN_USE_APP);
+    assert(he_cal_lock_screen_mode(true, false, 6000000, wait_us) == HE_LOCK_SCREEN_USE_APP);
+
+    // 2. No capable host (or old host with capability false) within 5 s window -> WAIT_FOR_APP
+    assert(he_cal_lock_screen_mode(false, false, 0, wait_us) == HE_LOCK_SCREEN_WAIT_FOR_APP);
+    assert(he_cal_lock_screen_mode(false, false, 4999999, wait_us) == HE_LOCK_SCREEN_WAIT_FOR_APP);
+
+    // 3. Past 5 s window with no capable host -> NO_APP_BUTTON
+    assert(he_cal_lock_screen_mode(false, false, 5000000, wait_us) == HE_LOCK_SCREEN_NO_APP_BUTTON);
+    assert(he_cal_lock_screen_mode(false, false, 8000000, wait_us) == HE_LOCK_SCREEN_NO_APP_BUTTON);
+
+    // 4. Capable host disconnects (even within 5 s window) -> NO_APP_BUTTON immediately
+    assert(he_cal_lock_screen_mode(false, true, 1000000, wait_us) == HE_LOCK_SCREEN_NO_APP_BUTTON);
+
+    printf("✓ test_lock_screen_mode passed\n");
+}
+
+static void test_no_key_during_lock_or_calibration(void)
+{
+    assert(!he_cal_suppress_input(false, false));
+    assert(he_cal_suppress_input(true, false));
+    assert(he_cal_suppress_input(false, true));
+    assert(he_cal_suppress_input(true, true));
+
+    printf("✓ test_no_key_during_lock_or_calibration passed\n");
+}
+
+static void test_start_refusals(void)
+{
+    const char *reason = NULL;
+
+    // Refused on MX (he_running == false)
+    assert(he_cal_can_start(false, true, false, &reason) == HE_CAL_START_REFUSED_NOT_HE);
+    assert(reason != NULL);
+
+    // Refused in PLAYING/COOLDOWN (is_idle == false)
+    assert(he_cal_can_start(true, false, false, &reason) == HE_CAL_START_REFUSED_NOT_IDLE);
+    assert(reason != NULL);
+
+    // Refused while already calibrating
+    assert(he_cal_can_start(true, true, true, &reason) == HE_CAL_START_REFUSED_BUSY);
+    assert(reason != NULL);
+
+    // Allowed when HE running, IDLE, and not already calibrating
+    assert(he_cal_can_start(true, true, false, &reason) == HE_CAL_START_OK);
+    assert(reason == NULL);
+
+    printf("✓ test_start_refusals passed\n");
+}
+
+static void test_failures_and_cancel_keep_old_calibration(void)
+{
+    he_calibration_t saved[2] = {
+        {.rest = 2050, .full = 2500, .valid = true},
+        {.rest = 2060, .full = 2510, .valid = true},
+    };
+
+    he_cal_runner_t runner;
+    he_cal_runner_init(&runner, NULL);
+
+    // 1. Failure during rest leaves saved calibration untouched
+    he_cal_runner_start(&runner);
+    for (int i = 0; i < 16; i++) {
+        he_cal_runner_feed(&runner, 2080, 2080);
+    }
+    for (int i = 0; i < 64; i++) {
+        he_cal_runner_feed(&runner, (i < 32) ? 2000 : 2100, 2080);
+    }
+    assert(runner.stage == HE_RUNNER_FAILED);
+    assert(!he_cal_runner_apply_to_saved(&runner, saved));
+    assert(saved[0].rest == 2050 && saved[0].full == 2500 && saved[0].valid);
+    assert(saved[1].rest == 2060 && saved[1].full == 2510 && saved[1].valid);
+
+    // 2. Failure during Key 2 (after Key 1 succeeded) leaves saved calibration untouched
+    he_cal_runner_start(&runner);
+    for (int i = 0; i < 16 + 64; i++) {
+        he_cal_runner_feed(&runner, 2080, 2090);
+    }
+    for (int p = 0; p < 5; p++) {
+        simulate_stroke(&runner, 1, 2080, 2550);
+    }
+    assert(runner.stage == HE_RUNNER_KEY2);
+    // Inconsistent peaks on Key 2 (diff from median > 120)
+    simulate_stroke(&runner, 2, 2090, 2300);
+    simulate_stroke(&runner, 2, 2090, 2700);
+    simulate_stroke(&runner, 2, 2090, 2500);
+    simulate_stroke(&runner, 2, 2090, 2500);
+    simulate_stroke(&runner, 2, 2090, 2500);
+    assert(runner.stage == HE_RUNNER_FAILED);
+    assert(runner.error == HE_CAL_ERR_PEAKS_INCONSISTENT);
+    assert(!he_cal_runner_apply_to_saved(&runner, saved));
+    assert(saved[0].rest == 2050 && saved[0].full == 2500 && saved[0].valid);
+    assert(saved[1].rest == 2060 && saved[1].full == 2510 && saved[1].valid);
+
+    // 3. Cancel / app disconnect mid-flow leaves saved calibration untouched
+    he_cal_runner_start(&runner);
+    for (int i = 0; i < 16 + 64; i++) {
+        he_cal_runner_feed(&runner, 2080, 2090);
+    }
+    simulate_stroke(&runner, 1, 2080, 2550);
+    he_cal_runner_cancel(&runner);
+    assert(runner.stage == HE_RUNNER_IDLE);
+    assert(!he_cal_runner_apply_to_saved(&runner, saved));
+    assert(saved[0].rest == 2050 && saved[0].full == 2500 && saved[0].valid);
+    assert(saved[1].rest == 2060 && saved[1].full == 2510 && saved[1].valid);
+
+    printf("✓ test_failures_and_cancel_keep_old_calibration passed\n");
+}
+
 int main(void)
 {
     printf("=== Running Hall Effect Calibration Runner Host Tests ===\n");
@@ -175,6 +308,11 @@ int main(void)
     test_rest_noisy_fails();
     test_span_too_small_fails();
     test_cancel();
+    test_lock_decision();
+    test_lock_screen_mode();
+    test_no_key_during_lock_or_calibration();
+    test_start_refusals();
+    test_failures_and_cancel_keep_old_calibration();
     printf("All Hall Effect calibration runner tests passed successfully!\n");
     return 0;
 }
