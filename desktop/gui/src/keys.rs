@@ -43,6 +43,8 @@ pub enum KeysMessage {
     Revert,
     PollLive,
     Live(Box<Result<IpcResponse, String>>),
+    /// The window is about to redraw: move the drawn stems on
+    Frame(iced::time::Instant),
 }
 
 #[derive(Debug, Default)]
@@ -56,6 +58,10 @@ pub struct KeysState {
     /// What the live view draws: each key's reading through a One Euro
     /// filter. Display only; the pad decides presses from raw readings.
     smooth: [OneEuro; 2],
+    /// Where the stems are drawn: glides towards `smooth` every frame, so
+    /// the motion has no steps between the ~50 readings a second
+    drawn: [Option<f32>; 2],
+    last_frame: Option<iced::time::Instant>,
     live_supported: bool,
     live_inflight: bool,
 }
@@ -85,6 +91,25 @@ impl KeysState {
         self.live = None;
         self.live_inflight = false;
         self.smooth = Default::default();
+        self.drawn = [None; 2];
+        self.last_frame = None;
+    }
+
+    /// Ease each drawn stem towards its filtered reading, by real time
+    fn advance(&mut self, now: iced::time::Instant) {
+        let dt = self
+            .last_frame
+            .map_or(0.0, |t| now.saturating_duration_since(t).as_secs_f32());
+        self.last_frame = Some(now);
+        // Most of the way in ~3 time constants: fast enough to keep up with
+        // a press, slow enough to hide the 20 ms steps between readings
+        let follow = 1.0 - (-dt / DRAW_TAU_S).exp();
+        for k in 0..2 {
+            self.drawn[k] = match (self.drawn[k], self.smooth[k].value) {
+                (Some(d), Some(t)) => Some(d + (t - d) * follow),
+                (_, t) => t,
+            };
+        }
     }
 
     fn take_sample(&mut self, sample: Option<HeLiveSample>, now: std::time::Instant) {
@@ -110,6 +135,9 @@ impl KeysState {
 /// a fast press is followed with almost no lag. Tuned in raw counts: rest
 /// noise is ~5-6 counts sd (decision record, V1.1 bench), a fast press moves
 /// ~450 counts in a few tens of ms.
+/// Time constant of the drawn stem's glide towards the filtered reading
+const DRAW_TAU_S: f32 = 0.025;
+
 #[derive(Debug, Default, Clone, Copy)]
 struct OneEuro {
     value: Option<f32>,
@@ -119,11 +147,12 @@ struct OneEuro {
 
 impl OneEuro {
     /// Cutoff for a still key, Hz: low, so the noise is averaged away
-    const MIN_CUTOFF: f32 = 1.5;
+    const MIN_CUTOFF: f32 = 0.5;
     /// Extra cutoff per count/s of movement
-    const BETA: f32 = 0.006;
-    /// Cutoff for the speed estimate itself, Hz
-    const SPEED_CUTOFF: f32 = 1.0;
+    const BETA: f32 = 0.004;
+    /// Cutoff for the speed estimate itself, Hz: low, so noise does not
+    /// read as movement and open the filter up
+    const SPEED_CUTOFF: f32 = 0.7;
 
     fn alpha(cutoff: f32, dt: f32) -> f32 {
         let tau = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
@@ -191,6 +220,10 @@ pub fn update(app: &mut App, msg: KeysMessage) -> Task<Message> {
                     state.take_sample(None, std::time::Instant::now());
                 }
             }
+            Task::none()
+        }
+        KeysMessage::Frame(now) => {
+            app.keys.advance(now);
             Task::none()
         }
         edit_msg => {
@@ -263,7 +296,10 @@ impl KeysState {
                 self.edit = Some(pad);
                 self.separate = pad[0] != pad[1];
             }
-            KeysMessage::Save | KeysMessage::PollLive | KeysMessage::Live(_) => {}
+            KeysMessage::Save
+            | KeysMessage::PollLive
+            | KeysMessage::Live(_)
+            | KeysMessage::Frame(_) => {}
         }
     }
 }
@@ -409,7 +445,7 @@ fn live_view<'a>(app: &'a App, key: usize, c: HeKeyConfig) -> Element<'a, Messag
         Some(s) => s.key2_down,
         None => false,
     };
-    let shown = app.keys.smooth[key].value;
+    let shown = app.keys.drawn[key];
     let depth = match (span, shown) {
         (Some((rest, full)), Some(r)) => Some((r - rest as f32) / (full as f32 - rest as f32)),
         _ => None,
@@ -814,7 +850,7 @@ mod tests {
     #[test]
     fn smoothing_removes_rest_noise() {
         let t0 = std::time::Instant::now();
-        let step = std::time::Duration::from_millis(33);
+        let step = std::time::Duration::from_millis(20);
         let mut f = OneEuro::default();
         let mut seed = 1;
         let (mut raw, mut out) = (vec![], vec![]);
@@ -827,7 +863,7 @@ mod tests {
             }
         }
         assert!(
-            sd(&out) < sd(&raw) * 0.5,
+            sd(&out) < sd(&raw) * 0.3,
             "raw sd {} shown sd {}",
             sd(&raw),
             sd(&out)
@@ -835,18 +871,43 @@ mod tests {
     }
 
     #[test]
-    fn smoothing_follows_a_fast_press_within_two_frames() {
+    fn smoothing_follows_a_fast_press_within_a_few_readings() {
         let t0 = std::time::Instant::now();
-        let step = std::time::Duration::from_millis(33);
+        let step = std::time::Duration::from_millis(20);
         let mut f = OneEuro::default();
-        for i in 0..30 {
+        for i in 0..50 {
             f.filter(2086.0, t0 + step * i);
         }
-        // A full press arrives between two polls: a 450-count step
-        let first = f.filter(2536.0, t0 + step * 30) - 2086.0;
-        let second = f.filter(2536.0, t0 + step * 31) - 2086.0;
-        assert!(first > 450.0 * 0.6, "first frame shows {first}");
-        assert!(second > 450.0 * 0.9, "second frame shows {second}");
+        // A full press arrives between two readings: a 450-count step
+        let shown: Vec<f32> = (50..54)
+            .map(|i| f.filter(2536.0, t0 + step * i) - 2086.0)
+            .collect();
+        assert!(shown[0] > 450.0 * 0.4, "first reading shows {}", shown[0]);
+        assert!(shown[2] > 450.0 * 0.85, "third reading shows {}", shown[2]);
+    }
+
+    #[test]
+    fn drawn_stem_glides_without_jumping_and_catches_up() {
+        let mut s = KeysState::default();
+        let t0 = iced::time::Instant::now();
+        let frame = std::time::Duration::from_micros(16_667);
+        s.smooth[0].value = Some(2086.0);
+        s.advance(t0);
+        assert_eq!(s.drawn[0], Some(2086.0), "starts where the reading is");
+        s.smooth[0].value = Some(2536.0);
+        s.advance(t0 + frame);
+        let first = s.drawn[0].unwrap() - 2086.0;
+        assert!(
+            first > 0.0 && first < 450.0 * 0.6,
+            "one frame moves part way: {first}"
+        );
+        for i in 2..=6 {
+            s.advance(t0 + frame * i);
+        }
+        assert!(
+            s.drawn[0].unwrap() - 2086.0 > 450.0 * 0.95,
+            "caught up within 100 ms"
+        );
     }
 
     #[test]

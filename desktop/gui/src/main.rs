@@ -2021,11 +2021,14 @@ impl App {
             );
         }
         if self.window.is_some() && self.page == Page::Keys {
-            // The live switch view: the pad sends ~50 samples/s
+            // The live switch view: the pad sends ~50 samples/s, and the
+            // stems are redrawn every display frame so they glide
             subscriptions.push(
-                iced::time::every(Duration::from_millis(33))
+                iced::time::every(Duration::from_millis(20))
                     .map(|_| Message::Keys(keys::KeysMessage::PollLive)),
             );
+            subscriptions
+                .push(window::frames().map(|at| Message::Keys(keys::KeysMessage::Frame(at))));
         }
         if self.window.is_some() && self.page == Page::Calibration {
             subscriptions.push(
