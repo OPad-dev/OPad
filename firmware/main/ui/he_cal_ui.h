@@ -56,11 +56,6 @@ bool he_cal_ui_start_calibration(bool from_app);
  */
 void he_cal_ui_cancel_calibration(void);
 
-/**
- * @brief True if calibration UI is currently active (lock screen or calibration screen).
- */
-bool he_cal_ui_is_active(void);
-
 #ifdef __cplusplus
 }
 #endif

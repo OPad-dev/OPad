@@ -17,6 +17,16 @@
 
 static const char *TAG = "he_cal_ui";
 
+// send_proto_progress() casts he_cal_error_t straight to osupad_HeCalError
+_Static_assert((int)HE_CAL_ERR_REST_NOT_STILL == (int)osupad_HeCalError_HE_CAL_ERROR_REST_NOT_STILL, "HeCalError");
+_Static_assert((int)HE_CAL_ERR_REST_OUT_OF_RANGE == (int)osupad_HeCalError_HE_CAL_ERROR_REST_OUT_OF_RANGE, "HeCalError");
+_Static_assert((int)HE_CAL_ERR_REST_PRESSED == (int)osupad_HeCalError_HE_CAL_ERROR_REST_PRESSED, "HeCalError");
+_Static_assert((int)HE_CAL_ERR_SIGNAL_NOT_RISING == (int)osupad_HeCalError_HE_CAL_ERROR_SIGNAL_NOT_RISING, "HeCalError");
+_Static_assert((int)HE_CAL_ERR_SPAN_TOO_SMALL == (int)osupad_HeCalError_HE_CAL_ERROR_SPAN_TOO_SMALL, "HeCalError");
+_Static_assert((int)HE_CAL_ERR_PEAKS_INCONSISTENT == (int)osupad_HeCalError_HE_CAL_ERROR_PEAKS_INCONSISTENT, "HeCalError");
+_Static_assert((int)HE_CAL_ERR_TOO_FEW_PEAKS == (int)osupad_HeCalError_HE_CAL_ERROR_TOO_FEW_PEAKS, "HeCalError");
+_Static_assert((int)HE_CAL_ERR_TOO_MANY_PEAKS == (int)osupad_HeCalError_HE_CAL_ERROR_TOO_MANY_PEAKS, "HeCalError");
+
 // Button bounds in screen coordinates (320x240)
 #define CAL_BTN_X 70
 #define CAL_BTN_Y 172
@@ -359,16 +369,17 @@ static void he_cal_ui_timer_cb(lv_timer_t *timer)
     }
 
     // Handling failure or app-disconnect display when not actively sampling
+    // The reason stays up for 2 s, then a locked pad goes back to the lock
+    // screen and an unlocked one (failed recalibration) back to normal.
     if (!calibrating && (s_runner.stage == HE_RUNNER_FAILED || s_disconnect_failed)) {
-        if (!locked && now_us >= s_fail_until_us) {
-            s_disconnect_failed = false;
-            he_cal_runner_cancel(&s_runner);
-            destroy_overlay_objects();
+        if (now_us < s_fail_until_us) {
+            create_overlay_objects();
+            update_calibration_screen();
             return;
         }
-        create_overlay_objects();
-        update_calibration_screen();
-        return;
+        s_disconnect_failed = false;
+        s_fail_until_us = 0;
+        he_cal_runner_cancel(&s_runner);
     }
 
     if (!locked && !calibrating) {
@@ -513,8 +524,3 @@ void he_cal_ui_cancel_calibration(void)
     }
 }
 
-bool he_cal_ui_is_active(void)
-{
-    return he_backend_is_locked() || he_backend_is_calibrating() ||
-           (s_success_until_us > 0) || (s_fail_until_us > 0);
-}

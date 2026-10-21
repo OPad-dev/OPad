@@ -76,6 +76,8 @@ typedef enum _osupad_HeCalStage {
     osupad_HeCalStage_HE_CAL_STAGE_FAILED = 5
 } osupad_HeCalStage;
 
+/* Values 1..8 match he_cal_error_t in firmware/main/input/he_cal_capture.h
+ (he_cal_ui.c asserts this at compile time). */
 typedef enum _osupad_HeCalError {
     osupad_HeCalError_HE_CAL_ERROR_NONE = 0,
     osupad_HeCalError_HE_CAL_ERROR_REST_NOT_STILL = 1,
@@ -86,6 +88,7 @@ typedef enum _osupad_HeCalError {
     osupad_HeCalError_HE_CAL_ERROR_PEAKS_INCONSISTENT = 6,
     osupad_HeCalError_HE_CAL_ERROR_TOO_FEW_PEAKS = 7,
     osupad_HeCalError_HE_CAL_ERROR_TOO_MANY_PEAKS = 8,
+    /* Reserved: no firmware sends it yet (the walk-away timeout is undecided). */
     osupad_HeCalError_HE_CAL_ERROR_TIMEOUT = 9
 } osupad_HeCalError;
 
@@ -412,6 +415,9 @@ typedef struct _osupad_BoardTestResult {
     uint64_t bridged_gpios; /* spare pins that follow a neighbour driven low */
 } osupad_BoardTestResult;
 
+/* Sent by the pad on every stage change and press. A start the pad refuses
+ (not IDLE, already calibrating, no HE backend) is answered with
+ stage = FAILED, error = NONE and the reason in error_message. */
 typedef struct _osupad_HeCalibrationProgress {
     osupad_HeCalStage stage;
     uint32_t key_index; /* 1 = Key 1, 2 = Key 2 (0 during rest/idle/complete) */
