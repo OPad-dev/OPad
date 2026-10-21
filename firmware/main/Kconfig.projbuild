@@ -57,6 +57,19 @@ menu "OPad Testing and Benchmark"
             with scripts/he_trace.py. Latency measured in this build does not
             count.
 
+    config OSUPAD_HE_DEBUG
+        bool "Hall Effect debug firmware: log every press, readings and ADC health"
+        default n
+        depends on OSUPAD_HE_BACKEND && !OSUPAD_HE_TRACE
+        help
+            A debug firmware for chasing wrong presses on HE pads. Logs every
+            press and release the engine makes with the readings just before
+            it, per-second reading ranges, ADC health, pad state, screen
+            animation and chip temperature, as LogEvents tagged "he.*" that
+            opad-daemon writes to he-debug.log. Works with the daemon and tosu
+            running, during maps. Adds latency on purpose; never a release
+            build. The firmware version gets a "+hedebug" suffix.
+
     config OSUPAD_BENCH_DEBUG_GPIO
         bool "Toggle debug GPIO right after HID submit"
         default n

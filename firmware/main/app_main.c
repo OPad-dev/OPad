@@ -25,6 +25,7 @@
 #include "diag/diag.h"
 #include "diag/hall_bench.h"
 #include "input/he_backend.h"
+#include "input/he_debug.h"
 #include "input/he_cal.h"
 
 static const char *TAG = "app_main";
@@ -257,6 +258,11 @@ void app_main(void)
         ESP_LOGE(TAG, "ui_init failed: %s (continuing in headless mode)", esp_err_to_name(err));
     } else if (module == BOARD_MODULE_HE && !he_backend_running()) {
         ui_show_notice("Hall Effect module needs firmware v2.\nKeys are disabled.");
+    }
+    // HE debug firmware only, and after the display: its draw buffers need
+    // DMA-capable internal RAM that the debug task would otherwise take first
+    if (he_backend_running()) {
+        he_debug_start();
     }
 #ifdef CONFIG_OSUPAD_HALL_BENCH
     hall_bench_show_ui();

@@ -37,6 +37,7 @@
 #include "input/he_cal_runner.h"
 #include "input/he_cal_barrier.h"
 #include "input/he_health.h"
+#include "input/he_debug.h"
 #include "input/key_event.h"
 #include "usb/usb_report_barrier.h"
 #include "esp_adc/adc_continuous.h"
@@ -171,6 +172,7 @@ static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continu
     if (__builtin_expect(s_calibrating, 0)) {
         he_cal_samples_push(s_cal_write, f.newest[0], f.newest[1]);
     }
+    he_debug_isr_frame(f.newest[0], f.newest[1]);  // no-op outside the debug build
     for (int k = 0; k < 2; k++) {
         if (f.newest[k] < 0) {
             continue;
@@ -180,8 +182,14 @@ static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continu
         if (he_health_is_key_faulted(&s_health, k)) {
             continue;
         }
+#ifdef CONFIG_OSUPAD_HE_DEBUG
+        he_rt_state_t from = s_keys[k].state;
+#endif
         he_rt_event_t ev = he_rt_step(&s_keys[k], f.newest[k]);
         if (ev != HE_RT_NONE) {
+#ifdef CONFIG_OSUPAD_HE_DEBUG
+            he_debug_isr_edge((uint8_t)k, ev, from, s_keys[k].state, s_keys[k].extreme, f.newest[k], now);
+#endif
             s_down[k] = ev == HE_RT_DOWN;
             s_edge_us[k] = now;
             changed = true;
@@ -687,7 +695,17 @@ void he_backend_set_params(uint8_t key_index, const he_rt_params_t *p)
     int32_t raw = s_stats.raw[key_index] >= 0 ? s_stats.raw[key_index] : INT32_MAX;
     he_rt_set_params(&s_keys[key_index], p, raw);
     portEXIT_CRITICAL(&s_lock);
+    he_debug_params(key_index, p);
 }
+
+#ifdef CONFIG_OSUPAD_HE_DEBUG
+void he_backend_debug_params(uint8_t key_index, he_rt_params_t *out)
+{
+    portENTER_CRITICAL(&s_lock);
+    *out = s_keys[key_index & 1].p;
+    portEXIT_CRITICAL(&s_lock);
+}
+#endif
 
 bool he_backend_keys_absent(void)
 {

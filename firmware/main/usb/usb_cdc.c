@@ -192,6 +192,7 @@ static void usb_cdc_task_poll(void)
     protocol_poll_detect_pin();
     protocol_poll_he_calibration();
     protocol_poll_he_live();
+    protocol_send_he_debug_logs();
     protocol_send_key_presses();
     protocol_drain_diag_logs();
 }
@@ -202,8 +203,13 @@ static void usb_cdc_task(void *arg)
 {
     (void)arg;
     while (1) {
-        // 10 ms while the app's live key view is open, so it gets ~50 samples/s
+        // 10 ms while the app's live key view is open, so it gets ~50 samples/s;
+        // 20 ms in the HE debug firmware, which streams its log
+#ifdef CONFIG_OSUPAD_HE_DEBUG
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(protocol_he_live_active() ? 10 : 20));
+#else
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(protocol_he_live_active() ? 10 : 200));
+#endif
         usb_cdc_task_poll();
     }
 }

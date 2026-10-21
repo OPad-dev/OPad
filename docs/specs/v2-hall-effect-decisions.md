@@ -249,6 +249,36 @@ does it itself only when no app is there.
 | F | USB-only recovery details | A/B OTA with rollback until USB configures (`app_main.c`), 16 MB flash with ~11.9 MiB past the last partition (`partitions.csv`) | separate proposal before any partition change |
 | G | ADC stall watchdog timeout | proposal ~5 ms | stress with display, USB, NVS/OTA writes |
 
+## HE debug firmware (owner, 2026-10-22)
+
+A permanent debug build for chasing wrong presses on HE pads, kept after
+any fix (`CONFIG_OSUPAD_HE_DEBUG`, `firmware/main/input/he_debug.c`). It
+logs every press and release the engine makes with the 12 frames (3 ms) of
+readings before it, per-second reading ranges per key, ADC health (late
+frames, longest gap, stray and railed readings, key faults, stalls,
+interrupt time), the pad's state, whether a screen animation runs, and the
+chip temperature. Lines are LogEvents tagged `he.*`, sent in every state, so
+it works during maps with opad-daemon and tosu running; the daemon writes
+them to `he-debug.log` in OPad's data folder (`desktop/daemon/src/he_debug_log.rs`,
+rotated at 50 MB). It adds latency on purpose and is never a release build;
+its version reports a `+hedebug` suffix.
+
+```sh
+cd firmware
+idf.py -B build-hed -D SDKCONFIG=build-hed/sdkconfig \
+  -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.hedebug" build
+opadctl flash build-hed/opad-firmware.bin
+tail -f ~/.local/share/opad/he-debug.log
+```
+
+Line formats, readings relative to the calibrated rest in raw counts:
+`he.edge` `K2 DOWN A>P raw+154 act+104 rel+52 top+52 pk+154` (states:
+A armed, P pressed, R rapid-trigger released); `he.pre` the 12 readings
+before it, oldest first (`x` = no reading in that frame); `he.sec`
+`K1 min..max avg K2 ...`; `he.adc` per-second deltas; `he.cfg` thresholds
+whenever they are rebuilt; `he.ctx` state, animation, temperature and any
+lines or edges lost.
+
 ## Reproducing the measurements
 
 ### Raw noise and the rapid-trigger floor (OPEN A, D)

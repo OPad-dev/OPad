@@ -1,6 +1,7 @@
 pub mod backup;
 pub mod device_actor;
 pub mod firmware_update;
+pub mod he_debug_log;
 pub mod identity;
 pub mod ipc_handlers;
 pub mod log_hub;

@@ -119,6 +119,9 @@ void protocol_poll_he_live(void);
 /** True while the host has the live key view open: the CDC task polls faster. */
 bool protocol_he_live_active(void);
 
+/** HE debug firmware only: send its log lines (any state). CDC task. */
+void protocol_send_he_debug_logs(void);
+
 #ifdef __cplusplus
 }
 #endif

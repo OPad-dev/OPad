@@ -23,6 +23,7 @@ idf_component_register(
         "input/he_cal_runner.c"
         "input/he_cal.c"
         "input/he_health.c"
+        "input/he_debug.c"
         "usb/usb_descriptors.c"
         "usb/usb_hid.c"
         "usb/usb_media.c"
@@ -76,4 +77,5 @@ idf_component_register(
         esp_tinyusb
         esp_app_format
         esp_adc
+        esp_driver_tsens
 )

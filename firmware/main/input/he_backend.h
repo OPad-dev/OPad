@@ -67,6 +67,11 @@ void he_backend_reload_params(void);
 
 void he_backend_get_stats(he_backend_stats_t *out);
 
+#ifdef CONFIG_OSUPAD_HE_DEBUG
+/** @brief The thresholds a key runs with now (debug log only). */
+void he_backend_debug_params(uint8_t key_index, he_rt_params_t *out);
+#endif
+
 /**
  * @brief True when neither key has had a valid reading for a while: no HE
  * module on the connector any more (nothing, or an MX module).

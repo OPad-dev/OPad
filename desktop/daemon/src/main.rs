@@ -20,6 +20,7 @@ use opad_tosu::{spawn_tosu_supervisor, TosuManager};
 pub mod backup;
 pub mod device_actor;
 pub mod firmware_update;
+pub mod he_debug_log;
 pub mod identity;
 pub mod ipc_handlers;
 pub mod log_hub;
@@ -139,6 +140,8 @@ async fn main() -> Result<()> {
     }
 
     let start_now = Instant::now();
+    // The HE debug firmware's log lines, kept in a file (he_debug_log.rs)
+    let mut he_debug_log = he_debug_log::HeDebugLog::new();
     let mut controller = RuntimeController::new(
         initial_config.clone(),
         initial_device,
@@ -659,6 +662,9 @@ async fn main() -> Result<()> {
                         tag,
                         message,
                     } => {
+                        if he_debug_log::HeDebugLog::is_debug_tag(&tag) {
+                            he_debug_log.write(&level.to_string(), &tag, &message);
+                        }
                         log_hub.push(LogSource::Esp, level, &tag, message);
                     }
                     RuntimeAction::SaveTapStats {

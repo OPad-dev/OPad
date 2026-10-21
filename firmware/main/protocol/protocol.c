@@ -10,6 +10,7 @@
 #include "input/key_event.h"
 #include "input/he_cal.h"
 #include "input/he_backend.h"
+#include "input/he_debug.h"
 #include "ui/he_cal_ui.h"
 #include "counters/counters.h"
 #include "ui/ui.h"
@@ -206,6 +207,11 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     msg.which_payload = osupad_DeviceToHost_hello_ack_tag;
     msg.payload.hello_ack.protocol_version = osupad_ProtocolVersion_PROTOCOL_VERSION_V1;
     strncpy(msg.payload.hello_ack.firmware_version, app_desc->version, sizeof(msg.payload.hello_ack.firmware_version) - 1);
+#ifdef CONFIG_OSUPAD_HE_DEBUG
+    // Never mistaken for a release build, in the app or in a bug report
+    strncat(msg.payload.hello_ack.firmware_version, "+hedebug",
+            sizeof(msg.payload.hello_ack.firmware_version) - 1 - strlen(msg.payload.hello_ack.firmware_version));
+#endif
     strncpy(msg.payload.hello_ack.board_profile, "waveshare_esp32s3_touch_lcd_2", sizeof(msg.payload.hello_ack.board_profile) - 1);
     strncpy(msg.payload.hello_ack.device_id, dev_id, sizeof(msg.payload.hello_ack.device_id) - 1);
     msg.payload.hello_ack.counter_generation = snap.generation;
@@ -1023,5 +1029,34 @@ void protocol_poll_he_live(void)
     msg.payload.he_live_sample.key1_down = key_event_is_down(KEY_ID_1);
     msg.payload.he_live_sample.key2_down = key_event_is_down(KEY_ID_2);
     (void)send_envelope(&msg);  // a lost sample is replaced by the next one
+#endif
+}
+
+void protocol_send_he_debug_logs(void)
+{
+#ifdef CONFIG_OSUPAD_HE_DEBUG
+    // Debug firmware: in every state, a map included; that is the point of it
+    if (!usb_cdc_is_connected() || !s_host_framing_known) {
+        return;
+    }
+    for (int b = 0; b < 8 && he_debug_pending(); b++) {
+        he_debug_line_t lines[8];
+        size_t n = he_debug_take(lines, 8);
+        osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+        msg.sequence_number = s_out_sequence++;
+        msg.which_payload = osupad_DeviceToHost_log_batch_tag;
+        msg.payload.log_batch.events_count = (pb_size_t)n;
+        for (size_t i = 0; i < n; i++) {
+            osupad_LogEvent *ev = &msg.payload.log_batch.events[i];
+            ev->timestamp_ms = lines[i].ms;
+            ev->level = (osupad_LogLevel)lines[i].level;
+            ev->event_id = 0;  // text event: the host shows `message`
+            strncpy(ev->tag, lines[i].tag, sizeof(ev->tag) - 1);
+            strncpy(ev->message, lines[i].msg, sizeof(ev->message) - 1);
+        }
+        if (send_envelope(&msg) != ESP_OK) {
+            return;
+        }
+    }
 #endif
 }

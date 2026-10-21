@@ -996,10 +996,17 @@ impl RuntimeController {
                     } else {
                         format!("ESP event {}", ev.event_id)
                     };
+                    // The HE debug firmware tags its lines ("he.*") and its
+                    // timing matters, so those keep the pad's own clock
+                    let (tag, message) = if ev.tag.starts_with("he.") {
+                        (ev.tag, format!("[{:>9} ms] {}", ev.timestamp_ms, msg))
+                    } else {
+                        ("firmware".to_string(), msg)
+                    };
                     actions.push(RuntimeAction::PushEspLog {
                         level,
-                        tag: "firmware".to_string(),
-                        message: msg,
+                        tag,
+                        message,
                     });
                 }
             }
