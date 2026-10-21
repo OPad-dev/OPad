@@ -171,4 +171,13 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     -o "${BIN_DIR}/test_he_cal_runner"
 "${BIN_DIR}/test_he_cal_runner"
 
+# 19. The ISR accumulator and its 20 ms consumer keep the 4 kHz stream
+echo "[19/19] Running test_he_cal_sampling..."
+gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
+    "${FW_MAIN}/input/he_cal_capture.c" \
+    "${FW_MAIN}/input/he_cal_runner.c" \
+    "${HOST_TEST_DIR}/test_he_cal_sampling.c" \
+    -o "${BIN_DIR}/test_he_cal_sampling"
+"${BIN_DIR}/test_he_cal_sampling"
+
 echo "=== All firmware host unit tests passed! ==="

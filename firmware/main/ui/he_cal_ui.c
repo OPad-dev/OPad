@@ -51,7 +51,6 @@ static atomic_bool s_host_disconnected = false;
 static atomic_bool s_btn_active = false;
 static bool s_app_started = false;
 static bool s_disconnect_failed = false;
-static uint32_t s_last_sample_seq = 0;
 static int64_t s_success_until_us = 0;
 static int64_t s_fail_until_us = 0;
 
@@ -398,13 +397,9 @@ static void he_cal_ui_timer_cb(lv_timer_t *timer)
 
     // OPEN (Report §Questions for the owner #1 & #2): On-pad cancel gesture and
     // walk-away timeout during KEY1/KEY2 stages are left open pending owner decision.
-    int32_t raw[2] = {-1, -1};
-    uint32_t seq = 0;
-    he_backend_get_cal_sample(raw, &seq);
-
-    if (seq != s_last_sample_seq && raw[0] >= 0 && raw[1] >= 0) {
-        s_last_sample_seq = seq;
-        bool changed = he_cal_runner_feed(&s_runner, raw[0], raw[1]);
+    const he_cal_samples_t *samples = he_backend_take_cal_samples();
+    if (samples) {
+        bool changed = he_cal_runner_feed_samples(&s_runner, samples);
         if (changed) {
             he_runner_progress_t prog;
             he_cal_runner_get_progress(&s_runner, &prog);
@@ -498,7 +493,6 @@ bool he_cal_ui_start_calibration(bool from_app)
     bool locked_ui = ui_lock();
     he_cal_runner_start(&s_runner);
     he_backend_start_calibration();
-    s_last_sample_seq = 0;
     s_success_until_us = 0;
     s_fail_until_us = 0;
     s_disconnect_failed = false;

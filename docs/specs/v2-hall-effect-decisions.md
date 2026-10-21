@@ -199,7 +199,7 @@ does it itself only when no app is there.
   Tested in `firmware/test/host/test_he_cal.c`.
 - **Capture algorithm (`firmware/main/input/he_cal_capture.c`):**
   Pure C state machine (`he_cal_capture_t`). Captures rest over a still window
-  (default 64 samples / 64 ms at 1 kHz, noise spread ≤ 36 counts, rejected if reading is out
+  (default 64 frame samples / 16 ms at 4 kHz in the UI flow, noise spread ≤ 36 counts, rejected if reading is out
   of physical rest bounds 1500..2500 or moving). Detects 5 stroke peaks on the sample stream; selects
   the **median** peak (ignoring extreme bottom-out / overtravel presses). Validates that
   the signal rises on press (`peak > rest`), travel span exceeds `min_span` (≥ 250 counts),

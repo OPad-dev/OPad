@@ -1,7 +1,7 @@
 #include "he_cal_runner.h"
 #include <string.h>
 
-#define REST_SETTLE_SAMPLES 16 // Settle 16 ms after user presses Calibrate before reading rest
+#define REST_SETTLE_SAMPLES 64 // 16 ms at one sample per 250 us frame
 
 void he_cal_runner_init(he_cal_runner_t *r, const he_cal_capture_cfg_t *cfg)
 {
@@ -32,6 +32,8 @@ void he_cal_runner_start(he_cal_runner_t *r)
     r->error = HE_CAL_ERR_NONE;
     r->error_key = 255;
     r->rest_settle_count = 0;
+    r->last_raw[0] = -1;
+    r->last_raw[1] = -1;
 }
 
 void he_cal_runner_cancel(he_cal_runner_t *r)
@@ -150,6 +152,23 @@ bool he_cal_runner_feed(he_cal_runner_t *r, int32_t raw0, int32_t raw1)
     }
 
     return false;
+}
+
+bool he_cal_runner_feed_samples(he_cal_runner_t *r, const he_cal_samples_t *samples)
+{
+    if (!r || !samples || r->stage < HE_RUNNER_REST || r->stage > HE_RUNNER_KEY2) {
+        return false;
+    }
+    if (samples->lost) {
+        r->stage = HE_RUNNER_FAILED;
+        r->error = HE_CAL_ERR_TOO_FEW_PEAKS;
+        return true;
+    }
+    bool changed = false;
+    for (uint16_t i = 0; i < samples->count; i++) {
+        changed |= he_cal_runner_feed(r, samples->raw[i][0], samples->raw[i][1]);
+    }
+    return changed;
 }
 
 void he_cal_runner_get_progress(const he_cal_runner_t *r, he_runner_progress_t *out)

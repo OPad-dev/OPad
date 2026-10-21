@@ -46,7 +46,7 @@ typedef enum {
 } he_cal_stage_t;
 
 typedef struct {
-    uint16_t rest_window_samples; // Samples needed for rest window (e.g. 64)
+    uint16_t rest_window_samples; // 64 frame samples = 16 ms at 4 kHz in the UI flow
     int32_t  rest_max_spread;     // Max allowable p-p spread at rest (e.g. 36)
     int32_t  rest_min_raw;        // Min acceptable rest count (e.g. 1500)
     int32_t  rest_max_raw;        // Max acceptable rest count (e.g. 2500)

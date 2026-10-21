@@ -9,10 +9,12 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 #include "esp_err.h"
 #include "sdkconfig.h"
 #include "input/he_rt.h"
 #include "input/he_params.h"
+#include "input/he_cal_samples.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -106,9 +108,11 @@ void he_backend_cancel_calibration(void);
 esp_err_t he_backend_finish_calibration(const he_calibration_t results[2]);
 
 /**
- * @brief Read the newest raw sample pair tapped from the frame ISR during calibration.
+ * @brief Swap out the ordered samples and extrema accumulated since the last read.
+ * Single reader (LVGL). The returned buffer belongs to it until its next call.
+ * The empty replacement is prepared outside s_lock; the swap holds it briefly.
  */
-void he_backend_get_cal_sample(int32_t raw[2], uint32_t *seq);
+const he_cal_samples_t *he_backend_take_cal_samples(void);
 
 #else  // MX-only builds carry none of it
 
@@ -123,7 +127,7 @@ static inline bool he_backend_is_calibrating(void) { return false; }
 static inline void he_backend_start_calibration(void) {}
 static inline void he_backend_cancel_calibration(void) {}
 static inline esp_err_t he_backend_finish_calibration(const he_calibration_t r[2]) { (void)r; return ESP_ERR_NOT_SUPPORTED; }
-static inline void he_backend_get_cal_sample(int32_t r[2], uint32_t *s) { if (r) { r[0] = -1; r[1] = -1; } if (s) *s = 0; }
+static inline const he_cal_samples_t *he_backend_take_cal_samples(void) { return NULL; }
 
 #endif
 

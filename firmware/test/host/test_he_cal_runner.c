@@ -37,7 +37,7 @@ static void test_full_successful_run(void)
     assert(prog.stage == HE_RUNNER_REST);
 
     // Feed settle + 64 rest samples for both keys at rest = 2080
-    for (int i = 0; i < 16 + 64; i++) {
+    for (int i = 0; i < 64 + 64; i++) {
         he_cal_runner_feed(&runner, 2080, 2090);
     }
     assert(runner.stage == HE_RUNNER_KEY1);
@@ -98,7 +98,7 @@ static void test_rest_noisy_fails(void)
     he_cal_runner_start(&runner);
 
     // Settle
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 64; i++) {
         he_cal_runner_feed(&runner, 2080, 2080);
     }
 
@@ -129,7 +129,7 @@ static void test_span_too_small_fails(void)
     he_cal_runner_start(&runner);
 
     // Settle + rest at 2080
-    for (int i = 0; i < 16 + 64; i++) {
+    for (int i = 0; i < 64 + 64; i++) {
         he_cal_runner_feed(&runner, 2080, 2080);
     }
     assert(runner.stage == HE_RUNNER_KEY1);
@@ -157,7 +157,7 @@ static void test_cancel(void)
     he_cal_runner_init(&runner, NULL);
     he_cal_runner_start(&runner);
 
-    for (int i = 0; i < 16 + 64; i++) {
+    for (int i = 0; i < 64 + 64; i++) {
         he_cal_runner_feed(&runner, 2080, 2080);
     }
     assert(runner.stage == HE_RUNNER_KEY1);
@@ -254,7 +254,7 @@ static void test_failures_and_cancel_keep_old_calibration(void)
 
     // 1. Failure during rest leaves saved calibration untouched
     he_cal_runner_start(&runner);
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 64; i++) {
         he_cal_runner_feed(&runner, 2080, 2080);
     }
     for (int i = 0; i < 64; i++) {
@@ -267,7 +267,7 @@ static void test_failures_and_cancel_keep_old_calibration(void)
 
     // 2. Failure during Key 2 (after Key 1 succeeded) leaves saved calibration untouched
     he_cal_runner_start(&runner);
-    for (int i = 0; i < 16 + 64; i++) {
+    for (int i = 0; i < 64 + 64; i++) {
         he_cal_runner_feed(&runner, 2080, 2090);
     }
     for (int p = 0; p < 5; p++) {
@@ -288,7 +288,7 @@ static void test_failures_and_cancel_keep_old_calibration(void)
 
     // 3. Cancel / app disconnect mid-flow leaves saved calibration untouched
     he_cal_runner_start(&runner);
-    for (int i = 0; i < 16 + 64; i++) {
+    for (int i = 0; i < 64 + 64; i++) {
         he_cal_runner_feed(&runner, 2080, 2090);
     }
     simulate_stroke(&runner, 1, 2080, 2550);

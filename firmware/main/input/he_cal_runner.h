@@ -18,6 +18,7 @@
 #include <stddef.h>
 #include "he_cal_capture.h"
 #include "he_params.h"
+#include "he_cal_samples.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -76,6 +77,10 @@ void he_cal_runner_cancel(he_cal_runner_t *r);
  * @return True if stage changed or press count incremented.
  */
 bool he_cal_runner_feed(he_cal_runner_t *r, int32_t raw0, int32_t raw1);
+
+// Drain an ordered ISR batch. Missing/overflowed data fails the attempt;
+// extrema alone cannot preserve stroke arming and release order.
+bool he_cal_runner_feed_samples(he_cal_runner_t *r, const he_cal_samples_t *samples);
 
 /**
  * @brief Get current calibration progress snapshot.

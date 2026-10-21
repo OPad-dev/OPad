@@ -122,9 +122,12 @@ static int64_t s_edge_us[2];         // frame time of the last change
 static he_health_t s_health;
 static he_backend_stats_t s_stats = {.raw = {-1, -1}};
 
-static volatile bool s_calibrating = false;
-static volatile int32_t s_cal_sample[2] = {-1, -1};
-static volatile uint32_t s_cal_sample_seq = 0;
+// s_lock protects the flag and ISR-owned buffer. Only LVGL swaps/drains;
+// start/cancel are serialized with that reader by the LVGL lock.
+static bool s_calibrating;
+static he_cal_samples_t s_cal_buffers[2];
+static he_cal_samples_t *s_cal_write = &s_cal_buffers[0];
+static he_cal_samples_t *s_cal_read = &s_cal_buffers[1];
 
 static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata,
                                void *user_data)
@@ -152,9 +155,7 @@ static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continu
     s_stats.foreign_words += f.foreign;
     s_stats.railed_samples += f.railed;
     if (__builtin_expect(s_calibrating, 0)) {
-        s_cal_sample[0] = f.newest[0];
-        s_cal_sample[1] = f.newest[1];
-        s_cal_sample_seq++;
+        he_cal_samples_push(s_cal_write, f.newest[0], f.newest[1]);
     }
     for (int k = 0; k < 2; k++) {
         if (f.newest[k] < 0) {
@@ -528,7 +529,7 @@ void he_backend_reload_params(void)
     he_cal_get_all(cal);
     bool suppress = he_cal_suppress_input(
         he_cal_is_locked_decision(s_running, cal[0].valid, cal[1].valid),
-        s_calibrating);
+        he_backend_is_calibrating());
     for (int k = 0; k < 2; k++) {
         he_rt_params_t p;
         uint32_t r = he_params_build(&s_key_settings[k], &cal[k], &HE_PROVISIONAL_LIMITS, &p);
@@ -548,12 +549,19 @@ bool he_backend_is_locked(void)
 
 bool he_backend_is_calibrating(void)
 {
-    return s_calibrating;
+    portENTER_CRITICAL(&s_lock);
+    bool active = s_calibrating;
+    portEXIT_CRITICAL(&s_lock);
+    return active;
 }
 
 void he_backend_start_calibration(void)
 {
+    he_cal_samples_reset(s_cal_write);
+    he_cal_samples_reset(s_cal_read);
+    portENTER_CRITICAL(&s_lock);
     s_calibrating = true;
+    portEXIT_CRITICAL(&s_lock);
     he_backend_reload_params();
     if (s_running) {
         int64_t now = esp_timer_get_time();
@@ -575,7 +583,9 @@ void he_backend_start_calibration(void)
 
 void he_backend_cancel_calibration(void)
 {
+    portENTER_CRITICAL(&s_lock);
     s_calibrating = false;
+    portEXIT_CRITICAL(&s_lock);
     he_backend_reload_params();
 }
 
@@ -585,22 +595,22 @@ esp_err_t he_backend_finish_calibration(const he_calibration_t results[2])
         return ESP_ERR_INVALID_ARG;
     }
     esp_err_t err = he_cal_set(results);
+    portENTER_CRITICAL(&s_lock);
     s_calibrating = false;
+    portEXIT_CRITICAL(&s_lock);
     he_backend_reload_params();
     return err;
 }
 
-void he_backend_get_cal_sample(int32_t raw[2], uint32_t *seq)
+const he_cal_samples_t *he_backend_take_cal_samples(void)
 {
+    he_cal_samples_reset(s_cal_read);
     portENTER_CRITICAL(&s_lock);
-    if (raw) {
-        raw[0] = s_cal_sample[0];
-        raw[1] = s_cal_sample[1];
-    }
-    if (seq) {
-        *seq = s_cal_sample_seq;
-    }
+    he_cal_samples_t *ready = s_cal_write;
+    s_cal_write = s_cal_read;
+    s_cal_read = ready;
     portEXIT_CRITICAL(&s_lock);
+    return ready;
 }
 
 bool he_backend_running(void)

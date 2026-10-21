@@ -27,7 +27,8 @@ This plan implements the Hall Effect calibration lock screen, on-pad calibration
 > "Captures rest over a still window (default 100 samples / 25 ms, noise spread ≤ 32 counts... travel span exceeds min_span (≥ 100 counts), and peak-to-peak consistency is within max_peak_spread (≤ 80 counts)."
 
 However, `firmware/main/input/he_cal_capture.c:10-19` (`he_cal_capture_default_cfg()`) defines the authoritative values based on V1.1 bench measurements:
-- `rest_window_samples = 64` (64 samples at 1 kHz = 64 ms)
+- `rest_window_samples = 64` (64 frame samples at 4 kHz = 16 ms;
+  `firmware/main/input/he_cal_capture.c`, `he_backend.c`)
 - `rest_max_spread = 36` counts
 - `rest_min_raw = 1500`, `rest_max_raw = 2500`
 - `target_peaks = 5`
@@ -133,7 +134,16 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
 - `firmware/main/input/he_backend.h` & `firmware/main/input/he_backend.c`:
   - `he_backend_is_locked()`: returns `true` if `he_backend_running()` and `(!cal[0].valid || !cal[1].valid)`.
   - When locked or calibrating: thresholds set to `HE_PARAMS_NEVER` (`actuation = INT32_MAX, release = -1`).
-  - Sample tapping in `on_frame`: `if (__builtin_expect(s_calibrating, 0))` copies `f.newest[0]` and `f.newest[1]` to calibration runner buffer.
+  - Sample tapping in `on_frame`: `if (__builtin_expect(s_calibrating, 0))`
+    accumulates the ordered newest conversion pair from every 250 µs frame,
+    plus each key's min/max. Two bounded 512-frame buffers are swapped under
+    `s_lock`; the LVGL timer drains the detached buffer every 20 ms. Overflow
+    or an invalid frame fails the attempt. A min/max pair per timer tick alone
+    cannot preserve press/release order (`firmware/main/input/he_cal_samples.h`,
+    `he_backend.c`, `he_cal_runner.c`, `firmware/main/ui/he_cal_ui.c`).
+  - The runner discards 64 frame samples (16 ms) to settle, then averages 64
+    frame samples (16 ms) at rest. The timer delays presentation, not sampling
+    (`firmware/main/input/he_cal_runner.c`, `he_cal_capture.c`).
   - `he_backend_start_calibration()` and `he_backend_cancel_calibration()`.
 - `firmware/main/input/touch_retry.c`:
   - Gated during lock or calibration: suppresses Quick Retry (`usb_hid_set_touch_retry(true)`) and swipes (`handle_swipe`).
