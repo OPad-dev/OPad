@@ -94,8 +94,11 @@ bool he_backend_is_calibrating(void);
 /**
  * @brief Start interactive calibration. Temporarily suppresses PC keypresses
  * and enables sample tapping in the frame ISR.
+ * Waits for the reporting task and USB callbacks before capture starts.
+ * Failure restores thresholds without starting capture. Caller serializes the
+ * UI lifecycle and reserves touch; never call from the HE or TinyUSB task.
  */
-void he_backend_start_calibration(void);
+esp_err_t he_backend_start_calibration(void);
 
 /**
  * @brief Cancel interactive calibration, restoring normal thresholds.
@@ -124,7 +127,7 @@ static inline void he_backend_reload_params(void) {}
 static inline esp_err_t he_backend_probe_module(int *o, int *l) { (void)o; (void)l; return ESP_ERR_NOT_SUPPORTED; }
 static inline bool he_backend_is_locked(void) { return false; }
 static inline bool he_backend_is_calibrating(void) { return false; }
-static inline void he_backend_start_calibration(void) {}
+static inline esp_err_t he_backend_start_calibration(void) { return ESP_ERR_NOT_SUPPORTED; }
 static inline void he_backend_cancel_calibration(void) {}
 static inline esp_err_t he_backend_finish_calibration(const he_calibration_t r[2]) { (void)r; return ESP_ERR_NOT_SUPPORTED; }
 static inline const he_cal_samples_t *he_backend_take_cal_samples(void) { return NULL; }

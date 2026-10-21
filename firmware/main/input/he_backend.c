@@ -35,8 +35,10 @@
 #include "input/he_params.h"
 #include "input/he_cal.h"
 #include "input/he_cal_runner.h"
+#include "input/he_cal_barrier.h"
 #include "input/he_health.h"
 #include "input/key_event.h"
+#include "usb/usb_report_barrier.h"
 #include "esp_adc/adc_continuous.h"
 #include "esp_attr.h"
 #include "esp_cpu.h"
@@ -135,6 +137,11 @@ static he_cal_samples_t *s_cal_read = &s_cal_buffers[1];
 // taken by on_frame, he_task or publish; those use only s_lock.
 static StaticSemaphore_t s_params_mutex_buf;
 static SemaphoreHandle_t s_params_mutex;
+static he_cal_barrier_t s_cal_barrier;
+// Key ISR notifications increment the low count; calibration uses the high
+// bit only after suppressing both keys. No changes to the ISR notification.
+#define HE_CAL_REPORT_NOTIFY (1u << 31)
+#define HE_CAL_REPORT_WAIT_MS 100
 
 static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata,
                                void *user_data)
@@ -278,8 +285,6 @@ static void fault_key_locked(int k, int64_t now)
 // cost the MX path ~170 us (linker.lf)
 static void IRAM_ATTR publish(bool reported[2])
 {
-    // OPEN: calibration start can cross the snapshot/report interval below;
-    // docs/history/2026-10-21-he-calibration-report.md §8, Q8.
     for (int k = 0; k < 2; k++) {
         portENTER_CRITICAL(&s_lock);
         bool down = s_down[k];
@@ -290,6 +295,11 @@ static void IRAM_ATTR publish(bool reported[2])
             key_event_report((uint8_t)k, down, edge_us);
         }
     }
+}
+
+static void publish_calibration_release(void *reported)
+{
+    publish(reported);
 }
 
 // True if the ADC has stopped delivering frames and needs a restart
@@ -453,8 +463,11 @@ static void IRAM_ATTR he_task(void *arg)
     resync_health(now);
 
     while (1) {
-        ulTaskNotifyTake(pdTRUE, HE_CHECK_TICKS);
+        uint32_t notifications = ulTaskNotifyTake(pdTRUE, HE_CHECK_TICKS);
         publish(reported);  // key changes first
+        if (notifications & HE_CAL_REPORT_NOTIFY) {
+            he_cal_barrier_publish(&s_cal_barrier, publish_calibration_release, reported);
+        }
 
         if (serve_probe()) {
             continue;  // paused for an ID reading: not a stall
@@ -570,31 +583,49 @@ bool he_backend_is_calibrating(void)
     return active;
 }
 
-void he_backend_start_calibration(void)
+esp_err_t he_backend_start_calibration(void)
 {
-    if (!s_running) return;
+    if (!s_running || !s_task) return ESP_ERR_INVALID_STATE;
     xSemaphoreTakeRecursive(s_params_mutex, portMAX_DELAY);
+    if (he_backend_is_calibrating()) {
+        xSemaphoreGiveRecursive(s_params_mutex);
+        return ESP_ERR_INVALID_STATE;
+    }
     he_cal_samples_reset(s_cal_write);
     he_cal_samples_reset(s_cal_read);
-    if (s_running) {
-        int64_t now = esp_timer_get_time();
-        bool changed = false;
-        portENTER_CRITICAL(&s_lock);
-        for (int k = 0; k < 2; k++) {
-            bool was_down = s_down[k];
-            he_rt_set_params(&s_keys[k], &HE_PARAMS_NEVER, INT32_MAX);
-            fault_key_locked(k, now);
-            if (was_down && !s_down[k]) {
-                changed = true;
-            }
+    int64_t now = esp_timer_get_time();
+    portENTER_CRITICAL(&s_lock);
+    for (int k = 0; k < 2; k++) {
+        he_rt_set_params(&s_keys[k], &HE_PARAMS_NEVER, INT32_MAX);
+        fault_key_locked(k, now);
+    }
+    portEXIT_CRITICAL(&s_lock);
+
+    // The reporting task may already hold a pre-lock snapshot. Let it finish
+    // and publish both releases, then fence any TinyUSB callback with an old
+    // report snapshot. Neither task takes s_params_mutex or the LVGL lock.
+    unsigned ticket = he_cal_barrier_request(&s_cal_barrier);
+    xTaskNotify(s_task, HE_CAL_REPORT_NOTIFY, eSetBits);
+    TickType_t start = xTaskGetTickCount();
+    esp_err_t err = ESP_OK;
+    while (!he_cal_barrier_done(&s_cal_barrier, ticket)) {
+        if ((TickType_t)(xTaskGetTickCount() - start) >= pdMS_TO_TICKS(HE_CAL_REPORT_WAIT_MS)) {
+            err = ESP_ERR_TIMEOUT;
+            break;
         }
+        vTaskDelay(1);
+    }
+    if (err == ESP_OK) err = usb_report_barrier_wait(HE_CAL_REPORT_WAIT_MS);
+    if (err == ESP_OK) {
+        portENTER_CRITICAL(&s_lock);
         s_calibrating = true;
         portEXIT_CRITICAL(&s_lock);
-        if (changed && s_task != NULL) {
-            xTaskNotifyGive(s_task);
-        }
+    } else {
+        // A late ack only completes its ticket; it never starts capture.
+        he_backend_reload_params();
     }
     xSemaphoreGiveRecursive(s_params_mutex);
+    return err;
 }
 
 void he_backend_cancel_calibration(void)

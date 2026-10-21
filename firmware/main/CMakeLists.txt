@@ -26,6 +26,7 @@ idf_component_register(
         "usb/usb_descriptors.c"
         "usb/usb_hid.c"
         "usb/usb_media.c"
+        "usb/usb_report_barrier.c"
         "usb/usb_cdc.c"
         "counters/counters.c"
         "counters/counter_sync_rules.c"

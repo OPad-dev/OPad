@@ -549,8 +549,7 @@ bool he_cal_ui_start_calibration(bool from_app)
     }
 
     he_runner_progress_t prog;
-    he_cal_runner_start(&s_runner);
-    he_backend_start_calibration();
+    esp_err_t err = he_backend_start_calibration();
     touch_retry_finish_calibration_start();
     s_success_until_us = 0;
     s_fail_until_us = 0;
@@ -560,6 +559,18 @@ bool he_cal_ui_start_calibration(bool from_app)
     s_last_progress_us = esp_timer_get_time();
     atomic_store(&s_btn_active, false);
     he_cal_button_reset(&s_btn_tracker);
+    if (err != ESP_OK) {
+        he_cal_runner_cancel(&s_runner);
+        s_runner.stage = HE_RUNNER_FAILED;
+        s_system_error = "Could not pause key reporting";
+        s_fail_until_us = esp_timer_get_time() + 2000000;
+        s_app_started = false;
+        he_cal_runner_get_progress(&s_runner, &prog);
+        send_proto_progress(&prog, NULL);
+        ui_unlock();
+        return false;
+    }
+    he_cal_runner_start(&s_runner);
     he_cal_runner_get_progress(&s_runner, &prog);
 
     send_proto_progress(&prog, NULL);

@@ -6,9 +6,9 @@
 Scope: `feat/he-night`, changes after `0fbcb6d`, including the ten original
 calibration commits and the follow-up commits below (`git log 0fbcb6d..HEAD`).
 No pad was connected. This is a software review and host/build verification,
-not hardware sign-off. Owner-approved touch-start and stale-reload fixes are
-recorded in Q4/Q7. The strict HE reporting cutoff remains a separate decision
-in Q8; this report does not claim complete D7 output isolation.
+not hardware sign-off. Owner-approved touch-start, stale-reload and reporting
+barrier fixes are recorded in Q4/Q7/Q8. The reporting cutoff allows previously
+submitted USB transfers to finish; physical D7 verification remains NOT RUN.
 
 ## 1. Commits
 
@@ -36,7 +36,8 @@ Review commits (review finding IDs CAL#1 onward):
 - `3ec4800` — show snapshot sampling can save a wrong full value (CAL#7).
 - `c6617ce` — preserve the required fresh release across parameter reloads (CAL#8).
 - `3beb8c1` — refuse calibration until the current touch cleanup finishes (CAL#9).
-- The commit containing this report — correct documentation and record remaining decisions.
+- `3818d45` — correct documentation and record remaining decisions (CAL#10).
+- The Q8 follow-up commit — fence HE reporting and TinyUSB callbacks before capture (CAL#11).
 
 No existing commit was rewritten. New commits use the configured maintainer
 identity, `Compatibility:` and `AI: generated` trailers (`git log --format=full`).
@@ -72,8 +73,9 @@ matching input rate. Restart also clears the previous attempt's live readings
 ### Spec conformance and rule 6 (CAL#2/CAL#3)
 
 Lock/sampling suppress both HE keys with `HE_PARAMS_NEVER`; start installs
-both keys' suppression parameters, faults any held states, and enables
-sampling in one existing `s_lock` section. Cancel/finish restore parameters
+both keys' suppression parameters and faults any held states in one existing
+`s_lock` section. It then waits for HE reporting and USB callbacks before
+enabling sampling (Q8). Cancel/finish restore parameters
 through the release-arming behavior of `he_rt_set_params`; they never call a
 key-down API. The playing screen is gated separately (`firmware/main/input/he_backend.c`,
 `he_rt.c`, `firmware/main/ui/ui_port.c`).
@@ -119,7 +121,42 @@ backend suppression; a contact racing after reservation latches its gate
 even before that backend flag is visible. This closes the delayed touch
 sequence race without a new per-poll wait (Q4, `touch_retry.c`,
 `he_cal_touch_guard.h`, `firmware/main/ui/he_cal_ui.c`). It does not withdraw
-previously submitted USB transfers or fence the HE publisher (Q8).
+previously submitted USB transfers. Q8 supplies the separate reporting fence.
+
+### Reporting cutoff (CAL#11, owner-approved Q8)
+
+The publisher can already hold a down snapshot when Core 1 suppresses the
+engines. Start now sends a control notification to `he_task`, which finishes
+its normal publish, publishes the suppressed state, and only then acknowledges
+that attempt's ticket. The high notification bit is reserved for this control
+request after both keys are suppressed; normal ISR count notifications are
+unchanged. The ordinary path still reports keys before checking this bit
+(`firmware/main/input/he_backend.c`, `he_cal_barrier.h`).
+
+The touch reservation stays held throughout. With the HE writers quiescent,
+start also queues a fence on the TinyUSB task. Any running HID completion
+callback must return before that fence acknowledges, so a previously captured
+USB report cannot be submitted after acceptance. Later completions read the
+suppressed/released state. Transfers already submitted can still finish, and
+empty release reports may still be sent (`firmware/main/usb/usb_report_barrier.c`,
+`usb_hid.c`, `firmware/main/input/touch_retry.c`).
+
+Only after both acknowledgements does start enable frame capture and start
+the runner. Each acknowledgement wait is 100 ms; failure restores thresholds
+without starting capture and reports FAILED/NONE with “Could not pause key
+reporting”. A late ack only completes its own ticket; it never starts capture
+or satisfies a newer retry (`he_backend.c`, `he_cal_barrier.h`,
+`firmware/main/ui/he_cal_ui.c`, `usb_report_barrier.c`).
+
+TinyUSB's task-context enqueue itself can wait for FIFO room, so 200 ms is
+not a total start-duration guarantee. Its callbacks do not take the LVGL or
+parameter mutexes; the caller is never the USB task. This avoids an inverse
+lock dependency while starting under the UI lock. The actual deferred-call
+queue/dispatch and enqueue semantics were read in
+`firmware/managed_components/espressif__tinyusb/src/device/usbd.c`,
+`src/osal/osal_freertos.h`; task ownership in
+`firmware/managed_components/espressif__esp_tinyusb/tinyusb_task.c`.
+No dependency or protocol format was changed.
 
 ### Concurrency (CAL#3)
 
@@ -135,6 +172,7 @@ New/shared calibration state and its protection:
 | Pending protocol progress | UI/protocol producer, CDC consumer | `s_progress_lock`; latest update coalesces. CDC alone frames/transmits and advances `s_out_sequence`. Disconnect clears pending progress. |
 | Touch gate, pending retry, held retry/Alt, gesture tracker, retained coordinates | Touch task | Task-local; the gate remains latched through physical release. |
 | Touch/start reservation | Touch task and protocol/UI start | Atomic bitmask; contact owns BUSY through cleanup, start compare-exchanges idle to START, and finishing start preserves a concurrent BUSY bit. |
+| HE and USB reporting tickets | Serialized start caller, HE task, TinyUSB task | Atomic request/completion epochs; acknowledgement follows publication or FIFO callback execution. Value-only USB callback arguments remain valid after a timed-out caller returns. |
 | Desktop progress and launch-once state | Runtime events/IPC | Shared `DaemonState` mutex and `apply_event`; controller owns launch-once state. GUI request epochs reject replies from earlier starts/cancels/connections. |
 
 Sources: `firmware/main/input/he_backend.c`, `he_cal.c`, `touch_retry.c`,
@@ -238,12 +276,12 @@ compatibility requirement here is app versus firmware.
 ESP-IDF v5.5.2 HE ELF, `xtensa-esp32s3-elf-nm -S`:
 
 ```text
-40387814 000000fa T he_rt_step
-40377114 00000040 T key_event_report
-403772a8 000001a1 t on_frame
-4037725c 0000004a t publish
-3fca16bc 00001028 b s_cal_buffers
-40377710 000000ac T usb_hid_handle_key_event
+4038783c 000000fa T he_rt_step
+4037711c 00000040 T key_event_report
+403772b0 000001a1 t on_frame
+40377264 0000004a t publish
+3fca16c4 00001028 b s_cal_buffers
+40377738 000000ac T usb_hid_handle_key_event
 ```
 
 The five functions remain in IRAM; buffers occupy 0x1028 (4136) bytes of
@@ -251,9 +289,9 @@ internal BSS. `xtensa-esp32s3-elf-objdump -d --disassemble=on_frame` shows the
 inactive calibration branch jumping over the inline accumulator:
 
 ```text
-40377318: l32r a11, ... (s_calibrating)
-4037731f: l8ui a11, a11, 0
-4037732c: beqz a11, 40377385 <on_frame+0xdd>
+40377320: l32r a11, ... (s_calibrating)
+40377327: l8ui a11, a11, 0
+40377334: beqz a11, 4037738d <on_frame+0xdd>
 ```
 
 The seven call targets are `esp_timer_get_time`, `he_frame_parse`,
@@ -269,10 +307,22 @@ to the 4 kHz rate used by the calibration windows
 (`firmware/main/input/he_backend.c`, `he_cal_samples.h`).
 
 The owner-approved rearming change is confined to task-side
-`he_rt_set_params`; `he_rt_step`'s before/after disassemblies compare equal,
-including instruction bytes and addresses. Touch reservation runs only at
-contact/start boundaries on Core 1, not in the frame ISR or ordinary switch
+`he_rt_set_params`; for CAL#8 alone, `he_rt_step`'s before/after disassemblies
+compared equal, including instruction bytes and addresses. The later barrier
+relink moved it and changed two literal-load encodings that still address
+ROM `memcpy`; its size and control flow are unchanged. Touch reservation runs
+only at contact/start boundaries on Core 1, not in the frame ISR or ordinary switch
 reporting path (`he_rt.c`, `touch_retry.c`, `he_cal_touch_guard.h`).
+
+Final `he_task` disassembly calls `publish` at `40377505` before testing the
+notification at `40377508` (`bgez` skips the calibration-only block). Only a
+control request takes the second publish at `4037751a` and completion store
+at `40377526`. Saving the notification value and the post-publish branch are
+new task instructions; no new mutex/wait is placed before ordinary reporting.
+The frame ISR is still 0x1a1 bytes with the same seven IRAM call targets.
+The USB fence is calibration-only flash code (`usb_report_barrier_wait` at
+`4200d438`), not an addition to every HID submission (`he_backend.c`,
+`usb_report_barrier.c`, inspected `firmware/build-he/opad-firmware.elf`).
 
 This establishes placement and control flow, not timing. ISR cost, jitter,
 USB-visible latency, flash/cache interference and short-tap delivery were
@@ -283,7 +333,7 @@ real-pad checks (`docs/testing-checklist.md`).
 ## 5. Tests and mutation evidence
 
 `make check` passed after the changes: formatting, clippy with warnings denied,
-workspace tests and all 21 numbered firmware host suites, plus version checks
+workspace tests and all 23 numbered firmware host suites, plus version checks
 (`Makefile`, `firmware/test/host/run_tests.sh`). Relevant Rust suite counts in
 the final implementation check were 72 daemon integration tests, 20 GUI tests
 and 15 protocol tests. The GUI state test constructs the app and drives its
@@ -306,8 +356,7 @@ The true median is computed from all generated frame peaks. The test also
 includes a fixed-phase 60 ms case where the old feed completes successfully
 but saves substantially low full values, rather than merely failing peak
 consistency. It also checks rest accuracy, an intervening moving-rest sample,
-overflow and missing
-samples (`firmware/test/host/test_he_cal_sampling.c`). Physical conversion
+overflow and missing samples (`firmware/test/host/test_he_cal_sampling.c`). Physical conversion
 noise and actual presses were not sampled in this session.
 
 The storage test links the real `he_cal.c` and record implementation against
@@ -317,6 +366,15 @@ concurrent writers. The concurrent phase checks twenty completed saves with
 consecutive A/B sequences and that reboot loads the last published values.
 These doubles do not replace either ESP-IDF firmware build or prove physical
 power-loss behavior (`firmware/test/host/test_he_cal_storage.c`, `cal_stubs/`).
+
+The HE fence test exercises the production publish-before-ack helper with
+a paused old-snapshot model, idle keys, a retry arriving during publication
+and ticket wrap. The USB fence test links the actual `usb_report_barrier.c`
+against a controlled callback FIFO, checking callback completion, missing
+initialization, timeout, tick wrap and late-ack retry isolation. These tests
+do not emulate the full HE task, UI rollback path, TinyUSB implementation or
+hardware scheduling (`firmware/test/host/test_he_cal_barrier.c`,
+`test_usb_report_barrier.c`, `barrier_stubs/`).
 
 Each mutation below was actually applied, the command returned nonzero, then
 the edit was reverted and the diff inspected. Line numbers identify the
@@ -334,9 +392,12 @@ recorded mutation run, not a promise about future source line numbers.
 | Accept old GUI poll epoch | `calibration_ignores_replies_from_before_start_or_cancel` | `gui/src/main.rs:3254: app.cal_progress.is_none()`; exit 101 |
 | Reserve calibration even when touch is busy | Touch interlock contact-first case | `test_he_cal_touch_guard.c:12: !he_cal_touch_reserve_start(&g)`; exit 134 |
 | Drop the outstanding release requirement on reload | `test_param_reload_preserves_release_requirement` | `test_he_rt.c:344: k.need_release`; exit 134 |
+| Acknowledge before the release publication | HE barrier callback | `test_he_cal_barrier.c:20: !he_cal_barrier_done(&f->barrier, f->ticket)`; exit 134 |
+| Skip waiting for the TinyUSB fence | USB FIFO completion check | `test_usb_report_barrier.c:48: old_callback_finished && head == tail && now == 2`; exit 134 |
+| A late USB callback acknowledges the newest ticket | USB retry isolation | `test_usb_report_barrier.c:57: head == old_head + 2 && now - before == 2`; exit 134 |
 
 The original C mutations were caught through `firmware/test/host/run_tests.sh`;
-the two owner-approved fixes also used direct GCC builds of their host tests.
+the owner-approved safety fixes also used direct GCC builds of their host tests.
 Rust mutations used filtered `cargo test` commands. No mutation remains in the
 branch. Detailed local command transcripts were kept in `/tmp/he-cal-*.log`;
 the essential failures are transcribed above so this report does not depend
@@ -364,7 +425,8 @@ changes warranted; their passing did not replace the behavioral review.
    outside the UI lock, cross-task CDC framing/TX access, premature save
    success, stale progress and inconsistent desktop guards. Fixes and their
    limits are in §2. The final follow-up closes the delayed touch sequence
-   after owner approval (Q4); the HE publisher cutoff remains Q8.
+   after owner approval (Q4). A further owner-approved follow-up fences the
+   HE publisher and running USB callbacks before capture (Q8).
 3. **Pass C — claims audit.** Compared identifiers and numeric claims with
    capture/runner/backend/proto/IPC/UI source and command output. Corrected
    1 kHz/64 ms claims, the obsolete “uncalibrated pad types” comment,
@@ -406,7 +468,7 @@ SDK (`idf.py --version`, SDK `git describe --tags --exact-match HEAD` and
 
 ## 7. Not done / not tested
 
-- No hardware was flashed, connected or exercised. Run HE-CAL-01..HE-CAL-11
+- No hardware was flashed, connected or exercised. Run HE-CAL-01..HE-CAL-12
   in `docs/testing-checklist.md` on Linux and Windows, including the approved Q4 policy;
   the checklist retains NOT RUN. In particular verify fallback/button
   coordinates, quick 20–60 ms presses, no report leakage or stuck touch key,
@@ -537,17 +599,20 @@ trigger modes. Ordinary stepping remains byte-for-byte unchanged in the HE
 artifact; hardware release behavior remains NOT RUN (`he_rt.c`, `he_rt.h`,
 `firmware/test/host/test_he_rt.c`, `docs/specs/v2-hall-effect-decisions.md` D4).
 
-### Q8. HE reporting cutoff at calibration start — awaiting direction
+### Q8. HE reporting cutoff — owner authorized the barrier; implemented
 
 The HE publisher snapshots `s_down` under `s_lock` and calls
-`key_event_report` after releasing it. A start can cross that read/report
-interval, so the threshold lock alone is not a reporting barrier. An
+`key_event_report` after releasing it. Before CAL#11 a start could cross that
+read/report interval; the threshold lock alone was not a reporting barrier. An
 already-submitted USB report also cannot be retroactively withdrawn
 (`firmware/main/input/he_backend.c`, `firmware/main/usb/usb_hid.c`).
 
-Options: authorize a key-task start barrier, allowing previously submitted
-USB transfers to finish; or defer it to a separate key-path review and
-withhold strict D7 output-isolation sign-off. Recommendation: add the
-task-side barrier, with new tests and latency review. The owner was asked
-separately because the touch refusal and stale-sample approvals do not
-authorize this additional reporting-path change (AGENTS.md §8).
+The owner asked for the best option, authorizing the reporting barrier rather
+than deferral. Implemented as a task notification/acknowledgement plus a
+TinyUSB FIFO fence, before frame capture becomes active. §2 records its order,
+timeout/error behavior and the allowed completion of already-submitted
+transfers; §4 records the additional post-publish task branch and final IRAM
+evidence. The old Q8 OPEN marker was removed. Physical scheduling, faulted
+waits, releases and latency still require HE-CAL-12 on a pad before hardware
+sign-off (`he_backend.c`, `he_cal_barrier.h`, `usb_report_barrier.c`,
+`docs/testing-checklist.md`).

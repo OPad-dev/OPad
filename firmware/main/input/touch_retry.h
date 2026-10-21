@@ -25,7 +25,8 @@ esp_err_t touch_retry_init(void);
 bool touch_retry_is_pressed(void);
 
 // Reserve an idle touch for calibration start, or refuse while a contact or
-// its release cleanup is active. Finish only after backend suppression is set.
+// its release cleanup is active. Finish after backend suppression is set or a
+// failed start has restored thresholds; a racing contact stays gated either way.
 bool touch_retry_reserve_calibration(void);
 void touch_retry_finish_calibration_start(void);
 

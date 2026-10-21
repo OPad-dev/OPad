@@ -151,6 +151,11 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
   - `he_backend_start_calibration()` and `he_backend_cancel_calibration()`
     serialize with settings/finish through a task-only mutex; the ISR uses
     only its existing `s_lock` (`firmware/main/input/he_backend.c`).
+  - Start suppresses the engines, waits for HE publication and a TinyUSB FIFO
+    fence, then enables capture. A failed wait restores thresholds without
+    capture; the UI reports FAILED/NONE. Previously submitted USB transfers
+    may finish (`he_backend.c`, `he_cal_barrier.h`,
+    `firmware/main/usb/usb_report_barrier.c`, `firmware/main/ui/he_cal_ui.c`).
 - `firmware/main/input/touch_retry.c`:
   - Gated during lock or calibration: suppresses Quick Retry (`usb_hid_set_touch_retry(true)`) and swipes (`handle_swipe`).
   - App start refuses a current contact through release cleanup. An atomic
@@ -201,9 +206,10 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
 
 ### 5.6 Test Checklist & Verification
 - `docs/testing-checklist.md`:
-  - Adds manual verification rows HE-CAL-01..HE-CAL-11 for the lock screen,
+  - Adds manual verification rows HE-CAL-01..HE-CAL-12 for the lock screen,
     button, app launch, calibration, cancellation, module compatibility,
-    touch/start interleaving and stale parameter-reload release arming.
+    touch/start interleaving, stale parameter-reload release arming and the
+    reporting start barrier.
     There is no timeout test or implementation; that policy is undecided
     (`docs/testing-checklist.md`, `firmware/main/ui/he_cal_ui.c`).
 - Host tests in `firmware/test/host/run_tests.sh` and `cargo test` across all desktop crates.
