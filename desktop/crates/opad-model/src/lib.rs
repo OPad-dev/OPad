@@ -487,6 +487,36 @@ pub fn he_effective(
     })
 }
 
+/// The lowest actuation setting (0.1 % units) the pad uses as is, without
+/// raising it: below it the key would still press at the same, deeper point.
+/// `None` without a usable calibration.
+pub fn he_min_actuation(
+    s: &HeKeyConfig,
+    rest: u32,
+    full: u32,
+    floors: Option<(u32, u32)>,
+) -> Option<u32> {
+    let raised = |pct: u32| {
+        let k = HeKeyConfig {
+            actuation: pct,
+            ..*s
+        };
+        he_effective(&k, rest, full, floors).map(|e| e.press_raised)
+    };
+    raised(1000)?;
+    // press_raised is monotonic in the setting: binary search the first one kept
+    let (mut lo, mut hi) = (0u32, 1000u32);
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if raised(mid) == Some(true) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    Some(lo)
+}
+
 impl HeKeyConfig {
     pub fn validate(&self, name: &str) -> Result<(), String> {
         if self.actuation > 1000
@@ -967,6 +997,44 @@ mod tests {
         let e = he_effective(&he(500, 100, 100, HeRtMode::Off, false), 2084, 2530, floors).unwrap();
         assert_eq!(counts(e), (223, 178));
         assert!(!e.press_raised);
+    }
+
+    #[test]
+    fn he_min_actuation_is_the_first_setting_used_as_is() {
+        let floors = Some((32, 32));
+        // Key 2 on the owner's pad: rest 2087, full 2611, defaults
+        let k = he(10, 100, 100, HeRtMode::Normal, false);
+        let min = he_min_actuation(&k, 2087, 2611, floors).unwrap();
+        let at = he_effective(
+            &HeKeyConfig {
+                actuation: min,
+                ..k
+            },
+            2087,
+            2611,
+            floors,
+        )
+        .unwrap();
+        assert!(!at.press_raised);
+        assert!(
+            (at.press - 0.160).abs() < 0.002,
+            "min press at {}",
+            at.press
+        );
+        let below = HeKeyConfig {
+            actuation: min - 1,
+            ..k
+        };
+        assert!(
+            he_effective(&below, 2087, 2611, floors)
+                .unwrap()
+                .press_raised
+        );
+        // A smaller release distance lowers it; the opt-out drops it to the bottom
+        let small = he(10, 10, 100, HeRtMode::Normal, false);
+        assert!(he_min_actuation(&small, 2087, 2611, floors).unwrap() < min);
+        let open = he(10, 10, 100, HeRtMode::Normal, true);
+        assert!(he_min_actuation(&open, 2087, 2611, floors).unwrap() <= 15);
     }
 
     #[test]

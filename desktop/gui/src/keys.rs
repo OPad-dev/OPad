@@ -17,8 +17,8 @@ use iced::{
 };
 use opad_ipc::{IpcRequest, IpcResponse};
 use opad_model::{
-    he_effective, DeviceConfig, HeCalibrationStatus, HeEffective, HeKeyConfig, HeLiveSample,
-    HeRtMode,
+    he_effective, he_min_actuation, DeviceConfig, HeCalibrationStatus, HeEffective, HeKeyConfig,
+    HeLiveSample, HeRtMode,
 };
 
 /// One setting of [`HeKeyConfig`], in the pad's 0.1 % units
@@ -232,7 +232,12 @@ pub fn update(app: &mut App, msg: KeysMessage) -> Task<Message> {
                 app.banner = Some("Cannot save: the pad is not connected.".into());
                 return Task::none();
             }
-            let [k1, k2] = app.keys.edit.unwrap_or(pad);
+            let mut edit = app.keys.edit.unwrap_or(pad);
+            // What the pad would do anyway: never save a press point below it
+            for (k, c) in edit.iter_mut().enumerate() {
+                c.actuation = c.actuation.max(slider_min(app, app.keys.separate, k, c));
+            }
+            let [k1, k2] = edit;
             let config = DeviceConfig {
                 key1_he: Some(k1),
                 key2_he: Some(k2),
@@ -276,6 +281,16 @@ pub fn update(app: &mut App, msg: KeysMessage) -> Task<Message> {
         }
         edit_msg => {
             app.keys.edit_settings(edit_msg, pad);
+            // Without the opt-out, the actuation point cannot go below where
+            // the key really presses (lowering the release distance or
+            // switching the opt-out off can move that up)
+            if let Some(mut edit) = app.keys.edit {
+                let separate = app.keys.separate;
+                for (k, c) in edit.iter_mut().enumerate() {
+                    c.actuation = c.actuation.max(slider_min(app, separate, k, c));
+                }
+                app.keys.edit = Some(edit);
+            }
             Task::none()
         }
     }
@@ -389,6 +404,49 @@ fn effective(app: &App, key: usize, c: &HeKeyConfig) -> Option<HeEffective> {
     he_effective(c, rest, full, floors)
 }
 
+/// The lowest actuation the slider offers: where the key really starts to
+/// press, unless the key allows below the noise floor
+fn min_actuation(app: &App, key: usize, c: &HeKeyConfig) -> u32 {
+    const SLIDER_MIN: u32 = 10;
+    if c.allow_below_noise_floor && floors_known(app) {
+        return SLIDER_MIN;
+    }
+    app.he_calibration
+        .as_ref()
+        .and_then(|cal| {
+            let (rest, full) = cal_span(cal, key)?;
+            let floors = (cal.noise_floor_rest > 0)
+                .then_some((cal.noise_floor_rest, cal.noise_floor_movement));
+            he_min_actuation(c, rest, full, floors)
+        })
+        .unwrap_or(SLIDER_MIN)
+        .clamp(SLIDER_MIN, 950)
+}
+
+/// Where the key presses at the slider's lowest value, as a share of travel
+fn min_actuation_share(app: &App, key: usize, c: &HeKeyConfig) -> f32 {
+    let min = slider_min(app, app.keys.separate, key, c);
+    effective(
+        app,
+        key,
+        &HeKeyConfig {
+            actuation: min,
+            ..*c
+        },
+    )
+    .map_or(min as f32 / 1000.0, |e| e.press)
+}
+
+/// The actuation slider's lowest value. Linked keys share one slider, so it
+/// is the higher of the two keys' minimums (their calibrations differ).
+fn slider_min(app: &App, separate: bool, key: usize, c: &HeKeyConfig) -> u32 {
+    if separate {
+        min_actuation(app, key, c)
+    } else {
+        min_actuation(app, 0, c).max(min_actuation(app, 1, c))
+    }
+}
+
 /// The pad reports its noise floors, so it honours a per-key opt-out
 fn floors_known(app: &App) -> bool {
     app.he_calibration
@@ -412,13 +470,25 @@ fn key_controls<'a>(app: &'a App, key: usize, c: HeKeyConfig) -> Element<'a, Mes
             };
             format!("Presses at {:.1} %: {why}.", e.press * 100.0)
         }
-        _ => "How deep the key goes before it presses.".to_string(),
+        _ if c.allow_below_noise_floor && floors_known(app) => {
+            "How deep the key goes before it presses.".to_string()
+        }
+        _ => format!(
+            "How deep the key goes before it presses. Lowest: {:.1} %{}.",
+            min_actuation_share(app, key, &c) * 100.0,
+            if floors_known(app) {
+                " (Advanced can allow lower)"
+            } else {
+                ""
+            }
+        ),
     };
+    let min = slider_min(app, app.keys.separate, key, &c);
     let mut col = column![setting(
         "ACTUATION POINT",
         actuation_hint,
-        c.actuation,
-        10..=950,
+        c.actuation.max(min),
+        min..=950,
         set(Field::Actuation),
     )]
     .spacing(16);
