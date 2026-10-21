@@ -345,6 +345,8 @@ async fn main() -> Result<()> {
                             key1_full: c.key1_full,
                             key2_rest: c.key2_rest,
                             key2_full: c.key2_full,
+                            is_locked: c.is_locked,
+                            is_calibrating: c.is_calibrating,
                         });
                         event_opt = Some(RuntimeEvent::DeviceStatus {
                             latency: opad_model::LatencyStats {
@@ -379,6 +381,42 @@ async fn main() -> Result<()> {
                     }
                     DeviceEvent::KeyPresses { now_us, presses, dropped, received } => {
                         event_opt = Some(RuntimeEvent::PadPresses { now_us, presses, dropped, received });
+                    }
+                    DeviceEvent::HeCalibrationProgress(prog) => {
+                        let stage = match prog.stage {
+                            1 => opad_model::HeCalStage::Rest,
+                            2 => opad_model::HeCalStage::Key1,
+                            3 => opad_model::HeCalStage::Key2,
+                            4 => opad_model::HeCalStage::Success,
+                            5 => opad_model::HeCalStage::Failed,
+                            _ => opad_model::HeCalStage::None,
+                        };
+                        let error = match prog.error {
+                            1 => opad_model::HeCalError::RestNotStill,
+                            2 => opad_model::HeCalError::RestOutOfRange,
+                            3 => opad_model::HeCalError::RestPressed,
+                            4 => opad_model::HeCalError::SignalNotRising,
+                            5 => opad_model::HeCalError::SpanTooSmall,
+                            6 => opad_model::HeCalError::PeaksInconsistent,
+                            7 => opad_model::HeCalError::TooFewPeaks,
+                            8 => opad_model::HeCalError::TooManyPeaks,
+                            9 => opad_model::HeCalError::Timeout,
+                            _ => opad_model::HeCalError::None,
+                        };
+                        event_opt = Some(RuntimeEvent::DeviceHeCalibrationProgress(
+                            opad_model::HeCalibrationProgress {
+                                stage,
+                                key_index: prog.key_index,
+                                presses_done: prog.presses_done,
+                                error,
+                                error_message: prog.error_message,
+                                raw_value: prog.raw_value,
+                                key1_rest: prog.key1_rest,
+                                key1_full: prog.key1_full,
+                                key2_rest: prog.key2_rest,
+                                key2_full: prog.key2_full,
+                            },
+                        ));
                     }
                 }
             }
@@ -681,6 +719,27 @@ async fn main() -> Result<()> {
                             }
                         }
                     }
+                    RuntimeAction::LaunchGuiCalibration => {
+                        info!("Pad is uncalibrated; launching GUI on calibration page");
+                        let exe = std::env::current_exe()
+                            .ok()
+                            .and_then(|p| {
+                                p.parent().map(|d| {
+                                    d.join(if cfg!(windows) {
+                                        "opad-gui.exe"
+                                    } else {
+                                        "opad-gui"
+                                    })
+                                })
+                            })
+                            .filter(|p| p.exists())
+                            .unwrap_or_else(|| std::path::PathBuf::from("opad-gui"));
+                        let mut cmd = std::process::Command::new(exe);
+                        cmd.arg("--page").arg("calibrate");
+                        if let Err(e) = cmd.spawn() {
+                            warn!("Failed to launch opad-gui on calibration page: {e}");
+                        }
+                    }
                 }
             }
         }
@@ -775,6 +834,7 @@ mod tests {
             custom_layouts: HashMap::new(),
             last_backup: None,
             he_calibration: None,
+            latest_he_progress: None,
         }));
 
         // 1. GetStatus surfaces storage_error

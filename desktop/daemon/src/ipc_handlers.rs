@@ -1359,6 +1359,45 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
         }
 
+        IpcRequest::StartHeCalibration => {
+            if let Some(refused) = refuse_if_pad_guarded(state) {
+                return refused;
+            }
+            if !device.is_connected() {
+                return IpcResponse::Error("The pad is not connected".to_string());
+            }
+            if !device.supports_he_calibration() {
+                return IpcResponse::Error(
+                    "This pad does not support Hall Effect calibration.".to_string(),
+                );
+            }
+            if state.lock().mode == RuntimeMode::Playing {
+                return IpcResponse::Error("Not while a map is played".to_string());
+            }
+            match device.start_he_calibration().await {
+                Ok(()) => {
+                    state.lock().latest_he_progress = None;
+                    IpcResponse::HeCalibrationStarted
+                }
+                Err(e) => IpcResponse::Error(format!("Could not start calibration: {e}")),
+            }
+        }
+
+        IpcRequest::CancelHeCalibration => {
+            if !device.is_connected() {
+                return IpcResponse::Error("The pad is not connected".to_string());
+            }
+            match device.cancel_he_calibration().await {
+                Ok(()) => IpcResponse::HeCalibrationCancelled,
+                Err(e) => IpcResponse::Error(format!("Could not cancel calibration: {e}")),
+            }
+        }
+
+        IpcRequest::GetHeCalibrationProgress => {
+            let prog = state.lock().latest_he_progress.clone();
+            IpcResponse::HeCalibrationProgress(prog)
+        }
+
         IpcRequest::TriggerEasterEgg => {
             let _ = device
                 .send_data_update(&[(67, opad_model::ui_source::SourceValue::Number(67.0))])

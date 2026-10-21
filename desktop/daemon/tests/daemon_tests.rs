@@ -508,6 +508,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             last_backup: None,
 
             he_calibration: None,
+            latest_he_progress: None,
         }));
 
         // Set storage writes blocked guard
@@ -738,6 +739,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             last_backup: None,
 
             he_calibration: None,
+            latest_he_progress: None,
         }));
 
         let res = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
@@ -799,6 +801,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             last_backup: None,
 
             he_calibration: None,
+            latest_he_progress: None,
         }));
 
         let res = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
@@ -911,6 +914,7 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
         last_backup: None,
 
         he_calibration: None,
+        latest_he_progress: None,
     }));
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
@@ -988,6 +992,7 @@ async fn a_non_monotonic_rejection_is_retried_with_the_pads_current_counters() {
         last_backup: None,
 
         he_calibration: None,
+        latest_he_progress: None,
     }));
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
@@ -1054,6 +1059,7 @@ async fn test_json_validation_preview_and_confirm() {
         last_backup: None,
 
         he_calibration: None,
+        latest_he_progress: None,
     }));
 
     // 1. Preview with counter rollback & generation bump warnings
@@ -1164,6 +1170,7 @@ async fn test_ipc_handshake_mismatch_and_protocol_version() {
         last_backup: None,
 
         he_calibration: None,
+        latest_he_progress: None,
     }));
 
     // Protocol mismatch rejected
@@ -1279,6 +1286,7 @@ async fn test_install_update_is_refused_outside_idle() {
             last_backup: None,
 
             he_calibration: None,
+            latest_he_progress: None,
         }));
 
         let resp = handle_ipc_request(
@@ -1336,6 +1344,7 @@ async fn test_firmware_is_not_an_enableable_updater() {
         last_backup: None,
 
         he_calibration: None,
+        latest_he_progress: None,
     }));
 
     let resp = handle_ipc_request(
@@ -2199,6 +2208,7 @@ fn firmware_update_fixture(mode: RuntimeMode, connected: bool) -> IpcFixture {
         last_backup: None,
 
         he_calibration: None,
+        latest_he_progress: None,
     }));
 
     (
@@ -3504,6 +3514,7 @@ fn idle_state(
         last_backup: None,
 
         he_calibration: None,
+        latest_he_progress: None,
     }
 }
 
@@ -3868,4 +3879,83 @@ fn a_foreign_pad_gets_no_result_animation() {
     controller.on_event(screen(true, None, false), now);
     let actions = controller.on_event(screen(false, Some("S"), false), now);
     assert!(animations(&actions).is_empty(), "{actions:?}");
+}
+
+#[test]
+fn uncalibrated_he_pad_launches_gui_calibration_once() {
+    let (mut controller, _) = left_alone_foreign_pad();
+    controller.state.foreign_pad = false;
+    let now = Instant::now();
+
+    // 1. Status with locked calibration triggers LaunchGuiCalibration
+    let actions = controller.on_event(
+        RuntimeEvent::DeviceStatus {
+            latency: opad_model::LatencyStats::default(),
+            he_calibration: Some(opad_model::HeCalibrationStatus {
+                key1_calibrated: false,
+                key2_calibrated: false,
+                is_locked: true,
+                is_calibrating: false,
+                ..Default::default()
+            }),
+        },
+        now,
+    );
+    assert!(actions.contains(&RuntimeAction::LaunchGuiCalibration));
+    assert!(controller.cal_gui_launched);
+
+    // 2. Subsequent status does not trigger LaunchGuiCalibration again
+    let actions2 = controller.on_event(
+        RuntimeEvent::DeviceStatus {
+            latency: opad_model::LatencyStats::default(),
+            he_calibration: Some(opad_model::HeCalibrationStatus {
+                key1_calibrated: false,
+                key2_calibrated: false,
+                is_locked: true,
+                is_calibrating: false,
+                ..Default::default()
+            }),
+        },
+        now,
+    );
+    assert!(!actions2.contains(&RuntimeAction::LaunchGuiCalibration));
+
+    // 3. Disconnect resets cal_gui_launched
+    controller.on_event(RuntimeEvent::DeviceDisconnected, now);
+    assert!(!controller.cal_gui_launched);
+    assert!(controller.state.he_calibration.is_none());
+}
+
+#[test]
+fn calibrated_he_pad_does_not_launch_gui_calibration() {
+    let (mut controller, _) = left_alone_foreign_pad();
+    controller.state.foreign_pad = false;
+    let now = Instant::now();
+
+    let actions = controller.on_event(
+        RuntimeEvent::DeviceStatus {
+            latency: opad_model::LatencyStats::default(),
+            he_calibration: Some(opad_model::HeCalibrationStatus {
+                key1_calibrated: true,
+                key2_calibrated: true,
+                is_locked: false,
+                is_calibrating: false,
+                ..Default::default()
+            }),
+        },
+        now,
+    );
+    assert!(!actions.contains(&RuntimeAction::LaunchGuiCalibration));
+    assert!(!controller.cal_gui_launched);
+
+    // MX pad (he_calibration: None in DeviceStatus) never launches calibration GUI
+    let actions_mx = controller.on_event(
+        RuntimeEvent::DeviceStatus {
+            latency: opad_model::LatencyStats::default(),
+            he_calibration: None,
+        },
+        now,
+    );
+    assert!(!actions_mx.contains(&RuntimeAction::LaunchGuiCalibration));
+    assert!(!controller.cal_gui_launched);
 }

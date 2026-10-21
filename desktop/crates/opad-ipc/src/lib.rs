@@ -215,6 +215,12 @@ pub enum IpcRequest {
     /// with firmware predating it, or during a map. Added after IPC v1
     /// shipped, like `RunBoardTest`.
     RestartPad,
+    /// Start interactive Hall Effect calibration on the connected pad
+    StartHeCalibration,
+    /// Cancel active Hall Effect calibration
+    CancelHeCalibration,
+    /// Poll current Hall Effect calibration progress
+    GetHeCalibrationProgress,
 }
 
 /// The daemon's tap rate statistics (answer to `GetTapStats`)
@@ -451,6 +457,9 @@ pub enum IpcResponse {
     AnimationPlayed,
     /// The pad was asked to restart (answer to `RestartPad`)
     PadRestarting,
+    HeCalibrationStarted,
+    HeCalibrationCancelled,
+    HeCalibrationProgress(Option<opad_model::HeCalibrationProgress>),
     Error(String),
 }
 

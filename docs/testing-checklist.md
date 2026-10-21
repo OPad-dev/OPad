@@ -459,6 +459,26 @@ row says otherwise.
 | SWP-11 | Re-enumeration after the update | Flash the swipe firmware over the previous one. | Keyboard, COM port and the new "OPad Media Controls" interface all work without unplugging; Windows keeps the "OPad (COMx)" name. | n/r | n/r |
 | SWP-12 | Old app, new firmware / new app, old firmware | Run the previous app with this firmware, then this app with the previous firmware. | Keys, display and config work both ways. Old app: swipes set the system volume only. Old firmware: the swipe settings are ignored, nothing else changes. | n/r | n/r |
 
+## 15. Hall Effect calibration lock screen, on-pad flow and app flow
+
+Applies when the firmware is built with `CONFIG_OSUPAD_HE_BACKEND=y` and a Hall
+Effect module is detected at boot (`he_backend_running()`). Firmware:
+`firmware/main/input/he_backend.c`, `he_cal_runner.c`, `he_cal_button.c`,
+`firmware/main/ui/he_cal_ui.c`, `firmware/main/protocol/protocol.c`. Desktop:
+`desktop/daemon/src/runtime.rs`, `desktop/gui/src/pages.rs`.
+
+| ID | Test Item | Procedure | Acceptance Criteria | Linux | Windows |
+|---|---|---|---|---|---|
+| HE-CAL-01 | Lock on first boot (no app) | Boot an HE pad with no saved `he_cal` NVS record and no OPad daemon running. | After the 5 s host-wait window, a red lock screen shows `KEYS NOT CALIBRATED`, `https://opad.dev/download`, and a **Calibrate** button. | **NOT RUN** | **NOT RUN** |
+| HE-CAL-02 | No keys or swipes while locked | While locked, press Key 1 and Key 2 repeatedly, tap/hold the touchscreen, and swipe in all 4 directions while osu! is playing a map. | Zero Z/X keystrokes and zero `` ` `` Quick Retry or swipe reports reach the PC (`evtest` / Keyboard Tester); pad screen stays on the lock overlay and never loads `UI_SCREEN_PLAYING`. | **NOT RUN** | **NOT RUN** |
+| HE-CAL-03 | Calibrate button tap vs swipe | On the no-app lock screen, tap outside the button, drag ≥ 30 px across the button, drag out before lifting, then tap cleanly inside the **Calibrate** button. | Outside tap, swipe, and drag-out do nothing; clean tap inside starts `CALIBRATING: REST`. | **NOT RUN** | **NOT RUN** |
+| HE-CAL-04 | Full on-pad calibration flow | With no daemon running, tap **Calibrate**, keep both keys released during Rest, press Key 1 fully 5 times, then press Key 2 fully 5 times. | 5 indicator boxes fill per key; `Calibrated!` shows for ~1 s; calibration is saved to NVS (`he_cal` v1) and the lock lifts. | **NOT RUN** | **NOT RUN** |
+| HE-CAL-05 | App-driven flow & auto-open | Connect an uncalibrated HE pad with `opad-daemon` running. Click **Start Calibration** in the GUI and complete Rest + 5 presses per key. | Pad shows `Calibrate in the OPad app` (no on-pad button); daemon auto-launches `opad-gui --page calibrate` once; GUI shows live stage, 0–5 boxes, and rest/full counts on completion; Settings → Keypad shows **Recalibrate Keys** afterward. | **NOT RUN** | **NOT RUN** |
+| HE-CAL-06 | App disconnect / cancel mid-flow | Start calibration from the app (both on an uncalibrated pad and when recalibrating a calibrated pad), then cancel or stop the daemon mid-flow. | Active calibration stops; previous calibration is untouched (uncalibrated pad returns to the red lock/failure screen with **Retry**; calibrated pad keeps its previous calibration active). | **NOT RUN** | **NOT RUN** |
+| HE-CAL-07 | MX module unaffected | Boot the `CONFIG_OSUPAD_HE_BACKEND=y` firmware with an MX module fitted. | `he_backend_running()` is false; pad is not locked, `HelloAck.he_calibration` is false, `DeviceStatus.he_calibration` is absent, daemon does not open the calibration page, and MX keys work as normal. | **NOT RUN** | **NOT RUN** |
+| HE-CAL-08 | Unlock without reboot | Immediately after HE-CAL-04 or HE-CAL-05 finishes, press Key 1, Key 2, and swipe on the touchscreen without rebooting or replugging. | Both keys emit Z/X and touchscreen swipes/Quick Retry work immediately with no reboot. | **NOT RUN** | **NOT RUN** |
+| HE-CAL-09 | Key held at boot or calibration start | Hold Key 1 down while booting a calibrated HE pad, and while starting/finishing calibration. | Held key at boot stays disarmed (`need_release`) until released; held key during Rest fails calibration cleanly (`Key held down` / `Key not still at rest`) without emitting a keystroke. | **NOT RUN** | **NOT RUN** |
+
 ## 8. Verification Sign-Off
 
 - **Linux v1.0.0, 2026-09-13:** sections 1–4 verified and passing, **except**

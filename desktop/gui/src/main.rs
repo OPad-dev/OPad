@@ -75,6 +75,7 @@ pub enum Page {
     Logs,
     Diagnostics,
     About,
+    Calibration,
 }
 
 impl Page {
@@ -84,7 +85,7 @@ impl Page {
     /// `--page` names and their aliases. The first name for each page is the
     /// token a second launch sends to the running instance, so both ends of
     /// the single-instance handoff read this one table.
-    const TOKENS: [(&'static str, Page); 14] = [
+    const TOKENS: [(&'static str, Page); 16] = [
         ("dashboard", Page::Dashboard),
         ("stats", Page::Stats),
         ("ppm", Page::Stats),
@@ -99,6 +100,8 @@ impl Page {
         ("about", Page::About),
         ("license", Page::About),
         ("licenses", Page::About),
+        ("calibrate", Page::Calibration),
+        ("calibration", Page::Calibration),
     ];
 
     pub fn from_token(token: &str) -> Option<Page> {
@@ -283,6 +286,10 @@ pub struct App {
     pub settings_tab: pages::SettingsTab,
     /// The Stats page's tap rate (PPM) statistics
     pub stats: stats::StatsState,
+    pub he_calibration: Option<opad_model::HeCalibrationStatus>,
+    pub cal_progress: Option<opad_model::HeCalibrationProgress>,
+    pub cal_status_msg: Option<String>,
+    pub cal_starting: bool,
 }
 
 /// Shown when no tray host appeared: closing the window then quits the app
@@ -348,6 +355,13 @@ pub enum Message {
     CancelFirmwareModal,
     ConfirmFirmwareUpdate,
     FirmwareUpdateResult(Result<IpcResponse, String>),
+    // Hall Effect Calibration
+    StartCalibration,
+    StartCalibrationDone(Result<IpcResponse, String>),
+    CancelCalibration,
+    CancelCalibrationDone(Result<IpcResponse, String>),
+    PollCalibration,
+    CalibrationProgress(Result<IpcResponse, String>),
     // Daemon and tosu recovery
     StartDaemon,
     DaemonStarted(Result<(), String>),
@@ -505,6 +519,10 @@ impl App {
             diagnostics: diagnostics::DiagnosticsState::default(),
             settings_tab: pages::SettingsTab::default(),
             stats: stats::StatsState::default(),
+            he_calibration: None,
+            cal_progress: None,
+            cal_status_msg: None,
+            cal_starting: false,
         };
         app.log_event(
             LogSource::Program,
@@ -682,6 +700,9 @@ impl App {
                 if page == Page::Stats {
                     self.stats.reset_backoff();
                 }
+                if page == Page::Calibration {
+                    self.cal_status_msg = None;
+                }
                 let mut tasks = vec![self.poll()];
                 // Layouts change outside the designer too (opadctl, another
                 // GUI, an update adding sources): show what the daemon holds
@@ -718,7 +739,7 @@ impl App {
                         // B's to add if it is wanted.
                         last_backup: _,
                         foreign_pad: _,
-                        he_calibration: _,
+                        he_calibration,
                     }) => {
                         let was_offline = !self.daemon_online;
                         let device_just_connected = !self.device_connected && device_connected;
@@ -741,6 +762,7 @@ impl App {
                         self.incompatible = incompatible;
                         self.tosu_connected = tosu_connected;
                         self.latency = latency;
+                        self.he_calibration = he_calibration;
                         self.last_sync_time = last_sync_time;
                         // Always adopt device config when device connects or config changes
                         if device_connected
@@ -1058,6 +1080,67 @@ impl App {
                     return self.poll();
                 }
             },
+            Message::StartCalibration => {
+                self.cal_starting = true;
+                self.cal_status_msg = Some("Starting calibration on pad...".to_string());
+                return Task::perform(
+                    ipc::request(IpcRequest::StartHeCalibration),
+                    Message::StartCalibrationDone,
+                );
+            }
+            Message::StartCalibrationDone(res) => {
+                self.cal_starting = false;
+                match res {
+                    Ok(IpcResponse::HeCalibrationStarted) => {
+                        self.cal_status_msg = None;
+                    }
+                    Ok(IpcResponse::Error(e)) => {
+                        self.cal_status_msg = Some(format!("Error: {e}"));
+                    }
+                    Err(e) => {
+                        self.cal_status_msg = Some(format!("Daemon error: {e}"));
+                    }
+                    _ => {}
+                }
+            }
+            Message::CancelCalibration => {
+                self.cal_status_msg = Some("Cancelling calibration...".to_string());
+                return Task::perform(
+                    ipc::request(IpcRequest::CancelHeCalibration),
+                    Message::CancelCalibrationDone,
+                );
+            }
+            Message::CancelCalibrationDone(res) => match res {
+                Ok(IpcResponse::HeCalibrationCancelled) => {
+                    self.cal_status_msg = Some("Calibration cancelled.".to_string());
+                    self.cal_progress = None;
+                }
+                Ok(IpcResponse::Error(e)) => {
+                    self.cal_status_msg = Some(format!("Error: {e}"));
+                }
+                Err(e) => {
+                    self.cal_status_msg = Some(format!("Daemon error: {e}"));
+                }
+                _ => {}
+            },
+            Message::PollCalibration => {
+                if !self.device_connected {
+                    if self.cal_progress.is_some() {
+                        self.cal_progress = None;
+                        self.cal_status_msg = Some("Pad disconnected.".to_string());
+                    }
+                    return Task::none();
+                }
+                return Task::perform(
+                    ipc::request(IpcRequest::GetHeCalibrationProgress),
+                    Message::CalibrationProgress,
+                );
+            }
+            Message::CalibrationProgress(res) => {
+                if let Ok(IpcResponse::HeCalibrationProgress(prog)) = res {
+                    self.cal_progress = prog;
+                }
+            }
             Message::StartDaemon => {
                 self.banner = Some("Starting opad-daemon...".into());
                 self.log_event(
@@ -1889,17 +1972,25 @@ impl App {
                 .map(Message::Diagnostics),
             );
         }
+        if self.window.is_some() && self.page == Page::Calibration {
+            subscriptions.push(
+                iced::time::every(Duration::from_millis(100)).map(|_| Message::PollCalibration),
+            );
+        }
         Subscription::batch(subscriptions)
     }
 
     fn view(&self, _window: window::Id) -> Element<'_, Message> {
-        let pages: &[(Page, &'static str)] = if self.diagnostics_enabled {
-            &Page::ALL_WITH_DIAGNOSTICS
+        let mut pages_vec: Vec<(Page, &'static str)> = if self.diagnostics_enabled {
+            Page::ALL_WITH_DIAGNOSTICS.to_vec()
         } else {
-            &Page::ALL
+            Page::ALL.to_vec()
         };
+        if self.page == Page::Calibration {
+            pages_vec.push((Page::Calibration, "Calibration"));
+        }
 
-        let nav = column(pages.iter().map(|(page, label)| {
+        let nav = column(pages_vec.iter().map(|(page, label)| {
             button(text(*label).size(15))
                 .width(Length::Fill)
                 .padding([10, 14])
@@ -1991,6 +2082,7 @@ impl App {
             Page::Logs => pages::logs(self),
             Page::Diagnostics => self.diagnostics.view(self),
             Page::About => pages::about(self),
+            Page::Calibration => pages::calibration(self),
         };
 
         let mut main = column![]

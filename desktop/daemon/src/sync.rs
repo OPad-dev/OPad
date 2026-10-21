@@ -62,6 +62,15 @@ pub trait DeviceLink: Send + Sync {
     fn supports_restart(&self) -> bool {
         false
     }
+    async fn start_he_calibration(&self) -> Result<(), DeviceError> {
+        Ok(())
+    }
+    async fn cancel_he_calibration(&self) -> Result<(), DeviceError> {
+        Ok(())
+    }
+    fn supports_he_calibration(&self) -> bool {
+        false
+    }
     fn subscribe(&self) -> broadcast::Receiver<DeviceEvent>;
     async fn pause_and_release(&self, timeout: Duration) -> bool;
     fn resume(&self);
@@ -159,6 +168,18 @@ impl DeviceLink for DeviceManager {
 
     fn supports_restart(&self) -> bool {
         DeviceManager::supports_restart(self)
+    }
+
+    async fn start_he_calibration(&self) -> Result<(), DeviceError> {
+        self.start_he_calibration().await
+    }
+
+    async fn cancel_he_calibration(&self) -> Result<(), DeviceError> {
+        self.cancel_he_calibration().await
+    }
+
+    fn supports_he_calibration(&self) -> bool {
+        DeviceManager::supports_he_calibration(self)
     }
 
     fn subscribe(&self) -> broadcast::Receiver<DeviceEvent> {

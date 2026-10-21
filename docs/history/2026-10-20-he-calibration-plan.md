@@ -49,13 +49,14 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
 1. `message Hello` (`protocol/osupad.proto:32`):
    - `bool he_calibration = 3;` (host indicates it supports HE calibration flow)
 
-2. `message HelloAck` (`protocol/osupad.proto:37`):
-   - `bool he_calibration = 16;` (already allocated in proto, set to `true` when firmware supports interactive calibration flow)
+2. `message HelloAck` (`protocol/osupad.proto:39`):
+   - `bool he_calibration = 16;` (set to `he_backend_running()`, i.e. `true` only when the HE backend is active at runtime and interactive calibration is available)
 
-3. `message HeCalibrationStatus` (`protocol/osupad.proto:102`):
+3. `message HeCalibrationStatus` (`protocol/osupad.proto:104`):
    - Existing fields 1..6: `key1_calibrated`, `key2_calibrated`, `key1_rest`, `key1_full`, `key2_rest`, `key2_full`
    - `bool is_locked = 7;` (pad is currently locked due to missing calibration)
    - `bool is_calibrating = 8;` (pad is currently executing calibration)
+   - Sent on `DeviceStatus` (`has_he_calibration = true`) only when `he_backend_running()` is true.
 
 4. Stage & Error Enums:
    ```protobuf
@@ -91,6 +92,10 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
        HeCalError error = 4;
        string error_message = 5;     // Fixed size in osupad.options: max_size 48
        uint32 raw_value = 6;         // Current live raw sensor count
+       uint32 key1_rest = 7;         // Populated on HE_CAL_STAGE_SUCCESS
+       uint32 key1_full = 8;         // Populated on HE_CAL_STAGE_SUCCESS
+       uint32 key2_rest = 9;         // Populated on HE_CAL_STAGE_SUCCESS
+       uint32 key2_full = 10;        // Populated on HE_CAL_STAGE_SUCCESS
    }
    ```
 
@@ -166,10 +171,10 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
   - Handles calibration IPC requests and forwards them to `opad-device`.
 - `desktop/gui/src/main.rs` & `desktop/gui/src/pages.rs`:
   - Registers `Page::Calibration` with token `"calibrate"`.
-  - Renders live calibration page: 0..5 press visual boxes, stage transitions, cancel button, retry on error.
-  - Settings page: adds "Recalibrate" button when connected to HE pad.
-  - Timeout: 60 seconds without progress triggers automatic cancel.
-  - Disconnect handling: cancels and shows warning if pad is unplugged during calibration.
+  - Renders live calibration page: 0..5 press visual boxes, stage transitions, cancel button, retry on error, and calibrated rest/full counts on success.
+  - Settings page: adds "Recalibrate Keys" button when connected to HE pad.
+  - Walk-away timeout and on-pad cancel gesture are left open with `// OPEN:` comments and documented in the report's "Questions for the owner" section.
+  - Disconnect handling: cancels and shows warning if pad is unplugged or app disconnects during calibration.
 
 ### 5.6 Test Checklist & Verification
 - `docs/testing-checklist.md`:

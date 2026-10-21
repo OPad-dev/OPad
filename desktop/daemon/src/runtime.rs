@@ -111,6 +111,7 @@ pub struct DaemonState {
     pub nvs_restore_pending: bool,
     pub tap: TapState,
     pub he_calibration: Option<opad_model::HeCalibrationStatus>,
+    pub latest_he_progress: Option<opad_model::HeCalibrationProgress>,
 }
 
 impl DaemonState {
@@ -195,6 +196,7 @@ pub enum RuntimeEvent {
         latency: LatencyStats,
         he_calibration: Option<opad_model::HeCalibrationStatus>,
     },
+    DeviceHeCalibrationProgress(opad_model::HeCalibrationProgress),
     DeviceLayoutAck {
         screen: u8,
         success: bool,
@@ -294,6 +296,8 @@ pub enum RuntimeAction {
     /// Re-read the tap rate history for the configured period (a read, so
     /// allowed in any mode)
     RefreshTapHistory,
+    /// Launch the GUI on the calibration page (`opad-gui --page calibrate`)
+    LaunchGuiCalibration,
 }
 
 pub struct RuntimeController {
@@ -361,6 +365,7 @@ pub struct RuntimeController {
     /// The last tosu frame was the results screen: what it plays is decided
     /// once, on its first frame
     on_results_screen: bool,
+    pub cal_gui_launched: bool,
 }
 
 impl RuntimeController {
@@ -418,6 +423,7 @@ impl RuntimeController {
                 period_unsaved: false,
             },
             he_calibration: None,
+            latest_he_progress: None,
         };
 
         Self {
@@ -451,6 +457,7 @@ impl RuntimeController {
             tosu_pending: Vec::new(),
             results_armed: false,
             on_results_screen: false,
+            cal_gui_launched: false,
         }
     }
 
@@ -841,6 +848,7 @@ impl RuntimeController {
                 }
 
                 actions.push(RuntimeAction::SendTimeSync);
+                actions.push(RuntimeAction::RequestDeviceStatus);
                 if (dev_cfg.is_none() || nvs_wiped) && !self.state.foreign_pad {
                     actions.push(RuntimeAction::SendConfig(self.state.config.clone()));
                 }
@@ -895,6 +903,8 @@ impl RuntimeController {
                 self.state.pending_takeover = None;
                 self.state.foreign_pad = false;
                 self.state.he_calibration = None;
+                self.state.latest_he_progress = None;
+                self.cal_gui_launched = false;
             }
 
             RuntimeEvent::DeviceCounters(c) => {
@@ -915,8 +925,22 @@ impl RuntimeController {
                 he_calibration,
             } => {
                 self.state.latency = Some(latency);
-                if he_calibration.is_some() {
+                if let Some(cal) = &he_calibration {
+                    let uncalibrated =
+                        cal.is_locked || !cal.key1_calibrated || !cal.key2_calibrated;
                     self.state.he_calibration = he_calibration;
+                    if uncalibrated && !self.cal_gui_launched {
+                        self.cal_gui_launched = true;
+                        actions.push(RuntimeAction::LaunchGuiCalibration);
+                    }
+                }
+            }
+
+            RuntimeEvent::DeviceHeCalibrationProgress(prog) => {
+                let success = prog.stage == opad_model::HeCalStage::Success;
+                self.state.latest_he_progress = Some(prog);
+                if success {
+                    actions.push(RuntimeAction::RequestDeviceStatus);
                 }
             }
 
@@ -1208,6 +1232,7 @@ impl RuntimeController {
                     {
                         self.last_periodic_time_sync = now;
                         actions.push(RuntimeAction::SendTimeSync);
+                        actions.push(RuntimeAction::RequestDeviceStatus);
                     }
 
                     if now.duration_since(self.last_periodic_sync) >= Duration::from_secs(300) {

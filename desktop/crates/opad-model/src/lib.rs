@@ -449,6 +449,56 @@ pub struct HeCalibrationStatus {
     pub key1_full: u32,
     pub key2_rest: u32,
     pub key2_full: u32,
+    #[serde(default)]
+    pub is_locked: bool,
+    #[serde(default)]
+    pub is_calibrating: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum HeCalStage {
+    #[default]
+    None,
+    Rest,
+    Key1,
+    Key2,
+    Success,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum HeCalError {
+    #[default]
+    None,
+    RestNotStill,
+    RestOutOfRange,
+    RestPressed,
+    SignalNotRising,
+    SpanTooSmall,
+    PeaksInconsistent,
+    TooFewPeaks,
+    TooManyPeaks,
+    Timeout,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct HeCalibrationProgress {
+    pub stage: HeCalStage,
+    pub key_index: u32,
+    pub presses_done: u32,
+    pub error: HeCalError,
+    pub error_message: String,
+    pub raw_value: u32,
+    #[serde(default)]
+    pub key1_rest: u32,
+    #[serde(default)]
+    pub key1_full: u32,
+    #[serde(default)]
+    pub key2_rest: u32,
+    #[serde(default)]
+    pub key2_full: u32,
 }
 
 impl Default for DeviceConfig {

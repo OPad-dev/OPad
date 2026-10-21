@@ -96,6 +96,8 @@ pub enum DeviceEvent {
         /// When this host received the batch
         received: Instant,
     },
+    /// Live progress event during Hall Effect calibration
+    HeCalibrationProgress(proto::HeCalibrationProgress),
 }
 
 /// How often the worker looks for a pad while none is connected (§W1-2).
@@ -319,6 +321,8 @@ pub struct DeviceManager {
     builtin_animations: Arc<AtomicU32>,
     /// The connected pad restarts when asked (HelloAck.restart)
     restart: Arc<AtomicBool>,
+    /// The connected pad supports Hall Effect calibration (HelloAck.he_calibration)
+    he_calibration: Arc<AtomicBool>,
 }
 
 impl DeviceManager {
@@ -335,6 +339,7 @@ impl DeviceManager {
         let board_test = Arc::new(AtomicBool::new(false));
         let builtin_animations = Arc::new(AtomicU32::new(0));
         let restart = Arc::new(AtomicBool::new(false));
+        let he_calibration = Arc::new(AtomicBool::new(false));
         tokio::spawn(async move { while cmd_rx.recv().await.is_some() {} });
         (
             Self {
@@ -350,6 +355,7 @@ impl DeviceManager {
                 board_test,
                 builtin_animations,
                 restart,
+                he_calibration,
             },
             event_rx,
         )
@@ -379,6 +385,8 @@ impl DeviceManager {
         let builtin_animations_clone = builtin_animations.clone();
         let restart = Arc::new(AtomicBool::new(false));
         let restart_clone = restart.clone();
+        let he_calibration = Arc::new(AtomicBool::new(false));
+        let he_calibration_clone = he_calibration.clone();
 
         // Spawn background worker managing the serial port lifecycle
         tokio::task::spawn_blocking(move || {
@@ -556,6 +564,8 @@ impl DeviceManager {
                                             builtin_animations_clone
                                                 .store(ack.builtin_animations, Ordering::SeqCst);
                                             restart_clone.store(ack.restart, Ordering::SeqCst);
+                                            he_calibration_clone
+                                                .store(ack.he_calibration, Ordering::SeqCst);
                                             if handshake.answered_in(msg_framing) {
                                                 debug!(
                                                     "{} speaks {:?} framing",
@@ -611,6 +621,10 @@ impl DeviceManager {
                 }
                 held = false;
                 let was_connected = is_conn_clone.swap(false, Ordering::SeqCst);
+                board_test_clone.store(false, Ordering::SeqCst);
+                builtin_animations_clone.store(0, Ordering::SeqCst);
+                restart_clone.store(false, Ordering::SeqCst);
+                he_calibration_clone.store(false, Ordering::SeqCst);
 
                 // Drain any pending commands on disconnect so they are never replayed to a new connection
                 while cmd_rx.try_recv().is_ok() {}
@@ -637,6 +651,7 @@ impl DeviceManager {
                 board_test,
                 builtin_animations,
                 restart,
+                he_calibration,
             },
             event_rx,
         )
@@ -680,6 +695,12 @@ impl DeviceManager {
     /// False for firmware predating the board test.
     pub fn supports_board_test(&self) -> bool {
         self.board_test.load(Ordering::SeqCst)
+    }
+
+    /// Whether the connected pad supports Hall Effect calibration
+    /// (HelloAck.he_calibration). False for MX pads and older firmware.
+    pub fn supports_he_calibration(&self) -> bool {
+        self.he_calibration.load(Ordering::SeqCst)
     }
 
     /// Highest built-in result animation id the connected pad plays
@@ -972,6 +993,24 @@ impl DeviceManager {
         self.send_msg(msg)
     }
 
+    /// Ask the pad to start interactive Hall Effect calibration.
+    pub async fn start_he_calibration(&self) -> Result<(), DeviceError> {
+        let msg = HostToDevice {
+            sequence_number: self.next_seq(),
+            payload: Some(host_to_device::Payload::StartHeCalibration(true)),
+        };
+        self.send_msg(msg)
+    }
+
+    /// Ask the pad to cancel active Hall Effect calibration.
+    pub async fn cancel_he_calibration(&self) -> Result<(), DeviceError> {
+        let msg = HostToDevice {
+            sequence_number: self.next_seq(),
+            payload: Some(host_to_device::Payload::CancelHeCalibration(true)),
+        };
+        self.send_msg(msg)
+    }
+
     /// Play a result animation over the pad's screen (0 stops it). The pad
     /// ignores it while a map is played.
     pub async fn play_animation(&self, animation: u32, grade: &str) -> Result<(), DeviceError> {
@@ -1221,6 +1260,9 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     received: Instant::now(),
                 });
             }
+            proto::device_to_host::Payload::HeCalibrationProgress(prog) => {
+                let _ = tx.send(DeviceEvent::HeCalibrationProgress(prog.clone()));
+            }
         }
     }
 }
@@ -1446,6 +1488,7 @@ fn hello_message() -> HostToDevice {
         payload: Some(host_to_device::Payload::Hello(proto::Hello {
             protocol_version: 1,
             client_version: "1.0.0".to_string(),
+            he_calibration: true,
         })),
     }
 }

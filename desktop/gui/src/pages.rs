@@ -366,6 +366,29 @@ pub fn settings(app: &App) -> Element<'_, Message> {
                 muted("Presses within this window after a switch change are ignored.").size(12),
             ]
             .spacing(8),
+            if app.device_info.as_ref().is_some_and(|i| i.he_calibration)
+                || app.he_calibration.is_some()
+            {
+                Element::from(
+                    column![
+                        row![
+                            caption("HALL EFFECT CALIBRATION"),
+                            Space::new().width(Length::Fill),
+                            button(text("Recalibrate Keys").size(12))
+                                .style(theme::secondary)
+                                .on_press(Message::Navigate(crate::Page::Calibration)),
+                        ]
+                        .align_y(Alignment::Center),
+                        muted(
+                            "Calibrate magnetic rest position and bottom-out travel for Hall Effect switches.",
+                        )
+                        .size(12),
+                    ]
+                    .spacing(8),
+                )
+            } else {
+                Element::from(Space::new().height(0))
+            },
         ]
         .spacing(18),
     );
@@ -1571,4 +1594,298 @@ pub fn about<'a>(_app: &'a App) -> Element<'a, Message> {
         .spacing(16),
     )
     .into()
+}
+
+pub fn calibration(app: &App) -> Element<'_, Message> {
+    let mut content = column![
+        heading("Hall Effect Calibration"),
+        muted(
+            "Calibrate magnetic rest baseline and full bottom-out travel for Hall Effect switches."
+        ),
+    ]
+    .spacing(14);
+
+    if !app.device_connected {
+        content = content.push(card(
+            column![
+                text("OPad is disconnected").size(16).font(theme::FONT_BOLD),
+                muted("Connect your OPad via USB to perform switch calibration.").size(13),
+                row![button(text("Return to Dashboard").size(13))
+                    .style(theme::secondary)
+                    .on_press(Message::Navigate(crate::Page::Dashboard)),],
+            ]
+            .spacing(14),
+        ));
+        return scrollable(content).into();
+    }
+
+    let progress = app.cal_progress.as_ref();
+    let stage = progress
+        .map(|p| p.stage)
+        .unwrap_or(opad_model::HeCalStage::None);
+
+    let progress_boxes = |presses_done: u32| {
+        row((1..=5).map(|i| {
+            let filled = i <= presses_done;
+            container(
+                text(format!("{i}"))
+                    .size(15)
+                    .font(theme::FONT_BOLD)
+                    .color(if filled {
+                        Color::WHITE
+                    } else {
+                        Color::from_rgb8(150, 150, 150)
+                    }),
+            )
+            .width(44)
+            .height(44)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center)
+            .style(move |_| container::Style {
+                background: Some(if filled {
+                    Color::from_rgb8(230, 70, 130).into()
+                } else {
+                    Color::from_rgb8(45, 45, 55).into()
+                }),
+                border: iced::border::rounded(6),
+                ..Default::default()
+            })
+            .into()
+        }))
+        .spacing(10)
+    };
+
+    let body = match stage {
+        opad_model::HeCalStage::None => {
+            let mut col =
+                column![
+                text("Switch Travel Calibration").size(16).font(theme::FONT_BOLD),
+                muted(
+                    "Calibration measures the rest position and maximum bottom-out depth for each \
+                     Hall Effect key switch. Once saved, switch thresholds adapt automatically to \
+                     your switches and springs.",
+                )
+                .size(13),
+                column![
+                    text("1. Release both keys (measures rest magnetic baseline)").size(13),
+                    text("2. Press Key 1 down to the bottom 5 times slowly").size(13),
+                    text("3. Press Key 2 down to the bottom 5 times slowly").size(13),
+                ]
+                .spacing(6),
+            ]
+                .spacing(14);
+
+            if let Some(msg) = &app.cal_status_msg {
+                col = col.push(text(msg).size(13).color(Color::from_rgb8(230, 180, 50)));
+            }
+
+            let start_btn = button(
+                text(if app.cal_starting {
+                    "Starting..."
+                } else {
+                    "Start Calibration"
+                })
+                .size(14)
+                .font(theme::FONT_BOLD),
+            )
+            .padding([8, 20])
+            .style(theme::primary);
+
+            let start_btn = if app.cal_starting {
+                start_btn
+            } else {
+                start_btn.on_press(Message::StartCalibration)
+            };
+
+            col = col.push(
+                row![
+                    start_btn,
+                    Space::new().width(12),
+                    button(text("Cancel").size(13))
+                        .style(theme::secondary)
+                        .on_press(Message::Navigate(crate::Page::Settings)),
+                ]
+                .align_y(Alignment::Center),
+            );
+
+            card(col)
+        }
+        opad_model::HeCalStage::Rest => card(
+            column![
+                text("Step 1: Measuring Rest Position")
+                    .size(16)
+                    .font(theme::FONT_BOLD),
+                muted("Please release both keys completely and touch nothing on the pad.").size(13),
+                text("Measuring baseline magnetic field and sensor noise (64 samples)...").size(13),
+                if let Some(p) = progress {
+                    if p.raw_value > 0 {
+                        text(format!("Live ADC: {}", p.raw_value)).size(12)
+                    } else {
+                        text("")
+                    }
+                } else {
+                    text("")
+                },
+                row![button(text("Cancel").size(13))
+                    .style(theme::danger)
+                    .on_press(Message::CancelCalibration),],
+            ]
+            .spacing(14),
+        ),
+        opad_model::HeCalStage::Key1 => card(
+            column![
+                text("Step 2: Press Key 1 (5 Times)")
+                    .size(16)
+                    .font(theme::FONT_BOLD),
+                muted("Press Key 1 firmly down to the bottom and release. Repeat 5 times slowly.")
+                    .size(13),
+                progress_boxes(progress.map(|p| p.presses_done).unwrap_or(0)),
+                text(format!(
+                    "Presses recorded: {} of 5",
+                    progress.map(|p| p.presses_done).unwrap_or(0)
+                ))
+                .size(13),
+                if let Some(p) = progress {
+                    if p.raw_value > 0 {
+                        text(format!("Live ADC: {}", p.raw_value)).size(12)
+                    } else {
+                        text("")
+                    }
+                } else {
+                    text("")
+                },
+                row![button(text("Cancel").size(13))
+                    .style(theme::danger)
+                    .on_press(Message::CancelCalibration),],
+            ]
+            .spacing(14),
+        ),
+        opad_model::HeCalStage::Key2 => card(
+            column![
+                text("Step 3: Press Key 2 (5 Times)")
+                    .size(16)
+                    .font(theme::FONT_BOLD),
+                muted("Press Key 2 firmly down to the bottom and release. Repeat 5 times slowly.")
+                    .size(13),
+                progress_boxes(progress.map(|p| p.presses_done).unwrap_or(0)),
+                text(format!(
+                    "Presses recorded: {} of 5",
+                    progress.map(|p| p.presses_done).unwrap_or(0)
+                ))
+                .size(13),
+                if let Some(p) = progress {
+                    if p.raw_value > 0 {
+                        text(format!("Live ADC: {}", p.raw_value)).size(12)
+                    } else {
+                        text("")
+                    }
+                } else {
+                    text("")
+                },
+                row![button(text("Cancel").size(13))
+                    .style(theme::danger)
+                    .on_press(Message::CancelCalibration),],
+            ]
+            .spacing(14),
+        ),
+        opad_model::HeCalStage::Success => card(
+            column![
+                text("✓ Calibration Complete")
+                    .size(18)
+                    .font(theme::FONT_BOLD)
+                    .color(Color::from_rgb8(80, 220, 100)),
+                muted(
+                    "Both switches are successfully calibrated! Calibration data has been written \
+                     to pad storage, and the keypad lock has been lifted.",
+                )
+                .size(13),
+                if let Some(p) = progress {
+                    if p.key1_full > 0 && p.key2_full > 0 {
+                        text(format!(
+                            "Key 1: rest {} → full {}   ·   Key 2: rest {} → full {}",
+                            p.key1_rest, p.key1_full, p.key2_rest, p.key2_full
+                        ))
+                        .size(13)
+                    } else {
+                        text("")
+                    }
+                } else {
+                    text("")
+                },
+                row![
+                    button(text("Go to Dashboard").size(14).font(theme::FONT_BOLD))
+                        .padding([8, 18])
+                        .style(theme::primary)
+                        .on_press(Message::Navigate(crate::Page::Dashboard)),
+                    Space::new().width(12),
+                    button(text("Recalibrate Again").size(13))
+                        .style(theme::secondary)
+                        .on_press(Message::StartCalibration),
+                ]
+                .align_y(Alignment::Center),
+            ]
+            .spacing(14),
+        ),
+        opad_model::HeCalStage::Failed => {
+            let err_text = if let Some(p) = progress {
+                match p.error {
+                    opad_model::HeCalError::RestNotStill => {
+                        "Rest position was not still. Ensure fingers are completely off both keys."
+                    }
+                    opad_model::HeCalError::RestOutOfRange => {
+                        "Rest magnetic reading was outside normal limits. Check switch magnet orientation."
+                    }
+                    opad_model::HeCalError::RestPressed => {
+                        "A key appeared pressed during the rest measurement."
+                    }
+                    opad_model::HeCalError::SignalNotRising => {
+                        "Sensor signal did not increase during press."
+                    }
+                    opad_model::HeCalError::SpanTooSmall => {
+                        "Press travel span was too shallow. Make sure to press switches all the way down."
+                    }
+                    opad_model::HeCalError::PeaksInconsistent => {
+                        "Bottom-out peak readings were inconsistent across the 5 presses."
+                    }
+                    opad_model::HeCalError::TooFewPeaks => "Fewer than 5 presses were detected.",
+                    opad_model::HeCalError::TooManyPeaks => "Too many extra bounces or presses detected.",
+                    opad_model::HeCalError::Timeout => "Calibration timed out.",
+                    _ => {
+                        if !p.error_message.is_empty() {
+                            &p.error_message
+                        } else {
+                            "Calibration did not complete successfully."
+                        }
+                    }
+                }
+            } else {
+                "Calibration did not complete successfully."
+            };
+
+            card(
+                column![
+                    text("⚠ Calibration Failed")
+                        .size(18)
+                        .font(theme::FONT_BOLD)
+                        .color(Color::from_rgb8(240, 70, 70)),
+                    muted(err_text).size(13),
+                    row![
+                        button(text("Retry Calibration").size(14).font(theme::FONT_BOLD))
+                            .padding([8, 18])
+                            .style(theme::primary)
+                            .on_press(Message::StartCalibration),
+                        Space::new().width(12),
+                        button(text("Cancel").size(13))
+                            .style(theme::secondary)
+                            .on_press(Message::Navigate(crate::Page::Settings)),
+                    ]
+                    .align_y(Alignment::Center),
+                ]
+                .spacing(14),
+            )
+        }
+    };
+
+    content = content.push(body);
+    scrollable(content).into()
 }
