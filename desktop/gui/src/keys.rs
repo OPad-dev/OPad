@@ -564,23 +564,23 @@ pub fn view(app: &App) -> Element<'_, Message> {
     .align_y(Alignment::Center);
     content = content.push(top);
 
-    let key_card = |key: usize, title: &'static str| {
+    // Separate keys: one column each, its switch on top and controls below
+    let key_column = |key: usize, title: &'static str| {
         card(
             column![
                 text(title).size(16).font(theme::FONT_BOLD),
-                row![
-                    container(key_controls(app, key, edit[key])).width(Length::Fill),
-                    live_view(app, key, edit[key]),
-                ]
-                .spacing(20),
+                container(live_view(app, key, edit[key])).center_x(Length::Fill),
+                key_controls(app, key, edit[key]),
             ]
             .spacing(12),
         )
     };
     if separate {
-        content = content
-            .push(key_card(0, "Key 1"))
-            .push(key_card(1, "Key 2"));
+        content = content.push(
+            row![key_column(0, "Key 1"), key_column(1, "Key 2")]
+                .spacing(14)
+                .width(Length::Fill),
+        );
     } else {
         // Linked: one set of controls, both keys' live views
         content = content.push(card(
