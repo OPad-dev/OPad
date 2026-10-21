@@ -116,7 +116,7 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
 | Scenario | Old Firmware (pre-calibration UI) | New Firmware (this change) |
 |---|---|---|
 | **Old App (pre-calibration UI)** | Pad behaves as before. Uncalibrated keys use provisional factory defaults. | Pad is locked if HE uncalibrated. Red lock screen displayed on pad with download URL `https://opad.dev/download` and on-pad Calibrate button. Old app connects, receives `DeviceStatus`, ignores unknown fields, does not crash. Pad can be calibrated on-pad without the app. |
-| **New App (with calibration UI)** | App receives `HelloAck.he_calibration == false`. Settings page shows calibration disabled with tooltip "Firmware update required for calibration". No crash. | App receives `HelloAck.he_calibration == true`. If uncalibrated, daemon auto-launches GUI on `Page::Calibration`. Full bidirectional live calibration supported. Settings page shows "Recalibrate" button. |
+| **New App (with calibration UI)** | App receives `HelloAck.he_calibration == false` and shows no calibration entry (`desktop/gui/src/pages.rs`, Keypad settings); the daemon ignores any `HeCalibrationStatus` from that firmware (`desktop/daemon/src/runtime.rs`, `DeviceStatus` handler). No crash. | App receives `HelloAck.he_calibration == true`. If uncalibrated, daemon auto-launches GUI on `Page::Calibration`. Full bidirectional live calibration supported. Settings page shows "Recalibrate" button. |
 | **MX Module / MX Firmware** | Normal operation. | `he_backend_running() == false`. Lock is inactive, `he_calibration` is false, no calibration UI or lock screen shown. MX keypath is completely identical. |
 
 ---
@@ -137,12 +137,12 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
   - `he_backend_start_calibration()` and `he_backend_cancel_calibration()`.
 - `firmware/main/input/touch_retry.c`:
   - Gated during lock or calibration: suppresses Quick Retry (`usb_hid_set_touch_retry(true)`) and swipes (`handle_swipe`).
-  - Passes touch coordinates to `he_cal_ui_touch_event()`.
+  - Passes touch coordinates to `he_cal_ui_touch_sample()` (`firmware/main/ui/he_cal_ui.h`).
 
 ### 5.3 Firmware UI
 - `firmware/main/ui/he_cal_ui.h` & `firmware/main/ui/he_cal_ui.c`:
   - URL constant: `#define OPAD_DOWNLOAD_URL "https://opad.dev/download"`
-  - Red lock screen (dark red `0x5A1010` / `0x7A1F1F` background).
+  - Red lock screen (dark red `0x5A1010` background, `firmware/main/ui/he_cal_ui.c`).
   - 5-second timer from boot: Calibrate button appears after 5s if no capable app connected. If capable app connects (`s_app_capable`), button is hidden and "Calibrate in the OPad app" is displayed.
   - Interactive calibration screen: step prompts ("Release keys...", "Press Key 1 fully 5 times", "Press Key 2 fully 5 times"), 5-box visual progress indicator per key, 1-second "Calibrated!" success message, or error message with "Retry" button.
 - `firmware/main/ui/ui_port.c`:
@@ -150,7 +150,7 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
 
 ### 5.4 Firmware Protocol Handler
 - `firmware/main/protocol/protocol.c`:
-  - Sets `hello_ack.he_calibration = true` when `CONFIG_OSUPAD_HE_BACKEND` is compiled.
+  - Sets `hello_ack.he_calibration = he_backend_running()` in builds with `CONFIG_OSUPAD_HE_BACKEND`, `false` otherwise (`firmware/main/protocol/protocol.c`, `protocol_send_hello_ack`).
   - Records `he_calibration` capability from incoming `Hello` message (`s_app_capable = msg->payload.hello.he_calibration`).
   - Populates `status.he_calibration.is_locked` and `status.he_calibration.is_calibrating`.
   - Dispatches `start_he_calibration` and `cancel_he_calibration`.
