@@ -149,7 +149,9 @@ static void send_proto_progress(const he_runner_progress_t *prog, const he_calib
     if (prog->error_desc) {
         strncpy(p.error_message, prog->error_desc, sizeof(p.error_message) - 1);
     }
-    p.raw_value = (prog->active_key == 2) ? (uint32_t)prog->last_raw[1] : (uint32_t)prog->last_raw[0];
+    // last_raw is -1 until the first sample; 0 means "no reading" to the app
+    int32_t raw = (prog->active_key == 2) ? prog->last_raw[1] : prog->last_raw[0];
+    p.raw_value = raw >= 0 ? (uint32_t)raw : 0;
 
     protocol_send_he_calibration_progress(&p);
 }
