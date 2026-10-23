@@ -321,6 +321,9 @@ pub struct DeviceManager {
     builtin_animations: Arc<AtomicU32>,
     /// The connected pad restarts when asked (HelloAck.restart)
     restart: Arc<AtomicBool>,
+    /// The connected pad shows tap rates per second when a widget asks
+    /// (HelloAck.tap_rate_per_second)
+    tap_rate_per_second: Arc<AtomicBool>,
     /// The connected pad supports Hall Effect calibration (HelloAck.he_calibration)
     he_calibration: Arc<AtomicBool>,
     /// Live key view: whether the pad streams it, the newest sample, and when
@@ -356,6 +359,7 @@ impl DeviceManager {
         let board_test = Arc::new(AtomicBool::new(false));
         let builtin_animations = Arc::new(AtomicU32::new(0));
         let restart = Arc::new(AtomicBool::new(false));
+        let tap_rate_per_second = Arc::new(AtomicBool::new(false));
         let he_calibration = Arc::new(AtomicBool::new(false));
         let he_live = Arc::new(HeLiveState::default());
         tokio::spawn(async move { while cmd_rx.recv().await.is_some() {} });
@@ -373,6 +377,7 @@ impl DeviceManager {
                 board_test,
                 builtin_animations,
                 restart,
+                tap_rate_per_second,
                 he_calibration,
                 he_live,
             },
@@ -404,6 +409,8 @@ impl DeviceManager {
         let builtin_animations_clone = builtin_animations.clone();
         let restart = Arc::new(AtomicBool::new(false));
         let restart_clone = restart.clone();
+        let tap_rate_per_second = Arc::new(AtomicBool::new(false));
+        let tap_rate_per_second_clone = tap_rate_per_second.clone();
         let he_calibration = Arc::new(AtomicBool::new(false));
         let he_calibration_clone = he_calibration.clone();
         let he_live = Arc::new(HeLiveState::default());
@@ -585,6 +592,8 @@ impl DeviceManager {
                                             builtin_animations_clone
                                                 .store(ack.builtin_animations, Ordering::SeqCst);
                                             restart_clone.store(ack.restart, Ordering::SeqCst);
+                                            tap_rate_per_second_clone
+                                                .store(ack.tap_rate_per_second, Ordering::SeqCst);
                                             he_calibration_clone
                                                 .store(ack.he_calibration, Ordering::SeqCst);
                                             he_live_clone
@@ -658,6 +667,7 @@ impl DeviceManager {
                 board_test_clone.store(false, Ordering::SeqCst);
                 builtin_animations_clone.store(0, Ordering::SeqCst);
                 restart_clone.store(false, Ordering::SeqCst);
+                tap_rate_per_second_clone.store(false, Ordering::SeqCst);
                 he_calibration_clone.store(false, Ordering::SeqCst);
                 he_live_clone.supported.store(false, Ordering::SeqCst);
                 *he_live_clone.latest.lock().unwrap() = None;
@@ -688,6 +698,7 @@ impl DeviceManager {
                 board_test,
                 builtin_animations,
                 restart,
+                tap_rate_per_second,
                 he_calibration,
                 he_live,
             },
@@ -727,6 +738,12 @@ impl DeviceManager {
     /// False for firmware predating it.
     pub fn supports_restart(&self) -> bool {
         self.restart.load(Ordering::SeqCst)
+    }
+
+    /// Whether the connected pad shows `FLAG_PER_SECOND` tap rates in keys
+    /// per second. False for firmware predating it, which shows them per minute.
+    pub fn supports_tap_rate_per_second(&self) -> bool {
+        self.tap_rate_per_second.load(Ordering::SeqCst)
     }
 
     /// Whether the connected pad answers [`DeviceManager::run_board_test`].

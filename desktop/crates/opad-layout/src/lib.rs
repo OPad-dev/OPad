@@ -19,8 +19,11 @@ pub const DECIMALS_DEFAULT: u8 = 0xFF;
 pub const FLAG_BG_FILL: u8 = 0x01;
 pub const FLAG_HIDE_WHEN_EMPTY: u8 = 0x02;
 pub const FLAG_BORDER: u8 = 0x04;
-/// Key card only: show that key's current tap rate (PPM) in the card
+/// Key card only: show that key's current tap rate (KPM) in the card
 pub const FLAG_KEY_RATE: u8 = 0x08;
+/// Tap rate values (and a key card's rate): keys per second instead of per
+/// minute. Firmware predating it ignores the bit and shows keys per minute.
+pub const FLAG_PER_SECOND: u8 = 0x10;
 
 macro_rules! wire_enum {
     ($(#[$meta:meta])* $name:ident { $($variant:ident = $value:literal, $label:literal;)* }) => {
@@ -94,6 +97,48 @@ wire_enum!(
         Right = 2, "Right";
     }
 );
+
+/// The unit a widget shows a tap rate in (`FLAG_PER_SECOND`)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TapRateUnit {
+    /// Keys per minute, what the daemon sends
+    Kpm,
+    /// Keys per second, KPM / 60
+    Kps,
+}
+
+impl TapRateUnit {
+    pub const ALL: [TapRateUnit; 2] = [TapRateUnit::Kpm, TapRateUnit::Kps];
+
+    /// The word on screen: "KPM" or "KPS"
+    pub fn abbreviation(self) -> &'static str {
+        match self {
+            TapRateUnit::Kpm => "KPM",
+            TapRateUnit::Kps => "KPS",
+        }
+    }
+}
+
+impl std::fmt::Display for TapRateUnit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            TapRateUnit::Kpm => "KPM (keys per minute)",
+            TapRateUnit::Kps => "KPS (keys per second)",
+        })
+    }
+}
+
+/// A daemon tap rate source, in KPM on the wire. Same set as
+/// `ui_source_is_tap_rate` in the firmware. Not `pad.kps`, which the pad
+/// counts itself, per second.
+pub fn is_tap_rate(source: u8) -> bool {
+    matches!(
+        source,
+        ui_source::PLAY_PPM..=ui_source::PLAY_K2_PPM_PEAK
+            | ui_source::HISTORY_PPM_AVG..=ui_source::HISTORY_K2_PPM_PEAK
+            | ui_source::PLAY_PPM_SONG..=ui_source::HISTORY_PPM_SONG_PEAK
+    )
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Widget {
@@ -193,9 +238,62 @@ impl Widget {
         }
     }
 
+    /// Whether the widget draws a tap rate, so the unit applies to it
+    pub fn shows_tap_rate(&self) -> bool {
+        match self.kind {
+            WidgetKind::KeyCard => self.has_flag(FLAG_KEY_RATE),
+            WidgetKind::Text | WidgetKind::Grade => is_tap_rate(self.source),
+            _ => false,
+        }
+    }
+
+    pub fn tap_rate_unit(&self) -> TapRateUnit {
+        if self.has_flag(FLAG_PER_SECOND) {
+            TapRateUnit::Kps
+        } else {
+            TapRateUnit::Kpm
+        }
+    }
+
+    /// Switch the unit, and the unit word the label or suffix carries with
+    /// it ("AVG KPM" becomes "AVG KPS"; the old "PPM" counts as KPM)
+    pub fn set_tap_rate_unit(&mut self, unit: TapRateUnit) {
+        self.set_flag(FLAG_PER_SECOND, unit == TapRateUnit::Kps);
+        for text in [&mut self.label, &mut self.suffix] {
+            *text = replace_unit_word(text, unit.abbreviation());
+        }
+    }
+
     pub fn contains(&self, x: i16, y: i16) -> bool {
         x >= self.x && x < self.x + self.w && y >= self.y && y < self.y + self.h
     }
+}
+
+/// `text` with each whole word KPM, PPM or KPS (any case) replaced by `unit`
+fn replace_unit_word(text: &str, unit: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut word = String::new();
+    let flush = |word: &mut String, out: &mut String| {
+        if ["KPM", "PPM", "KPS"]
+            .iter()
+            .any(|u| word.eq_ignore_ascii_case(u))
+        {
+            out.push_str(unit);
+        } else {
+            out.push_str(word);
+        }
+        word.clear();
+    };
+    for c in text.chars() {
+        if c.is_alphanumeric() {
+            word.push(c);
+        } else {
+            flush(&mut word, &mut out);
+            out.push(c);
+        }
+    }
+    flush(&mut word, &mut out);
+    out
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -238,6 +336,14 @@ impl Layout {
             }
         }
         Ok(())
+    }
+
+    /// Whether a widget shows a tap rate per second, which firmware
+    /// predating `FLAG_PER_SECOND` would show per minute instead
+    pub fn uses_per_second(&self) -> bool {
+        self.widgets
+            .iter()
+            .any(|w| w.has_flag(FLAG_PER_SECOND) && w.shows_tap_rate())
     }
 
     pub fn to_json(&self) -> String {
@@ -313,27 +419,27 @@ impl SourceInfo {
     }
 }
 
-/// The tap rate sources in the words the pad and the Stats page use: AVG PPM
-/// is the song average and PEAK the fastest tapping (7 presses in a row), as
+/// The tap rate sources in the words the pad and the Stats page use, in KPM
+/// (keys per minute; the ids keep the old "ppm"). AVG is the song average and PEAK the fastest tapping (7 presses in a row), as
 /// on the pad's panel; Best 10 s is the fastest 10 s of song, Live the key
 /// cards' rate, and Tapping avg the average while tapping (breaks left out)
 fn tap_rate_label(key: &str) -> Option<&'static str> {
     Some(match key {
-        "play.ppm_song" | "history.ppm_song" => "AVG PPM",
-        "play.ppm_song_peak" => "Best 10 s PPM",
-        "history.ppm_song_peak" => "Best 10 s PPM",
-        "play.ppm" => "Live PPM",
-        "play.k1_ppm" => "K1 live PPM",
-        "play.k2_ppm" => "K2 live PPM",
-        "play.ppm_avg" | "history.ppm_avg" => "Tapping avg PPM",
-        "play.k1_ppm_avg" | "history.k1_ppm_avg" => "K1 tapping avg PPM",
-        "play.k2_ppm_avg" | "history.k2_ppm_avg" => "K2 tapping avg PPM",
-        "play.ppm_peak" => "PEAK PPM",
-        "play.k1_ppm_peak" => "K1 peak PPM",
-        "play.k2_ppm_peak" => "K2 peak PPM",
-        "history.ppm_peak" => "Best PEAK PPM",
-        "history.k1_ppm_peak" => "K1 best peak PPM",
-        "history.k2_ppm_peak" => "K2 best peak PPM",
+        "play.ppm_song" | "history.ppm_song" => "AVG KPM",
+        "play.ppm_song_peak" => "Best 10 s KPM",
+        "history.ppm_song_peak" => "Best 10 s KPM",
+        "play.ppm" => "Live KPM",
+        "play.k1_ppm" => "K1 live KPM",
+        "play.k2_ppm" => "K2 live KPM",
+        "play.ppm_avg" | "history.ppm_avg" => "Tapping avg KPM",
+        "play.k1_ppm_avg" | "history.k1_ppm_avg" => "K1 tapping avg KPM",
+        "play.k2_ppm_avg" | "history.k2_ppm_avg" => "K2 tapping avg KPM",
+        "play.ppm_peak" => "PEAK KPM",
+        "play.k1_ppm_peak" => "K1 peak KPM",
+        "play.k2_ppm_peak" => "K2 peak KPM",
+        "history.ppm_peak" => "Best PEAK KPM",
+        "history.k1_ppm_peak" => "K1 best peak KPM",
+        "history.k2_ppm_peak" => "K2 best peak KPM",
         "history.period" => "Period",
         _ => return None,
     })
@@ -433,20 +539,20 @@ mod tests {
     #[test]
     fn tap_rate_sources() {
         let k1_avg = source_info(ui_source::PLAY_K1_PPM_AVG).unwrap();
-        assert_eq!(k1_avg.label(), "K1 tapping avg PPM");
+        assert_eq!(k1_avg.label(), "K1 tapping avg KPM");
         assert_eq!(k1_avg.category, SourceCategory::Play);
         assert_eq!(
             source_info(ui_source::PLAY_PPM).unwrap().label(),
-            "Live PPM"
+            "Live KPM"
         );
         let avg = source_info(ui_source::PLAY_PPM_SONG).unwrap();
-        assert_eq!(avg.to_string(), "Live play: AVG PPM");
+        assert_eq!(avg.to_string(), "Live play: AVG KPM");
         let peak = source_info(ui_source::HISTORY_PPM_SONG_PEAK).unwrap();
         assert_eq!(peak.category, SourceCategory::History);
-        assert_eq!(peak.to_string(), "History: Best 10 s PPM");
+        assert_eq!(peak.to_string(), "History: Best 10 s KPM");
         assert_eq!(
             source_info(ui_source::PLAY_PPM_PEAK).unwrap().to_string(),
-            "Live play: PEAK PPM"
+            "Live play: PEAK KPM"
         );
         // Every tap rate source has a written-out name
         for (id, key) in ui_source::ALL {
@@ -458,5 +564,49 @@ mod tests {
             source_info(ui_source::HISTORY_PERIOD).unwrap().category,
             SourceCategory::History
         );
+        // The tap rate set is exactly the per-minute sources the daemon sends
+        for (id, key) in ui_source::ALL {
+            assert_eq!(is_tap_rate(*id), key.contains("ppm"), "{id} {key}");
+        }
+    }
+
+    #[test]
+    fn tap_rate_unit_follows_the_flag_and_renames_the_unit_word() {
+        let mut w = Widget::new(WidgetKind::Text);
+        w.source = ui_source::PLAY_PPM_SONG;
+        w.label = "AVG PPM ".into();
+        w.suffix = " kpm".into();
+        assert!(w.shows_tap_rate());
+        assert_eq!(w.tap_rate_unit(), TapRateUnit::Kpm);
+
+        w.set_tap_rate_unit(TapRateUnit::Kps);
+        assert!(w.has_flag(FLAG_PER_SECOND));
+        assert_eq!(w.label, "AVG KPS ");
+        assert_eq!(w.suffix, " KPS");
+
+        w.set_tap_rate_unit(TapRateUnit::Kpm);
+        assert!(!w.has_flag(FLAG_PER_SECOND));
+        assert_eq!(w.label, "AVG KPM ");
+        // Words that only contain the letters stay
+        assert_eq!(replace_unit_word("KPMs PPM/kps", "KPS"), "KPMs KPS/KPS");
+    }
+
+    #[test]
+    fn per_second_counts_only_where_a_tap_rate_is_shown() {
+        let mut card = Widget::new(WidgetKind::KeyCard);
+        card.set_flag(FLAG_PER_SECOND, true);
+        let mut layout = Layout {
+            background: 0,
+            widgets: vec![card],
+        };
+        // A key card without its rate, or pad.kps, shows no KPM to convert
+        assert!(!layout.uses_per_second());
+        layout.widgets[0].set_flag(FLAG_KEY_RATE, true);
+        assert!(layout.uses_per_second());
+
+        let mut kps = Widget::new(WidgetKind::Text);
+        kps.source = ui_source::PAD_KPS;
+        kps.set_flag(FLAG_PER_SECOND, true);
+        assert!(!kps.shows_tap_rate());
     }
 }

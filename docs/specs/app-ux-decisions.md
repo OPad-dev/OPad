@@ -178,6 +178,8 @@ The tap rate is called **KPM (keys per minute)** everywhere a person reads it.
 - The pad's screen: the default layout's "AVG PPM" label
   (`firmware/main/ui/core/ui_defaults.c:123`).
 - Internal names in code and protocol can stay; only text people see changes.
+- Done in issue #8, which also lets each Designer widget show a tap rate in KPS
+  (keys per second) instead (`UI_FLAG_PER_SECOND`, docs/protocol.md §3).
 
 ### 19b. tosu explained in About
 

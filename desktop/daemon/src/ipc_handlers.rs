@@ -192,6 +192,18 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     reason: format!("Invalid layout: {}", e),
                 };
             }
+            // Older firmware ignores the flag and would show KPM next to a
+            // label that says KPS
+            if layout.uses_per_second()
+                && state.lock().device_connected
+                && !device.supports_tap_rate_per_second()
+            {
+                return IpcResponse::OperationRejected {
+                    reason: "This pad's firmware shows tap rates in KPM only; update the \
+                             pad's firmware to show them in KPS"
+                        .to_string(),
+                };
+            }
             state.lock().custom_layouts.insert(screen, layout.clone());
             if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
                 let _ = device.send_layout(screen, &layout).await;
@@ -257,7 +269,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
 
         IpcRequest::GetUiValues => {
             // Everything the pad is shown: tosu's values plus the tap rate the
-            // daemon works out, so the designer's live preview has PPM too
+            // daemon works out, so the designer's live preview has KPM too
             let st = state.lock();
             let tap = &st.tap.snapshot;
             let mut values = st.ui_values.clone();
@@ -1444,7 +1456,7 @@ pub async fn wait_for_layout_ack(
                     return if success {
                         IpcResponse::LayoutApplied { screen, message }
                     } else {
-                        // Firmware older than a data source (e.g. the PPM
+                        // Firmware older than a data source (e.g. the KPM
                         // ones) refuses the whole layout rather than one widget
                         let hint = if message.contains("unknown source") {
                             ". Its firmware predates that data source; update the pad's firmware to use it"

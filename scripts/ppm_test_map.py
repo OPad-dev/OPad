@@ -148,7 +148,7 @@ def main():
     print(f"{n} notes over {length_s:.1f} s of song (first to last note), "
           f"burst: {stream_notes} notes of 1/4")
     print("Expected, hitting every note once (allow about +-10%):")
-    print(f"  AVG PPM at the end    {n / length_s * 60:.0f}")
+    print(f"  AVG KPM at the end    {n / length_s * 60:.0f}")
     print(f"  PEAK                  {4 * bpm:.0f}  (a rushed burst reads a little higher)")
     print(f"  Best 10 s             {4 * bpm:.0f}")
     print(f"  Live, light parts     {bpm:.0f} on 1/1, {2 * bpm:.0f} on 1/2")

@@ -242,6 +242,8 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     // Plays PlayAnimation (issue #3)
     msg.payload.hello_ack.builtin_animations = UI_ANIM_BUILTIN_COUNT;
     msg.payload.hello_ack.restart = true;
+    // Shows UI_FLAG_PER_SECOND tap rates in KPS (issue #8)
+    msg.payload.hello_ack.tap_rate_per_second = true;
 #ifdef CONFIG_OSUPAD_HE_BACKEND
     msg.payload.hello_ack.he_input = true;
     msg.payload.hello_ack.he_calibration = he_backend_running();

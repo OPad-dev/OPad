@@ -36,6 +36,8 @@ struct MockDeviceLink {
     /// these counters and reports them back, as the pad does
     device_counters: Arc<Mutex<Option<CounterState>>>,
     he_capable: bool,
+    /// HelloAck.tap_rate_per_second
+    per_second: bool,
     cal_requests: Mutex<Vec<&'static str>>,
     progress_on_start: Option<Arc<Mutex<DaemonState>>>,
 }
@@ -54,6 +56,7 @@ impl MockDeviceLink {
             claimed_owners: Arc::new(Mutex::new(Vec::new())),
             device_counters: Arc::new(Mutex::new(None)),
             he_capable: false,
+            per_second: false,
             cal_requests: Mutex::new(Vec::new()),
             progress_on_start: None,
         }
@@ -63,6 +66,10 @@ impl MockDeviceLink {
 impl DeviceLink for MockDeviceLink {
     fn supports_he_calibration(&self) -> bool {
         self.he_capable
+    }
+
+    fn supports_tap_rate_per_second(&self) -> bool {
+        self.per_second
     }
 
     async fn start_he_calibration(&self) -> Result<(), DeviceError> {
@@ -3051,6 +3058,76 @@ fn a_map_played_on_our_pad_still_ends_in_a_sync() {
     let actions = controller.on_event(RuntimeEvent::Tick(after), after);
     assert!(actions.contains(&RuntimeAction::TriggerSync));
     assert_eq!(controller.state.mode, RuntimeMode::Sync);
+}
+
+/// Issue #8: firmware predating FLAG_PER_SECOND would show KPM under a KPS
+/// label, so such a layout is refused for it; KPM layouts still go through
+#[tokio::test]
+async fn kps_layouts_are_refused_for_a_pad_that_shows_only_kpm() {
+    use opad_layout::{Widget, WidgetKind, FLAG_PER_SECOND};
+    let now = Instant::now();
+    let controller = RuntimeController::new(
+        DeviceConfig::default(),
+        None,
+        counters("OSUPAD-KPS", 1, 0, 0),
+        HashMap::new(),
+        None,
+        vec!["OSUPAD-KPS".to_string()],
+        now,
+    );
+    let mut state = controller.state.clone();
+    state.device_connected = true;
+    // In a map the layout goes out without waiting for the pad's ack
+    state.mode = RuntimeMode::Playing;
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    let log_hub = LogHub::new();
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+
+    let mut rate = Widget::new(WidgetKind::Text);
+    rate.source = opad_model::ui_source::PLAY_PPM_SONG;
+    let kpm = Layout {
+        background: 0,
+        widgets: vec![rate.clone()],
+    };
+    rate.set_flag(FLAG_PER_SECOND, true);
+    let kps = Layout {
+        background: 0,
+        widgets: vec![rate],
+    };
+
+    for per_second in [false, true] {
+        let mut device = MockDeviceLink::new(true);
+        device.per_second = per_second;
+        let daemon_state = Arc::new(Mutex::new(state.clone()));
+        let set = |layout: &Layout| {
+            handle_ipc_request(
+                IpcRequest::SetLayout {
+                    screen: Screen::Playing,
+                    layout: layout.clone(),
+                },
+                &daemon_state,
+                &storage,
+                &device,
+                &log_hub,
+                &pending_ops,
+                None,
+            )
+        };
+        let r = set(&kpm).await;
+        assert!(matches!(r, IpcResponse::LayoutApplied { .. }), "{r:?}");
+        let r = set(&kps).await;
+        if per_second {
+            assert!(matches!(r, IpcResponse::LayoutApplied { .. }), "{r:?}");
+            assert_eq!(daemon_state.lock().custom_layouts[&Screen::Playing], kps);
+        } else {
+            match r {
+                IpcResponse::OperationRejected { reason } => assert!(reason.contains("KPS")),
+                other => panic!("not refused: {other:?}"),
+            }
+            assert_eq!(daemon_state.lock().custom_layouts[&Screen::Playing], kpm);
+        }
+        assert_eq!(device.sent_layouts.lock().len(), 1 + per_second as usize);
+    }
 }
 
 /// DA#2: every handler that writes to the pad or syncs from it refuses while

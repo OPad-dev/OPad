@@ -71,7 +71,7 @@ The display interface is completely customizable through the PC layout designer:
 2. **Preview Engine**: Powered by `osupad-ui-preview`, an embedded host-side C renderer mirroring firmware draw calls with 100% pixel-level parity.
 3. **Data Sources**: Data sources are numbered `0..95` (`firmware/main/ui/core/ui_ids.h`, listed in `docs/protocol.md`). Sources include:
    - Live gameplay: Current PP, Combo, Accuracy, beatmap BPM, Map Progress, Star Rating, Hits (300/100/50/Miss), Key 1/2 Session & Map counts.
-   - Player tap rate in PPM (presses per minute, not the beatmap BPM): current/average/peak per attempt, combined and per key, plus averages and peaks over a configurable history period. Computed by the daemon; the pad only displays them.
+   - Player tap rate in KPM (keys per minute, not the beatmap BPM; the designer can show any rate in KPS per widget): current/average/peak per attempt, combined and per key, plus averages and peaks over a configurable history period. Computed by the daemon; the pad only displays them.
    - Hardware stats: Device uptime, Core temperature, Key latency min/max/avg.
 4. **Binary Data Updates**: The host daemon polls tosu v2 WebSocket, extracts changed telemetry fields, and sends delta updates via `DataUpdate` over USB CDC.
 5. **Storage**: Custom screen layouts are saved to the host SQLite database (`layouts` table) and uploaded to the ESP32-S3 over CDC (`SetLayout`), where they are persisted in NVS during `IDLE` state.

@@ -460,6 +460,47 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(ui_preview_stub, ignore = "the stub draws no text")]
+    fn per_second_tap_rates_are_drawn_as_kps() {
+        use opad_layout::{Layout, Widget, WidgetKind, DECIMALS_DEFAULT, FLAG_PER_SECOND};
+        use opad_model::ui_source;
+        let one = |w: Widget| {
+            render_model(&Layout {
+                background: 0,
+                widgets: vec![w],
+            })
+            .unwrap()
+        };
+        let text = |source: u8, flags: u8, decimals: u8, label: &str| {
+            let mut w = Widget::new(WidgetKind::Text);
+            w.source = source;
+            w.flags = flags;
+            w.decimals = decimals;
+            w.label = label.into();
+            w
+        };
+        set_values([(ui_source::PLAY_PPM_SONG, &Value::Number(212.0))]);
+        // 212 KPM is 3.53 KPS: one decimal by default, or the widget's own
+        let kps = |decimals| {
+            one(text(
+                ui_source::PLAY_PPM_SONG,
+                FLAG_PER_SECOND,
+                decimals,
+                "",
+            ))
+        };
+        assert_eq!(kps(DECIMALS_DEFAULT), one(text(0, 0, 0, "3.5")));
+        assert_eq!(kps(2), one(text(0, 0, 0, "3.53")));
+        assert_eq!(kps(0), one(text(0, 0, 0, "4")));
+        // Without the flag it stays KPM, and pad.kps is per second already
+        let kpm = text(ui_source::PLAY_PPM_SONG, 0, DECIMALS_DEFAULT, "");
+        assert_eq!(one(kpm), one(text(0, 0, 0, "212")));
+        set_values([(ui_source::PAD_KPS, &Value::Number(9.0))]);
+        let pad = text(ui_source::PAD_KPS, FLAG_PER_SECOND, DECIMALS_DEFAULT, "");
+        assert_eq!(one(pad), one(text(0, 0, 0, "9")));
+    }
+
+    #[test]
     fn invalid_layout_is_rejected() {
         let mut layout = default_layout(SCREEN_IDLE).unwrap();
         layout.widgets[0].kind = 200;

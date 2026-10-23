@@ -240,6 +240,10 @@ typedef struct _osupad_HelloAck {
     /* The pad streams HeLiveSample while the host keeps asking (he_live_view).
  False on MX pads and firmware predating it: the host then shows no live view. */
     bool he_live;
+    /* The pad shows tap rate widgets with UI_FLAG_PER_SECOND in keys per second
+ (issue #8). False from firmware predating it, which ignores the flag and
+ shows keys per minute: the host then refuses layouts that use it. */
+    bool tap_rate_per_second;
 } osupad_HelloAck;
 
 typedef struct _osupad_SetConfig {
@@ -595,7 +599,7 @@ extern "C" {
 
 /* Initializer values for message structs */
 #define osupad_Hello_init_default                {0, "", 0}
-#define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_default, 0, 0, 0, 0, 0, 0, 0}
+#define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_default, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_ClaimOwnership_init_default       {{0, {0}}}
 #define osupad_DeviceStatus_init_default         {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, osupad_HeCalibrationStatus_init_default}
 #define osupad_HeCalibrationStatus_init_default  {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
@@ -627,7 +631,7 @@ extern "C" {
 #define osupad_HostToDevice_init_default         {0, 0, {osupad_Hello_init_default}}
 #define osupad_DeviceToHost_init_default         {0, 0, {osupad_HelloAck_init_default}}
 #define osupad_Hello_init_zero                   {0, "", 0}
-#define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_zero, 0, 0, 0, 0, 0, 0, 0}
+#define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_zero, 0, 0, 0, 0, 0, 0, 0, 0}
 #define osupad_ClaimOwnership_init_zero          {{0, {0}}}
 #define osupad_DeviceStatus_init_zero            {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, osupad_HeCalibrationStatus_init_zero}
 #define osupad_HeCalibrationStatus_init_zero     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
@@ -740,6 +744,7 @@ extern "C" {
 #define osupad_HelloAck_he_input_tag             15
 #define osupad_HelloAck_he_calibration_tag       16
 #define osupad_HelloAck_he_live_tag              17
+#define osupad_HelloAck_tap_rate_per_second_tag  18
 #define osupad_SetConfig_config_tag              1
 #define osupad_ConfigAck_success_tag             1
 #define osupad_ConfigAck_message_tag             2
@@ -907,7 +912,8 @@ X(a, STATIC,   SINGULAR, UINT32,   builtin_animations,  13) \
 X(a, STATIC,   SINGULAR, BOOL,     restart,          14) \
 X(a, STATIC,   SINGULAR, BOOL,     he_input,         15) \
 X(a, STATIC,   SINGULAR, BOOL,     he_calibration,   16) \
-X(a, STATIC,   SINGULAR, BOOL,     he_live,          17)
+X(a, STATIC,   SINGULAR, BOOL,     he_live,          17) \
+X(a, STATIC,   SINGULAR, BOOL,     tap_rate_per_second,  18)
 #define osupad_HelloAck_CALLBACK NULL
 #define osupad_HelloAck_DEFAULT NULL
 #define osupad_HelloAck_current_config_MSGTYPE osupad_ConfigPayload
@@ -1353,7 +1359,7 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_HeCalibrationStatus_size          44
 #define osupad_HeKeySettings_size                40
 #define osupad_HeLiveSample_size                 16
-#define osupad_HelloAck_size                     395
+#define osupad_HelloAck_size                     398
 #define osupad_Hello_size                        41
 #define osupad_HostStatus_size                   12
 #define osupad_HostToDevice_size                 4309

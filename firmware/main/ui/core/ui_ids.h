@@ -41,7 +41,10 @@ typedef enum {
 #define UI_FLAG_BG_FILL          0x01  // Fill the widget with bg
 #define UI_FLAG_HIDE_WHEN_EMPTY  0x02  // Hidden while the bound source has no value
 #define UI_FLAG_BORDER           0x04  // 1px border in fg (RECT, KEYCARD)
-#define UI_FLAG_KEY_RATE         0x08  // KEYCARD: also show that key's current PPM (play.k1_ppm/k2_ppm)
+#define UI_FLAG_KEY_RATE         0x08  // KEYCARD: also show that key's current KPM (play.k1_ppm/k2_ppm)
+// Tap rate sources (the *_ppm ones) and KEY_RATE: show keys per second (KPS) instead of per
+// minute (KPM). Firmware predating it ignores the bit and shows KPM (HelloAck.tap_rate_per_second)
+#define UI_FLAG_PER_SECOND       0x10
 
 typedef enum {
     UI_SRC_NONE = 0,              // Static text: label only
@@ -100,8 +103,9 @@ typedef enum {
     UI_SRC_SESSION_PLAYCOUNT = 49,
     UI_SRC_GAME_STATE = 50,       // "Playing", "Song select", ...
 
-    // Player tap rate in PPM (presses per minute) for the current attempt, worked out by
-    // the daemon. Not the beatmap's BPM (UI_SRC_MAP_BPM). Current is 0 while not tapping.
+    // Player tap rate in KPM (keys per minute) for the current attempt, worked out by
+    // the daemon; UI_FLAG_PER_SECOND shows it per second. The names keep the old "ppm"
+    // (wire format). Not the beatmap's BPM (UI_SRC_MAP_BPM). Current is 0 while not tapping.
     UI_SRC_PLAY_PPM = 51,
     UI_SRC_PLAY_PPM_AVG = 52,
     UI_SRC_PLAY_PPM_PEAK = 53,

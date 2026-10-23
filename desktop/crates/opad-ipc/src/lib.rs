@@ -184,7 +184,7 @@ pub enum IpcRequest {
         exclude_gpio: u32,
     },
     TriggerEasterEgg,
-    /// The player's tap rate (PPM): the attempt being played, the last one
+    /// The player's tap rate (KPM): the attempt being played, the last one
     /// that ended, and the history over the configured period. Reads only.
     /// Added after IPC v1 shipped: an older daemon cannot parse it and closes
     /// the connection, which the client shows as "not available".

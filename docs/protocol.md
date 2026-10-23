@@ -107,11 +107,14 @@ designer shows the stable names below.
 | 74–79, 83 | `history.*` (tap rate history) | daemon |
 | 80–82 | `status.pc`, `status.tosu`, `status.osu` | pad itself |
 
-**Tap rate (PPM).** PPM is *presses per minute*: the player's physical key
+**Tap rate (KPM).** KPM is *keys per minute*: the player's physical key
 press rate, worked out by the daemon from the key counts. It is not the
 beatmap's musical BPM (`map.bpm`, id 12), even though players often say "BPM"
-for it. All PPM values are integer numbers except `history.period`, which is
-text.
+for it. The daemon sends every rate in KPM as an integer; a widget with
+`UI_FLAG_PER_SECOND` shows it as KPS (KPM / 60) instead. `history.period` is
+text. The source names keep the old `ppm` (they are wire format and stored in
+layouts), and so does the code; only the text people read says KPM
+(`desktop/crates/opad-layout/src/lib.rs`, `tap_rate_label`).
 
 | Id | Name | Meaning |
 |---|---|---|
@@ -151,7 +154,8 @@ and nothing for text. The pad clears sources itself when the host goes away:
 | `0x01` | `UI_FLAG_BG_FILL` | Fill the widget with `bg` |
 | `0x02` | `UI_FLAG_HIDE_WHEN_EMPTY` | Hidden while the bound source has no value |
 | `0x04` | `UI_FLAG_BORDER` | 1 px border (RECT, KEYCARD) |
-| `0x08` | `UI_FLAG_KEY_RATE` | KEYCARD: show that key's current PPM (`play.k1_ppm` for a K1 card, `play.k2_ppm` for K2) as `198 PPM` right of the title. Hidden, with the title centered as before, while the rate is empty. |
+| `0x08` | `UI_FLAG_KEY_RATE` | KEYCARD: show that key's current rate (`play.k1_ppm` for a K1 card, `play.k2_ppm` for K2) as `198 KPM` right of the title, or `3.3 KPS` with `UI_FLAG_PER_SECOND`. Hidden, with the title centered as before, while the rate is empty. |
+| `0x10` | `UI_FLAG_PER_SECOND` | A tap rate source (ids 51–59, 74–79, 84–87; not `pad.kps`, which is per second already) or a key card's rate is shown in KPS: the KPM value / 60, with `decimals` decimals (1 when it is the source default). `ui_data_format` in `firmware/main/ui/core/ui_data.c`. |
 
 **Mixed versions.** Old firmware drops `DataValue`s with unknown source ids
 and ignores unknown flag bits, so a new app can send the tap rate sources and
@@ -160,6 +164,14 @@ widgets bind an unknown source id (`ui_layout_validate`), so a layout that
 uses ids 51–59, 74–79 or 83–87 only loads on firmware that knows them. An old app
 never sends these sources: on new firmware they stay empty and every widget
 bound to them hides.
+
+`UI_FLAG_PER_SECOND` is announced by `HelloAck.tap_rate_per_second` (field
+18). Older firmware ignores the bit and would show KPM where the layout's label
+says KPS, so the daemon refuses a layout that uses it while such a pad is
+connected ("update the pad's firmware"; `IpcRequest::SetLayout` in
+`desktop/daemon/src/ipc_handlers.rs`). An older app never sets the bit, and a
+layout without it looks the same on old and new firmware apart from the
+key card's unit word (`PPM` before, `KPM` now).
 
 ---
 

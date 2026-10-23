@@ -62,6 +62,10 @@ pub trait DeviceLink: Send + Sync {
     fn supports_restart(&self) -> bool {
         false
     }
+    /// The connected pad shows `FLAG_PER_SECOND` tap rates in keys per second
+    fn supports_tap_rate_per_second(&self) -> bool {
+        false
+    }
     async fn start_he_calibration(&self) -> Result<(), DeviceError> {
         Ok(())
     }
@@ -176,6 +180,10 @@ impl DeviceLink for DeviceManager {
 
     fn supports_restart(&self) -> bool {
         DeviceManager::supports_restart(self)
+    }
+
+    fn supports_tap_rate_per_second(&self) -> bool {
+        DeviceManager::supports_tap_rate_per_second(self)
     }
 
     async fn start_he_calibration(&self) -> Result<(), DeviceError> {

@@ -71,8 +71,9 @@ sources! {
     SESSION_PLAYCOUNT = 49, "session.playcount";
     GAME_STATE = 50, "game.state";
 
-    // Player tap rate in PPM (presses per minute) for the current attempt,
-    // worked out by the daemon. Not the beatmap's BPM (`map.bpm`).
+    // Player tap rate in KPM (keys per minute) for the current attempt,
+    // worked out by the daemon; a widget can show it per second instead. The
+    // names keep the old "ppm" (wire format). Not the beatmap's BPM (`map.bpm`).
     PLAY_PPM = 51, "play.ppm";
     PLAY_PPM_AVG = 52, "play.ppm_avg";
     PLAY_PPM_PEAK = 53, "play.ppm_peak";

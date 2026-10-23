@@ -73,6 +73,10 @@ message HelloAck {
     // The pad streams HeLiveSample while the host keeps asking (he_live_view).
     // False on MX pads and firmware predating it: the host then shows no live view.
     bool he_live = 17;
+    // The pad shows tap rate widgets with UI_FLAG_PER_SECOND in keys per second
+    // (issue #8). False from firmware predating it, which ignores the flag and
+    // shows keys per minute: the host then refuses layouts that use it.
+    bool tap_rate_per_second = 18;
 }
 
 // Record a new owner in NVS (§W3-2). An NVS write, so the firmware must honour

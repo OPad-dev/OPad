@@ -107,7 +107,7 @@ enum Commands {
         )]
         reset: bool,
     },
-    /// Show your tap rate in PPM (presses per minute, not the map's BPM):
+    /// Show your tap rate in KPM (keys per minute, not the map's BPM):
     /// the current or last attempt and the history
     Stats {
         #[arg(
@@ -831,7 +831,7 @@ async fn main() -> Result<()> {
             // An older daemon cannot parse the request and drops the connection
             let resp = send_request(daemon(&mut stream)?, &request)
                 .await
-                .context("The daemon did not answer; it may predate PPM statistics")?;
+                .context("The daemon did not answer; it may predate KPM statistics")?;
             match resp {
                 IpcResponse::TapStats(snapshot) => print!("{}", format_tap_stats(&snapshot)),
                 IpcResponse::Error(e) => bail!("{}", e),
@@ -946,7 +946,7 @@ fn format_tap_stats(s: &TapStatsSnapshot) -> String {
         Some(a) => {
             let _ = writeln!(
                 out,
-                "=== {} (PPM) ===",
+                "=== {} (KPM) ===",
                 if live {
                     "Current attempt, live"
                 } else {
@@ -976,12 +976,12 @@ fn format_tap_stats(s: &TapStatsSnapshot) -> String {
             }
             let _ = writeln!(
                 out,
-                "AVG:      {} PPM (every press over the song time, breaks included)",
+                "AVG:      {} KPM (every press over the song time, breaks included)",
                 fmt_ppm(a.song.ppm())
             );
             let _ = writeln!(
                 out,
-                "PEAK:     {} PPM (fastest 7 presses in a row); best 10 s: {} PPM",
+                "PEAK:     {} KPM (fastest 7 presses in a row); best 10 s: {} KPM",
                 fmt_ppm(a.combined.peak_ppm),
                 fmt_ppm(a.song.peak_ppm)
             );
@@ -1004,7 +1004,7 @@ fn format_tap_stats(s: &TapStatsSnapshot) -> String {
             }
         }
         None => {
-            let _ = writeln!(out, "=== Attempt (PPM) ===");
+            let _ = writeln!(out, "=== Attempt (KPM) ===");
             let _ = writeln!(out, "No attempt yet: play a map with tosu running.");
         }
     }
@@ -1017,10 +1017,10 @@ fn format_tap_stats(s: &TapStatsSnapshot) -> String {
     match &s.history {
         Some(h) if h.attempts > 0 => {
             let _ = writeln!(out, "Attempts: {}", h.attempts);
-            let _ = writeln!(out, "AVG:      {} PPM", fmt_ppm(h.song_ppm));
+            let _ = writeln!(out, "AVG:      {} KPM", fmt_ppm(h.song_ppm));
             let _ = writeln!(
                 out,
-                "PEAK:     {} PPM; best 10 s: {} PPM",
+                "PEAK:     {} KPM; best 10 s: {} KPM",
                 fmt_ppm(h.combined.best_peak_ppm),
                 fmt_ppm(h.best_song_peak_ppm)
             );
@@ -1569,12 +1569,12 @@ mod tests {
         assert!(out.contains("xi - Blue Zenith [FOUR DIMENSIONS]"), "{out}");
         assert!(out.contains("History: All time"), "{out}");
         assert!(out.contains("Attempts: 3"), "{out}");
-        assert!(out.contains("AVG:      150 PPM"), "{out}");
+        assert!(out.contains("AVG:      150 KPM"), "{out}");
         assert!(
-            out.contains("PEAK:     220 PPM (fastest 7 presses in a row); best 10 s: 212 PPM"),
+            out.contains("PEAK:     220 KPM (fastest 7 presses in a row); best 10 s: 212 KPM"),
             "{out}"
         );
-        assert!(out.contains("PEAK:     252 PPM; best 10 s: - PPM"), "{out}");
+        assert!(out.contains("PEAK:     252 KPM; best 10 s: - KPM"), "{out}");
         let combined = out.lines().rfind(|l| l.starts_with("Combined")).unwrap();
         assert!(
             combined.contains("190") && combined.contains("252"),

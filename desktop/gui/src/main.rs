@@ -89,9 +89,11 @@ impl Page {
     /// `--page` names and their aliases. The first name for each page is the
     /// token a second launch sends to the running instance, so both ends of
     /// the single-instance handoff read this one table.
-    const TOKENS: [(&'static str, Page); 18] = [
+    const TOKENS: [(&'static str, Page); 19] = [
         ("dashboard", Page::Dashboard),
         ("stats", Page::Stats),
+        ("kpm", Page::Stats),
+        // What the tap rate was called before KPM
         ("ppm", Page::Stats),
         ("designer", Page::Designer),
         ("settings", Page::Settings),
@@ -290,7 +292,7 @@ pub struct App {
     pub diagnostics_enabled: bool,
     pub diagnostics: diagnostics::DiagnosticsState,
     pub settings_tab: pages::SettingsTab,
-    /// The Stats page's tap rate (PPM) statistics
+    /// The Stats page's tap rate (KPM) statistics
     pub stats: stats::StatsState,
     pub he_calibration: Option<opad_model::HeCalibrationStatus>,
     pub cal_progress: Option<opad_model::HeCalibrationProgress>,
@@ -3267,6 +3269,7 @@ mod tests {
         assert_eq!(Page::from_token("testing"), Some(Page::Diagnostics));
         assert_eq!(Page::from_token("licenses"), Some(Page::About));
         assert_eq!(Page::from_token("ppm"), Some(Page::Stats));
+        assert_eq!(Page::from_token("kpm"), Some(Page::Stats));
         assert_eq!(Page::from_token("calibrate"), Some(Page::Calibration));
         assert_eq!(Page::from_token("calibration"), Some(Page::Calibration));
         assert_eq!(Page::Calibration.token(), "calibrate");

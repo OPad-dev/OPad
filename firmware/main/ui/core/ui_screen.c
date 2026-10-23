@@ -82,7 +82,7 @@ static void text_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
     lv_obj_t *label = lv_observer_get_target_obj(observer);
     const ui_widget_t *w = lv_observer_get_user_data(observer);
     char value[UI_STRING_MAX];
-    ui_data_format(w->source, w->decimals, value, sizeof(value));
+    ui_data_format(w->source, w->decimals, w->flags, value, sizeof(value));
     lv_label_set_text_fmt(label, "%s%s%s", w->label, value, w->suffix);
     set_hidden_if_empty(lv_obj_get_user_data(label), w);
 }
@@ -94,7 +94,7 @@ static void count_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
     lv_obj_t *label = lv_observer_get_target_obj(observer);
     const ui_widget_t *w = lv_observer_get_user_data(observer);
     char value[UI_STRING_MAX];
-    ui_data_format(w->source, w->decimals, value, sizeof(value));
+    ui_data_format(w->source, w->decimals, w->flags, value, sizeof(value));
     lv_label_set_text_fmt(label, "%s%s", value, w->suffix);
 }
 
@@ -223,19 +223,21 @@ static uint8_t key_rate_source(uint8_t source)
     }
 }
 
-// Key card rate: "198 PPM" right of the title; while there is no rate the title stays
-// centered, so the card looks as it does without the flag
+// Key card rate: "198 KPM" (or "3.3 KPS" with UI_FLAG_PER_SECOND) right of the title;
+// while there is no rate the title stays centered, so the card looks as it does without
+// the flag
 static void rate_observer_cb(lv_observer_t *observer, lv_subject_t *subject)
 {
     (void)subject;
     lv_obj_t *rate = lv_observer_get_target_obj(observer);
     lv_obj_t *title = lv_obj_get_user_data(rate);
-    uint8_t source = (uint8_t)(uintptr_t)lv_observer_get_user_data(observer);
+    const ui_widget_t *w = lv_observer_get_user_data(observer);
+    uint8_t source = key_rate_source(w->source);
     bool empty = ui_data_is_empty(source);
     if (!empty) {
         char value[UI_STRING_MAX];
-        ui_data_format(source, UI_DECIMALS_DEFAULT, value, sizeof(value));
-        lv_label_set_text_fmt(rate, "%s PPM", value);
+        ui_data_format(source, UI_DECIMALS_DEFAULT, w->flags, value, sizeof(value));
+        lv_label_set_text_fmt(rate, "%s %s", value, (w->flags & UI_FLAG_PER_SECOND) ? "KPS" : "KPM");
     }
     lv_obj_set_flag(rate, LV_OBJ_FLAG_HIDDEN, empty);
     if (empty) {
@@ -288,8 +290,7 @@ static void build_keycard(lv_obj_t *scr, const ui_widget_t *w)
         lv_obj_set_style_text_font(rate, s_fonts[UI_FONT_16], 0);
         lv_obj_align(rate, LV_ALIGN_TOP_RIGHT, -10, 2);
         lv_obj_set_user_data(rate, title);
-        lv_subject_add_observer_obj(ui_data_subject(rate_src), rate_observer_cb, rate,
-                                    (void *)(uintptr_t)rate_src);
+        lv_subject_add_observer_obj(ui_data_subject(rate_src), rate_observer_cb, rate, (void *)w);
     }
 
     uint8_t down = key_down_source(w->source);

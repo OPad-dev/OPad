@@ -421,7 +421,7 @@ with physical ESP32-S3 pad (`OSUPAD-3CDC75701678`) on `COM3`.
 
 ---
 
-## 13. Tap rate (PPM, issue #2)
+## 13. Tap rate (KPM, formerly PPM; issues #2 and #8)
 
 Generate the test map with `python3 scripts/ppm_test_map.py` (needs ffmpeg; `--bpm`
 picks another tempo) and open the `.osz` with osu! to import it. It is light, then a
@@ -434,6 +434,8 @@ what every number should read. Play it with the pad, hitting every note once.
 | PPM-02 | Autoplay is shown, not saved | Play the test map with Autoplay (AT). | PPM shows on the pad while it plays; the log says "shown but not saved"; nothing new in the history. | **PASS** (2026-10-03) — logged "Another player's play (a replay?): its tap rate is shown but not saved", no attempt saved | n/r |
 | PPM-03 | A replay is shown, not saved | Watch another player's replay for 20 s. | Same as PPM-02; the Stats page badge reads "REPLAY · NOT SAVED"; no impossible PEAK (thousands). | n/r — before the fix, a replay was saved with a PEAK of 8997 | n/r |
 | PPM-04 | No input latency cost | Run `opadctl latency` before and after a played map. | Key-to-HID p50/p99.9 unchanged within noise; no "lost key presses" warning in the daemon log. | **PASS** (2026-10-03) — p50 130 µs after the key-timestamp firmware; no lost presses on any attempt | n/r |
+| PPM-05 | KPS on the pad (issue #8) | In the Designer, set the playing screen's AVG value and a key card with "Show tap rate" to Unit KPS, Apply, play the test map. | The value reads the KPM / 60 with one decimal (e.g. 212 KPM → 3.5); the label follows ("AVG KPS"); the key card reads e.g. `3.3 KPS`. The Designer preview matches the pad. | n/r | n/r |
+| PPM-06 | KPS refused by older firmware | With a pad on firmware before issue #8, apply a layout with a KPS widget. | The Designer says the pad's firmware shows tap rates in KPM only; a KPM layout still applies. | n/r | n/r |
 
 ## 14. Touchscreen swipes
 

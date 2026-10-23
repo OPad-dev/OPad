@@ -226,7 +226,14 @@ static size_t format_grouped(char *out, size_t len, long long v)
     return pos;
 }
 
-void ui_data_format(uint8_t source, uint8_t decimals, char *out, size_t len)
+bool ui_source_is_tap_rate(uint8_t source)
+{
+    return (source >= UI_SRC_PLAY_PPM && source <= UI_SRC_PLAY_K2_PPM_PEAK) ||
+           (source >= UI_SRC_HISTORY_PPM_AVG && source <= UI_SRC_HISTORY_K2_PPM_PEAK) ||
+           (source >= UI_SRC_PLAY_PPM_SONG && source <= UI_SRC_HISTORY_PPM_SONG_PEAK);
+}
+
+void ui_data_format(uint8_t source, uint8_t decimals, uint8_t flags, char *out, size_t len)
 {
     const ui_source_info_t *info = ui_source_info(source);
     if (!info || len == 0) {
@@ -243,9 +250,15 @@ void ui_data_format(uint8_t source, uint8_t decimals, char *out, size_t len)
         lv_strlcpy(out, "-", len);
         return;
     }
+    double real = (double)raw / info->scale;
+    if ((flags & UI_FLAG_PER_SECOND) && ui_source_is_tap_rate(source)) {
+        // KPM as KPS, one decimal by default: 3.4 and 3.9 are not both "4"
+        int dec = decimals == UI_DECIMALS_DEFAULT ? 1 : decimals;
+        snprintf(out, len, "%.*f", dec > 4 ? 4 : dec, real / 60.0);
+        return;
+    }
     int dec = decimals == UI_DECIMALS_DEFAULT ? info->default_decimals : decimals;
     if (dec > 4) dec = 4;
-    double real = (double)raw / info->scale;
 
     switch (info->format) {
     case UI_FMT_GROUPED:

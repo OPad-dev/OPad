@@ -1,5 +1,5 @@
-//! Stats page: the player's tap rate in PPM (presses per minute), for the
-//! attempt being played and over the history period. PPM is how fast the
+//! Stats page: the player's tap rate in KPM (keys per minute), for the
+//! attempt being played and over the history period. KPM is how fast the
 //! keys are pressed, not the beatmap's BPM.
 
 use crate::theme::{self, caption, heading, muted};
@@ -106,7 +106,7 @@ fn backoff(failures: u32) -> Duration {
     Duration::from_secs(1u64 << failures.saturating_sub(1).min(5)).min(MAX_BACKOFF)
 }
 
-/// A PPM as shown: whole numbers, "-" when there is none
+/// A KPM as shown: whole numbers, "-" when there is none
 pub(crate) fn fmt_ppm(ppm: Option<f64>) -> String {
     match ppm.filter(|p| p.is_finite()) {
         Some(p) => format!("{:.0}", p),
@@ -216,15 +216,15 @@ fn attempt_card<'a>(attempt: &AttemptStats, live: bool) -> Element<'a, Message> 
             .size(14)
             .color(theme::CYAN),
         row![
-            stat("AVG PPM", fmt_ppm(attempt.song.ppm())),
-            stat("PEAK PPM", fmt_ppm(attempt.combined.peak_ppm)),
+            stat("AVG KPM", fmt_ppm(attempt.song.ppm())),
+            stat("PEAK KPM", fmt_ppm(attempt.combined.peak_ppm)),
             stat("BEST 10 S", fmt_ppm(attempt.song.peak_ppm)),
         ]
         .spacing(36),
         container(rows).padding([4, 0]),
         caption(
-            "PPM = presses per minute. AVG PPM: every press over the song time since the \
-             first note, breaks included. PEAK PPM: the fastest you tapped, over 7 presses \
+            "KPM = keys per minute. AVG KPM: every press over the song time since the \
+             first note, breaks included. PEAK KPM: the fastest you tapped, over 7 presses \
              in a row. Best 10 s: your fastest 10 seconds of the song. Current: your last \
              few presses. Tapping avg: the average only while you are tapping, breaks left \
              out."
@@ -239,8 +239,8 @@ fn history_body<'a>(history: &TapHistory, unsaved: usize) -> Element<'a, Message
     let mut body = column![
         row![
             stat("ATTEMPTS", crate::pages::grouped(history.attempts)),
-            stat("AVG PPM", fmt_ppm(history.song_ppm)),
-            stat("PEAK PPM", fmt_ppm(all.best_peak_ppm)),
+            stat("AVG KPM", fmt_ppm(history.song_ppm)),
+            stat("PEAK KPM", fmt_ppm(all.best_peak_ppm)),
             stat("BEST 10 S", fmt_ppm(history.best_song_peak_ppm)),
             stat("TAPPING AVG", fmt_ppm(all.average_ppm)),
             stat("PRESSES", crate::pages::grouped(all.total_presses)),
@@ -293,21 +293,21 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let mut page = column![row![
         heading("Stats"),
         Space::new().width(Length::Fill),
-        caption("TAP RATE · PPM"),
+        caption("TAP RATE · KPM"),
     ]
     .align_y(Alignment::Center)]
     .spacing(14);
 
     if let Some(e) = &s.error {
         let msg = if !app.daemon_online {
-            "The daemon is not running. PPM statistics appear once it is.".to_string()
+            "The daemon is not running. KPM statistics appear once it is.".to_string()
         } else if s.snapshot.is_none() {
             format!(
-                "PPM statistics are not available from this daemon (it may be an older \
+                "KPM statistics are not available from this daemon (it may be an older \
                  version). {e}"
             )
         } else {
-            format!("Could not refresh PPM statistics: {e}")
+            format!("Could not refresh KPM statistics: {e}")
         };
         page = page.push(
             container(text(msg).size(13).color(theme::YELLOW))
@@ -319,7 +319,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     let Some(snapshot) = &s.snapshot else {
         if s.error.is_none() {
-            page = page.push(card(muted("Loading PPM statistics...")));
+            page = page.push(card(muted("Loading KPM statistics...")));
         }
         return scrollable(page).into();
     };
@@ -330,7 +330,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         (None, None) => column![
             text("Current attempt").size(16).font(theme::FONT_BOLD),
             muted(
-                "Play a map with tosu running and your tap rate (PPM) shows up here, \
+                "Play a map with tosu running and your tap rate (KPM) shows up here, \
                  per key and combined."
             ),
         ]

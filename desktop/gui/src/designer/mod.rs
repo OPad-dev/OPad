@@ -12,8 +12,9 @@ use iced::{keyboard, Alignment, Color, Element, Length, Subscription, Task};
 use iced_aw::helpers::{color_picker, number_input};
 use opad_ipc::{IpcRequest, IpcResponse};
 use opad_layout::{
-    all_sources, source_info, Align, Font, Layout, Screen, SourceInfo, Widget, WidgetKind,
-    DECIMALS_DEFAULT, FLAG_BG_FILL, FLAG_BORDER, FLAG_HIDE_WHEN_EMPTY, FLAG_KEY_RATE, MAX_WIDGETS,
+    all_sources, source_info, Align, Font, Layout, Screen, SourceInfo, TapRateUnit, Widget,
+    WidgetKind, DECIMALS_DEFAULT, FLAG_BG_FILL, FLAG_BORDER, FLAG_HIDE_WHEN_EMPTY, FLAG_KEY_RATE,
+    MAX_WIDGETS,
 };
 use opad_model::ui_source::{self, SourceValue};
 use opad_ui_preview as preview;
@@ -86,6 +87,7 @@ pub enum Message {
     H(i16),
     Radius(u8),
     Decimals(Decimals),
+    RateUnit(TapRateUnit),
     Flag(u8, bool),
     Label(String),
     Suffix(String),
@@ -312,6 +314,7 @@ impl Designer {
             Message::H(v) => self.edit(|w| w.h = v.max(1)),
             Message::Radius(v) => self.edit(|w| w.radius = v),
             Message::Decimals(d) => self.edit(|w| w.decimals = d.0),
+            Message::RateUnit(unit) => self.edit(|w| w.set_tap_rate_unit(unit)),
             Message::Flag(flag, on) => self.edit(|w| w.set_flag(flag, on)),
             Message::Label(s) => {
                 let s = truncate(&s, opad_layout::LABEL_MAX_BYTES);
@@ -847,10 +850,16 @@ impl Designer {
             // The key's own tap rate, which the firmware only draws on key cards
             (w.kind == WidgetKind::KeyCard).then(|| {
                 checkbox(w.has_flag(FLAG_KEY_RATE))
-                    .label("Show PPM (key tap rate)")
+                    .label("Show tap rate (key's live KPM or KPS)")
                     .on_toggle(|on| Message::Flag(FLAG_KEY_RATE, on))
             }),
         )
+        .push(w.shows_tap_rate().then(|| {
+            field(
+                "Unit",
+                pick_list(TapRateUnit::ALL, Some(w.tap_rate_unit()), Message::RateUnit).into(),
+            )
+        }))
         .push(iced::widget::rule::horizontal(1))
         .push(background)
         .push(theme::muted(kind_help(w.kind)).size(12))
@@ -861,13 +870,16 @@ impl Designer {
 
 fn kind_help(kind: WidgetKind) -> &'static str {
     match kind {
-        WidgetKind::Text => "Shows Label + value + Suffix. With no data source it is static text.",
+        WidgetKind::Text => {
+            "Shows Label + value + Suffix. With no data source it is static text. A tap rate \
+             can be shown in KPM or KPS (Unit); KPS has one decimal by default."
+        }
         WidgetKind::Progress => {
             "Background = track, Accent = fill. Use a 0-1 source such as map progress or health."
         }
         WidgetKind::KeyCard => {
             "Label is the title. Background at rest, Accent while the key is held (they swap). \
-             Show PPM adds the key's live presses per minute."
+             Show tap rate adds the key's live rate, in the Unit chosen below it."
         }
         WidgetKind::StatusDot => {
             "Accent = connected, Background = disconnected, Text = label color."
