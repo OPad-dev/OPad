@@ -122,15 +122,6 @@ pub fn play_chatter_beep() {
 pub fn play_chatter_beep() {}
 
 #[cfg(target_os = "linux")]
-static LINUX_EVDEV: std::sync::Mutex<Option<evdev::Device>> = std::sync::Mutex::new(None);
-
-/// When the pad's input device was last looked for. The poll runs every 4 ms,
-/// and scanning /dev/input that often while no pad is plugged in is wasted work.
-#[cfg(target_os = "linux")]
-static LINUX_EVDEV_LAST_SCAN: std::sync::Mutex<Option<std::time::Instant>> =
-    std::sync::Mutex::new(None);
-
-#[cfg(target_os = "linux")]
 const EVDEV_RESCAN_INTERVAL: Duration = Duration::from_secs(2);
 
 #[cfg(target_os = "linux")]
@@ -245,40 +236,71 @@ fn find_opad_evdev() -> Option<evdev::Device> {
     None
 }
 
-/// Whether each key is down on the pad's input device; `None` for a key with
-/// no evdev code or while the device is not open
+/// Every press and release of the two keys on the pad's input device, in
+/// order and stamped with the kernel's own event time. Reading the key state
+/// every few ms instead lost a 5 ms ghost tap and its 5 ms gap between two
+/// reads, so the chatter check never saw it.
 #[cfg(target_os = "linux")]
-fn switch_states(k1_str: &str, k2_str: &str) -> [Option<bool>; 2] {
-    let mut guard = match LINUX_EVDEV.lock() {
-        Ok(g) => g,
-        Err(_) => return [None, None],
+fn linux_key_events(
+    k1_str: &str,
+    k2_str: &str,
+    tx: &tokio::sync::mpsc::UnboundedSender<DiagnosticsMessage>,
+) {
+    use std::time::SystemTime;
+    let codes = [char_to_evdev_key(k1_str), char_to_evdev_key(k2_str)];
+    let mut dev: Option<evdev::Device> = None;
+    let mut last_scan: Option<Instant> = None;
+    let mut last: [Option<bool>; 2] = [None, None];
+    let send = |i: usize, is_down: bool, at: Instant, last: &mut [Option<bool>; 2]| {
+        if last[i] != Some(is_down) {
+            last[i] = Some(is_down);
+            let _ = tx.send(DiagnosticsMessage::KeyEvent {
+                key_idx: i as u8 + 1,
+                is_down,
+                at,
+            });
+        }
     };
-
-    if guard.is_none() {
-        let mut last = LINUX_EVDEV_LAST_SCAN
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        if last.is_some_and(|t| t.elapsed() < EVDEV_RESCAN_INTERVAL) {
-            return [None, None];
-        }
-        *last = Some(std::time::Instant::now());
-        *guard = open_opad_evdev();
-    }
-
-    if let Some(dev) = guard.as_mut() {
-        match dev.get_key_state() {
-            Ok(keys) => {
-                return [
-                    char_to_evdev_key(k1_str).map(|k| keys.contains(k)),
-                    char_to_evdev_key(k2_str).map(|k| keys.contains(k)),
-                ];
-            }
-            Err(_) => {
-                *guard = None;
+    while !tx.is_closed() {
+        if dev.is_none() && !last_scan.is_some_and(|t| t.elapsed() < EVDEV_RESCAN_INTERVAL) {
+            last_scan = Some(Instant::now());
+            dev = open_opad_evdev().filter(|d| d.set_nonblocking(true).is_ok());
+            // The first reading of each key is always sent
+            if let Some(keys) = dev.as_ref().and_then(|d| d.get_key_state().ok()) {
+                for (i, code) in codes.iter().enumerate() {
+                    if let Some(code) = code {
+                        send(i, keys.contains(*code), Instant::now(), &mut last);
+                    }
+                }
             }
         }
+        let lost = dev.as_mut().is_some_and(|d| match d.fetch_events() {
+            Ok(events) => {
+                let (now, wall) = (Instant::now(), SystemTime::now());
+                for ev in events {
+                    let evdev::EventSummary::Key(_, code, value) = ev.destructure() else {
+                        continue;
+                    };
+                    if value == 2 {
+                        continue; // autorepeat
+                    }
+                    let age = wall.duration_since(ev.timestamp()).unwrap_or_default();
+                    let at = now.checked_sub(age).unwrap_or(now);
+                    for (i, c) in codes.iter().enumerate() {
+                        if *c == Some(code) {
+                            send(i, value == 1, at, &mut last);
+                        }
+                    }
+                }
+                false
+            }
+            Err(e) => e.kind() != std::io::ErrorKind::WouldBlock,
+        });
+        if lost {
+            dev = None; // unplugged: look for it again
+        }
+        std::thread::sleep(SWITCH_POLL_INTERVAL);
     }
-    [None, None]
 }
 
 /// Whether each key is down, from the global async key state
@@ -290,14 +312,18 @@ fn switch_states(k1_str: &str, k2_str: &str) -> [Option<bool>; 2] {
     ]
 }
 
-/// How often the switch tester samples the keys
+/// How often the switch tester samples the keys (Windows), or collects the
+/// pad's queued key events (Linux, each stamped with its own time)
 #[cfg(any(windows, target_os = "linux"))]
 const SWITCH_POLL_INTERVAL: Duration = Duration::from_millis(4);
 
-/// Samples the two keys on a thread of its own every [`SWITCH_POLL_INTERVAL`]
-/// and yields a `KeyEvent` only when one changes, stamped when it was seen, so
-/// the UI is not woken 250 times a second for nothing. The first reading of each
-/// key is always sent. The thread stops once the subscription is dropped.
+/// Watches the two keys on a thread of its own and yields a `KeyEvent` only
+/// when one changes, so the UI is not woken 250 times a second for nothing.
+/// Linux reads every transition from the pad's input device
+/// ([`linux_key_events`]); Windows samples the async key state every
+/// [`SWITCH_POLL_INTERVAL`] and can miss a change shorter than that. The first
+/// reading of each key is always sent. The thread stops once the subscription
+/// is dropped.
 #[cfg(any(windows, target_os = "linux"))]
 pub fn switch_input_stream(
     keys: &(String, String),
@@ -308,6 +334,9 @@ pub fn switch_input_stream(
         move |mut output: iced::futures::channel::mpsc::Sender<DiagnosticsMessage>| async move {
             use iced::futures::SinkExt;
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            #[cfg(target_os = "linux")]
+            std::thread::spawn(move || linux_key_events(&k1, &k2, &tx));
+            #[cfg(windows)]
             std::thread::spawn(move || {
                 let mut last: [Option<bool>; 2] = [None, None];
                 while !tx.is_closed() {
@@ -526,6 +555,13 @@ impl DiagnosticsState {
                             play_chatter_beep();
                         }
                         format!("🔴 PHANTOM: Key {key} jumped +{jump} in one frame at {time} ({frames})")
+                    }
+                    HeFinding::Short { ms } if self.he_mx => {
+                        counts.short += 1;
+                        if self.sound_enabled {
+                            play_chatter_beep();
+                        }
+                        format!("🔴 GHOST TAP: Key {key} sent a {ms} ms press at {time} (switch bounce)")
                     }
                     HeFinding::Short { ms } => {
                         counts.short += 1;
@@ -1045,7 +1081,7 @@ impl DiagnosticsState {
                 count("MISSED (NOT SENT)", c.missed, theme::RED),
                 count("STUCK (RELEASE LATE)", c.stuck, theme::RED),
                 count("LATE (> 3 ms)", c.late, theme::YELLOW),
-                count("SHORT (< 8 ms)", c.short, theme::YELLOW),
+                count("GHOST TAP (< 8 ms)", c.short, theme::RED),
             ]
             .spacing(14)
             .align_y(Alignment::Center)
