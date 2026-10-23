@@ -10,6 +10,18 @@ void module_watch_init(module_watch_t *w, uint8_t boot_module)
     *w = (module_watch_t){.boot = boot_module, .last = boot_module};
 }
 
+bool module_watch_fast(module_watch_t *w, bool disagrees)
+{
+    if (!disagrees) {
+        w->fast_misses = 0;
+        return false;
+    }
+    if (w->fast_misses >= MODULE_WATCH_FAST_READS) {
+        return false;  // passed on already
+    }
+    return ++w->fast_misses == MODULE_WATCH_FAST_READS;
+}
+
 module_watch_action_t module_watch_step(module_watch_t *w, uint8_t module_now)
 {
     bool changed = module_now != w->last;
@@ -27,6 +39,7 @@ module_watch_action_t module_watch_step(module_watch_t *w, uint8_t module_now)
         if (++w->matches >= MODULE_WATCH_RESTORE_READS) {
             w->keys_off = false;
             w->matches = 0;
+            w->fast_misses = 0;  // counting starts over with the keys back on
             return MODULE_WATCH_KEYS_ON;
         }
         return changed ? MODULE_WATCH_CHANGED : MODULE_WATCH_KEEP;

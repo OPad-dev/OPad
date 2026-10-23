@@ -338,8 +338,10 @@ void board_module_id_release(void)
 }
 
 // A floating ID with its pull-down reads ~0 V; either module's divider holds
-// it at 0.25 V (MX) or 0.6 V (HE): board_module_from_id's 120 mV line
-#define MODULE_PRESENT_MIN_MV 120
+// it well above: 0.25 V (MX) or 0.6 V (HE) on paper, but an MX pad measured
+// 140-180 mV with dips to 90 mV, so the line sits at 60 mV
+// (board_module_from_id uses the same)
+#define MODULE_PRESENT_MIN_MV 60
 
 esp_err_t board_module_present_fast(bool *out_present, int *out_mv)
 {
@@ -428,7 +430,7 @@ esp_err_t board_probe_reversed_cable(int *out_mv)
 
 board_module_type_t board_module_from_id(int open_mv, int loaded_mv)
 {
-    if (loaded_mv < 0 || open_mv < 0 || loaded_mv < 120) {
+    if (loaded_mv < 0 || open_mv < 0 || loaded_mv < MODULE_PRESENT_MIN_MV) {
         return BOARD_MODULE_NONE;          // floating, or unreadable
     } else if (open_mv < 650) {
         return BOARD_MODULE_MX;            // 0.30 V

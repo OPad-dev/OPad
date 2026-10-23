@@ -76,6 +76,33 @@ static void test_flaky_reseat_restarts_count(void)
     printf("✓ test_flaky_reseat_restarts_count passed\n");
 }
 
+// One noisy fast check of a seated module turns nothing off; a real unplug
+// (MODULE_WATCH_FAST_READS low checks in a row) does
+static void test_fast_check_needs_reads_in_a_row(void)
+{
+    module_watch_t w;
+    module_watch_init(&w, MX);
+    for (int i = 0; i < 100; i++) {
+        assert(!module_watch_fast(&w, i % 3 == 0));  // a dip now and then
+        assert(!module_watch_fast(&w, i % 5 == 0));
+    }
+    assert(!module_watch_fast(&w, true));
+    assert(!module_watch_fast(&w, true));
+    assert(module_watch_fast(&w, true));
+    assert(!module_watch_fast(&w, true));  // once, not every poll after
+    assert(!module_watch_fast(&w, false));
+
+    // Keys back on after an unplug: the count starts over
+    assert(module_watch_step(&w, NONE) == MODULE_WATCH_KEYS_OFF);
+    assert(!module_watch_fast(&w, true) && !module_watch_fast(&w, true) && module_watch_fast(&w, true));
+    for (int i = 0; i < MODULE_WATCH_RESTORE_READS - 1; i++) {
+        module_watch_step(&w, MX);
+    }
+    assert(module_watch_step(&w, MX) == MODULE_WATCH_KEYS_ON);
+    assert(!module_watch_fast(&w, true) && !module_watch_fast(&w, true) && module_watch_fast(&w, true));
+    printf("✓ test_fast_check_needs_reads_in_a_row passed\n");
+}
+
 int main(void)
 {
     test_steady_module_does_nothing();
@@ -83,6 +110,7 @@ int main(void)
     test_direct_swap();
     test_same_module_back();
     test_flaky_reseat_restarts_count();
+    test_fast_check_needs_reads_in_a_row();
     printf("All module watch tests passed\n");
     return 0;
 }

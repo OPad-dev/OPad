@@ -5,7 +5,7 @@
  * Every FAST_POLL_MS, one conversion tells whether anything is on the ID line
  * (board_module_present_fast, ~50 us). When that disagrees with the boot
  * module (something appeared on a pad that booted with none, or the module
- * went), the keys go off on that reading: a pad booted with nothing on ID
+ * went) MODULE_WATCH_FAST_READS times in a row, the keys go off: a pad booted with nothing on ID
  * keeps its keys on (a hand-wired pad reads the same), so this is what stops
  * an HE module's analog outputs on its digital key pins from typing. It can
  * only turn keys off, as it cannot tell MX from HE.
@@ -121,7 +121,7 @@ static void module_monitor_task(void *arg)
         int fast_mv = -1;
         if (!watch.keys_off && !he_backend_running() && board_module_present_fast(&present, &fast_mv) == ESP_OK) {
             mx_debug_id_mv(fast_mv);
-            if (present != boot_present) {
+            if (module_watch_fast(&watch, present != boot_present)) {
                 act(&watch, present ? MODULE_WATCH_UNKNOWN : BOARD_MODULE_NONE, fast_mv);
             }
         }
