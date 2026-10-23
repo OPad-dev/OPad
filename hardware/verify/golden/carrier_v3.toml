@@ -1,0 +1,175 @@
+# Intended netlist of the controller carrier V3, written from docs/specs/hardware-redesign-brief.md 4.2,
+# the Waveshare header table in AGENTS.md 6 and the datasheets in opadverify/devices.py.
+# Waveshare P1 is the rear row, P2 the front; pin 1 at the non-USB end.
+
+[board]
+title = "controller carrier V3"
+pcb = "../../pcb/V3/Carrier/carrier_v3.kicad_pcb"
+gerbers = "../../pcb/V3/Carrier/production/jlcpcb/carrier_v3-gerbers.zip"
+cpl = "../../pcb/V3/Carrier/production/jlcpcb/carrier_v3-CPL-JLCPCB.csv"
+cpl_from = "jlc"     # export_v3.py fits JLCPCB's own footprints
+bom = "../../pcb/V3/Carrier/production/jlcpcb/carrier_v3-BOM-JLCPCB.csv"
+
+[part.J_P1]   # P1: IO2 IO4 IO6 IO16 IO17 IO18 IO21 IO8 IO7 IO10 IO20(D+) IO19(D-) GND 5V
+device = "PINSOCKET_1x14"
+lcsc = "C7500781"
+mpn = "FH2.54-09-14PZD"
+pins = { "1" = "GPIO2", "2" = "GPIO4", "3" = "GPIO6", "4" = "NC", "5" = "NC", "6" = "NC", "7" = "NC", "8" = "GPIO8", "9" = "GPIO7", "10" = "GPIO10", "11" = "USB_DP", "12" = "USB_DN", "13" = "GND", "14" = "5V" }
+
+[part.J_P2]   # P2: 3V3 GND IO43 IO44 IO47 IO48 IO15 IO13 IO11 IO12 IO14 IO9 GND VBAT
+device = "PINSOCKET_1x14"
+lcsc = "C7500781"
+mpn = "FH2.54-09-14PZD"
+pins = { "1" = "3V3", "2" = "GND", "3" = "NC", "4" = "NC", "5" = "NC", "6" = "NC", "7" = "NC", "8" = "NC", "9" = "NC", "10" = "NC", "11" = "NC", "12" = "NC", "13" = "GND", "14" = "NC" }
+
+[part.J_MOD]   # module cable; ID straight to GPIO8, SPARE to GPIO7
+device = "FFC14"
+lcsc = "C262720"
+mpn = "AFA07-S14FCA-00"
+pins = { "1" = "GND", "2" = "5V_MOD", "3" = "3V3", "4" = "GPIO8", "5" = "M_MISO", "6" = "GND", "7" = "M_SCLK", "8" = "M_MOSI", "9" = "GND", "10" = "M_CS", "11" = "GPIO7", "12" = "3V3", "13" = "5V_MOD", "14" = "GND" }
+
+[part.J_USB]   # USB-C, both plug orientations
+device = "USB_C_HRO"
+lcsc = "C165948"
+mpn = "TYPE-C-31-M-12"
+pins = { A1B12 = "GND", B1A12 = "GND", A4B9 = "VBUS", B4A9 = "VBUS", A5 = "CC1", B5 = "CC2", A6 = "USB_DP", B6 = "USB_DP", A7 = "USB_DN", B7 = "USB_DN", A8 = "NC", B8 = "NC", S1 = "SHIELD", S2 = "SHIELD", S3 = "SHIELD", S4 = "SHIELD" }
+
+[part.R1]   # 5.1k: the host sees a sink
+device = "R0603"
+lcsc = "C23186"
+mpn = "0603WAF5101T5E"
+nets = ["CC1", "GND"]
+
+[part.R2]   # 5.1k
+device = "R0603"
+lcsc = "C23186"
+mpn = "0603WAF5101T5E"
+nets = ["CC2", "GND"]
+
+[part.R3]   # 1M shield to ground
+device = "R0603"
+lcsc = "C22935"
+mpn = "0603WAF1004T5E"
+nets = ["SHIELD", "GND"]
+
+[part.C1]   # 4.7nF shield to ground
+device = "R0603"
+lcsc = "C53987"
+mpn = "0603B472K500NT"
+nets = ["SHIELD", "GND"]
+
+[part.U1]   # ESD on D+/D-, REF clamps VBUS
+device = "SRV05_4"
+lcsc = "C85364"
+mpn = "SRV05-4-P-T7"
+pins = { IO1 = "USB_DP", IO2 = "USB_DN", IO3 = "NC", IO4 = "NC", GND = "GND", REF = "VBUS" }
+
+[part.C2]   # 100nF at the connector
+device = "R0603"
+lcsc = "C14663"
+mpn = "CC0603KRX7R9BB104"
+nets = ["VBUS", "GND"]
+
+[part.FB1]   # ferrite 2 A
+device = "R0603"
+lcsc = "C14709"
+mpn = "BLM18PG121SN1D"
+nets = ["VBUS", "VBUS_F"]
+
+[part.C3]   # 4.7uF
+device = "R0603"
+lcsc = "C19666"
+mpn = "CL10A475KO8NNNC"
+nets = ["VBUS_F", "GND"]
+
+[part.D1]   # Schottky: current only flows into the pad
+device = "B5817W"
+lcsc = "C7420328"
+mpn = "B5817W"
+pins = { A = "VBUS_F", K = "5V" }
+
+[part.FB2]   # ferrite on the module's 5 V
+device = "R0603"
+lcsc = "C1002"
+mpn = "GZ1608D601TF"
+nets = ["5V", "5V_MOD"]
+
+[part.C4]   # 1uF
+device = "R0603"
+lcsc = "C15849"
+mpn = "CL10A105KB8NNNC"
+nets = ["5V_MOD", "GND"]
+
+[part.C5]   # 10uF on the module's 3V3
+device = "R0603"
+lcsc = "C19702"
+mpn = "CL10A106KP8NNNC"
+nets = ["3V3", "GND"]
+
+[part.C6]   # 100nF
+device = "R0603"
+lcsc = "C14663"
+mpn = "CC0603KRX7R9BB104"
+nets = ["3V3", "GND"]
+
+[part.U2]   # ESD on the four SPI / key lines
+device = "SRV05_4"
+lcsc = "C85364"
+mpn = "SRV05-4-P-T7"
+pins = { IO1 = "M_SCLK", IO2 = "M_MOSI", IO3 = "M_MISO", IO4 = "M_CS", GND = "GND", REF = "3V3" }
+
+[part.U3]   # ESD on ID and SPARE
+device = "SRV05_4"
+lcsc = "C85364"
+mpn = "SRV05-4-P-T7"
+pins = { IO1 = "GPIO8", IO2 = "GPIO7", IO3 = "NC", IO4 = "NC", GND = "GND", REF = "3V3" }
+
+[part.R4]   # 33R
+device = "R0603"
+lcsc = "C23140"
+mpn = "0603WAF330JT5E"
+nets = ["GPIO2", "M_SCLK"]
+
+[part.R5]   # 33R
+device = "R0603"
+lcsc = "C23140"
+mpn = "0603WAF330JT5E"
+nets = ["GPIO4", "M_MOSI"]
+
+[part.R6]   # 33R
+device = "R0603"
+lcsc = "C23140"
+mpn = "0603WAF330JT5E"
+nets = ["GPIO6", "M_MISO"]
+
+[part.R7]   # 33R
+device = "R0603"
+lcsc = "C23140"
+mpn = "0603WAF330JT5E"
+nets = ["GPIO10", "M_CS"]
+
+# M2 holes at the Waveshare's own (29.0 x 42.2 mm, 3.0 mm from the edges)
+[[hole]]
+what = "M2"
+x = 103.0
+y = 103.0
+d = 2.2
+
+[[hole]]
+what = "M2"
+x = 132.0
+y = 103.0
+d = 2.2
+
+[[hole]]
+what = "M2"
+x = 103.0
+y = 145.2
+d = 2.2
+
+[[hole]]
+what = "M2"
+x = 132.0
+y = 145.2
+d = 2.2
+

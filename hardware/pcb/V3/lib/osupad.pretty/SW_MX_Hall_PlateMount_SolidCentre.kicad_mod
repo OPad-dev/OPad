@@ -1,0 +1,122 @@
+(footprint "SW_MX_Hall_PlateMount_SolidCentre"
+	(version 20240108)
+	(generator "osupad")
+	(generator_version "8.0")
+	(layer "F.Cu")
+	(descr "MX magnetic switch position for Hall Effect keypads (Gateron KS-20, Magnetic Jade, Wooting Lekker, Geon Raw HE), plate mounted 5.0 mm above the PCB. Two 1.75 mm side alignment peg holes only: unlike SW_MX_Hall_PlateMount there is NO 4.0 mm centre hole, because the linear Hall sensor is mounted on the bottom copper exactly at the key centre and needs solid FR-4 under the stem magnet. Keep both copper layers clear over the centre so the magnetic flux is not damped by eddy currents.")
+	(tags "MX Hall Effect magnetic keyswitch plate mount rapid trigger")
+	(attr board_only exclude_from_pos_files exclude_from_bom allow_missing_courtyard)
+	(property "Reference" "REF**"
+		(at 0 -8.9 0)
+		(layer "F.SilkS")
+		(uuid "0b1c2d3e-4f50-4617-8829-a0b1c2d3e4f1")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "SW_MX_Hall_SolidCentre"
+		(at 0 8.9 0)
+		(layer "F.Fab")
+		(uuid "1c2d3e4f-5061-4728-993a-b1c2d3e4f5a2")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "2d3e4f50-6172-4839-aa4b-c2d3e4f5a6b3")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(property "Description" "MX magnetic switch position, solid centre for a bottom-side Hall sensor"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "3e4f5061-7283-494a-bb5c-d3e4f5a6b7c4")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(fp_rect
+		(start -7 -7)
+		(end 7 7)
+		(stroke
+			(width 0.12)
+			(type default)
+		)
+		(fill no)
+		(layer "Dwgs.User")
+		(uuid "4f506172-8394-4a5b-cc6d-e4f5a6b7c8d5")
+	)
+	(fp_text user "14 mm plate cutout (top side)"
+		(at 0 6.2 0)
+		(layer "Dwgs.User")
+		(uuid "50617283-94a5-4b6c-dd7e-f5a6b7c8d9e6")
+		(effects
+			(font
+				(size 0.6 0.6)
+				(thickness 0.1)
+			)
+		)
+	)
+	(fp_rect
+		(start -1.5 -1.5)
+		(end 1.5 1.5)
+		(stroke
+			(width 0.1)
+			(type dash)
+		)
+		(fill no)
+		(layer "Dwgs.User")
+		(uuid "61728394-a5b6-4c7d-ee8f-a6b7c8d9e0f7")
+	)
+	(fp_text user "sensor: solid FR-4, no copper pour"
+		(at 0 -2.3 0)
+		(layer "Dwgs.User")
+		(uuid "728394a5-b6c7-4d8e-ff90-b7c8d9e0f1a8")
+		(effects
+			(font
+				(size 0.5 0.5)
+				(thickness 0.08)
+			)
+		)
+	)
+	(fp_rect
+		(start -7.2 -7.2)
+		(end 7.2 7.2)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "8394a5b6-c7d8-4e9f-a001-c8d9e0f1a2b9")
+	)
+	(pad "" np_thru_hole circle
+		(at -5.08 0)
+		(size 1.75 1.75)
+		(drill 1.75)
+		(layers "F&B.Cu" "*.Mask")
+		(uuid "94a5b6c7-d8e9-4fa0-b112-d9e0f1a2b3ca")
+	)
+	(pad "" np_thru_hole circle
+		(at 5.08 0)
+		(size 1.75 1.75)
+		(drill 1.75)
+		(layers "F&B.Cu" "*.Mask")
+		(uuid "a5b6c7d8-e9fa-40b1-c223-e0f1a2b3c4db")
+	)
+)

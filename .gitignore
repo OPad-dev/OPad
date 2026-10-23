@@ -2,6 +2,7 @@
 .tools/bin/
 .tools/src/
 .tools/venv/
+.tools/jlc_cache/
 .tools/KiCAD-MCP-Server/
 
 # Rust build artifacts
