@@ -302,6 +302,34 @@ LDO (H11).
 | H16 | **Four** locating holes on each input module, not two, for the case's pins. **Decided.** | Owner. |
 | H17 | "Emulation" means proving **every trace** right: a checker that rebuilds connectivity from the fab files and compares it with a hand-written intended netlist and the datasheet pin drawings (`hardware/verify/`). No magnet model. **Decided.** | Owner: V1 failed on the traces, not on magnetics. |
 
+### 4.2 Architecture of the new board set (proposed 2026-10-23, building on 4.1)
+
+| Board | What it does |
+|---|---|
+| **USB board** (new) | USB-C (HRO TYPE-C-31-M-12, C165948) lying flat at the case's rear wall, mouth facing the monitor. CC1/CC2 5.1 kΩ; SRV05-4 ESD on D+/D− with its REF pin on VBUS; 2 A ferrite (BLM18PG121SN1D, C14709) and capacitors on VBUS; B5817W Schottky (C7420328; JLCPCB's model: pad 1 anode, pad 2 cathode) so a host on the Waveshare's own port cannot feed this one; shield to GND through 1 MΩ ∥ 4.7 nF. 8-pin FFC to the carrier. |
+| **Carrier** | Same headers and outline as V1, rear rail widened for the 8-pin FFC from the USB board (VBUS → P1-14, D+ → P1-11, D− → P1-12, GND → P1-13). 14-pin FFC to the module at the non-USB end. 33 Ω series on the four SPI-capable lines, SRV05-4 ESD on the six module signals, ferrite + capacitors on the 5 V to the module, bulk on 3V3, all three Waveshare GND pins tied. |
+| **MX module** | 3 Kailh sockets, 10 kΩ pull-ups, ID 47k/100k = 2.24 V, 4 corner holes, 14-pin FFC. |
+| **HE module** | HE V2 plus: LP5907-3.3 LDO (C80670) from the cable's 5 V for the sensors and ADC AVDD (1 µF in, 1 µF out; AVDD total kept under the LDO's 10 µF limit); DVDD on 3V3; 100 kΩ CS pull-up; SRV05-4 ESD on the SPI lines; ID 100k/100k = 1.65 V (the V2 class: same ADC, same pins); 4 corner holes; 14-pin FFC. |
+
+**FFC links, both reversible:**
+
+- Module, 14-pin, 1.0 mm (JUSHUO AFA07-S14FCA-00, C262720, 2.5 mm tall, bottom contact):
+  `1 GND | 2 5V | 3 3V3 | 4 ID (GPIO8) | 5 MISO (GPIO6) | 6 GND | 7 SCLK (GPIO2) | 8 MOSI (GPIO4) | 9 GND | 10 CS (GPIO10) | 11 SPARE (GPIO7) | 12 3V3 | 13 5V | 14 GND`.
+  A reversed (type B) cable maps pin k to 15 − k: power and ground land on power and ground;
+  ID ↔ GPIO7 (also ADC1), MISO ↔ CS, SCLK ↔ MOSI. The firmware finds the ID on GPIO8 or GPIO7
+  and swaps the SPI pins in the GPIO matrix, so either cable type works.
+  MX uses CS = KEY1 (GPIO10, as V1), SPARE = KEY2 (GPIO7, as V1), MISO = KEY3 (GPIO6).
+- USB, 8-pin, 1.0 mm (JUSHUO AFA07-S08FCA-00, C262714):
+  `1 GND | 2 VBUS | 3 D− | 4 D+ | 5 D+ | 6 D− | 7 VBUS | 8 GND`, the same read from either
+  end; D+ and D− each use two conductors in parallel, joined on both boards.
+
+**Module IDs:** MX V1 0.30 V, HE V1 1.06 V, HE SPI (V2 and the new HE) 1.65 V, new MX 2.24 V.
+Firmware cut-offs halfway between: 0.68, 1.35, 1.95, 2.6 V.
+
+**JLCPCB placement:** the CPL is computed so that JLCPCB's own footprint of each part
+lands on our pads (`hardware/verify/opadverify/jlc.py`), with polarised bottom-side
+parts only at 0° or 180°.
+
 Findings from the review of HE V2 that the redesign must fix: CS has no
 pull-up (the ADC sees a floating CS during boot and plugging); SCLK/MOSI/CS
 have no series resistor at the driver and only one GND wire; the ADS7038's
