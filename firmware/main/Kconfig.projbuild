@@ -66,9 +66,12 @@ menu "OPad Testing and Benchmark"
             press and release the engine makes with the readings just before
             it, per-second reading ranges, ADC health, pad state, screen
             animation and chip temperature, as LogEvents tagged "he.*" that
-            opad-daemon writes to he-debug.log. Works with the daemon and tosu
-            running, during maps. Adds latency on purpose; never a release
-            build. The firmware version gets a "+hedebug" suffix.
+            opad-daemon writes to he-debug.log. With the MX module it logs
+            "he.mx*" lines instead (input/mx_debug.h): every tap, taps the
+            pins saw but the pad never sent, and keys turned off by the
+            module check. Works with the daemon and tosu running, during
+            maps. Adds latency on purpose; never a release build. The
+            firmware version gets a "+hedebug" suffix.
 
     config OSUPAD_BENCH_DEBUG_GPIO
         bool "Toggle debug GPIO right after HID submit"

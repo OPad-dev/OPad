@@ -29,6 +29,7 @@
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
 #include "ui/ui.h"
 #include "input/he_backend.h"
+#include "input/mx_debug.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -57,6 +58,7 @@ static void act(module_watch_t *watch, uint8_t now, int open_mv)
     case MODULE_WATCH_KEYS_OFF:
         keypad_set_input_enabled(false);
         ESP_LOGW(TAG, "Input module changed (ID %d mV): keys off", open_mv);
+        mx_debug_module(false, open_mv);
         show_module_notice((board_module_type_t)now);
         break;
     case MODULE_WATCH_CHANGED:
@@ -74,6 +76,7 @@ static void act(module_watch_t *watch, uint8_t now, int open_mv)
         } else {
             keypad_set_input_enabled(true);
             ui_clear_notice();
+            mx_debug_module(true, open_mv);
             ESP_LOGI(TAG, "Boot module back: keys on");
         }
         break;
@@ -115,9 +118,12 @@ static void module_monitor_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(FAST_POLL_MS));
 
         bool present;
-        if (!watch.keys_off && !he_backend_running() && board_module_present_fast(&present) == ESP_OK &&
-            present != boot_present) {
-            act(&watch, present ? MODULE_WATCH_UNKNOWN : BOARD_MODULE_NONE, -1);
+        int fast_mv = -1;
+        if (!watch.keys_off && !he_backend_running() && board_module_present_fast(&present, &fast_mv) == ESP_OK) {
+            mx_debug_id_mv(fast_mv);
+            if (present != boot_present) {
+                act(&watch, present ? MODULE_WATCH_UNKNOWN : BOARD_MODULE_NONE, fast_mv);
+            }
         }
 
         if (++polls % FULL_POLL_EVERY == 0) {

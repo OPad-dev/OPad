@@ -7,6 +7,7 @@
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "input/key_event.h"
+#include "input/mx_debug.h"
 #include "driver/gpio.h"
 #include "esp_rom_sys.h"
 #include "diag/diag.h"
@@ -72,9 +73,13 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
         s_config.debounce_us
     );
 
+    if (action == DEBOUNCE_ACTION_NONE && current_pressed != s_key_debounce[key_index].accepted_pressed) {
+        mx_debug_suppressed((uint8_t)key_index);  // debug firmware only
+    }
     if (action != DEBOUNCE_ACTION_NONE) {
         s_key_state[key_index] = s_key_debounce[key_index].accepted_pressed;
         s_last_transition_us[key_index] = s_key_debounce[key_index].last_transition_us;
+        mx_debug_transition((uint8_t)key_index, action == DEBOUNCE_ACTION_PRESS, now, false);
 
         // Counting rule: only accepted press transitions increment counters.
         if (action == DEBOUNCE_ACTION_PRESS) {
@@ -412,6 +417,7 @@ static void keypad_task(void *pvParameters)
                 if (action != DEBOUNCE_ACTION_NONE) {
                     s_key_state[i] = s_key_debounce[i].accepted_pressed;
                     s_last_transition_us[i] = s_key_debounce[i].last_transition_us;
+                    mx_debug_transition((uint8_t)i, action == DEBOUNCE_ACTION_PRESS, now_us, true);
 
                     // Counting rule: only accepted press transitions increment counters,
                     // including presses applied by resample. A glitch press that is later
@@ -628,6 +634,11 @@ bool keypad_detect_pin_result(uint32_t id, int *out_pin)
         *out_pin = pin;
     }
     return done;
+}
+
+bool keypad_input_enabled(void)
+{
+    return s_input_enabled;
 }
 
 void keypad_set_input_enabled(bool enabled)

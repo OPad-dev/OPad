@@ -417,6 +417,10 @@ pub struct HeKeyCounts {
     pub phantoms: u32,
     pub short: u32,
     pub repress: u32,
+    /// MX: taps the pad never sent, presses sent late, releases missed
+    pub missed: u32,
+    pub late: u32,
+    pub stuck: u32,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -450,6 +454,10 @@ pub struct DiagnosticsState {
     pub he: [HeKeyCounts; 2],
     /// When the HE debug log last showed the pad's once-a-second line
     pub he_alive: Option<Instant>,
+    /// The log is the MX module's (he.mx* lines)
+    pub he_mx: bool,
+    /// MX: times the module check turned the keys off, this session
+    pub keys_off: u32,
 }
 
 impl Default for DiagnosticsState {
@@ -470,6 +478,8 @@ impl Default for DiagnosticsState {
             restart: None,
             he: Default::default(),
             he_alive: None,
+            he_mx: false,
+            keys_off: 0,
         }
     }
 }
@@ -480,6 +490,7 @@ impl DiagnosticsState {
         self.k2 = KeyTrackerState::default();
         self.simultaneous_press_count = 0;
         self.he = Default::default();
+        self.keys_off = 0;
         self.event_log.clear();
         self.event_log
             .push_back("Tester reset. Ready to monitor switch inputs.".to_string());
@@ -487,7 +498,22 @@ impl DiagnosticsState {
 
     pub fn handle_he_event(&mut self, event: HeMonitorEvent) {
         match event {
-            HeMonitorEvent::Alive => self.he_alive = Some(Instant::now()),
+            HeMonitorEvent::Alive { mx } => {
+                self.he_alive = Some(Instant::now());
+                self.he_mx = mx;
+            }
+            HeMonitorEvent::KeysOff { time, mv } => {
+                self.keys_off += 1;
+                if self.sound_enabled {
+                    play_chatter_beep();
+                }
+                self.push_event(format!(
+                    "🔴 KEYS OFF: the module check read the ID line at {mv} mV at {time}; both keys dead until it reads MX again"
+                ));
+            }
+            HeMonitorEvent::KeysOn { time, off_ms } => {
+                self.push_event(format!("🟡 KEYS ON at {time}, after {off_ms} ms off"));
+            }
             HeMonitorEvent::Press { key } => {
                 self.he[(key as usize - 1).min(1)].presses += 1;
             }
@@ -509,13 +535,32 @@ impl DiagnosticsState {
                         counts.repress += 1;
                         format!("🟡 DOUBLE PRESS: Key {key} pressed again {ms} ms after its release at {time}")
                     }
+                    HeFinding::Missed { ms } => {
+                        counts.missed += 1;
+                        if self.sound_enabled {
+                            play_chatter_beep();
+                        }
+                        format!("🔴 MISSED: Key {key} was down {ms} ms at {time} and the pad sent no press")
+                    }
+                    HeFinding::Late { ms } => {
+                        counts.late += 1;
+                        format!("🟡 LATE: Key {key} press sent {ms} ms after the switch closed at {time}")
+                    }
+                    HeFinding::Stuck { ms } => {
+                        counts.stuck += 1;
+                        format!("🔴 STUCK: Key {key} reported down {ms} ms after the switch opened at {time}")
+                    }
                 };
-                if self.event_log.len() >= 25 {
-                    self.event_log.pop_front();
-                }
-                self.event_log.push_back(entry);
+                self.push_event(entry);
             }
         }
+    }
+
+    fn push_event(&mut self, entry: String) {
+        if self.event_log.len() >= 25 {
+            self.event_log.pop_front();
+        }
+        self.event_log.push_back(entry);
     }
 
     pub fn handle_key_event(&mut self, key_idx: u8, is_down: bool) {
@@ -907,6 +952,9 @@ impl DiagnosticsState {
         let live = self
             .he_alive
             .is_some_and(|at| at.elapsed() < Duration::from_secs(3));
+        if live && self.he_mx {
+            return self.view_mx_monitor();
+        }
         let status = if live {
             text("● Following the pad's HE debug log")
                 .size(12)
@@ -961,6 +1009,72 @@ impl DiagnosticsState {
                      double press is a key pressed again within 25 ms of its release. Works during maps."
                 )
                 .size(12),
+                key_row(0),
+                key_row(1),
+            ]
+            .spacing(10),
+        )
+        .padding(16)
+        .width(Length::Fill)
+        .style(theme::card)
+        .into()
+    }
+
+    /// The MX half of the same log: taps the pad dropped, from its own pin sampler
+    fn view_mx_monitor(&self) -> Element<'_, Message> {
+        let count = |label: &'static str, v: u32, bad: iced::Color| {
+            column![
+                caption(label),
+                text(v.to_string())
+                    .size(18)
+                    .font(theme::FONT_BOLD)
+                    .color(if v > 0 { bad } else { theme::GREEN }),
+            ]
+            .width(Length::FillPortion(1))
+        };
+        let key_row = |i: usize| {
+            let c = &self.he[i];
+            row![
+                column![
+                    text(format!("Key {}", i + 1))
+                        .size(14)
+                        .font(theme::FONT_BOLD),
+                    muted(format!("{} taps sent", c.presses)).size(12),
+                ]
+                .width(Length::FillPortion(1)),
+                count("MISSED (NOT SENT)", c.missed, theme::RED),
+                count("STUCK (RELEASE LATE)", c.stuck, theme::RED),
+                count("LATE (> 3 ms)", c.late, theme::YELLOW),
+                count("SHORT (< 8 ms)", c.short, theme::YELLOW),
+            ]
+            .spacing(14)
+            .align_y(Alignment::Center)
+        };
+        container(
+            column![
+                row![
+                    text("MX Missed-Tap Monitor").size(15).font(theme::FONT_BOLD),
+                    Space::new().width(Length::Fill),
+                    text("● Following the pad's MX debug log")
+                        .size(12)
+                        .color(theme::GREEN),
+                ]
+                .align_y(Alignment::Center),
+                muted(
+                    "The pad reads its switch pins every millisecond and compares them with what it sent. \
+                     Missed: a switch closed for 3 ms or more and no press went out. Keys off: the module \
+                     check lost the MX module and turned both keys off. Works during maps."
+                )
+                .size(12),
+                row![
+                    caption("KEYS OFF (MODULE CHECK)"),
+                    text(self.keys_off.to_string())
+                        .size(18)
+                        .font(theme::FONT_BOLD)
+                        .color(if self.keys_off > 0 { theme::RED } else { theme::GREEN }),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center),
                 key_row(0),
                 key_row(1),
             ]

@@ -133,7 +133,7 @@ esp_err_t board_read_module_id(int *out_open_mv, int *out_loaded_mv);
  *        pull-down on (~50 us): for noticing a module plugged in or out fast.
  *        It cannot tell MX from HE; board_read_module_id does that.
  */
-esp_err_t board_module_present_fast(bool *out_present);
+esp_err_t board_module_present_fast(bool *out_present, int *out_mv);
 
 /**
  * @brief Close the ADC1 oneshot unit the ID reads keep open, so ADC1

@@ -42,8 +42,13 @@ void he_debug_isr_edge(uint8_t key, he_rt_event_t ev, he_rt_state_t from, he_rt_
 
 // Task context only (never the interrupt)
 void he_debug_start(void);
+// The line ring both halves log into (HE here, MX in mx_debug.c); true once open
+bool he_debug_log_open(void);
 void he_debug_line(const char *tag, uint8_t level, const char *fmt, ...)
     __attribute__((format(printf, 3, 4)));
+// Stamped `ms` on the pad's clock (when it happened, not when it was formatted)
+void he_debug_line_at(const char *tag, uint8_t level, uint32_t ms, const char *fmt, ...)
+    __attribute__((format(printf, 4, 5)));
 void he_debug_params(uint8_t key, const he_rt_params_t *p);
 size_t he_debug_take(he_debug_line_t *out, size_t max);
 bool he_debug_pending(void);

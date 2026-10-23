@@ -123,6 +123,16 @@ void he_debug_line(const char *tag, uint8_t level, const char *fmt, ...)
     push_line_at(tag, level, msg, (uint32_t)(esp_timer_get_time() / 1000));
 }
 
+void he_debug_line_at(const char *tag, uint8_t level, uint32_t ms, const char *fmt, ...)
+{
+    char msg[64];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(msg, sizeof(msg), fmt, ap);
+    va_end(ap);
+    push_line_at(tag, level, msg, ms);
+}
+
 size_t he_debug_take(he_debug_line_t *out, size_t max)
 {
     portENTER_CRITICAL(&s_line_lock);
@@ -321,16 +331,31 @@ static void debug_task(void *arg)
     }
 }
 
+bool he_debug_log_open(void)
+{
+    if (s_lines != NULL) {
+        return true;
+    }
+    he_debug_line_t *lines = heap_caps_calloc(LINE_RING, sizeof(he_debug_line_t), MALLOC_CAP_SPIRAM);
+    size_t cap = LINE_RING;
+    if (lines == NULL) {
+        cap = 32;
+        lines = heap_caps_calloc(cap, sizeof(he_debug_line_t), MALLOC_CAP_INTERNAL);
+    }
+    if (lines == NULL) {
+        ESP_LOGE(TAG, "No memory for the debug log");
+        return false;
+    }
+    portENTER_CRITICAL(&s_line_lock);
+    s_line_cap = cap;
+    s_lines = lines;
+    portEXIT_CRITICAL(&s_line_lock);
+    return true;
+}
+
 void he_debug_start(void)
 {
-    s_line_cap = LINE_RING;
-    s_lines = heap_caps_calloc(s_line_cap, sizeof(he_debug_line_t), MALLOC_CAP_SPIRAM);
-    if (s_lines == NULL) {
-        s_line_cap = 32;
-        s_lines = heap_caps_calloc(s_line_cap, sizeof(he_debug_line_t), MALLOC_CAP_INTERNAL);
-    }
-    if (s_lines == NULL) {
-        ESP_LOGE(TAG, "No memory for the debug log");
+    if (!he_debug_log_open()) {
         return;
     }
     if (xTaskCreatePinnedToCore(debug_task, "he_debug", 4096, NULL, tskIDLE_PRIORITY + 2, NULL, 1) != pdPASS) {

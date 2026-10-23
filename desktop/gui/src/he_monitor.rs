@@ -8,6 +8,11 @@
 //! The host's key events cannot do this: a phantom is often a 1 ms press,
 //! shorter than the switch tester's 4 ms polling. The rules are the ones used
 //! in docs/history/2026-10-22-he-phantom-presses.md.
+//!
+//! With the MX module the same firmware logs `he.mx*` lines instead
+//! (firmware/main/input/mx_debug.h): taps the pad never sent, presses it sent
+//! late or releases it missed, from its 1 kHz pin sampler, and keys turned
+//! off by the module check.
 
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
 use std::time::Duration;
@@ -30,12 +35,19 @@ pub enum HeFinding {
     Short { ms: u32 },
     /// Pressed again `ms` after its release
     Repress { ms: u32 },
+    /// MX: the pin read pressed `ms` and no press was sent
+    Missed { ms: u32 },
+    /// MX: the press was sent `ms` after the pin went down
+    Late { ms: u32 },
+    /// MX: reported down while the pin read up for `ms`
+    Stuck { ms: u32 },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum HeMonitorEvent {
     /// The pad's once-a-second line: the monitor is following live data
-    Alive,
+    /// (`mx`: from the MX module's log)
+    Alive { mx: bool },
     /// The pad pressed key `key` (1 or 2)
     Press { key: u8 },
     /// `time`: the log's wall-clock time of the press
@@ -44,6 +56,10 @@ pub enum HeMonitorEvent {
         time: String,
         finding: HeFinding,
     },
+    /// MX: the module check turned both keys off (`mv`: the ID line's reading)
+    KeysOff { time: String, mv: i32 },
+    /// MX: keys back on after `off_ms`
+    KeysOn { time: String, off_ms: u32 },
 }
 
 /// Turns log lines into events; one per log file followed
@@ -69,6 +85,14 @@ fn split(line: &str) -> Option<(&str, &str, u32, &str)> {
     Some((time, tag, ms, line[close + 3..].trim()))
 }
 
+/// The first word like `34ms` or `41.2ms,`, in whole ms
+fn first_ms<'a>(mut words: impl Iterator<Item = &'a str>) -> Option<u32> {
+    words.find_map(|w| {
+        let v: f32 = w.trim_end_matches(',').strip_suffix("ms")?.parse().ok()?;
+        Some(v as u32)
+    })
+}
+
 fn key_index(word: &str) -> Option<usize> {
     match word {
         "K1" => Some(0),
@@ -85,7 +109,57 @@ impl Judge {
         };
         let mut words = rest.split_whitespace();
         match tag {
-            "he.sec" => out.push(HeMonitorEvent::Alive),
+            "he.sec" => out.push(HeMonitorEvent::Alive { mx: false }),
+            "he.mxsec" => out.push(HeMonitorEvent::Alive { mx: true }),
+            "he.mxtap" => {
+                let Some(k) = words.next().and_then(key_index) else {
+                    return out;
+                };
+                let key = k as u8 + 1;
+                out.push(HeMonitorEvent::Alive { mx: true });
+                out.push(HeMonitorEvent::Press { key });
+                if let Some(held) = first_ms(words).filter(|&h| h < SHORT_MS) {
+                    out.push(HeMonitorEvent::Found {
+                        key,
+                        time: time.get(..8).unwrap_or(time).to_string(),
+                        finding: HeFinding::Short { ms: held },
+                    });
+                }
+            }
+            "he.mxmiss" => {
+                let (Some(k), Some(kind)) = (words.next().and_then(key_index), words.next()) else {
+                    return out;
+                };
+                let Some(ms) = first_ms(words) else {
+                    return out;
+                };
+                let finding = match kind {
+                    "MISS" => HeFinding::Missed { ms },
+                    "LATE" => HeFinding::Late { ms },
+                    "STUCK" => HeFinding::Stuck { ms },
+                    _ => return out,
+                };
+                out.push(HeMonitorEvent::Found {
+                    key: k as u8 + 1,
+                    time: time.get(..8).unwrap_or(time).to_string(),
+                    finding,
+                });
+            }
+            "he.mxmod" => {
+                let time = time.get(..8).unwrap_or(time).to_string();
+                if rest.starts_with("keys OFF") {
+                    let mv = rest
+                        .rsplit("ID ")
+                        .next()
+                        .and_then(|v| v.strip_suffix("mV"))
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(-1);
+                    out.push(HeMonitorEvent::KeysOff { time, mv });
+                } else if rest.starts_with("keys ON") {
+                    let off_ms = first_ms(words).unwrap_or(0);
+                    out.push(HeMonitorEvent::KeysOn { time, off_ms });
+                }
+            }
             "he.edge" => {
                 let (Some(k), Some(ev)) = (words.next().and_then(key_index), words.next()) else {
                     return out;
@@ -315,9 +389,61 @@ mod tests {
         assert_eq!(
             e,
             vec![
-                HeMonitorEvent::Alive,
+                HeMonitorEvent::Alive { mx: false },
                 HeMonitorEvent::Press { key: 1 },
                 HeMonitorEvent::Press { key: 1 }
+            ]
+        );
+    }
+
+    #[test]
+    fn mx_lines_give_presses_misses_and_keys_off() {
+        let mut j = Judge::default();
+        let e = feed(
+            &mut j,
+            &[
+                &format!("{T}he.mxtap  [   5000 ms] K1 held 41.2ms prev 120ms sup2"),
+                &format!("{T}he.mxtap  [   5100 ms] K2 held 3.4ms prev 0ms sup0 rsdn"),
+                &format!("{T}he.mxmiss [   5200 ms] K2 MISS pin down 34ms, no press sent"),
+                &format!("{T}he.mxmiss [   5300 ms] K1 LATE press 4ms after the pin"),
+                &format!("{T}he.mxmiss [   5400 ms] K1 STUCK reported down, pin up 25ms"),
+                &format!("{T}he.mxmod  [   5500 ms] keys OFF, ID 80mV"),
+                &format!("{T}he.mxmod  [   6100 ms] keys ON after 612ms, ID 301mV"),
+            ],
+        );
+        let t = || "23:09:09".to_string();
+        assert_eq!(
+            e,
+            vec![
+                HeMonitorEvent::Alive { mx: true },
+                HeMonitorEvent::Press { key: 1 },
+                HeMonitorEvent::Alive { mx: true },
+                HeMonitorEvent::Press { key: 2 },
+                HeMonitorEvent::Found {
+                    key: 2,
+                    time: t(),
+                    finding: HeFinding::Short { ms: 3 }
+                },
+                HeMonitorEvent::Found {
+                    key: 2,
+                    time: t(),
+                    finding: HeFinding::Missed { ms: 34 }
+                },
+                HeMonitorEvent::Found {
+                    key: 1,
+                    time: t(),
+                    finding: HeFinding::Late { ms: 4 }
+                },
+                HeMonitorEvent::Found {
+                    key: 1,
+                    time: t(),
+                    finding: HeFinding::Stuck { ms: 25 }
+                },
+                HeMonitorEvent::KeysOff { time: t(), mv: 80 },
+                HeMonitorEvent::KeysOn {
+                    time: t(),
+                    off_ms: 612
+                },
             ]
         );
     }

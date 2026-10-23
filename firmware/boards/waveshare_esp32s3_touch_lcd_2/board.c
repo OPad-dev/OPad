@@ -341,7 +341,7 @@ void board_module_id_release(void)
 // it at 0.25 V (MX) or 0.6 V (HE): board_module_from_id's 120 mV line
 #define MODULE_PRESENT_MIN_MV 120
 
-esp_err_t board_module_present_fast(bool *out_present)
+esp_err_t board_module_present_fast(bool *out_present, int *out_mv)
 {
     module_id_adc_t m;
     esp_err_t err = module_id_adc_open(&m);
@@ -355,7 +355,11 @@ esp_err_t board_module_present_fast(bool *out_present)
     err = adc_oneshot_read(m.adc, ADC_CHANNEL_7, &raw);
     module_id_adc_close(&m);
     if (err == ESP_OK) {
-        *out_present = raw * 3100 / 4095 >= MODULE_PRESENT_MIN_MV;  // linear is plenty here
+        int mv = raw * 3100 / 4095;  // linear is plenty here
+        *out_present = mv >= MODULE_PRESENT_MIN_MV;
+        if (out_mv) {
+            *out_mv = mv;
+        }
     }
     return err;
 }

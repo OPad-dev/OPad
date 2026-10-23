@@ -72,6 +72,9 @@ esp_err_t keypad_line_test(keypad_line_test_t *out);
  */
 void keypad_set_input_enabled(bool enabled);
 
+/** @brief Whether key input is on (keypad_set_input_enabled). */
+bool keypad_input_enabled(void);
+
 #ifdef __cplusplus
 }
 #endif

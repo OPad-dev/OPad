@@ -26,6 +26,7 @@
 #include "diag/hall_bench.h"
 #include "input/he_backend.h"
 #include "input/he_debug.h"
+#include "input/mx_debug.h"
 #include "input/he_cal.h"
 
 static const char *TAG = "app_main";
@@ -263,6 +264,8 @@ void app_main(void)
     // DMA-capable internal RAM that the debug task would otherwise take first
     if (he_backend_running()) {
         he_debug_start();
+    } else if (module != BOARD_MODULE_HE) {
+        mx_debug_start();
     }
 #ifdef CONFIG_OSUPAD_HALL_BENCH
     hall_bench_show_ui();
