@@ -274,14 +274,14 @@ async fn main() -> Result<()> {
                             .as_deref()
                             .unwrap_or("unknown (firmware predates the OTA layout)")
                     );
-                    if info.he_input {
-                        println!("HE Input:         Available");
-                    }
+                    // HE lines only for a pad running an HE module; an MX
+                    // pad's firmware is merely able to (he_input)
                     if info.he_calibration {
-                        println!("HE Calibration:   Supported");
+                        println!("Input Module:     Hall Effect");
                     }
                 }
-                if let Some(cal) = &he_calibration {
+                let he_active = device_info.as_ref().is_some_and(|i| i.he_calibration);
+                if let Some(cal) = he_calibration.as_ref().filter(|_| he_active) {
                     println!(
                         "HE Calibrated:    K1: {}, K2: {}",
                         if cal.key1_calibrated { "yes" } else { "no" },

@@ -976,7 +976,7 @@ impl DiagnosticsState {
         column![
             row![card_k1, card_k2].spacing(14),
             summary_card,
-            self.view_he_monitor(),
+            self.view_he_monitor(app.device_info.as_ref().is_some_and(|i| i.he_calibration)),
             event_card
         ]
         .spacing(14)
@@ -984,12 +984,17 @@ impl DiagnosticsState {
     }
 
     /// The pad's own judgement of each HE press, from the HE debug log
-    fn view_he_monitor(&self) -> Element<'_, Message> {
+    /// Nothing at all unless the pad runs an HE module (`he_active`) or the
+    /// debug log is live: an MX pad shows no HE card
+    fn view_he_monitor(&self, he_active: bool) -> Element<'_, Message> {
         let live = self
             .he_alive
             .is_some_and(|at| at.elapsed() < Duration::from_secs(3));
         if live && self.he_mx {
             return self.view_mx_monitor();
+        }
+        if !he_active && !live {
+            return Space::new().height(0).into();
         }
         let status = if live {
             text("● Following the pad's HE debug log")
