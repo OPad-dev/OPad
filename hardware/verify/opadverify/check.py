@@ -16,6 +16,8 @@ Checks, in order (each problem is an ERROR unless it says WARN):
 6. assembly:   every assembled part is in the CPL at its footprint centre with
                the expected rotation and side, and in the BOM with the
                intended LCSC number
+6b. jlc:       JLCPCB's own footprint of each LCSC part, placed where the CPL
+               says, puts every pin on our pad for that pin (jlc.py)
 7. holes:      mechanical holes at the intended positions and sizes
 
 Exit status 0 only if there is no ERROR.
@@ -30,6 +32,7 @@ import tomllib
 
 from . import board as B
 from . import devices as D
+from . import jlc
 from .copper import Copper
 
 
@@ -106,7 +109,7 @@ def _mm(v):
     return float(str(v).replace("mm", "").strip())
 
 
-def run(golden_path, pcb=None, gerbers=None, cpl=None, bom=None, verbose=False):
+def run(golden_path, pcb=None, gerbers=None, cpl=None, bom=None, verbose=False, no_jlc=False):
     gdir = os.path.dirname(os.path.abspath(golden_path))
     g = tomllib.load(open(golden_path, "rb"))
     meta = g["board"]
@@ -365,8 +368,61 @@ def run(golden_path, pcb=None, gerbers=None, cpl=None, bom=None, verbose=False):
             elif spec.get("lcsc") and b["LCSC Part #"].strip() != spec["lcsc"]:
                 rep.error("assembly", "%s BOM has LCSC %s, intended %s"
                           % (ref, b["LCSC Part #"], spec["lcsc"]))
+            if spec.get("lcsc") and spec.get("mpn"):
+                cat = jlc.catalog(spec["lcsc"])
+                if cat is None:
+                    rep.error("assembly", "%s: %s is not in JLCPCB's catalogue snapshot" % (ref, spec["lcsc"]))
+                elif spec["mpn"].lower() not in cat["mfr_part"].lower():
+                    rep.error("assembly", "%s: %s is %s (%s), intended %s" % (
+                        ref, spec["lcsc"], cat["mfr_part"], cat["manufacturer"], spec["mpn"]))
+                elif cat["stock"] < spec.get("need", 10):
+                    rep.warn("assembly", "%s: %s has only %d in stock" % (ref, spec["lcsc"], cat["stock"]))
     for ref in sorted(set(rows) - set(golden)):
         rep.error("assembly", "%s is in the CPL but not in the intended netlist" % ref)
+
+    # 6b. JLCPCB's own model at the CPL placement -----------------------------
+    if cpl_path and not no_jlc:
+        for ref in sorted(set(golden) & set(by_ref) & set(rows)):
+            spec, fp = golden[ref], by_ref[ref]
+            lcsc = spec.get("lcsc")
+            if not lcsc:
+                continue
+            dev = D.DEVICES[spec["device"]]
+            try:
+                model = jlc.product(lcsc)
+            except Exception as e:      # network or LCSC trouble is not a pass
+                cat = jlc.catalog(lcsc)
+                if cat and not dev.polar:
+                    rep.warn("jlc", "%s: LCSC lists no footprint for %s (%s, JLCPCB %s part); a two-terminal "
+                             "part, so only its position is unchecked" % (ref, lcsc, cat["mfr_part"], cat["library_type"]))
+                else:
+                    rep.error("jlc", "%s: cannot load JLCPCB's model of %s (%s)" % (ref, lcsc, e))
+                continue
+            r = rows[ref]
+            cx, cy, rot = _mm(r["Mid X"]), _mm(r["Mid Y"]), float(r["Rotation"])
+            bottom = r["Layer"].strip().lower() == "bottom"
+            ours = [(p.number, to_gerber(*p.board)) for p in fp.pads if p.kind in ("smd", "thru_hole")]
+            names = getattr(dev, "jlc_names", None) or {}
+            bad = []
+            for mp in model["pads"]:
+                if mp.get("layer") not in ("1", "11"):
+                    continue
+                x, y = jlc.place(mp, cx, cy, rot, bottom)
+                near = min(ours, key=lambda o: math.hypot(o[1][0] - x, o[1][1] - y))
+                dist = math.hypot(near[1][0] - x, near[1][1] - y)
+                want = names.get(mp["number"], mp["number"])
+                if dist > 0.5:
+                    bad.append("pad %s lands on no pad (nearest %s, %.2f mm away)" % (mp["number"], near[0], dist))
+                elif want in dev.pins and dev.polar and near[0] != want:
+                    bad.append("pin %s lands on our pad %s" % (want, near[0]))
+            if bad:
+                rep.error("jlc", "%s (%s): with the CPL as written, JLCPCB's model is misplaced: %s"
+                          % (ref, model["productModel"], "; ".join(bad[:4]) + (" ..." if len(bad) > 4 else "")))
+            else:
+                rep.info("jlc", "%s: JLCPCB's model of %s lands pin for pin on our pads" % (ref, model["productModel"]))
+                if bottom and dev.polar and rot % 180 and len(dev.pins) > 1:
+                    rep.warn("jlc", "%s: bottom-side part at %.0f deg; which way JLCPCB turns bottom parts "
+                             "is not established, confirm in the preview" % (ref, rot))
 
     # 7. holes ---------------------------------------------------------------
     for h in g.get("hole", []):
@@ -397,8 +453,9 @@ def main(argv=None):
     ap.add_argument("--cpl")
     ap.add_argument("--bom")
     ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("--no-jlc", action="store_true", help="skip the JLCPCB model check (needs network)")
     a = ap.parse_args(argv)
-    rep = run(a.golden, a.pcb, a.gerbers, a.cpl, a.bom, a.verbose)
+    rep = run(a.golden, a.pcb, a.gerbers, a.cpl, a.bom, a.verbose, a.no_jlc)
     rep.print(a.verbose)
     return 1 if rep.errors else 0
 
