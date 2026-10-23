@@ -289,10 +289,17 @@ void app_main(void)
 #endif
 
 #ifndef CONFIG_OSUPAD_HALL_BENCH  // the bench owns ADC1 in continuous mode
-    // 9. Input module swapped while powered: keys off, LCD notice (core 1, NON-FATAL)
-    err = module_monitor_start();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "module_monitor_start failed: %s (continuing)", esp_err_to_name(err));
+    // 9. Input module swapped while powered: keys off, LCD notice (core 1, NON-FATAL).
+    // Not on an MX pad: its ID is read once, at boot, and ADC1 is let go, so
+    // nothing samples next to the key pins (GPIO8 sits between GPIO7 and
+    // GPIO10) or can turn the keys off mid-map. Swap modules with USB out
+    if (module == BOARD_MODULE_MX) {
+        board_module_id_release();
+    } else {
+        err = module_monitor_start();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "module_monitor_start failed: %s (continuing)", esp_err_to_name(err));
+        }
     }
 #endif
 
