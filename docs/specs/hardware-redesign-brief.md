@@ -253,6 +253,26 @@ works without phantoms, like the boards above.
 | ADC | Cleaner MCU ADC or a separate ADC chip | ESP32-S3 ADC (Espressif's docs ask for capacitors and multisampling) |
 | Firmware | Heavy averaging, per-key calibration | Median of 8 per 250 µs, per-key calibration |
 
+### 3.7 The Waveshare's 3V3 is a switching regulator (found 2026-10-23)
+
+From the Waveshare schematic (`ESP32-S3-Touch-LCD-2-SchDoc.pdf`, AGENTS.md §6):
+
+- USB-C H1 VBUS **is** the `5V` net, with no diode or filter; header P1-14 is
+  that same net.
+- `5V` → Schottky D1 (MBR230LSFT1G) → `VCC`; the battery reaches `VCC`
+  through PMOS Q1 (AO3401), which turns off while `5V` is present.
+- `VCC` → U7 **TMI3112H buck converter** (2.2 µH, 22 µF out) → `3V3`.
+- USB D+/D− reach GPIO20/19 through 22 Ω (R23, R26); the header pins
+  P1-11/12 are GPIO20/19 on the MCU side of those resistors.
+
+So the 3V3 that powered the V1.1 sensors, and that HE V2 still uses for
+AVDD, is the output of a switching converter shared with the LCD,
+backlight and PSRAM. Buck converters at light load usually switch in
+bursts whose rate follows the load (not checked for the TMI3112H). This
+is a plausible source of the load-dependent spikes in §3.1, **not proven**.
+It is why the redesign powers the measurement from 5 V through its own
+LDO (H11).
+
 ---
 
 ## 4. Decisions already made (owner, 2026-10-22/23)
@@ -268,6 +288,26 @@ works without phantoms, like the boards above.
 | H7 | **ADC: TI ADS7038** (8-ch, 12-bit SAR, 1 MSPS, SPI, on-chip averaging to 16-bit, AVDD is the reference → ratiometric). | One 3 × 3 mm chip for all keys, averaging off the ESP32, ~$3.70–5.30. Cheaper fallback considered: Microchip MCP3202 (2-ch, no averaging; ESP32 would average; LCSC not checked). Rejected: 24-bit precision ADCs (sensor noise is the limit); Allegro A1324–6 (5 V only); TMAG5273 digital 3D Hall (too slow, shared bus). |
 | H8 | **Carrier and MX module unchanged by HE V2.** | Constraint from the owner. HE V2 uses the reserved pins and ID 1.65 V. |
 | H9 | **Optional ESD diodes left out of HE V2** for simplicity. **Open for the redesign.** | Modules are plugged by hand. |
+
+### 4.1 Second round (owner, 2026-10-23, after the review of HE V2)
+
+| # | Decision | Why |
+|---|---|---|
+| H10 | **Module cable: FFC (flat flex) with ZIF connectors** replaces the JST-SH 8-pin. **Decided.** | The 8-pin JST-SH cable is hard to find; FFC cables and connectors are cheap and everywhere and fit the ~3.5 mm under the module. |
+| H11 | **USB: the best option** (owner: "whatever is the best"): the measurement is powered from 5 V through an LDO on the HE module (not from the Waveshare's buck 3V3, §3.7), and the carrier gets its own filtered USB-C input (ESD, VBUS filter, reverse-feed protection). No galvanic isolator (cost, its own DC-DC noise, risk to the USB detach used for flashing and recovery). **Decided.** | Keeps USB and buck noise off the sensors and the ADC reference without depending on knowing the spike source. |
+| H12 | **USB-C moves to the back** of the pad (the Waveshare's own port is on its short side today). **Decided**; exact position follows the new case. | Owner. |
+| H13 | **3 keys only, for both MX and HE.** No 2-key variants. **Decided.** | Owner: the 2-key layout was a mistake. |
+| H14 | **Nothing is ordered until the design has been examined exhaustively and simulated** (static checks against the datasheets, SPICE of the power, analog and SPI paths, a magnet-to-key digital twin, an ADS7038 emulator for the firmware). The checks must catch the V1.0 mirrored-sensor error when run on V1.0. **Decided.** | The ADC is the expensive part; V1.0 shipped with an error no check caught. |
+| H15 | HE V2 (`hardware/pcb/V2/HE/`) is **not ordered**; it is superseded by the redesign and used to validate the checks. | Follows from H10, H11, H14. |
+| H16 | **Four** locating holes on each input module, not two, for the case's pins. **Decided.** | Owner. |
+| H17 | "Emulation" means proving **every trace** right: a checker that rebuilds connectivity from the fab files and compares it with a hand-written intended netlist and the datasheet pin drawings (`hardware/verify/`). No magnet model. **Decided.** | Owner: V1 failed on the traces, not on magnetics. |
+
+Findings from the review of HE V2 that the redesign must fix: CS has no
+pull-up (the ADC sees a floating CS during boot and plugging); SCLK/MOSI/CS
+have no series resistor at the driver and only one GND wire; the ADS7038's
+CRC must be used by the driver so a corrupted SPI frame is dropped, not
+read as a key; the ID (1.65 V) is 50 mV from a cut-off; no ESD protection;
+AVDD comes from the Waveshare's buck 3V3 (§3.7).
 
 ---
 
@@ -465,13 +505,14 @@ much larger project (USB-C, ESP32-S3 module, LCD/touch connector). **Open.**
 
 ## 8. Open questions to settle first
 
-1. Keep the Waveshare dev board, or design a custom main board (§6.5)?
-2. Keep the 8-pin cable, or move to more pins with extra grounds (§6.2)?
-3. 2-key, 3-key, or both, for MX and HE (§2, §6.4)?
-4. Internal USB-C board with USB filtering and ESD (§6.3)?
-5. ESD on modules and carrier (H9)?
-6. One firmware for all modules (HE on by default) (§1.5)?
-7. Was a magnet near the pad at 23:40 on 2026-10-22 (§3.3)?
-8. Order HE V2 as it is now to validate the ADC-on-module approach before
-   redesigning everything else? (It is ready to order:
-   `hardware/pcb/V2/HE/production/jlcpcb/`.)
+Settled on 2026-10-23 (§4.1): keep the Waveshare (1, kept by H11), cable
+(2: FFC, H10), keys (3: three only, H13), USB-C board (4: yes, at the back,
+H11/H12), ESD (5: yes, H11 and the HE V2 findings), ordering HE V2 (8: no,
+H15).
+
+Still open:
+
+1. One firmware for all modules (HE on by default) (§1.5)?
+2. Was a magnet near the pad at 23:40 on 2026-10-22 (§3.3)?
+3. FFC pitch, pin count and pinout (proposal in progress).
+4. Case: where exactly "the back" is for the USB-C, and the 3-key deck.

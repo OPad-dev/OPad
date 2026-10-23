@@ -1,0 +1,108 @@
+# Intended netlist of the HE input module V1.1, written from hardware/pcb/V1/README.md
+# (Hall Effect module: Pinout, Layout, Module ID) and TI SBAS640C, not from KiCad.
+
+[board]
+title = "HE input module V1.1 (built, works)"
+pcb = "../../pcb/V1/HE/he_input_v1.kicad_pcb"
+gerbers = "../../pcb/V1/HE/production/jlcpcb/he_input_v1-gerbers.zip"
+cpl = "../../pcb/V1/HE/production/jlcpcb/he_input_v1-CPL-JLCPCB.csv"
+bom = "../../pcb/V1/HE/production/jlcpcb/he_input_v1-BOM-JLCPCB.csv"
+
+[part.J1]   # module connector, V1 pinout
+device = "JST_SH_8_SMD"
+lcsc = "C160407"
+pins = { 1 = "3V3", 2 = "GND", 3 = "IN1", 4 = "IN2", 5 = "ID", 6 = "IO6", 7 = "IO4", 8 = "IO2" }
+
+[part.U1]   # key 1 sensor
+device = "DRV5055"
+lcsc = "C266128"
+pins = { VCC = "3V3", OUT = "IN1", GND = "GND" }
+
+[part.U2]   # key 2 sensor
+device = "DRV5055"
+lcsc = "C266128"
+pins = { VCC = "3V3", OUT = "IN2", GND = "GND" }
+
+[part.C1]
+device = "R0603"
+lcsc = "C14663"
+nets = ["3V3", "GND"]
+
+[part.C2]
+device = "R0603"
+lcsc = "C14663"
+nets = ["3V3", "GND"]
+
+[part.C3]
+device = "R0603"
+lcsc = "C14663"
+nets = ["3V3", "GND"]
+
+[part.R1]   # ID divider top, 100k
+device = "R0603"
+lcsc = "C25803"
+nets = ["3V3", "ID"]
+
+[part.R2]   # ID divider bottom, 47k
+device = "R0603"
+lcsc = "C25819"
+nets = ["ID", "GND"]
+
+[part.TP1]
+device = "TESTPOINT"
+assembled = false
+nets = ["IO6", "IO6"]
+
+[part.TP2]
+device = "TESTPOINT"
+assembled = false
+nets = ["IO4", "IO4"]
+
+[part.TP3]
+device = "TESTPOINT"
+assembled = false
+nets = ["IO2", "IO2"]
+
+# Mechanical holes, KiCad coordinates (case X + 100, 100 - case Y)
+[[hole]]
+what = "M2 mounting hole, left"
+x = 115.5
+y = 83.5
+d = 2.2
+
+[[hole]]
+what = "M2 mounting hole, right"
+x = 160.5
+y = 83.5
+d = 2.2
+
+[[hole]]
+what = "key 1 switch peg, left"
+x = 123.395
+y = 83.5
+d = 1.75
+
+[[hole]]
+what = "key 1 switch peg, right"
+x = 133.555
+y = 83.5
+d = 1.75
+
+[[hole]]
+what = "key 2 switch peg, left"
+x = 142.445
+y = 83.5
+d = 1.75
+
+[[hole]]
+what = "key 2 switch peg, right"
+x = 152.605
+y = 83.5
+d = 1.75
+
+# Known on the built board: a 10 x 0.25 mm strip of bottom copper at J1 runs
+# past the rear edge. JLCPCB routed the edge through it; the boards work.
+[[accept]]
+section = "spacing"
+match = "B.Cu copper 0.000 mm from the board edge near (21.20, 24.12)"
+why = "copper strip past the rear edge at J1, trimmed by the fab; V1.1 boards work"

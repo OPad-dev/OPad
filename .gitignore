@@ -1,6 +1,7 @@
 # Locally built tooling
 .tools/bin/
 .tools/src/
+.tools/venv/
 .tools/KiCAD-MCP-Server/
 
 # Rust build artifacts

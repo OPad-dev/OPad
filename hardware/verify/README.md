@@ -1,0 +1,57 @@
+# Board checker (`opadverify`)
+
+Checks a board's **fab files** (the Gerbers, drill files, CPL and BOM that go to
+JLCPCB) against a **hand-written intended netlist** and **pin drawings typed in from
+the datasheets**. It does not trust KiCad: connectivity is rebuilt from the Gerber
+copper and the plated holes, and every footprint is compared with the datasheet drawing.
+
+It exists because HE V1.0 shipped with a mirrored SOT-23 footprint. Its
+connectivity was right, so ERC, DRC and the assembler all passed it
+(`hardware/pcb/V1/README.md`, V1.0 erratum). This checker fails V1.0 for that reason.
+
+## Run it
+
+```
+python3 -m venv .tools/venv && .tools/venv/bin/pip install -r hardware/verify/requirements.txt
+cd hardware/verify
+../../.tools/venv/bin/python -m opadverify golden/he_v2.toml        # -v lists every pass too
+../../.tools/venv/bin/python tests/test_mutations.py                 # proves each check can fail
+```
+
+Exit status 0 means no ERROR.
+
+## What it checks
+
+| Check | Catches |
+|---|---|
+| parts | a part on the board missing from the intended netlist, or the other way round |
+| handedness | a footprint whose pads are a **mirror image** of the datasheet's top view (V1.0), or do not match it at all |
+| landing | a pin with no copper, no solder-mask opening, no paste, or no plated hole under it |
+| nets | **OPEN** (one intended net in several pieces of copper), **SHORT** (two nets on one piece), NC pins touching anything |
+| copper | copper that touches no pin (floating islands) |
+| spacing | gaps between different nets below the fab minimum (0.1 mm, error) or the design rule (0.15 mm, warning); copper closer than 0.2 mm to the board edge |
+| assembly | CPL position, side and rotation against the footprint (including the `JLC_CPL_FIXES` offsets), BOM LCSC number against the intended one |
+| holes | mounting and switch-peg holes at the intended position and size |
+
+The pin models (`opadverify/devices.py`) say where their numbers come from.
+Three are confirmed only by built, working boards, not by a drawing: the JST SH
+connector, the Kailh hot-swap socket and the 1×14 socket. `-v` lists them.
+
+## What it cannot check
+
+- **JLCPCB's own part models.** Their preview decides which way the assembler turns
+  a part. The checker prints where pin 1 of every polarised part must appear in the
+  preview. Compare those positions by eye before paying.
+- **Whether the intended netlist is the right circuit.** It checks the board against
+  the intent. The intent itself (in `golden/`) has to be read against the datasheets.
+
+## Results (2026-10-23)
+
+| Board | Result |
+|---|---|
+| HE V1.0 (from git, `07d7414^`) | **fails**: U1 and U2 footprints are the mirror image of the DRV5055 |
+| HE V1.1 (built, works) | passes; one accepted finding: a 0.25 mm copper strip past the rear edge at J1 |
+| MX V1 (built, works) | passes; warns about two 0.19 mm² floating copper slivers |
+| Carrier V1 (built, works) | passes |
+| HE V2 (not built) | passes |
+| `tests/test_mutations.py` on HE V2 | 10 of 10 deliberate faults caught (cut track, short, missing vias, mirrored footprint, swapped SPI pins, ADC rotated in the CPL, no mask opening, wrong LCSC number, missing hole) |
