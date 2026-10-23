@@ -1,0 +1,1525 @@
+(kicad_sch
+	(version 20250114)
+	(generator "eeschema")
+	(generator_version "9.0")
+	(uuid "23ded7be-bf2f-4a5c-8f46-1df405f8c5aa")
+	(paper "A3")
+	(title_block (title "OPad Hall Effect Input Module V2") (date "2026-10-23") (rev "V2.0") (company "OPad"))
+	(lib_symbols
+		(symbol "osupad:ADS7038"
+		(pin_names (offset 1.016))
+		(exclude_from_sim no) (in_bom yes) (on_board yes)
+		(property "Reference" "U" (at 0 12.7 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "ADS7038" (at 0 -16.51 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:WQFN-16-1EP_3x3mm_P0.5mm_EP1.68mm" (at 0 0 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "https://www.ti.com/lit/ds/symlink/ads7038.pdf" (at 0 0 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "TI ADS7038 8-channel 12-bit SAR ADC, SPI, WQFN-16" (at 0 0 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(symbol "ADS7038_0_1"
+			(rectangle (start -10.16 11.43) (end 10.16 -15.24) (stroke (width 0.254) (type default)) (fill (type background)))
+		)
+		(symbol "ADS7038_1_1"
+			(pin bidirectional line (at -12.7 8.89 0) (length 2.54) (name "AIN0/GPIO0" (effects (font (size 1.27 1.27)))) (number "15" (effects (font (size 1.27 1.27)))))
+			(pin bidirectional line (at -12.7 6.3500000000000005 0) (length 2.54) (name "AIN1/GPIO1" (effects (font (size 1.27 1.27)))) (number "16" (effects (font (size 1.27 1.27)))))
+			(pin bidirectional line (at -12.7 3.8100000000000005 0) (length 2.54) (name "AIN2/GPIO2" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
+			(pin bidirectional line (at -12.7 1.2700000000000005 0) (length 2.54) (name "AIN3/GPIO3" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))
+			(pin bidirectional line (at -12.7 -1.2699999999999996 0) (length 2.54) (name "AIN4/GPIO4" (effects (font (size 1.27 1.27)))) (number "3" (effects (font (size 1.27 1.27)))))
+			(pin bidirectional line (at -12.7 -3.8099999999999987 0) (length 2.54) (name "AIN5/GPIO5" (effects (font (size 1.27 1.27)))) (number "4" (effects (font (size 1.27 1.27)))))
+			(pin bidirectional line (at -12.7 -6.35 0) (length 2.54) (name "AIN6/GPIO6" (effects (font (size 1.27 1.27)))) (number "5" (effects (font (size 1.27 1.27)))))
+			(pin bidirectional line (at -12.7 -8.89 0) (length 2.54) (name "AIN7/GPIO7" (effects (font (size 1.27 1.27)))) (number "6" (effects (font (size 1.27 1.27)))))
+			(pin power_in line (at 12.7 8.89 180) (length 2.54) (name "AVDD" (effects (font (size 1.27 1.27)))) (number "7" (effects (font (size 1.27 1.27)))))
+			(pin power_in line (at 12.7 6.3500000000000005 180) (length 2.54) (name "DVDD" (effects (font (size 1.27 1.27)))) (number "10" (effects (font (size 1.27 1.27)))))
+			(pin passive line (at 12.7 3.8100000000000005 180) (length 2.54) (name "DECAP" (effects (font (size 1.27 1.27)))) (number "8" (effects (font (size 1.27 1.27)))))
+			(pin input line (at 12.7 1.2700000000000005 180) (length 2.54) (name "CS" (effects (font (size 1.27 1.27)))) (number "11" (effects (font (size 1.27 1.27)))))
+			(pin input line (at 12.7 -1.2699999999999996 180) (length 2.54) (name "SCLK" (effects (font (size 1.27 1.27)))) (number "13" (effects (font (size 1.27 1.27)))))
+			(pin input line (at 12.7 -3.8099999999999987 180) (length 2.54) (name "SDI" (effects (font (size 1.27 1.27)))) (number "14" (effects (font (size 1.27 1.27)))))
+			(pin output line (at 12.7 -6.35 180) (length 2.54) (name "SDO" (effects (font (size 1.27 1.27)))) (number "12" (effects (font (size 1.27 1.27)))))
+			(pin power_in line (at 12.7 -10.16 180) (length 2.54) (name "GND" (effects (font (size 1.27 1.27)))) (number "9" (effects (font (size 1.27 1.27)))))
+			(pin passive line (at 12.7 -12.7 180) (length 2.54) (name "EP" (effects (font (size 1.27 1.27)))) (number "17" (effects (font (size 1.27 1.27)))))
+		)
+	)
+		(symbol "osupad:C"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0.254)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(duplicate_pin_numbers_are_jumpers no)
+		(property "Reference" "C"
+			(at 0.635 2.54 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "C"
+			(at 0.635 -2.54 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 0.9652 -3.81 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Capacitor, non-polarised"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "cap capacitor"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_fp_filters" "C_*"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(symbol "C_0_1"
+			(polyline
+				(pts
+					(xy -1.905 1.016)
+					(xy 1.905 1.016)
+				)
+				(stroke
+					(width 0.381)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.905 -1.016)
+					(xy 1.905 -1.016)
+				)
+				(stroke
+					(width 0.381)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "C_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 2.794)
+				(name ""
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 2.794)
+				(name ""
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+		(symbol "osupad:Conn_01x08_1MP"
+		(pin_numbers
+			(hide no)
+		)
+		(pin_names
+			(offset 1.016)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(duplicate_pin_numbers_are_jumpers no)
+		(property "Reference" "J"
+			(at 0 10.16 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "Conn_01x08_1MP"
+			(at 0 -15.24 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Single-row connector, 8 pins, plus the mounting pads as pin MP"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "connector header socket"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_fp_filters" "*_1x08-1MP_*"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(symbol "Conn_01x08_1MP_0_1"
+			(rectangle
+				(start -1.27 8.89)
+				(end 1.27 -13.97)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type background)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 7.62)
+					(xy -0.508 7.62)
+				)
+				(stroke
+					(width 0.1524)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 5.08)
+					(xy -0.508 5.08)
+				)
+				(stroke
+					(width 0.1524)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 2.54)
+					(xy -0.508 2.54)
+				)
+				(stroke
+					(width 0.1524)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 0)
+					(xy -0.508 0)
+				)
+				(stroke
+					(width 0.1524)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 -2.54)
+					(xy -0.508 -2.54)
+				)
+				(stroke
+					(width 0.1524)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 -5.08)
+					(xy -0.508 -5.08)
+				)
+				(stroke
+					(width 0.1524)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 -7.62)
+					(xy -0.508 -7.62)
+				)
+				(stroke
+					(width 0.1524)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 -10.16)
+					(xy -0.508 -10.16)
+				)
+				(stroke
+					(width 0.1524)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy -1.27 -12.7)
+					(xy -0.508 -12.7)
+				)
+				(stroke
+					(width 0.1524)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "Conn_01x08_1MP_1_1"
+			(pin passive line
+				(at -5.08 7.62 0)
+				(length 3.81)
+				(name "Pin_1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at -5.08 5.08 0)
+				(length 3.81)
+				(name "Pin_2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at -5.08 2.54 0)
+				(length 3.81)
+				(name "Pin_3"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "3"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at -5.08 0 0)
+				(length 3.81)
+				(name "Pin_4"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "4"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at -5.08 -2.54 0)
+				(length 3.81)
+				(name "Pin_5"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "5"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at -5.08 -5.08 0)
+				(length 3.81)
+				(name "Pin_6"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "6"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at -5.08 -7.62 0)
+				(length 3.81)
+				(name "Pin_7"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "7"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at -5.08 -10.16 0)
+				(length 3.81)
+				(name "Pin_8"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "8"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at -5.08 -12.7 0)
+				(length 3.81)
+				(name "MP"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "MP"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+		(symbol "osupad:DRV5055"
+		(pin_numbers
+			(hide no)
+		)
+		(pin_names
+			(offset 1.016)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(duplicate_pin_numbers_are_jumpers no)
+		(property "Reference" "U"
+			(at 0 6.35 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "DRV5055"
+			(at 0 -6.35 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "osupad:SOT-23"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" "https://www.ti.com/lit/ds/symlink/drv5055.pdf"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "TI DRV5055 ratiometric linear Hall effect sensor, SOT-23"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "hall magnetic linear sensor"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(symbol "DRV5055_0_1"
+			(rectangle
+				(start -6.35 3.81)
+				(end 6.35 -3.81)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type background)
+				)
+			)
+		)
+		(symbol "DRV5055_1_1"
+			(pin power_in line
+				(at -8.89 2.54 0)
+				(length 2.54)
+				(name "VCC"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin output line
+				(at 8.89 0 180)
+				(length 2.54)
+				(name "OUT"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin power_in line
+				(at -8.89 -2.54 0)
+				(length 2.54)
+				(name "GND"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "3"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+		(symbol "osupad:FerriteBead"
+		(pin_names (offset 1.016))
+		(exclude_from_sim no) (in_bom yes) (on_board yes)
+		(property "Reference" "FB" (at 0 2.54 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "FerriteBead" (at 0 -2.54 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:L_0603_1608Metric" (at 0 0 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 0 0 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Ferrite bead" (at 0 0 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(symbol "FerriteBead_0_1"
+			(rectangle (start -1.016 1.27) (end 1.016 -1.27) (stroke (width 0.254) (type default)) (fill (type background)))
+		)
+		(symbol "FerriteBead_1_1"
+			(pin passive line (at 0 3.81 270) (length 2.54) (name "1" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
+			(pin passive line (at 0 -3.81 90) (length 2.54) (name "2" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))
+		)
+	)
+		(symbol "osupad:PWR_FLAG"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board yes)
+		(duplicate_pin_numbers_are_jumpers no)
+		(property "Reference" "#FLG"
+			(at 0 1.905 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 0 3.81 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power flag: marks a net as driven, for ERC"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "power flag"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(symbol "PWR_FLAG_0_1"
+			(polyline
+				(pts
+					(xy 0 0)
+					(xy 0 1.27)
+					(xy -1.016 1.905)
+					(xy 0 2.54)
+					(xy 1.016 1.905)
+					(xy 0 1.27)
+				)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "PWR_FLAG_1_1"
+			(pin power_out line
+				(at 0 0 90)
+				(length 0)
+				(name "pwr"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+		(symbol "osupad:R"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(in_pos_files yes)
+		(duplicate_pin_numbers_are_jumpers no)
+		(property "Reference" "R"
+			(at 2.032 0 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "R"
+			(at 0 0 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at -1.778 0 90)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Resistor"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "R res resistor"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_fp_filters" "R_*"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(symbol "R_0_1"
+			(rectangle
+				(start -0.889 -2.54)
+				(end 0.889 2.54)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "R_1_1"
+			(pin passive line
+				(at 0 3.81 270)
+				(length 1.27)
+				(name ""
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 0 -3.81 90)
+				(length 1.27)
+				(name ""
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+		(symbol "osupad:TestPoint"
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0.762)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board yes)
+		(duplicate_pin_numbers_are_jumpers no)
+		(property "Reference" "TP"
+			(at 0 3.81 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "TestPoint"
+			(at 0 -2.54 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "osupad:TestPoint_Pad_1.0x1.0mm"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "SMD probe pad for a reserved connector pin"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "ki_keywords" "test point probe pad"
+			(at 0 0 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(symbol "TestPoint_0_1"
+			(circle
+				(center 0 2.032)
+				(radius 0.762)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "TestPoint_1_1"
+			(pin passive line
+				(at 0 -2.54 90)
+				(length 3.81)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	)
+	(text "Module connector (V1 pinout): 1 3V3 | 2 GND | 3 CS = GPIO10 | 4 spare = GPIO7 | 5 ID = GPIO8 | 6 MISO = GPIO6 | 7 MOSI = GPIO4 | 8 SCLK = GPIO2" (exclude_from_sim no) (at 20.32 250.00 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "8800375a-1ce6-4971-b2f7-860dfde107dc"))
+	(text "ID = 3V3 x 100k/(100k+100k) = 1.65 V: the 'Hall SPI' module ID reserved in V1/README.md." (exclude_from_sim no) (at 20.32 253.81 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "c6dc30bd-2f6d-4e2d-aa04-efd71ab1900a"))
+	(text "Ratiometric: the ADS7038 reference is AVDD, the same filtered rail that powers the three sensors." (exclude_from_sim no) (at 20.32 257.62 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "e60efb15-d7d3-4d4f-be10-1374036105c1"))
+	(text "Key channels: key 1 = AIN5, key 2 = AIN4, key 3 = AIN3." (exclude_from_sim no) (at 20.32 261.43 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "7119def7-2c89-4f7c-93b3-80fd5e6daf16"))
+	(text "Every part is on the bottom side; the switches sit on top under the plate." (exclude_from_sim no) (at 20.32 265.24 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "38eac12c-1489-4401-a70d-d31df49ca822"))
+	(symbol (lib_id "osupad:PWR_FLAG") (at 25.40 30.48 0) (unit 1) (exclude_from_sim no) (in_bom no) (on_board yes) (dnp no) (uuid "a4369b32-1ba7-4517-a179-12ae916d1dcd")
+		(property "Reference" "#FLG01" (at 25.40 26.67 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Value" "PWR_FLAG" (at 25.40 25.40 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "" (at 25.40 30.48 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "25216394-4d13-4087-aada-dbb6c6678b05"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "#FLG01") (unit 1))))
+	)
+	(label "3V3" (at 25.40 30.48 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "e817f58f-7f89-419a-8c1c-4838999755c2"))
+	(symbol (lib_id "osupad:PWR_FLAG") (at 35.56 30.48 0) (unit 1) (exclude_from_sim no) (in_bom no) (on_board yes) (dnp no) (uuid "82dd53ad-3372-494c-9957-842e9c2636bf")
+		(property "Reference" "#FLG02" (at 35.56 26.67 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Value" "PWR_FLAG" (at 35.56 25.40 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "" (at 35.56 30.48 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "bea7e943-7a55-4398-9dbe-45d90ca3d93e"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "#FLG02") (unit 1))))
+	)
+	(label "GND" (at 35.56 30.48 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "5b147ce4-0509-4d0a-9c30-fccde0e9b993"))
+	(symbol (lib_id "osupad:PWR_FLAG") (at 45.72 30.48 0) (unit 1) (exclude_from_sim no) (in_bom no) (on_board yes) (dnp no) (uuid "398076e5-e02d-4eae-8b64-b888aba2940b")
+		(property "Reference" "#FLG03" (at 45.72 26.67 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Value" "PWR_FLAG" (at 45.72 25.40 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "" (at 45.72 30.48 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "f644fdfc-f91a-4c7c-aadb-d75f7c1fb6f1"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "#FLG03") (unit 1))))
+	)
+	(label "AVDD" (at 45.72 30.48 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "3da7653c-8406-4133-b196-63b2e120e0a2"))
+	(symbol (lib_id "osupad:Conn_01x08_1MP") (at 50.80 50.80 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "96a71c8e-4623-4cf7-b1b3-1076773b59a1")
+		(property "Reference" "J1" (at 54.61 40.64 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "MODULE" (at 54.61 66.04 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal" (at 50.80 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 50.80 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Module connector to controller carrier (JST SH 8-pin), V1 pinout with the SPI pins in use" (at 50.80 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C160407" (at 50.80 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "JST SM08B-SRSS-TB(LF)(SN)" (at 50.80 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "489e286a-be19-4899-97e3-68363c55e4d7"))
+		(pin "2" (uuid "0123fbbb-cd85-4e43-bec9-85e1e2bc001e"))
+		(pin "3" (uuid "dfe5b96a-2bb4-4443-aa68-2d472404eb5f"))
+		(pin "4" (uuid "57d82ecf-fe58-4836-bbee-c256c1621bf8"))
+		(pin "5" (uuid "c6e80ee0-5547-48eb-84d7-db66f00acc9e"))
+		(pin "6" (uuid "d3b24fb5-d52e-4e14-b583-df9360d93c9b"))
+		(pin "7" (uuid "7ef871dc-afca-40f6-8aa8-3718b1af4322"))
+		(pin "8" (uuid "5fad6ce2-04cb-467f-9ac0-029d6c3caadf"))
+		(pin "MP" (uuid "00bf3f05-1e4d-4434-ae61-b252b2ae47c2"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "J1") (unit 1))))
+	)
+	(label "3V3" (at 45.72 43.18 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "a7baa62e-975f-4ea7-b7b3-176682c935ee"))
+	(label "GND" (at 45.72 45.72 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "b267fbd5-65b7-48f8-97af-96b746ae2c2b"))
+	(label "CS" (at 45.72 48.26 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "c0b640e6-edd0-45da-b278-4af4f191ba61"))
+	(label "SPARE" (at 45.72 50.80 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "80bb9ab7-0d5f-4b8c-9c51-4037cb01254a"))
+	(label "ID" (at 45.72 53.34 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "73a4fcd8-d05b-4842-a82e-f8720c84b638"))
+	(label "MISO" (at 45.72 55.88 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "08051068-8f16-4c69-8cdd-7ee7d5d0a69e"))
+	(label "MOSI" (at 45.72 58.42 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "5174741b-e66d-4129-9874-27d95351f63a"))
+	(label "SCLK" (at 45.72 60.96 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "189edf98-690f-49ba-a06b-037e87deae9d"))
+	(label "GND" (at 45.72 63.50 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "d4ea9852-ef40-491b-bf62-48edb8450643"))
+	(symbol (lib_id "osupad:C") (at 25.40 76.20 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "0232ca1b-cdaa-43ef-bfa4-7cc0d407dd3f")
+		(property "Reference" "C1" (at 29.21 69.85 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "100nF" (at 29.21 82.55 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:C_0603_1608Metric" (at 25.40 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 25.40 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "3V3 decoupling at the connector" (at 25.40 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C14663" (at 25.40 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "YAGEO CC0603KRX7R9BB104" (at 25.40 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "0231b517-3d7e-4f46-a2af-578b5701478f"))
+		(pin "2" (uuid "25a4338a-d773-4be2-9a50-fe4e602eb6b3"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "C1") (unit 1))))
+	)
+	(label "GND" (at 25.40 72.39 90) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "065177a8-e0c0-43d2-9001-2b875388b5fc"))
+	(label "3V3" (at 25.40 80.01 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "2e857afc-1d54-456c-bb57-6dbe92bf897c"))
+	(symbol (lib_id "osupad:FerriteBead") (at 38.10 76.20 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "af14d3ff-0726-4264-8236-a98314c1bef4")
+		(property "Reference" "FB1" (at 41.91 69.85 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "600R@100MHz" (at 41.91 82.55 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:L_0603_1608Metric" (at 38.10 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 38.10 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Sensor and ADC analog supply filter (600R at 100 MHz, 0.45R DC)" (at 38.10 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C1002" (at 38.10 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "Sunlord GZ1608D601TF" (at 38.10 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "98f99505-ab65-46e2-b880-5c4e2617ec8d"))
+		(pin "2" (uuid "a64bfd88-2e87-48d7-abbe-22c94d0cc398"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "FB1") (unit 1))))
+	)
+	(label "3V3" (at 38.10 72.39 90) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "8ed0d0e6-b594-4cc3-a694-b2ba71792356"))
+	(label "AVDD" (at 38.10 80.01 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "9efd6eee-45db-46d7-a8d9-3c8e6073943f"))
+	(symbol (lib_id "osupad:C") (at 45.72 88.90 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "487a3fe2-092a-4135-8577-b8f63c5b5bee")
+		(property "Reference" "C2" (at 49.53 82.55 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "10uF" (at 49.53 95.25 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:C_0603_1608Metric" (at 45.72 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 45.72 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "AVDD bulk, after the ferrite bead" (at 45.72 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C19702" (at 45.72 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "Samsung CL10A106KP8NNNC" (at 45.72 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "b561f32e-4a1c-4e04-abab-91563c09cbe4"))
+		(pin "2" (uuid "734e39bc-4a0d-4da1-92e0-ce54021d22fd"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "C2") (unit 1))))
+	)
+	(label "GND" (at 45.72 85.09 90) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "9856915b-6544-4ac3-a7ae-69ffabdf7631"))
+	(label "AVDD" (at 45.72 92.71 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "cea325b1-b336-4030-a778-9e180e79dc4d"))
+	(symbol (lib_id "osupad:R") (at 25.40 101.60 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "3a307d14-3374-44b4-98f1-dd5975d3596b")
+		(property "Reference" "R1" (at 29.21 95.25 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "100k" (at 29.21 107.95 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:R_0603_1608Metric" (at 25.40 101.60 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 25.40 101.60 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Module ID divider, top (HE V2 = 100k/100k = 1.65 V, the 'Hall SPI' ID)" (at 25.40 101.60 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C25803" (at 25.40 101.60 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "UNI-ROYAL 0603WAF1003T5E" (at 25.40 101.60 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "85b52960-404a-4f69-8c1c-47fc238b7aad"))
+		(pin "2" (uuid "34b8379e-b712-4892-881a-543191435c7f"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "R1") (unit 1))))
+	)
+	(label "3V3" (at 25.40 97.79 90) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "d2093f44-a5d7-4a09-9695-b18fdf114fa5"))
+	(label "ID" (at 25.40 105.41 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "4057b00d-de34-4065-a832-04c02fcdd2c6"))
+	(symbol (lib_id "osupad:R") (at 25.40 114.30 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "45339047-8eb5-4742-83c5-1e7bb99df583")
+		(property "Reference" "R2" (at 29.21 107.95 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "100k" (at 29.21 120.65 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:R_0603_1608Metric" (at 25.40 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 25.40 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Module ID divider, bottom" (at 25.40 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C25803" (at 25.40 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "UNI-ROYAL 0603WAF1003T5E" (at 25.40 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "a09998b1-503a-44d2-9a5c-1652d820c372"))
+		(pin "2" (uuid "2994947f-1193-466b-83c2-e9fd5f74401a"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "R2") (unit 1))))
+	)
+	(label "ID" (at 25.40 110.49 90) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "26a8932f-bd08-4828-920a-34c42925f1ff"))
+	(label "GND" (at 25.40 118.11 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "50433aa8-d415-4619-bbc9-f63750f053b2"))
+	(symbol (lib_id "osupad:TestPoint") (at 50.80 88.90 0) (unit 1) (exclude_from_sim no) (in_bom no) (on_board yes) (dnp yes) (uuid "d9515c1b-d356-462d-9f22-9128529b277b")
+		(property "Reference" "TP1" (at 54.61 88.90 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "SPARE" (at 54.61 93.98 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:TestPoint_Pad_1.0x1.0mm" (at 50.80 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 50.80 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Probe pad for the spare connector pin 4 (GPIO7)" (at 50.80 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "" (at 50.80 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "" (at 50.80 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "d927a9fa-7e72-4ac5-bb96-3cc53d128104"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "TP1") (unit 1))))
+	)
+	(label "SPARE" (at 50.80 91.44 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "2044e3f3-5a08-40d8-b4da-9d500881ae33"))
+	(symbol (lib_id "osupad:ADS7038") (at 101.60 63.50 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "69e0d6cc-c020-4b62-9ad0-3597e84908a5")
+		(property "Reference" "U4" (at 105.41 52.07 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "ADS7038" (at 105.41 78.74 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:WQFN-16-1EP_3x3mm_P0.5mm_EP1.68mm" (at 101.60 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 101.60 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "8-channel 12-bit SAR ADC, SPI; AVDD is its reference (ratiometric with the sensors)" (at 101.60 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C2876384" (at 101.60 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "Texas Instruments ADS7038QRTERQ1" (at 101.60 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "15" (uuid "25deb1af-39c2-4dca-b548-4aeeba3c3d39"))
+		(pin "16" (uuid "18555547-f5e2-472a-8ad0-3d16af3c9e4a"))
+		(pin "1" (uuid "b5c62f40-3709-449a-b721-a406dd5df414"))
+		(pin "2" (uuid "5ff9b2b2-a8af-49dc-8abe-6adc661325f1"))
+		(pin "3" (uuid "ed04febc-0098-49ff-be21-70f2e0db2c4d"))
+		(pin "4" (uuid "1f6e9ee1-b4b9-4f3f-aa74-38c17d2a7e0f"))
+		(pin "5" (uuid "58055e2e-325e-4344-8a93-1e07d2863837"))
+		(pin "6" (uuid "5b6877e7-0c33-4344-8389-51348d358a07"))
+		(pin "7" (uuid "d56e2d76-9065-4bc9-a2e2-2ad660e060ec"))
+		(pin "10" (uuid "409b1f63-8ab8-4c96-8b8b-6fe675ddbea2"))
+		(pin "8" (uuid "06bf9480-389a-4ea6-8979-e08f4e76e7fb"))
+		(pin "11" (uuid "4b9a6dde-7902-43db-ad75-9b47387481c2"))
+		(pin "13" (uuid "1f306006-8858-473e-924d-55d20b04260e"))
+		(pin "14" (uuid "c36ebcb7-74ea-41d5-b145-d6512def84c8"))
+		(pin "12" (uuid "15316fd4-634d-4d4f-9437-ad2599325942"))
+		(pin "9" (uuid "1939c8de-087c-472e-9181-e1358a4a4142"))
+		(pin "17" (uuid "b2ac406b-ebf0-475d-993e-8bc009ec235a"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "U4") (unit 1))))
+	)
+	(no_connect (at 88.90 54.61) (uuid "3f683969-d2c6-4b87-94b1-4712c6c22f24"))
+	(no_connect (at 88.90 57.15) (uuid "c1dca6aa-f0c3-4038-b548-77c103c289b8"))
+	(no_connect (at 88.90 59.69) (uuid "72572858-b5ce-49f4-9e4e-8743396fcc07"))
+	(label "AIN_K3" (at 88.90 62.23 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "2cbdb32a-7705-4131-beb1-a52da3a0e3d8"))
+	(label "AIN_K2" (at 88.90 64.77 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "3a324d8c-43e2-465c-84a1-081b6cf74754"))
+	(label "AIN_K1" (at 88.90 67.31 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "2c648c5a-07a4-448a-910e-c2e40ebff065"))
+	(no_connect (at 88.90 69.85) (uuid "ca89a8b6-dda7-431a-b066-920938eb2ca7"))
+	(no_connect (at 88.90 72.39) (uuid "55bad9a9-eddd-474d-9004-0b1ec1cded15"))
+	(label "AVDD" (at 114.30 54.61 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "8bdbb6be-6233-4d53-ae37-b36614bb403c"))
+	(label "3V3" (at 114.30 57.15 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "fb8e497d-6906-47ce-b7b9-2294daefce93"))
+	(label "DECAP" (at 114.30 59.69 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "347b6aad-2f17-4d4e-bd65-d004be4d7fa4"))
+	(label "CS" (at 114.30 62.23 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "2f50f707-41d5-4458-be3b-81b67a2d4a93"))
+	(label "SCLK" (at 114.30 64.77 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "3b7cb7d5-0480-4a76-aef8-99018b65e0e4"))
+	(label "MOSI" (at 114.30 67.31 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "f907b9bd-e504-453f-87b8-5dec8d3a1bd8"))
+	(label "SDO" (at 114.30 69.85 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "0173230d-83a2-4e64-b6d8-f0b7ad79f6eb"))
+	(label "GND" (at 114.30 73.66 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "76e9f606-c2fc-4629-aefc-c307732d6c7d"))
+	(label "GND" (at 114.30 76.20 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "eabd82ad-6daf-459b-9441-4c32d3fb5c55"))
+	(symbol (lib_id "osupad:R") (at 127.00 50.80 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "b878deb3-2024-4fe1-8f09-b13f7e8437f0")
+		(property "Reference" "R3" (at 130.81 44.45 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "33" (at 130.81 57.15 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:R_0603_1608Metric" (at 127.00 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 127.00 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "SDO series termination over the cable" (at 127.00 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C23140" (at 127.00 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "UNI-ROYAL 0603WAF330JT5E" (at 127.00 50.80 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "5b7c59a0-412a-42ff-b57b-060d342e745d"))
+		(pin "2" (uuid "574c40e7-7aa5-411e-b77d-ac230d84206a"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "R3") (unit 1))))
+	)
+	(label "SDO" (at 127.00 46.99 90) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "52915881-d202-4ae9-8f0d-7fc6c8ef22cd"))
+	(label "MISO" (at 127.00 54.61 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "f5581c4e-db27-4611-be93-23920eab8317"))
+	(symbol (lib_id "osupad:C") (at 142.24 76.20 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "1a662ded-fd97-49aa-8f75-04f54306c22c")
+		(property "Reference" "C5" (at 146.05 69.85 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "1uF" (at 146.05 82.55 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:C_0603_1608Metric" (at 142.24 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 142.24 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "ADS7038 DVDD decoupling" (at 142.24 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C15849" (at 142.24 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "Samsung CL10A105KB8NNNC" (at 142.24 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "1a0eac98-902c-4d9b-bc2e-3e307c3dd19c"))
+		(pin "2" (uuid "53a0a9a0-05e5-44d8-a091-e8f9c3a5e50d"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "C5") (unit 1))))
+	)
+	(label "GND" (at 142.24 72.39 90) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "6fc5cc52-0e21-4f73-9ccd-fc4f10f1a6cb"))
+	(label "3V3" (at 142.24 80.01 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "165fed7a-e6ce-467a-8ea4-23a7138bcf4f"))
+	(symbol (lib_id "osupad:C") (at 134.62 76.20 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "47f4478c-55e4-4067-b3d2-ea208744e5f1")
+		(property "Reference" "C4" (at 138.43 69.85 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "1uF" (at 138.43 82.55 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:C_0603_1608Metric" (at 134.62 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 134.62 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "ADS7038 DECAP" (at 134.62 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C15849" (at 134.62 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "Samsung CL10A105KB8NNNC" (at 134.62 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "3983845e-a096-4e2a-9270-383bf4bd0c3f"))
+		(pin "2" (uuid "c618e8b0-93cf-4a80-8b87-6cbab17e1ac5"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "C4") (unit 1))))
+	)
+	(label "GND" (at 134.62 72.39 90) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "fa460cda-3ae7-41bc-b90e-5c655b86db89"))
+	(label "DECAP" (at 134.62 80.01 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "8ead4d5b-7f8a-4304-a7f3-85e79808164a"))
+	(symbol (lib_id "osupad:C") (at 127.00 76.20 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "87ad222a-a37b-46f2-9641-0e26534e4cfc")
+		(property "Reference" "C3" (at 130.81 69.85 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "1uF" (at 130.81 82.55 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:C_0603_1608Metric" (at 127.00 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 127.00 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "ADS7038 AVDD (reference) decoupling" (at 127.00 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C15849" (at 127.00 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "Samsung CL10A105KB8NNNC" (at 127.00 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "af505f4a-0aa6-4a5f-844d-a5f2340e792a"))
+		(pin "2" (uuid "3384897c-9712-41f0-9343-6f3ff7d81e9c"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "C3") (unit 1))))
+	)
+	(label "GND" (at 127.00 72.39 90) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "04d55bc5-2bea-46ac-9740-e17d3d961760"))
+	(label "AVDD" (at 127.00 80.01 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "7ef0d978-79b1-47e5-84c8-9b451243dc53"))
+	(symbol (lib_id "osupad:DRV5055") (at 190.50 63.50 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "1d9ca2f9-8a93-4576-8577-fb57890bf2b3")
+		(property "Reference" "U1" (at 194.31 58.42 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "DRV5055A3" (at 194.31 68.58 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:SOT-23" (at 190.50 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 190.50 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Ratiometric linear Hall sensor, key 1" (at 190.50 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C266128" (at 190.50 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "Texas Instruments DRV5055A3QDBZR" (at 190.50 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "06ff190b-3dfb-4ed8-877d-ca423a956de9"))
+		(pin "2" (uuid "37ff84fa-5eb7-4577-a647-9d89bc49518f"))
+		(pin "3" (uuid "265ef4b8-4758-47c4-8a68-7b088bcac34a"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "U1") (unit 1))))
+	)
+	(label "AVDD" (at 181.61 60.96 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "3ba7628e-7663-4ff6-bb48-7b0e1666bc30"))
+	(label "OUT_K1" (at 199.39 63.50 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "8216701b-f001-4e94-9bfc-2e0dc6cf68de"))
+	(label "GND" (at 181.61 66.04 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "2af77a8d-3072-43e3-b359-8d4d7d07c306"))
+	(symbol (lib_id "osupad:C") (at 215.90 63.50 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "79332227-9b2a-475e-8894-3661cfa8ae66")
+		(property "Reference" "C6" (at 219.71 57.15 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "100nF" (at 219.71 69.85 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:C_0603_1608Metric" (at 215.90 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 215.90 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Local supply decoupling, key 1 sensor" (at 215.90 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C14663" (at 215.90 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "YAGEO CC0603KRX7R9BB104" (at 215.90 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "7c8c02de-4315-42e8-876e-492f257e4efc"))
+		(pin "2" (uuid "d0928b1f-55c8-49d2-a993-e91966b23e7a"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "C6") (unit 1))))
+	)
+	(label "GND" (at 215.90 59.69 90) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "b3d4b745-c331-4890-92a0-5cc6a3fb325c"))
+	(label "AVDD" (at 215.90 67.31 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "2f4045b0-3b0c-47d7-8884-7af79ede8c52"))
+	(symbol (lib_id "osupad:R") (at 165.10 63.50 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "0c233212-70f6-4f7a-8fe7-c45cf546bde5")
+		(property "Reference" "R5" (at 168.91 57.15 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "220" (at 168.91 69.85 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:R_0603_1608Metric" (at 165.10 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 165.10 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Key 1 output filter, series (never a capacitor straight on OUT)" (at 165.10 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C22962" (at 165.10 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "UNI-ROYAL 0603WAF2200T5E" (at 165.10 63.50 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "ddbe9c6e-8a80-410d-a689-b20ebbd0e0cf"))
+		(pin "2" (uuid "b68b4e8e-2d43-4b84-a871-0ea75cfbf165"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "R5") (unit 1))))
+	)
+	(label "OUT_K1" (at 165.10 59.69 90) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "85a5913f-7737-43f6-a5bf-d6150d174d84"))
+	(label "AIN_K1" (at 165.10 67.31 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "69d4b133-b120-46b0-a936-a91b6579a090"))
+	(symbol (lib_id "osupad:C") (at 165.10 76.20 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "0fcd7b12-626c-4a41-a164-321337f51ead")
+		(property "Reference" "C9" (at 168.91 69.85 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "10nF" (at 168.91 82.55 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:C_0603_1608Metric" (at 165.10 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 165.10 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Key 1 output filter, shunt; charge reservoir for the ADC sample" (at 165.10 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C57112" (at 165.10 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "FH 0603B103K500NT" (at 165.10 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "0d1e4a09-f07c-449e-bd2d-dcc7503c0516"))
+		(pin "2" (uuid "0875f937-6ca8-464e-a94f-1085c3579179"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "C9") (unit 1))))
+	)
+	(label "GND" (at 165.10 72.39 90) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "5cf7b871-ecd9-4532-8831-6b5b7121f27f"))
+	(label "AIN_K1" (at 165.10 80.01 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "fd1bf2cf-76f1-4829-926a-6a3be4238f28"))
+	(symbol (lib_id "osupad:DRV5055") (at 190.50 88.90 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "c1e22b94-680b-49c1-9d74-89c8566e9142")
+		(property "Reference" "U2" (at 194.31 83.82 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "DRV5055A3" (at 194.31 93.98 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:SOT-23" (at 190.50 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 190.50 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Ratiometric linear Hall sensor, key 2" (at 190.50 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C266128" (at 190.50 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "Texas Instruments DRV5055A3QDBZR" (at 190.50 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "b97dac37-e04c-43b9-8d47-ec52d301732b"))
+		(pin "2" (uuid "8ecaa578-5320-415b-aaa5-85974e98275f"))
+		(pin "3" (uuid "c19e9a38-1886-43dc-93cf-e97fa0836cdc"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "U2") (unit 1))))
+	)
+	(label "AVDD" (at 181.61 86.36 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "fb63aaf2-8ce1-4a38-996c-db90c9c82375"))
+	(label "OUT_K2" (at 199.39 88.90 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "d98c6f54-543f-4988-b0fc-e21a1e309303"))
+	(label "GND" (at 181.61 91.44 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "00579639-f2e2-408e-8740-bbea513cb9da"))
+	(symbol (lib_id "osupad:C") (at 215.90 88.90 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "f43f712a-5769-4cc8-8a97-5b5a16e3a425")
+		(property "Reference" "C7" (at 219.71 82.55 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "100nF" (at 219.71 95.25 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:C_0603_1608Metric" (at 215.90 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 215.90 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Local supply decoupling, key 2 sensor" (at 215.90 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C14663" (at 215.90 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "YAGEO CC0603KRX7R9BB104" (at 215.90 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "c36760b4-3d3f-43db-bd16-9dddc184110d"))
+		(pin "2" (uuid "7268347a-218f-40d0-b061-6c7d67005fb4"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "C7") (unit 1))))
+	)
+	(label "GND" (at 215.90 85.09 90) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "51950ce5-8e15-415d-9da7-4de5491411b2"))
+	(label "AVDD" (at 215.90 92.71 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "e2b5ef8b-009a-46a5-a234-79d14cc9062f"))
+	(symbol (lib_id "osupad:R") (at 165.10 88.90 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "49c009fa-9b71-4bc2-9a30-c3b4632b741f")
+		(property "Reference" "R6" (at 168.91 82.55 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "220" (at 168.91 95.25 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:R_0603_1608Metric" (at 165.10 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 165.10 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Key 2 output filter, series (never a capacitor straight on OUT)" (at 165.10 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C22962" (at 165.10 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "UNI-ROYAL 0603WAF2200T5E" (at 165.10 88.90 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "08a7db8c-11b5-43e7-b689-83615172c93b"))
+		(pin "2" (uuid "c918443a-c782-4c22-9444-3c085c41ec58"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "R6") (unit 1))))
+	)
+	(label "OUT_K2" (at 165.10 85.09 90) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "ae4537e1-bc01-4bad-b96c-c4fd176ce662"))
+	(label "AIN_K2" (at 165.10 92.71 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "9d4355ca-4148-4de3-a0e9-0c54dd6ab1ca"))
+	(symbol (lib_id "osupad:C") (at 165.10 101.60 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "dcdfc2d5-c413-4f62-8ac3-a6d0a1cd212d")
+		(property "Reference" "C10" (at 168.91 95.25 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "10nF" (at 168.91 107.95 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:C_0603_1608Metric" (at 165.10 101.60 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 165.10 101.60 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Key 2 output filter, shunt; charge reservoir for the ADC sample" (at 165.10 101.60 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C57112" (at 165.10 101.60 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "FH 0603B103K500NT" (at 165.10 101.60 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "3a1eb88c-f345-4ec4-9264-723122454f91"))
+		(pin "2" (uuid "1f3890bf-adc9-435b-a012-3f6a81ff5fcb"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "C10") (unit 1))))
+	)
+	(label "GND" (at 165.10 97.79 90) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "52097ad6-47fa-452e-b550-988be056bf71"))
+	(label "AIN_K2" (at 165.10 105.41 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "ae538c97-fc33-4d87-a1dd-257dd9361764"))
+	(symbol (lib_id "osupad:DRV5055") (at 190.50 114.30 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "32aff7ed-a036-4fdb-be4c-bba09af06cf8")
+		(property "Reference" "U3" (at 194.31 109.22 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "DRV5055A3" (at 194.31 119.38 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:SOT-23" (at 190.50 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 190.50 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Ratiometric linear Hall sensor, key 3" (at 190.50 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C266128" (at 190.50 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "Texas Instruments DRV5055A3QDBZR" (at 190.50 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "3ad76736-7dfa-4b98-82e8-da7d8a9073b4"))
+		(pin "2" (uuid "c2c3e72b-dd4e-4a46-9f06-5a5923e05f95"))
+		(pin "3" (uuid "54edee63-eb2b-470f-b823-b2fbc08ed417"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "U3") (unit 1))))
+	)
+	(label "AVDD" (at 181.61 111.76 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "ed5c891c-a8ea-40e1-a2dd-448be6eed394"))
+	(label "OUT_K3" (at 199.39 114.30 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "d4313bab-d258-442e-9bbf-ae93f4b44f03"))
+	(label "GND" (at 181.61 116.84 180) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "1aaab3f4-ef14-458a-a2d9-f4744d09a88d"))
+	(symbol (lib_id "osupad:C") (at 215.90 114.30 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "cffc091e-c26e-4d26-a498-7e786708db79")
+		(property "Reference" "C8" (at 219.71 107.95 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "100nF" (at 219.71 120.65 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:C_0603_1608Metric" (at 215.90 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 215.90 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Local supply decoupling, key 3 sensor" (at 215.90 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C14663" (at 215.90 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "YAGEO CC0603KRX7R9BB104" (at 215.90 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "61873ecf-5aaa-4cc7-b86a-628d3b89f45e"))
+		(pin "2" (uuid "cab8c442-9066-425c-bc28-2e72d857e89a"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "C8") (unit 1))))
+	)
+	(label "GND" (at 215.90 110.49 90) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "a495391b-075a-42be-9e26-942ef27b64a8"))
+	(label "AVDD" (at 215.90 118.11 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "6d759755-4057-4a16-a794-94ad03dd820c"))
+	(symbol (lib_id "osupad:R") (at 165.10 114.30 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "378d9e5d-8808-4764-9713-c608b37e87b1")
+		(property "Reference" "R7" (at 168.91 107.95 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "220" (at 168.91 120.65 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:R_0603_1608Metric" (at 165.10 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 165.10 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Key 3 output filter, series (never a capacitor straight on OUT)" (at 165.10 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C22962" (at 165.10 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "UNI-ROYAL 0603WAF2200T5E" (at 165.10 114.30 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "bdfebed3-9d1c-4c78-925c-05e4644b8c3f"))
+		(pin "2" (uuid "98c9927f-23dc-46f9-b010-5a90db939dff"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "R7") (unit 1))))
+	)
+	(label "OUT_K3" (at 165.10 110.49 90) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "4ff6e8eb-aaae-46c8-9da5-5263fd8b897f"))
+	(label "AIN_K3" (at 165.10 118.11 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "db3b2a87-4392-4ef3-bcb4-f4e1ab6c2725"))
+	(symbol (lib_id "osupad:C") (at 165.10 127.00 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "8b9fe814-f754-42b9-8989-290ab56bf305")
+		(property "Reference" "C11" (at 168.91 120.65 0) (effects (font (size 1.27 1.27))))
+		(property "Value" "10nF" (at 168.91 133.35 0) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "osupad:C_0603_1608Metric" (at 165.10 127.00 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Datasheet" "" (at 165.10 127.00 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Description" "Key 3 output filter, shunt; charge reservoir for the ADC sample" (at 165.10 127.00 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "LCSC" "C57112" (at 165.10 127.00 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "MPN" "FH 0603B103K500NT" (at 165.10 127.00 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(pin "1" (uuid "4738088e-eae0-4617-8df8-f9103148f4bb"))
+		(pin "2" (uuid "5420811f-d4e5-499c-88a4-36c87d699f92"))
+		(instances (project "he_input_v2" (path "/23ded7be-bf2f-4a5c-8f46-1df405f8c5aa" (reference "C11") (unit 1))))
+	)
+	(label "GND" (at 165.10 123.19 90) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "0c31c266-323b-4f76-8f5c-8a867ec9d1fa"))
+	(label "AIN_K3" (at 165.10 130.81 270) (effects (font (size 1.27 1.27)) (justify right bottom)) (uuid "6fd6c382-dc4d-429a-bd24-b620e2f32445"))
+	(sheet_instances (path "/" (page "1")))
+)

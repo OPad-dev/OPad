@@ -1,0 +1,173 @@
+(footprint "SOT-23"
+	(version 20240108)
+	(generator "osupad")
+	(generator_version "8.0")
+	(layer "F.Cu")
+	(descr "SOT-23 (JEDEC TO-236AB) 3-pin SMD package, e.g. the TI DRV5055 Hall sensor. Pads sized for reflow and hand soldering.")
+	(tags "SOT-23 TO-236AB 3-pin")
+	(property "Reference" "REF**"
+		(at 0 -2.55 0)
+		(layer "F.SilkS")
+		(uuid "025dc815-a8ac-50b9-9064-631778d259ec")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "SOT-23"
+		(at 0 2.55 0)
+		(layer "F.Fab")
+		(uuid "b28d1ead-9d71-573b-9f52-687f30f8c4a3")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "15b95bf3-a266-5c69-bbb9-fcab0dc70989")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(property "Description" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "4ddb5ab1-f147-5545-b7bc-5b4bce8aa1f2")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(attr smd)
+	(fp_poly
+		(pts
+			(xy -1.45 -0.65)
+			(xy 1.125 -0.65)
+			(xy 1.45 -0.325)
+			(xy 1.45 0.65)
+			(xy -1.45 0.65)
+		)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "a5ed0470-e59e-5588-8c93-a6e54be12d09")
+	)
+	(fp_line
+		(start -0.34 -0.76)
+		(end 0.34 -0.76)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "166c1265-4333-54f1-bd14-a0c714ec42a5")
+	)
+	(fp_line
+		(start 1.56 -0.76)
+		(end 1.56 0.76)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "ef393a0a-a15c-5364-aac4-81e0b966888e")
+	)
+	(fp_line
+		(start -1.56 0.76)
+		(end -0.61 0.76)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "d03ba668-ffa0-566f-8e8f-b2b7e7cc5811")
+	)
+	(fp_line
+		(start 0.61 0.76)
+		(end 1.56 0.76)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "864f58e5-346b-5909-aa2f-38a4341419ea")
+	)
+	(fp_line
+		(start -1.56 -0.76)
+		(end -1.56 0.76)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+		(uuid "8bfbc335-b693-5109-af98-b062184363c4")
+	)
+	(fp_circle
+		(center 1.7 -1)
+		(end 1.85 -1)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(fill yes)
+		(layer "F.SilkS")
+		(uuid "188289de-000d-55ed-9394-95a43a3c6a28")
+	)
+	(fp_rect
+		(start -1.85 -1.75)
+		(end 2.1 1.75)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "b14aadc7-5734-5ce8-b5a5-83c13de111b6")
+	)
+	(fp_text user "${REFERENCE}"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(uuid "77f6e0ee-3d83-513d-a404-aac243e1756c")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(pad "1" smd roundrect
+		(at 0.95 -1)
+		(size 0.7 1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.25)
+		(uuid "b43ada2b-b73e-594e-9616-eecad7ee60bf")
+	)
+	(pad "2" smd roundrect
+		(at -0.95 -1)
+		(size 0.7 1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.25)
+		(uuid "4a41f6e1-b4e0-596a-9edb-69239bf098ec")
+	)
+	(pad "3" smd roundrect
+		(at 0 1)
+		(size 0.7 1)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.25)
+		(uuid "7d941d24-958b-599c-b03e-37f4342c3fa4")
+	)
+)

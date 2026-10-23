@@ -1,0 +1,12 @@
+Item #,Designator,Qty,Manufacturer,Mfg Part #,Description / Value,Package/Footprint,Type,Your Instructions / Notes
+1,"C1,C6,C7,C8",4,YAGEO,CC0603KRX7R9BB104,100nF,C_0603_1608Metric,SMD,Bottom side
+2,"C10,C11,C9",3,FH,0603B103K500NT,10nF,C_0603_1608Metric,SMD,Bottom side
+3,C2,1,Samsung,CL10A106KP8NNNC,10uF,C_0603_1608Metric,SMD,Bottom side
+4,"C3,C4,C5",3,Samsung,CL10A105KB8NNNC,1uF,C_0603_1608Metric,SMD,Bottom side
+5,FB1,1,Sunlord,GZ1608D601TF,600R@100MHz,L_0603_1608Metric,SMD,
+6,J1,1,JST,SM08B-SRSS-TB(LF)(SN),MODULE,JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal,SMD,BOTTOM side. Cable opening faces the nearest board edge
+7,"R1,R2",2,UNI-ROYAL,0603WAF1003T5E,100k,R_0603_1608Metric,SMD,Bottom side
+8,R3,1,UNI-ROYAL,0603WAF330JT5E,33,R_0603_1608Metric,SMD,Bottom side
+9,"R5,R6,R7",3,UNI-ROYAL,0603WAF2200T5E,220,R_0603_1608Metric,SMD,Bottom side
+10,"U1,U2,U3",3,Texas,Instruments DRV5055A3QDBZR,DRV5055A3,SOT-23,SMD,"BOTTOM side. Single lead (pin 3) towards the board's front edge, as in the CPL"
+11,U4,1,Texas,Instruments ADS7038QRTERQ1,ADS7038,WQFN-16-1EP_3x3mm_P0.5mm_EP1.68mm,SMD,BOTTOM side. Exposed pad soldered to GND; pin 1 at the silkscreen dot

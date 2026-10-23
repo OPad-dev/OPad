@@ -1,0 +1,81 @@
+(footprint "TestPoint_Pad_1.0x1.0mm"
+	(version 20240108)
+	(generator "osupad")
+	(generator_version "8.0")
+	(layer "F.Cu")
+	(descr "1.0 x 1.0 mm SMD probe pad. Bare copper with a solder mask opening and no paste: nothing is assembled on it, so it is excluded from the position files.")
+	(tags "test point probe pad")
+	(attr exclude_from_pos_files exclude_from_bom)
+	(property "Reference" "TP**"
+		(at 0 -1.4 0)
+		(layer "F.SilkS")
+		(uuid "b6c7d8e9-fa0b-41c2-d334-f1a2b3c4d5ec")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(property "Value" "TestPoint"
+		(at 0 1.4 0)
+		(layer "F.Fab")
+		(uuid "c7d8e9fa-0b1c-42d3-e445-a2b3c4d5e6fd")
+		(effects
+			(font
+				(size 0.8 0.8)
+				(thickness 0.12)
+			)
+		)
+	)
+	(property "Datasheet" ""
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "d8e9fa0b-1c2d-43e4-f556-b3c4d5e6f70e")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(property "Description" "SMD probe pad"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(hide yes)
+		(uuid "e9fa0b1c-2d3e-44f5-a667-c4d5e6f7081f")
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+	)
+	(fp_rect
+		(start -0.5 -0.5)
+		(end 0.5 0.5)
+		(stroke
+			(width 0.1)
+			(type default)
+		)
+		(fill no)
+		(layer "F.Fab")
+		(uuid "fa0b1c2d-3e4f-4506-b778-d5e6f7081920")
+	)
+	(fp_rect
+		(start -0.75 -0.75)
+		(end 0.75 0.75)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+		(uuid "0b1c2d3e-4f50-4617-c889-e6f70819202a")
+	)
+	(pad "1" smd rect
+		(at 0 0)
+		(size 1 1)
+		(layers "F.Cu" "F.Mask")
+		(uuid "1c2d3e4f-5061-4728-d99a-f70819202a3b")
+	)
+)
