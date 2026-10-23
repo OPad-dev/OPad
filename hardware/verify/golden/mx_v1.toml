@@ -1,0 +1,99 @@
+# Intended netlist of the MX input module V1, written from hardware/pcb/V1/README.md
+# (Module connector, Module ID, MX input module, Assembly), not from KiCad.
+
+[board]
+title = "MX input module V1 (built, works)"
+pcb = "../../pcb/V1/MX/mx_input_v1.kicad_pcb"
+gerbers = "../../pcb/V1/MX/production/jlcpcb/mx_input_v1-gerbers.zip"
+cpl = "../../pcb/V1/MX/production/jlcpcb/mx_input_v1-CPL-JLCPCB.csv"
+bom = "../../pcb/V1/MX/production/jlcpcb/mx_input_v1-BOM-JLCPCB.csv"
+
+[part.J1]   # module connector, V1 pinout; 6-8 unused on MX
+device = "JST_SH_8_SMD"
+lcsc = "C160407"
+pins = { 1 = "3V3", 2 = "GND", 3 = "KEY1", 4 = "KEY2", 5 = "ID", 6 = "NC", 7 = "NC", 8 = "NC" }
+
+[part.SW1]   # key 1 switch to ground
+device = "KAILH_HOTSWAP"
+lcsc = "C41430893"
+nets = ["KEY1", "GND"]
+
+[part.SW2]   # key 2 switch to ground
+device = "KAILH_HOTSWAP"
+lcsc = "C41430893"
+nets = ["KEY2", "GND"]
+
+[part.R1]   # 10k pull-up
+device = "R0603"
+lcsc = "C25804"
+nets = ["3V3", "KEY1"]
+
+[part.R2]   # 10k pull-up
+device = "R0603"
+lcsc = "C25804"
+nets = ["3V3", "KEY2"]
+
+[part.R3]   # ID top 100k
+device = "R0603"
+lcsc = "C25803"
+nets = ["3V3", "ID"]
+
+[part.R4]   # ID bottom 10k -> 0.30 V
+device = "R0603"
+lcsc = "C25804"
+nets = ["ID", "GND"]
+
+[part.C1]
+device = "R0603"
+lcsc = "C14663"
+nets = ["3V3", "GND"]
+
+# Mechanical holes, KiCad coordinates (case X + 100, 100 - case Y)
+[[hole]]
+what = "M2 mounting hole, left"
+x = 115.5
+y = 83.5
+d = 2.2
+
+[[hole]]
+what = "M2 mounting hole, right"
+x = 160.5
+y = 83.5
+d = 2.2
+
+[[hole]]
+what = "key 1 peg, left"
+x = 123.395
+y = 83.5
+d = 1.75
+
+[[hole]]
+what = "key 1 peg, right"
+x = 133.555
+y = 83.5
+d = 1.75
+
+[[hole]]
+what = "key 2 peg, left"
+x = 142.445
+y = 83.5
+d = 1.75
+
+[[hole]]
+what = "key 2 peg, right"
+x = 152.605
+y = 83.5
+d = 1.75
+
+[[hole]]
+what = "key 1 centre pole"
+x = 128.475
+y = 83.5
+d = 4.0
+
+[[hole]]
+what = "key 2 centre pole"
+x = 147.525
+y = 83.5
+d = 4.0
+

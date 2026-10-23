@@ -1,0 +1,56 @@
+# Intended netlist of the controller carrier V1, written from hardware/pcb/V1/README.md
+# (Module connector table, Controller carrier) and the Waveshare header table in
+# AGENTS.md section 6, not from KiCad. Socket pins are named after the Waveshare
+# pin they receive; V1 uses only P2-2 for ground;
+# P1-13 and P2-13 are left free (README: "Free for later").
+
+[board]
+title = "Controller carrier V1 (built, works)"
+pcb = "../../pcb/V1/Carrier/controller_carrier_v1.kicad_pcb"
+gerbers = "../../pcb/V1/Carrier/production/jlcpcb/controller_carrier_v1-gerbers.zip"
+cpl = "../../pcb/V1/Carrier/production/jlcpcb/controller_carrier_v1-CPL-JLCPCB.csv"
+bom = "../../pcb/V1/Carrier/production/jlcpcb/controller_carrier_v1-BOM-JLCPCB.csv"
+
+[part.J_MOD]   # 1 3V3 (P2-1) | 2 GND (P2-2) | 3 GPIO10 (P1-10) | 4 GPIO7 (P1-9) | 5 GPIO8 (P1-8) | 6 GPIO6 (P1-3) | 7 GPIO4 (P1-2) | 8 GPIO2 (P1-1)
+device = "JST_SH_8_SMD"
+lcsc = "C160407"
+pins = { 1 = "3V3", 2 = "GND", 3 = "GPIO10", 4 = "GPIO7", 5 = "GPIO8", 6 = "GPIO6", 7 = "GPIO4", 8 = "GPIO2" }
+
+[part.J_P1]   # Waveshare P1: IO2 IO4 IO6 IO16 IO17 IO18 IO21 IO8 IO7 IO10 IO20 IO19 GND 5V
+device = "PINSOCKET_1x14"
+lcsc = "C2897377"
+cpl_centre = "pads"
+cpl_rotation_offset = 90
+pins = { 1 = "GPIO2", 2 = "GPIO4", 3 = "GPIO6", 4 = "NC", 5 = "NC", 6 = "NC", 7 = "NC", 8 = "GPIO8", 9 = "GPIO7", 10 = "GPIO10", 11 = "NC", 12 = "NC", 13 = "NC", 14 = "NC" }
+
+[part.J_P2]   # Waveshare P2: 3V3 GND IO43 IO44 IO47 IO48 IO15 IO13 IO11 IO12 IO14 IO9 GND VBAT
+device = "PINSOCKET_1x14"
+lcsc = "C2897377"
+cpl_centre = "pads"
+cpl_rotation_offset = 90
+pins = { 1 = "3V3", 2 = "GND", 3 = "NC", 4 = "NC", 5 = "NC", 6 = "NC", 7 = "NC", 8 = "NC", 9 = "NC", 10 = "NC", 11 = "NC", 12 = "NC", 13 = "NC", 14 = "NC" }
+
+[[hole]]
+what = "M2, Waveshare hole"
+x = 103.0
+y = 103.0
+d = 2.2
+
+[[hole]]
+what = "M2, Waveshare hole"
+x = 132.0
+y = 103.0
+d = 2.2
+
+[[hole]]
+what = "M2, Waveshare hole"
+x = 103.0
+y = 145.2
+d = 2.2
+
+[[hole]]
+what = "M2, Waveshare hole"
+x = 132.0
+y = 145.2
+d = 2.2
+

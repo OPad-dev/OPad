@@ -1,0 +1,181 @@
+# Intended netlist of the HE input module V2, written from hardware/pcb/V2/README.md,
+# docs/specs/hardware-redesign-brief.md section 5.1, TI SBAS979C (ADS7038) and
+# TI SBAS640C (DRV5055), not from KiCad.
+
+[board]
+title = "HE input module V2 (designed, not built)"
+pcb = "../../pcb/V2/HE/he_input_v2.kicad_pcb"
+gerbers = "../../pcb/V2/HE/production/jlcpcb/he_input_v2-gerbers.zip"
+cpl = "../../pcb/V2/HE/production/jlcpcb/he_input_v2-CPL-JLCPCB.csv"
+bom = "../../pcb/V2/HE/production/jlcpcb/he_input_v2-BOM-JLCPCB.csv"
+
+[part.J1]   # 1 3V3 | 2 GND | 3 CS | 4 spare | 5 ID | 6 MISO | 7 MOSI | 8 SCLK
+device = "JST_SH_8_SMD"
+lcsc = "C160407"
+pins = { 1 = "3V3", 2 = "GND", 3 = "CS", 4 = "SPARE", 5 = "ID", 6 = "MISO", 7 = "MOSI", 8 = "SCLK" }
+
+[part.U4]   # ADC; AVDD is its reference; key 1 = AIN5, key 2 = AIN4, key 3 = AIN3
+device = "ADS7038"
+lcsc = "C2876384"
+cpl_rotation_offset = 180   # JLCPCB's WQFN-16 model, from its preview on 2026-10-23
+pins = { AVDD = "AVDD", DVDD = "3V3", DECAP = "DECAP", GND = "GND", EP = "GND", CS = "CS", SCLK = "SCLK", SDI = "MOSI", SDO = "SDO", AIN5 = "AIN_K1", AIN4 = "AIN_K2", AIN3 = "AIN_K3", AIN0 = "NC", AIN1 = "NC", AIN2 = "NC", AIN6 = "NC", AIN7 = "NC" }
+
+[part.U1]   # key 1 sensor
+device = "DRV5055"
+lcsc = "C266128"
+pins = { VCC = "AVDD", OUT = "OUT_K1", GND = "GND" }
+
+[part.U2]   # key 2 sensor
+device = "DRV5055"
+lcsc = "C266128"
+pins = { VCC = "AVDD", OUT = "OUT_K2", GND = "GND" }
+
+[part.U3]   # key 3 sensor
+device = "DRV5055"
+lcsc = "C266128"
+pins = { VCC = "AVDD", OUT = "OUT_K3", GND = "GND" }
+
+[part.FB1]   # ferrite: 3V3 -> sensor and ADC analog supply
+device = "R0603"
+lcsc = "C1002"
+nets = ["3V3", "AVDD"]
+
+[part.C1]   # 100 nF at J1
+device = "R0603"
+lcsc = "C14663"
+nets = ["3V3", "GND"]
+
+[part.C2]   # 10 uF AVDD bulk
+device = "R0603"
+lcsc = "C19702"
+nets = ["AVDD", "GND"]
+
+[part.C3]   # 1 uF ADC AVDD
+device = "R0603"
+lcsc = "C15849"
+nets = ["AVDD", "GND"]
+
+[part.C4]   # 1 uF ADC DECAP
+device = "R0603"
+lcsc = "C15849"
+nets = ["DECAP", "GND"]
+
+[part.C5]   # 1 uF ADC DVDD
+device = "R0603"
+lcsc = "C15849"
+nets = ["3V3", "GND"]
+
+[part.C6]   # 100 nF at sensor 1
+device = "R0603"
+lcsc = "C14663"
+nets = ["AVDD", "GND"]
+
+[part.R5]   # 220R series, key 1
+device = "R0603"
+lcsc = "C22962"
+nets = ["OUT_K1", "AIN_K1"]
+
+[part.C9]   # 10 nF shunt at the ADC, key 1
+device = "R0603"
+lcsc = "C57112"
+nets = ["AIN_K1", "GND"]
+
+[part.C7]   # 100 nF at sensor 2
+device = "R0603"
+lcsc = "C14663"
+nets = ["AVDD", "GND"]
+
+[part.R6]   # 220R series, key 2
+device = "R0603"
+lcsc = "C22962"
+nets = ["OUT_K2", "AIN_K2"]
+
+[part.C10]   # 10 nF shunt at the ADC, key 2
+device = "R0603"
+lcsc = "C57112"
+nets = ["AIN_K2", "GND"]
+
+[part.C8]   # 100 nF at sensor 3
+device = "R0603"
+lcsc = "C14663"
+nets = ["AVDD", "GND"]
+
+[part.R7]   # 220R series, key 3
+device = "R0603"
+lcsc = "C22962"
+nets = ["OUT_K3", "AIN_K3"]
+
+[part.C11]   # 10 nF shunt at the ADC, key 3
+device = "R0603"
+lcsc = "C57112"
+nets = ["AIN_K3", "GND"]
+
+[part.R3]   # 33R on SDO
+device = "R0603"
+lcsc = "C23140"
+nets = ["SDO", "MISO"]
+
+[part.R1]   # ID top 100k
+device = "R0603"
+lcsc = "C25803"
+nets = ["3V3", "ID"]
+
+[part.R2]   # ID bottom 100k -> 1.65 V
+device = "R0603"
+lcsc = "C25803"
+nets = ["ID", "GND"]
+
+[part.TP1]
+device = "TESTPOINT"
+assembled = false
+nets = ["SPARE", "SPARE"]
+
+# Mechanical holes, KiCad coordinates
+[[hole]]
+what = "M2 mounting hole, left"
+x = 115.5
+y = 83.5
+d = 2.2
+
+[[hole]]
+what = "M2 mounting hole, right"
+x = 179.55
+y = 83.5
+d = 2.2
+
+[[hole]]
+what = "key 1 peg, left"
+x = 123.395
+y = 83.5
+d = 1.75
+
+[[hole]]
+what = "key 1 peg, right"
+x = 133.555
+y = 83.5
+d = 1.75
+
+[[hole]]
+what = "key 2 peg, left"
+x = 142.445
+y = 83.5
+d = 1.75
+
+[[hole]]
+what = "key 2 peg, right"
+x = 152.605
+y = 83.5
+d = 1.75
+
+[[hole]]
+what = "key 3 peg, left"
+x = 161.495
+y = 83.5
+d = 1.75
+
+[[hole]]
+what = "key 3 peg, right"
+x = 171.655
+y = 83.5
+d = 1.75
+
