@@ -1,8 +1,8 @@
 #pragma once
 
 /*
- * One ADC DMA frame of the Hall Effect keys -> the newest valid reading of
- * each key. Pure C, run in the ADC interrupt (from IRAM, linker.lf) and on the
+ * One ADC DMA frame of the Hall Effect keys -> the newest valid reading and
+ * the median of the valid readings of each key. Pure C, run in the ADC interrupt (from IRAM, linker.lf) and on the
  * host by firmware/test/host/test_he_frame.c.
  *
  * Each conversion is one 32-bit word, the ESP32-S3's TYPE2 format
@@ -11,6 +11,11 @@
  * only if it is ADC1 on that key's channel and the reading is off both rails:
  * a DRV5055 never drives its output to 0 V or to the ADC's full scale, so a
  * reading there is a missing or shorted sensor, not a key position.
+ *
+ * The median is what the keys use: a frame holds 8 readings per key 31.25 us
+ * apart, and the median ignores up to 3 of them jumping the same way, which a
+ * spike up to ~90 us wide does (docs/history/2026-10-22-he-phantom-presses.md:
+ * ~70 us upward spikes made phantom presses through the newest reading).
  */
 
 #include <stdint.h>
@@ -22,9 +27,11 @@ extern "C" {
 #define HE_FRAME_CH_KEY1 9   // GPIO10
 #define HE_FRAME_CH_KEY2 6   // GPIO7
 #define HE_FRAME_RAW_MAX 4095
+#define HE_FRAME_MEDIAN_MAX 16  // readings per key the median keeps (the newest)
 
 typedef struct {
     int32_t newest[2];   // per key, -1 = no valid reading in the frame
+    int32_t median[2];   // per key, -1 likewise; even counts round the middle pair down
     uint16_t count[2];   // valid readings per key
     uint16_t foreign;    // words from another unit or channel
     uint16_t railed;     // key words at 0 or HE_FRAME_RAW_MAX

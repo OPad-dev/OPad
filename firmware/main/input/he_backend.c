@@ -4,8 +4,8 @@
  * ADC1 continuous mode alternates key 1 (CH9) and key 2 (CH6) at
  * HE_SAMPLE_HZ, HE_FRAME_CONVS conversions per DMA frame (250 us). The frame
  * interrupt (on_frame, core 0, IRAM, also while flash is written: Kconfig
- * selects ADC_CONTINUOUS_ISR_IRAM_SAFE) takes each key's newest valid
- * conversion and steps its decision engine. Only when a key changes does it
+ * selects ADC_CONTINUOUS_ISR_IRAM_SAFE) takes the median of each key's valid
+ * conversions (he_frame.h) and steps its decision engine. Only when a key changes does it
  * wake he_task, which reports it like the MX keypad task does: no task runs
  * per frame.
  *
@@ -170,25 +170,26 @@ static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continu
     s_stats.foreign_words += f.foreign;
     s_stats.railed_samples += f.railed;
     if (__builtin_expect(s_calibrating, 0)) {
-        he_cal_samples_push(s_cal_write, f.newest[0], f.newest[1]);
+        he_cal_samples_push(s_cal_write, f.median[0], f.median[1]);
     }
+    // The newest reading, so the debug log still shows the spikes the median drops
     he_debug_isr_frame(f.newest[0], f.newest[1]);  // no-op outside the debug build
     for (int k = 0; k < 2; k++) {
-        if (f.newest[k] < 0) {
+        if (f.median[k] < 0) {
             continue;
         }
         he_health_record_valid(&s_health, k, now);
-        s_stats.raw[k] = f.newest[k];
+        s_stats.raw[k] = f.median[k];
         if (he_health_is_key_faulted(&s_health, k)) {
             continue;
         }
 #ifdef CONFIG_OSUPAD_HE_DEBUG
         he_rt_state_t from = s_keys[k].state;
 #endif
-        he_rt_event_t ev = he_rt_step(&s_keys[k], f.newest[k]);
+        he_rt_event_t ev = he_rt_step(&s_keys[k], f.median[k]);
         if (ev != HE_RT_NONE) {
 #ifdef CONFIG_OSUPAD_HE_DEBUG
-            he_debug_isr_edge((uint8_t)k, ev, from, s_keys[k].state, s_keys[k].extreme, f.newest[k], now);
+            he_debug_isr_edge((uint8_t)k, ev, from, s_keys[k].state, s_keys[k].extreme, f.median[k], now);
 #endif
             s_down[k] = ev == HE_RT_DOWN;
             s_edge_us[k] = now;
