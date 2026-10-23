@@ -106,7 +106,7 @@ def _only_link(cu, x, y):
 
 
 def run(**kw):
-    args = dict(pcb=PCB, gerbers=GERBERS, cpl=CPL, bom=BOM)
+    args = dict(pcb=PCB, gerbers=GERBERS, cpl=CPL, bom=BOM, no_jlc=True)
     args.update(kw)
     return check.run(GOLDEN, **args)
 
@@ -162,7 +162,7 @@ def main():
     g = open(GOLDEN).read().replace('SCLK = "SCLK", SDI = "MOSI"', 'SCLK = "MOSI", SDI = "SCLK"')
     gp = os.path.join(os.path.dirname(GOLDEN), "_swapped.toml"); open(gp, "w").write(g)
     try:
-        rep = check.run(gp, pcb=PCB, gerbers=GERBERS, cpl=CPL, bom=BOM)
+        rep = check.run(gp, pcb=PCB, gerbers=GERBERS, cpl=CPL, bom=BOM, no_jlc=True)
         got = sections(rep)
         results.append(("nets" in got, "SCLK and MOSI wired the wrong way round at the ADC", "nets", got, rep))
     finally:
@@ -198,6 +198,24 @@ def main():
     files[name] = "\n".join(lines)
     p = os.path.join(tmp, "hole.zip"); write_zip(files, p)
     case("a missing mounting or peg hole", "holes", gerbers=p)
+
+    # JLCPCB emulation: U4 at 180 deg (after the preview fix) lands; at 0 deg it does not,
+    # which is what JLCPCB's preview showed on 2026-10-23
+    def u4_jlc_errors(cpl_path):
+        rep = check.run(GOLDEN, pcb=PCB, gerbers=GERBERS, cpl=cpl_path, bom=BOM)
+        return rep, [m for lvl, sec, m in rep.lines if lvl == "ERROR" and sec == "jlc" and m.startswith("U4")]
+    rep, errs = u4_jlc_errors(CPL)
+    results.append((not errs, "JLCPCB's ADC model lands with the CPL's 180 deg", None, set(errs), rep))
+    rows = list(csv.DictReader(open(CPL)))
+    for r in rows:
+        if r["Designator"] == "U4":
+            r["Rotation"] = "0.0"
+    p = os.path.join(tmp, "rot0.csv")
+    with open(p, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=rows[0].keys()); w.writeheader(); w.writerows(rows)
+    rep, errs = u4_jlc_errors(p)
+    results.append((bool(errs), "JLCPCB's ADC model at 0 deg is caught (pin 1 in the far corner)", "jlc",
+                    {"jlc"} if errs else set(), rep))
 
     shutil.rmtree(tmp)
     bad = 0
