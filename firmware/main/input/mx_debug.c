@@ -4,6 +4,7 @@
 
 #include <limits.h>
 #include <stdio.h>
+#include "input/debounce.h"
 #include "input/he_debug.h"
 #include "input/key_event.h"
 #include "input/keypad.h"
@@ -22,6 +23,9 @@ static const char *TAG = "mx_debug";
 // A pin pressed this long without a press reported (or up this long with one)
 // is logged. Real taps are tens of ms; bounces within a lockout are well under
 #define MISMATCH_US  3000
+// A pin down this soon after its release is the switch bouncing open, which
+// debouncing ignores on purpose (the longest lockout), not a missed tap
+#define BOUNCE_US    DEBOUNCE_MAX_US
 
 typedef enum { MISS_NONE, MISS_MISS, MISS_LATE, MISS_STUCK } miss_kind_t;
 
@@ -41,7 +45,7 @@ typedef struct {
 // Key ISR, keypad task and sampler, guarded by s_lock
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
 static DRAM_ATTR tap_t s_open[2];  // the tap each key is in (down_us 0: none)
-static DRAM_ATTR int64_t s_last_down[2];
+static DRAM_ATTR int64_t s_last_down[2], s_last_up[2];
 static DRAM_ATTR tap_t s_taps[TAP_RING];
 static DRAM_ATTR uint8_t s_tap_head, s_tap_tail;
 static DRAM_ATTR miss_t s_misses[MISS_RING];
@@ -68,6 +72,7 @@ void IRAM_ATTR mx_debug_transition(uint8_t key, bool pressed, int64_t now_us, bo
     } else if (t->down_us != 0) {
         t->up_us = now_us;
         t->rs_up = resample;
+        s_last_up[key] = now_us;
         uint8_t next = (uint8_t)((s_tap_head + 1) % TAP_RING);
         if (next == s_tap_tail) {
             s_lost++;
@@ -168,7 +173,10 @@ static void sample_cb(void *arg)
         if (pin && !rep) {
             if (s_down_since[k] == 0) s_down_since[k] = now;
         } else if (s_down_since[k] != 0) {
-            if (now - s_down_since[k] >= MISMATCH_US) {
+            portENTER_CRITICAL(&s_lock);
+            bool bounce = s_down_since[k] - s_last_up[k] < BOUNCE_US;
+            portEXIT_CRITICAL(&s_lock);
+            if (now - s_down_since[k] >= MISMATCH_US && (pin || !bounce)) {
                 push_miss(k, pin ? MISS_LATE : MISS_MISS, s_down_since[k], now);
             }
             s_down_since[k] = 0;
