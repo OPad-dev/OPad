@@ -1,12 +1,14 @@
 //! Interactive diagnostics and hardware testing suite.
 //!
 //! Provides:
-//! 1. Switch Chatter & Input Tester (real-time key visualization, <15ms bounce detection, audio beep, NKRO test)
+//! 1. Switch Chatter & Input Tester (real-time key visualization, <15ms bounce detection, audio beep, NKRO test,
+//!    and on the HE debug firmware the pad-side phantom and double-press monitor, he_monitor.rs)
 //! 2. Hardware COM & Protocol Test (serial connection, ping latency, COM-02 resilience, latency percentiles)
 //! 3. Display & Screen Self-Test (backlight brightness ramp, test patterns, layout preview)
 //! 4. Carrier & module PCB test (the pad measures, `opad_model::board_test` judges)
 //! 5. One-click Diagnostic Bundle Exporter (system info, USB stats, firmware version, counters, and recent logs)
 
+use crate::he_monitor::{HeFinding, HeMonitorEvent};
 use crate::theme::{self, caption, heading, muted};
 use crate::{App, Message};
 use iced::widget::{button, checkbox, column, container, row, scrollable, text, Space};
@@ -404,6 +406,17 @@ pub enum DiagnosticsMessage {
     UseCarrierKeyPins,
     RestartPad,
     RestartDone(Result<(), String>),
+    /// From the HE debug log (he_monitor.rs)
+    He(HeMonitorEvent),
+}
+
+/// What the HE monitor found for one key, this session
+#[derive(Debug, Clone, Default)]
+pub struct HeKeyCounts {
+    pub presses: u32,
+    pub phantoms: u32,
+    pub short: u32,
+    pub repress: u32,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -434,6 +447,9 @@ pub struct DiagnosticsState {
     pub restart_running: bool,
     /// The last restart request: asked, or why not
     pub restart: Option<Result<(), String>>,
+    pub he: [HeKeyCounts; 2],
+    /// When the HE debug log last showed the pad's once-a-second line
+    pub he_alive: Option<Instant>,
 }
 
 impl Default for DiagnosticsState {
@@ -452,6 +468,8 @@ impl Default for DiagnosticsState {
             board_test: None,
             restart_running: false,
             restart: None,
+            he: Default::default(),
+            he_alive: None,
         }
     }
 }
@@ -461,9 +479,43 @@ impl DiagnosticsState {
         self.k1 = KeyTrackerState::default();
         self.k2 = KeyTrackerState::default();
         self.simultaneous_press_count = 0;
+        self.he = Default::default();
         self.event_log.clear();
         self.event_log
             .push_back("Tester reset. Ready to monitor switch inputs.".to_string());
+    }
+
+    pub fn handle_he_event(&mut self, event: HeMonitorEvent) {
+        match event {
+            HeMonitorEvent::Alive => self.he_alive = Some(Instant::now()),
+            HeMonitorEvent::Press { key } => {
+                self.he[(key as usize - 1).min(1)].presses += 1;
+            }
+            HeMonitorEvent::Found { key, time, finding } => {
+                let counts = &mut self.he[(key as usize - 1).min(1)];
+                let entry = match finding {
+                    HeFinding::Phantom { jump, frames } => {
+                        counts.phantoms += 1;
+                        if self.sound_enabled {
+                            play_chatter_beep();
+                        }
+                        format!("🔴 PHANTOM: Key {key} jumped +{jump} in one frame at {time} ({frames})")
+                    }
+                    HeFinding::Short { ms } => {
+                        counts.short += 1;
+                        format!("🔴 PHANTOM: Key {key} held only {ms} ms at {time}")
+                    }
+                    HeFinding::Repress { ms } => {
+                        counts.repress += 1;
+                        format!("🟡 DOUBLE PRESS: Key {key} pressed again {ms} ms after its release at {time}")
+                    }
+                };
+                if self.event_log.len() >= 25 {
+                    self.event_log.pop_front();
+                }
+                self.event_log.push_back(entry);
+            }
+        }
     }
 
     pub fn handle_key_event(&mut self, key_idx: u8, is_down: bool) {
@@ -822,9 +874,9 @@ impl DiagnosticsState {
             );
         } else {
             for line in self.event_log.iter().rev().take(10) {
-                let color = if line.contains("CHATTER") {
+                let color = if line.contains("CHATTER") || line.contains("PHANTOM") {
                     theme::RED
-                } else if line.contains("FLUTTER") {
+                } else if line.contains("FLUTTER") || line.contains("DOUBLE PRESS") {
                     theme::YELLOW
                 } else if line.contains("released") {
                     theme::MUTED
@@ -840,9 +892,84 @@ impl DiagnosticsState {
             .width(Length::Fill)
             .style(theme::card);
 
-        column![row![card_k1, card_k2].spacing(14), summary_card, event_card]
+        column![
+            row![card_k1, card_k2].spacing(14),
+            summary_card,
+            self.view_he_monitor(),
+            event_card
+        ]
+        .spacing(14)
+        .into()
+    }
+
+    /// The pad's own judgement of each HE press, from the HE debug log
+    fn view_he_monitor(&self) -> Element<'_, Message> {
+        let live = self
+            .he_alive
+            .is_some_and(|at| at.elapsed() < Duration::from_secs(3));
+        let status = if live {
+            text("● Following the pad's HE debug log")
+                .size(12)
+                .color(theme::GREEN)
+        } else {
+            text(
+                "○ No HE debug data: needs the HE debug firmware (+hedebug) and the daemon running",
+            )
+            .size(12)
+            .color(theme::MUTED)
+        };
+        let count = |label: &'static str, v: u32, bad: iced::Color| {
+            column![
+                caption(label),
+                text(v.to_string())
+                    .size(18)
+                    .font(theme::FONT_BOLD)
+                    .color(if v > 0 { bad } else { theme::GREEN }),
+            ]
+            .width(Length::FillPortion(1))
+        };
+        let key_row = |i: usize| {
+            let c = &self.he[i];
+            row![
+                column![
+                    text(format!("Key {}", i + 1))
+                        .size(14)
+                        .font(theme::FONT_BOLD),
+                    muted(format!("{} presses checked", c.presses)).size(12),
+                ]
+                .width(Length::FillPortion(1)),
+                count("PHANTOM (JUMP)", c.phantoms, theme::RED),
+                count("PHANTOM (< 8 ms)", c.short, theme::RED),
+                count("DOUBLE PRESS (< 25 ms)", c.repress, theme::YELLOW),
+            ]
             .spacing(14)
-            .into()
+            .align_y(Alignment::Center)
+        };
+        container(
+            column![
+                row![
+                    text("HE Phantom & Double-Press Monitor")
+                        .size(15)
+                        .font(theme::FONT_BOLD),
+                    Space::new().width(Length::Fill),
+                    status,
+                ]
+                .align_y(Alignment::Center),
+                muted(
+                    "Judged on the pad from its own readings, so it catches presses too short for the \
+                     tester above. A phantom is a press made by a one-frame jump from a steady reading; a \
+                     double press is a key pressed again within 25 ms of its release. Works during maps."
+                )
+                .size(12),
+                key_row(0),
+                key_row(1),
+            ]
+            .spacing(10),
+        )
+        .padding(16)
+        .width(Length::Fill)
+        .style(theme::card)
+        .into()
     }
 
     fn view_com_protocol<'a>(&'a self, app: &'a App) -> Element<'a, Message> {

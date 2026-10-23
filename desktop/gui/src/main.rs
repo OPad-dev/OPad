@@ -3,6 +3,7 @@
 mod chrome;
 mod designer;
 mod diagnostics;
+mod he_monitor;
 mod ipc;
 mod keys;
 mod pages;
@@ -1490,6 +1491,9 @@ impl App {
                 } => {
                     self.diagnostics.handle_key_event_at(key_idx, is_down, at);
                 }
+                diagnostics::DiagnosticsMessage::He(event) => {
+                    self.diagnostics.handle_he_event(event);
+                }
                 diagnostics::DiagnosticsMessage::SelectDisplayPattern(idx) => {
                     self.diagnostics.test_pattern_index = idx;
                 }
@@ -2018,6 +2022,11 @@ impl App {
                     diagnostics::switch_input_stream,
                 )
                 .map(Message::Diagnostics),
+            );
+            // The HE debug firmware's own record of each press (he_monitor.rs)
+            subscriptions.push(
+                Subscription::run(he_monitor::stream)
+                    .map(|e| Message::Diagnostics(diagnostics::DiagnosticsMessage::He(e))),
             );
         }
         if self.window.is_some() && self.page == Page::Keys {
