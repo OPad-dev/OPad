@@ -631,14 +631,22 @@ fn live_view<'a>(app: &'a App, key: usize, c: HeKeyConfig) -> Element<'a, Messag
         "Released"
     };
     column![
-        canvas_widget(SwitchView {
-            depth,
-            down,
-            settings: c,
-            effective: effective(app, key, &c),
-        })
-        .width(Length::Fixed(SWITCH_W * SWITCH_SCALE))
-        .height(Length::Fixed(SWITCH_H * SWITCH_SCALE)),
+        // Padded on the left so the switch, not the switch and its gauge,
+        // sits over the text below
+        container(
+            canvas_widget(SwitchView {
+                depth,
+                down,
+                settings: c,
+                effective: effective(app, key, &c),
+            })
+            .width(Length::Fixed(SWITCH_W * SWITCH_SCALE))
+            .height(Length::Fixed(SWITCH_H * SWITCH_SCALE)),
+        )
+        .padding(iced::Padding {
+            left: (SWITCH_W - 2.0 * SWITCH_CX) * SWITCH_SCALE,
+            ..iced::Padding::ZERO
+        }),
         text(match depth {
             Some(d) => format!("{:.0} %", (d * 100.0).clamp(-99.0, 199.0)),
             None => "-".to_string(),
@@ -788,6 +796,8 @@ struct SwitchView {
 /// Canvas size the drawing is laid out for
 const SWITCH_W: f32 = 260.0;
 const SWITCH_H: f32 = 250.0;
+/// Where the switch's centre line is on the canvas; the gauge is to its right
+const SWITCH_CX: f32 = 85.0;
 /// Drawn at this size so both keys' columns fit the default window
 /// (1360x860) without scrolling; labels keep their on-screen size
 const SWITCH_SCALE: f32 = 0.72;
@@ -844,7 +854,7 @@ impl canvas::Program<Message> for SwitchView {
         // On-screen text size, undoing the scale
         let px = |size: f32| Pixels(size / SWITCH_SCALE);
         let line = |c: Color, width: f32| Stroke::default().with_color(c).with_width(width);
-        let cx = 85.0;
+        let cx = SWITCH_CX;
         let depth = self.depth.unwrap_or(0.0).clamp(-0.1, 1.15);
         let off = depth * TRAVEL_PX;
 
