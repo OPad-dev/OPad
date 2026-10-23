@@ -345,22 +345,25 @@ def run(golden_path, pcb=None, gerbers=None, cpl=None, bom=None, verbose=False, 
             cx, cy = fp.pos
         ex, ey = to_gerber(cx, cy)
         gx, gy = _mm(r["Mid X"]), _mm(r["Mid Y"])
-        if math.hypot(gx - ex, gy - ey) > 0.01:
-            rep.error("assembly", "%s CPL position (%.3f, %.3f), footprint centre is (%.3f, %.3f)"
-                      % (ref, gx, gy, ex, ey))
         side = "Bottom" if fp.bottom else "Top"
         if r["Layer"].strip().lower() != side.lower():
             rep.error("assembly", "%s CPL side %s, footprint is on %s" % (ref, r["Layer"], side))
-        want = (fp.angle + spec.get("cpl_rotation_offset", 0)) % 360
-        got = float(r["Rotation"]) % 360
-        if abs((got - want + 180) % 360 - 180) > 0.01:
-            rep.error("assembly", "%s CPL rotation %.1f, expected %.1f" % (ref, got, want))
+        # With cpl_from = "jlc" the position and rotation follow JLCPCB's model (section jlc checks them)
+        if meta.get("cpl_from") != "jlc":
+            if math.hypot(gx - ex, gy - ey) > 0.01:
+                rep.error("assembly", "%s CPL position (%.3f, %.3f), footprint centre is (%.3f, %.3f)"
+                          % (ref, gx, gy, ex, ey))
+            want = (fp.angle + spec.get("cpl_rotation_offset", 0)) % 360
+            got = float(r["Rotation"]) % 360
+            if abs((got - want + 180) % 360 - 180) > 0.01:
+                rep.error("assembly", "%s CPL rotation %.1f, expected %.1f" % (ref, got, want))
         dev = D.DEVICES[spec["device"]]
-        if dev.polar and len(dev.pins) > 1:
-            p1 = fp.pad("1")[0]
+        first = min(dev.pins, key=lambda n: (len(n), n))
+        if dev.polar and len(dev.pins) > 1 and fp.pad(first):
+            p1 = fp.pad(first)[0]
             rep.info("assembly", "%s: in JLCPCB's preview, pin 1 of %s must sit on the pad at "
                      "(%.2f, %.2f) mm from the board's lower-left corner, seen from the top"
-                     % (ref, dev.name, *to_gerber(*p1.board)))
+                     % (ref if first == "1" else "%s (pin %s)" % (ref, first), dev.name, *to_gerber(*p1.board)))
         if bom_path:
             b = bom_rows.get(ref)
             if not b:

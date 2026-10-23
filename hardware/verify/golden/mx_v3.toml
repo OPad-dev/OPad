@@ -1,0 +1,186 @@
+# Intended netlist of the MX input module V3, written from docs/specs/hardware-redesign-brief.md 4.2,
+# the Waveshare header table in AGENTS.md 6 and the datasheets in opadverify/devices.py.
+# Keys on y = 83.5 at 19.05 mm; switch pins to the rear (MX standard).
+
+[board]
+title = "MX input module V3"
+pcb = "../../pcb/V3/MX/mx_input_v3.kicad_pcb"
+gerbers = "../../pcb/V3/MX/production/jlcpcb/mx_input_v3-gerbers.zip"
+cpl = "../../pcb/V3/MX/production/jlcpcb/mx_input_v3-CPL-JLCPCB.csv"
+cpl_from = "jlc"     # export_v3.py fits JLCPCB's own footprints
+bom = "../../pcb/V3/MX/production/jlcpcb/mx_input_v3-BOM-JLCPCB.csv"
+
+[part.J1]   # KEY1 = CS (GPIO10), KEY2 = SPARE (GPIO7), KEY3 = MISO (GPIO6)
+device = "FFC14"
+lcsc = "C262720"
+mpn = "AFA07-S14FCA-00"
+pins = { "1" = "GND", "2" = "NC", "3" = "3V3", "4" = "ID", "5" = "KEY3", "6" = "GND", "7" = "NC", "8" = "NC", "9" = "GND", "10" = "KEY1", "11" = "KEY2", "12" = "3V3", "13" = "NC", "14" = "GND" }
+
+[part.SW1]
+device = "KAILH_HOTSWAP"
+lcsc = "C41430893"
+mpn = "CPG151101S11"
+nets = ["KEY1", "GND"]
+
+[part.R1]   # 10k pull-up
+device = "R0603"
+lcsc = "C25804"
+mpn = "0603WAF1002T5E"
+nets = ["3V3", "KEY1"]
+
+[part.SW2]
+device = "KAILH_HOTSWAP"
+lcsc = "C41430893"
+mpn = "CPG151101S11"
+nets = ["KEY2", "GND"]
+
+[part.R2]   # 10k pull-up
+device = "R0603"
+lcsc = "C25804"
+mpn = "0603WAF1002T5E"
+nets = ["3V3", "KEY2"]
+
+[part.SW3]
+device = "KAILH_HOTSWAP"
+lcsc = "C41430893"
+mpn = "CPG151101S11"
+nets = ["KEY3", "GND"]
+
+[part.R3]   # 10k pull-up
+device = "R0603"
+lcsc = "C25804"
+mpn = "0603WAF1002T5E"
+nets = ["3V3", "KEY3"]
+
+[part.R4]   # 47k
+device = "R0603"
+lcsc = "C25819"
+mpn = "0603WAF4702T5E"
+nets = ["3V3", "ID"]
+
+[part.R5]   # 100k: 3.3 x 100/147 = 2.24 V
+device = "R0603"
+lcsc = "C25803"
+mpn = "0603WAF1003T5E"
+nets = ["ID", "GND"]
+
+[part.C1]
+device = "R0603"
+lcsc = "C14663"
+mpn = "CC0603KRX7R9BB104"
+nets = ["3V3", "GND"]
+
+[[hole]]
+what = "corner hole"
+x = 115.5
+y = 72.5
+d = 2.2
+
+[[hole]]
+what = "corner hole"
+x = 179.55
+y = 72.5
+d = 2.2
+
+[[hole]]
+what = "corner hole"
+x = 115.5
+y = 89.5
+d = 2.2
+
+[[hole]]
+what = "corner hole"
+x = 179.55
+y = 89.5
+d = 2.2
+
+[[hole]]
+what = "key 1 peg"
+x = 123.395
+y = 83.5
+d = 1.75
+
+[[hole]]
+what = "key 1 peg"
+x = 133.555
+y = 83.5
+d = 1.75
+
+[[hole]]
+what = "key 1 centre"
+x = 128.475
+y = 83.5
+d = 4.0
+
+[[hole]]
+what = "key 1 switch pin 1"
+x = 124.665
+y = 80.96
+d = 3.05
+
+[[hole]]
+what = "key 1 switch pin 2"
+x = 131.015
+y = 78.42
+d = 3.05
+
+[[hole]]
+what = "key 2 peg"
+x = 142.445
+y = 83.5
+d = 1.75
+
+[[hole]]
+what = "key 2 peg"
+x = 152.605
+y = 83.5
+d = 1.75
+
+[[hole]]
+what = "key 2 centre"
+x = 147.525
+y = 83.5
+d = 4.0
+
+[[hole]]
+what = "key 2 switch pin 1"
+x = 143.715
+y = 80.96
+d = 3.05
+
+[[hole]]
+what = "key 2 switch pin 2"
+x = 150.065
+y = 78.42
+d = 3.05
+
+[[hole]]
+what = "key 3 peg"
+x = 161.495
+y = 83.5
+d = 1.75
+
+[[hole]]
+what = "key 3 peg"
+x = 171.655
+y = 83.5
+d = 1.75
+
+[[hole]]
+what = "key 3 centre"
+x = 166.575
+y = 83.5
+d = 4.0
+
+[[hole]]
+what = "key 3 switch pin 1"
+x = 162.765
+y = 80.96
+d = 3.05
+
+[[hole]]
+what = "key 3 switch pin 2"
+x = 169.115
+y = 78.42
+d = 3.05
+
