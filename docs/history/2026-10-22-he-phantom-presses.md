@@ -84,6 +84,49 @@ Per boot (`scripts/he_debug_log.py summary` on the saved log):
    remove ~75 % (1-frame phantoms) at 0.25 ms latency and goes against D2 (no
    filtering on the key path); catching all needs ~3 ms.
 
+## Follow-up, evening of 2026-10-22
+
+Times are the owner's local time; boots are as `scripts/he_debug_log.py
+summary` numbers them in `~/.local/share/opad/he-debug.log`.
+
+- **The 154 ms rhythm is not on the pad's clock (corrects lead 2 above).** The
+  ADC frame is exactly 249.600 µs (4006.41 frames/s, from edge times). A 1 kHz
+  source on the pad's clock would beat at 156.0 ms, the USB frame clock
+  (measured 1000.014 µs on the pad clock, from the frame number the debug
+  build now logs, `he.sof`/`he.usb` in `firmware/main/input/he_debug.c`) at
+  154.67 ms. Every log beats at 154.0–154.1 ms: a crystal-grade source near
+  1 kHz, ~20 ppm off the pad's clock, that is neither.
+- **Serial traffic is not the trigger.** `scripts/he_phantom_probe.py`
+  (usbmon, evdev, daemon on/off phases) found host→pad CDC packets in the 3 ms
+  before 1–4 % of phantoms and 3 % of real presses, against 1–2 % at random
+  times. Its daemon-off phases never held: something restarted
+  `opad-daemon` within 5 s each time.
+- **Untouched for 76 minutes: no phantoms** (probe run 19:53–21:16, boot 9).
+  All 272 of that run's phantoms came in one burst while playing.
+- **Median of the frame, flashed 22:27 (boot 10).** The keys and calibration
+  now use the median of each key's 8 readings per frame instead of the newest
+  (`firmware/main/input/he_frame.c`); the debug log still records the newest,
+  so spikes stay visible. It ignores up to 3 readings jumping the same way, at
+  ~0.11 ms average added delay (half the 219 µs the 8 readings span, worked
+  out, not measured). This departs from D2 (no filtering on the key path) at
+  the owner's request. A hard streaming map gave 44 phantoms against hundreds
+  before; the ones left were jumps lasting several frames.
+- **osu!'s frame limiter.** Switching it to VSync at 22:42 was followed within
+  a minute by ~150 phantoms in under 2 minutes with the pad idle, mostly both
+  keys in one frame, +200 to +290 counts, past the median. They stopped by
+  22:43:40. Not repeated, so not yet shown to be cause and effect.
+- **Another HE board, and a USB hub, at 22:45.** The owner swapped in a
+  different HE board from the same batch of 10 and connected the pad through
+  a USB hub, both at once. Boot 11 (22:45:34, before recalibrating) had 9
+  phantom-shaped jumps in 4 s; boot 12 (22:46:54, recalibrated) had 1008 real
+  presses and none, its 5 flagged presses being steady ramps of fast real
+  presses. Two changes at once: which one helped is not known.
+
+Next: put the first board back on the hub (or the new board straight into
+the PC) to separate the two changes; repeat the frame-limiter switch with the
+pad untouched; then the planned parts (a ferrite on the USB cable, 10–47 µF
+across 3V3 and GND at P2 pins 1–2 or on the HE board's C1).
+
 ## Mistakes made during the investigation
 
 Recorded so they are not repeated:
