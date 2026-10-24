@@ -539,4 +539,5 @@ Still open:
 1. One firmware for all modules (HE on by default) (§1.5)?
 2. Was a magnet near the pad at 23:40 on 2026-10-22 (§3.3)?
 3. FFC pitch, pin count and pinout (proposal in progress).
-4. Case: where exactly "the back" is for the USB-C, and the 3-key deck.
+4. ~~Case~~: designed 2026-10-24 (`hardware/3d/custom_case/V3`): 84 x 83 mm, USB-C out of
+   the rear wall, stack inserted from below against a lip, four module pins. Not printed yet.

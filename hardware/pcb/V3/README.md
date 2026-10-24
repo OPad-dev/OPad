@@ -18,7 +18,8 @@ The work still to do is listed under "Before ordering" below.
   the rear edge. It has ESD protection, a VBUS ferrite and capacitors, and a Schottky
   so a cable in the Waveshare's own port cannot feed this one. The port points back
   and 16° up with the screen tilt. The carrier must be screwed to its posts so the
-  plug does not load the header sockets.
+  plug does not load the header sockets. (The V3 case does this with pins on its
+  bottom-plate posts, without screws.)
 - **Three keys** on both modules, and **four corner holes** for the case's locating pins.
 - **HE:**
   - The ADC is an **ADS7028** (C880341), the ADS7038's sibling. It has the same pins,
@@ -85,8 +86,10 @@ cd hardware/verify && ../../.tools/venv/bin/python -m opadverify golden/he_v3.to
 
 ## Before ordering
 
-1. **Case:** needs a 3-key deck, four locating pins, the rear USB-C opening, the FFC path,
-   screwed carrier posts, and a closed Waveshare USB port.
+1. **Case:** designed (`hardware/3d/custom_case/V3`, fit-checked, not printed yet).
+   The screen stack goes in from below against a lip. Three bottom-plate posts with pins
+   in the carrier's M2 holes hold it and take the USB plug's push, so no spacers or screws.
+   The module cable route is about 70 mm, so an 80 mm FFC fits best; 100 mm fits with an S-fold.
 2. **Firmware:**
    - the ADS7028/7038 driver;
    - the third key;
@@ -114,5 +117,5 @@ cd hardware/verify && ../../.tools/venv/bin/python -m opadverify golden/he_v3.to
 | HE | TI LP5907MFX-3.3 LDO | C80670 |
 
 The full lists, with the passives, are in each board's `production/jlcpcb/*-BOM-JLCPCB.csv`.
-The cable is not assembled: any 14-way, 1.0 mm, about 100 mm FFC, type A or B
-(LCSC sells them, for example C34155 type A or C64627 type B).
+The cable is not assembled: any 14-way, 1.0 mm FFC, type A or B, 80 mm for the V3 case
+(LCSC C54350071 type A, C54350068 type B; 100 mm, C34155 / C64627, also fits).
