@@ -1,0 +1,56 @@
+# Changelog
+
+## [1.0.0-rc.1](https://github.com/OPad-dev/OPad/compare/firmware-v1.0.0-rc...firmware-v1.0.0-rc.1) (2026-10-24)
+
+
+### Features
+
+* **app:** a Restart button restarts the pad, and a module change asks for it in red ([454593b](https://github.com/OPad-dev/OPad/commit/454593bafb273ebd571532096432c3d47e56a1f2))
+* **config:** per-key Hall Effect settings in device_config ([5f5b3b5](https://github.com/OPad-dev/OPad/commit/5f5b3b5526acbc5e1ba6cfcf7728f9390ac05a24))
+* **diag:** the debug firmware logs MX taps the pad never sent ([3552df2](https://github.com/OPad-dev/OPad/commit/3552df2fe0ae5ced2dbd28cb4dfeece005eea293))
+* **diag:** the Hall bench build shows both sensors live on the LCD ([aa450a8](https://github.com/OPad-dev/OPad/commit/aa450a8d8745cb4d3efb1516a97309a9fdd967f0))
+* **display:** the LCD runs at 80 MHz, so redraws keep up with the 30 Hz refresh ([80b421d](https://github.com/OPad-dev/OPad/commit/80b421dce91c14f63812bdd0e1241ac88cd08f3c))
+* **display:** the tap rate reads KPM, and each widget can show it in KPS ([#8](https://github.com/OPad-dev/OPad/issues/8)) ([b955339](https://github.com/OPad-dev/OPad/commit/b9553395d4d424fe74625feea6fb083ca194c16c))
+* **he:** a Keys tab sets actuation and rapid trigger, with a live cut-away of each switch ([3f712a2](https://github.com/OPad-dev/OPad/commit/3f712a2119b193a715bb5b704fcf10b8517dd279))
+* **he:** a trace build streams every raw HE conversion, and a replay tool counts false rapid-trigger events ([8f7b794](https://github.com/OPad-dev/OPad/commit/8f7b794a2c96aa5fb9a51c82f1a96077e99cdd3f))
+* **he:** an HE debug firmware logs every press with the readings before it ([a2524f4](https://github.com/OPad-dev/OPad/commit/a2524f482ed98bdf10d0b9f0cdfb060a29499e2a))
+* **he:** an HE pad notices its module unplugged or swapped for MX, and asks for a restart ([fb266c5](https://github.com/OPad-dev/OPad/commit/fb266c5fa0f2f7e042c8085fb0ee6a6c7bba7dcf))
+* **he:** an HE pad reads both keys through ADC1 DMA and the decision engine (experimental, off by default) ([cea0b2a](https://github.com/OPad-dev/OPad/commit/cea0b2a241bd26f8453e39efcffbca88cfbc106f))
+* **he:** calibration capture algorithm with median peak detection ([a922aa2](https://github.com/OPad-dev/OPad/commit/a922aa26a93d87879c653654ae93d9e5f1127aab))
+* **he:** calibration record and A/B NVS storage ([459ff7e](https://github.com/OPad-dev/OPad/commit/459ff7ebba6b7e93095d9f16e7e812f19e3867b3))
+* **he:** lock uncalibrated HE pads and add on-pad and app calibration UI ([276bcc3](https://github.com/OPad-dev/OPad/commit/276bcc3b34d8baac4ed60326eefaaa1808ca6db3))
+* **he:** plain calibration screen texts, and no on-pad cancel or timeout (CAL[#13](https://github.com/OPad-dev/OPad/issues/13)) ([f59049f](https://github.com/OPad-dev/OPad/commit/f59049fc4a51a83a652c1352d1d7e771523a4da8))
+* **he:** pure-C button hit detector and multi-stage calibration runner ([7fee807](https://github.com/OPad-dev/OPad/commit/7fee8079768d15c833e8d947289979577558efb7))
+* **he:** the debug log times each press exactly and records the touchscreen ([150f667](https://github.com/OPad-dev/OPad/commit/150f667ae946bf7600e43d543105cc1cc114a0e7))
+* **he:** the Hall Effect decision engine turns raw readings into key presses, host-tested ([d41deaa](https://github.com/OPad-dev/OPad/commit/d41deaa66ac41dc6e667fefec147d0972a5b8a9a))
+* **protocol:** add Hall Effect calibration commands and live progress ([b5100ab](https://github.com/OPad-dev/OPad/commit/b5100ab59eaa81748ca0d0edee8f45d09582761a))
+* **protocol:** Hall Effect capability flags, settings, and status ([e23a43e](https://github.com/OPad-dev/OPad/commit/e23a43ecee625e4185ec9365a9b8ecb2266ae5ae))
+* **ui:** the pad plays an animation for the grade on osu!'s results screen ([#3](https://github.com/OPad-dev/OPad/issues/3)) ([cb03a0c](https://github.com/OPad-dev/OPad/commit/cb03a0cfef3c10d5f01c27b9f88495b5f73c2b53))
+
+
+### Bug Fixes
+
+* **board:** 100 % backlight is solid on instead of switching every 200 us ([49f7750](https://github.com/OPad-dev/OPad/commit/49f77503eb58bd958d798540f2496b1ea66834c5))
+* **config:** store Hall Effect settings under their own NVS key ([f92c144](https://github.com/OPad-dev/OPad/commit/f92c144b572b6ca2ba03c5f474c0d37a2507af75))
+* **diag:** release bounce is not logged as a missed MX tap ([24a7587](https://github.com/OPad-dev/OPad/commit/24a7587dcea94f61ad80bf362a2c25d52971cbc0))
+* **he:** a calibrated HE pad boots instead of aborting in he_cal_init (CAL[#14](https://github.com/OPad-dev/OPad/issues/14)) ([a3de271](https://github.com/OPad-dev/OPad/commit/a3de271113000526f973434c7e804016a157e6a6))
+* **he:** a failed calibration on a locked pad goes back to the lock screen ([9364e62](https://github.com/OPad-dev/OPad/commit/9364e6264afd54d38e41d3e6aafc1b9b0f31956e))
+* **he:** a low actuation point presses where the app says, and a key can opt out of the noise floor ([24e4982](https://github.com/OPad-dev/OPad/commit/24e498219dff3c449c52fd7dda3f931fd89a3eae))
+* **he:** calibration fails when a key was held during rest (CAL[#12](https://github.com/OPad-dev/OPad/issues/12)) ([32938dc](https://github.com/OPad-dev/OPad/commit/32938dc557776051e37740e15cd4d0a67fadd01a))
+* **he:** calibration keeps old values until saving succeeds (CAL[#3](https://github.com/OPad-dev/OPad/issues/3)) ([ccd1714](https://github.com/OPad-dev/OPad/commit/ccd1714c66e10e9c2fd176e1486a4cd6acda6e3e))
+* **he:** calibration progress reports raw 0, not 4294967295, before the first sample ([b4611a8](https://github.com/OPad-dev/OPad/commit/b4611a873680d8780d29d69fc6a6a448a742d9c3))
+* **he:** calibration retains every frame in sample order (CAL[#1](https://github.com/OPad-dev/OPad/issues/1)) ([21ca183](https://github.com/OPad-dev/OPad/commit/21ca18343898f390f1f3ab5f92d8afbac1f539ab))
+* **he:** calibration waits for reporting and USB callback fences (CAL[#11](https://github.com/OPad-dev/OPad/issues/11)) ([5518820](https://github.com/OPad-dev/OPad/commit/551882011976d9b5ce9920180f70cdf12006cc75))
+* **he:** each key reads the median of its frame, so a short spike no longer presses it ([f146fb0](https://github.com/OPad-dev/OPad/commit/f146fb0abfae2ada818c216522cd82c07871b83d))
+* **he:** reloads preserve the required fresh release (CAL[#8](https://github.com/OPad-dev/OPad/issues/8)) ([c6617ce](https://github.com/OPad-dev/OPad/commit/c6617ce366102b7f312a622d7e7c611ee4424a57))
+* **he:** restore probe done behaviour to only refresh frame timestamp ([5b6c9e8](https://github.com/OPad-dev/OPad/commit/5b6c9e8856eab25ea656be698b347cc7da810ee9))
+* **he:** unchanged HE settings are not rewritten, and a half-saved SetConfig says which half failed ([ba464f1](https://github.com/OPad-dev/OPad/commit/ba464f1629e0a3dfed1ffb8dfdde898aa9415031))
+* **input:** a module plugged into a pad booted without one turns its keys off within milliseconds ([04ab60b](https://github.com/OPad-dev/OPad/commit/04ab60be0a51edade7c8728f410479cd9bfd1f5c))
+* **input:** an MX pad reads its module ID once, at boot, and never again ([10b0434](https://github.com/OPad-dev/OPad/commit/10b0434cbaaad144a11d778379b3481da8eea725))
+* **input:** one noisy module ID reading no longer turns the MX keys off ([56d4a47](https://github.com/OPad-dev/OPad/commit/56d4a47505e353b99f5c45be1fbd663be256e4a2))
+* **input:** swapping in an HE module while powered no longer types thousands of keys ([2971f62](https://github.com/OPad-dev/OPad/commit/2971f62212ad2bf665faaf0e1a685287294b23f4))
+* **keypad:** defer keycode changes until HE keys are released ([9b52e29](https://github.com/OPad-dev/OPad/commit/9b52e2931ab75150144c826cdbe780f8ddc135e9))
+* **protocol:** a bottom dead zone of 0 can be set over the wire ([74c7519](https://github.com/OPad-dev/OPad/commit/74c75194981e18b152832a0e6a407ead4cf64e3e))
+* **protocol:** do not advertise calibration until an entry point exists ([107835c](https://github.com/OPad-dev/OPad/commit/107835cc30946b22f1f4bbbeb32cffae608ebb2e))
+* **touch:** calibration retains contact positions and clears held keys (CAL[#2](https://github.com/OPad-dev/OPad/issues/2)) ([f574658](https://github.com/OPad-dev/OPad/commit/f574658874c7e1aff48ccae4227db89338bc8473))
+* **touch:** calibration waits for the current contact cleanup (CAL[#9](https://github.com/OPad-dev/OPad/issues/9)) ([3beb8c1](https://github.com/OPad-dev/OPad/commit/3beb8c1573f7a49cba85918b5db4446bfcb510bc))
