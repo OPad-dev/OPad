@@ -9,6 +9,13 @@ the same; what changed is below. **Not printed or test-fitted yet**; the boards 
 
 ![V3 assembled](osupad_render.png)
 
+![Bottom plate with the cable in its channel](osupad_bottom_plate.png)
+
+The bottom plate's L-shaped channel holds the module cable on the floor. Its walls are
+1.0 mm high, either side of the 15 mm cable with 0.4 mm play, and have 0.6 mm lips the
+cable is pressed in under. There are no lips at the corner, where the cable is folded
+double. The walls are low enough to pass under the front of the screen stack.
+
 | | V1.1 | V3 |
 |---|---|---|
 | Footprint | 76 × 82.5 mm | **84 × 83 mm** |
@@ -18,7 +25,7 @@ the same; what changed is below. **Not printed or test-fitted yet**; the boards 
 | Screen | glass flush, taped on a ledge, stack dropped in from the top | **stack inserted from below**, glass pressed up against a 1.2 mm lip (0.5 mm foam tape between them), so the glass sits 1.3 mm below the frame |
 | Carrier support | 4 posts 0.5 mm below the carrier | **3 posts pressing the carrier up, with pins in its M2 holes** |
 | USB-C | through the right wall, into the Waveshare's own port | **through the rear wall**, into the carrier's port; the Waveshare's own port is closed in |
-| Module cable | JST SH, 100 mm | **14-way 1.0 mm FFC**, about 70 mm route (see below) |
+| Module cable | JST SH, 100 mm | **14-way 1.0 mm FFC**, about 70 mm route, held on the floor by a **channel on the bottom plate** |
 
 **Why the screen goes in from below:** the V3 carrier is 62.5 mm long with its USB-C
 tab, longer than the 59.2 mm glass. The stack cannot pass through the glass pocket
@@ -50,8 +57,9 @@ No screws or spacers.
    corner holes.
 5. Route the cable:
    - down past the carrier's left end;
-   - across the floor towards the middle, then one 45° fold so it runs straight
-     forward into the module's J1;
+   - into the channel on the bottom plate, across towards the middle, with one 45°
+     fold at the corner so it runs straight forward into the module's J1;
+   - press it in under the channel's small lips, so it cannot move;
    - fold any extra length into an S beside the stack.
 6. Snap the bottom plate on. Its posts clamp the module against the deck, and press
    the carrier up so the glass bears on the lip. The plate comes off by prying at the
@@ -71,7 +79,7 @@ Every part must render with some volume first, or its checks would mean nothing.
 **All clear** (2026-10-24).
 
 `tools/test_fit_mutations.py` breaks the case on purpose and expects the check to
-catch it. **7 of 7 behave:**
+catch it. **9 of 9 behave:**
 
 | Deliberate fault | Caught as |
 |---|---|
@@ -81,6 +89,8 @@ catch it. **7 of 7 behave:**
 | shorter sockets | the carrier's top parts hit the Waveshare's back |
 | module pins too wide for their holes | module against the top case |
 | carrier pins too wide for their holes | carrier against the bottom plate |
+| a cable channel narrower than the cable | cable against the bottom plate |
+| channel walls 2 mm high | they hit the socket tails under the stack |
 
 The unmodified case passes. A bug where the pair checks tested nothing was found by these cases and fixed.
 
@@ -113,7 +123,7 @@ As V1.1:
 | `osupad_params.scad` | every dimension, the board-to-case coordinate conversions, the cable route |
 | `osupad_enclosure.scad` | the parts: `PART = "top_case"`, `"bottom_plate"` or `"assembly"` |
 | `osupad_case_top.stl`, `osupad_case_bottom.stl` | print files |
-| `osupad_render.png`, `osupad_inside.png` | assembled, and from above without the top case |
+| `osupad_render.png`, `osupad_inside.png`, `osupad_bottom_plate.png` | assembled; from above without the top case; the bottom plate with the cable in its channel |
 | `tools/check_fit.py`, `tools/fit_check.scad` | the fit check |
 | `tools/test_fit_mutations.py` | the deliberate faults |
 | `tools/reference_models.scad` | everything inside, as envelopes (V3 carrier and modules, FFC ribbon) |
