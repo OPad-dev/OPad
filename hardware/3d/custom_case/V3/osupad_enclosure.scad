@@ -1,0 +1,208 @@
+// =============================================================================
+//  OPad V3 enclosure (for the V3 boards, hardware/pcb/V3)
+//  - Low flat key deck for the three-key MX / Hall Effect input module
+//  - 16 deg screen pod for the Waveshare ESP32-S3-Touch-LCD-2 on the V3
+//    carrier (8.5 mm sockets). V3: the stack goes in from below and the glass
+//    bears on a 1.2 mm lip round the window, because the carrier's USB-C tab
+//    makes the stack longer than the glass (it cannot drop in from the top)
+//  - USB-C through the rear wall (V3: on the carrier); the Waveshare's own
+//    USB port is closed
+//  - Fully screwless: the module is located by four pins under the key deck
+//    and clamped by posts on the bottom plate; three posts with pins in the
+//    carrier's M2 holes hold the screen stack up against the lip and take the
+//    USB plug's force; the bottom plate snaps on
+//  - Recesses for four 12.7 mm silicone feet
+//
+//  Parts: PART = "top_case" | "bottom_plate" | "assembly"
+//  All parameters: osupad_params.scad. Clearance checks: tools/check_fit.py
+// =============================================================================
+
+include <osupad_params.scad>
+
+PART = "assembly";
+
+CAR_PIN_D = 1.9;  // in the carrier's 2.2 mm M2 holes
+// V3: the left-front carrier post is left out: the module cable runs there
+CARRIER_POST_HOLES = [WS_HOLES[0], WS_HOLES[1], WS_HOLES[2]];
+
+// --- Helpers -------------------------------------------------------------------
+
+// Prism over [x0,x1] x [y0,y1] from z0 to z1; corners listed in `round`
+// ("fl", "fr", "rl", "rr" = front/rear, left/right) get radius r.
+module rbox(x0, y0, x1, y1, z0, z1, r, round = ["fl", "fr", "rl", "rr"]) {
+    function has(c) = len([for (k = round) if (k == c) 1]) > 0;
+    hull() for (c = [["fl", x0, y0], ["fr", x1, y0], ["rl", x0, y1], ["rr", x1, y1]]) {
+        sx = c[1] == x0 ? 1 : -1;
+        sy = c[2] == y0 ? 1 : -1;
+        if (has(c[0]))
+            translate([c[1] + sx*r, c[2] + sy*r, z0]) cylinder(h = z1 - z0, r = r);
+        else
+            translate([c[1] + (sx > 0 ? 0 : -0.01), c[2] + (sy > 0 ? 0 : -0.01), z0])
+                cube([0.01, 0.01, z1 - z0]);
+    }
+}
+
+// Rounded rectangle, centred, in the XY plane
+module rrect2d(x, y, r) offset(r) square([x - 2*r, y - 2*r], center = true);
+
+// --- Top case ------------------------------------------------------------------
+
+module outer_shell() {
+    // key deck, rounded at the front; runs a little into the pod
+    rbox(0, 0, CASE_W, Y_KEY_END + 4, BASE_T, KEY_DECK_H, CORNER_R, ["fl", "fr"]);
+    // screen pod: the tilted face hulled down to a footprint that is vertical up to Z_KNEE
+    hull() {
+        at_deck() translate([0, 0, -0.01]) linear_extrude(0.01)
+            translate([-CASE_W/2, -FRAME_A]) square([CASE_W, 2*FRAME_A - CORNER_R]);
+        at_deck() for (sx = [-1, 1])
+            translate([sx * (CASE_W/2 - CORNER_R), FRAME_A - CORNER_R, -0.01]) cylinder(h = 0.01, r = CORNER_R);
+        rbox(0, Y_KEY_END, CASE_W, CASE_L, BASE_T, Z_KNEE, CORNER_R, ["rl", "rr"]);
+    }
+}
+
+module inner_cavity() {
+    ir = CORNER_R - WALL;
+    // under the key deck, open at the bottom; reaches back into the pod for the cable
+    rbox(WALL, WALL, CASE_W - WALL, Y_KEY_END + 4, BASE_T - 1, KEY_DECK_H - KEY_TOP_T, ir, ["fl", "fr"]);
+    hull() {
+        at_deck() translate([-(CASE_W/2 - WALL), -(FRAME_A - WALL), -POD_TOP_T - 0.01])
+            cube([CASE_W - 2*WALL, 2*(FRAME_A - WALL) - ir, 0.01]);
+        at_deck() for (sx = [-1, 1])
+            translate([sx * (CASE_W/2 - WALL - ir), FRAME_A - WALL - ir, -POD_TOP_T - 0.01]) cylinder(h = 0.01, r = ir);
+        rbox(WALL, Y_KEY_END + 3, CASE_W - WALL, CASE_L - WALL, BASE_T - 1, Z_KNEE, ir, ["rl", "rr"]);
+    }
+}
+
+module screen_cutouts() at_deck() {
+    // V3: window = glass minus the lip; the glass sits in a pocket under the lip, open to the cavity
+    translate([0, 0, -LIP_T - 0.01]) linear_extrude(10) rrect2d(GLASS_X - 2*LIP, GLASS_Y - 2*LIP, max(0.5, GLASS_R - LIP));
+    translate([0, 0, -POD_TOP_T - 1]) linear_extrude(1 + POD_TOP_T - LIP_T) rrect2d(POCKET_X, POCKET_Y, POCKET_R);
+    // V3: USB-C through the rear wall, along the slope; stadium for a 12 x 6.5 mm plug overmold
+    translate([USB_C[0], USB_MOUTH_A - 1.0, -USB_D]) rotate([-90, 0, 0])
+        linear_extrude(40) hull() for (s = [-1, 1]) translate([s * 2.75, 0]) circle(d = 7.3);
+}
+
+module key_cutouts() for (x = KEY_X) {
+    translate([x - MX_CUT/2, KEY_Y - MX_CUT/2, KEY_DECK_H - 5]) cube([MX_CUT, MX_CUT, 10]);
+    // 1.5 mm plate for the switch clips, relief underneath
+    translate([x - 8, KEY_Y - 8, BASE_T - 1]) cube([16, 16, KEY_DECK_H - PLATE_T - BASE_T + 1]);
+}
+
+// Screwless module mount, top half: bosses that the module PCB bears against,
+// with pins through its four corner holes to locate it
+module module_bosses() for (h = MODULE_HOLES) translate([h[0], h[1], 0]) {
+    translate([0, 0, MODULE_PCB_TOP]) cylinder(h = KEY_DECK_H - KEY_TOP_T - MODULE_PCB_TOP + 0.5, r = 3.2);
+    pin_l = MODULE_PCB_T + 1.0;
+    translate([0, 0, MODULE_PCB_TOP - pin_l]) {
+        translate([0, 0, 0.3]) cylinder(h = pin_l - 0.3 + 0.01, d = MODULE_PIN_D);
+        cylinder(h = 0.31, d1 = MODULE_PIN_D - 0.6, d2 = MODULE_PIN_D);   // lead-in chamfer
+    }
+}
+
+module snap_grooves() {
+    z = BASE_T + SNAP_Z - 0.1;
+    d = SNAP_BEAD_H + 0.15;   // groove depth into the wall
+    l = SNAP_BEAD_L + 1;
+    for (y = SNAP_SIDE_Y) {
+        translate([WALL - d, y - l/2, z]) cube([d + 0.1, l, 1.3]);
+        translate([CASE_W - WALL - 0.1, y - l/2, z]) cube([d + 0.1, l, 1.3]);
+    }
+    for (x = SNAP_END_X) {
+        translate([x - l/2, WALL - d, z]) cube([l, d + 0.1, 1.3]);
+        translate([x - l/2, CASE_L - WALL - 0.1, z]) cube([l, d + 0.1, 1.3]);
+    }
+}
+
+module top_case() {
+    difference() {
+        union() {
+            difference() { outer_shell(); inner_cavity(); }
+            module_bosses();
+        }
+        screen_cutouts();
+        key_cutouts();
+        snap_grooves();
+        // rear pry notch
+        translate([CASE_W/2 - 6, CASE_L - 2, BASE_T - 0.1]) cube([12, 4, 2.2]);
+    }
+}
+
+// --- Bottom plate ----------------------------------------------------------------
+
+// Screwless module mount, bottom half: posts that clamp the module PCB up
+// against the key deck bosses (tubes at the holes take the pin tips)
+module module_posts() {
+    h = MODULE_PCB_BOT - BASE_T + 0.01;
+    for (p = MODULE_HOLES) translate([p[0], p[1], BASE_T - 0.01]) difference() {
+        cylinder(h = h, r = 3.0);
+        translate([0, 0, 0.8]) cylinder(h = h, d = MODULE_PIN_D + 0.7);
+    }
+}
+
+// V3: posts under three of the carrier's M2 holes, topped parallel to the carrier
+// and pressing it up (the foam gasket on the lip takes the tolerance), with a pin
+// into each hole: they locate the stack and take the USB plug's push
+function carrier_hole_world(h) = deck_to_world([h[0], h[1], -CARRIER_BOT]);
+module carrier_posts() {
+    for (h = CARRIER_POST_HOLES) let (p = carrier_hole_world(h)) {
+        intersection() {
+            translate([p[0], p[1], BASE_T - 0.01]) cylinder(h = 40, r = 3.2);
+            at_deck() translate([-CASE_W, -CASE_L, -CARRIER_BOT - 60]) cube([2*CASE_W, 2*CASE_L, 60]);
+        }
+        at_deck() translate([h[0], h[1], -CARRIER_BOT - 0.01]) {
+            cylinder(h = CARRIER_T + 0.5, d = CAR_PIN_D);
+            translate([0, 0, CARRIER_T + 0.5]) cylinder(h = 0.3, d1 = CAR_PIN_D, d2 = CAR_PIN_D - 0.6);
+        }
+    }
+}
+
+// Snap beads on the rigid rim: flat retaining face below, lead-in ramp above
+module snap_bead(len) hull() {
+    cube([len, SNAP_BEAD_H + 0.5, 0.4]);
+    translate([0, 0, 0.9]) cube([len, 0.5, 0.1]);
+}
+
+module snap_beads() {
+    z = BASE_T + SNAP_Z;
+    o = WALL + TOL;   // rim outer face
+    for (y = SNAP_SIDE_Y) {
+        translate([o + 0.5, y - SNAP_BEAD_L/2, z]) rotate([0, 0, 90]) snap_bead(SNAP_BEAD_L);
+        translate([CASE_W - o - 0.5, y + SNAP_BEAD_L/2, z]) rotate([0, 0, -90]) snap_bead(SNAP_BEAD_L);
+    }
+    for (x = SNAP_END_X) {
+        translate([x + SNAP_BEAD_L/2, o + 0.5, z]) rotate([0, 0, 180]) snap_bead(SNAP_BEAD_L);
+        translate([x - SNAP_BEAD_L/2, CASE_L - o - 0.5, z]) snap_bead(SNAP_BEAD_L);
+    }
+}
+
+module bottom_plate() {
+    inner_w = CASE_W - 2*WALL - 2*TOL;
+    inner_l = CASE_L - 2*WALL - 2*TOL;
+    rim_r   = max(1.0, CORNER_R - WALL - TOL);
+    difference() {
+        union() {
+            rbox(0, 0, CASE_W, CASE_L, 0, BASE_T, CORNER_R);
+            // rigid perimeter rim: it locates the plate, the beads click into the walls
+            translate([WALL + TOL, WALL + TOL, BASE_T - 0.01]) difference() {
+                rbox(0, 0, inner_w, inner_l, 0, RIM_H, rim_r);
+                rbox(RIM_T, RIM_T, inner_w - RIM_T, inner_l - RIM_T, -0.1, RIM_H + 1, max(0.5, rim_r - RIM_T));
+            }
+            snap_beads();
+            module_posts();
+            carrier_posts();
+        }
+        // silicone foot recesses
+        for (p = FOOT_POS) translate([p[0], p[1], -0.01]) cylinder(h = FOOT_REC + 0.01, d = FOOT_D + 0.4);
+        // rear pry notch relief
+        translate([CASE_W/2 - 6, CASE_L - 3, -0.1]) cube([12, 5, 1.4]);
+    }
+}
+
+// --- Render selection ------------------------------------------------------------
+
+if (PART == "top_case")          translate([0, 0, -BASE_T]) top_case();
+else if (PART == "bottom_plate") bottom_plate();
+else if (PART == "assembly") {
+    color([0.35, 0.45, 0.60]) top_case();
+    color([0.18, 0.20, 0.24]) bottom_plate();
+}
