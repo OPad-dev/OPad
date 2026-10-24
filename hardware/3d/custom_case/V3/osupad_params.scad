@@ -167,6 +167,17 @@ JMOD_EXIT   = deck_to_world([CARRIER_EDGE_X - 1.5, JMOD[1], -(CARRIER_TOP - 1.2)
 FFC_DROP_X  = CASE_W/2 + CARRIER_EDGE_X - 4.5;     // where it turns down, left of the carrier
 FFC_FOLD    = [CASE_W/2, JMOD_EXIT[1]];            // the 45 deg fold, under the carrier's window
 J1_ENTRY    = [CASE_W/2, 31 + 0.2, MODULE_PCB_BOT - J1_SLOT_Z];
+FFC_RUN_Y   = Y_C + (CARRIER_TOP - 1.2) * sin(TILT);   // centre line of the run across the floor (world y)
+
+// Cable channel on the bottom plate along the floor part of the route: low walls with
+// small lips the cable is pressed in under. Low enough to pass under the front of the
+// screen stack (FLOOR_CLR above the floor there).
+GUIDE_H     = 1.0;    // wall height above the floor
+GUIDE_T     = 1.2;    // wall thickness
+GUIDE_GAP   = 0.4;    // cable to wall, each side
+GUIDE_LIP   = 0.6;    // lip over the cable's edge
+GUIDE_LIP_T = 0.3;
+GUIDE_END_Y = 36.0;   // the forward run stops here; the cable rises into J1 after it
 
 echo(str("V3: case ", CASE_W, " x ", CASE_L, " mm, key deck ", KEY_DECK_H, " mm, rear ", H_REAR,
          " mm, glass centre (Y ", Y_C, ", Z ", Z_C, ")"));

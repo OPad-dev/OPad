@@ -22,7 +22,7 @@ DECK_N = [0, -sin(TILT), cos(TILT)];       // deck normal in world
 X = [1, 0, 0]; Y = [0, 1, 0]; Z = [0, 0, 1];
 _D0 = deck_to_world([CARRIER_EDGE_X + 0.25, JMOD[1], -(CARRIER_TOP - 1.2)]);  // just outside J_MOD's mouth
 _D1 = deck_to_world([CARRIER_EDGE_X - 2.5, JMOD[1], -(CARRIER_TOP - 1.2)]);
-_YD = _D1[1];
+_YD = FFC_RUN_Y;
 RIBBON = [
     [_D0, DECK_A, DECK_N],
     [_D1, DECK_A, DECK_N],

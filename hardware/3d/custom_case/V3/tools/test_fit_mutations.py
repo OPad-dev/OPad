@@ -20,6 +20,8 @@ CASES = [
     ("case 76 mm wide (V1.1's): the carrier's USB-C tab hits the right wall", ["CASE_W=76"], "carrier"),
     ("glass pocket smaller than the glass", ["POCKET_CLR=-0.2"], "ws_glass"),
     ("sockets 2.5 mm shorter: the carrier's top-side parts hit the Waveshare's back", ["SOCKET_H=6.0"], "ws_back"),
+    ("cable channel too narrow for the 15 mm cable", ["GUIDE_GAP=-0.3"], "cable"),
+    ("cable channel walls 2 mm high: they hit the socket tails under the stack", ["GUIDE_H=2.0", "GUIDE_LIP_T=0.3"], "tails"),
     ("module pins wider than the module's 2.2 mm holes", ["MODULE_PIN_D=2.5"], "mod_pcb"),
     ("carrier pins wider than the carrier's 2.2 mm holes", ["CAR_PIN_D=2.5"], "carrier"),
 ]

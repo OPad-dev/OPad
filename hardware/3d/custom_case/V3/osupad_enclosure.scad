@@ -11,6 +11,7 @@
 //    and clamped by posts on the bottom plate; three posts with pins in the
 //    carrier's M2 holes hold the screen stack up against the lip and take the
 //    USB plug's force; the bottom plate snaps on
+//  - V3: a channel on the bottom plate holds the module cable (FFC) on the floor
 //  - Recesses for four 12.7 mm silicone feet
 //
 //  Parts: PART = "top_case" | "bottom_plate" | "assembly"
@@ -156,6 +157,36 @@ module carrier_posts() {
     }
 }
 
+// V3: L-shaped channel holding the module cable on the floor: across from the drop
+// beside the stack to the middle, round the 45 deg fold, then forward towards J1
+module guide_wall(x0, y0, x1, y1, lip_dir) {
+    translate([x0, y0, BASE_T - 0.01]) cube([x1 - x0, y1 - y0, GUIDE_H + 0.01]);
+    // lip on the inside of the top edge: [dx, dy] points into the channel
+    lx = lip_dir[0] > 0 ? x1 : lip_dir[0] < 0 ? x0 - GUIDE_LIP : x0;
+    ly = lip_dir[1] > 0 ? y1 : lip_dir[1] < 0 ? y0 - GUIDE_LIP : y0;
+    translate([lx, ly, BASE_T + GUIDE_H - GUIDE_LIP_T])
+        cube([lip_dir[0] != 0 ? GUIDE_LIP : x1 - x0, lip_dir[1] != 0 ? GUIDE_LIP : y1 - y0, GUIDE_LIP_T]);
+}
+module ffc_guide() {
+    w = FFC_W/2 + GUIDE_GAP;        // channel half width
+    x_start = FFC_DROP_X + 3.5;     // after the cable's bend onto the floor
+    cx = FFC_FOLD[0];
+    ry = FFC_RUN_Y;
+    difference() {
+        union() {
+            // run across: rear wall to the outer corner of the fold, front wall up to the forward run
+            guide_wall(x_start, ry + w, cx + w + GUIDE_T, ry + w + GUIDE_T, [0, -1]);
+            guide_wall(x_start, ry - w - GUIDE_T, cx - w, ry - w, [0, 1]);
+            // run forward: both side walls from the corner down to GUIDE_END_Y
+            guide_wall(cx - w - GUIDE_T, GUIDE_END_Y, cx - w, ry - w, [1, 0]);
+            guide_wall(cx + w, GUIDE_END_Y, cx + w + GUIDE_T, ry + w + GUIDE_T, [-1, 0]);
+        }
+        // no lips over the fold, where the cable lies doubled
+        translate([cx - w - 1, ry - w - 1, BASE_T + GUIDE_H - GUIDE_LIP_T - 0.01])
+            cube([2*w + 2, 2*w + 2, GUIDE_LIP_T + 0.1]);
+    }
+}
+
 // Snap beads on the rigid rim: flat retaining face below, lead-in ramp above
 module snap_bead(len) hull() {
     cube([len, SNAP_BEAD_H + 0.5, 0.4]);
@@ -190,6 +221,7 @@ module bottom_plate() {
             snap_beads();
             module_posts();
             carrier_posts();
+            ffc_guide();
         }
         // silicone foot recesses
         for (p = FOOT_POS) translate([p[0], p[1], -0.01]) cylinder(h = FOOT_REC + 0.01, d = FOOT_D + 0.4);
