@@ -83,21 +83,35 @@ static const ui_layout_t s_playing = {
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PP, .font = UI_FONT_48, .align = UI_ALIGN_CENTER,
           .x = 0, .y = 87, .w = 224, .h = 54, .fg = WHITE, .decimals = DEC, .suffix = "pp" },
 
+        // KPS panel right of the PP: the song rate (every press over the song since the first
+        // note, breaks included; not the map's BPM) and PEAK, the fastest tapping (7 presses in a
+        // row), both per second. The key cards show each key's live rate, per second too.
+        { .kind = UI_WIDGET_RECT, .source = UI_SRC_NONE, .font = UI_FONT_14, .x = 226, .y = 88, .w = 88, .h = 74,
+          .fg = 0x2A2A3C, .bg = CARD, .radius = 12, .flags = UI_FLAG_BORDER, .decimals = DEC },
+        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_NONE, .font = UI_FONT_12, .align = UI_ALIGN_CENTER,
+          .x = 226, .y = 92, .w = 85, .h = 14, .fg = MUTED, .decimals = DEC, .label = "AVG KPS" },
+        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM_SONG, .font = UI_FONT_32, .align = UI_ALIGN_CENTER,
+          .x = 226, .y = 105, .w = 88, .h = 34, .fg = PINK, .flags = UI_FLAG_HIDE_WHEN_EMPTY | UI_FLAG_PER_SECOND,
+          .decimals = DEC },
+        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM_PEAK, .font = UI_FONT_14, .align = UI_ALIGN_CENTER,
+          .x = 226, .y = 140, .w = 88, .h = 18, .fg = WHITE, .flags = UI_FLAG_PER_SECOND, .decimals = DEC,
+          .label = "PEAK " },
+
         // Accuracy · combo · grade
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_ACCURACY, .font = UI_FONT_20, .align = UI_ALIGN_CENTER,
           .x = 4, .y = 140, .w = 92, .h = 24, .fg = WHITE, .decimals = DEC, .suffix = "%" },
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_COMBO, .font = UI_FONT_20, .align = UI_ALIGN_CENTER,
           .x = 96, .y = 140, .w = 64, .h = 24, .fg = WHITE, .decimals = DEC, .suffix = "x" },
         { .kind = UI_WIDGET_GRADE, .source = UI_SRC_PLAY_GRADE, .font = UI_FONT_24, .align = UI_ALIGN_CENTER,
-          .x = 160, .y = 138, .w = 68, .h = 28, .fg = WHITE, .decimals = DEC },
+          .x = 160, .y = 138, .w = 68, .h = 27, .fg = WHITE, .decimals = DEC },
 
         // Map press counters: K1 pink / K2 dark at rest, colors swap while pressed
         { .kind = UI_WIDGET_KEYCARD, .source = UI_SRC_PAD_K1_MAP, .font = UI_FONT_24,
           .x = 12, .y = 166, .w = 144, .h = 48, .fg = BG, .bg = PINK, .accent = CARD, .radius = 12,
-          .flags = UI_FLAG_BORDER | UI_FLAG_KEY_RATE, .decimals = DEC, .label = "K1" },
+          .flags = UI_FLAG_BORDER | UI_FLAG_KEY_RATE | UI_FLAG_PER_SECOND, .decimals = DEC, .label = "K1" },
         { .kind = UI_WIDGET_KEYCARD, .source = UI_SRC_PAD_K2_MAP, .font = UI_FONT_24,
           .x = 164, .y = 166, .w = 144, .h = 48, .fg = WHITE, .bg = CARD, .accent = PINK, .radius = 12,
-          .flags = UI_FLAG_BORDER | UI_FLAG_KEY_RATE, .decimals = DEC, .label = "K2" },
+          .flags = UI_FLAG_BORDER | UI_FLAG_KEY_RATE | UI_FLAG_PER_SECOND, .decimals = DEC, .label = "K2" },
 
         // Progress
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_MAP_TIME_ELAPSED, .font = UI_FONT_14, .align = UI_ALIGN_RIGHT,
@@ -113,18 +127,6 @@ static const ui_layout_t s_playing = {
         { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_MAX_COMBO, .font = UI_FONT_14, .align = UI_ALIGN_RIGHT,
           .x = 226, .y = 6, .w = 86, .h = 18, .fg = MUTED, .flags = UI_FLAG_HIDE_WHEN_EMPTY,
           .decimals = DEC, .label = "max ", .suffix = "x" },
-
-        // KPM panel right of the PP: the song rate (every press over the song since the first
-        // note, breaks included; not the map's BPM) and PEAK, the fastest tapping (7 presses in a
-        // row). The key cards show each key's live rate.
-        { .kind = UI_WIDGET_RECT, .source = UI_SRC_NONE, .x = 226, .y = 88, .w = 88, .h = 74,
-          .fg = 0x2A2A3C, .bg = CARD, .radius = 12, .flags = UI_FLAG_BORDER, .decimals = DEC },
-        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_NONE, .font = UI_FONT_12, .align = UI_ALIGN_CENTER,
-          .x = 226, .y = 92, .w = 88, .h = 14, .fg = MUTED, .decimals = DEC, .label = "AVG KPM" },
-        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM_SONG, .font = UI_FONT_32, .align = UI_ALIGN_CENTER,
-          .x = 226, .y = 105, .w = 88, .h = 34, .fg = PINK, .flags = UI_FLAG_HIDE_WHEN_EMPTY, .decimals = DEC },
-        { .kind = UI_WIDGET_TEXT, .source = UI_SRC_PLAY_PPM_PEAK, .font = UI_FONT_14, .align = UI_ALIGN_CENTER,
-          .x = 226, .y = 140, .w = 88, .h = 18, .fg = WHITE, .decimals = DEC, .label = "PEAK " },
     },
 };
 
