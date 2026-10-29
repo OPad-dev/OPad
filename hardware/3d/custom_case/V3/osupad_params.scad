@@ -2,8 +2,8 @@
 //  OPad V3 enclosure: shared parameters
 //  Included by osupad_enclosure.scad and tools/fit_check.scad.
 //
-//  For the V3 boards (hardware/pcb/V3): the carrier with its USB-C on a tab past
-//  the Waveshare's USB end, and the three-key MX / HE modules on one 14-way FFC.
+//  For the V3 boards (hardware/pcb/V3): the carrier, the USB board on an 8-way FFC,
+//  and the three-key MX / HE modules on one 14-way FFC.
 //  Built on V1.1 (hardware/3d/custom_case/V1.1); what changed is marked "V3:".
 //
 //  World frame: origin at the front-left bottom corner of the bottom plate,
@@ -18,8 +18,8 @@
 $fn = 64;
 
 // --- Outline -----------------------------------------------------------------
-// V3: 84 mm wide (V1.1: 76) for the 71.05 mm module and the carrier's USB-C tab,
-// which reaches 38.6 mm right of the glass centre
+// V3: 84 mm wide (V1.1: 76) for the 71.05 mm module, and for the USB board in the
+// rear-right corner beside the screen stack
 CASE_W      = 84.0;
 WALL        = 2.4;    // 3 perimeters at 0.4 mm (design-guide minimum)
 CORNER_R    = 4.5;
@@ -96,7 +96,7 @@ WS_HOLES    = [[21.31, 14.5], [21.31, -14.5], [-20.89, 14.5], [-20.89, -14.5]];
 // Controller carrier V3 (hardware/pcb/V3/Carrier) on 8.5 mm sockets.
 // Carrier KiCad frame -> deck: x = CARRIER_EDGE_X + (Y - 100), a = X - 117.5
 SOCKET_H    = 8.5;
-CARRIER_TOP = WS_BACK + HDR_PLASTIC + SOCKET_H;   // 18.2
+CARRIER_TOP = WS_BACK + HDR_PLASTIC + SOCKET_H;   // 19.5
 CARRIER_T   = 1.6;
 CARRIER_BOT = CARRIER_TOP + CARRIER_T;            // 19.8
 CARRIER_EDGE_X = WS_PCB_XC - 24.1;                // non-USB end (deck x)
@@ -104,16 +104,19 @@ function car_to_deck(p) = [CARRIER_EDGE_X + (p[1] - 100), p[0] - 117.5];
 TAIL        = 1.0;    // socket pin tails, clipped
 ROW_A       = 15.24;  // socket rows
 CARRIER_A   = 17.5;
-CARRIER_TAB_X = car_to_deck([0, 162.5])[0];        // V3: right end of the USB-C tab (deck x)
-CARRIER_TAB_A0 = 118 - 117.5;                      // the tab spans a from here to CARRIER_A
+CARRIER_END_X = car_to_deck([0, 148.2])[0];       // USB end (deck x)
+// The carrier is a frame: rear rail a 10.5..17.5, front rail a -17.5..-12.3, solid at the
+// non-USB end; the window is open at the USB end except for the lug J_USB sits on
+CARRIER_WIN = [car_to_deck([0, 115])[0], -12.3, 10.5];      // window: from x, a0, a1
+CARRIER_LUG = [car_to_deck([0, 141.2])[0], -3.1, 10.5];     // lug: from x to the end, a0, a1
 POST_GAP    = 0.5;    // bottom-plate posts stop this far under the carrier
 
-// V3: the carrier's USB-C (HRO TYPE-C-31-M-12) on the carrier TOP, mouth on the rear edge
-USB_C       = car_to_deck([130.916, 154.0]);      // receptacle footprint origin (deck x, a)
-USB_H       = 3.26;                                // receptacle height above the carrier
-USB_D       = CARRIER_TOP - USB_H/2;               // receptacle axis, depth behind the glass front
-USB_MOUTH_A = CARRIER_A;                           // mouth on the rear edge
-USB_W       = 8.94;
+// V3: USB connector J_USB (8-way FFC, 2.5 mm tall) on the carrier TOP, on the lug,
+// mouth towards the USB end
+JUSB_MOUTH_X = car_to_deck([0, 147.9])[0];         // 0.3 mm inside the end
+JUSB_A      = 122.2 - 117.5;                       // contact row centre
+FFC8_W      = 9.0;    // 8-way, 1.0 mm FFC: (8 + 1) x 1.0 mm wide
+FFC_STIFF   = 2.0;    // stiffened cable end left outside a connector's mouth: it cannot bend
 
 // V3: module connector J_MOD (FFC, 2.5 mm tall) on the carrier TOP at the non-USB end,
 // cable leaving towards the left wall between the carrier and the Waveshare
@@ -139,12 +142,39 @@ _RC_Z   = Z_C + CARRIER_A * sin(TILT) - CARRIER_BOT * cos(TILT);
 CASE_L  = ceil((_RC_Y + 0.8 + WALL) * 2) / 2;
 Z_KNEE  = _RC_Z + 1.0;   // rear wall is vertical up to here, then leans with the deck
 
+// V3: USB board (hardware/pcb/V3/USB, 20 x 22 mm) flat on the floor in the rear-right
+// corner, jack through the rear wall. KiCad frame -> world: x = USB_X0 + (X - 100),
+// y = USB_REAR - (Y - 100); the jack's mouth is on its Y = 100 edge, J2 on the Y = 122 edge
+USB_BW      = 20.0;
+USB_BL      = 22.0;
+USB_T       = 1.6;
+USB_STANDOFF = 1.5;   // board bottom above the floor: the jack's shell legs stand 1.0 mm out under it, and J2 clears the lug
+USB_BOT     = BASE_T + USB_STANDOFF;
+USB_TOP     = USB_BOT + USB_T;
+USB_X0      = CASE_W - WALL - 2*TOL - USB_BW;      // right edge 0.4 from the right wall: its rounded corner clears the case's
+USB_REAR    = CASE_L - WALL - TOL - 0.4;           // rear edge; the jack's shell stands 0.4 mm past it
+USB_FRONT   = USB_REAR - USB_BL;
+USB_XC      = USB_X0 + USB_BW/2;                   // the jack and J2 are on the board's centre line
+function usb_to_world(p) = [USB_X0 + (p[0] - 100), USB_REAR - (p[1] - 100)];
+USB_HOLES   = [for (p = [[102.5, 103.0], [117.5, 103.0]]) usb_to_world(p)];
+USB_PIN_D   = 1.9;    // in the board's 2.2 mm holes
+USB_JACK_W  = 8.94;   // HRO TYPE-C-31-M-12
+USB_JACK_H  = 3.26;
+USB_JACK_L  = 7.75;   // from the mouth (0.4 mm past the edge) back over the board
+USB_AXIS_Z  = USB_TOP + USB_JACK_H/2;
+USB_OPEN_D  = 7.3;    // rear-wall opening: a stadium for a 12 x 6.5 mm plug overmold
+USB_CLAMP   = 0.0;    // top-case blocks on the board's rear corners, this far above its top
+J2_ENTRY_Z  = USB_TOP + 1.25;                      // cable entry into J2 above the board
+
 // --- Snap fit ----------------------------------------------------------------
 SNAP_BEAD_H = 0.35;
 SNAP_BEAD_L = 14.0;
 SNAP_Z      = 2.6;    // above the top case's underside
-SNAP_SIDE_Y = [CASE_L * 0.3, CASE_L * 0.7];
-SNAP_END_X  = [CASE_W * 0.3, CASE_W * 0.7];   // front and rear walls, clear of the pry notch and the USB-C
+SNAP_SIDE_Y = [CASE_L * 0.3, CASE_L * 0.7];   // left wall
+SNAP_RIGHT_Y = [CASE_L * 0.3, 45.0];           // V3: right wall, in front of the USB board
+SNAP_END_X  = [CASE_W * 0.3, CASE_W * 0.7];   // front wall
+SNAP_REAR_X = [19.0, 51.0];                    // V3: rear wall, either side of the pry notch, left of the USB board
+NOTCH_X     = 35.0;                            // V3: rear pry notch centre (V1.1: the middle)
 RIM_H       = 4.6;
 RIM_T       = 1.6;
 
@@ -179,5 +209,17 @@ GUIDE_LIP   = 0.6;    // lip over the cable's edge
 GUIDE_LIP_T = 0.3;
 GUIDE_END_Y = 36.0;   // the forward run stops here; the cable rises into J1 after it
 
+// --- The USB cable (8-way FFC) ------------------------------------------------------
+// Out of J_USB towards the USB end, past the stiffened end one 45 deg fold, then forward
+// in the free space right of the stack, down in front of the USB board, back along a
+// channel on the floor and up into J2 at the board's front edge
+USB_RUN_D   = CARRIER_TOP - 1.2;                       // cable depth beside the stack (as J_MOD's)
+USB_FOLD_X  = JUSB_MOUTH_X + FFC_STIFF + FFC8_W/2;      // deck x of the run after the fold
+USB_DROP_Y  = 39.0;                                     // world y where it turns down to the floor
+USB_DROP_A  = (USB_DROP_Y - Y_C - USB_RUN_D * sin(TILT)) / cos(TILT);
+USB_CH_Y    = [41.5, 52.0];                             // the floor channel
+
+echo(str("V3: USB board x ", USB_X0, "..", USB_X0 + USB_BW, ", y ", USB_FRONT, "..", USB_REAR,
+         ", jack axis z ", USB_AXIS_Z));
 echo(str("V3: case ", CASE_W, " x ", CASE_L, " mm, key deck ", KEY_DECK_H, " mm, rear ", H_REAR,
          " mm, glass centre (Y ", Y_C, ", Z ", Z_C, ")"));

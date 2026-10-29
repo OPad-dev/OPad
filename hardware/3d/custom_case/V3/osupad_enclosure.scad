@@ -3,15 +3,16 @@
 //  - Low flat key deck for the three-key MX / Hall Effect input module
 //  - 16 deg screen pod for the Waveshare ESP32-S3-Touch-LCD-2 on the V3
 //    carrier (8.5 mm sockets). V3: the stack goes in from below and the glass
-//    bears on a 1.2 mm lip round the window, because the carrier's USB-C tab
-//    makes the stack longer than the glass (it cannot drop in from the top)
-//  - USB-C through the rear wall (V3: on the carrier); the Waveshare's own
-//    USB port is closed
+//    bears on a 1.2 mm lip round the window
+//  - V3: USB-C on its own board (hardware/pcb/V3/USB), flat on the floor in the
+//    rear-right corner, through the rear wall; the Waveshare's own USB port is closed
 //  - Fully screwless: the module is located by four pins under the key deck
-//    and clamped by posts on the bottom plate; three posts with pins in the
-//    carrier's M2 holes hold the screen stack up against the lip and take the
-//    USB plug's force; the bottom plate snaps on
-//  - V3: a channel on the bottom plate holds the module cable (FFC) on the floor
+//    and clamped by posts on the bottom plate; two posts with pins in the
+//    carrier's M2 holes and a third support hold the screen stack up against the
+//    lip; the USB board sits on two pins, is clamped from above by blocks on the
+//    rear wall and takes the plug's push on stops and the rear wall; the bottom
+//    plate snaps on
+//  - V3: channels with small lips on the bottom plate hold both cables (FFC) on the floor
 //  - Recesses for four 12.7 mm silicone feet
 //
 //  Parts: PART = "top_case" | "bottom_plate" | "assembly"
@@ -23,8 +24,12 @@ include <osupad_params.scad>
 PART = "assembly";
 
 CAR_PIN_D = 1.9;  // in the carrier's 2.2 mm M2 holes
-// V3: the left-front carrier post is left out: the module cable runs there
-CARRIER_POST_HOLES = [WS_HOLES[0], WS_HOLES[1], WS_HOLES[2]];
+// V3: posts at the right-front and left-rear holes only: the module cable runs at the
+// left-front one and the USB board lies under the right-rear one
+CARRIER_POST_HOLES = [WS_HOLES[1], WS_HOLES[2]];
+// ...so the third support presses the rear rail left of the USB board, clear of the
+// socket tails (deck x, a ranges)
+CARRIER_RAIL_PAD = [[14.0, USB_X0 - TOL - CASE_W/2], [10.7, 14.1]];
 
 // --- Helpers -------------------------------------------------------------------
 
@@ -78,9 +83,29 @@ module screen_cutouts() at_deck() {
     // V3: window = glass minus the lip; the glass sits in a pocket under the lip, open to the cavity
     translate([0, 0, -LIP_T - 0.01]) linear_extrude(10) rrect2d(GLASS_X - 2*LIP, GLASS_Y - 2*LIP, max(0.5, GLASS_R - LIP));
     translate([0, 0, -POD_TOP_T - 1]) linear_extrude(1 + POD_TOP_T - LIP_T) rrect2d(POCKET_X, POCKET_Y, POCKET_R);
-    // V3: USB-C through the rear wall, along the slope; stadium for a 12 x 6.5 mm plug overmold
-    translate([USB_C[0], USB_MOUTH_A - 1.0, -USB_D]) rotate([-90, 0, 0])
-        linear_extrude(40) hull() for (s = [-1, 1]) translate([s * 2.75, 0]) circle(d = 7.3);
+}
+
+// V3: the USB board's jack through the rear wall, level; stadium for a 12 x 6.5 mm plug overmold
+module usb_opening()
+    translate([USB_XC, CASE_L - WALL - 0.3, USB_AXIS_Z]) rotate([-90, 0, 0])
+        linear_extrude(WALL + 1) hull() for (s = [-1, 1]) translate([s * 2.75, 0]) circle(d = USB_OPEN_D);
+
+// V3: blocks on the rear wall either side of the jack that clamp the USB board's rear
+// corners down onto its pins (recesses take the pin tips), and a rib along its left edge
+// that locates it while the case is upside down for assembly
+USB_HOLD_L = 5.0;   // how far the blocks reach forward over the board
+module usb_holddown() {
+    z = USB_TOP + USB_CLAMP;
+    difference() {
+        union() {
+            for (x = [[USB_X0, USB_XC - USB_JACK_W/2 - 0.4], [USB_XC + USB_JACK_W/2 + 0.4, CASE_W - WALL + 0.01]])
+                translate([x[0], USB_REAR - USB_HOLD_L, z]) cube([x[1] - x[0], CASE_L - WALL - USB_REAR + USB_HOLD_L + 0.01, 4.0]);
+            translate([USB_X0 - TOL - 0.8, USB_REAR - 3.5, USB_BOT + 0.3])
+                cube([0.8, CASE_L - WALL - USB_REAR + 3.51, z - USB_BOT - 0.3 + 0.01]);
+            translate([USB_X0 - TOL - 0.8, USB_REAR - 3.5, z]) cube([TOL + 0.81, CASE_L - WALL - USB_REAR + 3.51, 4.0]);
+        }
+        for (h = USB_HOLES) translate([h[0], h[1], z - 0.01]) cylinder(h = 1.0, d = USB_PIN_D + 0.7);
+    }
 }
 
 module key_cutouts() for (x = KEY_X) {
@@ -104,14 +129,10 @@ module snap_grooves() {
     z = BASE_T + SNAP_Z - 0.1;
     d = SNAP_BEAD_H + 0.15;   // groove depth into the wall
     l = SNAP_BEAD_L + 1;
-    for (y = SNAP_SIDE_Y) {
-        translate([WALL - d, y - l/2, z]) cube([d + 0.1, l, 1.3]);
-        translate([CASE_W - WALL - 0.1, y - l/2, z]) cube([d + 0.1, l, 1.3]);
-    }
-    for (x = SNAP_END_X) {
-        translate([x - l/2, WALL - d, z]) cube([l, d + 0.1, 1.3]);
-        translate([x - l/2, CASE_L - WALL - 0.1, z]) cube([l, d + 0.1, 1.3]);
-    }
+    for (y = SNAP_SIDE_Y) translate([WALL - d, y - l/2, z]) cube([d + 0.1, l, 1.3]);
+    for (y = SNAP_RIGHT_Y) translate([CASE_W - WALL - 0.1, y - l/2, z]) cube([d + 0.1, l, 1.3]);
+    for (x = SNAP_END_X) translate([x - l/2, WALL - d, z]) cube([l, d + 0.1, 1.3]);
+    for (x = SNAP_REAR_X) translate([x - l/2, CASE_L - WALL - 0.1, z]) cube([l, d + 0.1, 1.3]);
 }
 
 module top_case() {
@@ -119,12 +140,14 @@ module top_case() {
         union() {
             difference() { outer_shell(); inner_cavity(); }
             module_bosses();
+            usb_holddown();
         }
+        usb_opening();
         screen_cutouts();
         key_cutouts();
         snap_grooves();
         // rear pry notch
-        translate([CASE_W/2 - 6, CASE_L - 2, BASE_T - 0.1]) cube([12, 4, 2.2]);
+        translate([NOTCH_X - 6, CASE_L - 2, BASE_T - 0.1]) cube([12, 4, 2.2]);
     }
 }
 
@@ -140,15 +163,22 @@ module module_posts() {
     }
 }
 
-// V3: posts under three of the carrier's M2 holes, topped parallel to the carrier
+// V3: posts under two of the carrier's M2 holes, topped parallel to the carrier
 // and pressing it up (the foam gasket on the lip takes the tolerance), with a pin
-// into each hole: they locate the stack and take the USB plug's push
+// into each hole to locate the stack; a third support presses the rear rail
 function carrier_hole_world(h) = deck_to_world([h[0], h[1], -CARRIER_BOT]);
+module below_carrier() at_deck() translate([-CASE_W, -CASE_L, -CARRIER_BOT - 60]) cube([2*CASE_W, 2*CASE_L, 60]);
 module carrier_posts() {
+    let (x = CARRIER_RAIL_PAD[0], y0 = deck_to_world([0, CARRIER_RAIL_PAD[1][0], -CARRIER_BOT])[1],
+         y1 = deck_to_world([0, CARRIER_RAIL_PAD[1][1], -CARRIER_BOT])[1])
+        intersection() {
+            translate([CASE_W/2 + x[0], y0, BASE_T - 0.01]) cube([x[1] - x[0], y1 - y0, 40]);
+            below_carrier();
+        }
     for (h = CARRIER_POST_HOLES) let (p = carrier_hole_world(h)) {
         intersection() {
-            translate([p[0], p[1], BASE_T - 0.01]) cylinder(h = 40, r = 3.2);
-            at_deck() translate([-CASE_W, -CASE_L, -CARRIER_BOT - 60]) cube([2*CASE_W, 2*CASE_L, 60]);
+            translate([p[0], p[1], BASE_T - 0.01]) cylinder(h = 40, r = 3.0);
+            below_carrier();
         }
         at_deck() translate([h[0], h[1], -CARRIER_BOT - 0.01]) {
             cylinder(h = CARRIER_T + 0.5, d = CAR_PIN_D);
@@ -187,6 +217,26 @@ module ffc_guide() {
     }
 }
 
+// V3: the USB cable's channel on the floor, straight back towards J2
+module usb_guide() {
+    w = FFC8_W/2 + GUIDE_GAP;
+    guide_wall(USB_XC - w - GUIDE_T, USB_CH_Y[0], USB_XC - w, USB_CH_Y[1], [1, 0]);
+    guide_wall(USB_XC + w, USB_CH_Y[0], USB_XC + w + GUIDE_T, USB_CH_Y[1], [-1, 0]);
+}
+
+// V3: the USB board's seat: two posts with pins through its holes (it is clamped onto
+// them by the top case's blocks), and stops at its front corners, clear of J2's cable,
+// that take the plug's push; the rear wall takes the pull
+module usb_seat() {
+    for (h = USB_HOLES) translate([h[0], h[1], BASE_T - 0.01]) {
+        cylinder(h = USB_STANDOFF + 0.01, r = 2.0);
+        translate([0, 0, USB_STANDOFF]) cylinder(h = USB_T + 0.3, d = USB_PIN_D);
+        translate([0, 0, USB_STANDOFF + USB_T + 0.3]) cylinder(h = 0.3, d1 = USB_PIN_D, d2 = USB_PIN_D - 0.6);
+    }
+    for (x = [USB_X0, USB_X0 + USB_BW - 3.0])
+        translate([x, USB_FRONT - TOL - 2.0, BASE_T - 0.01]) cube([3.0, 2.0, USB_TOP + 0.8 - BASE_T]);
+}
+
 // Snap beads on the rigid rim: flat retaining face below, lead-in ramp above
 module snap_bead(len) hull() {
     cube([len, SNAP_BEAD_H + 0.5, 0.4]);
@@ -196,14 +246,10 @@ module snap_bead(len) hull() {
 module snap_beads() {
     z = BASE_T + SNAP_Z;
     o = WALL + TOL;   // rim outer face
-    for (y = SNAP_SIDE_Y) {
-        translate([o + 0.5, y - SNAP_BEAD_L/2, z]) rotate([0, 0, 90]) snap_bead(SNAP_BEAD_L);
-        translate([CASE_W - o - 0.5, y + SNAP_BEAD_L/2, z]) rotate([0, 0, -90]) snap_bead(SNAP_BEAD_L);
-    }
-    for (x = SNAP_END_X) {
-        translate([x + SNAP_BEAD_L/2, o + 0.5, z]) rotate([0, 0, 180]) snap_bead(SNAP_BEAD_L);
-        translate([x - SNAP_BEAD_L/2, CASE_L - o - 0.5, z]) snap_bead(SNAP_BEAD_L);
-    }
+    for (y = SNAP_SIDE_Y) translate([o + 0.5, y - SNAP_BEAD_L/2, z]) rotate([0, 0, 90]) snap_bead(SNAP_BEAD_L);
+    for (y = SNAP_RIGHT_Y) translate([CASE_W - o - 0.5, y + SNAP_BEAD_L/2, z]) rotate([0, 0, -90]) snap_bead(SNAP_BEAD_L);
+    for (x = SNAP_END_X) translate([x + SNAP_BEAD_L/2, o + 0.5, z]) rotate([0, 0, 180]) snap_bead(SNAP_BEAD_L);
+    for (x = SNAP_REAR_X) translate([x - SNAP_BEAD_L/2, CASE_L - o - 0.5, z]) snap_bead(SNAP_BEAD_L);
 }
 
 module bottom_plate() {
@@ -213,20 +259,26 @@ module bottom_plate() {
     difference() {
         union() {
             rbox(0, 0, CASE_W, CASE_L, 0, BASE_T, CORNER_R);
-            // rigid perimeter rim: it locates the plate, the beads click into the walls
-            translate([WALL + TOL, WALL + TOL, BASE_T - 0.01]) difference() {
-                rbox(0, 0, inner_w, inner_l, 0, RIM_H, rim_r);
-                rbox(RIM_T, RIM_T, inner_w - RIM_T, inner_l - RIM_T, -0.1, RIM_H + 1, max(0.5, rim_r - RIM_T));
+            // rigid perimeter rim: it locates the plate, the beads click into the walls;
+            // V3: open where the USB board lies against the rear and right walls
+            difference() {
+                translate([WALL + TOL, WALL + TOL, BASE_T - 0.01]) difference() {
+                    rbox(0, 0, inner_w, inner_l, 0, RIM_H, rim_r);
+                    rbox(RIM_T, RIM_T, inner_w - RIM_T, inner_l - RIM_T, -0.1, RIM_H + 1, max(0.5, rim_r - RIM_T));
+                }
+                translate([USB_X0 - 1.0, USB_FRONT - 2.5, BASE_T]) cube([CASE_W, CASE_L, RIM_H + 1]);
             }
             snap_beads();
             module_posts();
             carrier_posts();
             ffc_guide();
+            usb_guide();
+            usb_seat();
         }
         // silicone foot recesses
         for (p = FOOT_POS) translate([p[0], p[1], -0.01]) cylinder(h = FOOT_REC + 0.01, d = FOOT_D + 0.4);
         // rear pry notch relief
-        translate([CASE_W/2 - 6, CASE_L - 3, -0.1]) cube([12, 5, 1.4]);
+        translate([NOTCH_X - 6, CASE_L - 3, -0.1]) cube([12, 5, 1.4]);
     }
 }
 
