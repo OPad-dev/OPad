@@ -1,4 +1,5 @@
-"""Follow every module pin through the FFC (both ways round) and the carrier to the ESP32.
+"""Follow every module pin, and the USB board's jack, through its FFC (both ways round) and the carrier
+to the ESP32.
 
 The boards are checked one by one by opadverify against their intended
 netlists; this checks that the intended netlists fit together:
@@ -8,6 +9,9 @@ netlists; this checks that the intended netlists fit together:
 - every module signal reaches its own ESP32 GPIO through the carrier, and the
   ID always lands on an ADC1 pin (the firmware reads it on GPIO8, or on GPIO7
   with a reversed cable, then swaps the other pins in the GPIO matrix);
+- the USB jack's D+ and D- reach GPIO20 and GPIO19 (the ESP32-S3's USB), and
+  its filtered 5 V the Waveshare's 5 V pin, with the 8-way cable either way
+  round (a reversed cable maps contact k to 9 - k);
 - the module ID voltages, with 1 % resistors, a 3 % 3V3 and the ESP32-S3 ADC's
   error, stay clear of the firmware's cut-offs.
 
@@ -60,9 +64,6 @@ def carrier_lines(parts):
     for ref, spec in parts.items():
         if ref.startswith(SERIES) and "nets" in spec and spec["nets"][0] != "GND" and spec["nets"][1] != "GND":
             parent[find(spec["nets"][0])] = find(spec["nets"][1])
-    for ref, spec in parts.items():
-        if ref == "D1":       # the Schottky joins the USB VBUS to 5V in one direction only
-            continue
     reach = {}
     for ref, table in WAVESHARE.items():
         for pin, net in pin_nets(parts[ref]).items():
@@ -111,6 +112,29 @@ def main():
                 if net == "ID" and g not in ADC1:
                     fail("%s, %s cable: ID lands on GPIO%d, not an ADC1 pin" % (module, cable, g))
             print("ok    %-6s %-8s cable: %s" % (module, cable, ", ".join("%s=GPIO%d" % kv for kv in sorted(used.items()))))
+
+    # The USB board: its jack, through the 8-way cable and the carrier, to the ESP32's USB pins
+    usb = load("usb_v3")
+    jusb = {int(k): v for k, v in pin_nets(carrier["J_USB"]).items()}
+    j2 = {int(k): v for k, v in pin_nets(usb["J2"]).items()}
+    jack = {v for k, v in pin_nets(usb["J1"]).items()}
+    want_usb = {"USB_DP": {20}, "USB_DN": {19}, "5V": {"5V"}, "GND": {"GND"}}
+    for cable, mapping in (("straight", lambda k: k), ("reversed", lambda k: 9 - k)):
+        seen, before = {}, failures
+        for k, net in sorted(j2.items()):
+            c = jusb[mapping(k)]
+            reach = lines.get(c, set())
+            if reach != want_usb.get(net):
+                fail("usb_v3, %s cable: USB board %s (contact %d) meets carrier %s %s"
+                     % (cable, net, k, c, sorted(map(str, reach))))
+            seen[net] = reach
+        for net in ("USB_DP", "USB_DN"):
+            if net not in jack:
+                fail("usb_v3: the jack has no %s" % net)
+        if failures == before:
+            print("ok    usb_v3 %-8s cable: %s" % (cable, ", ".join(
+                "%s=%s" % (n, "/".join("GPIO%d" % r if isinstance(r, int) else r for r in sorted(seen[n], key=str)))
+                for n in ("USB_DP", "USB_DN", "5V", "GND"))))
 
     # ID voltages against the cut-offs: 1 % resistors, 3V3 +-3 %, ADC +-50 mV (worst case)
     for name, top, bottom in (("MX V3", 47e3, 100e3), ("HE V3", 100e3, 100e3)):

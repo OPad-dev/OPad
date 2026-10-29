@@ -24,6 +24,7 @@ class Device:
     polar: bool = True            # False: the two ends are interchangeable
     tol: float = 0.25             # mm, contact centre to pad centre
     extra_pads: tuple = ()        # pad numbers in the footprint not modelled (mechanical tabs)
+    jlc_mech_tol: float = 0.5     # mm, JLCPCB model pad to our pad, for pads that are not pins
     notes: str = ""
 
 
@@ -100,6 +101,17 @@ DEVICES.update({
                "the left with the contacts at the rear. The contacts are identical, so which end is "
                "called 1 only matters for the cable, which tests/test_system.py checks both ways round",
         notes="JLCPCB's model numbers the contacts from the other end; harmless (identical contacts)."),
+    "FFC8": Device(
+        "JUSHUO AFA07-S08FCA-00 (FFC ZIF, 1.0 mm, 8 contacts, bottom contact)",
+        pins={str(k): (k - 4.5, 0.0) for k in range(1, 9)},
+        names={str(k): str(k) for k in range(1, 9)}, extra_pads=("MP",), polar=False, jlc_mech_tol=0.8,
+        source="JUSHUO AFA07-S**F*-** customer drawing (LCSC C262714, the same drawing as C262720): "
+               "contacts at 1.00 mm, nails 2.60 x 3.00 with their outer edge 3.65 mm past the outer "
+               "contact and 4.57 mm from the contacts' rear edge to the nails' front edge. The pinout is "
+               "symmetric, so which end is called 1 does not matter (tests/test_system.py)",
+        notes="JLCPCB's model (EasyEDA) draws the nails 3.3 mm tall and 0.63 mm nearer the contacts than "
+              "the maker's drawing; its contacts match. Our pads follow the drawing, and the model's nails "
+              "still land on them (jlc_mech_tol)."),
     "USB_C_HRO": Device(
         "HRO TYPE-C-31-M-12 USB-C 2.0 receptacle",
         pins=dict([(n, (x, 0.0)) for n, x in USB_C_ROW] +

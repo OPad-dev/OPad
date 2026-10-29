@@ -414,7 +414,7 @@ def run(golden_path, pcb=None, gerbers=None, cpl=None, bom=None, verbose=False, 
                 near = min(ours, key=lambda o: math.hypot(o[1][0] - x, o[1][1] - y))
                 dist = math.hypot(near[1][0] - x, near[1][1] - y)
                 want = names.get(mp["number"], mp["number"])
-                if dist > 0.5:
+                if dist > (0.5 if want in dev.pins else dev.jlc_mech_tol):
                     bad.append("pad %s lands on no pad (nearest %s, %.2f mm away)" % (mp["number"], near[0], dist))
                 elif want in dev.pins and dev.polar and near[0] != want:
                     bad.append("pin %s lands on our pad %s" % (want, near[0]))

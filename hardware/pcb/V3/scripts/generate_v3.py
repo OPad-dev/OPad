@@ -3,19 +3,21 @@
 
 Design: docs/specs/hardware-redesign-brief.md sections 4.1 and 4.2. In short:
 
-- One cable: a 14-way 1.0 mm FFC between the carrier and the module, wired so
-  a reversed cable only swaps signals between ESP32 pins:
+- The module cable: a 14-way 1.0 mm FFC between the carrier and the module,
+  wired so a reversed cable only swaps signals between ESP32 pins:
       1 GND | 2 5V | 3 3V3 | 4 ID | 5 MISO | 6 GND | 7 SCLK | 8 MOSI | 9 GND |
       10 CS | 11 SPARE | 12 3V3 | 13 5V | 14 GND
-- The USB-C is on the carrier, on a tab past the Waveshare's USB end, mouth on
-  the rear edge, with ESD, VBUS filtering and a Schottky against back-feed.
+- The USB-C is on its own small board at the case's rear wall, with ESD, VBUS
+  filtering and a Schottky against back-feed, and reaches the carrier over an
+  8-way 1.0 mm FFC that reads the same from either end:
+      1 GND | 2 5V | 3 D- | 4 D+ | 5 D+ | 6 D- | 7 5V | 8 GND
 - Both modules: three keys at 19.05 mm, four corner holes, everything on the
   bottom. MX: Kailh sockets, ID 2.24 V. HE: DRV5055A3 x3, ADS7038, an LP5907
   LDO from the cable's 5 V for the sensors and the ADC reference, ID 1.65 V.
 - Polarised bottom-side parts sit at 0 or 180 deg only (JLCPCB's direction of
   rotation on the bottom is not established, hardware/verify/opadverify/jlc.py).
 
-    python3 hardware/pcb/V3/scripts/generate_v3.py [carrier] [mx] [he]   (default: all)
+    python3 hardware/pcb/V3/scripts/generate_v3.py [carrier] [usb] [mx] [he]   (default: all)
 Then route_v3.py and export_v3.py.
 """
 
@@ -58,7 +60,7 @@ LCSC = {
     "C10U": ("10uF", "C19702", "Samsung CL10A106KP8NNNC"),
     "C10N": ("10nF", "C57112", "FH 0603B103K500NT"),
     "C4N7": ("4.7nF", "C53987", "FH 0603B472K500NT"),
-    "FB600": ("600R@100MHz", "C1002", "Sunlord GZ1608D601TF"),
+    "FB600": ("600R@100MHz", "C107335", "TDK MPZ1608S601ATA00"),
     "FB120": ("120R@100MHz 2A", "C14709", "Murata BLM18PG121SN1D"),
     "DRV": ("DRV5055A3", "C266128", "Texas Instruments DRV5055A3QDBZR"),
     # ADS7028: the ADS7038's sibling (same RTE pinout, registers, averaging and CRC) that JLCPCB
@@ -69,6 +71,7 @@ LCSC = {
     "SCHOTTKY": ("B5817W", "C7420328", "R+O B5817W"),
     "USBC": ("TYPE-C-31-M-12", "C165948", "Korean Hroparts TYPE-C-31-M-12"),
     "FFC": ("AFA07-S14FCA-00", "C262720", "JUSHUO AFA07-S14FCA-00"),
+    "FFC8": ("AFA07-S08FCA-00", "C262714", "JUSHUO AFA07-S08FCA-00"),
     "KAILH": ("CPG151101S11", "C41430893", "Kailh CPG151101S11"),
     # V1's C2897377 is no longer in JLCPCB's assembly stock; same 8.5 mm socket, gold
     "SOCKET": ("FH2.54-09-14PZD", "C7500781", "XUNPU FH2.54-09-14PZD"),
@@ -91,12 +94,16 @@ FFC_PINS = {"1": "GND", "2": "5V", "3": "3V3", "4": "ID", "5": "MISO", "6": "GND
             "8": "MOSI", "9": "GND", "10": "CS", "11": "SPARE", "12": "3V3", "13": "5V", "14": "GND",
             "MP": "GND"}
 
+# The USB cable: symmetric, so a reversed cable (k to 9 - k) meets the same nets
+USB_FFC_PINS = {"1": "GND", "2": "5V", "3": "USB_DN", "4": "USB_DP", "5": "USB_DP", "6": "USB_DN", "7": "5V",
+                "8": "GND", "MP": "GND"}
+
 
 # -----------------------------------------------------------------------------
 # Schematic (labels on every pin; the board is the drawing that matters)
 # -----------------------------------------------------------------------------
 
-def write_schematic(directory, project, title, parts, notes, flags):
+def write_schematic(directory, project, title, parts, notes, flags, date):
     text = open(v3lib.SYM_LIB).read()
     sym = {}
     for name in {p.symbol for p in parts} | {"PWR_FLAG"}:
@@ -109,7 +116,7 @@ def write_schematic(directory, project, title, parts, notes, flags):
     root = g1.uid()
     out = ['(kicad_sch\n\t(version 20250114)\n\t(generator "eeschema")\n\t(generator_version "9.0")\n',
            '\t(uuid "%s")\n\t(paper "A2")\n' % root,
-           '\t(title_block (title "%s") (date "%s") (rev "%s") (company "OPad"))\n' % (title, DATE, REV),
+           '\t(title_block (title "%s") (date "%s") (rev "%s") (company "OPad"))\n' % (title, date, REV),
            '\t(lib_symbols\n']
     for name in sorted(sym):
         out.append("\t\t" + sym[name][0] + "\n")
@@ -201,12 +208,13 @@ def pin_names():
     return out
 
 
-def build(name, project, title, parts, outline, holes, notes, flags, extra=None, rules=None, stitch=()):
+def build(name, project, title, parts, outline, holes, notes, flags, extra=None, rules=None, stitch=(), date=DATE):
     directory = os.path.join(V3, name)
     os.makedirs(directory, exist_ok=True)
-    write_schematic(directory, project, title, parts, notes, flags)
+    write_schematic(directory, project, title, parts, notes, flags, date)
+    g1.DATE = date
     bb = g1.BoardBuilder(project)
-    bb.outline(outline, 1.0 if name == "Carrier" else 1.5)
+    bb.outline(outline, 1.0 if name in ("Carrier", "USB") else 1.5)
     sheet = project + ".kicad_sch"
     names = pin_names()
     for p in parts:
@@ -253,13 +261,15 @@ def build(name, project, title, parts, outline, holes, notes, flags, extra=None,
 # KiCad frame of the V1 carrier (hardware/pcb/V1/README.md): the Waveshare
 # outline is x 100..135, y 100..148.2; P2 (front) at x 102.26, P1 (rear) at
 # x 132.74, pin 1 at y 107.59 at the non-USB end (small y). Case: KiCad +X is
-# the rear, +Y the right (USB end). The new tab past y 148.2 carries the USB-C
-# with its mouth on the rear edge x = 135.
+# the rear, +Y the right (USB end). P1's sockets fill the rear edge, so the USB
+# cable's connector sits on a lug at the USB end of the window, mouth on the
+# USB-end edge, clear of P1 and of the M2 hole at (132, 145.2) the case posts use.
 
 P1X, P2X, PIN1Y = 132.74, 102.26, 107.59
 HY = {n: PIN1Y + 2.54 * (n - 1) for n in range(1, 15)}
-USB_C = (135.0 - v3lib.USB_EDGE_Y, 154.0)          # mouth on the rear edge
 JMOD = (117.5, 100.3 + v3lib.FFC_MOUTH_Y)          # mouth 0.3 mm inside the left edge
+JUSB = (122.2, 148.2 - 0.3 - v3lib.FFC_MOUTH_Y)    # mouth 0.3 mm inside the USB-end edge
+CARRIER_DATE = "2026-10-28"
 
 
 def carrier():
@@ -278,64 +288,103 @@ def carrier():
              "Socket for Waveshare header P2 (front)", "WAVESHARE_P2"),
         part("J_MOD", "FFC", "FFC14", v3lib.FFC14, jmod, JMOD, T, 180,
              "Module cable (14-way FFC), cable leaves towards the case's left wall"),
-        part("J_USB", "USBC", "USB_C", v3lib.USBC,
-             {"A1B12": "GND", "B1A12": "GND", "A4B9": "VBUS", "B4A9": "VBUS", "A5": "CC1", "B5": "CC2",
-              "A6": "USB_DP", "B6": "USB_DP", "A7": "USB_DN", "B7": "USB_DN", "A8": None, "B8": None,
-              "S1": "SHIELD", "S2": "SHIELD", "S3": "SHIELD", "S4": "SHIELD"},
-             USB_C, T, 90, "USB-C, mouth on the rear edge"),
-        two("R2", "R5K1", "CC2", "GND", (124.8, 150.0), T, 0, "CC2 pull-down"),
-        part("U1", "ESD", "SRV05-4", v3lib.SOT236,
-             {"1": "USB_DP", "2": "GND", "3": "USB_DN", "4": None, "5": "VBUS", "6": None},
-             (124.6, 154.0), T, 90, "ESD on D+/D- and VBUS"),
-        two("R1", "R5K1", "CC1", "GND", (124.8, 158.0), T, 0, "CC1 pull-down: a USB-C sink"),
-        two("C2", "C100N", "VBUS", "GND", (121.2, 150.2), T, 90, "VBUS at the connector"),
-        two("FB1", "FB120", "VBUS", "VBUS_F", (121.2, 154.0), T, 90, "VBUS filter, 2 A"),
-        two("C3", "C4U7", "VBUS_F", "GND", (121.2, 157.8), T, 90, "VBUS after the filter"),
-        part("D1", "SCHOTTKY", "D_Schottky", v3lib.SOD123, {"1": "VBUS_F", "2": "5V"}, (119.2, 154.0), T, 90,
-             "No back-feed from the Waveshare's own USB port into this one"),
-        two("C1", "C4N7", "SHIELD", "GND", (123.6, 161.2), T, 0, "Shield to ground, RF path"),
-        two("R3", "R1M", "SHIELD", "GND", (126.8, 161.2), T, 0, "Shield to ground, DC path"),
+        part("J_USB", "FFC8", "FFC8", v3lib.FFC8, USB_FFC_PINS, JUSB, T, 0,
+             "USB cable (8-way FFC) from the USB board, cable leaves towards the USB end"),
         # Module side, on the bridge at the non-USB end
-        two("FB2", "FB600", "5V", "5V_MOD", (129.6, 138.6), T, 90, "5 V to the module, filtered (next to P1-14)"),
-        two("C4", "C1U", "5V_MOD", "GND", (107.8, 109.4), T, 90, "5 V to the module"),
-        two("C5", "C10U", "3V3", "GND", (112.4, 109.4), T, 90, "3V3 to the module, bulk"),
-        two("C6", "C100N", "3V3", "GND", (114.2, 109.4), T, 90, "3V3 to the module"),
-        part("U2", "ESD", "SRV05-4", v3lib.SOT236,
+        two("FB1", "FB600", "5V", "5V_MOD", (129.6, 138.6), T, 90, "5 V to the module, filtered (next to P1-14)"),
+        two("C1", "C1U", "5V_MOD", "GND", (107.8, 109.4), T, 90, "5 V to the module"),
+        two("C2", "C10U", "3V3", "GND", (112.4, 109.4), T, 90, "3V3 to the module, bulk"),
+        two("C3", "C100N", "3V3", "GND", (114.2, 109.4), T, 90, "3V3 to the module"),
+        part("U1", "ESD", "SRV05-4", v3lib.SOT236,
              {"1": "M_SCLK", "2": "GND", "3": "M_MOSI", "4": "M_MISO", "5": "3V3", "6": "M_CS"},
              (118.0, 110.2), T, 0, "ESD on the module's SPI / key lines"),
-        part("U3", "ESD", "SRV05-4", v3lib.SOT236,
+        part("U2", "ESD", "SRV05-4", v3lib.SOT236,
              {"1": "GPIO8", "2": "GND", "3": "GPIO7", "4": None, "5": "3V3", "6": None},
              (122.6, 110.2), T, 0, "ESD on the module's ID and spare lines"),
-        two("R4", "R33", "GPIO2", "M_SCLK", (129.0, 107.6), T, 0, "Series, GPIO2"),
-        two("R5", "R33", "GPIO4", "M_MOSI", (129.0, 109.4), T, 0, "Series, GPIO4"),
-        two("R6", "R33", "GPIO6", "M_MISO", (129.0, 111.2), T, 0, "Series, GPIO6"),
-        two("R7", "R33", "GPIO10", "M_CS", (129.0, 113.0), T, 0, "Series, GPIO10"),
+        two("R1", "R33", "GPIO2", "M_SCLK", (129.0, 107.6), T, 0, "Series, GPIO2"),
+        two("R2", "R33", "GPIO4", "M_MOSI", (129.0, 109.4), T, 0, "Series, GPIO4"),
+        two("R3", "R33", "GPIO6", "M_MISO", (129.0, 111.2), T, 0, "Series, GPIO6"),
+        two("R4", "R33", "GPIO10", "M_CS", (129.0, 113.0), T, 0, "Series, GPIO10"),
     ]
-    # The tab: the rear rail continues past the Waveshare's USB end to y = 162.5 and widens to x = 118
-    outline = [(100.0, 100.0), (135.0, 100.0), (135.0, 162.5), (118.0, 162.5), (118.0, 148.2),
-               (128.0, 148.2), (128.0, 115.0), (105.2, 115.0), (105.2, 148.2), (100.0, 148.2)]
+    # V1's C-shape, plus the lug for J_USB in the window's USB-end rear corner
+    outline = [(100.0, 100.0), (135.0, 100.0), (135.0, 148.2), (114.4, 148.2), (114.4, 141.2),
+               (128.0, 141.2), (128.0, 115.0), (105.2, 115.0), (105.2, 148.2), (100.0, 148.2)]
     holes = [(103.0, 103.0), (132.0, 103.0), (103.0, 145.2), (132.0, 145.2)]
-    notes = ["OPad carrier V3: Waveshare headers, USB-C (rear, past the USB end), module FFC.",
+    notes = ["OPad carrier V3: Waveshare headers, USB cable from the USB board, module FFC.",
              "Module FFC: 1 GND | 2 5V | 3 3V3 | 4 ID=GPIO8 | 5 MISO=GPIO6 | 6 GND | 7 SCLK=GPIO2 | 8 MOSI=GPIO4 | "
              "9 GND | 10 CS=GPIO10 | 11 SPARE=GPIO7 | 12 3V3 | 13 5V | 14 GND; a reversed cable maps k to 15-k.",
-             "USB: VBUS -> FB1 -> D1 -> 5V (Waveshare P1-14); D+ -> P1-11 (GPIO20), D- -> P1-12 (GPIO19)."]
+             "USB FFC: 1 GND | 2 5V | 3 D- | 4 D+ | 5 D+ | 6 D- | 7 5V | 8 GND (the same read from either end); "
+             "5V -> P1-14, D+ -> P1-11 (GPIO20), D- -> P1-12 (GPIO19). The USB board filters and protects it."]
 
     def extra(bb):
-        S, F = pcbnew.F_SilkS, pcbnew.F_Fab
+        S = pcbnew.F_SilkS
         bb.text("WAVESHARE ON THIS SIDE", 116.5, 114.3, S, 0.8)
         bb.text("OPad carrier " + REV, 116.5, 103.0, pcbnew.B_SilkS, 0.8)
         bb.text("JLCJLCJLCJLC", 116.5, 111.0, pcbnew.B_SilkS, 0.8)
+        bb.text("USB", 122.2, 140.6, S, 0.8)
         p = pads_of(bb, "J_MOD")
         assert p["MP"][1] < p["1"][1], "J_MOD: the cable entry must face the left edge"
         u = pads_of(bb, "J_USB")
-        assert u["S3"][0] > u["S1"][0], "J_USB: the mouth must face the rear edge"
+        assert u["MP"][1] > u["1"][1], "J_USB: the cable entry must face the USB-end edge"
 
     stitch = [(101.5, 101.5), (133.5, 101.5), (101.5, 113.5), (106.5, 113.6), (126.5, 113.6),
               (101.5, 120.0), (101.5, 130.0), (101.5, 140.0), (130.0, 120.0), (130.0, 125.0),
-              (130.0, 140.0), (119.0, 149.5), (119.0, 161.5), (131.0, 161.5)]
+              (130.0, 131.0)]
     return build("Carrier", "carrier_v3", "OPad Controller Carrier V3", parts, outline, holes, notes,
-                 ["GND", "3V3", "5V", "VBUS"], extra, {"VBUS": 0.4, "VBUS_F": 0.4, "5V": 0.4, "GND": 0.3},
-                 stitch)
+                 ["GND", "3V3", "5V"], extra, {"5V": 0.4, "GND": 0.3}, stitch, CARRIER_DATE)
+
+
+# -----------------------------------------------------------------------------
+# USB board: lies flat at the case's rear wall, USB-C mouth on the rear edge
+# (y = 100), the USB cable leaving the front edge (y = 122) towards the carrier.
+# The case's pins in H1/H2 take the plug's push.
+# -----------------------------------------------------------------------------
+USB_W, USB_D = 20.0, 22.0
+UX = 100.0 + USB_W / 2
+
+
+def usb():
+    T = "top"
+    parts = [
+        part("J1", "USBC", "USB_C", v3lib.USBC,
+             {"A1B12": "GND", "B1A12": "GND", "A4B9": "VBUS", "B4A9": "VBUS", "A5": "CC1", "B5": "CC2",
+              "A6": "USB_DP", "B6": "USB_DP", "A7": "USB_DN", "B7": "USB_DN", "A8": None, "B8": None,
+              "S1": "SHIELD", "S2": "SHIELD", "S3": "SHIELD", "S4": "SHIELD"},
+             (UX, 100.0 + v3lib.USB_EDGE_Y), T, 180, "USB-C, mouth on the rear edge"),
+        part("J2", "FFC8", "FFC8", v3lib.FFC8, USB_FFC_PINS, (UX, 100.0 + USB_D - 0.3 - v3lib.FFC_MOUTH_Y), T, 0,
+             "USB cable (8-way FFC) to the carrier"),
+        part("U1", "ESD", "SRV05-4", v3lib.SOT236,
+             {"1": "USB_DP", "2": "GND", "3": "USB_DN", "4": None, "5": "VBUS", "6": None},
+             (UX, 111.0), T, 0, "ESD on D+/D-, REF on VBUS"),
+        two("R1", "R5K1", "CC1", "GND", (113.8, 108.8), T, 0, "CC1 pull-down: a USB-C sink"),
+        two("R2", "R5K1", "CC2", "GND", (102.6, 108.8), T, 0, "CC2 pull-down"),
+        two("R3", "R1M", "SHIELD", "GND", (102.4, 106.5), T, 0, "Shield to ground, DC path"),
+        two("C1", "C4N7", "SHIELD", "GND", (117.6, 106.5), T, 0, "Shield to ground, RF path"),
+        two("C2", "C100N", "VBUS", "GND", (106.2, 108.8), T, 0, "VBUS at the connector"),
+        two("FB1", "FB120", "VBUS", "VBUS_F", (117.4, 108.8), T, 0, "VBUS filter, 2 A"),
+        two("C3", "C4U7", "VBUS_F", "GND", (118.6, 113.6), T, 90, "VBUS after the filter"),
+        part("D1", "SCHOTTKY", "D_Schottky", v3lib.SOD123, {"1": "VBUS_F", "2": "5V"}, (114.6, 113.9), T, 180,
+             "No back-feed from the Waveshare's own USB port into this one"),
+    ]
+    outline = [(100.0, 100.0), (100.0 + USB_W, 100.0), (100.0 + USB_W, 100.0 + USB_D), (100.0, 100.0 + USB_D)]
+    holes = [(102.5, 103.0), (117.5, 103.0)]
+    notes = ["OPad USB board V3: USB-C -> CC 5.1k, ESD, VBUS 100nF / ferrite / 4.7uF, Schottky -> USB FFC to the carrier.",
+             "USB FFC: 1 GND | 2 5V | 3 D- | 4 D+ | 5 D+ | 6 D- | 7 5V | 8 GND (the same read from either end).",
+             "Shield to GND through 1M || 4.7nF."]
+
+    def extra(bb):
+        S = pcbnew.B_SilkS
+        bb.text("OPad USB " + REV, UX, 110.0, S, 0.8)
+        bb.text("JLCJLCJLCJLC", UX, 113.0, S, 0.8)
+        u = pads_of(bb, "J1")
+        assert u["S3"][1] < u["S1"][1], "J1: the mouth must face the rear edge"
+        p = pads_of(bb, "J2")
+        assert p["MP"][1] > p["1"][1], "J2: the cable entry must face the front edge"
+
+    stitch = [(101.0, 111.0), (119.0, 111.0), (101.0, 114.8), (105.0, 114.8), (110.0, 114.6)]
+    return build("USB", "usb_v3", "OPad USB Board V3", parts, outline, holes, notes,
+                 ["GND", "VBUS", "5V"], extra, {"VBUS": 0.4, "VBUS_F": 0.4, "5V": 0.4, "GND": 0.3}, stitch,
+                 CARRIER_DATE)
 
 
 # -----------------------------------------------------------------------------
@@ -469,7 +518,7 @@ def he():
                   (119.8, KEY_Y), (138.0, KEY_Y), (157.05, KEY_Y), (175.2, KEY_Y), (181.0, 78.0), (114.0, 78.0)])
 
 
-BOARDS = {"carrier": carrier, "mx": mx, "he": he}
+BOARDS = {"carrier": carrier, "usb": usb, "mx": mx, "he": he}
 
 if __name__ == "__main__":
     v3lib.write_library()

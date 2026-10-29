@@ -10,7 +10,7 @@ opadverify/jlc.py) onto our pads, so its preview needs no turning. Parts
 LCSC has no footprint for keep KiCad's position (two-terminal passives only;
 anything else stops the export).
 
-    python3 hardware/pcb/V3/scripts/export_v3.py [Carrier] [MX] [HE]   (default: all)
+    python3 hardware/pcb/V3/scripts/export_v3.py [Carrier] [USB] [MX] [HE]   (default: all)
 """
 
 import csv
@@ -30,26 +30,35 @@ from opadverify import board as B  # noqa: E402
 from opadverify import jlc  # noqa: E402
 
 ep.V1 = V3
-ep.BOARDS = [("Carrier", "carrier_v3"), ("MX", "mx_input_v3"), ("HE", "he_input_v3")]
+ep.BOARDS = [("Carrier", "carrier_v3"), ("USB", "usb_v3"), ("MX", "mx_input_v3"), ("HE", "he_input_v3")]
 ep.ACCEPTED_WARNINGS = set()
 ep.ACCEPTED_ERC = set()
 TOL = 0.35        # mm, model pad centre to our pad centre
+# The same for a model pad with no number of ours (a mechanical tab), where a part's JLCPCB model is known
+# to differ from the maker's drawing: the AFA07-S08 model draws its nails 0.63 mm nearer the contacts
+MECH_TOL = {"C262714": 0.8}
 
 
-def fit(model, pads, bottom):
+def fit(model, pads, bottom, mech_tol=None):
     """Best (unordered, worst, rotation, x, y) placing the model's pads onto ours.
 
     pads: [(number, (x, y))] in Gerber mm. A numbered fit (model pad n on our
     pad n) is preferred; an unordered one (every model pad on some pad of ours)
-    is only for parts whose pads are interchangeable, and is reported as such."""
+    is only for parts whose pads are interchangeable, and is reported as such.
+    mech_tol (MECH_TOL): the model's pads with no number of ours are mechanical
+    tabs drawn off the maker's drawing; they are left out of the alignment and
+    only need to land within mech_tol."""
     ours = {}
     for n, xy in pads:
         ours.setdefault(n, xy)
     every = [xy for _, xy in pads]
+    numbers = {p["number"] for p in model}
+    pins = [xy for n, xy in pads if n in numbers] if mech_tol else every
     best = None
     for rot in (0, 90, 180, 270):
         placed = {i: jlc.place(p, 0, 0, rot, bottom) for i, p in enumerate(model)}
         pairs = [(placed[i], ours[p["number"]]) for i, p in enumerate(model) if p["number"] in ours]
+        tab = {i for i, p in enumerate(model) if mech_tol and p["number"] not in ours}
         for numbered in (True, False):
             if numbered:
                 if len(pairs) < max(2, 0.6 * len(model)):
@@ -57,21 +66,23 @@ def fit(model, pads, bottom):
                 tx = sum(o[0] - m[0] for m, o in pairs) / len(pairs)
                 ty = sum(o[1] - m[1] for m, o in pairs) / len(pairs)
             else:   # interchangeable pads: centroid, then nearest neighbours
-                mx = sum(v[0] for v in placed.values()) / len(placed)
-                my = sum(v[1] for v in placed.values()) / len(placed)
-                ox = sum(v[0] for v in every) / len(every)
-                oy = sum(v[1] for v in every) / len(every)
+                mine = [v for i, v in placed.items() if i not in tab]
+                mx = sum(v[0] for v in mine) / len(mine)
+                my = sum(v[1] for v in mine) / len(mine)
+                ox = sum(v[0] for v in pins) / len(pins)
+                oy = sum(v[1] for v in pins) / len(pins)
                 tx, ty = ox - mx, oy - my
-            worst = 0.0
+            worst = mech = 0.0
             for i, p in enumerate(model):
                 x, y = placed[i][0] + tx, placed[i][1] + ty
-                if numbered and p["number"] in ours:
-                    d = math.hypot(ours[p["number"]][0] - x, ours[p["number"]][1] - y)
+                if i in tab:
+                    mech = max(mech, min(math.hypot(o[0] - x, o[1] - y) for o in every))
+                elif numbered and p["number"] in ours:
+                    worst = max(worst, math.hypot(ours[p["number"]][0] - x, ours[p["number"]][1] - y))
                 else:
-                    d = min(math.hypot(o[0] - x, o[1] - y) for o in every)
-                worst = max(worst, d)
+                    worst = max(worst, min(math.hypot(o[0] - x, o[1] - y) for o in every))
             cand = (not numbered, worst, rot, tx, ty)
-            if worst <= TOL and (best is None or cand < best):
+            if worst <= TOL and mech <= (mech_tol or TOL) and (best is None or cand < best):
                 best = cand
     return best
 
@@ -100,7 +111,7 @@ def bom_and_cpl(pcb, out, project):
                 continue
             sys.exit("%s: no JLCPCB footprint for %s: %s" % (ref, lcsc[ref], e))
         bottom = r["Layer"] == "Bottom"
-        f = fit(model, ours, bottom)
+        f = fit(model, ours, bottom, MECH_TOL.get(lcsc[ref]))
         if len(model) != len(ours):
             sys.exit("%s: JLCPCB's footprint of %s has %d pads, ours %d" % (ref, lcsc[ref], len(model), len(ours)))
         if f is None:

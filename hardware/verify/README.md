@@ -72,8 +72,8 @@ New boards are exported so that the check passes with no turning in the preview.
 | MX V1 (built, works) | passes; warns about two 0.19 mm² floating copper slivers |
 | Carrier V1 (built, works) | passes |
 | HE V2 (not built) | passes |
-| Carrier V3, MX V3, HE V3 (not built) | pass (one warning each on HE and carrier: no LCSC footprint for the 0603 ferrite) |
-| `tests/test_system.py` | the module cable both ways round, from every module pin to its ESP32 pin, and the ID margins: pass |
+| Carrier V3, USB V3, MX V3, HE V3 (not built; 2026-10-29) | pass, no warnings |
+| `tests/test_system.py` | the module cable both ways round, from every module pin to its ESP32 pin, the USB cable both ways round from the jack to GPIO20/19 and 5 V, and the ID margins: pass |
 | `tests/test_mutations.py` on HE V2 | 12 of 12 cases behave: 10 deliberate faults caught (cut track, short, missing vias, mirrored footprint, swapped SPI pins, ADC rotated in the CPL, no mask opening, wrong LCSC number, missing hole) and JLCPCB's ADC model lands at 180° but not at 0° |
 
 With the JLCPCB check on, every V1 board and HE V2 report their JST connector

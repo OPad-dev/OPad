@@ -6,10 +6,11 @@ checked by hardware/verify). Footprints that V1/V2 already proved on built
 boards are copied unchanged.
 
 Sources:
-- FFC: JUSHUO AFA07-S**F*-** customer drawing (LCSC C262720 datasheet):
-  contacts 0.60 x 1.80 at 1.00 mm, fitting nails 2.60 x 3.00, circuit 1 on
-  the left in the top view with the contacts at the rear and the FFC entry
-  at the front.
+- FFC: JUSHUO AFA07-S**F*-** customer drawing (LCSC C262720 and C262714
+  datasheets, the same drawing for every contact count): contacts 0.60 x 1.80
+  at 1.00 mm, fitting nails 2.60 x 3.00 whose outer edge is 3.65 mm past the
+  outer contact, circuit 1 on the left in the top view with the contacts at
+  the rear and the FFC entry at the front.
 - USB-C: HRO TYPE-C-31-M-12 drawing (LCSC C165948): pin order A1/B12, A4/B9,
   B8, A5, B7, A6, A7, B6, A8, B5, B4/A9, B1/A12 from left to right with the
   pins at the rear and the PCB edge at the front; shield legs 8.65 mm apart,
@@ -42,6 +43,7 @@ COPIED = {
 }
 
 FFC14 = "FFC_JUSHUO_AFA07-S14FCA_1x14-1MP_P1.0mm_Horizontal"
+FFC8 = "FFC_JUSHUO_AFA07-S08FCA_1x08-1MP_P1.0mm_Horizontal"
 USBC = "USB_C_Receptacle_HRO_TYPE-C-31-M-12"
 SOT236 = "SOT-23-6"
 SOT235 = "SOT-23-5"
@@ -81,23 +83,38 @@ def _footprint(name, descr, tags, body, attr="smd"):
             '\t(attr %s)\n%s)\n' % (name, descr, tags, name, attr, body))
 
 
-def ffc14():
+def ffc(n, name, mpn, lcsc):
+    """JUSHUO AFA07-S**FCA-00, n contacts: contacts at 1.00 mm, nails 2.35 mm past the outer
+    contacts, housing (DIM C) n + 5.05 mm wide (the drawing's land pattern and dimension table)."""
+    x1 = (n - 1) / 2.0                   # outer contact
+    nail = x1 + 2.35
+    half = round((n + 5.05) / 2.0 + 1e-6, 2)     # housing
+    edge = nail + 1.3                    # outer edge of a nail pad
     b = ""
-    for k in range(1, 15):
-        b += _pad(k, "smd", "roundrect", k - 7.5, 0.0, 0.6, 1.8)
+    for k in range(1, n + 1):
+        b += _pad(k, "smd", "roundrect", k - (n + 1) / 2.0, 0.0, 0.6, 1.8)
     for sx in (-1, 1):
-        b += _pad("MP", "smd", "roundrect", sx * FFC_NAIL[0], FFC_NAIL[1], 2.6, 3.0, rr=0.1)
-    b += _rect("F.Fab", -9.53, -0.2, 9.53, FFC_MOUTH_Y, 0.1)
-    b += _line("F.Fab", (-7.0, FFC_MOUTH_Y - 0.6), (7.0, FFC_MOUTH_Y - 0.6), 0.1)   # cable entry
-    b += _rect("F.CrtYd", -10.6, -1.25, 10.6, 5.1, 0.05)
-    b += _line("F.SilkS", (-7.7, -1.1), (-7.1, -1.1))
-    b += '\t(fp_circle (center -6.5 -1.55) (end -6.35 -1.55) (stroke (width 0.12) (type solid)) (fill yes) (layer "F.SilkS"))\n'
+        b += _pad("MP", "smd", "roundrect", sx * nail, FFC_NAIL[1], 2.6, 3.0, rr=0.1)
+    b += _rect("F.Fab", -half, -0.2, half, FFC_MOUTH_Y, 0.1)
+    b += _line("F.Fab", (-n / 2.0, FFC_MOUTH_Y - 0.6), (n / 2.0, FFC_MOUTH_Y - 0.6), 0.1)   # cable entry
+    b += _rect("F.CrtYd", -(edge + 0.45), -1.25, edge + 0.45, 5.1, 0.05)
+    b += _line("F.SilkS", (-x1 - 1.2, -1.1), (-x1 - 0.6, -1.1))
+    b += ('\t(fp_circle (center %s -1.55) (end %s -1.55) (stroke (width 0.12) (type solid)) (fill yes) '
+          '(layer "F.SilkS"))\n' % (-x1, -x1 + 0.15))
     for sx in (-1, 1):
-        b += _line("F.SilkS", (sx * 9.6, 0.4), (sx * 9.6, 0.5))
-        b += _line("F.SilkS", (sx * 9.6, 3.9), (sx * 9.6, FFC_MOUTH_Y))
-    return _footprint(FFC14, "JUSHUO AFA07-S14FCA-00 FFC/FPC ZIF connector, 1.0 mm pitch, 14 contacts, "
-                      "bottom contact, 2.5 mm tall, slide lock (LCSC C262720). Contacts at the rear, cable "
-                      "enters from the front (+Y).", "FFC FPC ZIF 1.0mm 14P JUSHUO AFA07", b)
+        b += _line("F.SilkS", (sx * (half + 0.07), 0.4), (sx * (half + 0.07), 0.5))
+        b += _line("F.SilkS", (sx * (half + 0.07), 3.9), (sx * (half + 0.07), FFC_MOUTH_Y))
+    return _footprint(name, "JUSHUO %s FFC/FPC ZIF connector, 1.0 mm pitch, %d contacts, "
+                      "bottom contact, 2.5 mm tall, slide lock (LCSC %s). Contacts at the rear, cable "
+                      "enters from the front (+Y)." % (mpn, n, lcsc), "FFC FPC ZIF 1.0mm %dP JUSHUO AFA07" % n, b)
+
+
+def ffc14():
+    return ffc(14, FFC14, "AFA07-S14FCA-00", "C262720")
+
+
+def ffc8():
+    return ffc(8, FFC8, "AFA07-S08FCA-00", "C262714")
 
 
 USB_PINS = [("A1B12", -3.2, 0.6), ("A4B9", -2.4, 0.6), ("B8", -1.75, 0.3), ("A5", -1.25, 0.3),
@@ -164,7 +181,7 @@ def testpad():
                       _pad(1, "smd", "rect", 0, 0, 1.0, 1.0, layers='"F.Cu" "F.Mask"'))
 
 
-NEW = {FFC14: ffc14, USBC: usb_c, SOT236: sot23_6, SOT235: sot23_5, SOD123: sod123,
+NEW = {FFC14: ffc14, FFC8: ffc8, USBC: usb_c, SOT236: sot23_6, SOT235: sot23_5, SOD123: sod123,
        "TestPoint_Pad_1.0x1.0mm": testpad}
 
 
@@ -178,7 +195,7 @@ def _font():
 
 def _pin(kind, name, number, x, y, angle):
     return ('\t\t\t(pin %s line (at %s %s %d) (length 2.54) (name "%s" %s) (number "%s" %s))\n'
-            % (kind, x, y, angle, name, _font(), number, _font()))
+            % (kind, round(x, 4) + 0.0, round(y, 4) + 0.0, angle, name, _font(), number, _font()))
 
 
 def box(name, ref, footprint, description, left, right):
@@ -207,6 +224,9 @@ SYMBOLS = {
     "FFC14": box("FFC14", "J", FFC14, "14-way FFC connector, mechanical tabs on MP",
                  [("%d" % k, str(k), P) for k in range(1, 8)],
                  [("%d" % k, str(k), P) for k in range(8, 15)] + [("MP", "MP", P)]),
+    "FFC8": box("FFC8", "J", FFC8, "8-way FFC connector, mechanical tabs on MP",
+                [("%d" % k, str(k), P) for k in range(1, 5)],
+                [("%d" % k, str(k), P) for k in range(5, 9)] + [("MP", "MP", P)]),
     "USB_C": box("USB_C", "J", USBC, "USB-C 2.0 receptacle",
                  [("GND", "A1B12", P), ("VBUS", "A4B9", P), ("SBU2", "B8", P), ("CC1", "A5", P),
                   ("DN2", "B7", P), ("DP1", "A6", P)],

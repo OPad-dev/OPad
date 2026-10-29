@@ -54,8 +54,8 @@ pins = { IO1 = "SCLK", IO2 = "MOSI", IO3 = "MISO", IO4 = "CS", GND = "GND", REF 
 
 [part.FB1]   # ferrite before the LDO
 device = "R0603"
-lcsc = "C1002"
-mpn = "GZ1608D601TF"
+lcsc = "C107335"
+mpn = "MPZ1608S601ATA00"
 nets = ["5V", "5V_F"]
 
 [part.C1]   # LDO input 1uF
