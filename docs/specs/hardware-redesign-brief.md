@@ -301,16 +301,18 @@ LDO (H11).
 | H15 | HE V2 (`hardware/pcb/V2/HE/`) is **not ordered**; it is superseded by the redesign and used to validate the checks. | Follows from H10, H11, H14. |
 | H16 | **Four** locating holes on each input module, not two, for the case's pins. **Decided.** | Owner. |
 | H17 | "Emulation" means proving **every trace** right: a checker that rebuilds connectivity from the fab files and compares it with a hand-written intended netlist and the datasheet pin drawings (`hardware/verify/`). No magnet model. **Decided.** | Owner: V1 failed on the traces, not on magnetics. |
+| H18 | **The USB-C is on its own board at the rear wall,** linked to the carrier by an 8-way FFC; the module keeps its 14-way FFC. This replaces the 2026-10-23 choice of one FFC and the USB-C on a carrier tab. **Decided** (owner, 2026-10-28). | The case wall takes the plug's push, not the header sockets; the port can sit anywhere on the rear wall; the carrier loses the 14.3 mm tab. |
 
 ### 4.2 Architecture of the new board set (2026-10-23, building on 4.1)
 
 | Board | What it does |
 |---|---|
-| **Carrier** | Same headers as V1, plus a tab at the rear-right corner past the Waveshare's USB end carrying the **USB-C** (HRO TYPE-C-31-M-12, C165948), mouth on the rear edge (owner, 2026-10-23: one FFC cable only, USB-C on the carrier). USB parts: CC1/CC2 5.1 kΩ; SRV05-4 ESD on D+/D− with REF on VBUS; 2 A ferrite (BLM18PG121SN1D, C14709) and capacitors on VBUS; B5817W Schottky (C7420328; JLCPCB's model: pad 1 anode, pad 2 cathode) so a host on the Waveshare's own port cannot feed this one; shield to GND through 1 MΩ ∥ 4.7 nF. VBUS → P1-14, D+ → P1-11, D− → P1-12. The port points backwards 16° upward with the screen tilt; the carrier must be screwed to its posts so the plug does not load the sockets. 14-pin FFC to the module at the non-USB end. 33 Ω series on the four SPI-capable lines, SRV05-4 ESD on the six module signals, ferrite + capacitors on the 5 V to the module, bulk on 3V3, all three Waveshare GND pins tied. |
+| **USB board** (H18) | Lies flat at the case's rear wall, **USB-C** (HRO TYPE-C-31-M-12, C165948) mouth on its rear edge; two M2 holes for the case's pins, which take the plug's push. CC1/CC2 5.1 kΩ; SRV05-4 ESD on D+/D− with REF on VBUS; 2 A ferrite (BLM18PG121SN1D, C14709) between 100 nF and 4.7 µF on VBUS; B5817W Schottky (C7420328; JLCPCB's model: pad 1 anode, pad 2 cathode) so a host on the Waveshare's own port cannot feed this one; shield to GND through 1 MΩ ∥ 4.7 nF. 8-pin FFC to the carrier. 20 × 22 mm. |
+| **Carrier** | V1's outline and headers, plus a lug in the window's USB-end rear corner for the 8-pin USB FFC (mouth on the USB-end edge; P1's sockets fill the rear edge). USB FFC: 5V → P1-14, D+ → P1-11, D− → P1-12. 14-pin FFC to the module at the non-USB end. 33 Ω series on the four SPI-capable lines, SRV05-4 ESD on the six module signals, ferrite + capacitors on the 5 V to the module, bulk on 3V3, all three Waveshare GND pins tied. |
 | **MX module** | 3 Kailh sockets, 10 kΩ pull-ups, ID 47k/100k = 2.24 V, 4 corner holes, 14-pin FFC. |
 | **HE module** | HE V2 plus: LP5907-3.3 LDO (C80670) from the cable's 5 V for the sensors and ADC AVDD (1 µF in, 1 µF out; AVDD total kept under the LDO's 10 µF limit); DVDD on 3V3; 100 kΩ CS pull-up; SRV05-4 ESD on the SPI lines; ID 100k/100k = 1.65 V (the V2 class: same ADC, same pins); 4 corner holes; 14-pin FFC. |
 
-**Module cable (the only FFC), reversible:**
+**FFC links, both reversible:**
 
 - Module, 14-pin, 1.0 mm (JUSHUO AFA07-S14FCA-00, C262720, 2.5 mm tall, bottom contact):
   `1 GND | 2 5V | 3 3V3 | 4 ID (GPIO8) | 5 MISO (GPIO6) | 6 GND | 7 SCLK (GPIO2) | 8 MOSI (GPIO4) | 9 GND | 10 CS (GPIO10) | 11 SPARE (GPIO7) | 12 3V3 | 13 5V | 14 GND`.
@@ -318,6 +320,11 @@ LDO (H11).
   ID ↔ GPIO7 (also ADC1), MISO ↔ CS, SCLK ↔ MOSI. The firmware finds the ID on GPIO8 or GPIO7
   and swaps the SPI pins in the GPIO matrix, so either cable type works.
   MX uses CS = KEY1 (GPIO10, as V1), SPARE = KEY2 (GPIO7, as V1), MISO = KEY3 (GPIO6).
+- USB, 8-pin, 1.0 mm (JUSHUO AFA07-S08FCA-00, C262714):
+  `1 GND | 2 5V | 3 D− | 4 D+ | 5 D+ | 6 D− | 7 5V | 8 GND`, the same read from either end;
+  D+ and D− each use two conductors in parallel, joined on both boards. The two 5V conductors
+  carry 1 A together (0.5 A per contact, connector datasheet). Different widths on purpose:
+  the module cable cannot go into the USB connector.
 
 **Module IDs:** MX V1 0.30 V, HE V1 1.06 V, HE SPI (V2 and the new HE) 1.65 V, new MX 2.24 V.
 Firmware cut-offs halfway between: 0.68, 1.35, 1.95, 2.6 V.
@@ -531,7 +538,7 @@ much larger project (USB-C, ESP32-S3 module, LCD/touch connector). **Open.**
 
 Settled on 2026-10-23 (§4.1): keep the Waveshare (1, kept by H11), cable
 (2: FFC, H10), keys (3: three only, H13), USB-C board (4: yes, at the back,
-H11/H12), ESD (5: yes, H11 and the HE V2 findings), ordering HE V2 (8: no,
+H11/H12; its own board on an 8-way FFC since 2026-10-28, H18), ESD (5: yes, H11 and the HE V2 findings), ordering HE V2 (8: no,
 H15).
 
 Still open:

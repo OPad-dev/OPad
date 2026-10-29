@@ -1974,7 +1974,7 @@
 				(justify mirror)
 			)
 		)
-		(property "LCSC" "C1002"
+		(property "LCSC" "C107335"
 			(at 0 0 270)
 			(layer "B.SilkS")
 			(hide yes)
@@ -1987,7 +1987,7 @@
 				(justify mirror)
 			)
 		)
-		(property "MPN" "Sunlord GZ1608D601TF"
+		(property "MPN" "TDK MPZ1608S601ATA00"
 			(at 0 0 270)
 			(layer "B.SilkS")
 			(hide yes)

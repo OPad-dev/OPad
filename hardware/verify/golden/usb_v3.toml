@@ -1,0 +1,91 @@
+# Intended netlist of the USB board V3, written from docs/specs/hardware-redesign-brief.md 4.2
+# (the USB-C on its own board at the case's rear wall since 2026-10-28) and the datasheets in
+# opadverify/devices.py. The board lies flat; the USB-C mouth is on the rear edge (small y),
+# the USB cable leaves the front edge to the carrier.
+
+[board]
+title = "USB board V3"
+pcb = "../../pcb/V3/USB/usb_v3.kicad_pcb"
+gerbers = "../../pcb/V3/USB/production/jlcpcb/usb_v3-gerbers.zip"
+cpl = "../../pcb/V3/USB/production/jlcpcb/usb_v3-CPL-JLCPCB.csv"
+cpl_from = "jlc"     # export_v3.py fits JLCPCB's own footprints
+bom = "../../pcb/V3/USB/production/jlcpcb/usb_v3-BOM-JLCPCB.csv"
+
+[part.J1]   # USB-C, both plug orientations
+device = "USB_C_HRO"
+lcsc = "C165948"
+mpn = "TYPE-C-31-M-12"
+pins = { A1B12 = "GND", B1A12 = "GND", A4B9 = "VBUS", B4A9 = "VBUS", A5 = "CC1", B5 = "CC2", A6 = "USB_DP", B6 = "USB_DP", A7 = "USB_DN", B7 = "USB_DN", A8 = "NC", B8 = "NC", S1 = "SHIELD", S2 = "SHIELD", S3 = "SHIELD", S4 = "SHIELD" }
+
+[part.J2]   # USB cable to the carrier; the same read from either end
+device = "FFC8"
+lcsc = "C262714"
+mpn = "AFA07-S08FCA-00"
+pins = { "1" = "GND", "2" = "5V", "3" = "USB_DN", "4" = "USB_DP", "5" = "USB_DP", "6" = "USB_DN", "7" = "5V", "8" = "GND" }
+
+[part.R1]   # 5.1k: the host sees a sink
+device = "R0603"
+lcsc = "C23186"
+mpn = "0603WAF5101T5E"
+nets = ["CC1", "GND"]
+
+[part.R2]   # 5.1k
+device = "R0603"
+lcsc = "C23186"
+mpn = "0603WAF5101T5E"
+nets = ["CC2", "GND"]
+
+[part.R3]   # 1M shield to ground
+device = "R0603"
+lcsc = "C22935"
+mpn = "0603WAF1004T5E"
+nets = ["SHIELD", "GND"]
+
+[part.C1]   # 4.7nF shield to ground
+device = "R0603"
+lcsc = "C53987"
+mpn = "0603B472K500NT"
+nets = ["SHIELD", "GND"]
+
+[part.U1]   # ESD on D+/D-, REF clamps VBUS
+device = "SRV05_4"
+lcsc = "C85364"
+mpn = "SRV05-4-P-T7"
+pins = { IO1 = "USB_DP", IO2 = "USB_DN", IO3 = "NC", IO4 = "NC", GND = "GND", REF = "VBUS" }
+
+[part.C2]   # 100nF at the connector
+device = "R0603"
+lcsc = "C14663"
+mpn = "CC0603KRX7R9BB104"
+nets = ["VBUS", "GND"]
+
+[part.FB1]   # ferrite 2 A
+device = "R0603"
+lcsc = "C14709"
+mpn = "BLM18PG121SN1D"
+nets = ["VBUS", "VBUS_F"]
+
+[part.C3]   # 4.7uF
+device = "R0603"
+lcsc = "C19666"
+mpn = "CL10A475KO8NNNC"
+nets = ["VBUS_F", "GND"]
+
+[part.D1]   # Schottky: current only flows into the pad
+device = "B5817W"
+lcsc = "C7420328"
+mpn = "B5817W"
+pins = { A = "VBUS_F", K = "5V" }
+
+# M2 holes for the case's pins, which take the plug's push
+[[hole]]
+what = "M2"
+x = 102.5
+y = 103.0
+d = 2.2
+
+[[hole]]
+what = "M2"
+x = 117.5
+y = 103.0
+d = 2.2

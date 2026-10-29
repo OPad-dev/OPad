@@ -12,7 +12,7 @@
 Each step that loads a board runs in its own process: pcbnew under Python
 3.14 fails when one process loads a second board.
 
-    python3 hardware/pcb/V3/scripts/route_v3.py Carrier|MX|HE [passes]
+    python3 hardware/pcb/V3/scripts/route_v3.py Carrier|USB|MX|HE [passes]
 """
 
 import json
@@ -26,7 +26,7 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 V3 = os.path.dirname(HERE)
-PROJECTS = {"Carrier": "carrier_v3", "MX": "mx_input_v3", "HE": "he_input_v3"}
+PROJECTS = {"Carrier": "carrier_v3", "USB": "usb_v3", "MX": "mx_input_v3", "HE": "he_input_v3"}
 JAR = os.environ.get("FREEROUTING_JAR", os.path.expanduser("~/.kicad-mcp/freerouting-1.9.0.jar"))
 VIA, DRILL = 0.6, 0.3
 CLEAR = 0.15 + 0.05       # net clearance plus a margin, via edge to foreign copper
