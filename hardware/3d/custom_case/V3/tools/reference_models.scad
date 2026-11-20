@@ -52,7 +52,7 @@ URIBBON2 = [
     [_uw(USB_XC - CASE_W/2, USB_DROP_A), X, DECK_N],
     [[USB_XC, USB_DROP_Y - 2.0, FFC_FLOOR_Z + 2.5], X, Y],              // curled down
     [[USB_XC, USB_DROP_Y + 1.0, FFC_FLOOR_Z], X, Z],                    // onto the floor, heading back
-    [[USB_XC, USB_CH_Y[1], FFC_FLOOR_Z], X, Z],
+    [[USB_XC, USB_FLOOR_Y, FFC_FLOOR_Z], X, Z],
     [[USB_XC, USB_FRONT - FFC_STIFF - 0.5, J2_ENTRY_Z], X, Z],
     [[USB_XC, USB_FRONT, J2_ENTRY_Z], X, Z],
 ];
@@ -65,17 +65,17 @@ module ribbon(rs, wd = FFC_W) for (i = [0 : len(rs) - 2]) hull() { ribbon_slab(r
 
 module ref(name) {
     // --- screen stack (deck frame) ---
-    if (name == "gasket") at_deck()          // foam tape on the lip's underside, compressed
-        translate([0, 0, -SINK]) linear_extrude(GASKET_C) difference() {
+    if (name == "tape") at_deck()            // double-sided tape under the glass edge, on the ledge
+        translate([0, 0, -POCKET_D]) linear_extrude(TAPE_T) difference() {
             rrect2d(GLASS_X, GLASS_Y, GLASS_R);
-            rrect2d(GLASS_X - 2*LIP, GLASS_Y - 2*LIP, max(0.5, GLASS_R - LIP));
+            translate([WS_PCB_XC, 0]) square([THROUGH_X + 0.2, THROUGH_Y + 0.2], center = true);
         }
     if (name == "ws_glass") at_deck()
-        translate([0, 0, -SINK - GLASS_T]) linear_extrude(GLASS_T)
+        translate([0, 0, -GLASS_T]) linear_extrude(GLASS_T)
             offset(GLASS_R) square([GLASS_X - 2*GLASS_R, GLASS_Y - 2*GLASS_R], center = true);
     if (name == "ws_module") at_deck()     // glass to PCB back, inside the glass outline
-        translate([WS_PCB_XC - WS_PCB_X/2, -WS_PCB_Y/2, -WS_BACK]) cube([WS_PCB_X, WS_PCB_Y, WS_BACK - SINK - GLASS_T]);
-    if (name == "ws_back") at_deck() for (b = WS_BACK_BOXES) dbox(b[0] + WS_PCB_XC, b[1] + WS_PCB_XC, b[2], b[3], b[4] + SINK, b[5] + SINK);
+        translate([WS_PCB_XC - WS_PCB_X/2, -WS_PCB_Y/2, -WS_BACK]) cube([WS_PCB_X, WS_PCB_Y, WS_BACK - GLASS_T]);
+    if (name == "ws_back") at_deck() for (b = WS_BACK_BOXES) dbox(b[0] + WS_PCB_XC, b[1] + WS_PCB_XC, b[2], b[3], b[4], b[5]);
     if (name == "sockets") at_deck() for (s = [-1, 1])
         dbox(WS_PCB_XC - 17.78, WS_PCB_XC + 17.78, s*ROW_A - 1.27, s*ROW_A + 1.27, WS_BACK + HDR_PLASTIC, CARRIER_TOP);
     // V3 carrier: V1 outline with the window, open at the USB end round the lug; M2 holes open
@@ -181,7 +181,7 @@ module ref(name) {
     }
 }
 
-REF_NAMES = ["gasket", "ws_glass", "ws_module", "ws_back", "sockets", "carrier", "tails", "carrier_top_parts",
+REF_NAMES = ["tape", "ws_glass", "ws_module", "ws_back", "sockets", "carrier", "tails", "carrier_top_parts",
              "jusb", "jusb_latch", "jmod", "jmod_latch", "mod_pcb", "mod_j1",
              "mx_sockets", "mx_parts", "mx_switch_pins", "he_parts", "switches", "keycaps", "cable",
              "usb_pcb", "usb_jack", "usb_legs", "usb_j2", "usb_j2_latch", "usb_parts", "usb_plug", "usb_cable"];

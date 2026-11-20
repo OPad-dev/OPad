@@ -46,11 +46,17 @@ MODULE_OUTLINE  = [CASE_W/2 - 35.525, 7, CASE_W/2 + 35.525, 31];   // x0, y0, x1
 MODULE_J1       = [CASE_W/2 - 10.6, 31 - 0.3 - 5.0, CASE_W/2 + 10.6, 31 + 0.2];
 J1_SLOT_Z       = 1.25;   // cable entry below the module PCB
 
-// Screwless module mount: pins under the key deck locate the module through its
-// four corner holes (V3: four, decision H16), and posts on the bottom plate
-// clamp it up against the deck.
+// Screwless module mount: pins on bosses under the key deck locate the module through
+// its four corner holes (V3: four, decision H16), so it stays put while the case is
+// upside down for assembly; posts on the bottom plate take the pin tips in holes and
+// clamp it up against the bosses.
 MODULE_FLOOR_CLR = 0.5;   // J1, the lowest part of either module, above the floor
 MODULE_PIN_D     = 1.9;   // in the 2.2 mm NPTH holes
+MODULE_PIN_INTO  = 1.5;   // pin length past the module, into the post
+MODULE_PIN_HOLE  = MODULE_PIN_D + 0.4;   // hole in the post
+// Ribs on the bottom plate under the MX sockets, so a switch pushed into its socket
+// does not bend the module; they clear every HE part by 0.5 mm or more
+SOCKET_RIB_GAP   = 0.1;   // rib top to socket bottom
 MODULE_PCB_BOT   = BASE_T + MODULE_J1_BELOW + MODULE_FLOOR_CLR;
 MODULE_PCB_TOP  = MODULE_PCB_BOT + MODULE_PCB_T;
 KEY_DECK_H      = MODULE_PCB_TOP + MX_PLATE_TO_PCB;         // world z of the plate top
@@ -75,22 +81,18 @@ POCKET_D    = GLASS_T + TAPE_T;          // glass front ends flush with the fram
 BORDER      = 3.5;                       // frame between pocket and pod edge
 FRAME_A     = POCKET_Y/2 + BORDER;       // half extent of the pod face along the slope
 
-// V3: the stack goes in from below and the glass bears on a lip round the window,
-// with foam tape between them; depths below are from the deck surface, so the
-// glass front is SINK below it
-LIP         = 1.2;    // lip over the glass edge (the glass border is 3.4 mm or more round the display)
-LIP_T       = 1.0;    // lip thickness
-GASKET      = 0.5;    // foam tape on the lip's underside...
-GASKET_C    = 0.3;    // ...compressed to this by the carrier posts
-SINK        = LIP_T + GASKET_C;
-
+// As V1.1: the glass sits in a pocket, taped on the ledge round the opening, its front
+// flush with the frame; the pocket's walls hold it sideways. The stack drops in from
+// the top through the opening.
 WS_PCB_XC   = 0.21;   // Waveshare PCB centre relative to the glass centre (deck x)
 WS_PCB_X    = 48.22;
 WS_PCB_Y    = 35.02;
-WS_BACK     = SINK + 7.2;   // deck surface -> Waveshare PCB back (7.2 mm behind the glass front)
+WS_BACK     = 7.2;    // glass front -> Waveshare PCB back
 HDR_PLASTIC = 2.5;    // male header plastic on the Waveshare
+THROUGH_X   = 48.8;   // opening the Waveshare and carrier pass through (as V1.1)...
 THROUGH_Y   = 35.6;
 WS_USB_X    = 25.5;   // the Waveshare's own USB-C face (deck x): V3 covers it, the case has no opening there
+WS_USB_A    = 4.79;   // ...widened round that USB-C (a = -4.79..4.79), which stands out past the PCB
 WS_HOLES    = [[21.31, 14.5], [21.31, -14.5], [-20.89, 14.5], [-20.89, -14.5]];
 
 // Controller carrier V3 (hardware/pcb/V3/Carrier) on 8.5 mm sockets.
@@ -157,7 +159,9 @@ USB_FRONT   = USB_REAR - USB_BL;
 USB_XC      = USB_X0 + USB_BW/2;                   // the jack and J2 are on the board's centre line
 function usb_to_world(p) = [USB_X0 + (p[0] - 100), USB_REAR - (p[1] - 100)];
 USB_HOLES   = [for (p = [[102.5, 103.0], [117.5, 103.0]]) usb_to_world(p)];
-USB_PIN_D   = 1.9;    // in the board's 2.2 mm holes
+USB_PIN_D   = 1.9;    // in the board's 2.2 mm holes (pins on the top case's blocks)
+USB_PIN_INTO = 1.0;   // pin length past the board, into the post
+USB_PIN_HOLE = USB_PIN_D + 0.4;   // hole in the post
 USB_JACK_W  = 8.94;   // HRO TYPE-C-31-M-12
 USB_JACK_H  = 3.26;
 USB_JACK_L  = 7.75;   // from the mouth (0.4 mm past the edge) back over the board
@@ -199,25 +203,17 @@ FFC_FOLD    = [CASE_W/2, JMOD_EXIT[1]];            // the 45 deg fold, under the
 J1_ENTRY    = [CASE_W/2, 31 + 0.2, MODULE_PCB_BOT - J1_SLOT_Z];
 FFC_RUN_Y   = Y_C + (CARRIER_TOP - 1.2) * sin(TILT);   // centre line of the run across the floor (world y)
 
-// Cable channel on the bottom plate along the floor part of the route: low walls with
-// small lips the cable is pressed in under. Low enough to pass under the front of the
-// screen stack (FLOOR_CLR above the floor there).
-GUIDE_H     = 1.0;    // wall height above the floor
-GUIDE_T     = 1.2;    // wall thickness
-GUIDE_GAP   = 0.4;    // cable to wall, each side
-GUIDE_LIP   = 0.6;    // lip over the cable's edge
-GUIDE_LIP_T = 0.3;
-GUIDE_END_Y = 36.0;   // the forward run stops here; the cable rises into J1 after it
+// No cable channels: both cables lie loose on the floor.
 
 // --- The USB cable (8-way FFC) ------------------------------------------------------
 // Out of J_USB towards the USB end, past the stiffened end one 45 deg fold, then forward
-// in the free space right of the stack, down in front of the USB board, back along a
-// channel on the floor and up into J2 at the board's front edge
+// in the free space right of the stack, down in front of the USB board, back along the
+// floor and up into J2 at the board's front edge
 USB_RUN_D   = CARRIER_TOP - 1.2;                       // cable depth beside the stack (as J_MOD's)
 USB_FOLD_X  = JUSB_MOUTH_X + FFC_STIFF + FFC8_W/2;      // deck x of the run after the fold
-USB_DROP_Y  = 39.0;                                     // world y where it turns down to the floor
+USB_DROP_Y  = 41.5;                                     // world y where it turns down to the floor
 USB_DROP_A  = (USB_DROP_Y - Y_C - USB_RUN_D * sin(TILT)) / cos(TILT);
-USB_CH_Y    = [41.5, 52.0];                             // the floor channel
+USB_FLOOR_Y = 52.5;                                     // where it leaves the floor to rise into J2
 
 echo(str("V3: USB board x ", USB_X0, "..", USB_X0 + USB_BW, ", y ", USB_FRONT, "..", USB_REAR,
          ", jack axis z ", USB_AXIS_Z));

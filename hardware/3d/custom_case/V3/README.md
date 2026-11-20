@@ -18,22 +18,48 @@ the same; what changed is below. **Not printed or test-fitted yet**; the boards 
 
 | | V1.1 | V3 |
 |---|---|---|
-| Footprint | 76 × 82.5 mm | **84 × 83 mm** |
-| Height, key deck / rear | 12.0 / 33.3 mm | **11.6 / 35.3 mm** |
+| Footprint | 76 × 82.5 mm | **84 × 82.5 mm** |
+| Height, key deck / rear | 12.0 / 33.3 mm | **11.6 / 34.1 mm** |
 | Keys | 2 | **3** at 19.05 mm |
-| Module mount | 2 pins + 2 clamp posts | **4 corner pins + 4 clamp posts** |
-| Screen | glass flush, taped on a ledge, stack dropped in from the top | **stack inserted from below**, glass pressed up against a 1.2 mm lip (0.5 mm foam tape between them), so the glass sits 1.3 mm below the frame |
-| Carrier support | 4 posts 0.5 mm below the carrier | **2 posts pressing the carrier up, with pins in its M2 holes, and a pad on its rear rail** |
+| Module mount | 2 pins under the deck + 2 clamp posts | **4 pins under the deck + 4 clamp posts** |
+| Screen | glass flush, taped on a ledge, stack dropped in from the top | same; the opening is widened round the Waveshare's own USB-C |
+| Carrier support | 4 posts 0.5 mm below the carrier | **2 posts and a pad on its rear rail**, 0.5 mm below the carrier |
 | USB-C | through the right wall, into the Waveshare's own port | **through the rear wall, level, on the USB board** in the rear-right corner; the Waveshare's own port is closed in |
-| Cables | JST SH, 100 mm | **14-way 1.0 mm FFC** to the module and **8-way 1.0 mm FFC** to the USB board, both held on the floor by **channels with small lips** |
+| Cables | JST SH, 100 mm | **14-way 1.0 mm FFC** to the module and **8-way 1.0 mm FFC** to the USB board, both loose on the floor |
+
+## Screen
+
+As V1.1: the glass sits in a pocket in the pod, its front flush with the frame, on
+double-sided tape on the ledge round the opening. The pocket's walls (0.3 mm clearance)
+stop it moving sideways. The Waveshare and the carrier drop through the opening from
+the top; the opening is widened round the Waveshare's own USB-C, which stands out past
+its PCB. The carrier supports stop 0.5 mm below the carrier: they only catch the stack
+if the tape lets go.
+
+## Module mount
+
+Everything goes into the top case upside down, so the pins are on the top case. Four
+bosses under the key deck carry pins that go through the module's four corner holes:
+the module hangs on them, located, while the rest goes in. The pins go on 1.5 mm into
+holes in four posts on the bottom plate, which clamp the module against the bosses
+when the plate snaps on.
+
+Three ribs per key on the bottom plate stop 0.1 mm under the MX sockets, so pushing a
+switch into its socket does not bend the module. They clear every part of the HE
+module by 0.5 mm or more.
 
 ## The USB board's seat
 
 There are no screws, so the board is held from every side:
-- **Down:** it sits on two posts on the bottom plate, 1.5 mm above the floor, with pins
-  through its two M2 holes.
-- **Up:** two blocks on the inside of the rear wall, either side of the jack, clamp its
-  rear corners down onto the posts. Recesses in the blocks take the pin tips.
+- **Located:** two pins on the blocks on the inside of the rear wall go through its two
+  M2 holes and on 1.0 mm into holes in two posts on the bottom plate.
+- **Down:** it sits on those posts, 1.5 mm above the floor.
+- **Up:** the two blocks, either side of the jack, clamp its rear corners down onto the
+  posts. A tab on the right wall over its front-right corner, clear of J2 and its
+  parts, presses there too.
+- **During assembly**, with the top case upside down, the board sits on the pins and
+  lies level on the two blocks and the tab, its jack in the opening and its left edge
+  against the rib. Its centre of mass is inside those three supports.
 - **Plug pushed in:** the pins and two stops at the board's front corners take it. The
   stops sit either side of J2, clear of its cable.
 - **Plug pulled out:** the rear wall takes it. The board's rear edge is 0.6 mm from the
@@ -46,13 +72,12 @@ The opening in the rear wall is a 12.8 × 7.3 mm stadium for a plug overmold up 
 and right walls.
 
 The carrier's right-rear M2 hole is right above the board, so there is no post there.
-A pad presses the carrier's rear rail beside the board instead, clear of the socket
-tails. The other two posts keep their pins.
+A pad under the carrier's rear rail beside the board takes its place, clear of the
+socket tails.
 
 ## The cables
 
-Both cables lie on the floor in channels. The channel walls are 1.0 mm high, either side
-of the cable with 0.4 mm play, and have 0.6 mm lips the cable is pressed in under.
+Both cables lie loose on the floor; there are no channels.
 
 - **Module (14-way, 15 mm):** out of J_MOD at the carrier's left end, down past the
   stack, across the floor to the middle, one 45° fold, then forward into the module's J1.
@@ -61,7 +86,7 @@ of the cable with 0.4 mm play, and have 0.6 mm lips the cable is pressed in unde
   - one 45° fold 2 mm past the connector, where the cable's stiffened end stops;
   - forward in the free space right of the stack, over the USB board;
   - down in front of the board;
-  - back along its channel on the floor, and up into J2 at the board's front edge.
+  - back along the floor, and up into J2 at the board's front edge.
 
   The route is about 60 mm between the mouths, 66 mm with both ends in their connectors.
 
@@ -71,6 +96,10 @@ of the cable with 0.4 mm play, and have 0.6 mm lips the cable is pressed in unde
 |---|---|---|
 | 1 | 14-way, 1.0 mm FFC, **80 mm** (100 mm also fits, with the extra folded into an S beside the stack), **type B** (contacts on opposite sides, "reverse") | carrier to module (LCSC C54350068 for 80 mm) |
 | 1 | 8-way, 1.0 mm FFC, **80 mm** (a 70 mm one fits closer), **type A** (contacts on the same side) | carrier to USB board (LCSC C54350099); the extra bows up in the space beside the stack |
+| ~20 cm | thin double-sided tape (about 0.15 mm), 2–3 mm wide | on the ledge, under the glass edge |
+| 4 | Silicone bumper, Ø 12.7 mm, about 3.5 mm tall, self-adhesive | the foot recesses |
+
+No screws or spacers.
 
 The connectors are bottom contact: the cable's bare contacts face the board the connector is
 on. Along these routes a bend keeps the same face against the same board side and each 45°
@@ -78,37 +107,35 @@ fold turns the cable over. The module cable leaves the carrier's top, turns unde
 and folds once, so it reaches the module's underside with the other face up: type B. The
 USB cable folds once and curls back once, so it reaches the USB board's top with the same
 face down: type A. Worked out from the modelled routes, not yet tried with real cables.
-| ~20 cm | 0.5 mm foam tape, 2–3 mm wide | under the lip, round the glass |
-| 4 | Silicone bumper, Ø 12.7 mm, about 3.5 mm tall, self-adhesive | the foot recesses |
-
-No screws or spacers.
 
 ## Assembly
 
-1. Plug both FFCs into the carrier before the Waveshare goes on: the 14-way into J_MOD
-   (top side, left end), the 8-way into J_USB (top side, on the lug, mouth towards the
-   USB end). For each, slide the latch out, insert the cable, slide the latch back. Then
-   plug the Waveshare onto the carrier's sockets.
-2. Stick the foam tape round the underside of the window lip.
-3. With the top case upside down, push the screen stack in from below, glass first,
-   against the lip.
-4. Fit the switches through the key deck into the module. The module goes under the
-   deck, parts facing down, with J1 towards the screen; the four pins go through its
-   corner holes.
-5. Lay the USB board in the rear-right corner, parts facing down onto the two blocks,
-   jack in the rear-wall opening, left edge against the rib.
-6. Route the cables:
-   - **module:** down past the carrier's left end, into its channel on the bottom
-     plate, across towards the middle, one 45° fold at the corner so it runs straight
-     forward into the module's J1;
-   - **USB:** fold it 45° just past J_USB so it runs forward beside the stack, curl it
-     down in front of the USB board, back along its channel and into J2;
-   - press both in under their channels' small lips, so they cannot move;
+Everything is wired before it goes into the case.
+
+1. Plug both FFCs into the carrier: the 14-way into J_MOD (top side, left end), the
+   8-way into J_USB (top side, on the lug, mouth towards the USB end). Plug the other
+   ends into the module's J1 and the USB board's J2. For each, slide the latch out,
+   insert the cable, slide the latch back. Fold each cable 45° where it will fold in the
+   case, and crease it with a fingernail.
+2. Plug the Waveshare onto the carrier's sockets.
+3. Stick the tape on the ledge round the glass pocket. With the top case upright, pass
+   the module and the USB board down through the screen opening from the top (the
+   module end first, on edge: 24 × 4 mm goes through the 48.8 × 35.6 mm opening),
+   then lay the glass in its pocket and press it onto the tape.
+4. Turn the top case upside down. Put the module on the four pins under the key deck,
+   J1 up and towards the screen. Put the USB board on the two pins in the rear-right
+   corner, jack in the rear-wall opening, left edge against the rib. Lay the cables:
+   - **module:** down past the carrier's left end, across the floor towards the
+     middle, folded 45° so it runs straight into J1;
+   - **USB:** forward beside the stack, curled down in front of the USB board and back
+     into J2;
    - fold any extra length into an S beside the stack.
-7. Snap the bottom plate on. Its pins go through the USB board's holes. Its posts clamp
-   the module against the deck, and press the carrier up so the glass bears on the lip.
-   The plate comes off by prying at the rear notch.
-8. Stick on the four feet.
+5. Put the bottom plate on and snap it shut. The pin tips go into the holes in its
+   posts, which clamp the module and the USB board. The plate comes off by prying at
+   the rear notch.
+6. Turn it over and fit the switches from the top, through the key deck into the
+   module. The ribs under the sockets take the push.
+7. Stick on the four feet.
 
 ## Checks
 
@@ -125,21 +152,22 @@ It also checks these pairs against each other:
 - the USB board and its parts against the carrier above it.
 
 Every part must render with some volume first, or its checks would mean nothing.
-**All clear** (2026-10-29).
+**All clear** (2026-11-20).
 
 `tools/test_fit_mutations.py` breaks the case on purpose and expects the check to
-catch it. **13 of 13 behave:**
+catch it. **14 of 14 behave:**
 
 | Deliberate fault | Caught as |
 |---|---|
 | V1.1's 0.6 mm floor clearance | the cable touches the socket tails |
-| an 80 mm wide case | the USB cable runs into the right-front carrier post |
+| an 80 mm wide case | the USB cable runs into the bottom plate |
 | a glass pocket smaller than the glass | glass against the top case |
 | shorter sockets | the carrier's top parts hit the Waveshare's back |
-| a cable channel narrower than the cable | cable against the bottom plate |
-| channel walls 2 mm high | they hit the socket tails under the stack |
 | module pins too wide for their holes | module against the top case |
-| carrier pins too wide for their holes | carrier against the bottom plate |
+| post holes narrower than the module pins | top case against the bottom plate |
+| carrier supports up against the carrier | carrier against the bottom plate |
+| USB pins too wide for the board's holes | USB board against the top case |
+| socket ribs up into the MX sockets | sockets against the bottom plate |
 | the USB board 0.6 mm higher | J2 hits the front of the carrier's lug |
 | the USB board 1.1 mm lower | the jack's shell legs hit the floor |
 | a USB opening smaller than the plug | plug against the top case |
@@ -162,7 +190,7 @@ What it cannot check:
 
 Print it and test-fit before trusting the clearances below 0.5 mm. The tightest are:
 - J2 under the front of the carrier's lug (0.36 mm);
-- the USB cable beside the right-front carrier post (0.4 mm);
+- the USB cable beside the right-front carrier post;
 - the cable under the front of the stack.
 
 ## Printing
@@ -178,11 +206,12 @@ As V1.1:
 | File | |
 |---|---|
 | `osupad_params.scad` | every dimension, the board-to-case coordinate conversions, the cable routes |
-| `osupad_enclosure.scad` | the parts: `PART = "top_case"`, `"bottom_plate"` or `"assembly"` |
+| `osupad_enclosure.scad` | the parts: `PART = "top_case"`, `"bottom_plate"`, `"assembly"` or `"side_by_side"` |
 | `osupad_case_top.stl`, `osupad_case_bottom.stl` | print files |
 | `osupad_render.png`, `osupad_inside.png`, `osupad_bottom_plate.png`, `osupad_usb.png` | assembled, from the rear; from above without the top case; the bottom plate; the USB board's corner |
 | `tools/check_fit.py`, `tools/fit_check.scad` | the fit check |
 | `tools/test_fit_mutations.py` | the deliberate faults |
 | `tools/reference_models.scad` | everything inside, as envelopes (V3 carrier, USB board and modules, both FFC ribbons) |
 | `tools/render_scene.scad` | the renders |
+| `tools/side_by_side.scad` | both case parts next to each other, for viewing (`PART = "side_by_side"`) |
 | `tools/waveshare_back.scad` | the Waveshare's back-side parts, from its STEP model (as V1.1) |
