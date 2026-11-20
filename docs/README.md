@@ -58,6 +58,7 @@ Until that lands, treat the documents below as **possibly stale**; the code and
 * **[Latency Testing Methodology](latency-testing.md)** — Hardware test methodology, Stages A–D, electronic key-to-HID gate requirements, and latency benchmarks.
 * **[Component notes](hardware/components/README.md)** — Datasheet facts for the parts the firmware talks to (registers, timings, how they are wired), as searchable text with section references. The PDFs are fetched by `scripts/fetch_datasheets.sh`, not committed.
 * **[Testing & Verification Checklist](testing-checklist.md)** — Comprehensive quality assurance checklist covering firmware, daemon, GUI, and hardware reliability.
+* **[Launch Checklist](launch-checklist.md)** — everything to fix, test and settle before OPad is sold: CI, releases, signing, pad, app, compliance, manufacturing.
 
 ### 🔍 Code review record (2026-09-23/24)
 * **[Code review findings & fix plan](claude-code-review/README.md)** — 93 findings across firmware, desktop and packaging, all closed (92 fixed, 1 invalid); [FIX-PLAN.md](claude-code-review/FIX-PLAN.md) holds the per-cluster progress log and the hardware validation record.
