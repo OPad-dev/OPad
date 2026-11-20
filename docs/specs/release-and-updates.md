@@ -226,8 +226,8 @@ electron-updater's `latest.yml` work). No server runs code; any static host or
 CDN can serve it.
 
 ```
-https://opad-dev.github.io/OPad/updates/stable.json   (+ .minisig)
-https://opad-dev.github.io/OPad/updates/beta.json     (+ .minisig)
+https://updates.opad.dev/stable.json   (+ .minisig)
+https://updates.opad.dev/beta.json     (+ .minisig)
 https://opad-dev.github.io/OPad/apt/…   https://opad-dev.github.io/OPad/rpm/…
 ```
 
@@ -698,9 +698,11 @@ minute.
 
 ## 17. Open questions
 
-1. **Feed address:** `opad-dev.github.io/OPad/updates/…`, or your own domain
-   pointed at Pages (`updates.<domain>`)? A domain lets hosting move later
-   without an app update; the address is compiled into every install.
+1. ~~Feed address~~ **Decided 2026-11-21:** `https://updates.opad.dev/`, the
+   owner's domain pointed at Pages (`updates CNAME opad-dev.github.io`), with
+   the feeds at the site root. Hosting can move without an app update. A fork
+   builds with `OPAD_FEED_BASE` (the `OPAD_FEED_BASE` repository variable in
+   `release-app.yml`) to point its app at its own feed.
 2. ~~First versions~~ **Decided in phase 1:** app and firmware both start
    from `1.0.0-rc` (`.release-please-manifest.json`), so the first release PRs
    propose `1.0.0-rc.1`. The firmware moved from `1.0.0` to `1.0.0-rc` for
@@ -789,7 +791,7 @@ Known limits:
 - Run **Release tosu** by hand once (revision 1), so the feed has a tosu
   build and `make release-local` has a `tosu.exe`.
 - Then merge the first release PRs; each release calls **Update feed**.
-  Check `https://opad-dev.github.io/OPad/updates/beta.json` appears.
+  Check `https://updates.opad.dev/beta.json` appears.
 
 ### 18.3 Pending for a session on Linux
 
@@ -946,8 +948,8 @@ is `true`; until then they are skipped. Then:
 
 ```
 # The feed verifies with the real key
-curl -fsSLO https://opad-dev.github.io/OPad/updates/stable.json
-curl -fsSLO https://opad-dev.github.io/OPad/updates/stable.json.minisig
+curl -fsSLO https://updates.opad.dev/stable.json
+curl -fsSLO https://updates.opad.dev/stable.json.minisig
 minisign -Vm stable.json -P '<public key>'
 
 # A release file was built by the workflow from this repository

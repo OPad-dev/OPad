@@ -212,7 +212,7 @@ Listed so they are not forgotten; they need their own work, outside these
 design changes.
 
 - [ ] **3. Update feed.** The daemon checks
-  `https://opad-dev.github.io/OPad/updates/stable.json`
+  `https://updates.opad.dev/stable.json`
   (`desktop/crates/opad-update/src/client.rs:21`), which returned 404 on
   2026-10-21, so every user sees "Last check failed". The release pipeline has
   to publish the feed.

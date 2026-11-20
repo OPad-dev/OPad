@@ -60,7 +60,7 @@ jobs:
         run: |
           desktop/target/release/opad-feed github \
             --releases releases.json --sums-dir sums --policy updates/policy.json \
-            --out-dir site/updates
+            --out-dir site
 
       - name: Keep opad-feed for signing
         run: cp desktop/target/release/opad-feed site/.opad-feed
@@ -97,8 +97,8 @@ jobs:
           chmod +x site/.opad-feed
           for channel in stable beta; do
             minisign -S -s desktop/crates/opad-update/test-key/opad-test.key \
-              -m "site/updates/${channel}.json" -t "OPad ${channel} feed (TEST KEY)" < /dev/null
-            site/.opad-feed verify --feed "site/updates/${channel}.json" --channel "$channel"
+              -m "site/${channel}.json" -t "OPad ${channel} feed (TEST KEY)" < /dev/null
+            site/.opad-feed verify --feed "site/${channel}.json" --channel "$channel"
           done
           rm site/.opad-feed
 
@@ -137,8 +137,8 @@ jobs:
           for channel in stable beta; do
             # minisign reads the passphrase from stdin when it is not a terminal
             printf '%s\n' "$MINISIGN_PASSWORD" | minisign -S -s "$key" \
-              -m "site/updates/${channel}.json" -t "OPad ${channel} feed"
-            site/.opad-feed verify --feed "site/updates/${channel}.json" --channel "$channel"
+              -m "site/${channel}.json" -t "OPad ${channel} feed"
+            site/.opad-feed verify --feed "site/${channel}.json" --channel "$channel"
           done
           rm site/.opad-feed
 

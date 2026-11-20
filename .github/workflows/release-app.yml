@@ -36,6 +36,10 @@ env:
   APPIMAGETOOL_SHA256: "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
   # The Designer must draw with the firmware's real LVGL, never the stub
   OPAD_REQUIRE_UI_PREVIEW: "1"
+  # The feed the app checks: empty means the official one (opad-update's
+  # DEFAULT_FEED_BASE). A fork that publishes its own releases sets this
+  # repository variable to its own feed.
+  OPAD_FEED_BASE: ${{ vars.OPAD_FEED_BASE }}
 
 jobs:
   check:

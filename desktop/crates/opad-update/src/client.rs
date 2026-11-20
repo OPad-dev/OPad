@@ -15,15 +15,20 @@ use crate::verify::{check_hash_bytes, signing_configured, verify_manifest_signat
 use crate::{Artifact, UpdateError};
 use std::time::SystemTime;
 
-/// Where the feeds are published (GitHub Pages, deployed by update-feed.yml):
-/// `<base><channel>.json` and its `.minisig`. `$OPAD_MANIFEST_URL` replaces
-/// the whole feed URL, for testing against `make feed-local`.
-pub const DEFAULT_FEED_BASE: &str = "https://opad-dev.github.io/OPad/updates/";
+/// Where the feeds are published: `<base><channel>.json` and its `.minisig`.
+/// The official ones are on the project's own domain (GitHub Pages behind it,
+/// deployed by update-feed.yml), so hosting can move without an app update.
+/// A fork that publishes its own releases builds with `OPAD_FEED_BASE` set to
+/// its feed. `$OPAD_MANIFEST_URL` replaces the whole feed URL at run time, for
+/// testing against `make feed-local`.
+pub const DEFAULT_FEED_BASE: &str = match option_env!("OPAD_FEED_BASE") {
+    Some(base) if !base.is_empty() => base,
+    _ => "https://updates.opad.dev/",
+};
 
 /// The feed URL for a channel, honouring `$OPAD_MANIFEST_URL`
 pub fn feed_url(channel: &str) -> String {
     std::env::var("OPAD_MANIFEST_URL")
-        .or_else(|_| std::env::var("OPAD_MANIFEST_URL"))
         .unwrap_or_else(|_| format!("{DEFAULT_FEED_BASE}{channel}.json"))
 }
 
@@ -223,10 +228,9 @@ mod tests {
     #[test]
     fn the_default_feed_is_https_and_per_channel() {
         assert!(DEFAULT_FEED_BASE.starts_with("https://"));
-        if std::env::var_os("OPAD_MANIFEST_URL").is_none()
-            && std::env::var_os("OPAD_MANIFEST_URL").is_none()
-        {
-            assert!(feed_url("beta").ends_with("/updates/beta.json"));
+        assert!(DEFAULT_FEED_BASE.ends_with('/'));
+        if std::env::var_os("OPAD_MANIFEST_URL").is_none() {
+            assert_eq!(feed_url("beta"), format!("{DEFAULT_FEED_BASE}beta.json"));
         }
     }
 
