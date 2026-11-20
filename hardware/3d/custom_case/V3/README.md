@@ -69,8 +69,15 @@ of the cable with 0.4 mm play, and have 0.6 mm lips the cable is pressed in unde
 
 | Qty | Part | For |
 |---|---|---|
-| 1 | 14-way, 1.0 mm FFC, **80 mm** (100 mm also fits, with the extra folded into an S beside the stack), type A or B | carrier to module (LCSC C54350071 / C54350068 for 80 mm) |
-| 1 | 8-way, 1.0 mm FFC, **80 mm** (a 70 mm one fits closer), type A or B | carrier to USB board (LCSC C54350099); the extra bows up in the space beside the stack |
+| 1 | 14-way, 1.0 mm FFC, **80 mm** (100 mm also fits, with the extra folded into an S beside the stack), **type B** (contacts on opposite sides, "reverse") | carrier to module (LCSC C54350068 for 80 mm) |
+| 1 | 8-way, 1.0 mm FFC, **80 mm** (a 70 mm one fits closer), **type A** (contacts on the same side) | carrier to USB board (LCSC C54350099); the extra bows up in the space beside the stack |
+
+The connectors are bottom contact: the cable's bare contacts face the board the connector is
+on. Along these routes a bend keeps the same face against the same board side and each 45°
+fold turns the cable over. The module cable leaves the carrier's top, turns under the stack
+and folds once, so it reaches the module's underside with the other face up: type B. The
+USB cable folds once and curls back once, so it reaches the USB board's top with the same
+face down: type A. Worked out from the modelled routes, not yet tried with real cables.
 | ~20 cm | 0.5 mm foam tape, 2–3 mm wide | under the lip, round the glass |
 | 4 | Silicone bumper, Ø 12.7 mm, about 3.5 mm tall, self-adhesive | the foot recesses |
 

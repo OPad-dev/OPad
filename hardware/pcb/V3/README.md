@@ -39,7 +39,7 @@ The work still to do is listed under "Before ordering" below.
 
 ## Cables
 
-### Module (14-way FFC, 1.0 mm, any type A or B, 80 mm in the V3 case)
+### Module (14-way FFC, 1.0 mm, type B, 80 mm in the V3 case)
 
 | Contact | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -55,7 +55,7 @@ follows every pin both ways round. MX keeps KEY1 = GPIO10 and KEY2 = GPIO7, as o
 Module IDs: MX V3 = 47k/100k = 2.24 V, HE V3 = 100k/100k = 1.65 V (the class HE V2
 reserved, since the ADC and pins are the same). Firmware cut-offs: 0.68 / 1.35 / 1.95 / 2.6 V.
 
-### USB (8-way FFC, 1.0 mm, any type A or B, 80 mm in the V3 case)
+### USB (8-way FFC, 1.0 mm, type A, 80 mm in the V3 case)
 
 | Contact | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
 |---|---|---|---|---|---|---|---|---|
@@ -143,7 +143,9 @@ cd hardware/verify && ../../.tools/venv/bin/python -m opadverify golden/he_v3.to
 | HE | TI LP5907MFX-3.3 LDO | C80670 |
 
 The full lists, with the passives, are in each board's `production/jlcpcb/*-BOM-JLCPCB.csv`.
-The cables are not assembled: any 14-way, 1.0 mm FFC, type A or B, 80 mm for the V3 case
-(LCSC C54350071 type A, C54350068 type B; 100 mm, C34155 / C64627, also fits), and any
-8-way, 1.0 mm FFC, type A or B, 80 mm (LCSC C54350099; the route is about 66 mm with
+The cables are not assembled. The connectors are bottom contact, so the cable type is
+fixed by the route in the V3 case (`hardware/3d/custom_case/V3/README.md`, The cables):
+a 14-way, 1.0 mm FFC, **type B** (contacts on opposite sides, "reverse"), 80 mm
+(LCSC C54350068), and an
+8-way, 1.0 mm FFC, **type A** (contacts on the same side), 80 mm (LCSC C54350099; the route is about 66 mm with
 both ends in their connectors, and the extra bows up in the space beside the stack).
