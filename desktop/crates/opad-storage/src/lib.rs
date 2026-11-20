@@ -144,6 +144,9 @@ impl Storage {
         if v < 17 {
             self.apply_v17()?;
         }
+        if v < 18 {
+            self.apply_v18()?;
+        }
         Ok(())
     }
 
@@ -387,6 +390,29 @@ impl Storage {
             } else {
                 "ALTER TABLE config ADD COLUMN key3_hid_usage INTEGER NOT NULL DEFAULT 6;
                 ALTER TABLE config ADD COLUMN game_keys INTEGER NOT NULL DEFAULT 3;"
+            }
+        ))?;
+        Ok(())
+    }
+
+    /// v18: key 3's lifetime count per pad, so a pad whose NVS was erased gets
+    /// it back like keys 1 and 2. NULL until a three-key pad has synced.
+    fn apply_v18(&self) -> Result<(), StorageError> {
+        // Re-run safe, like v11
+        let has_column: bool = self.conn.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('device_state') WHERE name = 'lifetime_key3'",
+            [],
+            |row| row.get(0),
+        )?;
+        self.conn.execute_batch(&format!(
+            "BEGIN TRANSACTION;
+            {}
+            INSERT INTO schema_migrations (version, applied_at) VALUES (18, datetime('now'));
+            COMMIT;",
+            if has_column {
+                ""
+            } else {
+                "ALTER TABLE device_state ADD COLUMN lifetime_key3 INTEGER;"
             }
         ))?;
         Ok(())
@@ -698,6 +724,31 @@ impl Storage {
         Ok(())
     }
 
+    /// Key 3's lifetime count last recorded for this pad; `None` when no
+    /// three-key pad with this ID has synced yet
+    pub fn load_key3_lifetime(&self, device_id: &str) -> Result<Option<u64>, StorageError> {
+        let v: Option<Option<i64>> = self
+            .conn
+            .query_row(
+                "SELECT lifetime_key3 FROM device_state WHERE device_id = ?1",
+                params![device_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(v.flatten().map(|k| k as u64))
+    }
+
+    /// Records key 3's lifetime count for a pad already saved with
+    /// [`Self::save_device_state`]
+    pub fn save_key3_lifetime(&self, device_id: &str, lifetime: u64) -> Result<(), StorageError> {
+        self.check_writes_allowed()?;
+        self.conn.execute(
+            "UPDATE device_state SET lifetime_key3 = ?1 WHERE device_id = ?2",
+            params![lifetime as i64, device_id],
+        )?;
+        Ok(())
+    }
+
     pub fn save_device_state(
         &self,
         info: &DeviceInfo,
@@ -841,6 +892,15 @@ mod tests {
 
         assert_eq!(fetched.lifetime_key1, 1000);
         assert_eq!(fetched.lifetime_key2, 2000);
+
+        // v18: key 3's count, unknown until saved, kept across a counter save
+        assert_eq!(storage.load_key3_lifetime("test-dev-01").unwrap(), None);
+        storage.save_key3_lifetime("test-dev-01", 70).unwrap();
+        storage
+            .save_device_state(&info, &counters)
+            .expect("save_state");
+        assert_eq!(storage.load_key3_lifetime("test-dev-01").unwrap(), Some(70));
+        assert_eq!(storage.load_key3_lifetime("other").unwrap(), None);
     }
 
     #[test]

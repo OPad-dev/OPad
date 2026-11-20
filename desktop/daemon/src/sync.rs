@@ -32,14 +32,16 @@ pub trait DeviceLink: Send + Sync {
         counters: &CounterState,
         force_restore: bool,
     ) -> Result<u32, DeviceError>;
-    /// A forced restore that also sets key 3's lifetime count when `Some`
-    async fn restore_counters(
+    /// `send_counter_sync` that also sets key 3's lifetime count when `Some`
+    /// (`CounterState.lifetime_key3`; firmware without key 3 ignores it)
+    async fn send_counter_sync_key3(
         &self,
         counters: &CounterState,
+        force_restore: bool,
         lifetime_key3: Option<u64>,
     ) -> Result<u32, DeviceError> {
         let _ = lifetime_key3;
-        self.send_counter_sync(counters, true).await
+        self.send_counter_sync(counters, force_restore).await
     }
     /// Records this install as the pad's owner (§W3-2)
     async fn claim_ownership(&self, owner_id: &[u8]) -> Result<(), DeviceError>;
@@ -146,12 +148,13 @@ impl DeviceLink for DeviceManager {
         self.send_counter_sync(counters, force_restore).await
     }
 
-    async fn restore_counters(
+    async fn send_counter_sync_key3(
         &self,
         counters: &CounterState,
+        force_restore: bool,
         lifetime_key3: Option<u64>,
     ) -> Result<u32, DeviceError> {
-        self.send_counter_sync_with_key3(counters, true, lifetime_key3)
+        self.send_counter_sync_with_key3(counters, force_restore, lifetime_key3)
             .await
     }
 
@@ -242,6 +245,25 @@ impl DeviceLink for DeviceManager {
 
     fn is_connected(&self) -> bool {
         self.is_connected()
+    }
+}
+
+/// What a sync sets key 3's lifetime count to: 0 for a counter reset (the
+/// pad's own reset path is not used, so a sync to zeros must carry it), this
+/// PC's count for a pad whose NVS was erased and now counts less, and
+/// otherwise nothing: the pad's count stands and this PC records it.
+pub fn key3_sync_target(
+    reset: bool,
+    nvs_restore: bool,
+    stored: Option<u64>,
+    pad: Option<u64>,
+) -> Option<u64> {
+    if reset {
+        return Some(0);
+    }
+    match stored {
+        Some(pc) if nvs_restore && pc > pad.unwrap_or(0) => Some(pc),
+        _ => None,
     }
 }
 
@@ -366,6 +388,19 @@ pub async fn perform_sync<D: DeviceLink>(
     }
     let force_restore = pending_reset.is_some();
 
+    // Key 3's count (Hall Effect V3) is not in CounterState: the pad keeps it
+    // and this PC records it, so a reset and an erased NVS treat it like keys
+    // 1 and 2
+    let (pad_key3, nvs_restore) = {
+        let st = state.lock();
+        (st.key3.map(|k| k.lifetime), st.nvs_restore_pending)
+    };
+    let stored_key3 = storage
+        .lock()
+        .as_ref()
+        .and_then(|s| s.load_key3_lifetime(&info.device_id).ok().flatten());
+    let key3_target = key3_sync_target(force_restore, nvs_restore, stored_key3, pad_key3);
+
     // Save reconciled state to SQLite (blocked by the write guard if a map started)
     {
         if let Some(s) = storage.lock().as_ref() {
@@ -381,7 +416,10 @@ pub async fn perform_sync<D: DeviceLink>(
 
     for attempt in 0..3 {
         let mut resp_events = device.subscribe();
-        match device.send_counter_sync(&reconciled, force_restore).await {
+        match device
+            .send_counter_sync_key3(&reconciled, force_restore, key3_target)
+            .await
+        {
             Ok(seq) => {
                 let wait_resp = tokio::time::timeout(Duration::from_secs(2), async {
                     loop {
@@ -483,6 +521,9 @@ pub async fn perform_sync<D: DeviceLink>(
         if let Some(s) = storage.lock().as_ref() {
             let _ = s.save_device_state(&info, &reconciled);
             let _ = s.touch_device_last_seen(&info.device_id);
+            if let Some(k3) = key3_target.or(pad_key3) {
+                let _ = s.save_key3_lifetime(&info.device_id, k3);
+            }
         }
     }
 

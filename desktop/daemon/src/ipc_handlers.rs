@@ -552,6 +552,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 if let Some(info) = &st.device_info {
                     if let Some(s) = storage.lock().as_ref() {
                         let _ = s.save_device_state(info, &updated);
+                        let _ = s.save_key3_lifetime(&info.device_id, 0);
                     }
                 }
                 (
@@ -561,7 +562,8 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             };
 
             if state.lock().device_connected {
-                let _ = device.send_counter_sync(&updated, true).await;
+                // Key 3 too: the reset reaches the pad as a sync to zeros
+                let _ = device.send_counter_sync_key3(&updated, true, Some(0)).await;
             } else {
                 // Honoured by the next sync with this pad (perform_sync)
                 pending_ops.lock().pending_device_push =
@@ -638,12 +640,16 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 map_key2: 0,
             };
 
+            let pc_key3 = storage
+                .lock()
+                .as_ref()
+                .and_then(|s| s.load_key3_lifetime(&info.device_id).ok().flatten());
             if let Some(s) = storage.lock().as_ref() {
                 let _ = s.save_device_state(&info, &target);
                 let _ = s.touch_device_last_seen(&info.device_id);
             }
 
-            let _ = device.send_counter_sync(&target, true).await;
+            let _ = device.send_counter_sync_key3(&target, true, pc_key3).await;
             {
                 let mut st = state.lock();
                 st.counters = target.clone();
@@ -715,9 +721,13 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 map_key2: 0,
             };
 
+            let pad_key3 = state.lock().key3.map(|k| k.lifetime);
             if let Some(s) = storage.lock().as_ref() {
                 let _ = s.save_device_state(&info, &target);
                 let _ = s.touch_device_last_seen(&info.device_id);
+                if let Some(k3) = pad_key3 {
+                    let _ = s.save_key3_lifetime(&info.device_id, k3);
+                }
             }
 
             let _ = device.send_counter_sync(&target, true).await;
@@ -920,11 +930,20 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                             map_key1: 0,
                             map_key2: 0,
                         };
+                        let old_key3 = storage
+                            .lock()
+                            .as_ref()
+                            .and_then(|s| s.load_key3_lifetime(&old_id).ok().flatten());
                         if let Some(s) = storage.lock().as_ref() {
                             let _ = s.save_device_state(&current_info, &restored);
                             let _ = s.touch_device_last_seen(&current_info.device_id);
+                            if let Some(k3) = old_key3 {
+                                let _ = s.save_key3_lifetime(&current_info.device_id, k3);
+                            }
                         }
-                        let _ = device.send_counter_sync(&restored, true).await;
+                        let _ = device
+                            .send_counter_sync_key3(&restored, true, old_key3)
+                            .await;
                         state.lock().counters = restored.clone();
                         info!("Restored lifetime counters from previous pad");
                         return IpcResponse::CountersReset { counters: restored };
@@ -1124,6 +1143,9 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     he_calibration: false,
                 };
                 let _ = s.save_device_state(&info, &new_counters);
+                if let Some(k3) = backup.stats.lifetime_key3 {
+                    let _ = s.save_key3_lifetime(&info.device_id, k3);
+                }
             }
 
             {
@@ -1134,7 +1156,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
 
             let _ = device.send_config(&new_config).await;
             let _ = device
-                .restore_counters(&new_counters, backup.stats.lifetime_key3)
+                .send_counter_sync_key3(&new_counters, true, backup.stats.lifetime_key3)
                 .await;
             info!("JSON Backup imported and applied");
 

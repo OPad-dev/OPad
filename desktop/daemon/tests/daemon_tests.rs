@@ -12,7 +12,7 @@ use opad_daemon::runtime::{
     DaemonState, PendingOperations, RuntimeAction, RuntimeController, RuntimeEvent,
     COOLDOWN_DURATION,
 };
-use opad_daemon::sync::{perform_sync, DeviceLink};
+use opad_daemon::sync::{key3_sync_target, perform_sync, DeviceLink};
 use opad_device::{DeviceError, DeviceEvent};
 use opad_ipc::{IpcRequest, IpcResponse, IPC_PROTOCOL_VERSION};
 use opad_layout::{Layout, Screen};
@@ -29,7 +29,7 @@ struct MockDeviceLink {
     sent_configs: Arc<Mutex<Vec<DeviceConfig>>>,
     sent_layouts: Arc<Mutex<Vec<Screen>>>,
     sent_syncs: Arc<Mutex<Vec<(CounterState, bool)>>>,
-    /// Key 3's count each `restore_counters` carried
+    /// Key 3's count each `send_counter_sync_key3` carried
     restored_key3: Mutex<Vec<Option<u64>>>,
     sync_response: Arc<Mutex<Option<Result<(), String>>>>,
     sync_seq: Arc<AtomicU32>,
@@ -123,13 +123,14 @@ impl DeviceLink for MockDeviceLink {
         Ok(())
     }
 
-    async fn restore_counters(
+    async fn send_counter_sync_key3(
         &self,
         counters: &CounterState,
+        force_restore: bool,
         lifetime_key3: Option<u64>,
     ) -> Result<u32, DeviceError> {
         self.restored_key3.lock().push(lifetime_key3);
-        self.send_counter_sync(counters, true).await
+        self.send_counter_sync(counters, force_restore).await
     }
 
     async fn send_counter_sync(
@@ -1893,6 +1894,100 @@ async fn test_perform_sync_leaves_write_guard_to_runtime() {
 
     assert!(!guard.load(Ordering::SeqCst));
     assert_eq!(daemon_state.lock().mode, RuntimeMode::Playing);
+}
+
+#[test]
+fn test_key3_sync_target() {
+    // A reset zeroes key 3 whatever either side holds
+    assert_eq!(key3_sync_target(true, false, Some(70), Some(80)), Some(0));
+    // An erased pad gets this PC's count back, never a lower one
+    assert_eq!(key3_sync_target(false, true, Some(70), Some(0)), Some(70));
+    assert_eq!(key3_sync_target(false, true, Some(70), None), Some(70));
+    assert_eq!(key3_sync_target(false, true, Some(70), Some(90)), None);
+    assert_eq!(key3_sync_target(false, true, None, Some(0)), None);
+    // Otherwise the pad's count stands
+    assert_eq!(key3_sync_target(false, false, Some(70), Some(0)), None);
+}
+
+// Key 3's count comes back to a pad whose NVS was erased, ordinary syncs
+// record the pad's, and a counter reset zeroes it on both sides
+#[tokio::test]
+async fn test_key3_count_survives_an_erased_nvs_and_follows_a_reset() {
+    let id = "OSUPAD-K3SYNC";
+    let dev = pad_info(id);
+    let storage = Storage::open_in_memory().unwrap();
+    storage
+        .save_device_state(&dev, &counters(id, 3, 500, 600))
+        .unwrap();
+    storage.save_key3_lifetime(id, 70).unwrap();
+    let storage = Arc::new(Mutex::new(Some(storage)));
+
+    let mut state = RuntimeController::new(
+        DeviceConfig::default(),
+        Some(dev),
+        counters(id, 1, 0, 0),
+        HashMap::new(),
+        None,
+        vec![id.to_string()],
+        Instant::now(),
+    )
+    .state;
+    state.device_connected = true;
+    state.nvs_restore_pending = true;
+    state.key3 = Some(opad_model::Key3Counters {
+        lifetime: 0,
+        map: 0,
+    });
+    let daemon_state = Arc::new(Mutex::new(state));
+    let device = MockDeviceLink::new(true);
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    let log_hub = LogHub::new();
+    let stored = |storage: &Arc<Mutex<Option<Storage>>>| {
+        storage
+            .lock()
+            .as_ref()
+            .unwrap()
+            .load_key3_lifetime(id)
+            .unwrap()
+    };
+
+    perform_sync(&daemon_state, &storage, &device, &pending_ops)
+        .await
+        .expect("the erased pad is restored");
+    assert_eq!(*device.restored_key3.lock(), vec![Some(70)]);
+    assert_eq!(stored(&storage), Some(70));
+
+    // The pad counted on: an ordinary sync sends no key 3 and records the pad's
+    {
+        let mut st = daemon_state.lock();
+        st.nvs_restore_pending = false;
+        st.key3 = Some(opad_model::Key3Counters {
+            lifetime: 75,
+            map: 0,
+        });
+    }
+    perform_sync(&daemon_state, &storage, &device, &pending_ops)
+        .await
+        .expect("ordinary sync");
+    assert_eq!(device.restored_key3.lock().last(), Some(&None));
+    assert_eq!(stored(&storage), Some(75));
+
+    let resp = handle_ipc_request(
+        IpcRequest::ResetCounters { confirm: true },
+        &daemon_state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+        None,
+    )
+    .await;
+    assert!(
+        matches!(resp, IpcResponse::CountersReset { .. }),
+        "{resp:?}"
+    );
+    assert_eq!(device.restored_key3.lock().last(), Some(&Some(0)));
+    assert_eq!(stored(&storage), Some(0));
 }
 
 /// §W1-2 / P1-8: a cable that drops and comes back mid-map must not wedge the
