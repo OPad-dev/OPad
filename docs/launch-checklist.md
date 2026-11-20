@@ -81,6 +81,17 @@ found and delivered.
 - **Support:** Discord first; GitHub issues for bugs that need a code change.
 - **Easter-egg GIF:** stays, with a notice that it is removed if its rights
   holder asks.
+- **Compliance (2026-11-21):** no lab testing before the Kickstarter (budget);
+  the campaign pays for it, before rewards ship. Sales are worldwide, so the
+  radio on the Waveshare board matters in every market (CE/RED, UKCA, FCC,
+  ISED, TELEC, RCM, KC). Waveshare is asked for its certificates first. The
+  owner knows that units handed out before then, even free promotional
+  ones, count as placed on the EU market.
+- **Case:** PETG printed in-house for testers and early batches; MJF PA12
+  quoted in batches for volumes (`hardware/3d/custom_case/V3/README.md`).
+- **Test machines:** the owner's mini PC becomes a bare-metal Windows 11 test
+  machine (flashing and WIN rows cannot run in a VM).
+- **Domain:** `opad.dev` is registered at Cloudflare.
 
 ---
 
