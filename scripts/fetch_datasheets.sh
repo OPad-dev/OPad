@@ -11,6 +11,7 @@ mkdir -p "${OUT}"
 # name  url  sha256 (empty: not recorded yet, printed for the note)
 DATASHEETS=(
     "ads7028.pdf https://www.ti.com/lit/ds/symlink/ads7028.pdf 794590931f11f1ca11bd9e8fe4683c92ccd6af7a1101d5f5158373f17f54188c"
+    "ads7038.pdf https://www.ti.com/lit/ds/symlink/ads7038.pdf 0197fc134bb8799070afa5eaa69b1fdeeb0a5d3332e74dc2ee36f9090726533a"
 )
 
 status=0

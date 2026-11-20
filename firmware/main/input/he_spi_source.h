@@ -13,6 +13,12 @@
  * previous frame, 250 us earlier, so it is dropped; the other three were
  * started within this frame and give one fresh reading per key.
  *
+ * The link runs with the ADC's CRC on (GENERAL_CFG.CRC_EN, input/ads7028.h):
+ * a conversion whose CRC does not match is dropped, so a bit flipped on the
+ * cable never becomes a reading. Reads run at 40 MHz and, after the first
+ * since start, straight on SPI3's registers (ads7028_read16_again): a frame
+ * reads in about 14 us (docs/hardware/components/ads7028.md).
+ *
  * he_backend.c owns start and stop (from he_task only).
  */
 
@@ -34,6 +40,7 @@ typedef void (*he_spi_frame_cb_t)(const he_frame_t *f, const int32_t raw[HE_SPI_
 typedef struct {
     uint32_t frames;
     uint32_t spi_errors;      // transfers the driver failed
+    uint32_t crc_errors;      // conversions dropped for a CRC mismatch
     uint32_t foreign;         // conversions tagged with a channel no key uses
     uint32_t max_frame_us;    // longest frame read, wake to done
 } he_spi_stats_t;

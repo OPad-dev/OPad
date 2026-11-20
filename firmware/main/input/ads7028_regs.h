@@ -11,8 +11,16 @@
  * A register read takes two frames: the second returns the register in its
  * first SDO byte. Conversion data comes MSB first: 12 bits, or 16 with
  * averaging (8.3.9). SPI-00 (CPOL 0, CPHA 0) after power-up and reset.
+ *
+ * With GENERAL_CFG.CRC_EN set, every frame is exactly 32 bits: the 24-bit
+ * command and its CRC on SDI; on SDO the data (8 bits for a register, 16 for
+ * a conversion) and its CRC. The ADS7028 datasheet does not show this; the
+ * ADS7038 one does (SBAS979C, 7.3.8.1, 7.3.8.2, Figure 7-12). The CRC is
+ * CRC-8 x^8 + x^2 + x + 1, MSB first, seed 0x00, measured on the owner's
+ * pad (docs/hardware/components/ads7028.md). A no-op frame is then all zeros.
  */
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -57,6 +65,39 @@ extern "C" {
 
 #define ADS7028_RESET_MS            5      // tRST and tPU (7.7)
 #define ADS7028_MAX_SCLK_HZ         60000000
+
+#define ADS7028_CRC_POLY            0x07   // x^8 + x^2 + x + 1
+
+/** @brief CRC-8 of n bytes, MSB first, seed 0x00, as the ADC computes it. */
+static inline uint8_t ads7028_crc8(const uint8_t *d, unsigned n)
+{
+    uint8_t c = 0;
+    for (unsigned i = 0; i < n; i++) {
+        c ^= d[i];
+        for (int b = 0; b < 8; b++) {
+            c = (c & 0x80) ? (uint8_t)((c << 1) ^ ADS7028_CRC_POLY) : (uint8_t)(c << 1);
+        }
+    }
+    return c;
+}
+
+/** @brief The 32-bit frame for one command with CRC on: the 24-bit frame and its CRC. */
+static inline void ads7028_frame_crc(uint8_t op, uint8_t addr, uint8_t data, uint8_t out[4])
+{
+    out[0] = op;
+    out[1] = addr;
+    out[2] = data;
+    out[3] = ads7028_crc8(out, 3);
+}
+
+/**
+ * @brief With CRC on, whether a frame's SDO bytes carry n data bytes (1 for
+ * a register, 2 for a conversion) followed by their correct CRC.
+ */
+static inline bool ads7028_rx_crc_ok(const uint8_t rx[4], unsigned n)
+{
+    return ads7028_crc8(rx, n) == rx[n];
+}
 
 /** @brief The 24-bit frame for one command. */
 static inline void ads7028_frame(uint8_t op, uint8_t addr, uint8_t data, uint8_t out[3])

@@ -12,8 +12,10 @@
 
 static const char *TAG = "he_spi";
 
-// 10 MHz: a 16-bit read in 1.6 us. The FFC is clean to 40 MHz (board test).
-#define STREAM_SCLK_HZ  10000000
+// 40 MHz, the fastest the pins allow (ads7028_set_clock): a 32-bit read
+// (16-bit word and its CRC) in 0.8 us. The FFC reads clean at 40 MHz (board
+// test), and the CRC drops any word that is not.
+#define STREAM_SCLK_HZ  40000000
 // One stale conversion (from the end of the last frame) and one per key
 #define FRAME_READS     4
 // AUTO_SEQ_CH_SEL: AIN3, AIN4, AIN5 (keys 3, 2, 1)
@@ -26,6 +28,7 @@ static gptimer_handle_t s_timer;
 static SemaphoreHandle_t s_frame_lock;  // held by the sampler for a frame, by stop to wait it out
 static StaticSemaphore_t s_frame_lock_buf;
 static volatile bool s_active;
+static bool s_spi_set_up;  // SPI3 set up for the conversion read, since start
 static he_spi_frame_cb_t s_cb;
 static portMUX_TYPE s_stats_lock = portMUX_INITIALIZER_UNLOCKED;
 static he_spi_stats_t s_stats;
@@ -57,9 +60,17 @@ static void sampler_task(void *arg)
         uint16_t words[FRAME_READS];
         uint32_t n = 0;
         uint32_t errors = 0;
+        uint32_t crc_errors = 0;
         for (int i = 0; i < FRAME_READS; i++) {
             uint16_t w = 0;
-            if (ads7028_read16(&w) != ESP_OK) {
+            // The first read after start sets SPI3 up through the driver;
+            // nothing else uses SPI3 while this task holds it, so every other
+            // read repeats it on the registers, without the driver's ~10 us
+            esp_err_t err = s_spi_set_up ? ads7028_read16_again(&w) : ads7028_read16(&w);
+            s_spi_set_up = s_spi_set_up || err == ESP_OK || err == ESP_ERR_INVALID_CRC;
+            if (err == ESP_ERR_INVALID_CRC) {
+                crc_errors++;  // dropped: that key keeps its last reading this frame
+            } else if (err != ESP_OK) {
                 errors++;
             } else if (i > 0) {
                 words[n++] = w;  // the first was converted a frame ago
@@ -77,6 +88,7 @@ static void sampler_task(void *arg)
         portENTER_CRITICAL(&s_stats_lock);
         s_stats.frames++;
         s_stats.spi_errors += errors;
+        s_stats.crc_errors += crc_errors;
         s_stats.foreign += f.foreign;
         if (took > s_stats.max_frame_us) {
             s_stats.max_frame_us = took;
@@ -99,10 +111,10 @@ static esp_err_t write_checked(uint8_t addr, uint8_t value)
     return err;
 }
 
-// Reset the ADC and start its auto-sequence with channel IDs
+// Reset the ADC, turn CRC on and start its auto-sequence with channel IDs
 static esp_err_t configure_adc(void)
 {
-    esp_err_t err = ads7028_write_reg(ADS7028_REG_GENERAL_CFG, ADS7028_GENERAL_RST);
+    esp_err_t err = ads7028_reset();
     if (err != ESP_OK) {
         return err;
     }
@@ -124,7 +136,9 @@ static esp_err_t configure_adc(void)
             break;
         }
     }
-    if ((err = write_checked(ADS7028_REG_DATA_CFG, DATA_CFG_CHANNEL_ID)) != ESP_OK ||
+    // CRC from here on: every later frame, settings and conversions, is checked
+    if ((err = write_checked(ADS7028_REG_GENERAL_CFG, ADS7028_GENERAL_CRC_EN)) != ESP_OK ||
+        (err = write_checked(ADS7028_REG_DATA_CFG, DATA_CFG_CHANNEL_ID)) != ESP_OK ||
         (err = write_checked(ADS7028_REG_AUTO_SEQ_CH_SEL, KEY_AINS_MASK)) != ESP_OK ||
         (err = write_checked(ADS7028_REG_SEQUENCE_CFG, SEQUENCE_AUTO_START)) != ESP_OK) {
         return err;
@@ -185,6 +199,7 @@ esp_err_t he_spi_source_start(bool cable_reversed, he_spi_frame_cb_t cb)
         ads7028_close();
         return err;
     }
+    s_spi_set_up = false;
     s_active = true;
     err = gptimer_start(s_timer);
     if (err != ESP_OK) {

@@ -12,4 +12,4 @@ script checks each file against the sha256 recorded here when there is one.
 
 | Part | Where | Note | Datasheet |
 |---|---|---|---|
-| TI ADS7028 | HE V3 module, U4 (ADC) | [ads7028.md](ads7028.md) | SBAS978A |
+| TI ADS7028 | HE V3 module, U4 (ADC) | [ads7028.md](ads7028.md) | SBAS978A; its sibling ADS7038's SBAS979C for the CRC frames |

@@ -175,7 +175,7 @@ void he_adc_test_run(bool cable_reversed, he_adc_test_t *out)
     r.ran = true;
 
     do {
-        if ((err = ads7028_write_reg(ADS7028_REG_GENERAL_CFG, ADS7028_GENERAL_RST)) != ESP_OK) {
+        if ((err = ads7028_reset()) != ESP_OK) {
             fail(&r, "reset", err);
             break;
         }
