@@ -28,6 +28,7 @@
 #include "input/he_debug.h"
 #include "input/mx_debug.h"
 #include "input/he_cal.h"
+#include "diag/ui_perf_test.h"
 
 static const char *TAG = "app_main";
 
@@ -312,6 +313,9 @@ void app_main(void)
     }
 #ifdef CONFIG_OSUPAD_HALL_BENCH
     hall_bench_show_ui();
+#endif
+#ifdef CONFIG_OSUPAD_UI_PERF_TEST
+    ui_perf_test_start();
 #endif
 
     // Apply brightness and sleep timeout to display & UI. Read again: the host

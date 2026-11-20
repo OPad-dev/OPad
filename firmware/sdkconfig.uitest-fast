@@ -1,0 +1,2 @@
+# LVGL refreshing every 16 ms (~60 Hz) instead of 33 ms (the LCD always runs at 80 MHz)
+CONFIG_LV_DEF_REFR_PERIOD=16

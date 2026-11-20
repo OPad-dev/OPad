@@ -1,0 +1,6 @@
+# UI performance test (main/diag/ui_perf_test.c), not a product build.
+# Combine with sdkconfig.uitest-psram and/or sdkconfig.uitest-fast.
+CONFIG_OSUPAD_UI_PERF_TEST=y
+CONFIG_LV_USE_SYSMON=y
+CONFIG_LV_USE_PERF_MONITOR=y
+CONFIG_LV_USE_MEM_MONITOR=y

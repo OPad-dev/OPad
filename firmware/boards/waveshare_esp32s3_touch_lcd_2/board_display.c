@@ -57,7 +57,11 @@ esp_err_t board_display_init(esp_lcd_panel_io_handle_t *out_io, esp_lcd_panel_ha
     spi_bus_config_t buscfg = {
         .sclk_io_num = BOARD_LCD_SCLK_GPIO,
         .mosi_io_num = BOARD_LCD_MOSI_GPIO,
+#ifdef CONFIG_OSUPAD_UI_PERF_TEST
+        .miso_io_num = BOARD_SD_MISO_GPIO,  // the TF card's; the LCD only writes
+#else
         .miso_io_num = -1,
+#endif
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
         .max_transfer_sz = BOARD_LCD_H_RES * 40 * sizeof(uint16_t),
