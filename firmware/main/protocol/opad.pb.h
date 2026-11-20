@@ -104,6 +104,10 @@ typedef struct _opad_Hello {
     char client_version[32];
     /* Host supports interactive Hall Effect calibration flow */
     bool he_calibration;
+    /* Host reads and writes checked frames ([AA 5A][len][payload][CRC-16]).
+ A pad that answers with HelloAck.frame_crc switches to them; firmware
+ predating it ignores the field and both keep the marked framing. */
+    bool frame_crc;
 } opad_Hello;
 
 typedef PB_BYTES_ARRAY_T(16) opad_ClaimOwnership_owner_id_t;
@@ -276,6 +280,11 @@ typedef struct _opad_HelloAck {
  firmware predating it. A host offers the key pin settings only on a pad
  without one (NONE: switches wired to the header by hand) or UNKNOWN. */
     opad_InputModule input_module;
+    /* The host asked for checked frames (Hello.frame_crc) in the marked
+ framing, and this pad sends them from the next message on, and reads
+ them. This HelloAck itself is still a marked frame. False from firmware
+ predating it, and when the host used the legacy framing. */
+    bool frame_crc;
 } opad_HelloAck;
 
 typedef struct _opad_SetConfig {
@@ -686,8 +695,8 @@ extern "C" {
 
 
 /* Initializer values for message structs */
-#define opad_Hello_init_default                  {0, "", 0}
-#define opad_HelloAck_init_default               {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, opad_ConfigPayload_init_default, 0, 0, 0, 0, 0, 0, 0, 0, 0, _opad_InputModule_MIN}
+#define opad_Hello_init_default                  {0, "", 0, 0}
+#define opad_HelloAck_init_default               {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, opad_ConfigPayload_init_default, 0, 0, 0, 0, 0, 0, 0, 0, 0, _opad_InputModule_MIN, 0}
 #define opad_ClaimOwnership_init_default         {{0, {0}}}
 #define opad_DeviceStatus_init_default           {0, _opad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, opad_HeCalibrationStatus_init_default, 0, 0}
 #define opad_HeCalibrationStatus_init_default    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
@@ -721,8 +730,8 @@ extern "C" {
 #define opad_HeLiveSample_init_default           {0, 0, 0, 0, 0, 0}
 #define opad_HostToDevice_init_default           {0, 0, {opad_Hello_init_default}}
 #define opad_DeviceToHost_init_default           {0, 0, {opad_HelloAck_init_default}}
-#define opad_Hello_init_zero                     {0, "", 0}
-#define opad_HelloAck_init_zero                  {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, opad_ConfigPayload_init_zero, 0, 0, 0, 0, 0, 0, 0, 0, 0, _opad_InputModule_MIN}
+#define opad_Hello_init_zero                     {0, "", 0, 0}
+#define opad_HelloAck_init_zero                  {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, opad_ConfigPayload_init_zero, 0, 0, 0, 0, 0, 0, 0, 0, 0, _opad_InputModule_MIN, 0}
 #define opad_ClaimOwnership_init_zero            {{0, {0}}}
 #define opad_DeviceStatus_init_zero              {0, _opad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, opad_HeCalibrationStatus_init_zero, 0, 0}
 #define opad_HeCalibrationStatus_init_zero       {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
@@ -761,6 +770,7 @@ extern "C" {
 #define opad_Hello_protocol_version_tag          1
 #define opad_Hello_client_version_tag            2
 #define opad_Hello_he_calibration_tag            3
+#define opad_Hello_frame_crc_tag                 4
 #define opad_ClaimOwnership_owner_id_tag         1
 #define opad_HeCalibrationStatus_key1_calibrated_tag 1
 #define opad_HeCalibrationStatus_key2_calibrated_tag 2
@@ -849,6 +859,7 @@ extern "C" {
 #define opad_HelloAck_tap_rate_per_second_tag    18
 #define opad_HelloAck_key_count_tag              19
 #define opad_HelloAck_input_module_tag           20
+#define opad_HelloAck_frame_crc_tag              21
 #define opad_SetConfig_config_tag                1
 #define opad_ConfigAck_success_tag               1
 #define opad_ConfigAck_message_tag               2
@@ -1023,7 +1034,8 @@ extern "C" {
 #define opad_Hello_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   protocol_version,   1) \
 X(a, STATIC,   SINGULAR, STRING,   client_version,    2) \
-X(a, STATIC,   SINGULAR, BOOL,     he_calibration,    3)
+X(a, STATIC,   SINGULAR, BOOL,     he_calibration,    3) \
+X(a, STATIC,   SINGULAR, BOOL,     frame_crc,         4)
 #define opad_Hello_CALLBACK NULL
 #define opad_Hello_DEFAULT NULL
 
@@ -1047,7 +1059,8 @@ X(a, STATIC,   SINGULAR, BOOL,     he_calibration,   16) \
 X(a, STATIC,   SINGULAR, BOOL,     he_live,          17) \
 X(a, STATIC,   SINGULAR, BOOL,     tap_rate_per_second,  18) \
 X(a, STATIC,   SINGULAR, UINT32,   key_count,        19) \
-X(a, STATIC,   SINGULAR, UENUM,    input_module,     20)
+X(a, STATIC,   SINGULAR, UENUM,    input_module,     20) \
+X(a, STATIC,   SINGULAR, BOOL,     frame_crc,        21)
 #define opad_HelloAck_CALLBACK NULL
 #define opad_HelloAck_DEFAULT NULL
 #define opad_HelloAck_current_config_MSGTYPE opad_ConfigPayload
@@ -1554,8 +1567,8 @@ extern const pb_msgdesc_t opad_DeviceToHost_msg;
 #define opad_HeCalibrationStatus_size            58
 #define opad_HeKeySettings_size                  40
 #define opad_HeLiveSample_size                   24
-#define opad_HelloAck_size                       465
-#define opad_Hello_size                          41
+#define opad_HelloAck_size                       468
+#define opad_Hello_size                          43
 #define opad_HostStatus_size                     12
 #define opad_HostToDevice_size                   4309
 #define opad_KeyPressBatch_size                  625

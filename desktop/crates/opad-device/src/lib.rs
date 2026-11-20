@@ -22,8 +22,7 @@ use tracing::{debug, info, warn};
 pub const ESPRESSIF_VID: u16 = 0x303A;
 /// pid.codes open-source VID, the other one an OPad may enumerate under
 pub const PIDCODES_VID: u16 = 0x1209;
-/// Every pad's USB serial number and HelloAck device_id start with this
-pub const DEVICE_ID_PREFIX: &str = "OSUPAD-";
+pub use opad_model::{canonical_device_id, DEVICE_ID_PREFIX};
 /// USB PID of the OPad application firmware (TinyUSB composite device)
 pub const OPAD_APP_PID: u16 = 0x4001;
 /// USB PID of the ESP32-S3 ROM download bootloader (USB-Serial-JTAG)
@@ -230,6 +229,8 @@ struct Handshake {
     framing: Option<Framing>,
     /// Hellos sent since the last answer
     unanswered: u32,
+    /// The pad's HelloAck said `frame_crc`: commands go out as checked frames
+    crc: bool,
 }
 
 impl Handshake {
@@ -272,9 +273,22 @@ impl Handshake {
         self.unanswered = 0;
         let learned = self.framing.is_none();
         if learned {
-            self.framing = Some(framing);
+            // A checked frame is the marked framing with a CRC
+            self.framing = Some(match framing {
+                Framing::Checked => Framing::Marked,
+                other => other,
+            });
         }
         learned
+    }
+
+    /// The framing commands are written in: checked once the pad agreed to
+    /// it on the marked framing, else the pad's framing
+    fn send_framing(&self) -> Option<Framing> {
+        match self.framing {
+            Some(Framing::Marked) if self.crc => Some(Framing::Checked),
+            other => other,
+        }
     }
 
     /// See [`accept_frame`]
@@ -553,7 +567,7 @@ impl DeviceManager {
                     // while a held connection is being reopened, and belong to
                     // the pad once it answers in its own framing.
                     while let Some(cmd) = framing.and_then(|_| cmd_rx.try_recv().ok()) {
-                        let as_framing = framing.unwrap_or(Framing::Marked);
+                        let as_framing = handshake.send_framing().unwrap_or(Framing::Marked);
                         if let Ok(encoded) = encode_host_message_as(&cmd, as_framing) {
                             if let Err(e) = write_frame(&mut *port, &encoded, WRITE_DEADLINE) {
                                 warn!("Failed to write to device: {}", e);
@@ -599,6 +613,14 @@ impl DeviceManager {
                                             he_live_clone
                                                 .supported
                                                 .store(ack.he_live, Ordering::SeqCst);
+                                            // Checked frames from here on if the pad
+                                            // said so; firmware predating it never does
+                                            let crc =
+                                                ack.frame_crc && msg_framing != Framing::Legacy;
+                                            if crc && !handshake.crc {
+                                                info!("{} uses checked frames (CRC-16)", port_path);
+                                            }
+                                            handshake.crc = crc;
                                             if handshake.answered_in(msg_framing) {
                                                 debug!(
                                                     "{} speaks {:?} framing",
@@ -1341,7 +1363,7 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                 let info = DeviceInfo {
                     // 0 from firmware predating key 3
                     key_count: ack.key_count.max(2),
-                    device_id: ack.device_id.clone(),
+                    device_id: canonical_device_id(&ack.device_id),
                     board_profile: ack.board_profile.clone(),
                     firmware_version: ack.firmware_version.clone(),
                     protocol_version: ack.protocol_version,
@@ -1362,7 +1384,7 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     owner_id: ack.owner_id.clone(),
                 });
                 let _ = tx.send(DeviceEvent::Counters(CounterState {
-                    device_id: ack.device_id.clone(),
+                    device_id: canonical_device_id(&ack.device_id),
                     counter_generation: ack.counter_generation,
                     lifetime_key1: ack.lifetime_key1,
                     lifetime_key2: ack.lifetime_key2,
@@ -1386,7 +1408,7 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
             }
             proto::device_to_host::Payload::CounterSyncResp(resp) => {
                 let st_opt = resp.synchronized_state.as_ref().map(|st| CounterState {
-                    device_id: st.device_id.clone(),
+                    device_id: canonical_device_id(&st.device_id),
                     counter_generation: st.counter_generation,
                     lifetime_key1: st.lifetime_key1,
                     lifetime_key2: st.lifetime_key2,
@@ -1472,8 +1494,9 @@ fn open_error_hint(e: &serialport::Error) -> &'static str {
     }
 }
 
+/// `OPAD-…`, or `OSUPAD-…` from firmware up to 1.0.0-rc
 pub fn is_opad_device_id(id: &str) -> bool {
-    id.starts_with(DEVICE_ID_PREFIX)
+    opad_model::device_id_suffix(id).is_some()
 }
 
 /// What a port's USB descriptor strings say about it.
@@ -1677,6 +1700,8 @@ fn hello_message() -> HostToDevice {
             protocol_version: 1,
             client_version: "1.0.0".to_string(),
             he_calibration: true,
+            // Answered with HelloAck.frame_crc by firmware that reads them
+            frame_crc: true,
         })),
     }
 }
@@ -1760,7 +1785,7 @@ pub fn locate_pad(app_port: &str, device_id: Option<&str>) -> PadLocation {
 /// composite-device instance id) does not hide the `device_id`.
 fn pad_mac(serial: Option<&str>, device_id: Option<&str>) -> Option<String> {
     let mac_of = |id: Option<&str>| {
-        id.and_then(|s| s.strip_prefix(DEVICE_ID_PREFIX))
+        id.and_then(opad_model::device_id_suffix)
             .and_then(normalize_mac)
     };
     mac_of(serial).or_else(|| mac_of(device_id))
@@ -1830,12 +1855,12 @@ pub fn select_bootloader_port(
 #[cfg(test)]
 mod tests {
     use super::{
-        accept_frame, classify_port, device_config_from, fit_nanopb_string, handle_device_message,
-        hello_due, is_opad_device_id, normalize_mac, pad_mac, probe_exhausted, proto,
-        select_bootloader_port, BootloaderMatch, BootloaderPort, DeviceConfig, DeviceEvent,
-        Handshake, HelloDue, HelloStep, PadLocation, PortClass, ProbeHistory, SwipeAction,
-        HELLOS_BEFORE_REOPEN, HELLO_RETRY, PORT_SCAN_INTERVAL, PROBE_HELLOS, PROBE_RETRY_KNOWN_VID,
-        RECONNECT_SETTLE_INTERVAL,
+        accept_frame, canonical_device_id, classify_port, device_config_from, fit_nanopb_string,
+        handle_device_message, hello_due, hello_message, host_to_device, is_opad_device_id,
+        normalize_mac, pad_mac, probe_exhausted, proto, select_bootloader_port, BootloaderMatch,
+        BootloaderPort, DeviceConfig, DeviceEvent, Handshake, HelloDue, HelloStep, PadLocation,
+        PortClass, ProbeHistory, SwipeAction, HELLOS_BEFORE_REOPEN, HELLO_RETRY,
+        PORT_SCAN_INTERVAL, PROBE_HELLOS, PROBE_RETRY_KNOWN_VID, RECONNECT_SETTLE_INTERVAL,
     };
     use opad_protocol::Framing;
     use serialport::SerialPortType;
@@ -1897,7 +1922,7 @@ mod tests {
             sequence_number: 1,
             payload: Some(proto::device_to_host::Payload::HelloAck(proto::HelloAck {
                 protocol_version: 1,
-                device_id: "OSUPAD-NEW".to_string(),
+                device_id: "OPAD-NEW".to_string(),
                 counter_generation: 1,
                 lifetime_key1: 3,
                 lifetime_key2: 4,
@@ -1909,9 +1934,7 @@ mod tests {
         assert!(
             matches!(rx.try_recv(), Ok(DeviceEvent::Ownership { owner_id }) if owner_id == vec![7u8; 16])
         );
-        assert!(
-            matches!(rx.try_recv(), Ok(DeviceEvent::Counters(c)) if c.device_id == "OSUPAD-NEW")
-        );
+        assert!(matches!(rx.try_recv(), Ok(DeviceEvent::Counters(c)) if c.device_id == "OPAD-NEW"));
         // Firmware predating key press times leaves the field false
         assert!(matches!(
             rx.try_recv(),
@@ -1967,7 +1990,7 @@ mod tests {
             sequence_number: 1,
             payload: Some(proto::device_to_host::Payload::HelloAck(proto::HelloAck {
                 protocol_version: 1,
-                device_id: "OSUPAD-OLD".to_string(),
+                device_id: "OPAD-OLD".to_string(),
                 ..Default::default()
             })),
         };
@@ -1991,7 +2014,7 @@ mod tests {
     fn tier_one_needs_an_opad_vid_and_an_opad_string() {
         let by_product = usb(0x303A, 0x4001, Some("OPad ESP32-S3"), None);
         assert_eq!(classify_port("/dev/ttyACM0", &by_product), PortClass::Opad);
-        let by_serial = usb(0x1209, 0x1234, None, Some("OSUPAD-A1B2C3D4E5F6"));
+        let by_serial = usb(0x1209, 0x1234, None, Some("OPAD-A1B2C3D4E5F6"));
         assert_eq!(classify_port("COM7", &by_serial), PortClass::Opad);
         // Another Espressif board that names itself
         let other = usb(0x303A, 0x4001, Some("TinyUSB CDC"), Some("123456"));
@@ -2154,11 +2177,70 @@ mod tests {
         assert_eq!(gave_up_at, Some(HELLO_RETRY * PROBE_HELLOS));
     }
 
+    /// Checked frames go out only once the pad agreed, and only on the marked
+    /// framing: new app with old firmware stays on marked frames
+    #[test]
+    fn commands_are_checked_only_after_the_pad_agreed() {
+        let mut h = Handshake::default();
+        assert_eq!(h.send_framing(), None);
+        h.answered_in(Framing::Marked);
+        assert_eq!(h.send_framing(), Some(Framing::Marked)); // old firmware: no frame_crc
+        h.crc = true;
+        assert_eq!(h.send_framing(), Some(Framing::Checked));
+        let mut legacy = Handshake::default();
+        legacy.answered_in(Framing::Legacy);
+        legacy.crc = true;
+        assert_eq!(legacy.send_framing(), Some(Framing::Legacy));
+        // A checked HelloAck teaches the marked framing
+        let mut c = Handshake::default();
+        c.answered_in(Framing::Checked);
+        assert_eq!(c.framing, Some(Framing::Marked));
+        // Every Hello offers it; firmware predating the field ignores it
+        match hello_message().payload {
+            Some(host_to_device::Payload::Hello(hello)) => assert!(hello.frame_crc),
+            _ => panic!("not a Hello"),
+        }
+    }
+
     #[test]
     fn device_ids_are_recognised_by_prefix() {
+        assert!(is_opad_device_id("OPAD-0011223344AA"));
+        // Firmware up to 1.0.0-rc
         assert!(is_opad_device_id("OSUPAD-0011223344AA"));
-        assert!(!is_opad_device_id("osupad-0011"));
+        assert!(!is_opad_device_id("opad-0011"));
         assert!(!is_opad_device_id(""));
+    }
+
+    /// New app, old firmware: a pad that still says OSUPAD- is the same pad,
+    /// kept under OPAD-, so its counters, ownership and backups follow it
+    #[test]
+    fn an_older_pads_device_id_is_kept_as_opad() {
+        assert_eq!(
+            canonical_device_id("OSUPAD-3CDC75701678"),
+            "OPAD-3CDC75701678"
+        );
+        assert_eq!(
+            canonical_device_id("OPAD-3CDC75701678"),
+            "OPAD-3CDC75701678"
+        );
+        let (tx, mut rx) = tokio::sync::broadcast::channel(8);
+        let msg = proto::DeviceToHost {
+            sequence_number: 1,
+            payload: Some(proto::device_to_host::Payload::HelloAck(proto::HelloAck {
+                protocol_version: 1,
+                device_id: "OSUPAD-3CDC75701678".to_string(),
+                ..Default::default()
+            })),
+        };
+        handle_device_message(&msg, &tx);
+        let _ownership = rx.try_recv();
+        assert!(
+            matches!(rx.try_recv(), Ok(DeviceEvent::Counters(c)) if c.device_id == "OPAD-3CDC75701678")
+        );
+        assert_eq!(
+            pad_mac(Some("OSUPAD-3CDC75701678"), None).as_deref(),
+            pad_mac(Some("OPAD-3CDC75701678"), None).as_deref()
+        );
     }
 
     fn boot(name: &str, mac: Option<&str>, path: Option<&str>) -> BootloaderPort {
@@ -2229,20 +2311,20 @@ mod tests {
 
     #[test]
     fn the_mac_falls_back_to_device_id_when_the_serial_is_not_an_opad_one() {
-        let id = Some("OSUPAD-3CDC75701678");
+        let id = Some("OPAD-3CDC75701678");
         // Windows composite-device instance id as the serial
         assert_eq!(
             pad_mac(Some("7&2ABC&0&0000"), id).as_deref(),
             Some("3CDC75701678")
         );
         assert_eq!(
-            pad_mac(Some("OSUPAD-nothex"), id).as_deref(),
+            pad_mac(Some("OPAD-nothex"), id).as_deref(),
             Some("3CDC75701678")
         );
         assert_eq!(pad_mac(None, id).as_deref(), Some("3CDC75701678"));
         // The USB serial still wins when it identifies the pad
         assert_eq!(
-            pad_mac(Some("OSUPAD-AABBCCDDEEFF"), id).as_deref(),
+            pad_mac(Some("OPAD-AABBCCDDEEFF"), id).as_deref(),
             Some("AABBCCDDEEFF")
         );
         assert_eq!(pad_mac(Some("7&2ABC&0&0000"), None), None);

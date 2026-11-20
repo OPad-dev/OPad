@@ -147,6 +147,9 @@ impl Storage {
         if v < 18 {
             self.apply_v18()?;
         }
+        if v < 19 {
+            self.apply_v19()?;
+        }
         Ok(())
     }
 
@@ -392,6 +395,26 @@ impl Storage {
                 ALTER TABLE config ADD COLUMN game_keys INTEGER NOT NULL DEFAULT 3;"
             }
         ))?;
+        Ok(())
+    }
+
+    /// v19: pads are stored as `OPAD-<MAC>`. Rows saved from firmware up to
+    /// 1.0.0-rc (`OSUPAD-<MAC>`) are renamed, so the same pad keeps its
+    /// counters, key 3 count and last-seen time. A pad that already has an
+    /// `OPAD-` row keeps that one, which is the newer.
+    fn apply_v19(&self) -> Result<(), StorageError> {
+        self.conn.execute_batch(
+            "BEGIN TRANSACTION;
+            UPDATE device_state SET device_id = 'OPAD-' || substr(device_id, 8)
+            WHERE device_id LIKE 'OSUPAD-%'
+              AND NOT EXISTS (
+                SELECT 1 FROM device_state AS d
+                WHERE d.device_id = 'OPAD-' || substr(device_state.device_id, 8)
+              );
+            DELETE FROM device_state WHERE device_id LIKE 'OSUPAD-%';
+            INSERT INTO schema_migrations (version, applied_at) VALUES (19, datetime('now'));
+            COMMIT;",
+        )?;
         Ok(())
     }
 
@@ -1157,6 +1180,54 @@ mod tests {
         let migrated = storage.load_config().unwrap();
         assert_eq!((migrated.key1_gpio, migrated.key2_gpio), (14, 9));
         assert_eq!(migrated.debounce_us, 4000);
+    }
+
+    #[test]
+    fn test_migration_v19_renames_osupad_rows_to_opad() {
+        let storage = Storage::open_in_memory().expect("open");
+        storage
+            .conn
+            .execute_batch(
+                "INSERT INTO device_state (device_id, board_profile, counter_generation,
+                    lifetime_key1, lifetime_key2, lifetime_key3)
+                 VALUES ('OSUPAD-3CDC75701678', 'waveshare', 15, 3745, 20594, 70),
+                        ('OSUPAD-AABBCCDDEEFF', 'waveshare', 2, 1, 1, NULL),
+                        ('OPAD-AABBCCDDEEFF', 'waveshare', 9, 500, 600, NULL);
+                 DELETE FROM schema_migrations WHERE version >= 19;",
+            )
+            .unwrap();
+        storage.migrate().unwrap();
+
+        let moved = storage
+            .load_device_state("OPAD-3CDC75701678")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (
+                moved.counter_generation,
+                moved.lifetime_key1,
+                moved.lifetime_key2
+            ),
+            (15, 3745, 20594)
+        );
+        assert_eq!(
+            storage.load_key3_lifetime("OPAD-3CDC75701678").unwrap(),
+            Some(70)
+        );
+        assert!(storage
+            .load_device_state("OSUPAD-3CDC75701678")
+            .unwrap()
+            .is_none());
+        // A pad already stored under OPAD- keeps that row
+        let kept = storage
+            .load_device_state("OPAD-AABBCCDDEEFF")
+            .unwrap()
+            .unwrap();
+        assert_eq!(kept.counter_generation, 9);
+        assert!(storage
+            .load_device_state("OSUPAD-AABBCCDDEEFF")
+            .unwrap()
+            .is_none());
     }
 
     #[test]

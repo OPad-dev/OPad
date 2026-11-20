@@ -210,7 +210,7 @@ does it itself only when no app is there.
 - **Record & NVS storage (`firmware/main/input/he_cal_record.c`, `firmware/main/input/he_cal.c`):**
   Pure-C record `he_cal_record_t` with schema versioning (`HE_CAL_VERSION = 1`),
   per-key `rest`, `full`, `valid` flags, and a 32-bit CRC (`he_cal_crc32`).
-  Stored in NVS namespace `"osupad_cal"` using an A/B slot ping-pong scheme with
+  Stored in NVS namespace `"opad_cal"` (`osupad_cal` on firmware up to 1.0.0-rc, copied over at boot by `config/nvs_ns.c`) using an A/B slot ping-pong scheme with
   32-bit monotonic sequence numbers. An interrupted write leaves the other slot intact.
   Corrupt or missing records fall back to uncalibrated factory defaults (`valid = false`)
   without erasing NVS. Writes are gated by runtime mode: deferred during `PLAYING` or

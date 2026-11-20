@@ -1,3 +1,4 @@
+#include "config/nvs_ns.h"
 #include "device_config.h"
 #include "input/keypad.h"
 #include "input/key_event.h"
@@ -18,7 +19,7 @@
 #include <string.h>
 
 static const char *TAG = "dev_config";
-static const char *NVS_NAMESPACE = "osupad_cfg";
+#define NVS_NAMESPACE nvs_ns_name(NVS_NS_CONFIG)
 static const char *NVS_KEY = "cfg";
 static const char *NVS_HE_KEY = "he_cfg";
 // Key 3's settings (Hall Effect V3): an he_cfg record of their own, keys[0],
@@ -370,6 +371,8 @@ esp_err_t device_config_init(void)
         device_config_apply_he(s_current_he_keys);
         return ESP_OK;
     }
+    // First NVS user at boot: bring the namespaces to their opad names
+    nvs_ns_migrate();
 
     nvs_handle_t handle;
     err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle);

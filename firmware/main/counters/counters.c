@@ -1,3 +1,4 @@
+#include "config/nvs_ns.h"
 #include "counters.h"
 #include "counter_sync_rules.h"
 #include "input/key_event.h"
@@ -12,7 +13,7 @@
 #include <string.h>
 
 static const char *TAG = "counters";
-static const char *NVS_NAMESPACE = "osupad";
+#define NVS_NAMESPACE nvs_ns_name(NVS_NS_COUNTERS)
 
 static uint32_t s_generation = 1;
 static uint64_t s_last_saved_key1 = 0;

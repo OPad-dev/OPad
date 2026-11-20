@@ -143,9 +143,16 @@ pub fn format_diag_event(event_id: u32, arg0: u32, arg1: u32) -> String {
                 .collect();
             format!("Undecodable frame starts {}", bytes.join(" "))
         }
-        DIAG_EVENT_FRAME_TOO_LARGE => {
-            format!("CDC RX frame exceeds max buffer (size: {} bytes)", arg0)
-        }
+        DIAG_EVENT_FRAME_TOO_LARGE => match arg1 {
+            0 => format!("Skipped {} bytes looking for a frame start", arg0),
+            1 => format!(
+                "Dropped a partial frame the host stopped sending ({} bytes)",
+                arg0
+            ),
+            2 => format!("Dropped {} frame(s) with a bad CRC", arg0),
+            // Firmware predating the reason
+            _ => format!("CDC RX frame exceeds max buffer (size: {} bytes)", arg0),
+        },
         DIAG_EVENT_CONFIG_REJECTED => {
             format!("Device configuration rejected (reason code: {})", arg0)
         }

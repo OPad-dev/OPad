@@ -64,7 +64,7 @@ async fn test_ipc_roundtrip_requests() {
                             device_info: Some(DeviceInfo {
                                 key_count: 2,
                                 input_module: Default::default(),
-                                device_id: "OSUPAD-TEST".to_string(),
+                                device_id: "OPAD-TEST".to_string(),
                                 board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                                 firmware_version: "1.0.0".to_string(),
                                 protocol_version: 1,
@@ -73,7 +73,7 @@ async fn test_ipc_roundtrip_requests() {
                                 he_calibration: false,
                             }),
                             counters: CounterState {
-                                device_id: "OSUPAD-TEST".to_string(),
+                                device_id: "OPAD-TEST".to_string(),
                                 counter_generation: 1,
                                 lifetime_key1: 42,
                                 lifetime_key2: 99,
@@ -113,7 +113,7 @@ async fn test_ipc_roundtrip_requests() {
                             let info = DeviceInfo {
                                 key_count: 2,
                                 input_module: Default::default(),
-                                device_id: "OSUPAD-TEST".to_string(),
+                                device_id: "OPAD-TEST".to_string(),
                                 board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                                 firmware_version: "1.0.0".to_string(),
                                 protocol_version: 1,
@@ -122,7 +122,7 @@ async fn test_ipc_roundtrip_requests() {
                                 he_calibration: false,
                             };
                             let counters = CounterState {
-                                device_id: "OSUPAD-TEST".to_string(),
+                                device_id: "OPAD-TEST".to_string(),
                                 counter_generation: 1,
                                 lifetime_key1: 100,
                                 lifetime_key2: 200,
@@ -136,7 +136,7 @@ async fn test_ipc_roundtrip_requests() {
                         IpcRequest::RestoreDeviceFromPc { .. }
                         | IpcRequest::ImportPcFromDevice { .. } => IpcResponse::CountersRestored {
                             counters: CounterState {
-                                device_id: "OSUPAD-TEST".to_string(),
+                                device_id: "OPAD-TEST".to_string(),
                                 counter_generation: 2,
                                 lifetime_key1: 100,
                                 lifetime_key2: 200,
@@ -234,7 +234,7 @@ async fn test_ipc_roundtrip_requests() {
         .expect("export backup");
     match export_resp {
         IpcResponse::BackupExported(backup) => {
-            assert_eq!(backup.device.device_id, "OSUPAD-TEST");
+            assert_eq!(backup.device.device_id, "OPAD-TEST");
             assert_eq!(backup.stats.lifetime_key1, 100);
             assert_eq!(backup.stats.lifetime_key2, 200);
             assert!(backup.validate().is_ok());

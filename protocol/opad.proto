@@ -34,6 +34,10 @@ message Hello {
     string client_version = 2;
     // Host supports interactive Hall Effect calibration flow
     bool he_calibration = 3;
+    // Host reads and writes checked frames ([AA 5A][len][payload][CRC-16]).
+    // A pad that answers with HelloAck.frame_crc switches to them; firmware
+    // predating it ignores the field and both keep the marked framing.
+    bool frame_crc = 4;
 }
 
 message HelloAck {
@@ -84,6 +88,11 @@ message HelloAck {
     // firmware predating it. A host offers the key pin settings only on a pad
     // without one (NONE: switches wired to the header by hand) or UNKNOWN.
     InputModule input_module = 20;
+    // The host asked for checked frames (Hello.frame_crc) in the marked
+    // framing, and this pad sends them from the next message on, and reads
+    // them. This HelloAck itself is still a marked frame. False from firmware
+    // predating it, and when the host used the legacy framing.
+    bool frame_crc = 21;
 }
 
 // Record a new owner in NVS (§W3-2). An NVS write, so the firmware must honour

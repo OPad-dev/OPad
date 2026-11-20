@@ -1,3 +1,4 @@
+#include "config/nvs_ns.h"
 #include "ui_store.h"
 #include "counters/counters.h"
 #include "runtime/runtime.h"
@@ -12,7 +13,7 @@
 #include <string.h>
 
 static const char *TAG = "ui_store";
-static const char *NVS_NAMESPACE = "osupad_ui";
+#define NVS_NAMESPACE nvs_ns_name(NVS_NS_UI)
 
 // Written by the protocol task (set_layout / reset_layout while not IDLE),
 // flushed by the runtime supervisor on the other core: guarded by store_lock(),

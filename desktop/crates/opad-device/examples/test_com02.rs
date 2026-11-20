@@ -41,6 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             protocol_version: 1,
             client_version: "com02-test-v1".to_string(),
             he_calibration: false,
+            frame_crc: false,
         })),
     };
     let encoded = encode_host_message(&hello_msg)?;

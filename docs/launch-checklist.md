@@ -39,11 +39,11 @@ Each of these was checked on 2026-11-20 against GitHub or the code.
 | 0.9 | P1 | The USB product ID is not OPad's own. | `firmware/main/usb/usb_descriptors.c:37-38` uses Espressif's VID `0x303A` with PID `0x4001`, the PID esp_tinyusb assigns by default to a CDC device. `packaging/linux/udev/70-opad.rules` gives any `303a:4001` device `uaccess`, and the daemon will try to talk to it. | Ask Espressif for a PID (free for products on their chips, via the `espressif/usb-pids` repository) and move to it **with** compatibility: the app, udev rules and flasher accept both PIDs for as long as old firmware exists. Ask before changing it: it is a USB-visible change. **Open**, choosing between Espressif and pid.codes. |
 | 0.10 | P1 | Hardware docs contradict the bench. | `hardware/pcb/V3/README.md` says every V3 board is "Not ordered, not built" and "No firmware supports them yet"; `docs/history/2026-11-20-v3-modules-handoff.md` has V3 boards on the bench and their firmware merged. `hardware/3d/README.md` lists only V1 and V1.1 cases. | Update both READMEs to what was built and what was not. **Done** (`911c2c1`). |
 | 0.11 | P1 | User-facing docs still use the old names. | 59 mentions of the old binary names in `README.md` and `docs/*.md` (32 in `docs/testing-checklist.md`, whose §7 recipe also runs a manifest binary that no longer exists). | Rename, and move the old reviews (`docs/software-*review*`, `docs/todo-2026-09-21-evening.md`, `docs/full-repo-…guide.md`) to `docs/history/` (AGENTS.md §7). **Done** (`fd76efd`, `911c2c1`): nothing is named osupad except what pads store (0.15); old reviews in `docs/history/`. |
-| 0.12 | P1 | Open firmware bug: the pad dropped two host messages (231 and 175 bytes) as an HE map ended. | Handoff "Open" item 1; `5715b9f` only adds logging. | Reproduce with `opadctl monitor` during the soak in §3.9, then fix the host or `protocol/opad.options`. Not shippable while unexplained. **Logged, not a launch blocker** (owner, 2026-11-21: no effect on gameplay). Hypothesis below. |
+| 0.12 | P1 | Open firmware bug: the pad dropped two host messages (231 and 175 bytes) as an HE map ended. | Handoff "Open" item 1; `5715b9f` only adds logging. | Reproduce with `opadctl monitor` during the soak in §3.9, then fix the host or `protocol/opad.options`. Not shippable while unexplained. **Fixed** 2026-11-21: checked frames with a CRC, negotiated (see the note below and `docs/protocol.md`). |
 | 0.13 | P1 | The V3 case has never been printed. | `hardware/3d/custom_case/V3/README.md:9`: "Not printed or test-fitted yet". HW-12 and HW-14 note "no case yet". | §4. **Done**: printed and fitted (owner); the latest small changes are not printed, accepted. |
 | 0.14 | P2 | Repository hygiene for a sold product. | No `SECURITY.md`, `CONTRIBUTING.md`, issue templates or `CHANGELOG.md` (release-please creates the last on its first PR). | Add `SECURITY.md` (where to report, response time) and issue templates (bug, pad info from `opadctl status`). **Done** (`911c2c1`): `SECURITY.md` with GitHub private reporting (enabled), issue templates sending help to Discord. |
 
-| 0.15 | P1 | What pads and PCs store still says osupad. | NVS namespaces `osupad`, `osupad_cfg`, `osupad_cal`, `osupad_cal3`, `osupad_ui` (`counters.c`, `device_config.c`, `he_cal.c`, `ui_store.c`); USB serial and device ID `OSUPAD-<MAC>` (`usb_descriptors.c`, `protocol.c`, `DEVICE_ID_PREFIX` in `opad-device`), which the app keys counters and ownership on. | Rename with a migration, before the first release (nothing released can break yet). **Waiting on the owner's go.** |
+| 0.15 | P1 | What pads and PCs store still says osupad. | NVS namespaces `osupad`, `osupad_cfg`, `osupad_cal`, `osupad_cal3`, `osupad_ui` (`counters.c`, `device_config.c`, `he_cal.c`, `ui_store.c`); USB serial and device ID `OSUPAD-<MAC>` (`usb_descriptors.c`, `protocol.c`, `DEVICE_ID_PREFIX` in `opad-device`), which the app keys counters and ownership on. | **Done** 2026-11-21: namespaces copied to `opad*` at boot (old ones kept for rollbacks), serial and ID `OPAD-<MAC>`, the app maps `OSUPAD-` to the same pad. Tested on the owner's MX V3 pad (`docs/testing-checklist.md` §16). The PID waits for 0.9. |
 | 0.16 | P2 | `chrono` is unmaintained (RUSTSEC-2026-0543). | Used in 21 files for timestamps. | Move to `jiff`; ignored in `desktop/deny.toml` until then. |
 
 ### 0.12: what is known
@@ -58,8 +58,9 @@ messages fail. The end of a map, when the pad writes flash and starts the
 result animation, is the likeliest moment for a stalled write. Unproven:
 `5715b9f` makes the next drop log nanopb's reason, the payload and the byte
 where decoding stopped. Neither keys nor latency are affected; the cost is a
-display update or a sync that is resent. A fix (a CRC the pad answers in kind,
-like the frame marker) changes the protocol and needs the owner's go.
+display update or a sync that is resent. Fixed with checked frames (owner's go,
+2026-11-21): a cut frame is dropped on its CRC and the frame behind it is
+found and delivered.
 
 ### Decisions (owner, 2026-11-21)
 

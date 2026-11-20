@@ -59,6 +59,7 @@ enum {
 enum {
     DIAG_FRAME_DROP_RESYNC = 0,  // skipped looking for a frame start (junk, impossible length)
     DIAG_FRAME_DROP_STALE = 1,   // partial frame the host stopped sending
+    DIAG_FRAME_DROP_CRC = 2,     // checked frames whose CRC did not match (arg0 = frames)
 };
 
 typedef struct {

@@ -374,6 +374,113 @@ static void test_resync_through_8k_of_junk(void)
     printf("✓ test_resync_through_8k_of_junk passed\n");
 }
 
+// A checked frame for payload, written by the same code the pad sends with
+static size_t make_checked(uint8_t *out, const char *payload)
+{
+    size_t len = strlen(payload);
+    frame_write_header(out, (uint16_t)len, FRAME_FORMAT_CHECKED);
+    memcpy(out + FRAME_HEADER_SIZE, payload, len);
+    frame_write_crc(out, len);
+    return FRAME_HEADER_SIZE + len + FRAME_CRC_SIZE;
+}
+
+static void test_crc16_check_value(void)
+{
+    // CRC-16/CCITT-FALSE of "123456789" is 0x29B1
+    assert(frame_crc16((const uint8_t *)"123456789", 9) == 0x29B1);
+    uint8_t f[32];
+    size_t n = make_checked(f, "HI");
+    assert(n == 4 + 2 + 2 && f[0] == 0xAA && f[1] == 0x5A && f[2] == 2 && f[3] == 0);
+    printf("✓ test_crc16_check_value passed\n");
+}
+
+static void test_checked_frames_are_read_where_marked_ones_are(void)
+{
+    uint8_t f[64];
+    size_t n = make_checked(f, "OSU!");
+    frame_accept_t modes[] = {FRAME_ACCEPT_ANY, FRAME_ACCEPT_MARKED};
+    for (int i = 0; i < 2; i++) {
+        frame_parser_t parser;
+        frame_parser_init(&parser);
+        test_context_t ctx = {0};
+        frame_parser_feed(&parser, f, n, modes[i], test_handler, &ctx);
+        assert(ctx.call_count == 1 && ctx.last_len == 4 && memcmp(ctx.last_payload, "OSU!", 4) == 0);
+        assert(parser.last_format == FRAME_FORMAT_CHECKED && frame_parser_is_idle(&parser));
+    }
+    // A host locked to legacy never sends one, and one is not believed
+    frame_parser_t parser;
+    frame_parser_init(&parser);
+    test_context_t ctx = {0};
+    frame_parser_feed(&parser, f, n, FRAME_ACCEPT_LEGACY, test_handler, &ctx);
+    assert(ctx.call_count == 0);
+    printf("✓ test_checked_frames_are_read_where_marked_ones_are passed\n");
+}
+
+static void test_a_bad_crc_drops_only_that_frame(void)
+{
+    frame_parser_t parser;
+    frame_parser_init(&parser);
+    test_context_t ctx = {0};
+    uint8_t buf[64];
+    size_t a = make_checked(buf, "BAD!");
+    buf[5] ^= 0x01;  // one flipped bit in the payload
+    size_t b = make_checked(buf + a, "GOOD");
+    frame_parser_feed(&parser, buf, a + b, FRAME_ACCEPT_MARKED, test_handler, &ctx);
+    assert(ctx.call_count == 1 && memcmp(ctx.last_payload, "GOOD", 4) == 0);
+    assert(parser.crc_errors == 1 && frame_parser_is_idle(&parser));
+    printf("✓ test_a_bad_crc_drops_only_that_frame passed\n");
+}
+
+// The 2026-11 drop: the host gave up on a frame half-way and sent the next
+// one. Unchecked, the pad glued them together and lost both.
+static void test_a_cut_short_frame_does_not_take_the_next_one(void)
+{
+    frame_parser_t parser;
+    frame_parser_init(&parser);
+    test_context_t ctx = {0};
+    uint8_t full[128], next[64];
+    char long_payload[61];
+    memset(long_payload, 'x', 60);
+    long_payload[60] = 0;
+    make_checked(full, long_payload);
+    size_t sent = 4 + 20;  // header and a third of the payload, then the write gave up
+    size_t n = make_checked(next, "NEXT MESSAGE, WHOLE, AND LONG ENOUGH TO COVER THE REST");
+    frame_parser_feed(&parser, full, sent, FRAME_ACCEPT_MARKED, test_handler, &ctx);
+    frame_parser_feed(&parser, next, n, FRAME_ACCEPT_MARKED, test_handler, &ctx);
+    assert(ctx.call_count == 1 && memcmp(ctx.last_payload, "NEXT MESSAGE", 12) == 0);
+    assert(parser.crc_errors == 1);
+    printf("✓ test_a_cut_short_frame_does_not_take_the_next_one passed\n");
+}
+
+// The cut frame claims more than arrives before the line goes quiet: on
+// expiry a checked partial gives up one byte and the whole frames behind it
+// are still delivered; an unchecked one is dropped as before.
+static void test_an_expired_checked_partial_keeps_the_frames_behind_it(void)
+{
+    frame_parser_t parser;
+    frame_parser_init(&parser);
+    test_context_t ctx = {0};
+    uint8_t full[300], next[32];
+    char big[201];
+    memset(big, 'y', 200);
+    big[200] = 0;
+    make_checked(full, big);
+    size_t n = make_checked(next, "SHORT");
+    frame_parser_feed(&parser, full, 4 + 10, FRAME_ACCEPT_MARKED, test_handler, &ctx);
+    frame_parser_feed(&parser, next, n, FRAME_ACCEPT_MARKED, test_handler, &ctx);
+    assert(ctx.call_count == 0);  // still waiting for 200 bytes
+    frame_parser_expire(&parser, FRAME_ACCEPT_MARKED, test_handler, &ctx);
+    assert(ctx.call_count == 1 && memcmp(ctx.last_payload, "SHORT", 5) == 0);
+    assert(frame_parser_is_idle(&parser));
+
+    // Unchecked partials expire whole
+    uint8_t marked[] = {0xAA, 0x55, 0x40, 0x00, 'a', 'b'};
+    frame_parser_feed(&parser, marked, sizeof(marked), FRAME_ACCEPT_MARKED, test_handler, &ctx);
+    frame_parser_expire(&parser, FRAME_ACCEPT_MARKED, test_handler, &ctx);
+    assert(frame_parser_is_idle(&parser) && ctx.call_count == 1);
+    printf("✓ test_an_expired_checked_partial_keeps_the_frames_behind_it passed\n");
+}
+
 int main(void)
 {
     test_header_encoding();
@@ -390,6 +497,11 @@ int main(void)
     test_locked_legacy_ignores_marked_headers();
     test_unlocked_accepts_both_framings();
     test_resync_through_8k_of_junk();
+    test_crc16_check_value();
+    test_checked_frames_are_read_where_marked_ones_are();
+    test_a_bad_crc_drops_only_that_frame();
+    test_a_cut_short_frame_does_not_take_the_next_one();
+    test_an_expired_checked_partial_keeps_the_frames_behind_it();
     printf("All frame parser unit tests passed successfully!\n");
     return 0;
 }

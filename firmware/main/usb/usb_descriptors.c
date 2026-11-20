@@ -4,13 +4,13 @@
 #include <stdio.h>
 #include <string.h>
 
-static char s_serial_str[32] = "OSUPAD-000000000000";
+static char s_serial_str[32] = "OPAD-000000000000";
 
 void usb_descriptors_init(void)
 {
     uint8_t mac[6] = {0};
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    snprintf(s_serial_str, sizeof(s_serial_str), "OSUPAD-%02X%02X%02X%02X%02X%02X",
+    snprintf(s_serial_str, sizeof(s_serial_str), "OPAD-%02X%02X%02X%02X%02X%02X",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 

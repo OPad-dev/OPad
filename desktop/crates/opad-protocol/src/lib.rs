@@ -12,12 +12,20 @@ use thiserror::Error;
 /// sees a frame start again, so stray bytes (ROM bootloader chatter, a text
 /// command, a dropped byte) cost at most the frame they land in.
 pub const FRAME_MAGIC: [u8; 2] = [0xAA, 0x55];
+
+/// Frame start marker of checked frames, `[0xAA, 0x5A, len u16-LE, payload,
+/// CRC-16 LE]`, used once both sides said so (Hello / HelloAck `frame_crc`)
+pub const FRAME_MAGIC_CHECKED: [u8; 2] = [0xAA, 0x5A];
+
+/// The CRC after a checked frame's payload
+pub const CRC_BYTES: usize = 2;
 /// The pad protocol version (HelloAck `protocol_version`) this host speaks.
 /// A pad reporting another one is left alone as incompatible.
 pub const DEVICE_PROTOCOL_VERSION: u32 = 1;
 pub const HEADER_BYTES: usize = 4;
-/// Matches PROTOCOL_MAX_FRAME_SIZE (8192) on the device minus the header
-pub const MAX_PAYLOAD_BYTES: usize = 8192 - HEADER_BYTES;
+/// Matches FRAME_MAX_PAYLOAD on the device: its 8192-byte buffer minus the
+/// header and a checked frame's CRC
+pub const MAX_PAYLOAD_BYTES: usize = 8192 - HEADER_BYTES - CRC_BYTES;
 /// Every real message carries at least a sequence number or a payload tag.
 /// Only legacy headers are held to it: it keeps runs of zero bytes from
 /// reading as empty legacy frames.
@@ -33,6 +41,10 @@ const LEGACY_MIN_PAYLOAD: usize = 2;
 pub enum Framing {
     /// `[0xAA, 0x55, len u16-LE, payload]`
     Marked,
+    /// `[0xAA, 0x5A, len u16-LE, payload, CRC-16 LE]`: the marked framing with
+    /// a CRC-16/CCITT-FALSE over the length and payload. Read wherever marked
+    /// frames are; sent only after the pad's HelloAck said `frame_crc`.
+    Checked,
     /// `[len u32-LE, payload]`, firmware and apps from before the marker
     Legacy,
 }
@@ -45,6 +57,8 @@ pub enum ProtocolError {
     DecodeError(#[from] prost::DecodeError),
     #[error("Protobuf encode error: {0}")]
     EncodeError(#[from] prost::EncodeError),
+    #[error("Checked frame dropped: CRC mismatch")]
+    BadCrc,
 }
 
 fn encode_frame<M: Message>(msg: &M, framing: Framing) -> Result<Vec<u8>, ProtocolError> {
@@ -53,29 +67,77 @@ fn encode_frame<M: Message>(msg: &M, framing: Framing) -> Result<Vec<u8>, Protoc
         return Err(ProtocolError::FrameTooLarge(payload_len));
     }
 
-    let mut buf = Vec::with_capacity(HEADER_BYTES + payload_len);
+    let mut buf = Vec::with_capacity(HEADER_BYTES + payload_len + CRC_BYTES);
     match framing {
-        Framing::Marked => {
-            buf.extend_from_slice(&FRAME_MAGIC);
+        Framing::Marked | Framing::Checked => {
+            let magic = if framing == Framing::Checked {
+                FRAME_MAGIC_CHECKED
+            } else {
+                FRAME_MAGIC
+            };
+            buf.extend_from_slice(&magic);
             buf.extend_from_slice(&(payload_len as u16).to_le_bytes());
         }
         Framing::Legacy => buf.extend_from_slice(&(payload_len as u32).to_le_bytes()),
     }
     msg.encode(&mut buf)?;
+    if framing == Framing::Checked {
+        let crc = checked_crc(&buf, payload_len);
+        buf.extend_from_slice(&crc.to_le_bytes());
+    }
     Ok(buf)
+}
+
+/// CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF), as `frame_crc16` on the pad
+pub fn crc16(data: &[u8]) -> u16 {
+    let mut crc: u16 = 0xFFFF;
+    for &byte in data {
+        crc ^= (byte as u16) << 8;
+        for _ in 0..8 {
+            crc = if crc & 0x8000 != 0 {
+                (crc << 1) ^ 0x1021
+            } else {
+                crc << 1
+            };
+        }
+    }
+    crc
+}
+
+/// A checked frame's CRC: over the length bytes and the payload
+fn checked_crc(frame: &[u8], payload_len: usize) -> u16 {
+    crc16(&frame[2..HEADER_BYTES + payload_len])
+}
+
+/// Bytes after the payload
+fn trailer(framing: Framing) -> usize {
+    if framing == Framing::Checked {
+        CRC_BYTES
+    } else {
+        0
+    }
+}
+
+/// Locked to the marked family: marked and checked frames only
+fn locked_marked(accept: Option<Framing>) -> bool {
+    matches!(accept, Some(Framing::Marked | Framing::Checked))
 }
 
 /// The framing and payload length of the header at the front of `buf`, if it
 /// is a plausible one that `accept` allows. `buf` holds at least 4 bytes.
 fn header(buf: &[u8], accept: Option<Framing>) -> Option<(Framing, usize)> {
-    if buf[..2] == FRAME_MAGIC {
+    if buf[..2] == FRAME_MAGIC || buf[..2] == FRAME_MAGIC_CHECKED {
         let len = u16::from_le_bytes([buf[2], buf[3]]) as usize;
         let ok = accept != Some(Framing::Legacy) && len <= MAX_PAYLOAD_BYTES;
-        return ok.then_some((Framing::Marked, len));
+        let framing = if buf[1] == FRAME_MAGIC_CHECKED[1] {
+            Framing::Checked
+        } else {
+            Framing::Marked
+        };
+        return ok.then_some((framing, len));
     }
     let len = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
-    let ok =
-        accept != Some(Framing::Marked) && (LEGACY_MIN_PAYLOAD..=MAX_PAYLOAD_BYTES).contains(&len);
+    let ok = !locked_marked(accept) && (LEGACY_MIN_PAYLOAD..=MAX_PAYLOAD_BYTES).contains(&len);
     ok.then_some((Framing::Legacy, len))
 }
 
@@ -83,7 +145,7 @@ fn header(buf: &[u8], accept: Option<Framing>) -> Option<(Framing, usize)> {
 /// tell. Returns that header.
 fn resync(buf: &mut BytesMut, accept: Option<Framing>) -> Option<(Framing, usize)> {
     loop {
-        if accept == Some(Framing::Marked) {
+        if locked_marked(accept) {
             // Only a marker can start a frame: jump straight to the next one
             match buf.iter().position(|&b| b == FRAME_MAGIC[0]) {
                 Some(start) => buf.advance(start),
@@ -110,13 +172,22 @@ fn decode_frame<M: Message + Default>(
     let Some((framing, payload_len)) = resync(buf, accept) else {
         return Ok(None);
     };
-    if buf.len() < HEADER_BYTES + payload_len {
+    let total = HEADER_BYTES + payload_len + trailer(framing);
+    if buf.len() < total {
         return Ok(None);
     }
-
+    if framing == Framing::Checked {
+        let got = u16::from_le_bytes([buf[total - 2], buf[total - 1]]);
+        if got != checked_crc(buf, payload_len) {
+            // A cut-short frame with the next glued on, or a false start:
+            // the frames inside it are found from the next byte
+            buf.advance(1);
+            return Err(ProtocolError::BadCrc);
+        }
+    }
     match M::decode(&buf[HEADER_BYTES..HEADER_BYTES + payload_len]) {
         Ok(msg) => {
-            buf.advance(HEADER_BYTES + payload_len);
+            buf.advance(total);
             Ok(Some((msg, framing)))
         }
         Err(e) => {
@@ -196,6 +267,7 @@ mod tests {
                 protocol_version: 1,
                 client_version: "1.0.0".to_string(),
                 he_calibration: true,
+                frame_crc: false,
             })),
         };
 
@@ -508,7 +580,7 @@ mod tests {
                 protocol_version: 1,
                 firmware_version: "1.0.0".to_string(),
                 board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
-                device_id: "OSUPAD-OLD".to_string(),
+                device_id: "OPAD-OLD".to_string(),
                 ..Default::default()
             })),
         };
@@ -548,5 +620,70 @@ mod tests {
             OldHello::decode(new.encode_to_vec().as_slice()).unwrap(),
             old
         );
+    }
+
+    #[test]
+    fn crc16_matches_the_pads() {
+        // CRC-16/CCITT-FALSE check value, the same as test_frame_parser.c
+        assert_eq!(crc16(b"123456789"), 0x29B1);
+    }
+
+    #[test]
+    fn checked_frames_round_trip_and_read_where_marked_ones_do() {
+        let frame = encode_device_message_as(&status(7), Framing::Checked).unwrap();
+        assert_eq!(&frame[..2], &FRAME_MAGIC_CHECKED);
+        for accept in [None, Some(Framing::Marked), Some(Framing::Checked)] {
+            let mut buf = BytesMut::from(&frame[..]);
+            let (msg, framing) = decode_device_message_framed(&mut buf, accept)
+                .unwrap()
+                .unwrap();
+            assert_eq!((msg.sequence_number, framing), (7, Framing::Checked));
+            assert!(buf.is_empty());
+        }
+        // A pad locked to legacy never sends one
+        let mut buf = BytesMut::from(&frame[..]);
+        assert!(matches!(
+            decode_device_message_framed(&mut buf, Some(Framing::Legacy)),
+            Ok(None)
+        ));
+    }
+
+    #[test]
+    fn a_bad_crc_drops_only_that_frame() {
+        let mut bad = encode_device_message_as(&status(1), Framing::Checked).unwrap();
+        bad[6] ^= 0x01;
+        bad.extend(encode_device_message_as(&status(2), Framing::Checked).unwrap());
+        let mut buf = BytesMut::from(&bad[..]);
+        let mut got = vec![];
+        let mut crc_errors = 0;
+        loop {
+            match decode_device_message_framed(&mut buf, Some(Framing::Marked)) {
+                Ok(Some((m, _))) => got.push(m.sequence_number),
+                Ok(None) => break,
+                Err(ProtocolError::BadCrc) => crc_errors += 1,
+                Err(_) => {}
+            }
+        }
+        assert_eq!((got, crc_errors), (vec![2], 1));
+    }
+
+    /// A frame cut short, then the next one: only the cut one is lost
+    #[test]
+    fn a_cut_short_frame_does_not_take_the_next_one() {
+        let first = encode_device_message_as(&status(1), Framing::Checked).unwrap();
+        let second = encode_device_message_as(&status(2), Framing::Checked).unwrap();
+        let mut stream = first[..first.len() / 2].to_vec();
+        stream.extend(&second);
+        stream.extend(&second); // and a third, so the cut one's length is covered
+        let mut buf = BytesMut::from(&stream[..]);
+        let mut got = vec![];
+        loop {
+            match decode_device_message_framed(&mut buf, Some(Framing::Marked)) {
+                Ok(Some((m, _))) => got.push(m.sequence_number),
+                Ok(None) => break,
+                Err(_) => {}
+            }
+        }
+        assert_eq!(got, vec![2, 2]);
     }
 }

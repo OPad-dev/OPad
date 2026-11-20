@@ -2,17 +2,44 @@
 
 ## 1. Framing Specification (§23)
 USB CDC is a streaming byte-oriented transport. Each protobuf-encoded envelope
-is prefixed with a 4-byte header, in one of two framings:
+is prefixed with a 4-byte header, in one of three framings
+(`firmware/main/protocol/frame_parser.h`, `desktop/crates/opad-protocol`):
 
 ```text
-marked (current):  | 0xAA | 0x55 | length (uint16-LE) | protobuf envelope |
+checked:           | 0xAA | 0x5A | length (uint16-LE) | protobuf envelope | CRC-16 (LE) |
+marked:            | 0xAA | 0x55 | length (uint16-LE) | protobuf envelope |
 legacy:            |     length (uint32-LE)            | protobuf envelope |
 ```
+
+### Checked frames
+
+A checked frame is a marked frame with a CRC-16/CCITT-FALSE (poly 0x1021,
+init 0xFFFF) over the two length bytes and the payload. Both sides switch to
+it only after agreeing, on the marked framing:
+
+1. The app's Hello sets `frame_crc` (every Hello does).
+2. A pad that reads checked frames answers with `HelloAck.frame_crc = true`.
+   The HelloAck itself is a marked frame; every frame the pad sends after it is
+   checked. Firmware predating it ignores the Hello field and leaves the
+   HelloAck field false.
+3. The app sends checked frames from then on (`Handshake::send_framing`).
+
+Both parsers read checked frames wherever they read marked ones, so frames in
+flight across the switch are never refused. The pad forgets the switch when
+the port closes. A host on the legacy framing never gets checked frames.
+
+A checked frame whose CRC does not match is dropped, and the parser rescans
+from the byte after its marker, so the frames inside it are still found. This
+is what makes a frame the host gave up writing half-way (`WRITE_DEADLINE`) cost
+only itself: unchecked, the pad glued it to the next frame and lost both. A
+checked partial that goes stale is also dropped by one byte rather than whole.
+The pad records each CRC drop as `DIAG_EVENT_FRAME_TOO_LARGE` with
+`DIAG_FRAME_DROP_CRC`.
 
 ### Mixed versions
 
 The app and the pad firmware are updated independently, so both sides speak
-both framings:
+all three framings:
 
 - **The pad** parses either framing and answers in the framing of the last
   valid frame the host sent. It sends nothing, not even log batches, until the
@@ -30,10 +57,11 @@ The framings cannot be confused: a legacy header beginning `AA 55` would claim
 at least 0x55AA bytes, more than any frame may hold.
 
 ### Protocol Constraints:
-- Maximum frame size: **8192 bytes** (`PROTOCOL_MAX_FRAME_SIZE`), so N ≤ 8188.
+- Maximum frame size: **8192 bytes** (`PROTOCOL_MAX_FRAME_SIZE`), so N ≤ 8186
+  (room for a checked frame's CRC).
 - **Resynchronisation.** Both parsers (`firmware/main/protocol/frame_parser.c`,
   `opad-protocol`) slide forward one byte at a time until they find a
-  plausible header: `AA 55` with a length ≤ 8188, or a legacy length of 2..8188
+  plausible header: `AA 55` or `AA 5A` with a length ≤ 8186, or a legacy length of 2..8186
   (its top two bytes zero). Stray bytes (ROM bootloader chatter, a plain-text
   command, a dropped byte) cost at most the frame they land in. Junk that
   happens to look like a legacy header can hold a parser until the stale-frame

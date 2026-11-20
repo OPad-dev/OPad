@@ -925,8 +925,35 @@ pub struct JsonBackup {
     pub config: JsonBackupConfig,
 }
 
+/// Every pad's USB serial number and HelloAck device_id start with this
+pub const DEVICE_ID_PREFIX: &str = "OPAD-";
+/// What firmware up to 1.0.0-rc put before the MAC. The same pad: kept only so
+/// an older pad, its stored row and its backups still map to `OPAD-<MAC>`.
+pub const LEGACY_DEVICE_ID_PREFIX: &str = "OSUPAD-";
+
+/// The part after the prefix (the MAC), for either prefix
+pub fn device_id_suffix(id: &str) -> Option<&str> {
+    id.strip_prefix(DEVICE_ID_PREFIX)
+        .or_else(|| id.strip_prefix(LEGACY_DEVICE_ID_PREFIX))
+}
+
+/// A pad's ID as the app keeps it: an older firmware's `OSUPAD-<MAC>` is the
+/// same pad as `OPAD-<MAC>`. Anything else is returned unchanged.
+pub fn canonical_device_id(id: &str) -> String {
+    match id.strip_prefix(LEGACY_DEVICE_ID_PREFIX) {
+        Some(mac) => format!("{DEVICE_ID_PREFIX}{mac}"),
+        None => id.to_string(),
+    }
+}
+
+fn de_canonical_device_id<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    String::deserialize(d).map(|id| canonical_device_id(&id))
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JsonBackupDevice {
+    /// Read in canonical form, so a backup made with older firmware matches the pad
+    #[serde(deserialize_with = "de_canonical_device_id")]
     pub device_id: String,
     pub board_profile: String,
     pub counter_generation: u32,
@@ -1250,7 +1277,7 @@ mod tests {
             &DeviceInfo {
                 key_count: 2,
                 input_module: Default::default(),
-                device_id: "OSUPAD-TEST".to_string(),
+                device_id: "OPAD-TEST".to_string(),
                 board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                 firmware_version: "1.0.0".to_string(),
                 protocol_version: 1,
@@ -1259,7 +1286,7 @@ mod tests {
                 he_calibration: false,
             },
             &CounterState {
-                device_id: "OSUPAD-TEST".to_string(),
+                device_id: "OPAD-TEST".to_string(),
                 counter_generation: 1,
                 lifetime_key1: 500,
                 lifetime_key2: 600,
@@ -1408,7 +1435,7 @@ mod tests {
         let info = DeviceInfo {
             key_count: 3,
             input_module: Default::default(),
-            device_id: "OSUPAD-TEST".to_string(),
+            device_id: "OPAD-TEST".to_string(),
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),
             protocol_version: 1,
@@ -1422,7 +1449,7 @@ mod tests {
             ..DeviceConfig::default()
         };
         let counters = CounterState {
-            device_id: "OSUPAD-TEST".to_string(),
+            device_id: "OPAD-TEST".to_string(),
             counter_generation: 1,
             lifetime_key1: 500,
             lifetime_key2: 600,
@@ -1609,5 +1636,12 @@ mod game_key_tests {
         let c: DeviceConfig = serde_json::from_value(v).unwrap();
         assert_eq!(c.key3_hid_usage, DEFAULT_KEY3_HID_USAGE);
         assert_eq!(c.game_keys, DEFAULT_GAME_KEYS);
+    }
+
+    #[test]
+    fn a_backup_from_older_firmware_names_the_pad_as_opad() {
+        let json = r#"{"device_id":"OSUPAD-3CDC75701678","board_profile":"waveshare","counter_generation":3}"#;
+        let d: JsonBackupDevice = serde_json::from_str(json).unwrap();
+        assert_eq!(d.device_id, "OPAD-3CDC75701678");
     }
 }

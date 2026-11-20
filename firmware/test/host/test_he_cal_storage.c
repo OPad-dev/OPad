@@ -8,6 +8,7 @@
 #include "input/he_cal_record.h"
 #include "runtime/runtime.h"
 #include "nvs.h"
+#include "config/nvs_ns.h"
 
 // Only the platform boundary is replaced: tests execute the real he_cal.c
 // transactions, validation and publication, backed by two in-memory slots.
@@ -21,9 +22,13 @@ static opad_state_t mode = OPAD_STATE_IDLE;
 opad_state_t runtime_get_state(void) { return mode; }
 void counters_record_nvs_write(void) { writes++; }
 
+// he_cal.c opens whatever name config/nvs_ns.c gives it; the copy itself is
+// tested in test_nvs_ns.c
+const char *nvs_ns_name(nvs_ns_id_t id) { return id == NVS_NS_CAL ? "opad_cal" : "opad_cal3"; }
+
 esp_err_t nvs_open(const char *name, int access, nvs_handle_t *handle)
 {
-    assert(strcmp(name, "osupad_cal") == 0);
+    assert(strcmp(name, "opad_cal") == 0);
     *handle = access;
     return access == NVS_READWRITE && fail_at == 1 ? ESP_FAIL : ESP_OK;
 }

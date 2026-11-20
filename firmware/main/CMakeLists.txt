@@ -40,6 +40,7 @@ idf_component_register(
         "config/config_validate.c"
         "config/he_config_record.c"
         "config/owner.c"
+        "config/nvs_ns.c"
         "ui/ui_port.c"
         "ui/ui_store.c"
         "ui/he_cal_ui.c"

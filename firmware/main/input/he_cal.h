@@ -26,8 +26,8 @@ extern "C" {
  * Never erases NVS on corrupted records.
  */
 /**
- * @brief Keep calibration in the Hall Effect V3 store (NVS namespace
- * "osupad_cal3") instead of V1's. Call before he_cal_init, once, at boot.
+ * @brief Keep calibration in the Hall Effect V3 store (NVS_NS_CAL3, "opad_cal3")
+ * instead of V1's. Call before he_cal_init, once, at boot.
  */
 void he_cal_use_v3_store(void);
 

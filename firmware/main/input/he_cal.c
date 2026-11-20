@@ -1,3 +1,4 @@
+#include "config/nvs_ns.h"
 #include "he_cal.h"
 #include "he_cal_record.h"
 #include "he_backend.h"
@@ -14,8 +15,7 @@
 static const char *TAG = "he_cal";
 // V1 and V3 modules read different raw values, so each keeps its own
 // calibration: a V1 calibration never drives a V3 module (he_cal_use_v3_store)
-static const char *NVS_NAMESPACE_V3 = "osupad_cal3";
-static const char *s_namespace = "osupad_cal";  // V1's, the one pads always had
+static nvs_ns_id_t s_namespace = NVS_NS_CAL;  // V1's, the one pads always had
 // Keys 1 and 2 in one A/B record pair, as always. Key 3 (V3) in a second pair
 // of the same record type (its keys[0]), so the first pair's format never
 // changes and older firmware still reads keys 1 and 2.
@@ -54,7 +54,7 @@ static void set_factory_defaults_locked(void)
 
 void he_cal_use_v3_store(void)
 {
-    s_namespace = NVS_NAMESPACE_V3;
+    s_namespace = NVS_NS_CAL3;
     s_keys = 3;
 }
 
@@ -89,7 +89,7 @@ esp_err_t he_cal_init(void)
     portEXIT_CRITICAL(&s_cal_lock);
 
     nvs_handle_t handle;
-    esp_err_t err = nvs_open(s_namespace, NVS_READONLY, &handle);
+    esp_err_t err = nvs_open(nvs_ns_name(s_namespace), NVS_READONLY, &handle);
     if (err != ESP_OK) {
         ESP_LOGI(TAG, "No NVS calibration namespace found (%s), using factory defaults", esp_err_to_name(err));
         return ESP_OK;
@@ -117,7 +117,7 @@ esp_err_t he_cal_init(void)
     // Logging takes locks, so never inside the critical section (a first
     // printf there aborts: newlib initialises its lock lazily)
     ESP_LOGI(TAG, "Calibration (%s): K1=[%ld..%ld, v=%d], K2=[%ld..%ld, v=%d], K3=[%ld..%ld, v=%d]%s",
-             s_namespace, (long)loaded[0].rest, (long)loaded[0].full, loaded[0].valid,
+             nvs_ns_name(s_namespace), (long)loaded[0].rest, (long)loaded[0].full, loaded[0].valid,
              (long)loaded[1].rest, (long)loaded[1].full, loaded[1].valid, (long)loaded[2].rest,
              (long)loaded[2].full, loaded[2].valid, rec12 ? "" : " (no keys 1-2 record)");
     (void)loaded;  // host tests build ESP_LOGI as nothing
@@ -185,9 +185,9 @@ static esp_err_t persist_store(nvs_handle_t handle, cal_store_t *st, const he_ca
 static esp_err_t persist_locked(const he_calibration_t snapshot[HE_KEYS_MAX])
 {
     nvs_handle_t handle;
-    esp_err_t err = nvs_open(s_namespace, NVS_READWRITE, &handle);
+    esp_err_t err = nvs_open(nvs_ns_name(s_namespace), NVS_READWRITE, &handle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to open NVS namespace '%s' for writing: %s", s_namespace, esp_err_to_name(err));
+        ESP_LOGE(TAG, "Failed to open NVS namespace '%s' for writing: %s", nvs_ns_name(s_namespace), esp_err_to_name(err));
         return err;
     }
     err = persist_store(handle, &s_store12, snapshot);
@@ -198,7 +198,7 @@ static esp_err_t persist_locked(const he_calibration_t snapshot[HE_KEYS_MAX])
     nvs_close(handle);
     if (err == ESP_OK) {
         ESP_LOGI(TAG, "Calibration persisted (%s): K1=[%ld..%ld, v=%d], K2=[%ld..%ld, v=%d], K3=[%ld..%ld, v=%d]",
-                 s_namespace, (long)snapshot[0].rest, (long)snapshot[0].full, snapshot[0].valid,
+                 nvs_ns_name(s_namespace), (long)snapshot[0].rest, (long)snapshot[0].full, snapshot[0].valid,
                  (long)snapshot[1].rest, (long)snapshot[1].full, snapshot[1].valid,
                  (long)snapshot[2].rest, (long)snapshot[2].full, snapshot[2].valid);
     }

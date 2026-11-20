@@ -49,6 +49,11 @@ static int64_t s_last_rx_us = 0;
 // Protocol state is owned by the CDC task.
 static bool s_host_framing_known = false;
 static frame_format_t s_host_framing = FRAME_FORMAT_MARKED;
+// Checked frames ([AA 5A] ... CRC-16) on the marked framing: on once a Hello
+// asked for them and our HelloAck said yes; off again when the port closes.
+// s_crc_answer is what the HelloAck being built says.
+static bool s_tx_crc = false;
+static bool s_crc_answer = false;
 static uint32_t s_out_sequence = 1;
 
 // Live key view (he_live_view): streamed until this time, 0 = off. Written and
@@ -70,7 +75,7 @@ static void get_device_mac_string(char *buf, size_t max_len)
 {
     uint8_t mac[6] = {0};
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    snprintf(buf, max_len, "OSUPAD-%02X%02X%02X%02X%02X%02X",
+    snprintf(buf, max_len, "OPAD-%02X%02X%02X%02X%02X%02X",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
@@ -80,7 +85,15 @@ esp_err_t protocol_encode_device_message(const opad_DeviceToHost *msg, uint8_t *
         return ESP_ERR_INVALID_ARG;
     }
 
-    size_t room = max_len - FRAME_HEADER_SIZE;
+    frame_format_t format = s_host_framing;
+    if (s_tx_crc && format != FRAME_FORMAT_LEGACY) {
+        format = FRAME_FORMAT_CHECKED;
+    }
+    size_t trailer = frame_trailer_size(format);
+    if (max_len <= FRAME_HEADER_SIZE + trailer) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    size_t room = max_len - FRAME_HEADER_SIZE - trailer;
     if (room > FRAME_MAX_PAYLOAD) {
         room = FRAME_MAX_PAYLOAD;
     }
@@ -90,8 +103,11 @@ esp_err_t protocol_encode_device_message(const opad_DeviceToHost *msg, uint8_t *
         return ESP_FAIL;
     }
 
-    frame_write_header(out_buf, (uint16_t)stream.bytes_written, s_host_framing);
-    *out_len = FRAME_HEADER_SIZE + stream.bytes_written;
+    frame_write_header(out_buf, (uint16_t)stream.bytes_written, format);
+    if (trailer) {
+        frame_write_crc(out_buf, stream.bytes_written);
+    }
+    *out_len = FRAME_HEADER_SIZE + stream.bytes_written + trailer;
     return ESP_OK;
 }
 
@@ -340,6 +356,7 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     msg.payload.hello_ack.restart = true;
     // Shows UI_FLAG_PER_SECOND tap rates in KPS (issue #8)
     msg.payload.hello_ack.tap_rate_per_second = true;
+    msg.payload.hello_ack.frame_crc = s_crc_answer;
     // Hosts show the key pin settings only without a module (hand-wired)
     msg.payload.hello_ack.input_module = input_module_to_proto(board_boot_module());
 #ifdef OPAD_HE_INPUT
@@ -727,7 +744,12 @@ static void handle_host_message(const opad_HostToDevice *msg)
     switch (msg->which_payload) {
     case opad_HostToDevice_hello_tag:
         he_cal_ui_set_app_capable(msg->payload.hello.he_calibration);
+        // Checked frames only on the marked framing. The HelloAck goes out as
+        // a marked frame; everything after it is checked.
+        s_crc_answer = msg->payload.hello.frame_crc && s_host_framing != FRAME_FORMAT_LEGACY;
+        s_tx_crc = false;
         protocol_send_hello_ack(msg->sequence_number);
+        s_tx_crc = s_crc_answer;
         break;
 
     case opad_HostToDevice_claim_ownership_tag: {
@@ -1037,7 +1059,9 @@ static void on_frame_received(const uint8_t *payload, size_t payload_len, void *
         // recognised message is evidence of the host's framing
         if (!s_host_framing_known && msg.which_payload >= opad_HostToDevice_hello_tag &&
             msg.which_payload <= opad_HostToDevice_cancel_he_calibration_tag) {
-            s_host_framing = s_parser.last_format;
+            // A checked frame is the marked framing with a CRC
+            s_host_framing = s_parser.last_format == FRAME_FORMAT_LEGACY ? FRAME_FORMAT_LEGACY
+                                                                          : FRAME_FORMAT_MARKED;
             s_host_framing_known = true;
         }
         handle_host_message(&msg);
@@ -1045,13 +1069,24 @@ static void on_frame_received(const uint8_t *payload, size_t payload_len, void *
 }
 
 // A partial frame the host stopped sending half a second ago will never complete
+static frame_accept_t current_accept(void)
+{
+    if (!s_host_framing_known) {
+        return FRAME_ACCEPT_ANY;
+    }
+    return s_host_framing == FRAME_FORMAT_LEGACY ? FRAME_ACCEPT_LEGACY : FRAME_ACCEPT_MARKED;
+}
+
+static void on_frame_received(const uint8_t *payload, size_t payload_len, void *user_data);
+
 static void expire_stale_partial(int64_t now)
 {
     if (!frame_parser_is_idle(&s_parser) && (now - s_last_rx_us) > RX_STALE_US) {
         ESP_LOGW(TAG, "Dropping stale partial frame (%u bytes)", (unsigned)s_parser.rx_len);
         diag_record(DIAG_EVENT_FRAME_TOO_LARGE, 2 /* WARN */, (uint32_t)s_parser.rx_len,
                     DIAG_FRAME_DROP_STALE);
-        frame_parser_reset(&s_parser);
+        // A checked partial is dropped by one byte: whole frames behind it still arrive
+        frame_parser_expire(&s_parser, current_accept(), on_frame_received, NULL);
     }
 }
 
@@ -1062,11 +1097,13 @@ void protocol_feed_cdc_bytes(const uint8_t *data, size_t len)
     s_last_rx_us = now;
 
     uint32_t prev_resync = s_parser.resync_bytes;
-    frame_accept_t accept = FRAME_ACCEPT_ANY;
-    if (s_host_framing_known) {
-        accept = s_host_framing == FRAME_FORMAT_LEGACY ? FRAME_ACCEPT_LEGACY : FRAME_ACCEPT_MARKED;
+    uint32_t prev_crc = s_parser.crc_errors;
+    frame_parser_feed(&s_parser, data, len, current_accept(), on_frame_received, NULL);
+    uint32_t bad_crc = s_parser.crc_errors - prev_crc;
+    if (bad_crc > 0) {
+        diag_record(DIAG_EVENT_FRAME_TOO_LARGE, 2 /* WARN */, bad_crc, DIAG_FRAME_DROP_CRC);
+        ESP_LOGW(TAG, "Dropped %lu frame(s) with a bad CRC", (unsigned long)bad_crc);
     }
-    frame_parser_feed(&s_parser, data, len, accept, on_frame_received, NULL);
     uint32_t skipped = s_parser.resync_bytes - prev_resync;
     if (skipped > 0) {
         diag_record(DIAG_EVENT_FRAME_TOO_LARGE, 2 /* WARN */, skipped, DIAG_FRAME_DROP_RESYNC);
@@ -1079,6 +1116,8 @@ void protocol_reset_rx(void)
     frame_parser_reset(&s_parser);
     // Called when the host closes the port: the next one may frame differently
     s_host_framing_known = false;
+    s_tx_crc = false;
+    s_crc_answer = false;
     he_cal_ui_on_host_disconnect();
     s_live_until_us = 0;
     portENTER_CRITICAL(&s_progress_lock);
