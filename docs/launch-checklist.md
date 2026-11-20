@@ -22,6 +22,62 @@ ships, **P2** should be done before launch but can follow within weeks.
 
 ---
 
+## Code work list (what is left in the repository, in order)
+
+The owner's own list (accounts, DNS, hardware, legal) is kept outside the
+repository. Items marked *waits* need something from the owner first.
+
+**Done (2026-11-20/21):** CI green; release-please opens PRs and bumps
+`Cargo.lock`; Pages and the feed deploy; nothing named osupad but what pads
+store, and that migrates (`OPAD-<MAC>`, `opad*` NVS namespaces); checked
+frames (0.12); feed at `updates.opad.dev`, overridable by forks; SECURITY.md,
+issue templates; V3 hardware and case docs; printing guide.
+
+1. [ ] **Pages custom domain** `updates.opad.dev`, HTTPS enforced. *Waits: the
+   `updates` CNAME in Cloudflare.*
+2. [ ] **tosu, watched:** a weekly job that builds a new upstream tosu, checks it
+   starts and that its v2 JSON still has every field `opad-tosu` reads, then
+   opens the version bump PR and publishes it to beta. Then an acceptance run
+   on the Windows mini PC: osu! stable and lazer play a recorded replay of the
+   test map (`scripts/ppm_test_map.py`), and the run checks tosu and the daemon
+   go menu → playing → results with the right data; passing promotes it to
+   stable. *Waits for the acceptance half: the mini PC on Windows 11, osu!, a
+   replay.*
+3. [ ] **`make hil`:** the pad suite (board test, flash, rollback, recover,
+   latency, old/new app × firmware, soak) against one pad picked by serial,
+   with a report; a daemon option to ignore that serial so the owner's daemon
+   leaves the test pad alone.
+4. [ ] **`opadctl factory`:** per unit, flash the published release (all four
+   images), board test (`--magnet` on HE), HE calibration, taps per key, a
+   touch check, factory state (no owner, zero counters), and a report saved
+   under the serial.
+5. [ ] **Installers tested in CI:** silent install, run, uninstall of the
+   Windows installer on the Windows runner (PKG-01 … PKG-06); daemon and
+   `opadctl` smoke tests on the packages; the AppImage.
+6. [ ] **`make release-local` and `make feed-local` on Linux** (release spec
+   §18.3), and an end-to-end update from a local feed for each package type.
+7. [ ] **First release candidate:** tosu `r1`, then merge release PRs #9 / #10
+   (`1.0.0-rc.1`), check every artifact, the feed and an update from it.
+   *Waits: the owner's go.*
+8. [ ] **The not-run rows of §16 in `docs/testing-checklist.md`:** layouts and
+   HE calibration across the upgrade (ID-02), a rollback (ID-03), Windows
+   (ID-04, CRC-01/02), the 8-hour soak (CRC-03).
+9. [ ] **USB PID** (0.9): firmware, app, udev and flasher accept the new PID
+   and `0x4001`. *Waits: the owner's choice and the granted PID.*
+10. [ ] **Signing** (0.8, release spec §19): build-time trusted key override
+    for forks, the `release` environment, the rotation release, SignPath wired
+    and tested, then `1.0.0`. *Waits: the owner's keys and SignPath.*
+11. [ ] **Docs a buyer follows:** README install per OS with the real download
+    URLs, quick start, update, recovery and troubleshooting, each checked
+    against a release; Discord link in the app, README and issue templates
+    (*waits: the invite*).
+12. [ ] **Compliance paperwork drafts** (kept outside the repository): technical
+    file, risk analysis, Declaration of Conformity, safety and GPSR texts in
+    English and Spanish, labels. *Waits: Waveshare's answer.*
+13. [ ] **Repository hygiene:** Dependabot for Actions and Cargo, branch
+    protection on `main`, `cargo deny check` in `make check`, `chrono` → `jiff`
+    (0.16).
+
 ## 0. Found broken during this review (fix first)
 
 Each of these was checked on 2026-11-20 against GitHub or the code.
@@ -81,12 +137,10 @@ found and delivered.
 - **Support:** Discord first; GitHub issues for bugs that need a code change.
 - **Easter-egg GIF:** stays, with a notice that it is removed if its rights
   holder asks.
-- **Compliance (2026-11-21):** no lab testing before the Kickstarter (budget);
-  the campaign pays for it, before rewards ship. Sales are worldwide, so the
-  radio on the Waveshare board matters in every market (CE/RED, UKCA, FCC,
-  ISED, TELEC, RCM, KC). Waveshare is asked for its certificates first. The
-  owner knows that units handed out before then, even free promotional
-  ones, count as placed on the EU market.
+- **Compliance (2026-11-21):** compliance testing is funded by the Kickstarter
+  and done before rewards ship. Sales are worldwide, so the radio on the
+  Waveshare board matters in every market (CE/RED, UKCA, FCC, ISED, TELEC,
+  RCM, KC). Waveshare is asked for its certificates first.
 - **Case:** PETG printed in-house for testers and early batches; MJF PA12
   quoted in batches for volumes (`hardware/3d/custom_case/V3/README.md`).
 - **Test machines:** the owner's mini PC becomes a bare-metal Windows 11 test
