@@ -31,7 +31,7 @@ Fingers barely have to lift between taps. That needs analog key travel, which me
 - Analog/gamepad output, Dynamic Keystroke, Mod-Tap, per-key RGB, macros, layers, profiles
 - 8 kHz polling
 - More than two keys
-- Wireless (see `docs/roadmap.md`)
+- Wireless (not planned)
 
 ### Spec amendments this plan introduces
 

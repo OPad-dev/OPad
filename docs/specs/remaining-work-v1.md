@@ -698,7 +698,7 @@ Legend: ✅ done · 🟡 partial · ❌ missing. Task IDs show what closes each 
 - ~~Windows support (named pipes, COM discovery, login startup): **after** Linux v1.0 (A3).~~
   **Reversed 2026-09-16** by `osupad_packaging_distribution_plan.md` — it is in
   v1.0. See the note on A3 above.
-- ESP-NOW wireless dongle, battery, and heavy-ballast case V2 (`docs/roadmap.md`): post-v1.0.
+- ESP-NOW wireless dongle, battery, and heavy-ballast case V2: post-v1.0, and off the roadmap since 2026-11-20 (the V3 case replaces the case V2 idea).
 - Touch UI, Wi-Fi, Bluetooth, NTP, macros, RGB, more than two keys (spec §2.2).
 - ~~A custom OTA subsystem (spec §26; flashing stays espflash over USB).~~
   **Partially reversed 2026-09-16** by §U-3 of the packaging plan, and the

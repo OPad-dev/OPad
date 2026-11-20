@@ -67,9 +67,6 @@ Until that lands, treat the documents below as **possibly stale**; the code and
 
 ### 🚀 Future Milestones & Catalog Roadmap
 * **[Future Roadmap & Hardware Variants](roadmap.md)**:
-  * **ESP-NOW Ultra-Low-Latency Wireless Dongle** (Dual-mode 1.0 ms wireless).
-  * **Heavy Ballast & Anti-Slip Deskmat Enclosure** (High-BPM anti-slip case V2).
-  * **Multi-Key Catalog Expansion** (3-Key Standard with Quick Retry, 4k/5k/6k/7k/10k Mania).
   * **Modular Swappable Switch PCBs** (On-board ADC chip architecture, universal 8-wire SPI bus).
   * **Hardware Auto-Detection** (Analog ID voltage net & digital SPI handshake).
   * **Adaptive Debounce & Rapid Trigger Velocity Hysteresis**.
