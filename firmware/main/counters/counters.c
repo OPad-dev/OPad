@@ -157,7 +157,8 @@ void counters_get(counters_snapshot_t *snapshot)
     snapshot->lifetime_key3 = key_event_get_lifetime_key3();
 }
 
-esp_err_t counters_sync_from_host(uint32_t generation, uint64_t k1, uint64_t k2, bool force, char *err_msg, size_t err_msg_len)
+esp_err_t counters_sync_from_host(uint32_t generation, uint64_t k1, uint64_t k2, const uint64_t *k3, bool force,
+                                  char *err_msg, size_t err_msg_len)
 {
     if (runtime_get_state() != OSUPAD_STATE_IDLE) {
         ESP_LOGW(TAG, "Cannot sync counters while active (state != IDLE)");
@@ -190,6 +191,9 @@ esp_err_t counters_sync_from_host(uint32_t generation, uint64_t k1, uint64_t k2,
 
     s_generation = generation;
     rebase_lifetime_presses(&current, k1, k2);
+    if (k3) {
+        key_event_add_lifetime_key3(*k3 - current.lifetime_key3);  // to *k3, modulo 2^64
+    }
 
     if (err_msg && err_msg_len > 0) {
         err_msg[0] = '\0';

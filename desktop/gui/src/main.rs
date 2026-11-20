@@ -2593,7 +2593,7 @@ impl App {
                 .map(|c| c.config.key2_char())
                 .unwrap_or_else(|| "X".to_string());
 
-            let table = column![
+            let mut table = column![
                 row![
                     text("Field")
                         .size(12)
@@ -2683,6 +2683,55 @@ impl App {
                 ],
             ]
             .spacing(6);
+            // Key 3 and the game keys, when the backup carries them (a three-key pad's)
+            let inc = &modal.incoming;
+            if inc.config.key3.is_some() || inc.stats.lifetime_key3.is_some() {
+                let cur_k3 = modal.current.as_ref().and_then(|c| c.lifetime_key3);
+                let k3_color = match (inc.stats.lifetime_key3, cur_k3) {
+                    (Some(i), Some(c)) if i < c => theme::RED,
+                    _ => theme::WHITE,
+                };
+                let cur_k3_str = modal
+                    .current
+                    .as_ref()
+                    .map(|c| match cur_k3 {
+                        Some(n) => format!("{} ({} presses)", c.config.key3_char(), n),
+                        None => c.config.key3_char(),
+                    })
+                    .unwrap_or_else(|| "-".to_string());
+                let inc_k3_str = format!(
+                    "{} ({})",
+                    inc.config.key3.as_deref().unwrap_or("kept"),
+                    inc.stats
+                        .lifetime_key3
+                        .map_or("count kept".to_string(), |n| format!("{n} presses"))
+                );
+                table = table.push(row![
+                    text("Key 3").size(13).width(Length::FillPortion(2)),
+                    text(cur_k3_str).size(13).width(Length::FillPortion(3)),
+                    text(inc_k3_str)
+                        .size(13)
+                        .color(k3_color)
+                        .width(Length::FillPortion(3)),
+                ]);
+            }
+            if let Some(game) = inc.config.game_keys {
+                table = table.push(row![
+                    text("Game keys").size(13).width(Length::FillPortion(2)),
+                    text(
+                        modal
+                            .current
+                            .as_ref()
+                            .map(|c| opad_model::game_keys_names(c.config.game_keys))
+                            .unwrap_or_else(|| "-".to_string())
+                    )
+                    .size(13)
+                    .width(Length::FillPortion(3)),
+                    text(opad_model::game_keys_names(game))
+                        .size(13)
+                        .width(Length::FillPortion(3)),
+                ]);
+            }
 
             modal_col = modal_col.push(table);
 

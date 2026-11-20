@@ -399,11 +399,10 @@ async fn main() -> Result<()> {
                         config.key3_char(),
                         k3.lifetime
                     );
-                    let names: Vec<String> = (1..=3u8)
-                        .filter(|&k| config.is_game_key(k))
-                        .map(|k| format!("K{k}"))
-                        .collect();
-                    println!("Game Keys:        {}", names.join(" + "));
+                    println!(
+                        "Game Keys:        {}",
+                        opad_model::game_keys_names(config.game_keys)
+                    );
                 }
                 // The game keys' presses (keys 1 and 2 unless others are picked)
                 let total: u64 = [
@@ -579,6 +578,17 @@ async fn main() -> Result<()> {
                             cur.config.key2_char(),
                             cur.lifetime_key2
                         );
+                        if let Some(k3) = cur.lifetime_key3 {
+                            println!(
+                                "          Key 3: {} ({} presses)",
+                                cur.config.key3_char(),
+                                k3
+                            );
+                            println!(
+                                "          Game keys: {}",
+                                opad_model::game_keys_names(cur.config.game_keys)
+                            );
+                        }
                     }
                     println!("Incoming: Device ID: {}", incoming.device.device_id);
                     println!(
@@ -589,6 +599,15 @@ async fn main() -> Result<()> {
                         "          Key 2: {} ({} presses)",
                         incoming.config.key2, incoming.stats.lifetime_key2
                     );
+                    if let Some(k3) = &incoming.config.key3 {
+                        match incoming.stats.lifetime_key3 {
+                            Some(n) => println!("          Key 3: {} ({} presses)", k3, n),
+                            None => println!("          Key 3: {} (count kept)", k3),
+                        }
+                    }
+                    if let Some(game) = incoming.config.game_keys {
+                        println!("          Game keys: {}", opad_model::game_keys_names(game));
+                    }
 
                     if !device_id_matches {
                         println!("\n  ⚠ Note: Backup device ID does not match current pad.");

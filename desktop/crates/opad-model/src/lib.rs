@@ -814,6 +814,15 @@ impl DeviceConfig {
     }
 }
 
+/// A game keys mask (`DeviceConfig::game_keys`) as "K1 + K2"
+pub fn game_keys_names(game_keys: u32) -> String {
+    let names: Vec<String> = (1..=3u8)
+        .filter(|&k| game_keys & (1 << (k - 1)) != 0)
+        .map(|k| format!("K{k}"))
+        .collect();
+    names.join(" + ")
+}
+
 /// Helper converting standard HID usage to character representation
 pub fn hid_usage_to_char(usage: u32) -> String {
     match usage {
@@ -912,6 +921,10 @@ pub struct JsonBackupDevice {
 pub struct JsonBackupStats {
     pub lifetime_key1: u64,
     pub lifetime_key2: u64,
+    /// Key 3's lifetime count. Only written for a three-key pad whose count
+    /// is known (it is connected); absent, an import leaves the pad's as it is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifetime_key3: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -954,10 +967,34 @@ pub struct JsonBackupConfig {
     /// Backups predating result animations restore the defaults
     #[serde(default)]
     pub result_animations: result_anim::ResultAnimations,
+    /// What key 3 types, like key1/key2, or "none" for nothing. Only written
+    /// for a three-key pad; absent (older backups, two-key pads), an import
+    /// leaves key 3 and the game keys as they are.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key3: Option<String>,
+    /// The game keys (`DeviceConfig::game_keys`), with `key3`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game_keys: Option<u32>,
+}
+
+impl JsonBackupConfig {
+    /// Key 3's HID usage: `None` when the backup does not set key 3, 0 for
+    /// "none", an error when it names no key
+    pub fn key3_hid_usage(&self) -> Result<Option<u32>, String> {
+        match self.key3.as_deref() {
+            None => Ok(None),
+            Some(k) if k.trim().eq_ignore_ascii_case("none") => Ok(Some(0)),
+            Some(k) => char_to_hid_usage(k)
+                .map(Some)
+                .ok_or_else(|| format!("Invalid key3 mapping: {}", k)),
+        }
+    }
 }
 
 impl JsonBackup {
     pub fn new(info: &DeviceInfo, counters: &CounterState, config: &DeviceConfig) -> Self {
+        // Key 3 and the game keys only mean something on a three-key pad
+        let three = info.key_count >= 3;
         Self {
             format_version: 1,
             exported_at: Utc::now(),
@@ -969,6 +1006,7 @@ impl JsonBackup {
             stats: JsonBackupStats {
                 lifetime_key1: counters.lifetime_key1,
                 lifetime_key2: counters.lifetime_key2,
+                lifetime_key3: None,
             },
             config: JsonBackupConfig {
                 key1: config.key1_char(),
@@ -992,8 +1030,16 @@ impl JsonBackup {
                 swipe_left_modifiers: config.swipe_left_modifiers,
                 swipe_right_modifiers: config.swipe_right_modifiers,
                 result_animations: config.result_animations,
+                key3: three.then(|| config.key3_char()),
+                game_keys: three.then_some(config.game_keys),
             },
         }
+    }
+
+    /// Records key 3's lifetime count, for a three-key pad whose count is known
+    pub fn with_key3_lifetime(mut self, lifetime_key3: Option<u64>) -> Self {
+        self.stats.lifetime_key3 = lifetime_key3;
+        self
     }
 
     pub fn validate(&self) -> Result<(), String> {
@@ -1015,6 +1061,13 @@ impl JsonBackup {
         if self.stats.lifetime_key2 > i64::MAX as u64 {
             return Err("lifetime_key2 exceeds maximum integer size".to_string());
         }
+        if self
+            .stats
+            .lifetime_key3
+            .is_some_and(|k| k > i64::MAX as u64)
+        {
+            return Err("lifetime_key3 exceeds maximum integer size".to_string());
+        }
         if self.exported_at > chrono::Utc::now() + chrono::Duration::days(1) {
             return Err("Backup timestamp is in the future".to_string());
         }
@@ -1022,6 +1075,11 @@ impl JsonBackup {
             .ok_or_else(|| format!("Invalid key1 mapping: {}", self.config.key1))?;
         let key2_hid_usage = char_to_hid_usage(&self.config.key2)
             .ok_or_else(|| format!("Invalid key2 mapping: {}", self.config.key2))?;
+        let defaults = DeviceConfig::default();
+        let key3_hid_usage = self
+            .config
+            .key3_hid_usage()?
+            .unwrap_or(defaults.key3_hid_usage);
         // The config the import would apply must pass the same rules as any
         // other config (and the firmware's): one set of ranges, not two
         DeviceConfig {
@@ -1046,7 +1104,9 @@ impl JsonBackup {
             swipe_left_modifiers: self.config.swipe_left_modifiers,
             swipe_right_modifiers: self.config.swipe_right_modifiers,
             result_animations: self.config.result_animations,
-            ..DeviceConfig::default()
+            key3_hid_usage,
+            game_keys: self.config.game_keys.unwrap_or(defaults.game_keys),
+            ..defaults
         }
         .validate()
     }
@@ -1300,6 +1360,74 @@ mod tests {
         c.swipe_left_key = 0;
         c.swipe_up_action = SwipeAction::Key;
         assert!(c.validate().unwrap_err().contains("up swipe needs a key"));
+    }
+
+    fn three_key_backup() -> JsonBackup {
+        let info = DeviceInfo {
+            key_count: 3,
+            device_id: "OSUPAD-TEST".to_string(),
+            board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+            firmware_version: "1.0.0".to_string(),
+            protocol_version: 1,
+            running_partition: None,
+            he_input: true,
+            he_calibration: true,
+        };
+        let config = DeviceConfig {
+            key3_hid_usage: 0x2C, // Space: not a letter, written as hex
+            game_keys: 0b101,
+            ..DeviceConfig::default()
+        };
+        let counters = CounterState {
+            device_id: "OSUPAD-TEST".to_string(),
+            counter_generation: 1,
+            lifetime_key1: 500,
+            lifetime_key2: 600,
+            map_key1: 0,
+            map_key2: 0,
+        };
+        JsonBackup::new(&info, &counters, &config).with_key3_lifetime(Some(70))
+    }
+
+    #[test]
+    fn test_backup_carries_key3_and_game_keys_for_a_three_key_pad() {
+        let b = three_key_backup();
+        assert!(b.validate().is_ok());
+        let read: JsonBackup = serde_json::from_str(&serde_json::to_string(&b).unwrap()).unwrap();
+        assert_eq!(read.stats.lifetime_key3, Some(70));
+        assert_eq!(read.config.game_keys, Some(0b101));
+        assert_eq!(read.config.key3_hid_usage(), Ok(Some(0x2C)));
+
+        // A two-key pad's backup writes none of them
+        let json = serde_json::to_value(valid_backup()).unwrap();
+        assert!(json["stats"].get("lifetime_key3").is_none());
+        assert!(json["config"].get("key3").is_none());
+        assert!(json["config"].get("game_keys").is_none());
+        let b: JsonBackup = serde_json::from_value(json).unwrap();
+        assert_eq!(b.config.key3_hid_usage(), Ok(None));
+    }
+
+    #[test]
+    fn test_backup_key3_and_game_keys_are_validated() {
+        let mut b = three_key_backup();
+        b.config.key3 = Some("none".to_string());
+        assert_eq!(b.config.key3_hid_usage(), Ok(Some(0)));
+        assert!(b.validate().is_ok());
+        b.config.key3 = Some("??".to_string());
+        assert!(b.validate().is_err());
+
+        let mut b = three_key_backup();
+        b.config.game_keys = Some(0b111); // osu!standard: never three
+        assert!(b.validate().is_err());
+        b.config.game_keys = Some(0);
+        assert!(b.validate().is_err());
+    }
+
+    #[test]
+    fn test_game_keys_names() {
+        assert_eq!(game_keys_names(0b011), "K1 + K2");
+        assert_eq!(game_keys_names(0b101), "K1 + K3");
+        assert_eq!(game_keys_names(0b100), "K3");
     }
 
     #[test]

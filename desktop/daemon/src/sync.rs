@@ -32,6 +32,15 @@ pub trait DeviceLink: Send + Sync {
         counters: &CounterState,
         force_restore: bool,
     ) -> Result<u32, DeviceError>;
+    /// A forced restore that also sets key 3's lifetime count when `Some`
+    async fn restore_counters(
+        &self,
+        counters: &CounterState,
+        lifetime_key3: Option<u64>,
+    ) -> Result<u32, DeviceError> {
+        let _ = lifetime_key3;
+        self.send_counter_sync(counters, true).await
+    }
     /// Records this install as the pad's owner (§W3-2)
     async fn claim_ownership(&self, owner_id: &[u8]) -> Result<(), DeviceError>;
     async fn request_status(&self) -> Result<(), DeviceError>;
@@ -135,6 +144,15 @@ impl DeviceLink for DeviceManager {
         force_restore: bool,
     ) -> Result<u32, DeviceError> {
         self.send_counter_sync(counters, force_restore).await
+    }
+
+    async fn restore_counters(
+        &self,
+        counters: &CounterState,
+        lifetime_key3: Option<u64>,
+    ) -> Result<u32, DeviceError> {
+        self.send_counter_sync_with_key3(counters, true, lifetime_key3)
+            .await
     }
 
     async fn request_status(&self) -> Result<(), DeviceError> {

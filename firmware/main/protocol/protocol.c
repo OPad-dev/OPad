@@ -771,6 +771,7 @@ static void handle_host_message(const osupad_HostToDevice *msg)
                 tgt->counter_generation,
                 tgt->lifetime_key1,
                 tgt->lifetime_key2,
+                tgt->has_lifetime_key3 ? &tgt->lifetime_key3 : NULL,
                 msg->payload.counter_sync.force_restore,
                 err_msg,
                 sizeof(err_msg)

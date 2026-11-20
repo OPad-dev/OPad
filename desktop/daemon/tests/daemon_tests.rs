@@ -29,6 +29,8 @@ struct MockDeviceLink {
     sent_configs: Arc<Mutex<Vec<DeviceConfig>>>,
     sent_layouts: Arc<Mutex<Vec<Screen>>>,
     sent_syncs: Arc<Mutex<Vec<(CounterState, bool)>>>,
+    /// Key 3's count each `restore_counters` carried
+    restored_key3: Mutex<Vec<Option<u64>>>,
     sync_response: Arc<Mutex<Option<Result<(), String>>>>,
     sync_seq: Arc<AtomicU32>,
     claimed_owners: Arc<Mutex<Vec<Vec<u8>>>>,
@@ -51,6 +53,7 @@ impl MockDeviceLink {
             sent_configs: Arc::new(Mutex::new(Vec::new())),
             sent_layouts: Arc::new(Mutex::new(Vec::new())),
             sent_syncs: Arc::new(Mutex::new(Vec::new())),
+            restored_key3: Mutex::new(Vec::new()),
             sync_response: Arc::new(Mutex::new(Some(Ok(())))),
             sync_seq: Arc::new(AtomicU32::new(1)),
             claimed_owners: Arc::new(Mutex::new(Vec::new())),
@@ -118,6 +121,15 @@ impl DeviceLink for MockDeviceLink {
 
     async fn send_data_update(&self, _values: &[(u8, SourceValue)]) -> Result<(), DeviceError> {
         Ok(())
+    }
+
+    async fn restore_counters(
+        &self,
+        counters: &CounterState,
+        lifetime_key3: Option<u64>,
+    ) -> Result<u32, DeviceError> {
+        self.restored_key3.lock().push(lifetime_key3);
+        self.send_counter_sync(counters, true).await
     }
 
     async fn send_counter_sync(
@@ -1180,6 +1192,144 @@ async fn test_json_validation_preview_and_confirm() {
         }
         other => panic!("Expected BackupImported, got {:?}", other),
     }
+}
+
+// 7b. A three-key pad's backup restores key 3 and the game keys; an older
+// backup leaves them as they are
+#[tokio::test]
+async fn test_json_import_restores_key3_and_game_keys() {
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    let device = MockDeviceLink::new(true);
+    let log_hub = LogHub::new();
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+
+    let dev_info = DeviceInfo {
+        key_count: 3,
+        device_id: "OSUPAD-K3".to_string(),
+        board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+        firmware_version: "1.0.0".to_string(),
+        protocol_version: 1,
+        running_partition: None,
+        he_input: true,
+        he_calibration: true,
+    };
+    let counters = CounterState {
+        device_id: "OSUPAD-K3".to_string(),
+        counter_generation: 2,
+        lifetime_key1: 1000,
+        lifetime_key2: 2000,
+        map_key1: 0,
+        map_key2: 0,
+    };
+    let daemon_state = Arc::new(Mutex::new(DaemonState {
+        mode: RuntimeMode::Idle,
+        device_connected: true,
+        device_info: Some(dev_info.clone()),
+        counters: counters.clone(),
+        counters_source: CounterSource::Device,
+        pc_counters: Some(counters.clone()),
+        esp_counters: Some(counters.clone()),
+        config: DeviceConfig::default(),
+        last_sync_time: None,
+        last_sync_error: None,
+        storage_error: None,
+        tosu_connected: false,
+        osu_active: false,
+        latency: None,
+        pending_replacement: None,
+        install_id: None,
+        pending_takeover: None,
+        foreign_pad: false,
+        nvs_restore_pending: false,
+        tap: Default::default(),
+        incompatible: None,
+        ui_values: Vec::new(),
+        custom_layouts: HashMap::new(),
+        last_backup: None,
+        he_calibration: None,
+        latest_he_progress: None,
+        key3: Some(opad_model::Key3Counters {
+            lifetime: 80,
+            map: 0,
+        }),
+    }));
+
+    let backup_config = DeviceConfig {
+        key3_hid_usage: 0x07, // D
+        game_keys: 0b101,
+        ..DeviceConfig::default()
+    };
+    let backup = JsonBackup::new(&dev_info, &counters, &backup_config).with_key3_lifetime(Some(70));
+    assert_eq!(backup.config.key3.as_deref(), Some("D"));
+
+    // Key 3's count going down is a rollback too
+    let resp = handle_ipc_request(
+        IpcRequest::PreviewImport(backup.clone()),
+        &daemon_state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+        None,
+    )
+    .await;
+    match resp {
+        IpcResponse::ImportPreview {
+            current,
+            is_counter_rollback,
+            ..
+        } => {
+            assert!(is_counter_rollback);
+            assert_eq!(current.unwrap().lifetime_key3, Some(80));
+        }
+        other => panic!("Expected ImportPreview, got {:?}", other),
+    }
+
+    let resp = handle_ipc_request(
+        IpcRequest::ImportBackup {
+            backup,
+            confirm: true,
+        },
+        &daemon_state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+        None,
+    )
+    .await;
+    match resp {
+        IpcResponse::BackupImported { config, .. } => {
+            assert_eq!((config.key3_hid_usage, config.game_keys), (0x07, 0b101));
+        }
+        other => panic!("Expected BackupImported, got {:?}", other),
+    }
+    assert_eq!(*device.restored_key3.lock(), vec![Some(70)]);
+
+    // An older backup (no key 3) keeps key 3, the game keys and key 3's count
+    let mut older = JsonBackup::new(&dev_info, &counters, &DeviceConfig::default());
+    older.config.key3 = None;
+    older.config.game_keys = None;
+    let resp = handle_ipc_request(
+        IpcRequest::ImportBackup {
+            backup: older,
+            confirm: true,
+        },
+        &daemon_state,
+        &storage,
+        &device,
+        &log_hub,
+        &pending_ops,
+        None,
+    )
+    .await;
+    match resp {
+        IpcResponse::BackupImported { config, .. } => {
+            assert_eq!((config.key3_hid_usage, config.game_keys), (0x07, 0b101));
+        }
+        other => panic!("Expected BackupImported, got {:?}", other),
+    }
+    assert_eq!(*device.restored_key3.lock(), vec![Some(70), None]);
 }
 
 // 8. IPC handshake mismatch (P1-7); oversized frame (P2-6); second daemon refused (P2-6)

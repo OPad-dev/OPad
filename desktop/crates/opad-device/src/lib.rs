@@ -1023,6 +1023,18 @@ impl DeviceManager {
         counters: &CounterState,
         force_restore: bool,
     ) -> Result<u32, DeviceError> {
+        self.send_counter_sync_with_key3(counters, force_restore, None)
+            .await
+    }
+
+    /// `send_counter_sync` that also sets key 3's lifetime count. `None`
+    /// leaves the pad's as it is; firmware without key 3 ignores it.
+    pub async fn send_counter_sync_with_key3(
+        &self,
+        counters: &CounterState,
+        force_restore: bool,
+        lifetime_key3: Option<u64>,
+    ) -> Result<u32, DeviceError> {
         let seq = self.next_seq();
         let msg = HostToDevice {
             sequence_number: seq,
@@ -1033,6 +1045,7 @@ impl DeviceManager {
                         counter_generation: counters.counter_generation,
                         lifetime_key1: counters.lifetime_key1,
                         lifetime_key2: counters.lifetime_key2,
+                        lifetime_key3,
                     }),
                     force_restore,
                 },

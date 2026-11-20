@@ -381,6 +381,11 @@ typedef struct _osupad_CounterState {
     uint32_t counter_generation;
     uint64_t lifetime_key1;
     uint64_t lifetime_key2;
+    /* Key 3's lifetime count, sent only when restoring a backup that has it.
+ Absent (older apps, every ordinary sync) leaves the pad's key 3 count as
+ it is; firmware without key 3 skips the field. */
+    bool has_lifetime_key3;
+    uint64_t lifetime_key3;
 } osupad_CounterState;
 
 typedef struct _osupad_CounterSyncRequest {
@@ -693,7 +698,7 @@ extern "C" {
 #define osupad_SetLayout_init_default            {0, 0, 0, {osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default, osupad_UiWidget_init_default}}
 #define osupad_LayoutAck_init_default            {0, 0, ""}
 #define osupad_PlayAnimation_init_default        {0, ""}
-#define osupad_CounterState_init_default         {"", 0, 0, 0}
+#define osupad_CounterState_init_default         {"", 0, 0, 0, false, 0}
 #define osupad_CounterSyncRequest_init_default   {false, osupad_CounterState_init_default, 0}
 #define osupad_CounterSyncResponse_init_default  {0, false, osupad_CounterState_init_default, ""}
 #define osupad_LogEvent_init_default             {0, _osupad_LogLevel_MIN, "", "", 0, 0, 0}
@@ -728,7 +733,7 @@ extern "C" {
 #define osupad_SetLayout_init_zero               {0, 0, 0, {osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero, osupad_UiWidget_init_zero}}
 #define osupad_LayoutAck_init_zero               {0, 0, ""}
 #define osupad_PlayAnimation_init_zero           {0, ""}
-#define osupad_CounterState_init_zero            {"", 0, 0, 0}
+#define osupad_CounterState_init_zero            {"", 0, 0, 0, false, 0}
 #define osupad_CounterSyncRequest_init_zero      {false, osupad_CounterState_init_zero, 0}
 #define osupad_CounterSyncResponse_init_zero     {0, false, osupad_CounterState_init_zero, ""}
 #define osupad_LogEvent_init_zero                {0, _osupad_LogLevel_MIN, "", "", 0, 0, 0}
@@ -893,6 +898,7 @@ extern "C" {
 #define osupad_CounterState_counter_generation_tag 2
 #define osupad_CounterState_lifetime_key1_tag    3
 #define osupad_CounterState_lifetime_key2_tag    4
+#define osupad_CounterState_lifetime_key3_tag    5
 #define osupad_CounterSyncRequest_target_state_tag 1
 #define osupad_CounterSyncRequest_force_restore_tag 2
 #define osupad_CounterSyncResponse_success_tag   1
@@ -1234,7 +1240,8 @@ X(a, STATIC,   SINGULAR, STRING,   grade,             2)
 X(a, STATIC,   SINGULAR, STRING,   device_id,         1) \
 X(a, STATIC,   SINGULAR, UINT32,   counter_generation,   2) \
 X(a, STATIC,   SINGULAR, UINT64,   lifetime_key1,     3) \
-X(a, STATIC,   SINGULAR, UINT64,   lifetime_key2,     4)
+X(a, STATIC,   SINGULAR, UINT64,   lifetime_key2,     4) \
+X(a, STATIC,   OPTIONAL, UINT64,   lifetime_key3,     5)
 #define osupad_CounterState_CALLBACK NULL
 #define osupad_CounterState_DEFAULT NULL
 
@@ -1522,9 +1529,9 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_ClaimOwnership_size               18
 #define osupad_ConfigAck_size                    330
 #define osupad_ConfigPayload_size                260
-#define osupad_CounterState_size                 61
-#define osupad_CounterSyncRequest_size           65
-#define osupad_CounterSyncResponse_size          130
+#define osupad_CounterState_size                 72
+#define osupad_CounterSyncRequest_size           76
+#define osupad_CounterSyncResponse_size          141
 #define osupad_DataUpdate_size                   2336
 #define osupad_DataValue_size                    71
 #define osupad_DetectPinRequest_size             18

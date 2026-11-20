@@ -346,6 +346,10 @@ message CounterState {
     uint32 counter_generation = 2;
     uint64 lifetime_key1 = 3;
     uint64 lifetime_key2 = 4;
+    // Key 3's lifetime count, sent only when restoring a backup that has it.
+    // Absent (older apps, every ordinary sync) leaves the pad's key 3 count as
+    // it is; firmware without key 3 skips the field.
+    optional uint64 lifetime_key3 = 5;
 }
 
 message CounterSyncRequest {

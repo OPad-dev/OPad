@@ -67,7 +67,11 @@ pub fn current(
             he_calibration: false,
             key_count: 2,
         });
-    Some(JsonBackup::new(&info, &st.counters, &st.config))
+    // Key 3's count is known only while a three-key pad is connected
+    Some(
+        JsonBackup::new(&info, &st.counters, &st.config)
+            .with_key3_lifetime(st.key3.map(|k| k.lifetime)),
+    )
 }
 
 /// How many backups to keep. Ten covers a long session's worth of plays

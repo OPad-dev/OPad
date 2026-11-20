@@ -966,13 +966,19 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 counter_generation: st.counters.counter_generation,
                 lifetime_key1: st.counters.lifetime_key1,
                 lifetime_key2: st.counters.lifetime_key2,
+                lifetime_key3: st.key3.map(|k| k.lifetime),
                 config: st.config.clone(),
             });
 
             let device_id_matches = st.counters.device_id.is_empty()
                 || st.counters.device_id == backup.device.device_id;
+            let key3_rollback = matches!(
+                (backup.stats.lifetime_key3, st.key3),
+                (Some(incoming), Some(now)) if incoming < now.lifetime
+            );
             let is_counter_rollback = backup.stats.lifetime_key1 < st.counters.lifetime_key1
-                || backup.stats.lifetime_key2 < st.counters.lifetime_key2;
+                || backup.stats.lifetime_key2 < st.counters.lifetime_key2
+                || key3_rollback;
 
             let mut warnings = Vec::new();
             if !device_id_matches {
@@ -1044,12 +1050,18 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             let k1_usage = char_to_hid_usage(&backup.config.key1).unwrap_or(0x1D);
             let k2_usage = char_to_hid_usage(&backup.config.key2).unwrap_or(0x1B);
 
-            // Backups predate key 3: it and the game keys stay as they are
+            // Key 3 and the game keys come from the backup when it has them
+            // (a three-key pad's); otherwise they stay as they are
             let kept = { state.lock().config.clone() };
             let new_config = DeviceConfig {
-                key3_hid_usage: kept.key3_hid_usage,
+                key3_hid_usage: backup
+                    .config
+                    .key3_hid_usage()
+                    .ok()
+                    .flatten()
+                    .unwrap_or(kept.key3_hid_usage),
                 key3_he: kept.key3_he,
-                game_keys: kept.game_keys,
+                game_keys: backup.config.game_keys.unwrap_or(kept.game_keys),
                 key1_hid_usage: k1_usage,
                 key2_hid_usage: k2_usage,
                 debounce_us: backup.config.debounce_us,
@@ -1121,7 +1133,9 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
 
             let _ = device.send_config(&new_config).await;
-            let _ = device.send_counter_sync(&new_counters, true).await;
+            let _ = device
+                .restore_counters(&new_counters, backup.stats.lifetime_key3)
+                .await;
             info!("JSON Backup imported and applied");
 
             IpcResponse::BackupImported {

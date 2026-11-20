@@ -54,10 +54,13 @@ bool counters_validate_sync_acceptance(
 /**
  * @brief Update baseline counters from host synchronization.
  * Only permitted when system is in IDLE state.
+ * @param k3 Key 3's lifetime count to set, or NULL to leave it as it is (the
+ *        host sends it only when restoring a backup that has it).
  * @param err_msg Optional buffer to receive reason string on rejection.
  * @param err_msg_len Size of err_msg buffer.
  */
-esp_err_t counters_sync_from_host(uint32_t generation, uint64_t k1, uint64_t k2, bool force, char *err_msg, size_t err_msg_len);
+esp_err_t counters_sync_from_host(uint32_t generation, uint64_t k1, uint64_t k2, const uint64_t *k3, bool force,
+                                  char *err_msg, size_t err_msg_len);
 
 /**
  * @brief Checkpoint dirty RAM counters to NVS flash storage.

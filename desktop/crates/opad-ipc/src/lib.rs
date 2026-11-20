@@ -56,6 +56,9 @@ pub struct CurrentBackupState {
     pub counter_generation: u32,
     pub lifetime_key1: u64,
     pub lifetime_key2: u64,
+    /// Key 3's lifetime count, while a three-key pad is connected
+    #[serde(default)]
+    pub lifetime_key3: Option<u64>,
     pub config: DeviceConfig,
 }
 
