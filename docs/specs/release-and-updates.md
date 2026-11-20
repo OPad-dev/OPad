@@ -739,16 +739,17 @@ What it changed:
 - `ci.yml`: a `versions` job, and the firmware build caches
   `managed_components` and ccache.
 - `scripts/release/check_versions.py` (also in `make check`): both versions
-  are SemVer and agree with `.release-please-manifest.json` and `Cargo.lock`,
-  and every workspace crate is in release-please's `Cargo.lock` list. With
+  are SemVer and agree with `.release-please-manifest.json` and `Cargo.lock`. With
   `--tag` it checks a release tag against the tree (used by phase 2).
 - release-please: `release-please-config.json`,
   `.release-please-manifest.json`, `.github/workflows/release-please.yml`.
   The app is the repository root minus `firmware/` and `hardware/`; the
   firmware is `firmware/`. Its Rust mode cannot handle a workspace whose root
   `Cargo.toml` has no `[package]`, so the version lines carry an
-  `x-release-please-version` comment and `Cargo.lock` is bumped through an
-  explicit list of the workspace crates. Changelogs start after `c0babc3`
+  `x-release-please-version` comment. `Cargo.lock` is brought to the new
+  version by the `lockfile` job of `release-please.yml` (`cargo update -w` on
+  the app's release PR branch): release-please's toml updater matched none of
+  the lock's workspace entries (first release PR, 2026-11-20). Changelogs start after `c0babc3`
   (`bootstrap-sha`).
 - The RPM version is no longer written by hand in `desktop/gui/Cargo.toml`:
   `make rpm` and `build_packages.sh` pass it, turning `-rc.1` into `~rc.1`.
@@ -768,8 +769,8 @@ Known limits:
   so CI does not run on release-please's PRs. The release workflows of phase 2
   run `check_versions.py --tag` before building, which catches what CI would.
   If CI on those PRs is wanted later, release-please needs a GitHub App token.
-- The `Cargo.lock` bump could not be run locally (it is release-please's own
-  code); the first release PR must show all twelve crates bumped.
+- The release PR's `Cargo.lock` commit comes from `github-actions[bot]`,
+  pushed with `GITHUB_TOKEN`, so it starts no CI either.
 
 ### 18.2 Phases 2–5 (written 2026-10-12, on Windows)
 

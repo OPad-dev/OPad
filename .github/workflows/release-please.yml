@@ -35,6 +35,38 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+  # release-please bumps desktop/Cargo.toml but cannot edit Cargo.lock's
+  # workspace entries (its toml updater matches nothing there), and the
+  # release builds with --locked. So the app's release PR gets one more
+  # commit with the lock brought to the new version. release-please rewrites
+  # its branch on every push to main, so this runs after every run.
+  lockfile:
+    name: Cargo.lock on the app release PR
+    needs: release-please
+    runs-on: ubuntu-latest
+    env:
+      BRANCH: release-please--branches--main--components--app
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Bring Cargo.lock to the PR's version
+        run: |
+          git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null || { echo "No app release PR"; exit 0; }
+          git switch "$BRANCH"
+          # Only the workspace members change; no dependency is touched
+          (cd desktop && cargo update -w)
+          if git diff --quiet -- desktop/Cargo.lock; then
+            echo "Cargo.lock already matches"
+            exit 0
+          fi
+          python3 scripts/release/check_versions.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(main): Cargo.lock at the release version" -- desktop/Cargo.lock
+          git push origin "$BRANCH"
+
   # A tag pushed with GITHUB_TOKEN starts no workflow, so the builds are
   # called from here rather than triggered by the tag
   app:

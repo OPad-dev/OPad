@@ -3,11 +3,12 @@
 
 The app version lives in desktop/Cargo.toml ([workspace.package]) and in the
 Cargo.lock entry of every workspace crate; the firmware version in
-firmware/CMakeLists.txt (PROJECT_VER). release-please bumps them through
-release-please-config.json and records them in .release-please-manifest.json.
-A crate added to the workspace but not to the config's Cargo.lock list would
-keep its old version in the lock, and `cargo build --locked` would then fail
-at release time; this fails first.
+firmware/CMakeLists.txt (PROJECT_VER). release-please bumps the first and
+the last through release-please-config.json and records them in
+.release-please-manifest.json; release-please.yml then brings Cargo.lock to
+the new version on the app's release PR (`cargo update -w`). A lock left
+behind would make `cargo build --locked` fail at release time; this fails
+first.
 
     check_versions.py               check the repository
     check_versions.py --tag TAG     also check that TAG (v1.2.0 or
@@ -60,15 +61,6 @@ def lock_versions(names):
     return {p["name"]: p["version"] for p in lock["package"] if p["name"] in names and "source" not in p}
 
 
-def release_please_lock_crates():
-    with open(os.path.join(REPO_ROOT, "release-please-config.json"), encoding="utf-8") as f:
-        config = json.load(f)
-    for extra in config["packages"]["."]["extra-files"]:
-        if isinstance(extra, dict) and extra.get("path") == "desktop/Cargo.lock":
-            return set(re.findall(r"@\.name == '([^']+)'", extra["jsonpath"]))
-    return set()
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--tag", help="a release tag to check against the tree")
@@ -99,11 +91,6 @@ def main():
     for name, version in sorted(lock_versions(crates).items()):
         if version != app:
             errors.append(f"desktop/Cargo.lock: {name} is {version}, the workspace is {app}")
-    listed = release_please_lock_crates()
-    for name in sorted(crates - listed):
-        errors.append(f"release-please-config.json: workspace crate {name} is missing from the Cargo.lock jsonpath")
-    for name in sorted(listed - crates):
-        errors.append(f"release-please-config.json: {name} in the Cargo.lock jsonpath is not a workspace crate")
 
     component = None
     if args.tag:

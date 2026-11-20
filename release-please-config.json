@@ -26,12 +26,7 @@
       "include-component-in-tag": false,
       "exclude-paths": ["firmware", "hardware"],
       "extra-files": [
-        { "type": "generic", "path": "desktop/Cargo.toml" },
-        {
-          "type": "toml",
-          "path": "desktop/Cargo.lock",
-          "jsonpath": "$.package[?(@.name == 'opad-model' || @.name == 'opad-protocol' || @.name == 'opad-storage' || @.name == 'opad-ipc' || @.name == 'opad-tosu' || @.name == 'opad-update' || @.name == 'opad-device' || @.name == 'opad-ui-preview' || @.name == 'opad-layout' || @.name == 'opad-daemon' || @.name == 'opad-gui' || @.name == 'opadctl')].version"
-        }
+        { "type": "generic", "path": "desktop/Cargo.toml" }
       ]
     },
     "firmware": {
