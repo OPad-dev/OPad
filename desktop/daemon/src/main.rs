@@ -809,6 +809,7 @@ mod tests {
             device_connected: true,
             device_info: Some(DeviceInfo {
                 key_count: 2,
+                input_module: Default::default(),
                 device_id: "OSUPAD-TEST".to_string(),
                 board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                 firmware_version: "1.0.0".to_string(),

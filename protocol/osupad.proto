@@ -80,6 +80,10 @@ message HelloAck {
     // Keys the pad reads now: 3 with a Hall Effect V3 module, else 2. 0 from
     // firmware predating key 3, which a host reads as 2.
     uint32 key_count = 19;
+    // The module the pad found at boot, which chose its key pins. UNKNOWN from
+    // firmware predating it. A host offers the key pin settings only on a pad
+    // without one (NONE: switches wired to the header by hand) or UNKNOWN.
+    InputModule input_module = 20;
 }
 
 // Record a new owner in NVS (§W3-2). An NVS write, so the firmware must honour

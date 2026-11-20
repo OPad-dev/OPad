@@ -262,6 +262,7 @@ async fn test_daemon_connection_states_and_reconnect() {
     // ESP connects
     let dev_info = DeviceInfo {
         key_count: 2,
+        input_module: Default::default(),
         device_id: "OSUPAD-TEST01".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -501,6 +502,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
     let storage = Storage::open_in_memory().unwrap();
     let dev_info = DeviceInfo {
         key_count: 2,
+        input_module: Default::default(),
         device_id: "OSUPAD-SAFE".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -727,6 +729,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
 async fn test_reconcile_and_replacement_scenarios() {
     let dev_info = DeviceInfo {
         key_count: 2,
+        input_module: Default::default(),
         device_id: "OSUPAD-RECON".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -886,6 +889,7 @@ async fn test_reconcile_and_replacement_scenarios() {
 
         let new_pad_info = DeviceInfo {
             key_count: 2,
+            input_module: Default::default(),
             device_id: "OSUPAD-NEW".to_string(),
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),
@@ -914,6 +918,7 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
     let storage = Storage::open_in_memory().unwrap();
     let dev_info = DeviceInfo {
         key_count: 2,
+        input_module: Default::default(),
         device_id: "OSUPAD-RETRY".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -992,6 +997,7 @@ async fn a_non_monotonic_rejection_is_retried_with_the_pads_current_counters() {
     let storage = Storage::open_in_memory().unwrap();
     let dev_info = DeviceInfo {
         key_count: 2,
+        input_module: Default::default(),
         device_id: "OSUPAD-RACE".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -1072,6 +1078,7 @@ async fn test_json_validation_preview_and_confirm() {
 
     let dev_info = DeviceInfo {
         key_count: 2,
+        input_module: Default::default(),
         device_id: "OSUPAD-JSON".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -1206,6 +1213,7 @@ async fn test_json_import_restores_key3_and_game_keys() {
 
     let dev_info = DeviceInfo {
         key_count: 3,
+        input_module: Default::default(),
         device_id: "OSUPAD-K3".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -1659,6 +1667,7 @@ async fn test_queue_does_not_block_without_device() {
 fn pad_info(id: &str) -> DeviceInfo {
     DeviceInfo {
         key_count: 2,
+        input_module: Default::default(),
         device_id: id.to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -1999,6 +2008,7 @@ async fn test_replug_during_play_keeps_the_state_machine_and_write_guard() {
     let now = Instant::now();
     let dev_info = DeviceInfo {
         key_count: 2,
+        input_module: Default::default(),
         device_id: "OSUPAD-HOTPLUG".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -2120,6 +2130,7 @@ fn ownership_controller(install_id: Option<&str>, known: Vec<String>) -> Runtime
 fn pad(device_id: &str) -> DeviceInfo {
     DeviceInfo {
         key_count: 2,
+        input_module: Default::default(),
         device_id: device_id.to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -2458,6 +2469,7 @@ type IpcFixture = (
 fn firmware_update_fixture(mode: RuntimeMode, connected: bool) -> IpcFixture {
     let dev_info = DeviceInfo {
         key_count: 2,
+        input_module: Default::default(),
         device_id: "OSUPAD-FW".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -3001,6 +3013,7 @@ async fn a_failed_post_play_sync_still_gets_a_backup() {
 async fn test_device_connected_with_config_adopts_device_config() {
     let dev_info = DeviceInfo {
         key_count: 2,
+        input_module: Default::default(),
         device_id: "OSUPAD-CONFIG-TEST".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -3729,6 +3742,7 @@ async fn a_counter_reset_while_disconnected_survives_the_next_connect() {
         let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
         let info = DeviceInfo {
             key_count: 2,
+            input_module: Default::default(),
             device_id: "OSUPAD-RESET".to_string(),
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),
@@ -3833,6 +3847,7 @@ async fn a_queued_counter_reset_is_kept_for_its_own_pad() {
         true,
         Some(DeviceInfo {
             key_count: 2,
+            input_module: Default::default(),
             device_id: other.device_id.clone(),
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),

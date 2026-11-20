@@ -287,6 +287,8 @@ static void fill_config_payload(osupad_ConfigPayload *out, const device_config_d
     out->game_keys = ext.game_keys;
 }
 
+static osupad_InputModule input_module_to_proto(board_module_type_t m);
+
 esp_err_t protocol_send_hello_ack(uint32_t seq)
 {
     counters_snapshot_t snap;
@@ -338,6 +340,8 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     msg.payload.hello_ack.restart = true;
     // Shows UI_FLAG_PER_SECOND tap rates in KPS (issue #8)
     msg.payload.hello_ack.tap_rate_per_second = true;
+    // Hosts show the key pin settings only without a module (hand-wired)
+    msg.payload.hello_ack.input_module = input_module_to_proto(board_boot_module());
 #ifdef OSUPAD_HE_INPUT
     msg.payload.hello_ack.he_input = true;
     msg.payload.hello_ack.he_calibration = he_backend_running();

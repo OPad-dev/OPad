@@ -681,6 +681,7 @@ impl Storage {
 
             let info = DeviceInfo {
                 key_count: 2,
+                input_module: Default::default(),
                 device_id: device_id.clone(),
                 board_profile,
                 firmware_version: firmware_version.unwrap_or_default(),
@@ -865,6 +866,7 @@ mod tests {
 
         let info = DeviceInfo {
             key_count: 2,
+            input_module: Default::default(),
             device_id: "test-dev-01".to_string(),
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),
@@ -961,6 +963,7 @@ mod tests {
 
         let info = DeviceInfo {
             key_count: 2,
+            input_module: Default::default(),
             device_id: "dev-test".to_string(),
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),
@@ -987,6 +990,7 @@ mod tests {
 
         let info1 = DeviceInfo {
             key_count: 2,
+            input_module: Default::default(),
             device_id: "dev-01".to_string(),
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),

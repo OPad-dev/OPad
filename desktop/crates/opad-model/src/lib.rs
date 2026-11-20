@@ -75,6 +75,21 @@ pub struct DeviceInfo {
     /// (also from firmware that predates key 3)
     #[serde(default = "default_key_count")]
     pub key_count: u32,
+    /// The module the pad found at boot. `Unknown` from firmware that
+    /// predates it (and then the key pin settings stay offered)
+    #[serde(default)]
+    pub input_module: board_test::InputModule,
+}
+
+impl DeviceInfo {
+    /// Whether to offer the key pin settings: only for switches wired to the
+    /// header by hand. A module fixes its pins (the carrier routes them).
+    pub fn key_pins_configurable(&self) -> bool {
+        matches!(
+            self.input_module,
+            board_test::InputModule::None | board_test::InputModule::Unknown
+        )
+    }
 }
 
 fn default_key_count() -> u32 {
@@ -1115,6 +1130,32 @@ impl JsonBackup {
 #[cfg(test)]
 mod tests {
 
+    #[test]
+    fn key_pins_are_offered_only_without_a_module() {
+        use board_test::InputModule;
+        let with = |m: InputModule| DeviceInfo {
+            input_module: m,
+            ..Default::default()
+        };
+        // Hand-wired, and firmware that does not say
+        assert!(with(InputModule::None).key_pins_configurable());
+        assert!(with(InputModule::Unknown).key_pins_configurable());
+        for m in [
+            InputModule::Mx,
+            InputModule::MxV3,
+            InputModule::HallEffect,
+            InputModule::HallEffectV3,
+        ] {
+            assert!(!with(m).key_pins_configurable(), "{m:?}");
+        }
+        // A daemon predating the field sends none: Unknown
+        let old: DeviceInfo = serde_json::from_str(
+            r#"{"device_id":"x","board_profile":"b","firmware_version":"f","protocol_version":1}"#,
+        )
+        .unwrap();
+        assert_eq!(old.input_module, InputModule::Unknown);
+    }
+
     // Same settings and calibration as firmware/test/host/test_he_rt.c
     // (rest 2084, full 2530, floors 32/32), so both sides must agree
     fn he(actuation: u32, hyst: u32, top: u32, mode: HeRtMode, no_floor: bool) -> HeKeyConfig {
@@ -1208,6 +1249,7 @@ mod tests {
         JsonBackup::new(
             &DeviceInfo {
                 key_count: 2,
+                input_module: Default::default(),
                 device_id: "OSUPAD-TEST".to_string(),
                 board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                 firmware_version: "1.0.0".to_string(),
@@ -1365,6 +1407,7 @@ mod tests {
     fn three_key_backup() -> JsonBackup {
         let info = DeviceInfo {
             key_count: 3,
+            input_module: Default::default(),
             device_id: "OSUPAD-TEST".to_string(),
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),

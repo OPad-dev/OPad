@@ -1351,6 +1351,8 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                         .then(|| ack.running_partition.clone()),
                     he_input: ack.he_input,
                     he_calibration: ack.he_calibration,
+                    // Unknown (0) from firmware predating it
+                    input_module: input_module_from(ack.input_module),
                 };
                 // Ownership first, then counters: the connect handler decides
                 // between known pad, new pad, replacement and takeover from

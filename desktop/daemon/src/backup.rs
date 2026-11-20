@@ -65,6 +65,7 @@ pub fn current(
             running_partition: None,
             he_input: false,
             he_calibration: false,
+            input_module: Default::default(),
             key_count: 2,
         });
     // Key 3's count: the pad's while it is connected, else this PC's record
@@ -217,6 +218,7 @@ mod tests {
         let mut b = JsonBackup::new(
             &DeviceInfo {
                 key_count: 2,
+                input_module: Default::default(),
                 device_id: "pad-1".into(),
                 board_profile: "waveshare_esp32s3_touch_lcd_2".into(),
                 firmware_version: "1.0.0".into(),

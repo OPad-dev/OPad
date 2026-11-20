@@ -413,15 +413,28 @@ pub fn settings(app: &App) -> Element<'_, Message> {
                 }
                 col
             },
-            column![
-                row![
-                    pin_select("KEY 1 PIN", 1, app.k1_gpio, app.k2_gpio, Message::Key1Pin),
-                    pin_select("KEY 2 PIN", 2, app.k2_gpio, app.k1_gpio, Message::Key2Pin),
-                ]
-                .spacing(24),
-                muted("Header pin each switch is wired to (other leg to GND). Press 'Auto-Detect' and hit the switch to identify the pin automatically.").size(12),
-            ]
-            .spacing(8),
+            // Only for switches wired to the header by hand: a module's pins
+            // are fixed by the carrier (and older firmware does not say, so
+            // the settings stay)
+            if app
+                .device_info
+                .as_ref()
+                .is_none_or(|i| i.key_pins_configurable())
+            {
+                Element::from(
+                    column![
+                        row![
+                            pin_select("KEY 1 PIN", 1, app.k1_gpio, app.k2_gpio, Message::Key1Pin),
+                            pin_select("KEY 2 PIN", 2, app.k2_gpio, app.k1_gpio, Message::Key2Pin),
+                        ]
+                        .spacing(24),
+                        muted("Header pin each switch is wired to (other leg to GND). Press 'Auto-Detect' and hit the switch to identify the pin automatically.").size(12),
+                    ]
+                    .spacing(8),
+                )
+            } else {
+                Element::from(Space::new().height(0))
+            },
             column![
                 row![
                     caption("DEBOUNCE LOCKOUT"),

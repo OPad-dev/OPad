@@ -272,6 +272,10 @@ typedef struct _osupad_HelloAck {
     /* Keys the pad reads now: 3 with a Hall Effect V3 module, else 2. 0 from
  firmware predating key 3, which a host reads as 2. */
     uint32_t key_count;
+    /* The module the pad found at boot, which chose its key pins. UNKNOWN from
+ firmware predating it. A host offers the key pin settings only on a pad
+ without one (NONE: switches wired to the header by hand) or UNKNOWN. */
+    osupad_InputModule input_module;
 } osupad_HelloAck;
 
 typedef struct _osupad_SetConfig {
@@ -634,6 +638,7 @@ extern "C" {
 #define _osupad_HeCalError_ARRAYSIZE ((osupad_HeCalError)(osupad_HeCalError_HE_CAL_ERROR_TIMEOUT+1))
 
 
+#define osupad_HelloAck_input_module_ENUMTYPE osupad_InputModule
 
 
 #define osupad_DeviceStatus_state_ENUMTYPE osupad_DeviceState
@@ -682,7 +687,7 @@ extern "C" {
 
 /* Initializer values for message structs */
 #define osupad_Hello_init_default                {0, "", 0}
-#define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_default, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+#define osupad_HelloAck_init_default             {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_default, 0, 0, 0, 0, 0, 0, 0, 0, 0, _osupad_InputModule_MIN}
 #define osupad_ClaimOwnership_init_default       {{0, {0}}}
 #define osupad_DeviceStatus_init_default         {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, osupad_HeCalibrationStatus_init_default, 0, 0}
 #define osupad_HeCalibrationStatus_init_default  {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
@@ -717,7 +722,7 @@ extern "C" {
 #define osupad_HostToDevice_init_default         {0, 0, {osupad_Hello_init_default}}
 #define osupad_DeviceToHost_init_default         {0, 0, {osupad_HelloAck_init_default}}
 #define osupad_Hello_init_zero                   {0, "", 0}
-#define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_zero, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+#define osupad_HelloAck_init_zero                {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, osupad_ConfigPayload_init_zero, 0, 0, 0, 0, 0, 0, 0, 0, 0, _osupad_InputModule_MIN}
 #define osupad_ClaimOwnership_init_zero          {{0, {0}}}
 #define osupad_DeviceStatus_init_zero            {0, _osupad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, osupad_HeCalibrationStatus_init_zero, 0, 0}
 #define osupad_HeCalibrationStatus_init_zero     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
@@ -843,6 +848,7 @@ extern "C" {
 #define osupad_HelloAck_he_live_tag              17
 #define osupad_HelloAck_tap_rate_per_second_tag  18
 #define osupad_HelloAck_key_count_tag            19
+#define osupad_HelloAck_input_module_tag         20
 #define osupad_SetConfig_config_tag              1
 #define osupad_ConfigAck_success_tag             1
 #define osupad_ConfigAck_message_tag             2
@@ -1040,7 +1046,8 @@ X(a, STATIC,   SINGULAR, BOOL,     he_input,         15) \
 X(a, STATIC,   SINGULAR, BOOL,     he_calibration,   16) \
 X(a, STATIC,   SINGULAR, BOOL,     he_live,          17) \
 X(a, STATIC,   SINGULAR, BOOL,     tap_rate_per_second,  18) \
-X(a, STATIC,   SINGULAR, UINT32,   key_count,        19)
+X(a, STATIC,   SINGULAR, UINT32,   key_count,        19) \
+X(a, STATIC,   SINGULAR, UENUM,    input_module,     20)
 #define osupad_HelloAck_CALLBACK NULL
 #define osupad_HelloAck_DEFAULT NULL
 #define osupad_HelloAck_current_config_MSGTYPE osupad_ConfigPayload
@@ -1547,7 +1554,7 @@ extern const pb_msgdesc_t osupad_DeviceToHost_msg;
 #define osupad_HeCalibrationStatus_size          58
 #define osupad_HeKeySettings_size                40
 #define osupad_HeLiveSample_size                 24
-#define osupad_HelloAck_size                     462
+#define osupad_HelloAck_size                     465
 #define osupad_Hello_size                        41
 #define osupad_HostStatus_size                   12
 #define osupad_HostToDevice_size                 4309

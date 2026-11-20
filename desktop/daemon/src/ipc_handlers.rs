@@ -1134,6 +1134,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     .unwrap_or_default();
                 let info = DeviceInfo {
                     key_count: 2,
+                    input_module: Default::default(),
                     device_id: backup.device.device_id,
                     board_profile: backup.device.board_profile,
                     firmware_version: last_firmware_version,
