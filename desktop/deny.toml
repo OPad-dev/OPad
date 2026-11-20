@@ -14,7 +14,11 @@ targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
 # ttf-parser, via iced and GTK) have no replacement we can choose.
 unmaintained = "workspace"
 # Every other advisory fails unless listed here with the reason it does not apply
-ignore = []
+ignore = [
+    # chrono is unmaintained (no vulnerability). It is used across the
+    # workspace for timestamps; moving to jiff or time is its own change.
+    { id = "RUSTSEC-2026-0543", reason = "unmaintained only; migration to jiff/time tracked separately" },
+]
 
 [licenses]
 allow = [
