@@ -381,25 +381,30 @@ pub fn settings(app: &App) -> Element<'_, Message> {
                 let mut col = column![inputs].spacing(10);
                 if three {
                     let game = |key: u8| app.game_keys & (1 << (key - 1)) != 0;
+                    // osu!standard plays with two keys: with two ticked, the third is off
+                    let full = app.game_keys.count_ones() >= 2;
+                    let game_box = |key: u8, label: &'static str| {
+                        let b = checkbox(game(key)).label(label);
+                        if full && !game(key) {
+                            b
+                        } else {
+                            b.on_toggle(move |on| Message::GameKey(key, on))
+                        }
+                    };
                     col = col.push(
                         column![
                             caption("GAME KEYS"),
                             row![
-                                checkbox(game(1))
-                                    .label("Key 1")
-                                    .on_toggle(|on| Message::GameKey(1, on)),
-                                checkbox(game(2))
-                                    .label("Key 2")
-                                    .on_toggle(|on| Message::GameKey(2, on)),
-                                checkbox(game(3))
-                                    .label("Key 3")
-                                    .on_toggle(|on| Message::GameKey(3, on)),
+                                game_box(1, "Key 1"),
+                                game_box(2, "Key 2"),
+                                game_box(3, "Key 3"),
                             ]
                             .spacing(18),
                             muted(
-                                "The keys you play with: only their presses count toward the \
-                                 total, the tap rate and map stats. Every key keeps its own \
-                                 lifetime count. Key 3 left empty sends nothing.",
+                                "The one or two keys you play with (osu!standard plays with \
+                                 two): only their presses count toward the total, the tap rate \
+                                 and map stats. Every key keeps its own lifetime count. Key 3 \
+                                 left empty sends nothing.",
                             )
                             .size(12),
                         ]

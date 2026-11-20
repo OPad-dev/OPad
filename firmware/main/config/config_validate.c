@@ -141,7 +141,8 @@ bool device_config_validate_ext(const device_config_ext_t *ext, char *err_msg, s
         if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "invalid key3 usage 0x%02x", ext->key3_usage);
         return false;
     }
-    if (ext->game_keys == 0 || ext->game_keys > 0x07) {
+    // One or two of keys 1-3: osu!standard plays with two keys, never three
+    if (ext->game_keys == 0 || ext->game_keys >= 0x07) {
         if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "invalid game keys 0x%02x", ext->game_keys);
         return false;
     }

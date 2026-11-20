@@ -772,9 +772,10 @@ impl DeviceConfig {
         if let Some(he) = &self.key3_he {
             he.validate("key 3")?;
         }
-        if self.game_keys == 0 || self.game_keys > 0b111 {
+        // osu!standard plays with two keys, never three
+        if self.game_keys == 0 || self.game_keys > 0b111 || self.game_keys.count_ones() > 2 {
             return Err(format!(
-                "Game keys must name at least one of keys 1-3 (got 0b{:b})",
+                "Game keys must name one or two of keys 1-3 (got 0b{:b})",
                 self.game_keys
             ));
         }
@@ -803,7 +804,7 @@ impl DeviceConfig {
     }
 
     /// Which tap-rate finger a game key's press goes to: the lowest game key
-    /// is the first (0), any other the second (1). `None` for other keys.
+    /// is the first (0), the other the second (1). `None` for other keys.
     pub fn game_key_slot(&self, key: u8) -> Option<usize> {
         if !self.is_game_key(key) {
             return None;
@@ -1410,7 +1411,10 @@ mod game_key_tests {
     fn game_keys_and_key3_are_validated() {
         assert!(with(0).validate().is_err());
         assert!(with(0b1000).validate().is_err());
-        assert!(with(0b111).validate().is_ok());
+        assert!(with(0b111).validate().is_err());
+        for two in [0b011, 0b101, 0b110] {
+            assert!(with(two).validate().is_ok());
+        }
         let none = DeviceConfig {
             key3_hid_usage: 0,
             ..DeviceConfig::default()

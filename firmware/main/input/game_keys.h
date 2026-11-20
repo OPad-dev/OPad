@@ -19,8 +19,8 @@ extern "C" {
 
 /**
  * @brief The game keys in order: out[slot] = key index (0-2), -1 for a slot
- * with no key (one game key only). A third game key gets no card slot; it
- * still counts in the totals.
+ * with no key (one game key only). The config allows one or two game keys
+ * (config_validate.c): osu!standard plays with two.
  */
 static inline void game_keys_slots(uint8_t mask, int out[2])
 {

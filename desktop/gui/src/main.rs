@@ -1361,8 +1361,8 @@ impl App {
                     } else {
                         self.game_keys & !bit
                     };
-                    // At least one key always counts
-                    if next != 0 {
+                    // One or two keys count: osu!standard plays with two, never three
+                    if next != 0 && next.count_ones() <= 2 {
                         self.game_keys = next;
                     }
                 }
