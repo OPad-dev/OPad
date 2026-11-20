@@ -22,9 +22,6 @@ pub fn get_user_systemd_dir() -> Result<PathBuf, String> {
 const SERVICE_NAME: &str = "opad-daemon.service";
 const PACKAGED_UNIT: &str =
     include_str!("../../../packaging/linux/systemd-user/opad-daemon.service");
-/// Written by earlier GUI builds under another name; removed so two units never start two daemons
-const LEGACY_SERVICE_NAME: &str = "opad.service";
-
 fn systemctl_user(args: &[&str]) -> Result<(), String> {
     let status = Command::new("systemctl")
         .arg("--user")
@@ -61,12 +58,6 @@ pub fn install_systemd_user_service(daemon_bin: &Path) -> Result<(), String> {
             e
         )
     })?;
-
-    let legacy_unit = service_dir.join(LEGACY_SERVICE_NAME);
-    if legacy_unit.exists() {
-        let _ = systemctl_user(&["disable", "--now", LEGACY_SERVICE_NAME]);
-        let _ = std::fs::remove_file(&legacy_unit);
-    }
 
     // Point ExecStart at the binary next to this GUI, or the running AppImage
     let exec_start = if let Ok(appimage) = std::env::var("APPIMAGE") {
