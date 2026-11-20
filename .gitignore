@@ -47,3 +47,6 @@ desktop/target-xwin/
 
 # Extra ESP-IDF build directories (measurement builds: build-he, build-hb, ...)
 firmware/build-*/
+
+# Vendor datasheets (scripts/fetch_datasheets.sh): copyrighted, never committed
+docs/hardware/components/.datasheets/

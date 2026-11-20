@@ -56,6 +56,7 @@ Until that lands, treat the documents below as **possibly stale**; the code and
 
 ### ⏱️ Latency & Hardware Testing
 * **[Latency Testing Methodology](latency-testing.md)** — Hardware test methodology, Stages A–D, electronic key-to-HID gate requirements, and latency benchmarks.
+* **[Component notes](hardware/components/README.md)** — Datasheet facts for the parts the firmware talks to (registers, timings, how they are wired), as searchable text with section references. The PDFs are fetched by `scripts/fetch_datasheets.sh`, not committed.
 * **[Testing & Verification Checklist](testing-checklist.md)** — Comprehensive quality assurance checklist covering firmware, daemon, GUI, and hardware reliability.
 
 ### 🔍 Code review record (2026-09-23/24)
