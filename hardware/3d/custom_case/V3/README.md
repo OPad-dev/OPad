@@ -199,7 +199,39 @@ As V1.1:
 - **Top case:** upright, open side down, with supports under the key deck, the screen
   pod and the USB hold-down blocks.
 - **Bottom plate:** base down, no supports.
-- **Material:** PLA or PETG.
+- **Material:** PETG for every case that leaves the bench (decided 2026-11-21). PLA
+  softens near 55 °C (a car, a sunny window) and its snap fits are brittler; it is fine
+  for fit checks only.
+
+### Materials and where (owner's decisions, 2026-11-21)
+
+| Material | Use | Notes |
+|---|---|---|
+| PETG, printed in-house | testers and the first batches | About 46 g a case (29 g top, 17 g bottom, from the STLs), so roughly 1 € of filament. Holds about 70–80 °C. Needs no enclosure. |
+| MJF PA12 nylon (JLC3DP or a Craftcloud shop) | Kickstarter volumes, if a batch quote is worth it | Tough, takes heat, snap fits survive; ask for dyed black. Per-part minimums make single cases expensive: quote 50 at a time. Tolerance about ±0.2–0.3 mm, so print one set first and check the clearances below 0.5 mm. |
+| ABS / ASA | not on the owner's printer | Need an enclosure (warp and layer cracks on an 84 × 82.5 mm part) and ventilation; ASA if ever, it warps less and takes the sun. |
+| SLA / WJP resin | never for this case | Brittle: the snap fits break. |
+
+Ordering PETG from a service is possible (5 cases on Craftcloud were quoted 33.01 €
+on 2026-11-21) but buys nothing over printing it here except time. If ordered, ask the
+shop to keep the STL's orientation, so the snap fits are not printed across their layers.
+
+### PETG on the owner's Creality Ender-3 V3 KE (220 × 220 mm bed)
+
+- **4 parts a plate** (2 × 2, about 5 mm apart): 5 cases (5 tops, 5 bottoms) are three
+  plates, 4 + 4 + 2. Not all ten at once: one part coming loose late can take the plate
+  with it, travel between many parts strings PETG, and the snap fits cool longer between
+  layers.
+- **Print one case first** and check it closes: PETG shrinks differently from PLA.
+- **Start from Creality Print's generic PETG profile:** nozzle 230–250 °C, bed 70–85 °C,
+  part fan lower than PLA, a little slower. Strings between parts: more retraction, or
+  5 °C less at a time.
+- **Bed:** the stock textured PEI releases PETG when it cools; no glue needed. On smooth
+  PEI or glass use glue stick as a release layer, or PETG tears the surface.
+- **Keep the filament dry:** a fresh spool comes vacuum sealed; store it in a sealed box
+  or bag with silica gel. Popping, bubbles and strings mean it is wet: a filament dryer
+  (or an oven at about 65 °C for 4–6 h, watched with a thermometer) fixes it. A
+  dehumidifier is not needed.
 
 ## Files
 
