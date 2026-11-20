@@ -69,7 +69,6 @@ Until that lands, treat the documents below as **possibly stale**; the code and
 * **[Future Roadmap & Hardware Variants](roadmap.md)**:
   * **Modular Swappable Switch PCBs** (On-board ADC chip architecture, universal 8-wire SPI bus).
   * **Hardware Auto-Detection** (Analog ID voltage net & digital SPI handshake).
-  * **Adaptive Debounce & Rapid Trigger Velocity Hysteresis**.
 
 ### 📋 Specifications & Development Plans
 * **[Technical Specification v1](specs/technical-spec-v1.md)** — Complete normative specification for OPad V1 hardware, firmware, and desktop integration.

@@ -78,17 +78,3 @@ The mainboard automatically identifies the connected daughterboard at boot:
   Critical for Rapid Trigger to detect sub-millimeter finger reversals while traveling at $500\text{ mm/s}$.
 * **USB Polling Rate (1,000 Hz)**:
   Optimal host communication. 1,000 Hz USB offers rock-solid 0.5 ms average transfer without the CPU interrupt overhead, DPC latency spikes, or rhythm-game frame drops caused by 8,000 Hz USB flooding on Windows.
-
----
-
-## 🧠 Milestone: Adaptive Debounce & Velocity-Adaptive Hysteresis
-
-### 1. Mechanical Switches (Adaptive Debounce Learner)
-- **Noise Tracking**: Firmware monitors edge chatter inside the lockout window. If contact bounce creeps close to the boundary (e.g. switch wear or hand vibration), the lockout automatically widens from 5 ms $\to$ 8 ms $\to$ 10 ms.
-- **Asymmetric Debounce**: Ultra-short press lockout (`2,000 µs`) for immediate re-activation readiness + wider release lockout (`8,000 µs`) to absorb leaf resonance.
-- **Eager Zero-Latency Actuation**: First edge always triggers the HID press packet at microsecond zero.
-
-### 2. Hall Effect (Velocity-Adaptive Hysteresis)
-- **Hovering / Idle State**: Widened deadzone (e.g. `0.20 mm`) to prevent electrical ADC noise or hand tremors from causing phantom double-hits.
-- **Stream / Vibration State**: As velocity ($\Delta x / \Delta t$) spikes during rapid tapping, the threshold tightens down to `0.05 mm` for hyper-responsive re-activation.
-- **Auto-Calibrating Noise Floor**: Continuously tracks rest-position ADC variance to guarantee trigger sensitivity remains above the thermal noise floor.
