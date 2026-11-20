@@ -2,14 +2,17 @@
 
 | Board | Folder | Size | Status |
 |---|---|---|---|
-| Controller carrier V3 | `Carrier/` | 35.0 × 48.2 mm (the V1 outline plus a lug in the window for the USB cable) | Designed, routed, checked. **Not ordered, not built** |
-| USB board V3 | `USB/` | 20.0 × 22.0 mm | Designed, routed, checked (2026-10-28). **Not ordered, not built** |
-| MX input module V3 | `MX/` | 71.05 × 24.0 mm, 3 keys | Designed, routed, checked. **Not ordered, not built** |
-| HE input module V3 | `HE/` | 71.05 × 24.0 mm, 3 keys | Designed, routed, checked. **Not ordered, not built** |
+| Controller carrier V3 | `Carrier/` | 35.0 × 48.2 mm (the V1 outline plus a lug in the window for the USB cable) | Built; works on the bench (2026-11-20) |
+| USB board V3 | `USB/` | 20.0 × 22.0 mm | Built; works on the bench (2026-11-20) |
+| MX input module V3 | `MX/` | 71.05 × 24.0 mm, 3 keys | Built; works on the bench (2026-11-20) |
+| HE input module V3 | `HE/` | 71.05 × 24.0 mm, 3 keys | Built; works on the bench (2026-11-20) |
 
 These replace every V1/V2 board (decisions H10–H18 and section 4.2 in
-`docs/specs/hardware-redesign-brief.md`). **No firmware supports them yet.**
-The work still to do is listed under "Before ordering" below.
+`docs/specs/hardware-redesign-brief.md`). They are built and run on the owner's
+bench with the firmware on `main`: board test, three keys on both modules, HE V3
+calibration, key 3 and latency (`docs/testing-checklist.md` HW-06 to HW-15, and
+`docs/history/2026-11-20-v3-modules-handoff.md`). An MX V3 module on a turned-over
+module cable is not read; every pad ships with the type B cable.
 
 ## What is different from V1
 
@@ -111,19 +114,12 @@ python3 hardware/pcb/V3/scripts/export_v3.py [Carrier] [USB] [MX] [HE]
 cd hardware/verify && ../../.tools/venv/bin/python -m opadverify golden/he_v3.toml   # and carrier_v3, usb_v3, mx_v3
 ```
 
-## Before ordering
+## Before ordering more
 
-1. **Case:** `hardware/3d/custom_case/V3` fits these boards in its fit check (2026-10-29),
-   with the USB board in the rear-right corner. It has not been printed or test-fitted.
-2. **Firmware:**
-   - the ADS7028/7038 driver;
-   - the third key;
-   - cable-reversal detection;
-   - the new ID classes;
-   - the protocol and app for three keys.
-3. **JLCPCB preview:** check every part sits on its pads before paying. The checker
+1. **Case:** `hardware/3d/custom_case/V3` was printed and fits these boards; the
+   latest small changes to it have not been printed.
+2. **JLCPCB preview:** check every part sits on its pads before paying. The checker
    predicts no turning is needed (`-v` prints where pin 1 of each polarised part must be).
-4. **Order 5, assemble 2** of each board first.
 
 ## Parts (JLCPCB, all in assembly stock on 2026-10-23)
 

@@ -3,7 +3,7 @@
 **Author:** Claude (Opus 5.5, Anthropic), AI code reviewer
 **Date:** 2026-09-22
 **Scope:** the whole repository: firmware, protocol, desktop (daemon, GUI, CLI, updater), packaging, CI, hardware, licensing, documentation.
-**Companion:** [`software-readiness-review-2026-09-22.md`](software-readiness-review-2026-09-22.md) has the detailed write-up of the install and Linux/Windows portability issues. This guide repeats those items only as checklist lines and links back.
+**Companion:** [`software-readiness-review-2026-09-22.md`](2026-09-22-software-readiness-review.md) has the detailed write-up of the install and Linux/Windows portability issues. This guide repeats those items only as checklist lines and links back.
 **No code was changed.** Every claim below comes from reading the code at `7d3a76d` or from a command run on this machine. Items marked **(verify)** could not be confirmed without the pad, a Windows machine, or a clean VM.
 
 ### How to read this

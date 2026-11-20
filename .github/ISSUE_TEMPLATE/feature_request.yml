@@ -1,0 +1,16 @@
+name: Feature request
+description: Something OPad should do that it does not
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are easiest to talk through in the OPad Discord first.
+        OPad never adds macros, auto-tap or keys the pad sends without a finger
+        on it (AGENTS.md, rule 6): requests for those are closed.
+  - type: textarea
+    id: what
+    attributes:
+      label: What you would like, and why
+    validations:
+      required: true

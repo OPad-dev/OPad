@@ -23,7 +23,7 @@ coherent wiki. The plan:
    protocol incl. framing negotiation, Counter sync & pad ownership, Update &
    release pipeline). It ends with a checklist of remaining pages, each naming
    the source files to read — same format as
-   [claude-code-review/FIX-PLAN.md](claude-code-review/FIX-PLAN.md).
+   [history/2026-09-23-claude-code-review/FIX-PLAN.md](history/2026-09-23-claude-code-review/FIX-PLAN.md).
 3. **Per-component pages** from that checklist: firmware modules (keypad &
    debounce, USB HID/CDC, UI & LVGL layouts, `ui_store`, diag & counters,
    touch as the third key), one page per desktop crate, the daemon state
@@ -35,8 +35,8 @@ coherent wiki. The plan:
    disagree, the code wins and the doc is fixed or deleted; no placeholder
    pages.
 5. **Historical material** is kept but moved under `docs/history/` and marked
-   as such: the readiness/audit reviews of 2026-09-22, `todo-2026-09-21-evening.md`,
-   and the `claude-code-review/` findings (a record of what was found and fixed,
+   as such: the readiness/audit reviews of 2026-09-22, `history/2026-09-21-todo-evening.md`,
+   and the `history/2026-09-23-claude-code-review/` findings (a record of what was found and fixed,
    not current guidance). `specs/remaining-work-v1.md` is folded into a changelog.
 
 Until that lands, treat the documents below as **possibly stale**; the code and
@@ -61,10 +61,10 @@ Until that lands, treat the documents below as **possibly stale**; the code and
 * **[Launch Checklist](launch-checklist.md)** — everything to fix, test and settle before OPad is sold: CI, releases, signing, pad, app, compliance, manufacturing.
 
 ### 🔍 Code review record (2026-09-23/24)
-* **[Code review findings & fix plan](claude-code-review/README.md)** — 93 findings across firmware, desktop and packaging, all closed (92 fixed, 1 invalid); [FIX-PLAN.md](claude-code-review/FIX-PLAN.md) holds the per-cluster progress log and the hardware validation record.
+* **[Code review findings & fix plan](history/2026-09-23-claude-code-review/README.md)** — 93 findings across firmware, desktop and packaging, all closed (92 fixed, 1 invalid); [FIX-PLAN.md](history/2026-09-23-claude-code-review/FIX-PLAN.md) holds the per-cluster progress log and the hardware validation record.
 
-### 🗂️ Historical readiness reviews (pre-fix snapshots, to move under `history/`)
-* [Software readiness review (2026-09-22)](software-readiness-review-2026-09-22.md), [Software audit & readiness review](software-audit-and-readiness-review.md), [Release readiness guide (2026-09-22)](history/2026-09-22-release-readiness-guide.md), [Full-repo architecture & readiness guide](full-repo-architecture-and-readiness-guide.md), [TODO 2026-09-21 evening](todo-2026-09-21-evening.md) — written before the review fixes; many items they list are now done.
+### 🗂️ Historical readiness reviews (pre-fix snapshots)
+* [Software readiness review (2026-09-22)](history/2026-09-22-software-readiness-review.md), [Software audit & readiness review](history/2026-09-22-software-audit-and-readiness-review.md), [Release readiness guide (2026-09-22)](history/2026-09-22-release-readiness-guide.md), [Full-repo architecture & readiness guide](history/2026-09-22-full-repo-architecture-and-readiness-guide.md), [TODO 2026-09-21 evening](history/2026-09-21-todo-evening.md) — written before the review fixes; many items they list are now done.
 
 ### 🚀 Future Milestones & Catalog Roadmap
 * **[Future Roadmap & Hardware Variants](roadmap.md)**:

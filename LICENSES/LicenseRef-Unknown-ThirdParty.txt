@@ -6,5 +6,7 @@ identity, and the licence under which the file may be used, are unknown.
 It is not covered by the GPL-3.0-or-later licence of this repository, and no rights to it
 are granted by the OPad project.
 
-If you are the rights holder and want it removed or credited, open an issue at
-https://github.com/OPad-dev/OPad/issues.
+If you are the rights holder and want it credited, or no longer used, open an
+issue at https://github.com/OPad-dev/OPad/issues or write to the contact in
+SECURITY.md. It is then credited, or removed from the firmware and from every
+release after that one.

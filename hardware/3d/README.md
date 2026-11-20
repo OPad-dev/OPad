@@ -9,7 +9,12 @@ This directory contains the ready-to-print/modify OPad enclosure for the **Waves
 ```
 hardware/3d/
 └── custom_case/
-    ├── V1.1/                               # Current: fits the V1 PCBs (carrier on sockets + MX/HE module)
+    ├── V3/                                 # Current: the V3 carrier, USB board and three-key MX/HE modules on FFCs
+    │   ├── opad_params.scad / opad_enclosure.scad
+    │   ├── opad_case_top.stl, opad_case_bottom.stl
+    │   ├── README.md                       # changes from V1.1, cables, assembly, printing
+    │   └── tools/                          # fit check
+    ├── V1.1/                               # Fits the V1 PCBs (carrier on sockets + MX/HE module)
     │   ├── opad_params.scad              # every dimension
     │   ├── opad_enclosure.scad           # top case and bottom plate (screwless)
     │   ├── opad_case_top.stl
@@ -24,7 +29,7 @@ hardware/3d/
         └── opad_preview.png
 ```
 
-Use **V1.1** with the V1 PCBs; see [`custom_case/V1.1/README.md`](custom_case/V1.1/README.md).
+Use **V3** with the V3 boards (the ones that ship); see [`custom_case/V3/README.md`](custom_case/V3/README.md). **V1.1** is for the old V1 PCBs.
 
 Third-party models (the Waveshare board model and other keypads) are not stored in this repository, since their licences differ from OPad's. Download them from their authors if you want them as a modelling reference; see section 4.
 

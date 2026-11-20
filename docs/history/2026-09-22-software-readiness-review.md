@@ -238,5 +238,5 @@ Test on **fresh VMs** (not the dev machine): Ubuntu 24.04 (GNOME, Wayland), Fedo
 
 - Firmware internals beyond USB descriptors and CDC line handling (input timing, LVGL, NVS, OTA slot selection).
 - GUI page logic and the Designer's layout rules.
-- Hardware (KiCad, enclosure) and the licensing items already tracked in `docs/todo-2026-09-21-evening.md`.
+- Hardware (KiCad, enclosure) and the licensing items already tracked in `docs/history/2026-09-21-todo-evening.md`.
 - Anything that needs the pad or the Windows VM to confirm. §3.6 in particular is a likely cause, not a verified one.

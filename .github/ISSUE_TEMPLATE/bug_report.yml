@@ -1,0 +1,54 @@
+name: Bug report
+description: Something in the app, the firmware or the hardware does not work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Need help setting up or using your pad? Ask in the OPad Discord first.
+        Issues are for bugs that need a change in the code or the hardware.
+        Security problems: see SECURITY.md, never a public issue.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. ...\n2. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: "Output of `opadctl status`"
+      description: App and firmware versions, module and slot. Run it with the pad plugged in.
+      render: text
+  - type: dropdown
+    id: module
+    attributes:
+      label: Input module
+      options: [MX V3, Hall Effect V3, Other / hand-wired, Don't know]
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: Windows 11 24H2, Ubuntu 24.04, Arch, ...
+    validations:
+      required: true
+  - type: input
+    id: install
+    attributes:
+      label: How the app was installed
+      placeholder: Windows installer, .deb, .rpm, AppImage, AUR, from source
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: The daemon log around the problem (Linux `journalctl --user -u opad-daemon`), or the Monitor page in the app.
+      render: text

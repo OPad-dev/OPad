@@ -6,7 +6,7 @@ The case for the V3 boards (`hardware/pcb/V3`):
 - the three-key MX or Hall Effect module, on one 14-way FFC.
 
 It is built on [V1.1](../V1.1/README.md). The coordinates and design approach are
-the same; what changed is below. **Not printed or test-fitted yet**; the boards are not built either.
+the same; what changed is below. It has been printed and fits the built V3 boards; the latest small changes (the flush screen, assembly upside down into the top case) have not been printed.
 
 ![V3 assembled](opad_render.png)
 
@@ -106,7 +106,7 @@ on. Along these routes a bend keeps the same face against the same board side an
 fold turns the cable over. The module cable leaves the carrier's top, turns under the stack
 and folds once, so it reaches the module's underside with the other face up: type B. The
 USB cable folds once and curls back once, so it reaches the USB board's top with the same
-face down: type A. Worked out from the modelled routes, not yet tried with real cables.
+face down: type A. The built pads use these cables (2026-11-20).
 
 ## Assembly
 
@@ -188,7 +188,7 @@ What it cannot check:
 - the printer's tolerances;
 - the USB-C shell legs' real length under the board (1.0 mm assumed).
 
-Print it and test-fit before trusting the clearances below 0.5 mm. The tightest are:
+Check these on every new print before trusting the clearances below 0.5 mm. The tightest are:
 - J2 under the front of the carrier's lug (0.36 mm);
 - the USB cable beside the right-front carrier post;
 - the cable under the front of the stack.

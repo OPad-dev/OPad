@@ -21,8 +21,9 @@ GCC's `libgcc` and `libstdc++` are also linked; they are covered by the GCC
 Runtime Library Exception, which places no conditions on the firmware.
 
 The easter-egg animation (`main/ui/easter_egg_gif.h`) is a third-party image
-whose licence is unknown; see `REUSE.toml`. It will be replaced if its rights
-holder objects.
+whose author and licence are unknown; see `REUSE.toml`. No rights to it are
+granted, and it is removed from the firmware if its rights holder asks
+(`LICENSES/LicenseRef-Unknown-ThirdParty.txt`).
 
 ---
 

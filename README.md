@@ -313,4 +313,6 @@ Third-party components keep their own open licenses and ship with their notices:
 
 Libraries pulled in at build time (Rust crates, ESP-IDF components such as LVGL and TinyUSB) are not stored here and are used under their own permissive licenses.
 
+The firmware's easter-egg animation (`firmware/main/ui/easter_egg_gif.h`) is the one exception: it was made from images found online whose author and licence are unknown, and no rights to it are granted. If you hold the rights and want it credited or no longer used, open an issue or write to the contact in [`SECURITY.md`](SECURITY.md); it is then credited, or removed from the firmware ([`LICENSES/LicenseRef-Unknown-ThirdParty.txt`](LICENSES/LicenseRef-Unknown-ThirdParty.txt)).
+
 
