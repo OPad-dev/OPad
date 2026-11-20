@@ -18,7 +18,9 @@ enum {
     DIAG_EVENT_NVS_INIT_FAILED = 7,      // arg0 = esp_err
     DIAG_EVENT_NVS_ERASED = 8,
     DIAG_EVENT_LCD_INIT_FAILED = 9,      // arg0 = esp_err
-    DIAG_EVENT_DECODE_FAILED = 10,       // arg0 = error code
+    // arg0 = message length; arg1 = DIAG_DECODE_* reason << 24 | HostToDevice
+    // payload field number << 16 | byte offset where decoding stopped
+    DIAG_EVENT_DECODE_FAILED = 10,
     DIAG_EVENT_FRAME_TOO_LARGE = 11,     // CDC bytes dropped: arg0 = count, arg1 = DIAG_FRAME_DROP_*
     DIAG_EVENT_CONFIG_REJECTED = 12,     // arg0 = reason code
     DIAG_EVENT_COUNTER_SYNC_REJECTED = 13, // arg0 = reason code
@@ -30,6 +32,27 @@ enum {
     DIAG_EVENT_CDC_WRITE_DROPPED = 19,   // arg0 = expected, arg1 = written
     DIAG_EVENT_BUFFER_OVERFLOW = 20,     // arg0 = dropped_count
     DIAG_EVENT_UNKNOWN_HOST_MSG = 21,    // arg0 = field tag
+    // Right after DIAG_EVENT_DECODE_FAILED: the message's first 8 bytes,
+    // arg0 = bytes 0-3, arg1 = bytes 4-7 (byte 0 in the low byte; 0 past the end)
+    DIAG_EVENT_DECODE_BYTES = 22,
+};
+
+// DIAG_EVENT_DECODE_FAILED reason: nanopb's error message, as a code
+enum {
+    DIAG_DECODE_OTHER = 0,          // a message not listed here
+    DIAG_DECODE_STRING_OVERFLOW = 1,
+    DIAG_DECODE_ARRAY_OVERFLOW = 2,
+    DIAG_DECODE_BYTES_OVERFLOW = 3,
+    DIAG_DECODE_END_OF_STREAM = 4,
+    DIAG_DECODE_WRONG_WIRE_TYPE = 5,
+    DIAG_DECODE_INVALID_WIRE_TYPE = 6,
+    DIAG_DECODE_VARINT_OVERFLOW = 7,
+    DIAG_DECODE_SIZE_TOO_LARGE = 8,
+    DIAG_DECODE_PARENT_TOO_SHORT = 9,
+    DIAG_DECODE_INVALID_UTF8 = 10,
+    DIAG_DECODE_ZERO_TAG = 11,
+    DIAG_DECODE_IO_ERROR = 12,
+    DIAG_DECODE_INVALID_UNION_TAG = 13,
 };
 
 // DIAG_EVENT_FRAME_TOO_LARGE arg1: why the bytes were dropped

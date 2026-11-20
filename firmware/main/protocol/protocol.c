@@ -95,6 +95,69 @@ esp_err_t protocol_encode_device_message(const osupad_DeviceToHost *msg, uint8_t
     return ESP_OK;
 }
 
+// nanopb's error message as a DIAG_DECODE_* code
+static uint8_t decode_reason(const char *err)
+{
+    static const struct {
+        const char *msg;
+        uint8_t code;
+    } k_reasons[] = {
+        {"string overflow", DIAG_DECODE_STRING_OVERFLOW},
+        {"array overflow", DIAG_DECODE_ARRAY_OVERFLOW},
+        {"bytes overflow", DIAG_DECODE_BYTES_OVERFLOW},
+        {"end-of-stream", DIAG_DECODE_END_OF_STREAM},
+        {"wrong wire type", DIAG_DECODE_WRONG_WIRE_TYPE},
+        {"invalid wire_type", DIAG_DECODE_INVALID_WIRE_TYPE},
+        {"varint overflow", DIAG_DECODE_VARINT_OVERFLOW},
+        {"size too large", DIAG_DECODE_SIZE_TOO_LARGE},
+        {"parent stream too short", DIAG_DECODE_PARENT_TOO_SHORT},
+        {"invalid utf8", DIAG_DECODE_INVALID_UTF8},
+        {"zero tag", DIAG_DECODE_ZERO_TAG},
+        {"io error", DIAG_DECODE_IO_ERROR},
+        {"invalid union tag", DIAG_DECODE_INVALID_UNION_TAG},
+    };
+    for (size_t i = 0; err && i < sizeof(k_reasons) / sizeof(k_reasons[0]); i++) {
+        if (strcmp(err, k_reasons[i].msg) == 0) {
+            return k_reasons[i].code;
+        }
+    }
+    return DIAG_DECODE_OTHER;
+}
+
+// The HostToDevice payload field (the oneof member) a message carries, read
+// from its top-level tags alone, so a payload that fails to decode is named
+// too. 0 if none is found.
+static uint32_t payload_field_of(const uint8_t *payload, size_t payload_len)
+{
+    pb_istream_t stream = pb_istream_from_buffer(payload, payload_len);
+    uint32_t field = 0;
+    while (stream.bytes_left > 0) {
+        pb_wire_type_t wire_type;
+        uint32_t tag;
+        bool eof;
+        if (!pb_decode_tag(&stream, &wire_type, &tag, &eof) || eof) {
+            break;
+        }
+        if (tag != osupad_HostToDevice_sequence_number_tag) {
+            field = tag;  // the last one wins, as in nanopb's oneof decoding
+        }
+        if (!pb_skip_field(&stream, wire_type)) {
+            break;
+        }
+    }
+    return field;
+}
+
+// Little-endian word of payload bytes [at, at + 4), 0 past the end
+static uint32_t payload_word(const uint8_t *payload, size_t payload_len, size_t at)
+{
+    uint32_t w = 0;
+    for (size_t i = 0; i < 4 && at + i < payload_len; i++) {
+        w |= (uint32_t)payload[at + i] << (8 * i);
+    }
+    return w;
+}
+
 bool protocol_decode_host_message(const uint8_t *payload, size_t payload_len, osupad_HostToDevice *out_msg)
 {
     if (!payload || !out_msg) {
@@ -103,8 +166,17 @@ bool protocol_decode_host_message(const uint8_t *payload, size_t payload_len, os
 
     pb_istream_t stream = pb_istream_from_buffer(payload, payload_len);
     if (!pb_decode(&stream, osupad_HostToDevice_fields, out_msg)) {
-        diag_record(DIAG_EVENT_DECODE_FAILED, 3 /* ERROR */, (uint32_t)payload_len, 0);
-        ESP_LOGE(TAG, "NanoPB decode failed: %s", PB_GET_ERROR(&stream));
+        const char *err = PB_GET_ERROR(&stream);
+        uint32_t reason = decode_reason(err);
+        uint32_t field = payload_field_of(payload, payload_len);
+        size_t offset = payload_len - stream.bytes_left;
+        uint32_t detail = (reason << 24) | ((field & 0xFFu) << 16) |
+                          (uint32_t)(offset > 0xFFFF ? 0xFFFF : offset);
+        diag_record(DIAG_EVENT_DECODE_FAILED, 3 /* ERROR */, (uint32_t)payload_len, detail);
+        diag_record(DIAG_EVENT_DECODE_BYTES, 3 /* ERROR */, payload_word(payload, payload_len, 0),
+                    payload_word(payload, payload_len, 4));
+        ESP_LOGE(TAG, "NanoPB decode failed: %s (%u bytes, payload field %lu, stopped at byte %u)",
+                 err, (unsigned)payload_len, (unsigned long)field, (unsigned)offset);
         return false;
     }
 

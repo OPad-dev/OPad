@@ -22,6 +22,74 @@ pub const DIAG_EVENT_LATENCY_OUTLIER: u32 = 18;
 pub const DIAG_EVENT_CDC_WRITE_DROPPED: u32 = 19;
 pub const DIAG_EVENT_BUFFER_OVERFLOW: u32 = 20;
 pub const DIAG_EVENT_UNKNOWN_HOST_MSG: u32 = 21;
+pub const DIAG_EVENT_DECODE_BYTES: u32 = 22;
+
+/// nanopb's error message for a DIAG_EVENT_DECODE_FAILED reason code
+/// (`DIAG_DECODE_*` in `firmware/main/diag/diag.h`)
+fn decode_reason_to_str(code: u32) -> &'static str {
+    match code {
+        1 => "string overflow",
+        2 => "array overflow",
+        3 => "bytes overflow",
+        4 => "end-of-stream",
+        5 => "wrong wire type",
+        6 => "invalid wire_type",
+        7 => "varint overflow",
+        8 => "size too large",
+        9 => "parent stream too short",
+        10 => "invalid utf8",
+        11 => "zero tag",
+        12 => "io error",
+        13 => "invalid union tag",
+        _ => "other error",
+    }
+}
+
+/// The HostToDevice payload a field number carries (`protocol/osupad.proto`)
+fn host_payload_name(field: u32) -> &'static str {
+    match field {
+        2 => "Hello",
+        3 => "SetConfig",
+        4 => "TimeSync",
+        5 => "GameplayDisplayState",
+        6 => "CounterSyncRequest",
+        7 => "request_status",
+        8 => "HostStatus",
+        9 => "reset_latency_stats",
+        10 => "DataUpdate",
+        11 => "SetLayout",
+        12 => "reset_layout",
+        13 => "request_logs",
+        14 => "ClaimOwnership",
+        15 => "DetectPinRequest",
+        16 => "run_board_test",
+        17 => "PlayAnimation",
+        18 => "restart",
+        19 => "start_he_calibration",
+        20 => "cancel_he_calibration",
+        21 => "he_live_view",
+        _ => "unknown payload",
+    }
+}
+
+fn decode_failed_message(len: u32, detail: u32) -> String {
+    if detail == 0 {
+        // Firmware that recorded only the length
+        return format!("Protobuf frame decode failed ({len} bytes)");
+    }
+    let reason = detail >> 24;
+    let field = (detail >> 16) & 0xFF;
+    let offset = detail & 0xFFFF;
+    let payload = if field == 0 {
+        "no payload field".to_string()
+    } else {
+        format!("{} (field {field})", host_payload_name(field))
+    };
+    format!(
+        "Protobuf frame decode failed ({len} bytes): {}, in {payload}, at byte {offset}",
+        decode_reason_to_str(reason)
+    )
+}
 
 /// The pad's boot reason: ESP-IDF's `esp_reset_reason_t`, which the firmware
 /// sends in DIAG_EVENT_BOOT (`esp_reset_reason()` in `firmware/main/app_main.c`)
@@ -65,7 +133,16 @@ pub fn format_diag_event(event_id: u32, arg0: u32, arg1: u32) -> String {
         DIAG_EVENT_LCD_INIT_FAILED => {
             format!("LCD initialization failed (esp_err: 0x{:04x})", arg0)
         }
-        DIAG_EVENT_DECODE_FAILED => format!("Protobuf frame decode failed (code: {})", arg0),
+        DIAG_EVENT_DECODE_FAILED => decode_failed_message(arg0, arg1),
+        DIAG_EVENT_DECODE_BYTES => {
+            let bytes: Vec<String> = arg0
+                .to_le_bytes()
+                .iter()
+                .chain(arg1.to_le_bytes().iter())
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            format!("Undecodable frame starts {}", bytes.join(" "))
+        }
         DIAG_EVENT_FRAME_TOO_LARGE => {
             format!("CDC RX frame exceeds max buffer (size: {} bytes)", arg0)
         }
@@ -103,6 +180,23 @@ pub fn format_diag_event(event_id: u32, arg0: u32, arg1: u32) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decode_failure_names_reason_payload_and_bytes() {
+        let msg = format_diag_event(DIAG_EVENT_DECODE_FAILED, 231, (1 << 24) | (10 << 16) | 97);
+        assert_eq!(
+            msg,
+            "Protobuf frame decode failed (231 bytes): string overflow, in DataUpdate \
+             (field 10), at byte 97"
+        );
+        // Older firmware: arg1 is 0
+        assert_eq!(
+            format_diag_event(DIAG_EVENT_DECODE_FAILED, 175, 0),
+            "Protobuf frame decode failed (175 bytes)"
+        );
+        let bytes = format_diag_event(DIAG_EVENT_DECODE_BYTES, 0x5201_2a08, 0x0000_0a08);
+        assert_eq!(bytes, "Undecodable frame starts 08 2a 01 52 08 0a 00 00");
+    }
 
     #[test]
     fn test_format_diag_event() {
