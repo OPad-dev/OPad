@@ -384,6 +384,8 @@ static void module_id_lock(void)
 
 static module_id_adc_t s_module_id_adc;
 static bool s_module_id_adc_open;
+// ID pins whose ADC channel is configured (bit = GPIO number), under the lock
+static uint64_t s_module_id_chan_pins;
 
 static esp_err_t module_id_adc_open(module_id_adc_t *m)
 {
@@ -401,13 +403,8 @@ static esp_err_t module_id_adc_open(module_id_adc_t *m)
         xSemaphoreGive(s_module_id_lock);
         return err;
     }
-    adc_oneshot_chan_cfg_t chan_cfg = {
-        .atten = ADC_ATTEN_DB_12,
-        .bitwidth = ADC_BITWIDTH_12,
-    };
-    // Both ID pins; configuring a channel leaves its pad's pulls alone
-    adc_oneshot_config_channel(m->adc, ADC_CHANNEL_7, &chan_cfg);
-    adc_oneshot_config_channel(m->adc, ADC_CHANNEL_6, &chan_cfg);
+    // Channels are configured per pin when first read (module_id_chan_ready):
+    // configuring one turns its pad analog, and GPIO7 is MX key 2
 
     // The S3's curve fitting is per unit and attenuation, not per channel
     adc_cali_curve_fitting_config_t cali_cfg = {
@@ -421,7 +418,43 @@ static esp_err_t module_id_adc_open(module_id_adc_t *m)
     }
     s_module_id_adc = *m;
     s_module_id_adc_open = true;
+    s_module_id_chan_pins = 0;
     return ESP_OK;
+}
+
+// A pin a key reads digitally now. Detached (HE V3) and analog (HE V1) pins
+// are only recorded: an HE V3 on a turned-over cable has its ID on GPIO7.
+static bool is_key_pin(gpio_num_t gpio)
+{
+    if (s_key3_armed && gpio == s_key3_gpio) {
+        return true;
+    }
+    return !s_keys_detached && !s_keys_analog && (gpio == s_key1_gpio || gpio == s_key2_gpio);
+}
+
+/*
+ * Configure the ADC channel of an ID pin, once per open unit. That makes the
+ * pad analog (gpio_config_as_analog: digital input and pulls off), so it is
+ * refused on a pin a key is armed on: GPIO7, MX key 2, then read low, as a
+ * key held down until the next boot. Called with the lock held.
+ */
+static esp_err_t module_id_chan_ready(const module_id_adc_t *m, gpio_num_t gpio)
+{
+    if (s_module_id_chan_pins & (1ULL << gpio)) {
+        return ESP_OK;
+    }
+    if (is_key_pin(gpio)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    adc_oneshot_chan_cfg_t chan_cfg = {
+        .atten = ADC_ATTEN_DB_12,
+        .bitwidth = ADC_BITWIDTH_12,
+    };
+    esp_err_t err = adc_oneshot_config_channel(m->adc, id_channel(gpio), &chan_cfg);
+    if (err == ESP_OK) {
+        s_module_id_chan_pins |= 1ULL << gpio;
+    }
+    return err;
 }
 
 // Done with ID for now: the unit stays open, the pin keeps its pull-down (a
@@ -456,6 +489,11 @@ esp_err_t board_module_present_fast(bool *out_present, int *out_mv)
         return err;
     }
     gpio_num_t gpio = s_id_gpio;
+    err = module_id_chan_ready(&m, gpio);
+    if (err != ESP_OK) {
+        xSemaphoreGive(s_module_id_lock);
+        return err;
+    }
     gpio_pullup_dis(gpio);
     gpio_pulldown_en(gpio);  // already on after a read; settles in microseconds
     esp_rom_delay_us(20);
@@ -492,6 +530,11 @@ esp_err_t board_read_module_id_on(int gpio_num, int *out_open_mv, int *out_loade
     module_id_adc_t m;
     esp_err_t err = module_id_adc_open(&m);
     if (err != ESP_OK) {
+        return err;
+    }
+    err = module_id_chan_ready(&m, gpio);
+    if (err != ESP_OK) {
+        xSemaphoreGive(s_module_id_lock);
         return err;
     }
     adc_channel_t chan = id_channel(gpio);
