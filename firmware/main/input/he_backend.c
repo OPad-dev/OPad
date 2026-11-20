@@ -172,6 +172,8 @@ static he_cal_barrier_t s_cal_barrier;
 #define HE_CAL_REPORT_NOTIFY (1u << 31)
 #define HE_CAL_REPORT_WAIT_MS 100
 
+static void publish(void);
+
 // One frame's readings through each key's engine. From the V1 ADC interrupt
 // or the V3 sampler task; true when a key changed (he_task must publish).
 static bool IRAM_ATTR process_frame(const he_frame_t *f, int64_t now)
@@ -250,13 +252,14 @@ static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continu
 }
 #endif
 
-// V3: from the sampler task, every HE_SPI_FRAME_US
-static void on_spi_frame(const he_frame_t *f, const int32_t raw[HE_SPI_KEYS], int64_t now)
+// V3: from the sampler task, every HE_SPI_FRAME_US. A key change is reported
+// here, in the sampler task, not handed to he_task.
+static void IRAM_ATTR on_spi_frame(const he_frame_t *f, const int32_t raw[HE_SPI_KEYS], int64_t now)
 {
     (void)raw;  // the same readings are in f
     uint32_t c0 = esp_cpu_get_cycle_count();
-    if (process_frame(f, now) && s_task != NULL) {
-        xTaskNotifyGive(s_task);
+    if (process_frame(f, now)) {
+        publish();
     }
     uint32_t cycles = esp_cpu_get_cycle_count() - c0;
     portENTER_CRITICAL(&s_lock);
@@ -386,25 +389,36 @@ static void fault_key_locked(int k, int64_t now)
     }
 }
 
+// What key_event_report was last told, per key. Two tasks publish: he_task,
+// and on V3 the sampler task, straight after the frame that changed a key
+// (no hand-over to he_task, whose wake-up behind the 20 kHz sampler cost the
+// tail ~100 us). s_publish_mutex makes each key change reported once, in order.
+static bool s_reported[HE_KEYS_MAX];
+static SemaphoreHandle_t s_publish_mutex;
+static StaticSemaphore_t s_publish_mutex_buf;
+
 // IRAM like the MX keypad task: from flash, a cache miss while core 1 is busy
 // cost the MX path ~170 us (linker.lf)
-static void IRAM_ATTR publish(bool reported[HE_KEYS_MAX])
+static void IRAM_ATTR publish(void)
 {
+    xSemaphoreTake(s_publish_mutex, portMAX_DELAY);
     for (int k = 0; k < s_nkeys; k++) {
         portENTER_CRITICAL(&s_lock);
         bool down = s_down[k];
         int64_t edge_us = s_edge_us[k];
         portEXIT_CRITICAL(&s_lock);
-        if (down != reported[k]) {
-            reported[k] = down;
+        if (down != s_reported[k]) {
+            s_reported[k] = down;
             key_event_report((uint8_t)k, down, edge_us);
         }
     }
+    xSemaphoreGive(s_publish_mutex);
 }
 
-static void publish_calibration_release(void *reported)
+static void publish_calibration_release(void *unused)
 {
-    publish(reported);
+    (void)unused;
+    publish();
 }
 
 // True if the ADC has stopped delivering frames and needs a restart
@@ -521,7 +535,7 @@ static void he_trace_task(void *arg)
 #endif
 
 // The pause's side of the handshake; true while the ADC is paused for it
-static bool serve_probe(bool reported[HE_KEYS_MAX])
+static bool serve_probe(void)
 {
     switch (s_probe) {
     case PROBE_ASKED: {
@@ -533,7 +547,7 @@ static bool serve_probe(bool reported[HE_KEYS_MAX])
             fault_key_locked(k, now);
         }
         portEXIT_CRITICAL(&s_lock);
-        publish(reported);
+        publish();
         if (s_health.adc_ok) {
             source_stop();  // V1: frees ADC1 for the ID's oneshot read; V3: frees SPI3
         }
@@ -562,7 +576,6 @@ static bool serve_probe(bool reported[HE_KEYS_MAX])
 static void IRAM_ATTR he_task(void *arg)
 {
     (void)arg;
-    bool reported[HE_KEYS_MAX] = {false};
     int64_t now = esp_timer_get_time();
     he_health_init(&s_health, now);
     he_health_set_keys(&s_health, s_nkeys);
@@ -584,17 +597,17 @@ static void IRAM_ATTR he_task(void *arg)
 
     while (1) {
         uint32_t notifications = ulTaskNotifyTake(pdTRUE, HE_CHECK_TICKS);
-        publish(reported);  // key changes first
+        publish();  // key changes first (V1; V3's sampler has reported them)
         if (notifications & HE_CAL_REPORT_NOTIFY) {
-            he_cal_barrier_publish(&s_cal_barrier, publish_calibration_release, reported);
+            he_cal_barrier_publish(&s_cal_barrier, publish_calibration_release, NULL);
         }
 
-        if (serve_probe(reported)) {
+        if (serve_probe()) {
             continue;  // paused for an ID reading: not a stall
         }
         now = esp_timer_get_time();
         if (s_health.adc_ok && check_health(now)) {
-            publish(reported);
+            publish();
             he_health_on_adc_stalled(&s_health, now);
         }
         if (he_health_should_retry_adc(&s_health, now)) {
@@ -631,6 +644,7 @@ esp_err_t he_backend_start(he_source_t source)
 #endif
     s_source = source;
     s_params_mutex = xSemaphoreCreateRecursiveMutexStatic(&s_params_mutex_buf);
+    s_publish_mutex = xSemaphoreCreateMutexStatic(&s_publish_mutex_buf);
     s_nkeys = source == HE_SOURCE_ADS7028 ? 3 : 2;
     s_frame_us = source == HE_SOURCE_ADS7028 ? HE_SPI_FRAME_US : HE_FRAME_US;
     s_cal_every = source == HE_SOURCE_ADS7028 ? HE_CAL_EVERY_V3 : 1;

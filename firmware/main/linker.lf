@@ -11,6 +11,10 @@ entries:
     # flash is written (ADC_CONTINUOUS_ISR_IRAM_SAFE)
     he_frame (noflash)
     he_rt (noflash)
+    # V3: the sampler task reads a frame every 50 us and reports key changes
+    # itself (he_backend.c on_spi_frame, publish, process_frame: IRAM_ATTR)
+    he_spi_source:sampler_task (noflash)
+    he_spi_frame (noflash)
 
 [mapping:opad_keypath_tinyusb]
 archive: libespressif__tinyusb.a
