@@ -28,10 +28,12 @@
  * conversion over CDC for scripts/he_trace.py; see he_trace_task.
  *
  * Hall Effect V3 (CONFIG_OSUPAD_HE_V3): the readings come from the module's
- * ADS7028 over SPI instead (input/he_spi_source.h), one frame every 250 us
- * from a sampler task, and go through the same per-frame step (process_frame)
- * and he_task. "The ADC" below is then that source: started, stopped and
- * restarted the same way.
+ * ADS7028 over SPI instead (input/he_spi_source.h), one frame every
+ * HE_SPI_FRAME_US (50 us, 20 kHz) from a sampler task, and go through the same
+ * per-frame step (process_frame) and he_task. Calibration still gets one
+ * frame in HE_CAL_EVERY_V3, so it sees the 4 kHz stream its sample-count
+ * windows are written for. "The ADC" below is then that source: started,
+ * stopped and restarted the same way.
  */
 #include "he_backend.h"
 
@@ -72,7 +74,9 @@ static const char *TAG = "he";
 #define HE_FRAME_BYTES  (HE_FRAME_CONVS * SOC_ADC_DIGI_RESULT_BYTES)
 _Static_assert(HE_SAMPLE_HZ == HE_FRAME_CONVS * HE_CAL_SAMPLE_HZ,
                "Calibration sample-count windows require a 4 kHz frame stream");
-_Static_assert(HE_SPI_FRAME_US == HE_FRAME_US, "V3 frames keep V1's 4 kHz frame rate");
+// V3 runs faster than V1; calibration takes every HE_CAL_EVERY_V3-th frame
+_Static_assert(HE_FRAME_US % HE_SPI_FRAME_US == 0, "V3's frame period must divide 250 us");
+#define HE_CAL_EVERY_V3 (HE_FRAME_US / HE_SPI_FRAME_US)
 #ifdef CONFIG_OSUPAD_HE_TRACE
 #define HE_STORE_FRAMES 64     // 16 ms for he_trace_task to drain
 #else
@@ -106,6 +110,11 @@ static he_key_settings_t s_key_settings[HE_KEYS_MAX] = {
 };
 // Keys the module has: 2 (V1) or 3 (V3), set by he_backend_start
 static uint8_t s_nkeys = 2;
+// The source's frame period, and how many of its frames make one 4 kHz
+// calibration sample (V1 1, V3 HE_CAL_EVERY_V3); set by he_backend_start
+static uint32_t s_frame_us = HE_FRAME_US;
+static uint8_t s_cal_every = 1;
+static uint8_t s_cal_skip;
 
 // Thresholds that never press: `release` below any reading, so a key never arms
 static const he_rt_params_t HE_PARAMS_NEVER = {
@@ -171,7 +180,7 @@ static bool IRAM_ATTR process_frame(const he_frame_t *f, int64_t now)
     portENTER_CRITICAL_SAFE(&s_lock);
     if (s_stats.frames > 0) {
         int64_t gap = now - s_health.last_frame_us;
-        if (gap > 2 * HE_FRAME_US) {
+        if (gap > 2 * (int64_t)s_frame_us) {
             s_stats.late_frames++;
         }
         if (gap > (int64_t)s_stats.max_gap_us) {
@@ -182,7 +191,8 @@ static bool IRAM_ATTR process_frame(const he_frame_t *f, int64_t now)
     s_stats.frames++;
     s_stats.foreign_words += f->foreign;
     s_stats.railed_samples += f->railed;
-    if (__builtin_expect(s_calibrating, 0)) {
+    if (__builtin_expect(s_calibrating, 0) && ++s_cal_skip >= s_cal_every) {
+        s_cal_skip = 0;
         he_cal_samples_push(s_cal_write, f->median, s_nkeys);
     }
     // The newest reading, so the debug log still shows the spikes the median drops
@@ -240,7 +250,7 @@ static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continu
 }
 #endif
 
-// V3: from the sampler task, every 250 us
+// V3: from the sampler task, every HE_SPI_FRAME_US
 static void on_spi_frame(const he_frame_t *f, const int32_t raw[HE_SPI_KEYS], int64_t now)
 {
     (void)raw;  // the same readings are in f
@@ -622,6 +632,8 @@ esp_err_t he_backend_start(he_source_t source)
     s_source = source;
     s_params_mutex = xSemaphoreCreateRecursiveMutexStatic(&s_params_mutex_buf);
     s_nkeys = source == HE_SOURCE_ADS7028 ? 3 : 2;
+    s_frame_us = source == HE_SOURCE_ADS7028 ? HE_SPI_FRAME_US : HE_FRAME_US;
+    s_cal_every = source == HE_SOURCE_ADS7028 ? HE_CAL_EVERY_V3 : 1;
     he_calibration_t cal[HE_KEYS_MAX];
     he_cal_get_all(cal);
     bool locked = he_cal_is_locked_decision(true, cal, s_nkeys);
@@ -741,6 +753,7 @@ esp_err_t he_backend_start_calibration(void)
     if (err == ESP_OK) err = usb_report_barrier_wait(HE_CAL_REPORT_WAIT_MS);
     if (err == ESP_OK) {
         portENTER_CRITICAL(&s_lock);
+        s_cal_skip = 0;
         s_calibrating = true;
         portEXIT_CRITICAL(&s_lock);
     } else {

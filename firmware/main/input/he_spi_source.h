@@ -2,15 +2,16 @@
 
 /*
  * Hall Effect V3 readings: the module's ADS7028 over SPI (input/ads7028.h),
- * one frame every HE_SPI_FRAME_US for he_backend.c, the same frame rate as V1's
- * ADC DMA frames (calibration counts samples at 4 kHz).
+ * one frame every HE_SPI_FRAME_US (50 us, 20 kHz) for he_backend.c, five times
+ * V1's ADC DMA frame rate; he_backend.c hands calibration one frame in five,
+ * so it still counts samples at 4 kHz.
  *
  * A GPTimer alarm wakes the sampler task (core 0, the key path's priority)
  * every frame. The ADC runs its auto-sequence over AIN3/AIN4/AIN5 with each
  * result tagged with its channel ID (DATA_CFG.APPEND_STATUS), so a frame
  * that lost or gained a bit lands on no key instead of the wrong one. Each
  * frame reads four conversions: the first was started at the end of the
- * previous frame, 250 us earlier, so it is dropped; the other three were
+ * previous frame, a frame period earlier, so it is dropped; the other three were
  * started within this frame and give one fresh reading per key.
  *
  * The link runs with the ADC's CRC on (GENERAL_CFG.CRC_EN, input/ads7028.h):
@@ -31,7 +32,9 @@
 extern "C" {
 #endif
 
-#define HE_SPI_FRAME_US 250
+// 20 kHz: the fastest period that divides V1's 250 us (calibration's 4 kHz)
+// and leaves core 0 room for USB. Measured in docs/hardware/components/ads7028.md.
+#define HE_SPI_FRAME_US 50
 #define HE_SPI_KEYS     3
 
 /** Called from the sampler task with each frame (keys 1 and 2 in f). */
