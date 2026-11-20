@@ -1696,6 +1696,11 @@ impl App {
                 if !k2.is_empty() && (key_str == k2 || (k2 == "SPACE" && key_str == "SPACE")) {
                     self.diagnostics.handle_key_event(2, is_down);
                 }
+                let k3 = self.k3_input.trim().to_uppercase();
+                let three = self.device_info.as_ref().is_some_and(|i| i.key_count >= 3);
+                if three && !k3.is_empty() && key_str == k3 {
+                    self.diagnostics.handle_key_event(3, is_down);
+                }
             }
             Message::CopyDiagnosticBundle => {
                 let bundle = diagnostics::generate_diagnostic_bundle(self, &self.diagnostics);

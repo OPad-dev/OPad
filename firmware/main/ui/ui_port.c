@@ -7,6 +7,8 @@
 #include "ui/core/ui_anim.h"
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
 #include "input/key_event.h"
+#include "input/game_keys.h"
+#include "config/device_config.h"
 #include "runtime/runtime.h"
 #include "diag/diag.h"
 #include "usb/usb_cdc.h"
@@ -66,26 +68,49 @@ static void rebuild_screen(uint8_t screen)
 
 static void update_pad_sources(int64_t now_us)
 {
-    uint64_t k1_life = 0, k2_life = 0;
-    uint32_t k1_map = 0, k2_map = 0;
-    key_event_get_lifetime_presses(&k1_life, &k2_life);
-    key_event_get_map_presses(&k1_map, &k2_map);
+    uint64_t life[GAME_KEYS_MAX] = {0};
+    uint32_t map32[GAME_KEYS_MAX] = {0};
+    key_event_get_lifetime_presses(&life[0], &life[1]);
+    key_event_get_map_presses(&map32[0], &map32[1]);
+    life[2] = key_event_get_lifetime_key3();
+    map32[2] = key_event_get_map_key3();
+    const uint64_t map[GAME_KEYS_MAX] = {map32[0], map32[1], map32[2]};
 
-    ui_data_set_number(UI_SRC_PAD_K1_LIFETIME, (double)k1_life);
-    ui_data_set_number(UI_SRC_PAD_K2_LIFETIME, (double)k2_life);
-    ui_data_set_number(UI_SRC_PAD_TOTAL_LIFETIME, (double)(k1_life + k2_life));
-    ui_data_set_number(UI_SRC_PAD_K1_MAP, k1_map);
-    ui_data_set_number(UI_SRC_PAD_K2_MAP, k2_map);
-    ui_data_set_number(UI_SRC_PAD_TOTAL_MAP, (double)k1_map + k2_map);
-
-    bool k1_down = key_event_is_down(KEY_ID_1) || (now_us - key_event_get_last_press_us(KEY_ID_1)) < KEY_FLASH_HOLD_US;
-    bool k2_down = key_event_is_down(KEY_ID_2) || (now_us - key_event_get_last_press_us(KEY_ID_2)) < KEY_FLASH_HOLD_US;
-    ui_data_set_number(UI_SRC_PAD_K1_DOWN, k1_down);
-    ui_data_set_number(UI_SRC_PAD_K2_DOWN, k2_down);
+    // The two key cards show the first and second game key (input/game_keys.h)
+    uint8_t game = key_event_game_keys();
+    int slot[2];
+    game_keys_slots(game, slot);
+    static const uint8_t LIFE_SRC[2] = {UI_SRC_PAD_K1_LIFETIME, UI_SRC_PAD_K2_LIFETIME};
+    static const uint8_t MAP_SRC[2] = {UI_SRC_PAD_K1_MAP, UI_SRC_PAD_K2_MAP};
+    static const uint8_t DOWN_SRC[2] = {UI_SRC_PAD_K1_DOWN, UI_SRC_PAD_K2_DOWN};
+    static const uint8_t LABEL_SRC[2] = {UI_SRC_PAD_K1_LABEL, UI_SRC_PAD_K2_LABEL};
+    device_config_data_t cfg;
+    device_config_get(&cfg);
+    device_config_ext_t ext;
+    device_config_get_ext(&ext);
+    const uint8_t usage[GAME_KEYS_MAX] = {(uint8_t)cfg.key1_usage, (uint8_t)cfg.key2_usage, ext.key3_usage};
+    for (int i = 0; i < 2; i++) {
+        int k = slot[i];
+        bool down = k >= 0 && (key_event_is_down((keypad_key_id_t)k) ||
+                               (now_us - key_event_get_last_press_us((keypad_key_id_t)k)) < KEY_FLASH_HOLD_US);
+        char label[2];
+        game_keys_label(k >= 0 ? usage[k] : 0, label);
+        ui_data_set_number(LIFE_SRC[i], k >= 0 ? (double)life[k] : 0);
+        ui_data_set_number(MAP_SRC[i], k >= 0 ? (double)map[k] : 0);
+        ui_data_set_number(DOWN_SRC[i], down);
+        // Copying a string notifies every label bound to it: only on a change
+        static char shown[2][2] = {{'\x01'}, {'\x01'}};
+        if (strcmp(shown[i], label) != 0) {
+            strcpy(shown[i], label);
+            ui_data_set_string(LABEL_SRC[i], label);
+        }
+    }
+    uint64_t total = game_keys_sum(game, life);
+    ui_data_set_number(UI_SRC_PAD_TOTAL_LIFETIME, (double)total);
+    ui_data_set_number(UI_SRC_PAD_TOTAL_MAP, (double)game_keys_sum(game, map));
 
     // Taps in the last second, or since the oldest sample while the ring fills.
     // Lifetime counters drop on a forced sync or reset: start the window over.
-    uint64_t total = k1_life + k2_life;
     if (s_kps_fill > 0 && total < s_kps_ring[(s_kps_pos + KPS_WINDOW - 1) % KPS_WINDOW]) {
         s_kps_fill = 0;
     }

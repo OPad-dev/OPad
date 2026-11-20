@@ -476,6 +476,8 @@ pub struct DiagnosticsState {
     pub sound_enabled: bool,
     pub k1: KeyTrackerState,
     pub k2: KeyTrackerState,
+    /// Hall Effect V3's key 3
+    pub k3: KeyTrackerState,
     pub simultaneous_press_count: u32,
     pub event_log: VecDeque<String>,
     pub test_pattern_index: usize,
@@ -509,6 +511,7 @@ impl Default for DiagnosticsState {
             sound_enabled: true,
             k1: KeyTrackerState::default(),
             k2: KeyTrackerState::default(),
+            k3: KeyTrackerState::default(),
             simultaneous_press_count: 0,
             event_log: VecDeque::with_capacity(30),
             test_pattern_index: 0,
@@ -534,6 +537,7 @@ impl DiagnosticsState {
     pub fn reset_input_tester(&mut self) {
         self.k1 = KeyTrackerState::default();
         self.k2 = KeyTrackerState::default();
+        self.k3 = KeyTrackerState::default();
         self.simultaneous_press_count = 0;
         self.he = Default::default();
         self.keys_off = 0;
@@ -622,13 +626,23 @@ impl DiagnosticsState {
 
     /// Edge-triggered: a repeat of the key's current state changes nothing
     pub fn handle_key_event_at(&mut self, key_idx: u8, is_down: bool, now: Instant) {
-        let key_name = if key_idx == 1 { "Key 1" } else { "Key 2" };
-
-        let (target, other) = if key_idx == 1 {
-            (&mut self.k1, &self.k2)
-        } else {
-            (&mut self.k2, &self.k1)
+        let key_name = match key_idx {
+            1 => "Key 1",
+            3 => "Key 3",
+            _ => "Key 2",
         };
+
+        // The key itself, and the press times of the others that are down
+        let (target, others) = match key_idx {
+            1 => (&mut self.k1, [&self.k2, &self.k3]),
+            3 => (&mut self.k3, [&self.k1, &self.k2]),
+            _ => (&mut self.k2, [&self.k1, &self.k3]),
+        };
+        let other_presses: Vec<Instant> = others
+            .iter()
+            .filter(|o| o.is_down)
+            .filter_map(|o| o.last_press_time)
+            .collect();
 
         if is_down && !target.is_down {
             target.is_down = true;
@@ -680,14 +694,12 @@ impl DiagnosticsState {
                 self.event_log.push_back(entry);
             }
 
-            // Check simultaneous press with other key (within 10ms)
-            if other.is_down {
-                if let Some(other_press) = other.last_press_time {
-                    let delta_ms = (now - other_press).as_secs_f64() * 1000.0;
-                    if delta_ms <= 10.0 {
-                        self.simultaneous_press_count += 1;
-                    }
-                }
+            // Check simultaneous press with another key (within 10ms)
+            if other_presses
+                .iter()
+                .any(|&p| (now - p).as_secs_f64() * 1000.0 <= 10.0)
+            {
+                self.simultaneous_press_count += 1;
             }
 
             target.last_press_time = Some(now);
@@ -775,116 +787,130 @@ impl DiagnosticsState {
             &app.k2_input
         };
 
-        let key_card = |label: &'a str,
-                        k: &'a KeyTrackerState,
-                        pin: u32,
-                        is_k1: bool|
-         -> Element<'a, Message> {
-            let fill = if k.is_down { theme::PINK } else { theme::CARD };
-            let border_color = if k.is_down {
-                theme::WHITE
-            } else if k.definite_chatter_count > 0 {
-                theme::RED
-            } else {
-                theme::BORDER
-            };
-            let text_color = if k.is_down { theme::BG } else { theme::WHITE };
+        let key_card =
+            |label: &'a str, k: &'a KeyTrackerState, pin: u32, key: u8| -> Element<'a, Message> {
+                let fill = if k.is_down { theme::PINK } else { theme::CARD };
+                let border_color = if k.is_down {
+                    theme::WHITE
+                } else if k.definite_chatter_count > 0 {
+                    theme::RED
+                } else {
+                    theme::BORDER
+                };
+                let text_color = if k.is_down { theme::BG } else { theme::WHITE };
 
-            let chatter_info = if k.definite_chatter_count > 0 {
-                text(format!(
-                    "⚠ {} chatter events (<15ms)",
-                    k.definite_chatter_count
-                ))
-                .size(12)
-                .color(theme::RED)
-                .font(theme::FONT_BOLD)
-            } else {
-                text("0 switch bounce / chatter detected")
+                let chatter_info = if k.definite_chatter_count > 0 {
+                    text(format!(
+                        "⚠ {} chatter events (<15ms)",
+                        k.definite_chatter_count
+                    ))
                     .size(12)
-                    .color(theme::GREEN)
+                    .color(theme::RED)
+                    .font(theme::FONT_BOLD)
+                } else {
+                    text("0 switch bounce / chatter detected")
+                        .size(12)
+                        .color(theme::GREEN)
+                };
+
+                let repress_str = k
+                    .shortest_repress_ms
+                    .map(|ms| format!("{:.2} ms", ms))
+                    .unwrap_or_else(|| "—".to_string());
+
+                let hold_str = k
+                    .last_hold_ms
+                    .map(|ms| format!("{:.1} ms", ms))
+                    .unwrap_or_else(|| "—".to_string());
+
+                let key_box = container(
+                    column![
+                        text(label)
+                            .size(42)
+                            .font(theme::FONT_BOLD)
+                            .color(text_color),
+                        text(if k.is_down { "PRESSED" } else { "RELEASED" })
+                            .size(11)
+                            .font(theme::FONT_BOLD)
+                            .color(if k.is_down { theme::BG } else { theme::MUTED }),
+                    ]
+                    .align_x(Alignment::Center)
+                    .spacing(4),
+                )
+                .width(130)
+                .height(110)
+                .align_x(Alignment::Center)
+                .align_y(Alignment::Center)
+                .style(move |_: &iced::Theme| container::Style {
+                    background: Some(fill.into()),
+                    border: Border {
+                        color: border_color,
+                        width: 2.0,
+                        radius: 12.0.into(),
+                    },
+                    ..Default::default()
+                });
+
+                container(
+                    row![
+                        key_box,
+                        column![
+                            row![
+                                text(format!("Key {key}")).size(16).font(theme::FONT_BOLD),
+                                Space::new().width(Length::Fill),
+                                muted(if pin == 0 {
+                                    String::new()
+                                } else {
+                                    format!("GPIO Pin: {}", pin)
+                                })
+                                .size(12),
+                            ]
+                            .align_y(Alignment::Center),
+                            row![
+                                muted("Total presses:").width(130),
+                                text(k.press_count.to_string())
+                                    .size(14)
+                                    .font(theme::FONT_BOLD),
+                            ],
+                            row![muted("Last hold time:").width(130), text(hold_str).size(13),],
+                            row![
+                                muted("Shortest repress:").width(130),
+                                text(repress_str).size(13),
+                            ],
+                            chatter_info,
+                        ]
+                        .spacing(6)
+                        .width(Length::Fill)
+                    ]
+                    .spacing(16)
+                    .align_y(Alignment::Center),
+                )
+                .padding(16)
+                .width(Length::FillPortion(1))
+                .style(theme::card)
+                .into()
             };
 
-            let repress_str = k
-                .shortest_repress_ms
-                .map(|ms| format!("{:.2} ms", ms))
-                .unwrap_or_else(|| "—".to_string());
+        let card_k1 = key_card(k1_label, &self.k1, app.k1_gpio, 1);
+        let card_k2 = key_card(k2_label, &self.k2, app.k2_gpio, 2);
+        let three = app.device_info.as_ref().is_some_and(|i| i.key_count >= 3);
+        let mut cards = row![card_k1, card_k2].spacing(14);
+        if three {
+            let k3_label = if app.k3_input.is_empty() {
+                "—"
+            } else {
+                &app.k3_input
+            };
+            // Key 3 is on the module's ADC, not a GPIO of the pad's: no pin shown
+            cards = cards.push(key_card(k3_label, &self.k3, 0, 3));
+        }
 
-            let hold_str = k
-                .last_hold_ms
-                .map(|ms| format!("{:.1} ms", ms))
-                .unwrap_or_else(|| "—".to_string());
-
-            let key_box = container(
-                column![
-                    text(label)
-                        .size(42)
-                        .font(theme::FONT_BOLD)
-                        .color(text_color),
-                    text(if k.is_down { "PRESSED" } else { "RELEASED" })
-                        .size(11)
-                        .font(theme::FONT_BOLD)
-                        .color(if k.is_down { theme::BG } else { theme::MUTED }),
-                ]
-                .align_x(Alignment::Center)
-                .spacing(4),
-            )
-            .width(130)
-            .height(110)
-            .align_x(Alignment::Center)
-            .align_y(Alignment::Center)
-            .style(move |_: &iced::Theme| container::Style {
-                background: Some(fill.into()),
-                border: Border {
-                    color: border_color,
-                    width: 2.0,
-                    radius: 12.0.into(),
-                },
-                ..Default::default()
-            });
-
-            container(
-                row![
-                    key_box,
-                    column![
-                        row![
-                            text(if is_k1 { "Key 1" } else { "Key 2" })
-                                .size(16)
-                                .font(theme::FONT_BOLD),
-                            Space::new().width(Length::Fill),
-                            muted(format!("GPIO Pin: {}", pin)).size(12),
-                        ]
-                        .align_y(Alignment::Center),
-                        row![
-                            muted("Total presses:").width(130),
-                            text(k.press_count.to_string())
-                                .size(14)
-                                .font(theme::FONT_BOLD),
-                        ],
-                        row![muted("Last hold time:").width(130), text(hold_str).size(13),],
-                        row![
-                            muted("Shortest repress:").width(130),
-                            text(repress_str).size(13),
-                        ],
-                        chatter_info,
-                    ]
-                    .spacing(6)
-                    .width(Length::Fill)
-                ]
-                .spacing(16)
-                .align_y(Alignment::Center),
-            )
-            .padding(16)
-            .width(Length::FillPortion(1))
-            .style(theme::card)
-            .into()
-        };
-
-        let card_k1 = key_card(k1_label, &self.k1, app.k1_gpio, true);
-        let card_k2 = key_card(k2_label, &self.k2, app.k2_gpio, false);
-
-        let total_presses = self.k1.press_count + self.k2.press_count;
-        let total_chatter = self.k1.definite_chatter_count + self.k2.definite_chatter_count;
-        let total_flutter = self.k1.fast_flutter_count + self.k2.fast_flutter_count;
+        let total_presses = self.k1.press_count + self.k2.press_count + self.k3.press_count;
+        let total_chatter = self.k1.definite_chatter_count
+            + self.k2.definite_chatter_count
+            + self.k3.definite_chatter_count;
+        let total_flutter =
+            self.k1.fast_flutter_count + self.k2.fast_flutter_count + self.k3.fast_flutter_count;
 
         let summary_card = container(
             column![
@@ -991,7 +1017,7 @@ impl DiagnosticsState {
             .style(theme::card);
 
         column![
-            row![card_k1, card_k2].spacing(14),
+            cards,
             summary_card,
             self.view_he_monitor(app.device_info.as_ref().is_some_and(|i| i.he_calibration)),
             event_card
@@ -2084,6 +2110,8 @@ pub fn generate_diagnostic_bundle(app: &App, diag: &DiagnosticsState) -> String 
         "counters": {
             "active_k1": app.counters.lifetime_key1,
             "active_k2": app.counters.lifetime_key2,
+            "k3": app.key3,
+            "game_keys": app.config.game_keys,
             "active_generation": app.counters.counter_generation,
             "pc_k1": app.pc_counters.as_ref().map(|c| c.lifetime_key1),
             "pc_k2": app.pc_counters.as_ref().map(|c| c.lifetime_key2),
@@ -2114,6 +2142,13 @@ pub fn generate_diagnostic_bundle(app: &App, diag: &DiagnosticsState) -> String 
                 "fast_flutter_count": diag.k2.fast_flutter_count,
                 "shortest_repress_ms": diag.k2.shortest_repress_ms,
                 "last_hold_ms": diag.k2.last_hold_ms,
+            },
+            "key3": {
+                "press_count": diag.k3.press_count,
+                "definite_chatter_count": diag.k3.definite_chatter_count,
+                "fast_flutter_count": diag.k3.fast_flutter_count,
+                "shortest_repress_ms": diag.k3.shortest_repress_ms,
+                "last_hold_ms": diag.k3.last_hold_ms,
             },
             "simultaneous_presses": diag.simultaneous_press_count,
         },
