@@ -178,8 +178,9 @@ message ConfigPayload {
     optional uint32 key3_hid_usage = 25;  // Default: 0x06 ('C'). 0 = sends nothing
     HeKeySettings key3_he = 26;
     // Keys whose presses count toward the total, tap rate and map stats: bit
-    // k = key k+1 (default 0x03, keys 1 and 2). Every key keeps its own
-    // lifetime counter. The pad also sends KeyPress only for these keys.
+    // k = key k+1 (default 0x03, keys 1 and 2), one or two of them: osu!standard
+    // plays with two keys, and the pad refuses all three. Every key keeps its
+    // own lifetime counter. The pad also sends KeyPress only for these keys.
     optional uint32 game_keys = 27;
 }
 

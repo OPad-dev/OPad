@@ -219,8 +219,9 @@ typedef struct _osupad_ConfigPayload {
     bool has_key3_he;
     osupad_HeKeySettings key3_he;
     /* Keys whose presses count toward the total, tap rate and map stats: bit
- k = key k+1 (default 0x03, keys 1 and 2). Every key keeps its own
- lifetime counter. The pad also sends KeyPress only for these keys. */
+ k = key k+1 (default 0x03, keys 1 and 2), one or two of them: osu!standard
+ plays with two keys, and the pad refuses all three. Every key keeps its
+ own lifetime counter. The pad also sends KeyPress only for these keys. */
     bool has_game_keys;
     uint32_t game_keys;
 } osupad_ConfigPayload;
