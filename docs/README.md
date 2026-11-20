@@ -63,7 +63,7 @@ Until that lands, treat the documents below as **possibly stale**; the code and
 * **[Code review findings & fix plan](claude-code-review/README.md)** — 93 findings across firmware, desktop and packaging, all closed (92 fixed, 1 invalid); [FIX-PLAN.md](claude-code-review/FIX-PLAN.md) holds the per-cluster progress log and the hardware validation record.
 
 ### 🗂️ Historical readiness reviews (pre-fix snapshots, to move under `history/`)
-* [Software readiness review (2026-09-22)](software-readiness-review-2026-09-22.md), [Software audit & readiness review](software-audit-and-readiness-review.md), [Release readiness guide (2026-09-22)](release-readiness-guide-2026-09-22.md), [Full-repo architecture & readiness guide](full-repo-architecture-and-readiness-guide.md), [TODO 2026-09-21 evening](todo-2026-09-21-evening.md) — written before the review fixes; many items they list are now done.
+* [Software readiness review (2026-09-22)](software-readiness-review-2026-09-22.md), [Software audit & readiness review](software-audit-and-readiness-review.md), [Release readiness guide (2026-09-22)](history/2026-09-22-release-readiness-guide.md), [Full-repo architecture & readiness guide](full-repo-architecture-and-readiness-guide.md), [TODO 2026-09-21 evening](todo-2026-09-21-evening.md) — written before the review fixes; many items they list are now done.
 
 ### 🚀 Future Milestones & Catalog Roadmap
 * **[Future Roadmap & Hardware Variants](roadmap.md)**:

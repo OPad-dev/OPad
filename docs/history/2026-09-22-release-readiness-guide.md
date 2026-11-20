@@ -59,7 +59,9 @@ Items from `docs/todo-2026-09-21-evening.md` §5 that are **done** and confirmed
 Ways to keep the GIF and still reach a clean state, from best to acceptable:
 
 1. **Get a license for it.** Find the original creator (reverse image search on the first frame; the file name suggests a meme or sticker source) and ask for permission under an open license (CC BY 4.0 or CC0 is simplest). Then add `firmware/main/ui/EASTER_EGG_GIF_LICENSE.txt` with the author, source URL and license, and list it in the README's third-party section. This is the only option that makes the GIF itself open source.
+<!-- REUSE-IgnoreStart -->
 2. **Until then, label it honestly.** Add an SPDX header to `easter_egg_gif.h` that doesn't claim MIT (e.g. `// SPDX-License-Identifier: LicenseRef-Unknown-ThirdParty`). Mention it in the README license section as the single known exception. Make sure `reuse lint` (§1.6) lists it as the only non-compliant file. At least then the claim "everything else is open source" is true and checkable.
+<!-- REUSE-IgnoreEnd -->
 3. **Optional safety valve.** Keep the original artwork from commit `9193acc` (which you reverted) behind a build option, e.g. `CONFIG_OPAD_EASTER_EGG_ORIGINAL_ART`. If a pid.codes reviewer or a sale requires it, you can switch the shipped image without touching code. The GIF stays the default.
 
 ### 1.3 P0: tosu redistribution (LGPL-3.0) is only half done

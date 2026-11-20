@@ -455,7 +455,7 @@ against the cited code.
 Protobuf was regenerated with the IDF environment, never hand-edited; repeat
 generation produced no additional diff (`scripts/gen_proto.sh`). REUSE
 returned exit 1 for exactly the pre-existing missing licensing information
-on `docs/release-readiness-guide-2026-09-22.md`; no new finding was reported
+on `docs/history/2026-09-22-release-readiness-guide.md`; no new finding was reported
 (`scripts/check_reuse.py`). That existing problem was left outside this task.
 
 The installed SDK reports `ESP-IDF v5.5.2-dirty`; its HEAD is exactly tag
