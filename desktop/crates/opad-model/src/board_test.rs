@@ -12,6 +12,8 @@ use serde::{Deserialize, Serialize};
 /// Where the carrier routes an MX module's keys (connector pins 3 and 4)
 pub const CARRIER_KEY1_GPIO: u32 = 10;
 pub const CARRIER_KEY2_GPIO: u32 = 7;
+/// Where the V3 carrier routes an MX V3 module's key 3 on a straight cable
+pub const CARRIER_KEY3_GPIO: u32 = 6;
 
 /// The spare module lines, in connector order: (GPIO, connector pin)
 const SPARE_LINES: [(u32, u32); 3] = [(6, 6), (4, 7), (2, 8)];
@@ -329,6 +331,20 @@ pub fn evaluate(r: &BoardTestReport) -> Vec<BoardCheck> {
     } else {
         checks.push(key_line_check(r, 1, r.key1_gpio, mx).in_group(CheckGroup::Keys));
         checks.push(key_line_check(r, 2, r.key2_gpio, mx).in_group(CheckGroup::Keys));
+        if r.module == InputModule::MxV3 && !r.cable_reversed {
+            let check = if r.tested(CARRIER_KEY3_GPIO) {
+                key_line_check(r, 3, CARRIER_KEY3_GPIO, true)
+            } else {
+                // Firmware from before MX V3's key 3 was read
+                BoardCheck::new(
+                    "Key 3 line",
+                    CheckStatus::Skip,
+                    "Not tested: this firmware does not read the MX V3 module's key 3. Update \
+                     the pad's firmware.",
+                )
+            };
+            checks.push(check.in_group(CheckGroup::Keys));
+        }
     }
 
     if let Some(c) = spare_lines_check(r) {
@@ -1004,17 +1020,20 @@ fn key_pins_check(r: &BoardTestReport) -> BoardCheck {
 }
 
 fn key_line_check(r: &BoardTestReport, key: u8, gpio: u32, mx: bool) -> BoardCheck {
-    let name = if key == 1 { "Key 1 line" } else { "Key 2 line" };
-    // What sits on that key's line between the pad and the switch
-    let (conn_pin, socket, resistor) = if key == 1 {
-        (3, "P1-10", "R1")
-    } else {
-        (4, "P1-9", "R2")
+    let name = match key {
+        1 => "Key 1 line",
+        2 => "Key 2 line",
+        _ => "Key 3 line",
     };
-    let carrier_pin = if key == 1 {
-        CARRIER_KEY1_GPIO
-    } else {
-        CARRIER_KEY2_GPIO
+    // What sits on that key's line between the pad and the switch: the JST
+    // pin on V1, the FFC contact on V3 (straight cable)
+    let v3 = r.module.is_v3() || r.boot_module.is_v3();
+    let (conn_pin, socket, resistor, carrier_pin) = match (key, v3) {
+        (1, false) => (3, "P1-10", "R1", CARRIER_KEY1_GPIO),
+        (2, false) => (4, "P1-9", "R2", CARRIER_KEY2_GPIO),
+        (1, true) => (10, "P1-10", "R1", CARRIER_KEY1_GPIO),
+        (2, true) => (11, "P1-9", "R2", CARRIER_KEY2_GPIO),
+        _ => (5, "P1-3", "R3", CARRIER_KEY3_GPIO),
     };
 
     if !r.tested(gpio) {
@@ -1027,7 +1046,7 @@ fn key_line_check(r: &BoardTestReport, key: u8, gpio: u32, mx: bool) -> BoardChe
             format!(
                 "GPIO{gpio} reads low: the switch was held during the test, or the line is \
                  shorted to GND (a solder bridge at the hot-swap socket, connector pin \
-                 {conn_pin}, or the carrier socket). Release both keys and run the test \
+                 {conn_pin}, or the carrier socket). Release the keys and run the test \
                  again."
             ),
         );
@@ -1073,6 +1092,10 @@ fn key_line_check(r: &BoardTestReport, key: u8, gpio: u32, mx: bool) -> BoardChe
 }
 
 fn spare_lines_check(r: &BoardTestReport) -> Option<BoardCheck> {
+    if r.module.is_v3() {
+        // No spare lines on the FFC: GPIO6 is MX V3's key 3 (tested as a key)
+        return None;
+    }
     let lines: Vec<(u32, u32)> = SPARE_LINES
         .iter()
         .copied()
@@ -1403,6 +1426,61 @@ mod tests {
         let checks = evaluate(&healthy_mx());
         assert_eq!(overall(&checks), CheckStatus::Pass, "{checks:#?}");
         assert_eq!(checks.len(), 5); // module, key pins, two key lines, spares
+    }
+
+    /// The MX V3 module on a straight cable, as on the bench (2026-11-20)
+    fn healthy_mx_v3() -> BoardTestReport {
+        const LINES: u64 = KEYS | (1 << 6);
+        BoardTestReport {
+            boot_module: InputModule::MxV3,
+            module: InputModule::MxV3,
+            id_mv: Some(2266),
+            id_loaded_mv: Some(856),
+            tested_gpios: LINES,
+            high_with_pullup: LINES,
+            high_with_pulldown: LINES,
+            ..healthy_mx()
+        }
+    }
+
+    #[test]
+    fn healthy_mx_v3_tests_key_3() {
+        let checks = evaluate(&healthy_mx_v3());
+        assert_eq!(overall(&checks), CheckStatus::Pass, "{checks:#?}");
+        let k3 = find(&checks, "Key 3 line");
+        assert!(
+            k3.detail.contains("GPIO6") && k3.detail.contains("P1-3"),
+            "{k3:#?}"
+        );
+        // V3 names the FFC contact, not V1's JST pin
+        assert!(find(&checks, "Key 1 line").detail.contains("pin 10"));
+    }
+
+    #[test]
+    fn mx_v3_key_3_open_names_r3() {
+        let r = BoardTestReport {
+            high_with_pulldown: KEYS,
+            ..healthy_mx_v3()
+        };
+        let k3 = find(&evaluate(&r), "Key 3 line").clone();
+        assert_eq!(k3.status, CheckStatus::Fail);
+        assert!(
+            k3.detail.contains("R3") && k3.detail.contains("pin 5"),
+            "{k3:#?}"
+        );
+    }
+
+    #[test]
+    fn mx_v3_on_old_firmware_skips_key_3() {
+        let r = BoardTestReport {
+            tested_gpios: KEYS,
+            high_with_pullup: KEYS,
+            high_with_pulldown: KEYS,
+            ..healthy_mx_v3()
+        };
+        let checks = evaluate(&r);
+        assert_eq!(find(&checks, "Key 3 line").status, CheckStatus::Skip);
+        assert_eq!(find(&checks, "Key 1 line").status, CheckStatus::Pass);
     }
 
     #[test]

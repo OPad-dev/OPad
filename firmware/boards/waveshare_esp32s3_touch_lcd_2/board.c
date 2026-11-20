@@ -18,6 +18,9 @@ static bool s_gpio_isr_service_installed = false;
 // Read from the key ISR; only changed by board_keys_set_gpio with that pin's ISR removed
 static volatile gpio_num_t s_key1_gpio = GPIO_NUM_NC;
 static volatile gpio_num_t s_key2_gpio = GPIO_NUM_NC;
+// MX V3's key 3: fixed by the module, never moved (board_key3_set_gpio)
+static volatile gpio_num_t s_key3_gpio = GPIO_NUM_NC;
+static volatile bool s_key3_armed = false;
 static gpio_isr_t s_key_isr = NULL;
 // Set before keypad_init with an HE module: the key pins carry analog outputs
 static bool s_keys_analog = false;
@@ -49,6 +52,9 @@ esp_err_t board_keys_set_gpio(int key1_gpio, int key2_gpio)
 {
     if (key1_gpio == key2_gpio || !GPIO_IS_VALID_GPIO(key1_gpio) || !GPIO_IS_VALID_GPIO(key2_gpio)) {
         return ESP_ERR_INVALID_ARG;
+    }
+    if (s_key3_gpio != GPIO_NUM_NC && (key1_gpio == s_key3_gpio || key2_gpio == s_key3_gpio)) {
+        return ESP_ERR_INVALID_ARG;  // the module's key 3 is on it
     }
     if (s_keys_detached) {
         // Record only: GPIO10 is the HE V3 module's CS (or MISO, cable turned over)
@@ -204,8 +210,75 @@ esp_err_t board_keys_register_isr(gpio_isr_t isr_handler)
         return (err1 != ESP_OK) ? err1 : err2;
     }
     s_key_isr = isr_handler;
+    if (s_key3_armed) {
+        esp_err_t err3 = gpio_isr_handler_add(s_key3_gpio, isr_handler, (void *)(intptr_t)3);
+        if (err3 != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to add the key 3 ISR handler: %s", esp_err_to_name(err3));
+            return err3;
+        }
+    }
 
     return ESP_OK;
+}
+
+esp_err_t board_key3_set_gpio(int gpio)
+{
+    if (!GPIO_IS_VALID_GPIO(gpio) || s_key3_gpio != GPIO_NUM_NC) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    s_key3_gpio = (gpio_num_t)gpio;
+    return ESP_OK;
+}
+
+esp_err_t board_key3_arm(bool armed)
+{
+    gpio_num_t pin = s_key3_gpio;
+    if (pin == GPIO_NUM_NC || armed == s_key3_armed) {
+        return ESP_OK;
+    }
+    if (!armed) {
+        s_key3_armed = false;
+        if (s_key_isr) {
+            gpio_isr_handler_remove(pin);
+        }
+        key_pin_park_analog(pin);
+        return ESP_OK;
+    }
+    // As keys 1 and 2: active LOW, internal pull-up beside the module's 10k (R3)
+    gpio_config_t cfg = {
+        .pin_bit_mask = 1ULL << pin,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_ANYEDGE,
+    };
+    esp_err_t err = gpio_config(&cfg);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to configure key 3 GPIO%d: %s", pin, esp_err_to_name(err));
+        return err;
+    }
+    esp_rom_delay_us(200);
+    if (s_key_isr) {
+        err = gpio_isr_handler_add(pin, s_key_isr, (void *)(intptr_t)3);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to add the key 3 ISR handler: %s", esp_err_to_name(err));
+            return err;
+        }
+    }
+    s_key3_armed = true;
+    ESP_LOGI(TAG, "Key 3 GPIO configured (GPIO%d)", pin);
+    return ESP_OK;
+}
+
+bool IRAM_ATTR board_key3_read(void)
+{
+    gpio_num_t gpio = s_key3_gpio;
+    return s_key3_armed && gpio_get_level(gpio) == 0;
+}
+
+int board_get_key3_gpio(void)
+{
+    return s_key3_gpio == GPIO_NUM_NC ? -1 : s_key3_gpio;
 }
 
 // IRAM: called from the key ISR, which also runs while the flash cache is off

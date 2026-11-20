@@ -124,7 +124,7 @@ void app_main(void)
     bool he_v3 = false;
 #endif
     // An MX V3 module on a cable the right way round has its keys 1 and 2 on
-    // MX V1's pins; key 3 (GPIO6) is not read yet
+    // MX V1's pins, and key 3 on GPIO6
     bool mx_pins = module == BOARD_MODULE_MX ||
                    (module == BOARD_MODULE_MX_V3 && !board_boot_cable_reversed());
     // Modules this firmware cannot read keys from: their lines stay off
@@ -165,6 +165,10 @@ void app_main(void)
 
     // 2. Initialize Keypad: switch GPIOs, usages and debouncing (FATAL if fails)
     key_event_init();
+    if (module == BOARD_MODULE_MX_V3 && mx_pins) {
+        ESP_ERROR_CHECK(keypad_set_key3_gpio(BOARD_MX3_KEY3_GPIO));
+        ESP_LOGI(TAG, "MX V3 module: key 3 on GPIO%d", BOARD_MX3_KEY3_GPIO);
+    }
     if (module == BOARD_MODULE_HE || keys_unsupported) {
         // Before the ISR is armed: Hall sensors drive analog levels on the key
         // pins (HE V3: SPI lines), so they stay off and no host config re-arms them

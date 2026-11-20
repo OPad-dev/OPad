@@ -270,9 +270,9 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     msg.payload.hello_ack.he_input = true;
     msg.payload.hello_ack.he_calibration = he_backend_running();
     msg.payload.hello_ack.he_live = he_backend_running();
-    msg.payload.hello_ack.key_count = he_backend_key_count() == 3 ? 3 : 2;
+    msg.payload.hello_ack.key_count = he_backend_key_count() == 3 ? 3 : keypad_key_count();
 #else
-    msg.payload.hello_ack.key_count = 2;
+    msg.payload.hello_ack.key_count = keypad_key_count();
     msg.payload.hello_ack.he_input = false;
     msg.payload.hello_ack.he_calibration = false;
 #endif

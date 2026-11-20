@@ -38,6 +38,8 @@
 // Where the carrier routes an MX module's keys (connector pins 3/4)
 #define BOARD_MX_KEY1_GPIO      10
 #define BOARD_MX_KEY2_GPIO      7
+// MX V3's key 3, on a straight FFC (contact 5, carrier socket P1-3)
+#define BOARD_MX3_KEY3_GPIO     6
 // Spare module lines (connector pins 6, 7, 8): not used by the MX module
 #define BOARD_MODULE_IO6_GPIO   6
 #define BOARD_MODULE_IO4_GPIO   4

@@ -112,7 +112,7 @@ esp_err_t board_test_run(board_test_result_t *out)
     r.key2_gpio = lines.gpio[KEY_ID_2];
     r.keys_enabled = lines.ran;
     if (lines.ran) {
-        for (int i = 0; i < KEYPAD_KEY_COUNT; i++) {
+        for (int i = 0; i < lines.count; i++) {
             uint64_t bit = 1ULL << lines.gpio[i];
             r.tested_gpios |= bit;
             if (lines.high_with_pullup[i]) {

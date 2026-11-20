@@ -46,13 +46,23 @@ static uint32_t s_line_test_req_id = 0;
 static uint32_t s_line_test_done_id = 0;
 static keypad_line_test_t s_line_test_result;
 
-static volatile bool s_key_state[KEYPAD_KEY_COUNT] = {false, false};
-static volatile int64_t s_last_transition_us[KEYPAD_KEY_COUNT] = {0, 0};
+static volatile bool s_key_state[KEYPAD_KEY_COUNT] = {false, false, false};
+static volatile int64_t s_last_transition_us[KEYPAD_KEY_COUNT] = {0, 0, 0};
+// Key 3's pin (MX V3), or -1: then key 3 reads released and is never armed
+static int s_key3_gpio = -1;
 
 static TaskHandle_t s_input_task_handle = NULL;
 // Off when the input module is one v1 cannot read (Hall Effect): its analog
 // outputs on the key pins would otherwise register as presses
 static volatile bool s_input_enabled = true;
+
+// Raw pin state of a key (true = pressed). IRAM: the key ISR calls it
+static inline bool IRAM_ATTR board_key_read(int key_index)
+{
+    return key_index == 0 ? board_key1_read()
+         : key_index == 1 ? board_key2_read()
+         : board_key3_read();
+}
 
 static void IRAM_ATTR gpio_isr_handler(void *arg)
 {
@@ -62,7 +72,7 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
     }
 
     int64_t now = esp_timer_get_time();
-    bool current_pressed = (key_index == 0) ? board_key1_read() : board_key2_read();
+    bool current_pressed = board_key_read(key_index);
 
     portENTER_CRITICAL_ISR(&s_keypad_spinlock);
     debounce_action_t action = debounce_step(
@@ -104,14 +114,14 @@ static bool read_key_level(int key_index)
     if (!s_input_enabled) {
         return false;
     }
-    return key_index == 0 ? board_key1_read() : board_key2_read();
+    return board_key_read(key_index);
 }
 
 // Start debouncing again from the pins as they read now. True if a key reads
 // pressed, so the caller can have the keypad task report it.
 static bool restart_debounce_from_pins(void)
 {
-    bool levels[KEYPAD_KEY_COUNT] = {read_key_level(0), read_key_level(1)};
+    bool levels[KEYPAD_KEY_COUNT] = {read_key_level(0), read_key_level(1), read_key_level(2)};
     portENTER_CRITICAL(&s_keypad_spinlock);
     for (int i = 0; i < KEYPAD_KEY_COUNT; i++) {
         debounce_init(&s_key_debounce[i], levels[i]);
@@ -119,7 +129,7 @@ static bool restart_debounce_from_pins(void)
         s_last_transition_us[i] = esp_timer_get_time();
     }
     portEXIT_CRITICAL(&s_keypad_spinlock);
-    return levels[0] || levels[1];
+    return levels[0] || levels[1] || levels[2];
 }
 
 // How long a key line gets to settle after its pull changes. The pin, carrier
@@ -142,21 +152,24 @@ static void line_test_run(keypad_line_test_t *r)
     keypad_config_t cfg = s_config;
     portEXIT_CRITICAL(&s_keypad_spinlock);
 
-    gpio_num_t pins[KEYPAD_KEY_COUNT] = {(gpio_num_t)cfg.key1_gpio, (gpio_num_t)cfg.key2_gpio};
+    uint8_t count = keypad_key_count();
+    gpio_num_t pins[KEYPAD_KEY_COUNT] = {(gpio_num_t)cfg.key1_gpio, (gpio_num_t)cfg.key2_gpio,
+                                         (gpio_num_t)s_key3_gpio};
     *r = (keypad_line_test_t){
-        .gpio = {cfg.key1_gpio, cfg.key2_gpio},
+        .count = count,
+        .gpio = {cfg.key1_gpio, cfg.key2_gpio, s_key3_gpio < 0 ? 0 : (uint8_t)s_key3_gpio},
     };
     if (!s_input_enabled) {
         return; // Hall Effect outputs on the pins: nothing a pull test can say
     }
 
     s_input_enabled = false;
-    for (int i = 0; i < KEYPAD_KEY_COUNT; i++) {
+    for (int i = 0; i < count; i++) {
         r->high_with_pullup[i] = gpio_get_level(pins[i]) != 0;
         gpio_set_pull_mode(pins[i], GPIO_PULLDOWN_ONLY);
     }
     esp_rom_delay_us(LINE_TEST_SETTLE_US);
-    for (int i = 0; i < KEYPAD_KEY_COUNT; i++) {
+    for (int i = 0; i < count; i++) {
         r->high_with_pulldown[i] = gpio_get_level(pins[i]) != 0;
         gpio_set_pull_mode(pins[i], GPIO_PULLUP_ONLY);
     }
@@ -209,7 +222,8 @@ static void detect_scan_release(const detect_scan_t *scan)
     portEXIT_CRITICAL(&s_keypad_spinlock);
     for (size_t i = 0; i < KEY_GPIO_ALLOWED_COUNT; i++) {
         uint8_t pin = KEY_GPIO_ALLOWED[i];
-        if ((scan->pin_mask & (1ULL << pin)) && pin != cfg.key1_gpio && pin != cfg.key2_gpio) {
+        if ((scan->pin_mask & (1ULL << pin)) && pin != cfg.key1_gpio && pin != cfg.key2_gpio &&
+            pin != s_key3_gpio) {
             gpio_reset_pin(pin);
         }
     }
@@ -237,8 +251,8 @@ static void detect_scan_step(detect_scan_t *scan)
         uint64_t pin_mask = 0;
         for (size_t i = 0; i < KEY_GPIO_ALLOWED_COUNT; i++) {
             uint8_t pin = KEY_GPIO_ALLOWED[i];
-            if (device_config_key_gpio_supported(pin) &&
-                pin != exclude && pin != cfg.key1_gpio && pin != cfg.key2_gpio) {
+            if (device_config_key_gpio_supported(pin) && pin != exclude &&
+                pin != cfg.key1_gpio && pin != cfg.key2_gpio && pin != s_key3_gpio) {
                 pin_mask |= (1ULL << pin);
             }
         }
@@ -278,8 +292,9 @@ static void detect_scan_step(detect_scan_t *scan)
     if (scan->candidate < 0) {
         for (size_t i = 0; i < KEY_GPIO_ALLOWED_COUNT; i++) {
             uint8_t pin = KEY_GPIO_ALLOWED[i];
+            // Key 3's pin is a key, not a free pin to offer (pin != s_key3_gpio)
             if (device_config_key_gpio_supported(pin) && pin != scan->exclude &&
-                gpio_get_level(pin) == 0) {
+                pin != s_key3_gpio && gpio_get_level(pin) == 0) {
                 scan->candidate = pin;
                 scan->candidate_since_us = now;
                 break;
@@ -319,6 +334,7 @@ static void apply_input_enabled(bool *parked)
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Key pins GPIO%u/GPIO%u: %s", cfg.key1_gpio, cfg.key2_gpio, esp_err_to_name(err));
     }
+    board_key3_arm(!want_parked);
     *parked = want_parked;
     if (!want_parked) {
         // Let the pull-up settle first: a pin read too early is low, a press
@@ -334,7 +350,7 @@ static void keypad_task(void *pvParameters)
     (void)pvParameters;
     ESP_LOGI(TAG, "Keypad high-priority processing task started on core %d", xPortGetCoreID());
 
-    bool reported_state[KEYPAD_KEY_COUNT] = {false, false};
+    bool reported_state[KEYPAD_KEY_COUNT] = {false, false, false};
     detect_scan_t scan = {0};
     // Off at boot (Hall Effect module): app_main parked the pins already
     bool parked = !s_input_enabled;
@@ -404,7 +420,7 @@ static void keypad_task(void *pvParameters)
                 s_key_state[i] = false;
                 portEXIT_CRITICAL(&s_keypad_spinlock);
             } else if (need_resample) {
-                bool pin_level = (i == 0) ? board_key1_read() : board_key2_read();
+                bool pin_level = board_key_read(i);
                 portENTER_CRITICAL(&s_keypad_spinlock);
                 debounce_action_t action = debounce_step(
                     &s_key_debounce[i],
@@ -532,13 +548,19 @@ esp_err_t keypad_init(const keypad_config_t *config)
         }
     }
 
+    if (s_input_enabled) {
+        err = board_key3_arm(true);  // no-op without key 3
+        if (err != ESP_OK) {
+            return err;
+        }
+    }
+
     // Initial state read
-    bool k1_init = read_key_level(0);
-    bool k2_init = read_key_level(1);
-    debounce_init(&s_key_debounce[0], k1_init);
-    debounce_init(&s_key_debounce[1], k2_init);
-    s_key_state[0] = k1_init;
-    s_key_state[1] = k2_init;
+    for (int i = 0; i < KEYPAD_KEY_COUNT; i++) {
+        bool level = read_key_level(i);
+        debounce_init(&s_key_debounce[i], level);
+        s_key_state[i] = level;
+    }
 
     // Spawn high-priority task (configMAX_PRIORITIES - 1) pinned to Core 0
     BaseType_t res = xTaskCreatePinnedToCore(
@@ -634,6 +656,23 @@ bool keypad_detect_pin_result(uint32_t id, int *out_pin)
         *out_pin = pin;
     }
     return done;
+}
+
+esp_err_t keypad_set_key3_gpio(int gpio)
+{
+    if (s_input_task_handle != NULL || s_key3_gpio >= 0) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    esp_err_t err = board_key3_set_gpio(gpio);
+    if (err == ESP_OK) {
+        s_key3_gpio = gpio;
+    }
+    return err;
+}
+
+uint8_t keypad_key_count(void)
+{
+    return s_key3_gpio >= 0 ? 3 : 2;
 }
 
 bool keypad_input_enabled(void)

@@ -54,6 +54,26 @@ bool board_key1_read(void);
 bool board_key2_read(void);
 
 /**
+ * @brief Give key 3 a pin (MX V3: GPIO6, fixed by the module). Once, before
+ * keypad_init; the pin stays untouched until board_key3_arm.
+ */
+esp_err_t board_key3_set_gpio(int gpio);
+
+/**
+ * @brief Arm key 3's pin (input, pull-up, any-edge interrupt, the key ISR
+ * with arg 3) or park it analog. No-op without board_key3_set_gpio. Keypad task only.
+ */
+esp_err_t board_key3_arm(bool armed);
+
+/**
+ * @brief Read raw physical state of Key 3 (true = pressed); false while not armed.
+ */
+bool board_key3_read(void);
+
+/** @brief Key 3's pin, or -1 when the module has none the switches drive. */
+int board_get_key3_gpio(void);
+
+/**
  * @brief Set LCD backlight brightness (0-100%).
  */
 void board_backlight_set(uint8_t percent);
