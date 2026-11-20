@@ -46,17 +46,6 @@ menu "OPad Testing and Benchmark"
             boot. Selects the IRAM-safe ADC interrupt, so frames keep coming
             while flash is written.
 
-    config OSUPAD_HE_V3
-        bool "Hall Effect V3 key input (ADS7028 over SPI)"
-        default y
-        depends on !OSUPAD_HALL_BENCH
-        help
-            With a Hall Effect V3 module fitted (ID 1.65 V on the V3
-            carrier), read keys 1 and 2 from the module's ADS7028 over SPI
-            through the rapid-trigger engine and calibration that V1 uses.
-            Key 3 is not read yet. MX pads and V1 modules are not affected:
-            nothing here runs unless an HE V3 module is detected at boot.
-
     config OSUPAD_HE_TRACE
         bool "Hall Effect trace: stream every raw conversion over CDC"
         default n

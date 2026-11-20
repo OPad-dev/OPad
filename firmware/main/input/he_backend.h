@@ -1,8 +1,7 @@
 #pragma once
 
 /*
- * Hall Effect key input (CONFIG_OSUPAD_HE_BACKEND for V1, CONFIG_OSUPAD_HE_V3
- * for V3). V1: ADC1 continuous DMA on both sensors; V3: the module's ADS7028
+ * Hall Effect key input (V3 always; V1 with CONFIG_OSUPAD_HE_BACKEND). V1: ADC1 continuous DMA on both sensors; V3: the module's ADS7028
  * over SPI (he_spi_source.h). Either way the decision engine (he_rt.h) runs per frame, and a
  * core-0 task that hands key changes to key_event_report. Started only when
  * the HE module is fitted; with MX nothing here runs.
@@ -40,8 +39,10 @@ typedef enum {
     HE_SOURCE_ADS7028 = 1,   // V3: the module's ADC over SPI (input/he_spi_source.h)
 } he_source_t;
 
-// Built with Hall Effect input: V1's (experimental) or V3's
-#if defined(CONFIG_OSUPAD_HE_BACKEND) || defined(CONFIG_OSUPAD_HE_V3)
+// Built with Hall Effect input: every firmware build (V3), except the hall
+// bench measurement build, which reads V1's sensors its own way. Not the host
+// tests (no ESP_PLATFORM): they build the pure parts without the backend.
+#if defined(ESP_PLATFORM) && !defined(CONFIG_OSUPAD_HALL_BENCH)
 #define OSUPAD_HE_INPUT 1
 #endif
 

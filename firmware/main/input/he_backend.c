@@ -27,7 +27,7 @@
  * CONFIG_OSUPAD_HE_TRACE (measurement build only) also streams every raw
  * conversion over CDC for scripts/he_trace.py; see he_trace_task.
  *
- * Hall Effect V3 (CONFIG_OSUPAD_HE_V3): the readings come from the module's
+ * Hall Effect V3 (always built in): the readings come from the module's
  * ADS7028 over SPI instead (input/he_spi_source.h), one frame every
  * HE_SPI_FRAME_US (50 us, 20 kHz) from a sampler task, and go through the same
  * per-frame step (process_frame) and he_task. Calibration still gets one

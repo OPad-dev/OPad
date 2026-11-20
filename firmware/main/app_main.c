@@ -118,7 +118,7 @@ void app_main(void)
         he_cal_use_v3_store();
     }
     he_cal_init();
-#ifdef CONFIG_OSUPAD_HE_V3
+#ifndef CONFIG_OSUPAD_HALL_BENCH
     bool he_v3 = module == BOARD_MODULE_HE_V3;
 #else
     bool he_v3 = false;
