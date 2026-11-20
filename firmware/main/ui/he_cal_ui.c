@@ -119,7 +119,7 @@ static void show_lock_screen(int64_t now_us)
     }
 }
 
-static void send_proto_progress(const he_runner_progress_t *prog, const he_calibration_t results[2])
+static void send_proto_progress(const he_runner_progress_t *prog, const he_calibration_t results[HE_KEYS_MAX])
 {
     osupad_HeCalibrationProgress p = osupad_HeCalibrationProgress_init_zero;
     switch (prog->stage) {
@@ -132,6 +132,9 @@ static void send_proto_progress(const he_runner_progress_t *prog, const he_calib
     case HE_RUNNER_KEY2:
         p.stage = osupad_HeCalStage_HE_CAL_STAGE_KEY2;
         break;
+    case HE_RUNNER_KEY3:
+        p.stage = osupad_HeCalStage_HE_CAL_STAGE_KEY3;
+        break;
     case HE_RUNNER_SUCCESS:
         p.stage = osupad_HeCalStage_HE_CAL_STAGE_SUCCESS;
         if (results) {
@@ -139,6 +142,10 @@ static void send_proto_progress(const he_runner_progress_t *prog, const he_calib
             p.key1_full = results[0].full >= 0 ? (uint32_t)results[0].full : 0;
             p.key2_rest = results[1].rest >= 0 ? (uint32_t)results[1].rest : 0;
             p.key2_full = results[1].full >= 0 ? (uint32_t)results[1].full : 0;
+            if (prog->keys > 2) {
+                p.key3_rest = results[2].rest >= 0 ? (uint32_t)results[2].rest : 0;
+                p.key3_full = results[2].full >= 0 ? (uint32_t)results[2].full : 0;
+            }
         }
         break;
     case HE_RUNNER_FAILED:
@@ -156,7 +163,8 @@ static void send_proto_progress(const he_runner_progress_t *prog, const he_calib
         strncpy(p.error_message, error, sizeof(p.error_message) - 1);
     }
     // last_raw is -1 until the first sample; 0 means "no reading" to the app
-    int32_t raw = (prog->active_key == 2) ? prog->last_raw[1] : prog->last_raw[0];
+    int32_t raw = prog->active_key >= 1 && prog->active_key <= HE_KEYS_MAX
+                      ? prog->last_raw[prog->active_key - 1] : prog->last_raw[0];
     p.raw_value = raw >= 0 ? (uint32_t)raw : 0;
 
     if (atomic_load(&s_app_capable)) protocol_send_he_calibration_progress(&p);
@@ -188,7 +196,8 @@ static void update_calibration_screen(void)
     switch (prog.stage) {
     case HE_RUNNER_REST:
         lv_label_set_text(s_title_label, "Calibrating");
-        lv_label_set_text(s_prompt_label, "Take your fingers off both keys");
+        lv_label_set_text(s_prompt_label, prog.keys > 2 ? "Take your fingers off all keys"
+                                                        : "Take your fingers off both keys");
         lv_label_set_text(s_info_label, "");
         update_boxes_visibility(false, 0);
         lv_obj_add_flag(s_btn_obj, LV_OBJ_FLAG_HIDDEN);
@@ -196,22 +205,21 @@ static void update_calibration_screen(void)
         break;
 
     case HE_RUNNER_KEY1:
-        lv_label_set_text(s_title_label, "Key 1");
-        lv_label_set_text(s_prompt_label, "Press key 1 all the way, 5 times");
-        lv_label_set_text(s_info_label, "Let it come fully up each time");
-        update_boxes_visibility(true, prog.presses_done);
-        lv_obj_add_flag(s_btn_obj, LV_OBJ_FLAG_HIDDEN);
-        atomic_store(&s_btn_active, false);
-        break;
-
     case HE_RUNNER_KEY2:
-        lv_label_set_text(s_title_label, "Key 2");
-        lv_label_set_text(s_prompt_label, "Press key 2 all the way, 5 times");
+    case HE_RUNNER_KEY3: {
+        static const char *const TITLES[] = {"Key 1", "Key 2", "Key 3"};
+        static const char *const PROMPTS[] = {"Press key 1 all the way, 5 times",
+                                              "Press key 2 all the way, 5 times",
+                                              "Press key 3 all the way, 5 times"};
+        int k = (int)(prog.stage - HE_RUNNER_KEY1);
+        lv_label_set_text(s_title_label, TITLES[k]);
+        lv_label_set_text(s_prompt_label, PROMPTS[k]);
         lv_label_set_text(s_info_label, "Let it come fully up each time");
         update_boxes_visibility(true, prog.presses_done);
         lv_obj_add_flag(s_btn_obj, LV_OBJ_FLAG_HIDDEN);
         atomic_store(&s_btn_active, false);
         break;
+    }
 
     case HE_RUNNER_SUCCESS:
         lv_obj_set_style_bg_color(s_overlay, lv_color_hex(0x1B381E), 0); // Green Tint
@@ -416,15 +424,17 @@ static void he_cal_ui_timer_cb(lv_timer_t *timer)
             he_runner_progress_t prog;
 
             if (s_runner.stage == HE_RUNNER_SUCCESS) {
-                he_calibration_t saved[2];
+                he_calibration_t saved[HE_KEYS_MAX];
+                he_cal_get_all(saved);  // keys the module lacks keep theirs
                 esp_err_t err = ESP_FAIL;
                 if (he_cal_runner_get_results(&s_runner, saved)) {
                     err = he_backend_finish_calibration(saved);
                 }
                 if (err == ESP_OK) {
-                    ESP_LOGI(TAG, "Calibration successful: K1=%ld..%ld, K2=%ld..%ld",
+                    ESP_LOGI(TAG, "Calibration successful: K1=%ld..%ld, K2=%ld..%ld, K3=%ld..%ld",
                              (long)saved[0].rest, (long)saved[0].full,
-                             (long)saved[1].rest, (long)saved[1].full);
+                             (long)saved[1].rest, (long)saved[1].full,
+                             (long)saved[2].rest, (long)saved[2].full);
                     he_cal_runner_get_progress(&s_runner, &prog);
                     send_proto_progress(&prog, saved);
                     s_success_until_us = now_us + 1000000; // Hold for 1 second
@@ -570,6 +580,7 @@ bool he_cal_ui_start_calibration(bool from_app)
         ui_unlock();
         return false;
     }
+    he_cal_runner_set_keys(&s_runner, he_backend_key_count());
     he_cal_runner_start(&s_runner);
     he_cal_runner_get_progress(&s_runner, &prog);
 

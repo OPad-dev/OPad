@@ -62,6 +62,7 @@ async fn test_ipc_roundtrip_requests() {
                             mode: RuntimeMode::Idle,
                             device_connected: true,
                             device_info: Some(DeviceInfo {
+                                key_count: 2,
                                 device_id: "OSUPAD-TEST".to_string(),
                                 board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                                 firmware_version: "1.0.0".to_string(),
@@ -93,6 +94,7 @@ async fn test_ipc_roundtrip_requests() {
                             last_backup: Some("2026-09-17T00:00:00Z".to_string()),
                             foreign_pad: false,
                             he_calibration: None,
+                            key3: None,
                         },
                         IpcRequest::PrepareFlash => IpcResponse::ReadyForFlash {
                             port: Some("/dev/ttyACM0".to_string()),
@@ -108,6 +110,7 @@ async fn test_ipc_roundtrip_requests() {
                         },
                         IpcRequest::ExportBackup => {
                             let info = DeviceInfo {
+                                key_count: 2,
                                 device_id: "OSUPAD-TEST".to_string(),
                                 board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                                 firmware_version: "1.0.0".to_string(),

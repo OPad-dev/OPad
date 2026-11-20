@@ -18,7 +18,7 @@ static int32_t median_of(uint16_t *v, uint32_t n)
 
 void he_frame_parse(const uint32_t *words, uint32_t n, he_frame_t *out)
 {
-    *out = (he_frame_t){.newest = {-1, -1}, .median = {-1, -1}};
+    *out = (he_frame_t){.newest = {-1, -1, -1}, .median = {-1, -1, -1}};
     if (words == NULL) {
         return;
     }

@@ -3,7 +3,7 @@ pub mod flash;
 use bytes::BytesMut;
 use chrono::{Datelike, Local, Timelike};
 use opad_layout::{Layout, Screen};
-use opad_model::board_test::{BoardTestReport, InputModule};
+use opad_model::board_test::{BoardTestReport, HeAdcChannel, HeAdcReport, HeAdcSpeed, InputModule};
 use opad_model::ui_source::SourceValue;
 use opad_model::{CounterState, DeviceConfig, DeviceInfo, SwipeAction};
 pub use opad_protocol::proto;
@@ -883,6 +883,19 @@ impl DeviceManager {
                         rt_mode: k.rt_mode.to_wire() as i32,
                         allow_below_noise_floor: Some(k.allow_below_noise_floor),
                     }),
+                    // Firmware predating key 3 ignores these three
+                    key3_hid_usage: Some(config.key3_hid_usage),
+                    key3_he: config.key3_he.map(|k| proto::HeKeySettings {
+                        actuation: k.actuation,
+                        release_hyst: k.release_hyst,
+                        top_reset: k.top_reset,
+                        rt_press: k.rt_press,
+                        rt_release: k.rt_release,
+                        bottom_dead_zone: Some(k.bottom_dead_zone),
+                        rt_mode: k.rt_mode.to_wire() as i32,
+                        allow_below_noise_floor: Some(k.allow_below_noise_floor),
+                    }),
+                    game_keys: Some(config.game_keys),
                 }),
             })),
         };
@@ -1157,6 +1170,24 @@ fn fit_nanopb_string(s: &str, max_size: usize) -> String {
 /// endpoint, so it is the default here.
 fn device_config_from(c: &proto::ConfigPayload) -> DeviceConfig {
     DeviceConfig {
+        // Absent from firmware predating key 3: the defaults
+        key3_hid_usage: c
+            .key3_hid_usage
+            .unwrap_or(opad_model::DEFAULT_KEY3_HID_USAGE),
+        key3_he: c.key3_he.as_ref().map(|k| opad_model::HeKeyConfig {
+            actuation: k.actuation,
+            release_hyst: k.release_hyst,
+            top_reset: k.top_reset,
+            rt_press: k.rt_press,
+            rt_release: k.rt_release,
+            bottom_dead_zone: k.bottom_dead_zone.unwrap_or(0),
+            rt_mode: opad_model::HeRtMode::from_wire(k.rt_mode as u32).unwrap_or_default(),
+            allow_below_noise_floor: k.allow_below_noise_floor.unwrap_or(false),
+        }),
+        game_keys: c
+            .game_keys
+            .filter(|&g| g != 0)
+            .unwrap_or(opad_model::DEFAULT_GAME_KEYS),
         key1_hid_usage: c.key1_hid_usage,
         key2_hid_usage: c.key2_hid_usage,
         debounce_us: c.debounce_us,
@@ -1223,6 +1254,8 @@ fn input_module_from(m: i32) -> InputModule {
         Ok(proto::InputModule::None) => InputModule::None,
         Ok(proto::InputModule::Mx) => InputModule::Mx,
         Ok(proto::InputModule::HallEffect) => InputModule::HallEffect,
+        Ok(proto::InputModule::HallEffectV3) => InputModule::HallEffectV3,
+        Ok(proto::InputModule::MxV3) => InputModule::MxV3,
         _ => InputModule::Unknown,
     }
 }
@@ -1245,6 +1278,46 @@ fn board_test_report_from(r: &proto::BoardTestResult) -> BoardTestReport {
         high_with_pullup: r.high_with_pullup,
         high_with_pulldown: r.high_with_pulldown,
         bridged_gpios: r.bridged_gpios,
+        cable_reversed: r.cable_reversed,
+        he_adc: r.he_adc.as_ref().map(he_adc_report_from),
+    }
+}
+
+fn he_adc_report_from(a: &proto::HeAdcTest) -> HeAdcReport {
+    // -1 is "not read" on the wire
+    let status = |v: i32| u8::try_from(v).ok();
+    HeAdcReport {
+        ran: a.ran,
+        message: a.message.clone(),
+        sclk_hz: a.sclk_hz,
+        status_after_reset: status(a.status_after_reset),
+        status_after_clear: status(a.status_after_clear),
+        walk_writes: a.walk_writes,
+        walk_mismatches: a.walk_mismatches,
+        walk_wrong_bits: a.walk_wrong_bits as u8,
+        cal_done: a.cal_done,
+        status_end: status(a.status_end),
+        speeds: a
+            .speeds
+            .iter()
+            .map(|s| HeAdcSpeed {
+                sclk_hz: s.sclk_hz,
+                frames: s.frames,
+                errors: s.errors,
+            })
+            .collect(),
+        channels: a
+            .channels
+            .iter()
+            .map(|c| HeAdcChannel {
+                ain: c.ain,
+                samples: c.samples,
+                min: c.min,
+                max: c.max,
+                mean_x16: c.mean_x16,
+                noise_x100: c.noise_x100,
+            })
+            .collect(),
     }
 }
 
@@ -1253,6 +1326,8 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
         match payload {
             proto::device_to_host::Payload::HelloAck(ack) => {
                 let info = DeviceInfo {
+                    // 0 from firmware predating key 3
+                    key_count: ack.key_count.max(2),
                     device_id: ack.device_id.clone(),
                     board_profile: ack.board_profile.clone(),
                     firmware_version: ack.firmware_version.clone(),
@@ -1348,7 +1423,8 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
                     presses: batch
                         .presses
                         .iter()
-                        .filter(|p| p.key == 1 || p.key == 2)
+                        // The pad sends game keys only (ConfigPayload.game_keys)
+                        .filter(|p| (1..=3).contains(&p.key))
                         .map(|p| (p.key as u8, p.t_us))
                         .collect(),
                     dropped: batch.dropped,
@@ -1830,7 +1906,7 @@ mod tests {
     }
 
     /// Issue #2: a KeyPressBatch arrives as pad-timed presses, with anything
-    /// that is not K1 or K2 left out
+    /// that is not key 1, 2 or 3 (Hall Effect V3) left out
     #[test]
     fn key_press_batches_become_pad_presses() {
         let (tx, mut rx) = tokio::sync::broadcast::channel(8);
@@ -1840,7 +1916,12 @@ mod tests {
             payload: Some(proto::device_to_host::Payload::KeyPresses(
                 proto::KeyPressBatch {
                     now_us: 5_000,
-                    presses: vec![press(1, 1_000), press(3, 1_500), press(2, 2_000)],
+                    presses: vec![
+                        press(1, 1_000),
+                        press(4, 1_200),
+                        press(3, 1_500),
+                        press(2, 2_000),
+                    ],
                     dropped: 1,
                 },
             )),
@@ -1854,7 +1935,7 @@ mod tests {
                 ..
             }) => {
                 assert_eq!(now_us, 5_000);
-                assert_eq!(presses, vec![(1, 1_000), (2, 2_000)]);
+                assert_eq!(presses, vec![(1, 1_000), (3, 1_500), (2, 2_000)]);
                 assert_eq!(dropped, 1);
             }
             other => panic!("{other:?}"),
@@ -2332,7 +2413,9 @@ fn he_live_sample_from(s: &proto::HeLiveSample) -> opad_model::HeLiveSample {
     opad_model::HeLiveSample {
         key1_raw: s.key1_raw,
         key2_raw: s.key2_raw,
+        key3_raw: s.key3_raw,
         key1_down: s.key1_down,
         key2_down: s.key2_down,
+        key3_down: s.key3_down,
     }
 }

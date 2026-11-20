@@ -172,6 +172,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 last_backup: st.last_backup.clone(),
                 foreign_pad: st.foreign_pad,
                 he_calibration: st.he_calibration,
+                key3: st.key3,
             }
         }
 
@@ -1043,7 +1044,12 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             let k1_usage = char_to_hid_usage(&backup.config.key1).unwrap_or(0x1D);
             let k2_usage = char_to_hid_usage(&backup.config.key2).unwrap_or(0x1B);
 
+            // Backups predate key 3: it and the game keys stay as they are
+            let kept = { state.lock().config.clone() };
             let new_config = DeviceConfig {
+                key3_hid_usage: kept.key3_hid_usage,
+                key3_he: kept.key3_he,
+                game_keys: kept.game_keys,
                 key1_hid_usage: k1_usage,
                 key2_hid_usage: k2_usage,
                 debounce_us: backup.config.debounce_us,
@@ -1096,6 +1102,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     })
                     .unwrap_or_default();
                 let info = DeviceInfo {
+                    key_count: 2,
                     device_id: backup.device.device_id,
                     board_profile: backup.device.board_profile,
                     firmware_version: last_firmware_version,

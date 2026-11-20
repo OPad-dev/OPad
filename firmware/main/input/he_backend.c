@@ -26,10 +26,16 @@
  *
  * CONFIG_OSUPAD_HE_TRACE (measurement build only) also streams every raw
  * conversion over CDC for scripts/he_trace.py; see he_trace_task.
+ *
+ * Hall Effect V3 (CONFIG_OSUPAD_HE_V3): the readings come from the module's
+ * ADS7028 over SPI instead (input/he_spi_source.h), one frame every 250 us
+ * from a sampler task, and go through the same per-frame step (process_frame)
+ * and he_task. "The ADC" below is then that source: started, stopped and
+ * restarted the same way.
  */
 #include "he_backend.h"
 
-#ifdef CONFIG_OSUPAD_HE_BACKEND
+#ifdef OSUPAD_HE_INPUT
 
 #include "input/he_frame.h"
 #include "input/he_params.h"
@@ -40,7 +46,10 @@
 #include "input/he_debug.h"
 #include "input/key_event.h"
 #include "usb/usb_report_barrier.h"
+#include "input/he_spi_source.h"
+#ifdef CONFIG_OSUPAD_HE_BACKEND
 #include "esp_adc/adc_continuous.h"
+#endif
 #include "esp_attr.h"
 #include "esp_cpu.h"
 #include "esp_log.h"
@@ -63,6 +72,7 @@ static const char *TAG = "he";
 #define HE_FRAME_BYTES  (HE_FRAME_CONVS * SOC_ADC_DIGI_RESULT_BYTES)
 _Static_assert(HE_SAMPLE_HZ == HE_FRAME_CONVS * HE_CAL_SAMPLE_HZ,
                "Calibration sample-count windows require a 4 kHz frame stream");
+_Static_assert(HE_SPI_FRAME_US == HE_FRAME_US, "V3 frames keep V1's 4 kHz frame rate");
 #ifdef CONFIG_OSUPAD_HE_TRACE
 #define HE_STORE_FRAMES 64     // 16 ms for he_trace_task to drain
 #else
@@ -89,10 +99,13 @@ _Static_assert(HE_SAMPLE_HZ == HE_FRAME_CONVS * HE_CAL_SAMPLE_HZ,
  * with HE_PARAMS_NEVER rather than typing with the factory fallback span.
  */
 static const he_limits_t HE_PROVISIONAL_LIMITS = {.min_movement = 32, .min_top_reset = 32};
-static he_key_settings_t s_key_settings[2] = {
+static he_key_settings_t s_key_settings[HE_KEYS_MAX] = {
+    {.actuation = 500, .release_hyst = 100, .top_reset = 100, .rt_press = 150, .rt_release = 150},
     {.actuation = 500, .release_hyst = 100, .top_reset = 100, .rt_press = 150, .rt_release = 150},
     {.actuation = 500, .release_hyst = 100, .top_reset = 100, .rt_press = 150, .rt_release = 150},
 };
+// Keys the module has: 2 (V1) or 3 (V3), set by he_backend_start
+static uint8_t s_nkeys = 2;
 
 // Thresholds that never press: `release` below any reading, so a key never arms
 static const he_rt_params_t HE_PARAMS_NEVER = {
@@ -100,14 +113,20 @@ static const he_rt_params_t HE_PARAMS_NEVER = {
     .rt_press = 1, .rt_release = 1, .peak_cap = INT32_MAX,
 };
 
+static he_source_t s_source;
+// The source has been set up once (V1: s_adc exists): restarts stop and start it
+static bool s_source_created;
+#ifdef CONFIG_OSUPAD_HE_BACKEND
 // Started (he_task only). The ADC driver's ADC1 lock is a mutex taken by
 // adc_continuous_start and given back by adc_continuous_stop, so both must run
 // in the same task: he_task. Releasing it from another task trips FreeRTOS's
 // mutex-holder assert (a panic on every HE unplug, before this was so).
 static adc_continuous_handle_t s_adc;
+#endif
 
-// Module probe handshake (he_backend_probe_module): the caller asks, he_task
-// stops the ADC and says so, the caller reads ID, says done, he_task starts it.
+// Pause handshake (he_backend_run_paused: the module probe, the board test):
+// the caller asks, he_task releases both keys, stops the ADC and says so, the
+// caller does its work, says done, he_task starts it.
 typedef enum { PROBE_IDLE, PROBE_ASKED, PROBE_PAUSED, PROBE_DONE } probe_state_t;
 static volatile probe_state_t s_probe;
 static SemaphoreHandle_t s_probe_ack;
@@ -122,11 +141,11 @@ static volatile bool s_running;
 // Shared by on_frame and he_task (and he_backend_set_params). Only copies and
 // he_rt calls happen under it.
 static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
-static he_rt_key_t s_keys[2];
-static bool s_down[2];
-static int64_t s_edge_us[2];         // frame time of the last change
+static he_rt_key_t s_keys[HE_KEYS_MAX];
+static bool s_down[HE_KEYS_MAX];
+static int64_t s_edge_us[HE_KEYS_MAX];  // frame time of the last change
 static he_health_t s_health;
-static he_backend_stats_t s_stats = {.raw = {-1, -1}};
+static he_backend_stats_t s_stats = {.raw = {-1, -1, -1}};
 
 // s_lock protects the flag and ISR-owned buffer. Only LVGL swaps/drains;
 // start/cancel are serialized with that reader by the LVGL lock.
@@ -144,18 +163,12 @@ static he_cal_barrier_t s_cal_barrier;
 #define HE_CAL_REPORT_NOTIFY (1u << 31)
 #define HE_CAL_REPORT_WAIT_MS 100
 
-static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata,
-                               void *user_data)
+// One frame's readings through each key's engine. From the V1 ADC interrupt
+// or the V3 sampler task; true when a key changed (he_task must publish).
+static bool IRAM_ATTR process_frame(const he_frame_t *f, int64_t now)
 {
-    (void)handle;
-    (void)user_data;
-    uint32_t c0 = esp_cpu_get_cycle_count();
-    int64_t now = esp_timer_get_time();
-    he_frame_t f;
-    he_frame_parse((const uint32_t *)edata->conv_frame_buffer, edata->size / SOC_ADC_DIGI_RESULT_BYTES, &f);
-
     bool changed = false;
-    portENTER_CRITICAL_ISR(&s_lock);
+    portENTER_CRITICAL_SAFE(&s_lock);
     if (s_stats.frames > 0) {
         int64_t gap = now - s_health.last_frame_us;
         if (gap > 2 * HE_FRAME_US) {
@@ -167,29 +180,29 @@ static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continu
     }
     he_health_record_frame(&s_health, now);
     s_stats.frames++;
-    s_stats.foreign_words += f.foreign;
-    s_stats.railed_samples += f.railed;
+    s_stats.foreign_words += f->foreign;
+    s_stats.railed_samples += f->railed;
     if (__builtin_expect(s_calibrating, 0)) {
-        he_cal_samples_push(s_cal_write, f.median[0], f.median[1]);
+        he_cal_samples_push(s_cal_write, f->median, s_nkeys);
     }
     // The newest reading, so the debug log still shows the spikes the median drops
-    he_debug_isr_frame(f.newest[0], f.newest[1]);  // no-op outside the debug build
-    for (int k = 0; k < 2; k++) {
-        if (f.median[k] < 0) {
+    he_debug_isr_frame(f->newest[0], f->newest[1]);  // no-op outside the debug build
+    for (int k = 0; k < s_nkeys; k++) {
+        if (f->median[k] < 0) {
             continue;
         }
         he_health_record_valid(&s_health, k, now);
-        s_stats.raw[k] = f.median[k];
+        s_stats.raw[k] = f->median[k];
         if (he_health_is_key_faulted(&s_health, k)) {
             continue;
         }
 #ifdef CONFIG_OSUPAD_HE_DEBUG
         he_rt_state_t from = s_keys[k].state;
 #endif
-        he_rt_event_t ev = he_rt_step(&s_keys[k], f.median[k]);
+        he_rt_event_t ev = he_rt_step(&s_keys[k], f->median[k]);
         if (ev != HE_RT_NONE) {
 #ifdef CONFIG_OSUPAD_HE_DEBUG
-            he_debug_isr_edge((uint8_t)k, ev, from, s_keys[k].state, s_keys[k].extreme, f.median[k], now);
+            he_debug_isr_edge((uint8_t)k, ev, from, s_keys[k].state, s_keys[k].extreme, f->median[k], now);
 #endif
             s_down[k] = ev == HE_RT_DOWN;
             s_edge_us[k] = now;
@@ -199,7 +212,21 @@ static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continu
             }
         }
     }
-    portEXIT_CRITICAL_ISR(&s_lock);
+    portEXIT_CRITICAL_SAFE(&s_lock);
+    return changed;
+}
+
+#ifdef CONFIG_OSUPAD_HE_BACKEND
+static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata,
+                               void *user_data)
+{
+    (void)handle;
+    (void)user_data;
+    uint32_t c0 = esp_cpu_get_cycle_count();
+    int64_t now = esp_timer_get_time();
+    he_frame_t f;
+    he_frame_parse((const uint32_t *)edata->conv_frame_buffer, edata->size / SOC_ADC_DIGI_RESULT_BYTES, &f);
+    bool changed = process_frame(&f, now);
 
     BaseType_t woken = pdFALSE;
     if (changed && s_task != NULL) {
@@ -211,7 +238,25 @@ static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continu
     }
     return woken == pdTRUE;
 }
+#endif
 
+// V3: from the sampler task, every 250 us
+static void on_spi_frame(const he_frame_t *f, const int32_t raw[HE_SPI_KEYS], int64_t now)
+{
+    (void)raw;  // the same readings are in f
+    uint32_t c0 = esp_cpu_get_cycle_count();
+    if (process_frame(f, now) && s_task != NULL) {
+        xTaskNotifyGive(s_task);
+    }
+    uint32_t cycles = esp_cpu_get_cycle_count() - c0;
+    portENTER_CRITICAL(&s_lock);
+    if (cycles > s_stats.isr_max_cycles) {
+        s_stats.isr_max_cycles = cycles;
+    }
+    portEXIT_CRITICAL(&s_lock);
+}
+
+#ifdef CONFIG_OSUPAD_HE_BACKEND
 #ifdef CONFIG_OSUPAD_HE_TRACE
 static bool IRAM_ATTR on_pool_ovf(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata,
                                   void *user_data)
@@ -274,6 +319,47 @@ static esp_err_t adc_setup(void)
     return ESP_OK;
 }
 
+#endif  // OSUPAD_HE_INPUT
+
+// The frame source: V1's ADC DMA or V3's SPI sampler. he_task only.
+static esp_err_t source_setup(void)
+{
+    esp_err_t err = ESP_ERR_NOT_SUPPORTED;
+    if (s_source == HE_SOURCE_ADS7028) {
+        err = he_spi_source_start(board_boot_cable_reversed(), on_spi_frame);
+    }
+#ifdef CONFIG_OSUPAD_HE_BACKEND
+    else {
+        err = adc_setup();
+    }
+#endif
+    s_source_created = err == ESP_OK;
+    return err;
+}
+
+static esp_err_t source_start(void)
+{
+    if (s_source == HE_SOURCE_ADS7028) {
+        return he_spi_source_start(board_boot_cable_reversed(), on_spi_frame);
+    }
+#ifdef CONFIG_OSUPAD_HE_BACKEND
+    return adc_continuous_start(s_adc);
+#else
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
+static void source_stop(void)
+{
+    if (s_source == HE_SOURCE_ADS7028) {
+        he_spi_source_stop();
+        return;
+    }
+#ifdef CONFIG_OSUPAD_HE_BACKEND
+    adc_continuous_stop(s_adc);
+#endif
+}
+
 // Fresh readings from now on: no stall or key fault counted for the time before
 static void resync_health(int64_t now)
 {
@@ -292,9 +378,9 @@ static void fault_key_locked(int k, int64_t now)
 
 // IRAM like the MX keypad task: from flash, a cache miss while core 1 is busy
 // cost the MX path ~170 us (linker.lf)
-static void IRAM_ATTR publish(bool reported[2])
+static void IRAM_ATTR publish(bool reported[HE_KEYS_MAX])
 {
-    for (int k = 0; k < 2; k++) {
+    for (int k = 0; k < s_nkeys; k++) {
         portENTER_CRITICAL(&s_lock);
         bool down = s_down[k];
         int64_t edge_us = s_edge_us[k];
@@ -318,11 +404,11 @@ static bool check_health(int64_t now)
     he_health_check_result_t res = he_health_check(&s_health, now);
     if (res.adc_stalled) {
         s_stats.stalls++;
-        for (int k = 0; k < 2; k++) {
+        for (int k = 0; k < s_nkeys; k++) {
             fault_key_locked(k, now);
         }
     } else {
-        for (int k = 0; k < 2; k++) {
+        for (int k = 0; k < s_nkeys; k++) {
             if (res.key_fault_started[k]) {
                 s_stats.key_faults++;
                 fault_key_locked(k, now);
@@ -424,21 +510,31 @@ static void he_trace_task(void *arg)
 }
 #endif
 
-// The module probe's side of the handshake; true while the ADC is paused for it
-static bool serve_probe(void)
+// The pause's side of the handshake; true while the ADC is paused for it
+static bool serve_probe(bool reported[HE_KEYS_MAX])
 {
     switch (s_probe) {
-    case PROBE_ASKED:
+    case PROBE_ASKED: {
+        // Both keys up first: nothing is read while paused, and a key held
+        // across the pause must be seen up before it presses again
+        int64_t now = esp_timer_get_time();
+        portENTER_CRITICAL(&s_lock);
+        for (int k = 0; k < s_nkeys; k++) {
+            fault_key_locked(k, now);
+        }
+        portEXIT_CRITICAL(&s_lock);
+        publish(reported);
         if (s_health.adc_ok) {
-            adc_continuous_stop(s_adc);  // frees ADC1 for the ID's oneshot read
+            source_stop();  // V1: frees ADC1 for the ID's oneshot read; V3: frees SPI3
         }
         s_probe = PROBE_PAUSED;
         xSemaphoreGive(s_probe_ack);
         return true;
+    }
     case PROBE_PAUSED:
         return true;
     case PROBE_DONE:
-        if (s_health.adc_ok && adc_continuous_start(s_adc) != ESP_OK) {
+        if (s_health.adc_ok && source_start() != ESP_OK) {
             s_health.adc_ok = false;  // the recovery below retries
         }
         portENTER_CRITICAL(&s_lock);
@@ -456,15 +552,20 @@ static bool serve_probe(void)
 static void IRAM_ATTR he_task(void *arg)
 {
     (void)arg;
-    bool reported[2] = {false, false};
+    bool reported[HE_KEYS_MAX] = {false};
     int64_t now = esp_timer_get_time();
     he_health_init(&s_health, now);
+    he_health_set_keys(&s_health, s_nkeys);
 
-    esp_err_t err = adc_setup();
+    esp_err_t err = source_setup();
     if (err == ESP_OK) {
         s_health.adc_ok = true;
-        ESP_LOGI(TAG, "ADC1 continuous: %d conv/s, %d per frame, core %d", HE_SAMPLE_HZ, HE_FRAME_CONVS,
-                 xPortGetCoreID());
+        if (s_source == HE_SOURCE_ADS7028) {
+            ESP_LOGI(TAG, "ADS7028 over SPI: one frame every %d us, core %d", HE_SPI_FRAME_US, xPortGetCoreID());
+        } else {
+            ESP_LOGI(TAG, "ADC1 continuous: %d conv/s, %d per frame, core %d", HE_SAMPLE_HZ, HE_FRAME_CONVS,
+                     xPortGetCoreID());
+        }
     } else {
         ESP_LOGE(TAG, "ADC setup failed: %s, retrying", esp_err_to_name(err));
         he_health_on_adc_stalled(&s_health, now);
@@ -478,7 +579,7 @@ static void IRAM_ATTR he_task(void *arg)
             he_cal_barrier_publish(&s_cal_barrier, publish_calibration_release, reported);
         }
 
-        if (serve_probe()) {
+        if (serve_probe(reported)) {
             continue;  // paused for an ID reading: not a stall
         }
         now = esp_timer_get_time();
@@ -487,11 +588,11 @@ static void IRAM_ATTR he_task(void *arg)
             he_health_on_adc_stalled(&s_health, now);
         }
         if (he_health_should_retry_adc(&s_health, now)) {
-            if (s_adc != NULL) {
-                adc_continuous_stop(s_adc);  // may already be stopped
-                err = adc_continuous_start(s_adc);
+            if (s_source_created) {
+                source_stop();  // may already be stopped
+                err = source_start();
             } else {
-                err = adc_setup();
+                err = source_setup();
             }
             now = esp_timer_get_time();
             if (err == ESP_OK) {
@@ -508,16 +609,23 @@ static void IRAM_ATTR he_task(void *arg)
     }
 }
 
-esp_err_t he_backend_start(void)
+esp_err_t he_backend_start(he_source_t source)
 {
     if (s_running) {
         return ESP_ERR_INVALID_STATE;
     }
+#ifndef CONFIG_OSUPAD_HE_BACKEND
+    if (source != HE_SOURCE_ADS7028) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+#endif
+    s_source = source;
     s_params_mutex = xSemaphoreCreateRecursiveMutexStatic(&s_params_mutex_buf);
-    he_calibration_t cal[2];
+    s_nkeys = source == HE_SOURCE_ADS7028 ? 3 : 2;
+    he_calibration_t cal[HE_KEYS_MAX];
     he_cal_get_all(cal);
-    bool locked = he_cal_is_locked_decision(true, cal[0].valid, cal[1].valid);
-    for (int k = 0; k < 2; k++) {
+    bool locked = he_cal_is_locked_decision(true, cal, s_nkeys);
+    for (int k = 0; k < s_nkeys; k++) {
         he_rt_params_t p;
         uint32_t r = he_params_build(&s_key_settings[k], &cal[k], &HE_PROVISIONAL_LIMITS, &p);
         if (locked || HE_PARAMS_FAILED(r)) {
@@ -542,14 +650,15 @@ esp_err_t he_backend_start(void)
     return ESP_OK;
 }
 
-void he_backend_apply_settings(const he_key_settings_t s[2])
+void he_backend_apply_settings(const he_key_settings_t s[HE_KEYS_MAX])
 {
     if (s == NULL) {
         return;
     }
     if (s_running) xSemaphoreTakeRecursive(s_params_mutex, portMAX_DELAY);
-    s_key_settings[0] = s[0];
-    s_key_settings[1] = s[1];
+    for (int k = 0; k < HE_KEYS_MAX; k++) {
+        s_key_settings[k] = s[k];
+    }
     he_backend_reload_params();
     if (s_running) xSemaphoreGiveRecursive(s_params_mutex);
 }
@@ -560,12 +669,12 @@ void he_backend_reload_params(void)
         return;
     }
     xSemaphoreTakeRecursive(s_params_mutex, portMAX_DELAY);
-    he_calibration_t cal[2];
+    he_calibration_t cal[HE_KEYS_MAX];
     he_cal_get_all(cal);
     bool suppress = he_cal_suppress_input(
-        he_cal_is_locked_decision(s_running, cal[0].valid, cal[1].valid),
+        he_cal_is_locked_decision(s_running, cal, s_nkeys),
         he_backend_is_calibrating());
-    for (int k = 0; k < 2; k++) {
+    for (int k = 0; k < s_nkeys; k++) {
         he_rt_params_t p;
         uint32_t r = he_params_build(&s_key_settings[k], &cal[k], &HE_PROVISIONAL_LIMITS, &p);
         if (suppress || HE_PARAMS_FAILED(r)) {
@@ -579,9 +688,9 @@ void he_backend_reload_params(void)
 bool he_backend_is_locked(void)
 {
     if (!s_running) return false;
-    he_calibration_t cal[2];
+    he_calibration_t cal[HE_KEYS_MAX];
     he_cal_get_all(cal);
-    return he_cal_is_locked_decision(s_running, cal[0].valid, cal[1].valid);
+    return he_cal_is_locked_decision(s_running, cal, s_nkeys);
 }
 
 he_limits_t he_backend_noise_floors(void)
@@ -609,7 +718,7 @@ esp_err_t he_backend_start_calibration(void)
     he_cal_samples_reset(s_cal_read);
     int64_t now = esp_timer_get_time();
     portENTER_CRITICAL(&s_lock);
-    for (int k = 0; k < 2; k++) {
+    for (int k = 0; k < s_nkeys; k++) {
         he_rt_set_params(&s_keys[k], &HE_PARAMS_NEVER, INT32_MAX);
         fault_key_locked(k, now);
     }
@@ -653,7 +762,7 @@ void he_backend_cancel_calibration(void)
     xSemaphoreGiveRecursive(s_params_mutex);
 }
 
-esp_err_t he_backend_finish_calibration(const he_calibration_t results[2])
+esp_err_t he_backend_finish_calibration(const he_calibration_t results[HE_KEYS_MAX])
 {
     if (!results) {
         return ESP_ERR_INVALID_ARG;
@@ -685,9 +794,14 @@ bool he_backend_running(void)
     return s_running;
 }
 
+uint8_t he_backend_key_count(void)
+{
+    return s_running ? s_nkeys : 0;
+}
+
 void he_backend_set_params(uint8_t key_index, const he_rt_params_t *p)
 {
-    if (key_index >= 2 || p == NULL) {
+    if (key_index >= s_nkeys || p == NULL) {
         return;
     }
     portENTER_CRITICAL(&s_lock);
@@ -703,7 +817,7 @@ void he_backend_set_params(uint8_t key_index, const he_rt_params_t *p)
 void he_backend_debug_params(uint8_t key_index, he_rt_params_t *out)
 {
     portENTER_CRITICAL(&s_lock);
-    *out = s_keys[key_index & 1].p;
+    *out = s_keys[key_index < HE_KEYS_MAX ? key_index : 0].p;
     portEXIT_CRITICAL(&s_lock);
 }
 #endif
@@ -721,7 +835,7 @@ bool he_backend_keys_absent(void)
 // couple of milliseconds; the timeouts only guard against a stuck task.
 #define PROBE_ACK_TICKS pdMS_TO_TICKS(500)
 
-esp_err_t he_backend_probe_module(int *out_open_mv, int *out_loaded_mv)
+esp_err_t he_backend_run_paused(void (*fn)(void *arg), void *arg)
 {
     if (!s_running || s_probe != PROBE_IDLE) {
         return ESP_ERR_INVALID_STATE;
@@ -732,12 +846,36 @@ esp_err_t he_backend_probe_module(int *out_open_mv, int *out_loaded_mv)
         s_probe = PROBE_IDLE;  // never paused
         return ESP_ERR_TIMEOUT;
     }
-    esp_err_t err = board_read_module_id(out_open_mv, out_loaded_mv);
-    board_module_id_release();  // the oneshot unit must not outlive the pause
+    fn(arg);
     s_probe = PROBE_DONE;
     xTaskNotifyGive(s_task);
     xSemaphoreTake(s_probe_ack, PROBE_ACK_TICKS);
-    return err;
+    return ESP_OK;
+}
+
+typedef struct {
+    int *open_mv;
+    int *loaded_mv;
+    esp_err_t err;
+} probe_args_t;
+
+static void probe_read(void *arg)
+{
+    probe_args_t *a = arg;
+    a->err = board_read_module_id(a->open_mv, a->loaded_mv);
+    board_module_id_release();  // the oneshot unit must not outlive the pause
+}
+
+esp_err_t he_backend_probe_module(int *out_open_mv, int *out_loaded_mv)
+{
+    probe_args_t a = {.open_mv = out_open_mv, .loaded_mv = out_loaded_mv, .err = ESP_FAIL};
+    esp_err_t err = he_backend_run_paused(probe_read, &a);
+    return err != ESP_OK ? err : a.err;
+}
+
+he_source_t he_backend_source(void)
+{
+    return s_source;
 }
 
 void he_backend_get_stats(he_backend_stats_t *out)
@@ -750,4 +888,4 @@ void he_backend_get_stats(he_backend_stats_t *out)
     portEXIT_CRITICAL(&s_lock);
 }
 
-#endif  // CONFIG_OSUPAD_HE_BACKEND
+#endif  // OSUPAD_HE_INPUT

@@ -87,12 +87,18 @@ pub fn dashboard(app: &App) -> Element<'_, Message> {
         ..theme::BG
     };
 
+    // The game keys' presses (keys 1 and 2 unless the player picked others)
+    let key3_lifetime = app.key3.map_or(0, |k| k.lifetime);
+    let total_presses: u64 = [c.lifetime_key1, c.lifetime_key2, key3_lifetime]
+        .iter()
+        .enumerate()
+        .filter(|(k, _)| app.config.is_game_key(*k as u8 + 1))
+        .map(|(_, v)| v)
+        .sum();
     let total = card(
         column![
             caption("TOTAL PRESSES"),
-            text(grouped(c.total_lifetime_presses()))
-                .size(64)
-                .font(theme::FONT_BOLD),
+            text(grouped(total_presses)).size(64).font(theme::FONT_BOLD),
         ]
         .spacing(2)
         .align_x(Alignment::Center)
@@ -135,6 +141,26 @@ pub fn dashboard(app: &App) -> Element<'_, Message> {
     .padding(18)
     .width(Length::Fill)
     .style(theme::outlined_card);
+
+    let k3 = app.key3.map(|k3| {
+        container(
+            column![
+                caption(format!("K3 · {}", app.config.key3_char())).size(14),
+                text(grouped(k3.lifetime)).size(40).font(theme::FONT_BOLD),
+                muted(format!("this map {}", k3.map)).size(13),
+            ]
+            .spacing(4)
+            .align_x(Alignment::Center)
+            .width(Length::Fill),
+        )
+        .padding(18)
+        .width(Length::Fill)
+        .style(theme::outlined_card)
+    });
+    let mut key_cards = row![k1, k2].spacing(14);
+    if let Some(k3) = k3 {
+        key_cards = key_cards.push(k3);
+    }
 
     let profile: Element<'_, Message> = match text_value(app, src::PROFILE_NAME) {
         Some(name) => column![
@@ -244,7 +270,7 @@ pub fn dashboard(app: &App) -> Element<'_, Message> {
             ]
             .align_y(Alignment::Center),
             total,
-            row![k1, k2].spacing(14),
+            key_cards,
             row![card(profile), card(now)].spacing(14),
             card(
                 column![
@@ -342,11 +368,46 @@ pub fn settings(app: &App) -> Element<'_, Message> {
     let keys = card(
         column![
             keys_header,
-            row![
-                key_input("KEY 1", &app.k1_input, Message::Key1),
-                key_input("KEY 2", &app.k2_input, Message::Key2)
-            ]
-            .spacing(24),
+            {
+                let three = app.device_info.as_ref().is_some_and(|i| i.key_count >= 3);
+                let mut inputs = row![
+                    key_input("KEY 1", &app.k1_input, Message::Key1),
+                    key_input("KEY 2", &app.k2_input, Message::Key2)
+                ]
+                .spacing(24);
+                if three {
+                    inputs = inputs.push(key_input("KEY 3", &app.k3_input, Message::Key3));
+                }
+                let mut col = column![inputs].spacing(10);
+                if three {
+                    let game = |key: u8| app.game_keys & (1 << (key - 1)) != 0;
+                    col = col.push(
+                        column![
+                            caption("GAME KEYS"),
+                            row![
+                                checkbox(game(1))
+                                    .label("Key 1")
+                                    .on_toggle(|on| Message::GameKey(1, on)),
+                                checkbox(game(2))
+                                    .label("Key 2")
+                                    .on_toggle(|on| Message::GameKey(2, on)),
+                                checkbox(game(3))
+                                    .label("Key 3")
+                                    .on_toggle(|on| Message::GameKey(3, on)),
+                            ]
+                            .spacing(18),
+                            muted(
+                                "The keys you play with: only their presses count toward the \
+                                 total, the tap rate and map stats. Every key keeps its own \
+                                 lifetime count. Key 3 left empty sends nothing.",
+                            )
+                            .size(12),
+                        ]
+                        .spacing(6),
+                    );
+                }
+                col
+            },
             column![
                 row![
                     pin_select("KEY 1 PIN", 1, app.k1_gpio, app.k2_gpio, Message::Key1Pin),
@@ -1662,23 +1723,38 @@ pub fn calibration(app: &App) -> Element<'_, Message> {
 
     let body = match stage {
         opad_model::HeCalStage::None => {
-            let mut col =
-                column![
-                text("Switch Travel Calibration").size(16).font(theme::FONT_BOLD),
+            let mut col = column![
+                text("Switch Travel Calibration")
+                    .size(16)
+                    .font(theme::FONT_BOLD),
                 muted(
                     "Calibration measures the rest position and maximum bottom-out depth for each \
                      Hall Effect key switch. Once saved, switch thresholds adapt automatically to \
                      your switches and springs.",
                 )
                 .size(13),
-                column![
-                    text("1. Release both keys (measures rest magnetic baseline)").size(13),
-                    text("2. Press Key 1 down to the bottom 5 times slowly").size(13),
-                    text("3. Press Key 2 down to the bottom 5 times slowly").size(13),
-                ]
-                .spacing(6),
+                {
+                    let three = app.device_info.as_ref().is_some_and(|i| i.key_count >= 3);
+                    let mut steps = column![
+                        text(if three {
+                            "1. Release all keys (measures rest magnetic baseline)"
+                        } else {
+                            "1. Release both keys (measures rest magnetic baseline)"
+                        })
+                        .size(13),
+                        text("2. Press Key 1 down to the bottom 5 times slowly").size(13),
+                        text("3. Press Key 2 down to the bottom 5 times slowly").size(13),
+                    ]
+                    .spacing(6);
+                    if three {
+                        steps = steps.push(
+                            text("4. Press Key 3 down to the bottom 5 times slowly").size(13),
+                        );
+                    }
+                    steps
+                },
             ]
-                .spacing(14);
+            .spacing(14);
 
             if let Some(msg) = &app.cal_status_msg {
                 col = col.push(text(msg).size(13).color(Color::from_rgb8(230, 180, 50)));
@@ -1793,6 +1869,34 @@ pub fn calibration(app: &App) -> Element<'_, Message> {
             ]
             .spacing(14),
         ),
+        opad_model::HeCalStage::Key3 => card(
+            column![
+                text("Step 4: Press Key 3 (5 Times)")
+                    .size(16)
+                    .font(theme::FONT_BOLD),
+                muted("Press Key 3 firmly down to the bottom and release. Repeat 5 times slowly.")
+                    .size(13),
+                progress_boxes(progress.map(|p| p.presses_done).unwrap_or(0)),
+                text(format!(
+                    "Presses recorded: {} of 5",
+                    progress.map(|p| p.presses_done).unwrap_or(0)
+                ))
+                .size(13),
+                if let Some(p) = progress {
+                    if p.raw_value > 0 {
+                        text(format!("Live ADC: {}", p.raw_value)).size(12)
+                    } else {
+                        text("")
+                    }
+                } else {
+                    text("")
+                },
+                row![button(text("Cancel").size(13))
+                    .style(theme::danger)
+                    .on_press(Message::CancelCalibration),],
+            ]
+            .spacing(14),
+        ),
         opad_model::HeCalStage::Success => card(
             column![
                 text("✓ Calibration Complete")
@@ -1800,15 +1904,20 @@ pub fn calibration(app: &App) -> Element<'_, Message> {
                     .font(theme::FONT_BOLD)
                     .color(Color::from_rgb8(80, 220, 100)),
                 muted(
-                    "Both switches are successfully calibrated! Calibration data has been written \
-                     to pad storage, and the keypad lock has been lifted.",
+                    "Every switch is calibrated. The calibration is saved on the pad, and the \
+                     keypad lock has been lifted.",
                 )
                 .size(13),
                 if let Some(p) = progress {
                     if p.key1_full > 0 && p.key2_full > 0 {
+                        let key3 = if p.key3_full > 0 {
+                            format!("   ·   Key 3: rest {} → full {}", p.key3_rest, p.key3_full)
+                        } else {
+                            String::new()
+                        };
                         text(format!(
-                            "Key 1: rest {} → full {}   ·   Key 2: rest {} → full {}",
-                            p.key1_rest, p.key1_full, p.key2_rest, p.key2_full
+                            "Key 1: rest {} → full {}   ·   Key 2: rest {} → full {}{}",
+                            p.key1_rest, p.key1_full, p.key2_rest, p.key2_full, key3
                         ))
                         .size(13)
                     } else {

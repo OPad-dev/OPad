@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "esp_err.h"
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
+#include "diag/he_adc_test.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,11 +25,15 @@ typedef struct {
     uint64_t high_with_pullup;
     uint64_t high_with_pulldown;
     uint64_t bridged_gpios;
+    bool cable_reversed;        // a V3 module's ID came on GPIO7 at boot
+    bool he_adc_present;        // he_adc below was attempted (HE V3 module)
+    he_adc_test_t he_adc;
 } board_test_result_t;
 
 /**
  * @brief Run the board test: module ID, reversed cable, key line pull-ups,
- * spare connector lines. About 30 ms; key edges are ignored for about 1 ms of
+ * spare connector lines, and on a Hall Effect V3 module its ADC and sensors
+ * (he_adc_test.h). About 30 ms, 130 ms with HE V3; key edges are ignored for about 1 ms of
  * it. Protocol task only, and only in IDLE: it reconfigures pins and blocks.
  */
 esp_err_t board_test_run(board_test_result_t *out);

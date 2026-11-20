@@ -21,7 +21,8 @@ extern "C" {
 typedef enum {
     KEY_ID_1 = 0,
     KEY_ID_2 = 1,
-    KEY_ID_COUNT = 2
+    KEY_ID_3 = 2,      // Hall Effect V3 only
+    KEY_ID_COUNT = 3
 } keypad_key_id_t;
 
 /**
@@ -67,6 +68,21 @@ void key_event_get_map_presses(uint32_t *key1_presses, uint32_t *key2_presses);
  * @brief Zero the current-attempt press counters (lifetime counters are untouched).
  */
 void key_event_reset_map_presses(void);
+
+/**
+ * @brief The game keys (bit k = key k+1): only their presses reach the press
+ * log the host's tap rate is built from. From the device config.
+ */
+void key_event_set_game_keys(uint8_t mask);
+uint8_t key_event_game_keys(void);
+
+/**
+ * @brief Key 3's counters (Hall Effect V3): lifetime, add at boot, this attempt.
+ * Kept apart from keys 1 and 2, whose getters predate it.
+ */
+uint64_t key_event_get_lifetime_key3(void);
+void key_event_add_lifetime_key3(uint64_t presses);
+uint32_t key_event_get_map_key3(void);
 
 /**
  * @brief Get timestamp in microseconds of the last keypress down event.

@@ -23,4 +23,7 @@ osupad.LogEvent.message max_size:64
 osupad.LogEventBatch.events max_count:8
 osupad.KeyPressBatch.presses max_count:32
 osupad.BoardTestResult.message max_size:64
+osupad.HeAdcTest.message max_size:48
+osupad.HeAdcTest.speeds max_count:6
+osupad.HeAdcTest.channels max_count:3
 osupad.HeCalibrationProgress.error_message max_size:48

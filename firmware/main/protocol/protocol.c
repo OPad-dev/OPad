@@ -56,7 +56,7 @@ static uint32_t s_out_sequence = 1;
 #define HE_LIVE_KEEPALIVE_US 2000000
 #define HE_LIVE_PERIOD_US    20000
 static int64_t s_live_until_us;
-#ifdef CONFIG_OSUPAD_HE_BACKEND
+#ifdef OSUPAD_HE_INPUT
 static int64_t s_live_sent_us;
 #endif
 
@@ -137,6 +137,44 @@ static esp_err_t send_envelope(const osupad_DeviceToHost *msg)
     return ESP_OK;
 }
 
+static void fill_he_settings(osupad_HeKeySettings *o, const he_key_settings_t *k)
+{
+    o->actuation = k->actuation;
+    o->release_hyst = k->release_hyst;
+    o->top_reset = k->top_reset;
+    o->rt_press = k->rt_press;
+    o->rt_release = k->rt_release;
+    o->has_bottom_dead_zone = true;
+    o->bottom_dead_zone = k->bottom_dz;
+    o->has_allow_below_noise_floor = true;
+    o->allow_below_noise_floor = k->no_floor;
+    o->rt_mode = !k->rapid_trigger ? osupad_HeRtMode_HE_RT_MODE_OFF :
+        k->continuous ? osupad_HeRtMode_HE_RT_MODE_CONTINUOUS :
+        osupad_HeRtMode_HE_RT_MODE_NORMAL;
+}
+
+// The fields the host sent; 0 / absent keeps the current value
+static void apply_he_settings(he_key_settings_t *k, const osupad_HeKeySettings *c)
+{
+    if (c->actuation > 0) k->actuation = (uint16_t)c->actuation;
+    if (c->release_hyst > 0) k->release_hyst = (uint16_t)c->release_hyst;
+    if (c->top_reset > 0) k->top_reset = (uint16_t)c->top_reset;
+    if (c->rt_press > 0) k->rt_press = (uint16_t)c->rt_press;
+    if (c->rt_release > 0) k->rt_release = (uint16_t)c->rt_release;
+    if (c->has_bottom_dead_zone) k->bottom_dz = (uint16_t)c->bottom_dead_zone;
+    if (c->has_allow_below_noise_floor) k->no_floor = c->allow_below_noise_floor;
+    if (c->rt_mode == osupad_HeRtMode_HE_RT_MODE_OFF) {
+        k->rapid_trigger = false;
+        k->continuous = false;
+    } else if (c->rt_mode == osupad_HeRtMode_HE_RT_MODE_NORMAL) {
+        k->rapid_trigger = true;
+        k->continuous = false;
+    } else if (c->rt_mode == osupad_HeRtMode_HE_RT_MODE_CONTINUOUS) {
+        k->rapid_trigger = true;
+        k->continuous = true;
+    }
+}
+
 static void fill_config_payload(osupad_ConfigPayload *out, const device_config_data_t *cfg)
 {
     out->key1_hid_usage = cfg->key1_usage;
@@ -161,36 +199,20 @@ static void fill_config_payload(osupad_ConfigPayload *out, const device_config_d
     out->swipe_left_modifiers = cfg->swipe_mods[2];
     out->swipe_right_modifiers = cfg->swipe_mods[3];
 
-    he_key_settings_t he_keys[2];
+    he_key_settings_t he_keys[HE_KEYS_MAX];
     device_config_get_he(he_keys);
-
     out->has_key1_he = true;
-    out->key1_he.actuation = he_keys[0].actuation;
-    out->key1_he.release_hyst = he_keys[0].release_hyst;
-    out->key1_he.top_reset = he_keys[0].top_reset;
-    out->key1_he.rt_press = he_keys[0].rt_press;
-    out->key1_he.rt_release = he_keys[0].rt_release;
-    out->key1_he.has_bottom_dead_zone = true;
-    out->key1_he.bottom_dead_zone = he_keys[0].bottom_dz;
-    out->key1_he.has_allow_below_noise_floor = true;
-    out->key1_he.allow_below_noise_floor = he_keys[0].no_floor;
-    out->key1_he.rt_mode = !he_keys[0].rapid_trigger ? osupad_HeRtMode_HE_RT_MODE_OFF :
-        he_keys[0].continuous ? osupad_HeRtMode_HE_RT_MODE_CONTINUOUS :
-        osupad_HeRtMode_HE_RT_MODE_NORMAL;
-
+    fill_he_settings(&out->key1_he, &he_keys[0]);
     out->has_key2_he = true;
-    out->key2_he.actuation = he_keys[1].actuation;
-    out->key2_he.release_hyst = he_keys[1].release_hyst;
-    out->key2_he.top_reset = he_keys[1].top_reset;
-    out->key2_he.rt_press = he_keys[1].rt_press;
-    out->key2_he.rt_release = he_keys[1].rt_release;
-    out->key2_he.has_bottom_dead_zone = true;
-    out->key2_he.bottom_dead_zone = he_keys[1].bottom_dz;
-    out->key2_he.has_allow_below_noise_floor = true;
-    out->key2_he.allow_below_noise_floor = he_keys[1].no_floor;
-    out->key2_he.rt_mode = !he_keys[1].rapid_trigger ? osupad_HeRtMode_HE_RT_MODE_OFF :
-        he_keys[1].continuous ? osupad_HeRtMode_HE_RT_MODE_CONTINUOUS :
-        osupad_HeRtMode_HE_RT_MODE_NORMAL;
+    fill_he_settings(&out->key2_he, &he_keys[1]);
+    out->has_key3_he = true;
+    fill_he_settings(&out->key3_he, &he_keys[2]);
+    device_config_ext_t ext;
+    device_config_get_ext(&ext);
+    out->has_key3_hid_usage = true;
+    out->key3_hid_usage = ext.key3_usage;
+    out->has_game_keys = true;
+    out->game_keys = ext.game_keys;
 }
 
 esp_err_t protocol_send_hello_ack(uint32_t seq)
@@ -244,11 +266,13 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     msg.payload.hello_ack.restart = true;
     // Shows UI_FLAG_PER_SECOND tap rates in KPS (issue #8)
     msg.payload.hello_ack.tap_rate_per_second = true;
-#ifdef CONFIG_OSUPAD_HE_BACKEND
+#ifdef OSUPAD_HE_INPUT
     msg.payload.hello_ack.he_input = true;
     msg.payload.hello_ack.he_calibration = he_backend_running();
     msg.payload.hello_ack.he_live = he_backend_running();
+    msg.payload.hello_ack.key_count = he_backend_key_count() == 3 ? 3 : 2;
 #else
+    msg.payload.hello_ack.key_count = 2;
     msg.payload.hello_ack.he_input = false;
     msg.payload.hello_ack.he_calibration = false;
 #endif
@@ -275,6 +299,8 @@ esp_err_t protocol_send_status(void)
     msg.payload.status.lifetime_key1 = snap.lifetime_key1;
     msg.payload.status.lifetime_key2 = snap.lifetime_key2;
     key_event_get_map_presses(&msg.payload.status.map_key1, &msg.payload.status.map_key2);
+    msg.payload.status.lifetime_key3 = snap.lifetime_key3;
+    msg.payload.status.map_key3 = key_event_get_map_key3();
 
     latency_stats_t lat;
     latency_stats_get(&lat);
@@ -300,6 +326,13 @@ esp_err_t protocol_send_status(void)
         msg.payload.status.he_calibration.key2_calibrated = cal1.valid;
         msg.payload.status.he_calibration.key2_rest = cal1.rest >= 0 ? (uint32_t)cal1.rest : 0;
         msg.payload.status.he_calibration.key2_full = cal1.full >= 0 ? (uint32_t)cal1.full : 0;
+        if (he_backend_key_count() == 3) {
+            he_calibration_t cal2 = {0};
+            he_cal_get(2, &cal2);
+            msg.payload.status.he_calibration.key3_calibrated = cal2.valid;
+            msg.payload.status.he_calibration.key3_rest = cal2.rest >= 0 ? (uint32_t)cal2.rest : 0;
+            msg.payload.status.he_calibration.key3_full = cal2.full >= 0 ? (uint32_t)cal2.full : 0;
+        }
         msg.payload.status.he_calibration.is_locked = he_backend_is_locked();
         msg.payload.status.he_calibration.is_calibrating = he_backend_is_calibrating();
         he_limits_t floors = he_backend_noise_floors();
@@ -381,7 +414,45 @@ static osupad_InputModule input_module_to_proto(board_module_type_t m)
     switch (m) {
     case BOARD_MODULE_MX: return osupad_InputModule_INPUT_MODULE_MX;
     case BOARD_MODULE_HE: return osupad_InputModule_INPUT_MODULE_HALL_EFFECT;
+    case BOARD_MODULE_HE_V3: return osupad_InputModule_INPUT_MODULE_HALL_EFFECT_V3;
+    case BOARD_MODULE_MX_V3: return osupad_InputModule_INPUT_MODULE_MX_V3;
     default:              return osupad_InputModule_INPUT_MODULE_NONE;
+    }
+}
+
+static void fill_he_adc(const he_adc_test_t *a, osupad_BoardTestResult *out)
+{
+    out->has_he_adc = true;
+    osupad_HeAdcTest *t = &out->he_adc;
+    t->ran = a->ran;
+    strncpy(t->message, a->message, sizeof(t->message) - 1);
+    t->sclk_hz = a->sclk_hz;
+    t->status_after_reset = a->status_after_reset;
+    t->status_after_clear = a->status_after_clear;
+    t->walk_writes = a->walk_writes;
+    t->walk_mismatches = a->walk_mismatches;
+    t->walk_wrong_bits = a->walk_wrong_bits;
+    t->cal_done = a->cal_done;
+    t->status_end = a->status_end;
+    for (int i = 0; i < a->speed_count && i < (int)(sizeof(t->speeds) / sizeof(t->speeds[0])); i++) {
+        t->speeds[i] = (osupad_HeAdcSpeed){
+            .sclk_hz = a->speeds[i].sclk_hz,
+            .frames = a->speeds[i].frames,
+            .errors = a->speeds[i].errors,
+        };
+        t->speeds_count++;
+    }
+    for (int i = 0; i < a->channel_count && i < (int)(sizeof(t->channels) / sizeof(t->channels[0])); i++) {
+        const he_adc_channel_t *c = &a->channels[i];
+        t->channels[i] = (osupad_HeAdcChannel){
+            .ain = c->ain,
+            .samples = c->samples,
+            .min = c->min,
+            .max = c->max,
+            .mean_x16 = c->mean_x16,
+            .noise_x100 = c->noise_x100,
+        };
+        t->channels_count++;
     }
 }
 
@@ -392,7 +463,7 @@ esp_err_t protocol_send_board_test(uint32_t seq, const char *refusal)
     msg.which_payload = osupad_DeviceToHost_board_test_tag;
     osupad_BoardTestResult *out = &msg.payload.board_test;
 
-    board_test_result_t r;
+    static board_test_result_t r;  // protocol task only; keeps ~250 bytes off its stack
     esp_err_t err = ESP_OK;
     if (refusal) {
         strncpy(out->message, refusal, sizeof(out->message) - 1);
@@ -415,6 +486,10 @@ esp_err_t protocol_send_board_test(uint32_t seq, const char *refusal)
         out->high_with_pullup = r.high_with_pullup;
         out->high_with_pulldown = r.high_with_pulldown;
         out->bridged_gpios = r.bridged_gpios;
+        out->cable_reversed = r.cable_reversed;
+        if (r.he_adc_present) {
+            fill_he_adc(&r.he_adc, out);
+        }
     }
     return send_envelope(&msg);
 }
@@ -603,7 +678,7 @@ static void handle_host_message(const osupad_HostToDevice *msg)
             const osupad_ConfigPayload *c = &msg->payload.set_config.config;
             device_config_data_t dcfg;
             device_config_get(&dcfg);
-            he_key_settings_t he_keys[2];
+            he_key_settings_t he_keys[HE_KEYS_MAX];
             device_config_get_he(he_keys);
 
             if (c->key1_hid_usage > 0) dcfg.key1_usage = c->key1_hid_usage;
@@ -631,55 +706,35 @@ static void handle_host_message(const osupad_HostToDevice *msg)
                 dcfg.swipe_mods[i] = (uint8_t)mods[i]; // HID modifiers are 8 bits
             }
 
-            if (c->has_key1_he) {
-                if (c->key1_he.actuation > 0) he_keys[0].actuation = (uint16_t)c->key1_he.actuation;
-                if (c->key1_he.release_hyst > 0) he_keys[0].release_hyst = (uint16_t)c->key1_he.release_hyst;
-                if (c->key1_he.top_reset > 0) he_keys[0].top_reset = (uint16_t)c->key1_he.top_reset;
-                if (c->key1_he.rt_press > 0) he_keys[0].rt_press = (uint16_t)c->key1_he.rt_press;
-                if (c->key1_he.rt_release > 0) he_keys[0].rt_release = (uint16_t)c->key1_he.rt_release;
-                if (c->key1_he.has_bottom_dead_zone) he_keys[0].bottom_dz = (uint16_t)c->key1_he.bottom_dead_zone;
-                if (c->key1_he.has_allow_below_noise_floor) he_keys[0].no_floor = c->key1_he.allow_below_noise_floor;
-                if (c->key1_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_OFF) {
-                    he_keys[0].rapid_trigger = false;
-                    he_keys[0].continuous = false;
-                } else if (c->key1_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_NORMAL) {
-                    he_keys[0].rapid_trigger = true;
-                    he_keys[0].continuous = false;
-                } else if (c->key1_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_CONTINUOUS) {
-                    he_keys[0].rapid_trigger = true;
-                    he_keys[0].continuous = true;
-                }
+            device_config_ext_t ext;
+            device_config_get_ext(&ext);
+            if (c->has_key3_hid_usage) {
+                // Out of range is left for validation to reject
+                ext.key3_usage = c->key3_hid_usage <= UINT8_MAX ? (uint8_t)c->key3_hid_usage : 1;
             }
-            if (c->has_key2_he) {
-                if (c->key2_he.actuation > 0) he_keys[1].actuation = (uint16_t)c->key2_he.actuation;
-                if (c->key2_he.release_hyst > 0) he_keys[1].release_hyst = (uint16_t)c->key2_he.release_hyst;
-                if (c->key2_he.top_reset > 0) he_keys[1].top_reset = (uint16_t)c->key2_he.top_reset;
-                if (c->key2_he.rt_press > 0) he_keys[1].rt_press = (uint16_t)c->key2_he.rt_press;
-                if (c->key2_he.rt_release > 0) he_keys[1].rt_release = (uint16_t)c->key2_he.rt_release;
-                if (c->key2_he.has_bottom_dead_zone) he_keys[1].bottom_dz = (uint16_t)c->key2_he.bottom_dead_zone;
-                if (c->key2_he.has_allow_below_noise_floor) he_keys[1].no_floor = c->key2_he.allow_below_noise_floor;
-                if (c->key2_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_OFF) {
-                    he_keys[1].rapid_trigger = false;
-                    he_keys[1].continuous = false;
-                } else if (c->key2_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_NORMAL) {
-                    he_keys[1].rapid_trigger = true;
-                    he_keys[1].continuous = false;
-                } else if (c->key2_he.rt_mode == osupad_HeRtMode_HE_RT_MODE_CONTINUOUS) {
-                    he_keys[1].rapid_trigger = true;
-                    he_keys[1].continuous = true;
-                }
+            if (c->has_game_keys) {
+                ext.game_keys = c->game_keys <= UINT8_MAX ? (uint8_t)c->game_keys : 0;
             }
+            if (c->has_key1_he) apply_he_settings(&he_keys[0], &c->key1_he);
+            if (c->has_key2_he) apply_he_settings(&he_keys[1], &c->key2_he);
+            if (c->has_key3_he) apply_he_settings(&he_keys[2], &c->key3_he);
+            const he_key_settings_t key3_pair[2] = {he_keys[2], he_keys[2]};
 
             char err_msg[64] = "";
             if (!device_config_validate(&dcfg, err_msg, sizeof(err_msg)) ||
-                !device_config_validate_he(he_keys, err_msg, sizeof(err_msg))) {
+                !device_config_validate_he(he_keys, err_msg, sizeof(err_msg)) ||
+                !device_config_validate_he(key3_pair, err_msg, sizeof(err_msg)) ||
+                !device_config_validate_ext(&ext, err_msg, sizeof(err_msg))) {
                 diag_record(DIAG_EVENT_CONFIG_REJECTED, 2 /* WARN */, 1, 0);
                 protocol_send_config_ack(msg->sequence_number, false, err_msg);
             } else {
                 // Two NVS records: both are applied, and the ack says which one did not save
                 esp_err_t err = device_config_set(&dcfg);
+                if (err == ESP_OK && (c->has_key3_hid_usage || c->has_game_keys)) {
+                    err = device_config_set_ext(&ext);
+                }
                 esp_err_t he_err = ESP_OK;
-                if (c->has_key1_he || c->has_key2_he) {
+                if (c->has_key1_he || c->has_key2_he || c->has_key3_he) {
                     he_err = device_config_set_he(he_keys);
                 }
                 if (err != ESP_OK || he_err != ESP_OK) {
@@ -1007,7 +1062,7 @@ bool protocol_he_live_active(void)
 
 void protocol_poll_he_live(void)
 {
-#ifdef CONFIG_OSUPAD_HE_BACKEND
+#ifdef OSUPAD_HE_INPUT
     if (s_live_until_us == 0) {
         return;
     }
@@ -1030,6 +1085,8 @@ void protocol_poll_he_live(void)
     msg.payload.he_live_sample.key2_raw = st.raw[1] > 0 ? (uint32_t)st.raw[1] : 0;
     msg.payload.he_live_sample.key1_down = key_event_is_down(KEY_ID_1);
     msg.payload.he_live_sample.key2_down = key_event_is_down(KEY_ID_2);
+    msg.payload.he_live_sample.key3_raw = st.raw[2] > 0 ? (uint32_t)st.raw[2] : 0;
+    msg.payload.he_live_sample.key3_down = key_event_is_down(KEY_ID_3);
     (void)send_envelope(&msg);  // a lost sample is replaced by the next one
 #endif
 }

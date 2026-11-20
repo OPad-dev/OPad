@@ -45,3 +45,22 @@
 // Connector pin 8: where a reversed cable puts the module's 3V3
 #define BOARD_REVERSE_PROBE_GPIO GPIO_NUM_2
 
+// -----------------------------------------------------------------------------
+// V3 carrier: 14-way FFC (hardware/pcb/V3/README.md, Cables, on hw/redesign).
+// The carrier's FFC contacts: 4 GPIO8, 5 GPIO6, 7 GPIO2, 8 GPIO4, 10 GPIO10,
+// 11 GPIO7. A turned-over cable joins module contact k to carrier contact
+// 15 - k, so the ID arrives on GPIO7 (ADC1_CH6) and every line moves.
+// -----------------------------------------------------------------------------
+#define BOARD_MODULE_ID_ALT_GPIO GPIO_NUM_7   // ADC1_CH6: ID on a turned-over V3 cable
+
+// HE V3: the module's ADS7028 (module contacts ID 4, MISO 5, SCLK 7, MOSI 8, CS 10)
+#define BOARD_HE3_MISO_GPIO      6
+#define BOARD_HE3_SCLK_GPIO      2
+#define BOARD_HE3_MOSI_GPIO      4
+#define BOARD_HE3_CS_GPIO        10
+// The same lines with the cable turned over
+#define BOARD_HE3_REV_MISO_GPIO  10
+#define BOARD_HE3_REV_SCLK_GPIO  4
+#define BOARD_HE3_REV_MOSI_GPIO  2
+#define BOARD_HE3_REV_CS_GPIO    6
+

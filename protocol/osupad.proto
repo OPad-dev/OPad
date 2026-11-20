@@ -77,6 +77,9 @@ message HelloAck {
     // (issue #8). False from firmware predating it, which ignores the flag and
     // shows keys per minute: the host then refuses layouts that use it.
     bool tap_rate_per_second = 18;
+    // Keys the pad reads now: 3 with a Hall Effect V3 module, else 2. 0 from
+    // firmware predating key 3, which a host reads as 2.
+    uint32 key_count = 19;
 }
 
 // Record a new owner in NVS (§W3-2). An NVS write, so the firmware must honour
@@ -106,6 +109,10 @@ message DeviceStatus {
     bool nvs_ok = 16;
     uint32 nvs_writes = 17;
     HeCalibrationStatus he_calibration = 18;
+    // Key 3 (Hall Effect V3): its own counters, not part of key 1/2's totals
+    // or reconciliation. 0 from firmware predating it.
+    uint64 lifetime_key3 = 19;
+    uint32 map_key3 = 20;
 }
 
 message HeCalibrationStatus {
@@ -124,6 +131,10 @@ message HeCalibrationStatus {
     // firmware predating them, whose release floor is the top reset depth.
     uint32 noise_floor_rest = 9;
     uint32 noise_floor_movement = 10;
+    // Key 3 (Hall Effect V3); false / 0 from firmware predating it
+    bool key3_calibrated = 11;
+    uint32 key3_rest = 12;
+    uint32 key3_full = 13;
 }
 
 // -----------------------------------------------------------------------------
@@ -162,6 +173,14 @@ message ConfigPayload {
     // Per-key Hall Effect settings. 0 = keep current
     HeKeySettings key1_he = 23;
     HeKeySettings key2_he = 24;
+    // Key 3 (Hall Effect V3). Absent = keep current; firmware predating them
+    // ignores these and leaves them out.
+    optional uint32 key3_hid_usage = 25;  // Default: 0x06 ('C'). 0 = sends nothing
+    HeKeySettings key3_he = 26;
+    // Keys whose presses count toward the total, tap rate and map stats: bit
+    // k = key k+1 (default 0x03, keys 1 and 2). Every key keeps its own
+    // lifetime counter. The pad also sends KeyPress only for these keys.
+    optional uint32 game_keys = 27;
 }
 
 // Rapid trigger mode on the wire. 0 is wire-only keep current.
@@ -398,12 +417,16 @@ message DetectPinResponse {
 // Board test (carrier + input module PCBs)
 // -----------------------------------------------------------------------------
 
-// Input module on the carrier's connector, from its ID voltage on GPIO8
+// Input module on the carrier's connector, from its ID voltage on GPIO8 (or
+// GPIO7 for a V3 module on a turned-over FFC). Hosts that predate a value
+// read it as UNKNOWN.
 enum InputModule {
     INPUT_MODULE_UNKNOWN = 0;
     INPUT_MODULE_NONE = 1;           // ID floating: no module, or a hand-wired pad
     INPUT_MODULE_MX = 2;             // 100k/10k divider, 0.30 V
     INPUT_MODULE_HALL_EFFECT = 3;    // 100k/47k divider, 1.06 V
+    INPUT_MODULE_HALL_EFFECT_V3 = 4; // 100k/100k, 1.65 V: ADS7028 over SPI, three keys
+    INPUT_MODULE_MX_V3 = 5;          // 47k/100k, 2.24 V: three keys
 }
 
 // Measurements only; the host turns them into pass/fail checks. Run in IDLE
@@ -425,6 +448,46 @@ message BoardTestResult {
     uint64 high_with_pullup = 12;    // read high with only the internal pull-up
     uint64 high_with_pulldown = 13;  // read high with only the internal pull-down
     uint64 bridged_gpios = 14;       // spare pins that follow a neighbour driven low
+    // A V3 module's ID came on GPIO7 at boot: its FFC is turned over. False
+    // on V1 boards and from firmware predating V3.
+    bool cable_reversed = 15;
+    // The ADC test of a Hall Effect V3 module. Absent with any other module
+    // and from firmware predating it.
+    HeAdcTest he_adc = 16;
+}
+
+// SCLK sweep with the ADC's fixed output pattern (0xA5A): how much margin the
+// module cable has
+message HeAdcSpeed {
+    uint32 sclk_hz = 1;
+    uint32 frames = 2;               // 0: the pad's pins cannot run this fast (not tried)
+    uint32 errors = 3;               // frames that did not read 0xA5A
+}
+
+// One sensor read in a burst, 12-bit codes (AVDD full scale)
+message HeAdcChannel {
+    uint32 ain = 1;                  // ADC input
+    uint32 samples = 2;
+    uint32 min = 3;
+    uint32 max = 4;
+    uint32 mean_x16 = 5;             // mean × 16
+    uint32 noise_x100 = 6;           // standard deviation × 100
+}
+
+// Hall Effect V3 module: its ADS7028 and sensors (firmware/main/diag/he_adc_test.h)
+message HeAdcTest {
+    bool ran = 1;                    // false: not run, see message
+    string message = 2;              // why not, or the step that failed
+    uint32 sclk_hz = 3;              // SCLK for everything but the sweep
+    sint32 status_after_reset = 4;   // SYSTEM_STATUS after a software reset, 0x81 expected. -1 = not read
+    sint32 status_after_clear = 5;   // after clearing BOR, 0x80 expected
+    uint32 walk_writes = 6;          // register write/read-back pairs
+    uint32 walk_mismatches = 7;
+    uint32 walk_wrong_bits = 8;      // bits that ever read back wrong
+    bool cal_done = 9;               // offset calibration finished
+    sint32 status_end = 10;          // SYSTEM_STATUS when done: BOR set again = a supply dip
+    repeated HeAdcSpeed speeds = 11;
+    repeated HeAdcChannel channels = 12;  // key 1, 2, 3
 }
 
 // -----------------------------------------------------------------------------
@@ -438,6 +501,7 @@ enum HeCalStage {
     HE_CAL_STAGE_KEY2 = 3;
     HE_CAL_STAGE_SUCCESS = 4;
     HE_CAL_STAGE_FAILED = 5;
+    HE_CAL_STAGE_KEY3 = 6;        // Hall Effect V3 only, after KEY2
 }
 
 // Values 1..8 match he_cal_error_t in firmware/main/input/he_cal_capture.h
@@ -463,7 +527,7 @@ enum HeCalError {
 // and lost frame samples use stage = FAILED, error = NONE, with error_message.
 message HeCalibrationProgress {
     HeCalStage stage = 1;
-    uint32 key_index = 2;         // 1 = Key 1, 2 = Key 2 (0 during rest/idle/complete)
+    uint32 key_index = 2;         // 1, 2 or 3 = the key being pressed (0 during rest/idle/complete)
     uint32 presses_done = 3;      // 0..5
     HeCalError error = 4;
     string error_message = 5;
@@ -474,6 +538,8 @@ message HeCalibrationProgress {
     uint32 key1_full = 8;         // Populated on HE_CAL_STAGE_SUCCESS
     uint32 key2_rest = 9;         // Populated on HE_CAL_STAGE_SUCCESS
     uint32 key2_full = 10;        // Populated on HE_CAL_STAGE_SUCCESS
+    uint32 key3_rest = 11;        // Populated on HE_CAL_STAGE_SUCCESS (Hall Effect V3)
+    uint32 key3_full = 12;
 }
 
 // One live reading per key, for the app's key view (he_live_view). Raw ADC
@@ -484,6 +550,8 @@ message HeLiveSample {
     uint32 key2_raw = 2;
     bool key1_down = 3;           // what the pad reports to the PC
     bool key2_down = 4;
+    uint32 key3_raw = 5;          // Hall Effect V3; 0 otherwise
+    bool key3_down = 6;
 }
 
 // -----------------------------------------------------------------------------

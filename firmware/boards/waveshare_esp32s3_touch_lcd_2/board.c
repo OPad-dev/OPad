@@ -9,6 +9,7 @@
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
+#include "input/module_id.h"
 
 static const char *TAG = "board";
 static uint8_t s_backlight_percent = 100;
@@ -20,6 +21,9 @@ static volatile gpio_num_t s_key2_gpio = GPIO_NUM_NC;
 static gpio_isr_t s_key_isr = NULL;
 // Set before keypad_init with an HE module: the key pins carry analog outputs
 static bool s_keys_analog = false;
+// Set before keypad_init with an HE V3 module: the key pins are its SPI lines,
+// driven by the SPI peripheral, so nothing here may touch them
+static bool s_keys_detached = false;
 
 // No pulls, no digital input, no interrupt: a sensor output resting near
 // mid-rail would otherwise fire an any-edge interrupt without end on core 0
@@ -36,10 +40,21 @@ void board_keys_set_analog(bool analog)
     s_keys_analog = analog;
 }
 
+void board_keys_set_detached(bool detached)
+{
+    s_keys_detached = detached;
+}
+
 esp_err_t board_keys_set_gpio(int key1_gpio, int key2_gpio)
 {
     if (key1_gpio == key2_gpio || !GPIO_IS_VALID_GPIO(key1_gpio) || !GPIO_IS_VALID_GPIO(key2_gpio)) {
         return ESP_ERR_INVALID_ARG;
+    }
+    if (s_keys_detached) {
+        // Record only: GPIO10 is the HE V3 module's CS (or MISO, cable turned over)
+        s_key1_gpio = (gpio_num_t)key1_gpio;
+        s_key2_gpio = (gpio_num_t)key2_gpio;
+        return ESP_OK;
     }
     if (s_keys_analog) {
         // Every config the host pushes comes through here, on each connect
@@ -175,8 +190,8 @@ esp_err_t board_keys_register_isr(gpio_isr_t isr_handler)
     if (s_key1_gpio == GPIO_NUM_NC || s_key2_gpio == GPIO_NUM_NC) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (s_keys_analog) {
-        s_key_isr = isr_handler; // kept, never attached to analog pins
+    if (s_keys_analog || s_keys_detached) {
+        s_key_isr = isr_handler; // kept, never attached to analog or SPI pins
         return ESP_OK;
     }
 
@@ -231,14 +246,34 @@ int board_get_key2_gpio(void)
     return s_key2_gpio;
 }
 
-// Average of 16 ADC1_CH7 conversions in mV (calibrated when the eFuse
-// calibration is present, otherwise a linear estimate), -1 on error
-static int read_module_id_mv(adc_oneshot_unit_handle_t adc, adc_cali_handle_t cali)
+// The ID pin: GPIO8 (ADC1_CH7), or GPIO7 (ADC1_CH6) once board_detect_module
+// found a V3 module's ID there (FFC turned over)
+static gpio_num_t s_id_gpio = BOARD_MODULE_ID_GPIO;
+static bool s_boot_cable_reversed = false;
+
+static adc_channel_t id_channel(gpio_num_t gpio)
+{
+    return gpio == BOARD_MODULE_ID_ALT_GPIO ? ADC_CHANNEL_6 : ADC_CHANNEL_7;
+}
+
+int board_module_id_gpio(void)
+{
+    return s_id_gpio;
+}
+
+bool board_boot_cable_reversed(void)
+{
+    return s_boot_cable_reversed;
+}
+
+// Average of 16 conversions in mV (calibrated when the eFuse calibration is
+// present, otherwise a linear estimate), -1 on error
+static int read_module_id_mv(adc_oneshot_unit_handle_t adc, adc_cali_handle_t cali, adc_channel_t chan)
 {
     int32_t sum = 0;
     for (int i = 0; i < 16; i++) {
         int raw = 0;
-        if (adc_oneshot_read(adc, ADC_CHANNEL_7, &raw) != ESP_OK) {
+        if (adc_oneshot_read(adc, chan, &raw) != ESP_OK) {
             return -1;
         }
         sum += raw;
@@ -297,8 +332,11 @@ static esp_err_t module_id_adc_open(module_id_adc_t *m)
         .atten = ADC_ATTEN_DB_12,
         .bitwidth = ADC_BITWIDTH_12,
     };
+    // Both ID pins; configuring a channel leaves its pad's pulls alone
     adc_oneshot_config_channel(m->adc, ADC_CHANNEL_7, &chan_cfg);
+    adc_oneshot_config_channel(m->adc, ADC_CHANNEL_6, &chan_cfg);
 
+    // The S3's curve fitting is per unit and attenuation, not per channel
     adc_cali_curve_fitting_config_t cali_cfg = {
         .unit_id = ADC_UNIT_1,
         .chan = ADC_CHANNEL_7,
@@ -313,13 +351,13 @@ static esp_err_t module_id_adc_open(module_id_adc_t *m)
     return ESP_OK;
 }
 
-// Done with ID for now: the unit stays open, ID keeps its pull-down (a
+// Done with ID for now: the unit stays open, the pin keeps its pull-down (a
 // floating pin then reads ~0 V, ready for board_module_present_fast)
-static void module_id_adc_close(module_id_adc_t *m)
+static void module_id_adc_close(module_id_adc_t *m, gpio_num_t gpio)
 {
     (void)m;
-    gpio_pullup_dis(BOARD_MODULE_ID_GPIO);
-    gpio_pulldown_en(BOARD_MODULE_ID_GPIO);
+    gpio_pullup_dis(gpio);
+    gpio_pulldown_en(gpio);
     xSemaphoreGive(s_module_id_lock);
 }
 
@@ -331,17 +369,11 @@ void board_module_id_release(void)
             adc_cali_delete_scheme_curve_fitting(s_module_id_adc.cali);
         }
         adc_oneshot_del_unit(s_module_id_adc.adc);
-        gpio_reset_pin(BOARD_MODULE_ID_GPIO);
+        gpio_reset_pin(s_id_gpio);
         s_module_id_adc_open = false;
     }
     xSemaphoreGive(s_module_id_lock);
 }
-
-// A floating ID with its pull-down reads ~0 V; either module's divider holds
-// it well above: 0.25 V (MX) or 0.6 V (HE) on paper, but an MX pad measured
-// 140-180 mV with dips to 90 mV, so the line sits at 60 mV
-// (board_module_from_id uses the same)
-#define MODULE_PRESENT_MIN_MV 60
 
 esp_err_t board_module_present_fast(bool *out_present, int *out_mv)
 {
@@ -350,15 +382,16 @@ esp_err_t board_module_present_fast(bool *out_present, int *out_mv)
     if (err != ESP_OK) {
         return err;
     }
-    gpio_pullup_dis(BOARD_MODULE_ID_GPIO);
-    gpio_pulldown_en(BOARD_MODULE_ID_GPIO);  // already on after a read; settles in microseconds
+    gpio_num_t gpio = s_id_gpio;
+    gpio_pullup_dis(gpio);
+    gpio_pulldown_en(gpio);  // already on after a read; settles in microseconds
     esp_rom_delay_us(20);
     int raw = 0;
-    err = adc_oneshot_read(m.adc, ADC_CHANNEL_7, &raw);
-    module_id_adc_close(&m);
+    err = adc_oneshot_read(m.adc, id_channel(gpio), &raw);
+    module_id_adc_close(&m, gpio);
     if (err == ESP_OK) {
         int mv = raw * 3100 / 4095;  // linear is plenty here
-        *out_present = mv >= MODULE_PRESENT_MIN_MV;
+        *out_present = mv >= MODULE_ID_PRESENT_MIN_MV;
         if (out_mv) {
             *out_mv = mv;
         }
@@ -367,41 +400,50 @@ esp_err_t board_module_present_fast(bool *out_present, int *out_mv)
 }
 
 /*
- * The module on the JST connector identifies itself with a divider from 3V3
- * to GND on ID (GPIO8): 100k/10k = 0.30 V for MX, 100k/47k = 1.06 V for Hall
- * Effect (hardware/pcb/V1/README.md). With nothing plugged in, ID floats.
+ * The module on the connector identifies itself with a divider from 3V3 to
+ * GND on ID (input/module_id.h has the table). With nothing plugged in, ID
+ * floats.
  *
  * Two reads: with the internal pull-down on, a floating pin sits at ~0 V while
- * either divider still holds it well above (0.25 V / 0.6 V); that only tells
- * "something is there". The voltage that identifies the module is read with
- * the pull-down off, since its ~45k would load the 32k-source HE divider down
- * to where it looks like MX.
+ * every divider still holds it well above; that only tells "something is
+ * there". The voltage that identifies the module is read with the pull-down
+ * off, since its ~45k would load the 32k-source HE divider down to where it
+ * looks like MX.
  */
-esp_err_t board_read_module_id(int *out_open_mv, int *out_loaded_mv)
+esp_err_t board_read_module_id_on(int gpio_num, int *out_open_mv, int *out_loaded_mv)
 {
+    gpio_num_t gpio = (gpio_num_t)gpio_num;
+    if (gpio != BOARD_MODULE_ID_GPIO && gpio != BOARD_MODULE_ID_ALT_GPIO) {
+        return ESP_ERR_INVALID_ARG;
+    }
     module_id_adc_t m;
     esp_err_t err = module_id_adc_open(&m);
     if (err != ESP_OK) {
         return err;
     }
-    // oneshot_config_channel leaves the pad's pulls alone
-    gpio_pulldown_en(BOARD_MODULE_ID_GPIO);
-    gpio_pullup_dis(BOARD_MODULE_ID_GPIO);
+    adc_channel_t chan = id_channel(gpio);
+    gpio_pulldown_en(gpio);
+    gpio_pullup_dis(gpio);
     vTaskDelay(pdMS_TO_TICKS(2) ? pdMS_TO_TICKS(2) : 1);
-    int loaded_mv = read_module_id_mv(m.adc, m.cali);
+    int loaded_mv = read_module_id_mv(m.adc, m.cali, chan);
 
-    gpio_pulldown_dis(BOARD_MODULE_ID_GPIO);
+    gpio_pulldown_dis(gpio);
     vTaskDelay(pdMS_TO_TICKS(2) ? pdMS_TO_TICKS(2) : 1);
-    int open_mv = read_module_id_mv(m.adc, m.cali);
-    module_id_adc_close(&m);
+    int open_mv = read_module_id_mv(m.adc, m.cali, chan);
+    module_id_adc_close(&m, gpio);
 
     *out_open_mv = open_mv;
     *out_loaded_mv = loaded_mv;
     return (open_mv < 0 || loaded_mv < 0) ? ESP_FAIL : ESP_OK;
 }
 
+esp_err_t board_read_module_id(int *out_open_mv, int *out_loaded_mv)
+{
+    return board_read_module_id_on(s_id_gpio, out_open_mv, out_loaded_mv);
+}
+
 /*
- * A cable that swaps pin 1 <-> 8 puts the module's 3V3 on GPIO2 and its IN2
+ * A V1 cable that swaps pin 1 <-> 8 puts the module's 3V3 on GPIO2 and its IN2
  * line (10k pull-up to that 3V3, on an MX module) on ID. Unpowered, the module
  * then reads as nothing at all. Pulling GPIO2 up powers that pull-up through
  * ~45k, so ID climbs to ~1.5 V against its pull-down, while with the cable the
@@ -415,13 +457,14 @@ esp_err_t board_probe_reversed_cable(int *out_mv)
     if (err != ESP_OK) {
         return err;
     }
+    gpio_num_t gpio = s_id_gpio;
     gpio_set_direction(BOARD_REVERSE_PROBE_GPIO, GPIO_MODE_INPUT);
     gpio_set_pull_mode(BOARD_REVERSE_PROBE_GPIO, GPIO_PULLUP_ONLY);
-    gpio_pulldown_en(BOARD_MODULE_ID_GPIO);
-    gpio_pullup_dis(BOARD_MODULE_ID_GPIO);
+    gpio_pulldown_en(gpio);
+    gpio_pullup_dis(gpio);
     esp_rom_delay_us(5000);
-    int mv = read_module_id_mv(m.adc, m.cali);
-    module_id_adc_close(&m);
+    int mv = read_module_id_mv(m.adc, m.cali, id_channel(gpio));
+    module_id_adc_close(&m, gpio);
     gpio_reset_pin(BOARD_REVERSE_PROBE_GPIO);
 
     *out_mv = mv;
@@ -430,14 +473,18 @@ esp_err_t board_probe_reversed_cable(int *out_mv)
 
 board_module_type_t board_module_from_id(int open_mv, int loaded_mv)
 {
-    if (loaded_mv < 0 || open_mv < 0 || loaded_mv < MODULE_PRESENT_MIN_MV) {
-        return BOARD_MODULE_NONE;          // floating, or unreadable
-    } else if (open_mv < 650) {
-        return BOARD_MODULE_MX;            // 0.30 V
-    } else if (open_mv < 1600) {
-        return BOARD_MODULE_HE;            // 1.06 V
+    return (board_module_type_t)module_id_classify(open_mv, loaded_mv);
+}
+
+static const char *module_name(board_module_type_t m)
+{
+    switch (m) {
+    case BOARD_MODULE_MX:    return "MX";
+    case BOARD_MODULE_HE:    return "Hall Effect";
+    case BOARD_MODULE_HE_V3: return "Hall Effect V3";
+    case BOARD_MODULE_MX_V3: return "MX V3";
+    default:                 return "none";
     }
-    return BOARD_MODULE_NONE;              // no known module sits up here
 }
 
 static board_module_type_t s_boot_module = BOARD_MODULE_NONE;
@@ -446,15 +493,35 @@ board_module_type_t board_detect_module(void)
 {
     int open_mv = -1;
     int loaded_mv = -1;
-    esp_err_t err = board_read_module_id(&open_mv, &loaded_mv);
+    esp_err_t err = board_read_module_id_on(BOARD_MODULE_ID_GPIO, &open_mv, &loaded_mv);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Module ID: read failed (%s), assuming no module", esp_err_to_name(err));
     }
     board_module_type_t result = board_module_from_id(open_mv, loaded_mv);
 
     ESP_LOGI(TAG, "Module ID: %d mV (%d mV with pull-down) -> %s", open_mv, loaded_mv,
-             result == BOARD_MODULE_MX ? "MX" :
-             result == BOARD_MODULE_HE ? "Hall Effect" : "none");
+             module_name(result));
+
+    if (err == ESP_OK && result == BOARD_MODULE_NONE && loaded_mv < MODULE_ID_PRESENT_MIN_MV) {
+        // Nothing on GPIO8: a V3 module on a turned-over FFC has its ID on GPIO7
+        int alt_open = -1;
+        int alt_loaded = -1;
+        if (board_read_module_id_on(BOARD_MODULE_ID_ALT_GPIO, &alt_open, &alt_loaded) == ESP_OK) {
+            board_module_type_t alt = board_module_from_id(alt_open, alt_loaded);
+            if (module_id_is_v3((module_id_t)alt)) {
+                ESP_LOGW(TAG, "Module ID on GPIO7: %d mV (%d mV with pull-down) -> %s, "
+                         "cable turned over", alt_open, alt_loaded, module_name(alt));
+                gpio_reset_pin(BOARD_MODULE_ID_GPIO);
+                s_id_gpio = BOARD_MODULE_ID_ALT_GPIO;
+                s_boot_cable_reversed = true;
+                result = alt;
+            }
+        }
+        if (!s_boot_cable_reversed) {
+            // GPIO7 is a key pin on V1 and hand-wired pads: hand it back
+            gpio_reset_pin(BOARD_MODULE_ID_ALT_GPIO);
+        }
+    }
     s_boot_module = result;
     return result;
 }

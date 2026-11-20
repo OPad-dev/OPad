@@ -30,7 +30,7 @@ PB_BIND(osupad_HeKeySettings, osupad_HeKeySettings, AUTO)
 PB_BIND(osupad_SetConfig, osupad_SetConfig, AUTO)
 
 
-PB_BIND(osupad_ConfigAck, osupad_ConfigAck, AUTO)
+PB_BIND(osupad_ConfigAck, osupad_ConfigAck, 2)
 
 
 PB_BIND(osupad_TimeSync, osupad_TimeSync, AUTO)
@@ -87,7 +87,16 @@ PB_BIND(osupad_DetectPinRequest, osupad_DetectPinRequest, AUTO)
 PB_BIND(osupad_DetectPinResponse, osupad_DetectPinResponse, AUTO)
 
 
-PB_BIND(osupad_BoardTestResult, osupad_BoardTestResult, AUTO)
+PB_BIND(osupad_BoardTestResult, osupad_BoardTestResult, 2)
+
+
+PB_BIND(osupad_HeAdcSpeed, osupad_HeAdcSpeed, AUTO)
+
+
+PB_BIND(osupad_HeAdcChannel, osupad_HeAdcChannel, AUTO)
+
+
+PB_BIND(osupad_HeAdcTest, osupad_HeAdcTest, AUTO)
 
 
 PB_BIND(osupad_HeCalibrationProgress, osupad_HeCalibrationProgress, AUTO)

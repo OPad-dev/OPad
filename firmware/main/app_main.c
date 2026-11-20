@@ -107,14 +107,30 @@ void app_main(void)
 
     // 1. Load device configuration from NVS (or fall back to defaults) (NON-FATAL)
     device_config_init();
-    he_cal_init();
     device_config_data_t dev_cfg;
     device_config_get(&dev_cfg);
 
     // 1b. Which input module is on the carrier's connector (ID divider on GPIO8).
     // Hand-wired pads read as none and keep their configured pins.
     board_module_type_t module = board_detect_module();
-    if (module == BOARD_MODULE_MX &&
+    // Each module generation keeps its own HE calibration
+    if (module == BOARD_MODULE_HE_V3) {
+        he_cal_use_v3_store();
+    }
+    he_cal_init();
+#ifdef CONFIG_OSUPAD_HE_V3
+    bool he_v3 = module == BOARD_MODULE_HE_V3;
+#else
+    bool he_v3 = false;
+#endif
+    // An MX V3 module on a cable the right way round has its keys 1 and 2 on
+    // MX V1's pins; key 3 (GPIO6) is not read yet
+    bool mx_pins = module == BOARD_MODULE_MX ||
+                   (module == BOARD_MODULE_MX_V3 && !board_boot_cable_reversed());
+    // Modules this firmware cannot read keys from: their lines stay off
+    bool keys_unsupported = (module == BOARD_MODULE_HE_V3 && !he_v3) ||
+                            (module == BOARD_MODULE_MX_V3 && !mx_pins);
+    if (mx_pins &&
         dev_cfg.key1_gpio == DEVICE_CONFIG_DEFAULT_KEY1_GPIO &&
         dev_cfg.key2_gpio == DEVICE_CONFIG_DEFAULT_KEY2_GPIO) {
         // The carrier routes the MX keys to GPIO10/GPIO7; the defaults are the
@@ -130,6 +146,13 @@ void app_main(void)
 #else
         ESP_LOGW(TAG, "Hall Effect module: needs firmware v2, key input disabled");
 #endif
+    } else if (he_v3) {
+        ESP_LOGW(TAG, "Hall Effect V3 module%s: keys 1 and 2 from its ADC over SPI",
+                 board_boot_cable_reversed() ? " on a turned-over cable" : "");
+    } else if (keys_unsupported) {
+        ESP_LOGW(TAG, "%s module%s: no key input in this firmware yet (board test only)",
+                 module == BOARD_MODULE_HE_V3 ? "Hall Effect V3" : "MX V3",
+                 board_boot_cable_reversed() ? " on a turned-over cable" : "");
     }
 
     keypad_config_t k_cfg = {
@@ -142,11 +165,15 @@ void app_main(void)
 
     // 2. Initialize Keypad: switch GPIOs, usages and debouncing (FATAL if fails)
     key_event_init();
-    if (module == BOARD_MODULE_HE) {
+    if (module == BOARD_MODULE_HE || keys_unsupported) {
         // Before the ISR is armed: Hall sensors drive analog levels on the key
-        // pins, so they stay analog and no host config re-arms them
+        // pins (HE V3: SPI lines), so they stay off and no host config re-arms them
         keypad_set_input_enabled(false);
         board_keys_set_analog(true);
+    } else if (he_v3) {
+        // The key pins are the module's SPI lines: the keypad never touches them
+        keypad_set_input_enabled(false);
+        board_keys_set_detached(true);
     }
     ESP_ERROR_CHECK(keypad_init(&k_cfg));
     keypad_config_t armed;
@@ -220,12 +247,20 @@ void app_main(void)
         // After TinyUSB: reports before the host configures USB are not delivered.
         // The module ID read at boot left its oneshot unit open: ADC1 is HE's now
         board_module_id_release();
-        err = he_backend_start();
+        err = he_backend_start(HE_SOURCE_ESP_ADC);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "he_backend_start failed: %s (keys stay off)", esp_err_to_name(err));
         }
     }
 #endif
+    if (he_v3) {
+        // After TinyUSB, as V1. ADC1 stays with the module monitor's ID reads:
+        // the keys come over SPI
+        err = he_backend_start(HE_SOURCE_ADS7028);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "he_backend_start failed: %s (keys stay off)", esp_err_to_name(err));
+        }
+    }
 
 #ifdef CONFIG_OSUPAD_HALL_BENCH
     err = hall_bench_start();
@@ -259,12 +294,16 @@ void app_main(void)
         ESP_LOGE(TAG, "ui_init failed: %s (continuing in headless mode)", esp_err_to_name(err));
     } else if (module == BOARD_MODULE_HE && !he_backend_running()) {
         ui_show_notice("Hall Effect module needs firmware v2.\nKeys are disabled.");
+    } else if (keys_unsupported) {
+        ui_show_notice(module == BOARD_MODULE_HE_V3
+                           ? "Hall Effect V3 module.\nThis firmware cannot read its keys."
+                           : "MX V3 module on a turned-over cable.\nThis firmware cannot read its keys.");
     }
     // HE debug firmware only, and after the display: its draw buffers need
     // DMA-capable internal RAM that the debug task would otherwise take first
     if (he_backend_running()) {
         he_debug_start();
-    } else if (module != BOARD_MODULE_HE) {
+    } else if (module != BOARD_MODULE_HE && !keys_unsupported && !he_v3) {
         mx_debug_start();
     }
 #ifdef CONFIG_OSUPAD_HALL_BENCH
@@ -293,7 +332,7 @@ void app_main(void)
     // Not on an MX pad: its ID is read once, at boot, and ADC1 is let go, so
     // nothing samples next to the key pins (GPIO8 sits between GPIO7 and
     // GPIO10) or can turn the keys off mid-map. Swap modules with USB out
-    if (module == BOARD_MODULE_MX) {
+    if (mx_pins) {
         board_module_id_release();
     } else {
         err = module_monitor_start();

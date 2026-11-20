@@ -266,6 +266,12 @@ so the thresholds and advice can change without a firmware update.
 | `key1_gpio`, `key2_gpio`, `keys_enabled` | The key pins tested, and whether key input is on (off with a Hall Effect module on v1) |
 | `tested_gpios`, `high_with_pullup`, `high_with_pulldown` | GPIO bitmasks (bit n = GPIOn). Key lines: low with the pull-up = held or shorted to GND; high with the pull-down = the MX module's 10 kΩ pull-up reaches the pin. Spare lines (GPIO6/4/2, connector pins 6–8, only with a module answering): each must follow its own pull |
 | `bridged_gpios` | Spare-line neighbours that follow each other: one is driven low (only after both passed alone) and the other, pulled up, reads low |
+| `cable_reversed` | A V3 module's ID came on GPIO7 at boot: its 14-way FFC is turned over (contact k to 15 − k), and the pad uses the swapped pins (`board_pins.h`) |
+| `he_adc` | `HeAdcTest`, only with a Hall Effect V3 module (`firmware/main/diag/he_adc_test.c`): `SYSTEM_STATUS` after a software reset (0x81) and after clearing BOR (0x80), a write/read-back walk over `AUTO_SEQ_CH_SEL` (`walk_writes`, `walk_mismatches`, `walk_wrong_bits`), offset calibration (`cal_done`), the fixed 0xA5A pattern at 1–40 MHz SCLK (`speeds`: frames and errors; 0 frames = the pins cannot run that fast), each key's sensor (`channels`: AIN, 256 samples, min, max, mean × 16, standard deviation × 100, in 12-bit codes) and `SYSTEM_STATUS` at the end (BOR again = a supply dip). Status fields are -1 when not read |
+
+`InputModule` gained `INPUT_MODULE_HALL_EFFECT_V3` (4, ID 1.65 V) and
+`INPUT_MODULE_MX_V3` (5, ID 2.24 V). Firmware reads the ID on GPIO8, and on
+GPIO7 when GPIO8 shows nothing (`firmware/main/input/module_id.h`).
 
 The test takes about 30 ms on the protocol task. Key edges are ignored for
 about 1 ms while the key pins are on pull-downs. The keypad task runs that part
@@ -276,7 +282,10 @@ outside IDLE.
 Compatibility: firmware predating the test reads field 16 as an unknown
 payload and does not answer; it also leaves `HelloAck.board_test` false, so the
 daemon refuses the request with "update the firmware" instead of waiting.
-Older hosts never send field 16 and skip field 10.
+Older hosts never send field 16 and skip field 10. Hosts that predate V3 skip
+`cable_reversed` and `he_adc` and read the new `InputModule` values as unknown;
+firmware that predates V3 sends neither, and the host then names a V3 module
+from its ID voltage alone and asks for a firmware update.
 
 ### `PlayAnimation` (HostToDevice field 17) and `HelloAck.builtin_animations` (field 13)
 

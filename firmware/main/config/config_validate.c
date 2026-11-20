@@ -131,6 +131,23 @@ bool device_config_blob_layout_ok(size_t len, uint32_t version)
            (len == DEVICE_CONFIG_V1_SIZE && version == 1);
 }
 
+bool device_config_validate_ext(const device_config_ext_t *ext, char *err_msg, size_t err_msg_len)
+{
+    if (!ext) {
+        if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "null ext settings");
+        return false;
+    }
+    if (ext->key3_usage != 0 && (ext->key3_usage < 0x04 || ext->key3_usage > 0xE7)) {
+        if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "invalid key3 usage 0x%02x", ext->key3_usage);
+        return false;
+    }
+    if (ext->game_keys == 0 || ext->game_keys > 0x07) {
+        if (err_msg && err_msg_len) snprintf(err_msg, err_msg_len, "invalid game keys 0x%02x", ext->game_keys);
+        return false;
+    }
+    return true;
+}
+
 bool device_config_validate_he(const he_key_settings_t in[2], char *err_msg, size_t err_msg_len)
 {
     if (!in) {

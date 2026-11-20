@@ -248,6 +248,7 @@ async fn test_daemon_connection_states_and_reconnect() {
 
     // ESP connects
     let dev_info = DeviceInfo {
+        key_count: 2,
         device_id: "OSUPAD-TEST01".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -486,6 +487,7 @@ async fn test_playing_cooldown_sync_idle_exactly_one_sync() {
 async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
     let storage = Storage::open_in_memory().unwrap();
     let dev_info = DeviceInfo {
+        key_count: 2,
         device_id: "OSUPAD-SAFE".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -542,6 +544,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
 
             he_calibration: None,
             latest_he_progress: None,
+            key3: None,
         }));
 
         // Set storage writes blocked guard
@@ -710,6 +713,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
 #[tokio::test]
 async fn test_reconcile_and_replacement_scenarios() {
     let dev_info = DeviceInfo {
+        key_count: 2,
         device_id: "OSUPAD-RECON".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -773,6 +777,7 @@ async fn test_reconcile_and_replacement_scenarios() {
 
             he_calibration: None,
             latest_he_progress: None,
+            key3: None,
         }));
 
         let res = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
@@ -835,6 +840,7 @@ async fn test_reconcile_and_replacement_scenarios() {
 
             he_calibration: None,
             latest_he_progress: None,
+            key3: None,
         }));
 
         let res = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
@@ -866,6 +872,7 @@ async fn test_reconcile_and_replacement_scenarios() {
         );
 
         let new_pad_info = DeviceInfo {
+            key_count: 2,
             device_id: "OSUPAD-NEW".to_string(),
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),
@@ -893,6 +900,7 @@ async fn test_reconcile_and_replacement_scenarios() {
 async fn test_device_rejects_sync_retries_and_surfaces_error() {
     let storage = Storage::open_in_memory().unwrap();
     let dev_info = DeviceInfo {
+        key_count: 2,
         device_id: "OSUPAD-RETRY".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -948,6 +956,7 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
 
         he_calibration: None,
         latest_he_progress: None,
+        key3: None,
     }));
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
@@ -969,6 +978,7 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
 async fn a_non_monotonic_rejection_is_retried_with_the_pads_current_counters() {
     let storage = Storage::open_in_memory().unwrap();
     let dev_info = DeviceInfo {
+        key_count: 2,
         device_id: "OSUPAD-RACE".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -1026,6 +1036,7 @@ async fn a_non_monotonic_rejection_is_retried_with_the_pads_current_counters() {
 
         he_calibration: None,
         latest_he_progress: None,
+        key3: None,
     }));
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
@@ -1047,6 +1058,7 @@ async fn test_json_validation_preview_and_confirm() {
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
     let dev_info = DeviceInfo {
+        key_count: 2,
         device_id: "OSUPAD-JSON".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -1093,6 +1105,7 @@ async fn test_json_validation_preview_and_confirm() {
 
         he_calibration: None,
         latest_he_progress: None,
+        key3: None,
     }));
 
     // 1. Preview with counter rollback & generation bump warnings
@@ -1204,6 +1217,7 @@ async fn test_ipc_handshake_mismatch_and_protocol_version() {
 
         he_calibration: None,
         latest_he_progress: None,
+        key3: None,
     }));
 
     // Protocol mismatch rejected
@@ -1320,6 +1334,7 @@ async fn test_install_update_is_refused_outside_idle() {
 
             he_calibration: None,
             latest_he_progress: None,
+            key3: None,
         }));
 
         let resp = handle_ipc_request(
@@ -1378,6 +1393,7 @@ async fn test_firmware_is_not_an_enableable_updater() {
 
         he_calibration: None,
         latest_he_progress: None,
+        key3: None,
     }));
 
     let resp = handle_ipc_request(
@@ -1491,6 +1507,7 @@ async fn test_queue_does_not_block_without_device() {
 
 fn pad_info(id: &str) -> DeviceInfo {
     DeviceInfo {
+        key_count: 2,
         device_id: id.to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -1736,6 +1753,7 @@ async fn test_perform_sync_leaves_write_guard_to_runtime() {
 async fn test_replug_during_play_keeps_the_state_machine_and_write_guard() {
     let now = Instant::now();
     let dev_info = DeviceInfo {
+        key_count: 2,
         device_id: "OSUPAD-HOTPLUG".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -1856,6 +1874,7 @@ fn ownership_controller(install_id: Option<&str>, known: Vec<String>) -> Runtime
 
 fn pad(device_id: &str) -> DeviceInfo {
     DeviceInfo {
+        key_count: 2,
         device_id: device_id.to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -2193,6 +2212,7 @@ type IpcFixture = (
 
 fn firmware_update_fixture(mode: RuntimeMode, connected: bool) -> IpcFixture {
     let dev_info = DeviceInfo {
+        key_count: 2,
         device_id: "OSUPAD-FW".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -2242,6 +2262,7 @@ fn firmware_update_fixture(mode: RuntimeMode, connected: bool) -> IpcFixture {
 
         he_calibration: None,
         latest_he_progress: None,
+        key3: None,
     }));
 
     (
@@ -2734,6 +2755,7 @@ async fn a_failed_post_play_sync_still_gets_a_backup() {
 #[tokio::test]
 async fn test_device_connected_with_config_adopts_device_config() {
     let dev_info = DeviceInfo {
+        key_count: 2,
         device_id: "OSUPAD-CONFIG-TEST".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
@@ -3461,6 +3483,7 @@ async fn a_counter_reset_while_disconnected_survives_the_next_connect() {
         let log_hub = LogHub::new();
         let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
         let info = DeviceInfo {
+            key_count: 2,
             device_id: "OSUPAD-RESET".to_string(),
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),
@@ -3564,6 +3587,7 @@ async fn a_queued_counter_reset_is_kept_for_its_own_pad() {
     let daemon_state = Arc::new(Mutex::new(idle_state(
         true,
         Some(DeviceInfo {
+            key_count: 2,
             device_id: other.device_id.clone(),
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),
@@ -3618,6 +3642,7 @@ fn idle_state(
 
         he_calibration: None,
         latest_he_progress: None,
+        key3: None,
     }
 }
 
@@ -3999,6 +4024,7 @@ fn uncalibrated_he_pad_launches_gui_calibration_once() {
     // 1. Status with locked calibration triggers LaunchGuiCalibration
     let actions = controller.on_event(
         RuntimeEvent::DeviceStatus {
+            key3: opad_model::Key3Counters::default(),
             latency: opad_model::LatencyStats::default(),
             he_calibration: Some(opad_model::HeCalibrationStatus {
                 key1_calibrated: false,
@@ -4016,6 +4042,7 @@ fn uncalibrated_he_pad_launches_gui_calibration_once() {
     // 2. Subsequent status does not trigger LaunchGuiCalibration again
     let actions2 = controller.on_event(
         RuntimeEvent::DeviceStatus {
+            key3: opad_model::Key3Counters::default(),
             latency: opad_model::LatencyStats::default(),
             he_calibration: Some(opad_model::HeCalibrationStatus {
                 key1_calibrated: false,
@@ -4049,6 +4076,7 @@ fn calibrated_he_and_mx_pads_do_not_launch_gui_calibration() {
 
     let actions = controller.on_event(
         RuntimeEvent::DeviceStatus {
+            key3: opad_model::Key3Counters::default(),
             latency: opad_model::LatencyStats::default(),
             he_calibration: Some(opad_model::HeCalibrationStatus {
                 key1_calibrated: true,
@@ -4072,6 +4100,7 @@ fn calibrated_he_and_mx_pads_do_not_launch_gui_calibration() {
         .he_calibration = false;
     let actions_mx = controller.on_event(
         RuntimeEvent::DeviceStatus {
+            key3: opad_model::Key3Counters::default(),
             latency: opad_model::LatencyStats::default(),
             he_calibration: None,
         },
@@ -4097,6 +4126,7 @@ fn pre_calibration_firmware_status_does_not_launch_or_offer_calibration() {
     );
     let actions = controller.on_event(
         RuntimeEvent::DeviceStatus {
+            key3: opad_model::Key3Counters::default(),
             latency: opad_model::LatencyStats::default(),
             he_calibration: Some(opad_model::HeCalibrationStatus {
                 key1_calibrated: false,
@@ -4121,6 +4151,7 @@ fn reconnect_allows_one_new_calibration_launch_and_clears_progress() {
         for repeat in 0..3 {
             let actions = controller.on_event(
                 RuntimeEvent::DeviceStatus {
+                    key3: opad_model::Key3Counters::default(),
                     latency: Default::default(),
                     he_calibration: Some(opad_model::HeCalibrationStatus {
                         is_locked: true,

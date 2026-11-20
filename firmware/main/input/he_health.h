@@ -20,6 +20,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "input/he_params.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,9 +35,10 @@ extern "C" {
 
 typedef struct {
     int64_t last_frame_us;
-    int64_t last_valid_us[2];
-    bool    key_faulted[2];
-    int64_t fault_since_us[2];
+    uint8_t keys;                    // keys watched: 2 (V1, he_health_init) or 3 (V3)
+    int64_t last_valid_us[HE_KEYS_MAX];
+    bool    key_faulted[HE_KEYS_MAX];
+    int64_t fault_since_us[HE_KEYS_MAX];
 
     bool    adc_ok;
     int64_t backoff_us;
@@ -46,14 +48,16 @@ typedef struct {
 
 typedef struct {
     bool adc_stalled;
-    bool key_fault_started[2];
-    bool key_fault_cleared[2];
+    bool key_fault_started[HE_KEYS_MAX];
+    bool key_fault_cleared[HE_KEYS_MAX];
 } he_health_check_result_t;
 
 /**
  * Initialize health state machine.
  */
 void he_health_init(he_health_t *h, int64_t now);
+/** Watch this many keys (2 or 3; after he_health_init, which sets 2). */
+void he_health_set_keys(he_health_t *h, uint8_t keys);
 
 /**
  * Resync health: marks all readings fresh from now on.

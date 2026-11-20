@@ -14,6 +14,8 @@ static atomic_uint_least64_t s_lifetime_presses[KEY_ID_COUNT];
 static atomic_uint_least32_t s_map_presses[KEY_ID_COUNT];
 static atomic_llong s_last_press_us[KEY_ID_COUNT];
 static volatile bool s_reported[KEY_ID_COUNT];
+// Bit k: key k+1 counts toward the total and tap rate (device config)
+static volatile uint8_t s_game_keys = 0x03;
 
 void key_event_init(void)
 {
@@ -39,7 +41,20 @@ void IRAM_ATTR key_event_press_accepted(uint8_t key_index, int64_t t_us)
     atomic_fetch_add_explicit(&s_lifetime_presses[key_index], 1, memory_order_relaxed);
     atomic_fetch_add_explicit(&s_map_presses[key_index], 1, memory_order_relaxed);
     atomic_store_explicit(&s_last_press_us[key_index], t_us, memory_order_relaxed);
-    press_log_push(key_index + 1, t_us);
+    // The host's tap rate counts game keys only (DeviceConfig game_keys)
+    if (s_game_keys & (1u << key_index)) {
+        press_log_push(key_index + 1, t_us);
+    }
+}
+
+void key_event_set_game_keys(uint8_t mask)
+{
+    s_game_keys = mask;
+}
+
+uint8_t key_event_game_keys(void)
+{
+    return s_game_keys;
 }
 
 void IRAM_ATTR key_event_report(uint8_t key_index, bool pressed, int64_t edge_us)
@@ -96,8 +111,24 @@ void key_event_get_map_presses(uint32_t *key1_presses, uint32_t *key2_presses)
 
 void key_event_reset_map_presses(void)
 {
-    atomic_store_explicit(&s_map_presses[KEY_ID_1], 0, memory_order_relaxed);
-    atomic_store_explicit(&s_map_presses[KEY_ID_2], 0, memory_order_relaxed);
+    for (int k = 0; k < KEY_ID_COUNT; k++) {
+        atomic_store_explicit(&s_map_presses[k], 0, memory_order_relaxed);
+    }
+}
+
+uint64_t key_event_get_lifetime_key3(void)
+{
+    return atomic_load_explicit(&s_lifetime_presses[KEY_ID_3], memory_order_relaxed);
+}
+
+void key_event_add_lifetime_key3(uint64_t presses)
+{
+    atomic_fetch_add_explicit(&s_lifetime_presses[KEY_ID_3], presses, memory_order_relaxed);
+}
+
+uint32_t key_event_get_map_key3(void)
+{
+    return atomic_load_explicit(&s_map_presses[KEY_ID_3], memory_order_relaxed);
 }
 
 int64_t key_event_get_last_press_us(keypad_key_id_t key_id)

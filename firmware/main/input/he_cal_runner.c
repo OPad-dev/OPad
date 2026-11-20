@@ -17,8 +17,17 @@ void he_cal_runner_init(he_cal_runner_t *r, const he_cal_capture_cfg_t *cfg)
     r->stage = HE_RUNNER_IDLE;
     r->error = HE_CAL_ERR_NONE;
     r->error_key = 255;
-    r->last_raw[0] = -1;
-    r->last_raw[1] = -1;
+    r->keys = 2;
+    for (int k = 0; k < HE_KEYS_MAX; k++) {
+        r->last_raw[k] = -1;
+    }
+}
+
+void he_cal_runner_set_keys(he_cal_runner_t *r, uint8_t keys)
+{
+    if (r && keys >= 2 && keys <= HE_KEYS_MAX) {
+        r->keys = keys;
+    }
 }
 
 void he_cal_runner_start(he_cal_runner_t *r)
@@ -26,14 +35,14 @@ void he_cal_runner_start(he_cal_runner_t *r)
     if (!r) {
         return;
     }
-    he_cal_capture_init(&r->cap[0], &r->cfg);
-    he_cal_capture_init(&r->cap[1], &r->cfg);
+    for (int k = 0; k < HE_KEYS_MAX; k++) {
+        he_cal_capture_init(&r->cap[k], &r->cfg);
+        r->last_raw[k] = -1;
+    }
     r->stage = HE_RUNNER_REST;
     r->error = HE_CAL_ERR_NONE;
     r->error_key = 255;
     r->rest_settle_count = 0;
-    r->last_raw[0] = -1;
-    r->last_raw[1] = -1;
 }
 
 void he_cal_runner_cancel(he_cal_runner_t *r)
@@ -74,13 +83,27 @@ const char *he_cal_runner_error_string(he_cal_error_t err)
     }
 }
 
-bool he_cal_runner_feed(he_cal_runner_t *r, int32_t raw0, int32_t raw1)
+static he_runner_stage_t key_stage(int k)
 {
-    if (!r) {
+    return (he_runner_stage_t)(HE_RUNNER_KEY1 + k);
+}
+
+static bool fail_key(he_cal_runner_t *r, int k)
+{
+    r->stage = HE_RUNNER_FAILED;
+    r->error = r->cap[k].error;
+    r->error_key = (uint8_t)k;
+    return true;
+}
+
+bool he_cal_runner_feed(he_cal_runner_t *r, const int32_t *raw)
+{
+    if (!r || !raw) {
         return false;
     }
-    r->last_raw[0] = raw0;
-    r->last_raw[1] = raw1;
+    for (int k = 0; k < r->keys; k++) {
+        r->last_raw[k] = raw[k];
+    }
 
     switch (r->stage) {
     case HE_RUNNER_IDLE:
@@ -93,62 +116,41 @@ bool he_cal_runner_feed(he_cal_runner_t *r, int32_t raw0, int32_t raw1)
             r->rest_settle_count++;
             return false;
         }
-
-        bool done0 = he_cal_capture_feed_rest(&r->cap[0], raw0);
-        bool done1 = he_cal_capture_feed_rest(&r->cap[1], raw1);
-
-        if (r->cap[0].stage == HE_CAL_STAGE_FAILED) {
-            r->stage = HE_RUNNER_FAILED;
-            r->error = r->cap[0].error;
-            r->error_key = 0;
-            return true;
+        bool all_done = true;
+        for (int k = 0; k < r->keys; k++) {
+            all_done &= he_cal_capture_feed_rest(&r->cap[k], raw[k]);
         }
-        if (r->cap[1].stage == HE_CAL_STAGE_FAILED) {
-            r->stage = HE_RUNNER_FAILED;
-            r->error = r->cap[1].error;
-            r->error_key = 1;
-            return true;
+        for (int k = 0; k < r->keys; k++) {
+            if (r->cap[k].stage == HE_CAL_STAGE_FAILED) {
+                return fail_key(r, k);
+            }
         }
-
-        if (done0 && done1) {
+        if (all_done) {
             r->stage = HE_RUNNER_KEY1;
             return true;
         }
         return false;
     }
 
-    case HE_RUNNER_KEY1: {
-        uint8_t prev_peaks = r->cap[0].peak_count;
-        bool done = he_cal_capture_feed_press(&r->cap[0], raw0);
-        if (r->cap[0].stage == HE_CAL_STAGE_FAILED) {
-            r->stage = HE_RUNNER_FAILED;
-            r->error = r->cap[0].error;
-            r->error_key = 0;
+    case HE_RUNNER_KEY1:
+    case HE_RUNNER_KEY2:
+    case HE_RUNNER_KEY3: {
+        int k = (int)(r->stage - HE_RUNNER_KEY1);
+        if (k >= r->keys) {
+            r->stage = HE_RUNNER_SUCCESS;  // never reached: the key before moves on
             return true;
         }
-        if (done || r->cap[0].stage == HE_CAL_STAGE_COMPLETE) {
-            r->results[0] = r->cap[0].result;
-            r->stage = HE_RUNNER_KEY2;
+        uint8_t prev_peaks = r->cap[k].peak_count;
+        bool done = he_cal_capture_feed_press(&r->cap[k], raw[k]);
+        if (r->cap[k].stage == HE_CAL_STAGE_FAILED) {
+            return fail_key(r, k);
+        }
+        if (done || r->cap[k].stage == HE_CAL_STAGE_COMPLETE) {
+            r->results[k] = r->cap[k].result;
+            r->stage = k + 1 < r->keys ? key_stage(k + 1) : HE_RUNNER_SUCCESS;
             return true;
         }
-        return r->cap[0].peak_count != prev_peaks;
-    }
-
-    case HE_RUNNER_KEY2: {
-        uint8_t prev_peaks = r->cap[1].peak_count;
-        bool done = he_cal_capture_feed_press(&r->cap[1], raw1);
-        if (r->cap[1].stage == HE_CAL_STAGE_FAILED) {
-            r->stage = HE_RUNNER_FAILED;
-            r->error = r->cap[1].error;
-            r->error_key = 1;
-            return true;
-        }
-        if (done || r->cap[1].stage == HE_CAL_STAGE_COMPLETE) {
-            r->results[1] = r->cap[1].result;
-            r->stage = HE_RUNNER_SUCCESS;
-            return true;
-        }
-        return r->cap[1].peak_count != prev_peaks;
+        return r->cap[k].peak_count != prev_peaks;
     }
     }
 
@@ -157,17 +159,21 @@ bool he_cal_runner_feed(he_cal_runner_t *r, int32_t raw0, int32_t raw1)
 
 bool he_cal_runner_feed_samples(he_cal_runner_t *r, const he_cal_samples_t *samples)
 {
-    if (!r || !samples || r->stage < HE_RUNNER_REST || r->stage > HE_RUNNER_KEY2) {
+    if (!r || !samples || r->stage < HE_RUNNER_REST || r->stage > HE_RUNNER_KEY3) {
         return false;
     }
-    if (samples->lost) {
+    if (samples->lost || (samples->count > 0 && samples->keys < r->keys)) {
         r->stage = HE_RUNNER_FAILED;
         r->error = HE_CAL_ERR_NONE; // transport failure, not a capture decision
         return true;
     }
     bool changed = false;
     for (uint16_t i = 0; i < samples->count; i++) {
-        changed |= he_cal_runner_feed(r, samples->raw[i][0], samples->raw[i][1]);
+        int32_t raw[HE_KEYS_MAX];
+        for (int k = 0; k < HE_KEYS_MAX; k++) {
+            raw[k] = samples->raw[i][k];
+        }
+        changed |= he_cal_runner_feed(r, raw);
     }
     return changed;
 }
@@ -181,8 +187,10 @@ void he_cal_runner_get_progress(const he_cal_runner_t *r, he_runner_progress_t *
     out->error = r->error;
     out->error_key = r->error_key;
     out->error_desc = he_cal_runner_error_string(r->error);
-    out->last_raw[0] = r->last_raw[0];
-    out->last_raw[1] = r->last_raw[1];
+    out->keys = r->keys;
+    for (int k = 0; k < HE_KEYS_MAX; k++) {
+        out->last_raw[k] = r->last_raw[k];
+    }
 
     switch (r->stage) {
     case HE_RUNNER_REST:
@@ -190,13 +198,13 @@ void he_cal_runner_get_progress(const he_cal_runner_t *r, he_runner_progress_t *
         out->presses_done = 0;
         break;
     case HE_RUNNER_KEY1:
-        out->active_key = 1;
-        out->presses_done = r->cap[0].peak_count;
-        break;
     case HE_RUNNER_KEY2:
-        out->active_key = 2;
-        out->presses_done = r->cap[1].peak_count;
+    case HE_RUNNER_KEY3: {
+        int k = (int)(r->stage - HE_RUNNER_KEY1);
+        out->active_key = (uint8_t)(k + 1);
+        out->presses_done = r->cap[k].peak_count;
         break;
+    }
     case HE_RUNNER_SUCCESS:
         out->active_key = 0;
         out->presses_done = 5;
@@ -210,22 +218,28 @@ void he_cal_runner_get_progress(const he_cal_runner_t *r, he_runner_progress_t *
     }
 }
 
-bool he_cal_runner_get_results(const he_cal_runner_t *r, he_calibration_t out[2])
+bool he_cal_runner_get_results(const he_cal_runner_t *r, he_calibration_t out[HE_KEYS_MAX])
 {
     if (!r || r->stage != HE_RUNNER_SUCCESS || !out) {
         return false;
     }
-    out[0] = r->results[0];
-    out[1] = r->results[1];
+    for (int k = 0; k < r->keys; k++) {
+        out[k] = r->results[k];
+    }
     return true;
 }
 
-bool he_cal_is_locked_decision(bool he_running, bool key1_valid, bool key2_valid)
+bool he_cal_is_locked_decision(bool he_running, const he_calibration_t *cal, uint8_t keys)
 {
-    if (!he_running) {
+    if (!he_running || !cal) {
         return false;
     }
-    return !key1_valid || !key2_valid;
+    for (int k = 0; k < keys && k < HE_KEYS_MAX; k++) {
+        if (!cal[k].valid) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool he_cal_suppress_input(bool locked, bool calibrating)
@@ -273,12 +287,7 @@ he_cal_start_check_t he_cal_can_start(bool he_running, bool is_idle, bool alread
     return HE_CAL_START_OK;
 }
 
-bool he_cal_runner_apply_to_saved(const he_cal_runner_t *r, he_calibration_t saved[2])
+bool he_cal_runner_apply_to_saved(const he_cal_runner_t *r, he_calibration_t saved[HE_KEYS_MAX])
 {
-    if (!r || !saved || r->stage != HE_RUNNER_SUCCESS) {
-        return false;
-    }
-    saved[0] = r->results[0];
-    saved[1] = r->results[1];
-    return true;
+    return he_cal_runner_get_results(r, saved);
 }

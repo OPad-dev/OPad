@@ -8,16 +8,23 @@ void he_health_init(he_health_t *h, int64_t now)
         return;
     }
     h->last_frame_us = now;
-    h->last_valid_us[0] = now;
-    h->last_valid_us[1] = now;
-    h->key_faulted[0] = false;
-    h->key_faulted[1] = false;
-    h->fault_since_us[0] = 0;
-    h->fault_since_us[1] = 0;
+    h->keys = 2;
+    for (int k = 0; k < HE_KEYS_MAX; k++) {
+        h->last_valid_us[k] = now;
+        h->key_faulted[k] = false;
+        h->fault_since_us[k] = 0;
+    }
     h->adc_ok = false;
     h->backoff_us = HE_RESTART_BACKOFF_MIN_US;
     h->retry_at_us = 0;
     h->healthy_since_us = now;
+}
+
+void he_health_set_keys(he_health_t *h, uint8_t keys)
+{
+    if (h != NULL && keys >= 1 && keys <= HE_KEYS_MAX) {
+        h->keys = keys;
+    }
 }
 
 void he_health_resync(he_health_t *h, int64_t now)
@@ -26,7 +33,7 @@ void he_health_resync(he_health_t *h, int64_t now)
         return;
     }
     h->last_frame_us = now;
-    for (int k = 0; k < 2; k++) {
+    for (int k = 0; k < h->keys; k++) {
         h->last_valid_us[k] = now;
         h->key_faulted[k] = false;
     }
@@ -40,7 +47,7 @@ he_health_check_result_t he_health_check(he_health_t *h, int64_t now)
     }
     if (now - h->last_frame_us > HE_STALL_US) {
         res.adc_stalled = true;
-        for (int k = 0; k < 2; k++) {
+        for (int k = 0; k < h->keys; k++) {
             if (!h->key_faulted[k]) {
                 h->fault_since_us[k] = now;
                 h->key_faulted[k] = true;
@@ -48,7 +55,7 @@ he_health_check_result_t he_health_check(he_health_t *h, int64_t now)
             }
         }
     } else {
-        for (int k = 0; k < 2; k++) {
+        for (int k = 0; k < h->keys; k++) {
             bool stale = now - h->last_valid_us[k] > HE_STALL_US;
             if (stale && !h->key_faulted[k]) {
                 h->fault_since_us[k] = now;
@@ -68,9 +75,17 @@ bool he_health_keys_absent(const he_health_t *h, int64_t now)
     if (h == NULL) {
         return false;
     }
-    bool both = h->key_faulted[0] && h->key_faulted[1];
-    int64_t since = h->fault_since_us[0] > h->fault_since_us[1] ? h->fault_since_us[0] : h->fault_since_us[1];
-    return both && (now - since >= HE_ABSENT_US);
+    // Every key faulted, the last of them for HE_ABSENT_US
+    int64_t since = 0;
+    for (int k = 0; k < h->keys; k++) {
+        if (!h->key_faulted[k]) {
+            return false;
+        }
+        if (h->fault_since_us[k] > since) {
+            since = h->fault_since_us[k];
+        }
+    }
+    return now - since >= HE_ABSENT_US;
 }
 
 void he_health_on_adc_stalled(he_health_t *h, int64_t now)

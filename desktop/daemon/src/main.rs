@@ -342,6 +342,9 @@ async fn main() -> Result<()> {
                     }
                     DeviceEvent::StatusUpdate(status) => {
                         let cal = status.he_calibration.map(|c| opad_model::HeCalibrationStatus {
+                            key3_calibrated: c.key3_calibrated,
+                            key3_full: c.key3_full,
+                            key3_rest: c.key3_rest,
                             key1_calibrated: c.key1_calibrated,
                             key2_calibrated: c.key2_calibrated,
                             key1_rest: c.key1_rest,
@@ -363,6 +366,10 @@ async fn main() -> Result<()> {
                                 deferred_reports: status.hid_deferred_reports,
                             },
                             he_calibration: cal,
+                            key3: opad_model::Key3Counters {
+                                lifetime: status.lifetime_key3,
+                                map: status.map_key3,
+                            },
                         });
                     }
                     DeviceEvent::CounterSyncResult { .. } => {}
@@ -394,6 +401,7 @@ async fn main() -> Result<()> {
                             3 => opad_model::HeCalStage::Key2,
                             4 => opad_model::HeCalStage::Success,
                             5 => opad_model::HeCalStage::Failed,
+                            6 => opad_model::HeCalStage::Key3,
                             _ => opad_model::HeCalStage::None,
                         };
                         let error = match prog.error {
@@ -420,6 +428,8 @@ async fn main() -> Result<()> {
                                 key1_full: prog.key1_full,
                                 key2_rest: prog.key2_rest,
                                 key2_full: prog.key2_full,
+                                key3_rest: prog.key3_rest,
+                                key3_full: prog.key3_full,
                             },
                         ));
                     }
@@ -798,6 +808,7 @@ mod tests {
             mode: RuntimeMode::Idle,
             device_connected: true,
             device_info: Some(DeviceInfo {
+                key_count: 2,
                 device_id: "OSUPAD-TEST".to_string(),
                 board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                 firmware_version: "1.0.0".to_string(),
@@ -843,6 +854,7 @@ mod tests {
             last_backup: None,
             he_calibration: None,
             latest_he_progress: None,
+            key3: None,
         }));
 
         // 1. GetStatus surfaces storage_error

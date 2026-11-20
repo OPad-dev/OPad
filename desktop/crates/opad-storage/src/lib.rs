@@ -141,6 +141,9 @@ impl Storage {
         if v < 16 {
             self.apply_v16()?;
         }
+        if v < 17 {
+            self.apply_v17()?;
+        }
         Ok(())
     }
 
@@ -365,6 +368,30 @@ impl Storage {
         Ok(())
     }
 
+    /// v17: Hall Effect V3's key 3 binding and the game keys (the keys that
+    /// count toward totals and the tap rate)
+    fn apply_v17(&self) -> Result<(), StorageError> {
+        // Re-run safe, like v11
+        let has_column: bool = self.conn.query_row(
+            "SELECT COUNT(*) > 0 FROM pragma_table_info('config') WHERE name = 'game_keys'",
+            [],
+            |row| row.get(0),
+        )?;
+        self.conn.execute_batch(&format!(
+            "BEGIN TRANSACTION;
+            {}
+            INSERT INTO schema_migrations (version, applied_at) VALUES (17, datetime('now'));
+            COMMIT;",
+            if has_column {
+                ""
+            } else {
+                "ALTER TABLE config ADD COLUMN key3_hid_usage INTEGER NOT NULL DEFAULT 6;
+                ALTER TABLE config ADD COLUMN game_keys INTEGER NOT NULL DEFAULT 3;"
+            }
+        ))?;
+        Ok(())
+    }
+
     /// Reads a host-side value written by [`Self::set_app_state`]
     pub fn get_app_state(&self, key: &str) -> Result<Option<String>, StorageError> {
         self.conn
@@ -478,11 +505,15 @@ impl Storage {
                     key1_gpio, key2_gpio, swipe_left_action, swipe_right_action,
                     swipe_left_key, swipe_right_key, swipe_up_action, swipe_down_action,
                     swipe_up_key, swipe_down_key, swipe_up_modifiers, swipe_down_modifiers,
-                    swipe_left_modifiers, swipe_right_modifiers, result_animations
+                    swipe_left_modifiers, swipe_right_modifiers, result_animations,
+                    key3_hid_usage, game_keys
              FROM config WHERE id = 1",
                 [],
                 |row| {
                     Ok(DeviceConfig {
+                        key3_hid_usage: row.get(22)?,
+                        key3_he: None,
+                        game_keys: row.get(23)?,
                         key1_hid_usage: row.get(0)?,
                         key2_hid_usage: row.get(1)?,
                         debounce_us: row.get(2)?,
@@ -551,7 +582,9 @@ impl Storage {
                 swipe_down_modifiers = ?19,
                 swipe_left_modifiers = ?20,
                 swipe_right_modifiers = ?21,
-                result_animations = ?22
+                result_animations = ?22,
+                key3_hid_usage = ?23,
+                game_keys = ?24
              WHERE id = 1",
             params![
                 config.key1_hid_usage,
@@ -576,6 +609,8 @@ impl Storage {
                 config.swipe_left_modifiers,
                 config.swipe_right_modifiers,
                 config.result_animations.to_storage(),
+                config.key3_hid_usage,
+                config.game_keys,
             ],
         )?;
         Ok(())
@@ -619,6 +654,7 @@ impl Storage {
             let lifetime_key2: i64 = row.get(5)?;
 
             let info = DeviceInfo {
+                key_count: 2,
                 device_id: device_id.clone(),
                 board_profile,
                 firmware_version: firmware_version.unwrap_or_default(),
@@ -758,20 +794,26 @@ mod tests {
         assert_eq!(config.debounce_us, 5000);
         assert_eq!(config.brightness, 100);
         assert_eq!((config.key1_gpio, config.key2_gpio), (14, 9));
+        // v17: key 3 is 'C' and keys 1 and 2 are the game keys until changed
+        assert_eq!((config.key3_hid_usage, config.game_keys), (0x06, 0b011));
 
         let mut updated = config.clone();
         updated.brightness = 85;
         updated.debounce_us = 2500;
         updated.key1_gpio = 21;
         updated.key2_gpio = 2;
+        updated.key3_hid_usage = 0x2C; // Space
+        updated.game_keys = 0b101; // Z/C
         storage.save_config(&updated).expect("save_config");
 
         let loaded = storage.load_config().expect("load_config");
         assert_eq!(loaded.brightness, 85);
         assert_eq!(loaded.debounce_us, 2500);
         assert_eq!((loaded.key1_gpio, loaded.key2_gpio), (21, 2));
+        assert_eq!((loaded.key3_hid_usage, loaded.game_keys), (0x2C, 0b101));
 
         let info = DeviceInfo {
+            key_count: 2,
             device_id: "test-dev-01".to_string(),
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),
@@ -858,6 +900,7 @@ mod tests {
         ));
 
         let info = DeviceInfo {
+            key_count: 2,
             device_id: "dev-test".to_string(),
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),
@@ -883,6 +926,7 @@ mod tests {
         assert!(storage.load_latest_device_state().unwrap().is_none());
 
         let info1 = DeviceInfo {
+            key_count: 2,
             device_id: "dev-01".to_string(),
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),

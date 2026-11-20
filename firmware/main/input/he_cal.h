@@ -25,23 +25,33 @@ extern "C" {
  * Reads A/B records from NVS, selects the active one, or sets factory defaults.
  * Never erases NVS on corrupted records.
  */
+/**
+ * @brief Keep calibration in the Hall Effect V3 store (NVS namespace
+ * "osupad_cal3") instead of V1's. Call before he_cal_init, once, at boot.
+ */
+void he_cal_use_v3_store(void);
+
+/** @brief Keys calibrated: 2, or 3 after he_cal_use_v3_store. */
+uint8_t he_cal_key_count(void);
+
 esp_err_t he_cal_init(void);
 
 /**
- * @brief Get the active calibration for a key (0 or 1). Thread-safe.
+ * @brief Get the active calibration for a key (0-2). Thread-safe.
  */
 void he_cal_get(uint8_t key_index, he_calibration_t *out);
 
 /**
- * @brief Get both keys' active calibration. Thread-safe.
+ * @brief Get every key's active calibration (key 3 stays the factory
+ * default, invalid, on V1). Thread-safe.
  */
-void he_cal_get_all(he_calibration_t out[2]);
+void he_cal_get_all(he_calibration_t out[HE_KEYS_MAX]);
 
 /**
- * @brief Save new calibration for both keys.
+ * @brief Save new calibration for the module's keys (he_cal_key_count of in[]).
  * If in IDLE state, writes to NVS immediately. Otherwise updates RAM and marks dirty.
  */
-esp_err_t he_cal_set(const he_calibration_t in[2]);
+esp_err_t he_cal_set(const he_calibration_t in[HE_KEYS_MAX]);
 
 /**
  * @brief Commit interactive calibration before publishing it in RAM.
@@ -50,7 +60,7 @@ esp_err_t he_cal_set(const he_calibration_t in[2]);
  * that set_blob persisted before a later error was reported.
  * The caller reloads backend thresholds after checking the result.
  */
-esp_err_t he_cal_save(const he_calibration_t in[2]);
+esp_err_t he_cal_save(const he_calibration_t in[HE_KEYS_MAX]);
 
 /**
  * @brief Flush deferred calibration writes to NVS if state is IDLE.

@@ -13,7 +13,9 @@ use crate::theme::{self, caption, heading, muted};
 use crate::{App, Message};
 use iced::widget::{button, checkbox, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Border, Element, Length};
-use opad_model::board_test::{self, BoardFix, BoardTestReport, CheckStatus};
+use opad_model::board_test::{
+    self, BoardCheck, BoardFix, BoardTestReport, CheckGroup, CheckStatus, MagnetKey, MagnetTest,
+};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
@@ -433,6 +435,11 @@ pub enum DiagnosticsMessage {
     BoardTestDone(Result<BoardTestReport, String>),
     /// Set Key 1 = GPIO10 and Key 2 = GPIO7, then test again
     UseCarrierKeyPins,
+    /// Hall Effect V3: run the board test over and over while a magnet is
+    /// moved over each key
+    StartMagnetTest,
+    StopMagnetTest,
+    MagnetTick(Result<BoardTestReport, String>),
     RestartPad,
     RestartDone(Result<(), String>),
     /// From the HE debug log (he_monitor.rs)
@@ -477,6 +484,12 @@ pub struct DiagnosticsState {
     pub board_test_running: bool,
     /// The last board test: the pad's report, or why there is none
     pub board_test: Option<Result<BoardTestReport, String>>,
+    /// The magnet test: what it has seen, whether it is still asking the pad,
+    /// the newest report and the last error
+    pub magnet: Option<MagnetTest>,
+    pub magnet_running: bool,
+    pub magnet_last: Option<BoardTestReport>,
+    pub magnet_error: Option<String>,
     pub restart_running: bool,
     /// The last restart request: asked, or why not
     pub restart: Option<Result<(), String>>,
@@ -503,6 +516,10 @@ impl Default for DiagnosticsState {
             last_ping_ms: None,
             board_test_running: false,
             board_test: None,
+            magnet: None,
+            magnet_running: false,
+            magnet_last: None,
+            magnet_error: None,
             restart_running: false,
             restart: None,
             he: Default::default(),
@@ -1507,7 +1524,7 @@ impl DiagnosticsState {
     }
 
     fn view_board_test<'a>(&'a self, app: &'a App) -> Element<'a, Message> {
-        let can_run = app.device_connected && !self.board_test_running;
+        let can_run = app.device_connected && !self.board_test_running && !self.magnet_running;
         let run_label = if self.board_test_running {
             "Testing..."
         } else if self.board_test.is_some() {
@@ -1529,9 +1546,12 @@ impl DiagnosticsState {
                     .font(theme::FONT_BOLD),
                 muted(
                     "The pad checks its own wiring: which module answers on the carrier's \
-                     connector, whether the cable is reversed, whether each key line reaches the \
-                     module, and whether the spare connector pins are shorted. Release both keys \
-                     while it runs. Not available during a map."
+                     connector and which way round its cable is, whether each key line reaches \
+                     the module, and whether the spare connector pins are shorted. On a Hall \
+                     Effect V3 module it also tests the ADC and its SPI link (answer, register \
+                     writes, signal margin, supply) and each sensor's rest level and noise, then \
+                     offers a magnet test. Release every key while it runs. Not available during \
+                     a map."
                 )
                 .size(12),
                 row![
@@ -1551,24 +1571,41 @@ impl DiagnosticsState {
         .width(Length::Fill)
         .style(theme::card);
 
-        let results: Element<'a, Message> = match &self.board_test {
-            None => Space::new().height(0).into(),
-            Some(Err(e)) => container(text(e.clone()).size(13).color(theme::RED))
-                .padding(16)
-                .width(Length::Fill)
-                .style(theme::card)
-                .into(),
-            Some(Ok(report)) => board_test_results(report),
-        };
+        let mut page = column![intro].spacing(16);
+        match &self.board_test {
+            None => {}
+            Some(Err(e)) => {
+                page = page.push(
+                    container(text(e.clone()).size(13).color(theme::RED))
+                        .padding(16)
+                        .width(Length::Fill)
+                        .style(theme::card),
+                )
+            }
+            Some(Ok(report)) => {
+                page = page.push(board_test_results(report, self.magnet.as_ref()));
+                if let Some(m) = board_test_measurements(report) {
+                    page = page.push(m);
+                }
+                if has_sensors(report) {
+                    page = page.push(self.view_magnet_test(app));
+                }
+            }
+        }
 
+        let he_v3 = matches!(&self.board_test, Some(Ok(r)) if r.he_adc.is_some());
         let press_hint = container(
             column![
                 text("Then press each key").size(15).font(theme::FONT_BOLD),
-                muted(
+                muted(if he_v3 {
+                    "The magnet test proves each sensor sees its key's magnet. Keys on a Hall \
+                     Effect V3 module need firmware that reads them; until then the pad sends \
+                     nothing for them."
+                } else {
                     "The test proves the lines are connected, not that the switches work. Press \
                      each key in the Switch Chatter & Input tab: Key 1 must light the left card \
                      and Key 2 the right one, each on its own."
-                )
+                })
                 .size(12),
             ]
             .spacing(6),
@@ -1577,8 +1614,72 @@ impl DiagnosticsState {
         .width(Length::Fill)
         .style(theme::card);
 
-        column![intro, results, press_hint, self.view_restart(app)]
-            .spacing(16)
+        page.push(press_hint).push(self.view_restart(app)).into()
+    }
+
+    fn view_magnet_test<'a>(&'a self, app: &'a App) -> Element<'a, Message> {
+        let button_row: Element<'a, Message> = if self.magnet_running {
+            button(text("Stop").size(13))
+                .padding([8, 16])
+                .style(theme::secondary)
+                .on_press(Message::Diagnostics(DiagnosticsMessage::StopMagnetTest))
+                .into()
+        } else {
+            let label = if self.magnet.is_some() {
+                "Start Again"
+            } else {
+                "Start Magnet Test"
+            };
+            button(text(label).size(13))
+                .padding([8, 16])
+                .style(theme::primary)
+                .on_press_maybe(
+                    (app.device_connected && !self.board_test_running)
+                        .then_some(Message::Diagnostics(DiagnosticsMessage::StartMagnetTest)),
+                )
+                .into()
+        };
+
+        let mut body = column![
+            text("Magnet Test").size(15).font(theme::FONT_BOLD),
+            muted(format!(
+                "Hold a magnet (a key's own, or any small one) over key 1, then key 2, then key \
+                 3, a few millimetres above the sensor. Each sensor must move at least {:.0} \
+                 codes (about 0.2 V) while the others stay put. It stops by itself once all \
+                 three have seen it.",
+                board_test::MAGNET_MOVE_CODES
+            ))
+            .size(12),
+            button_row,
+        ]
+        .spacing(10);
+
+        if let (Some(test), Some(report)) = (&self.magnet, &self.magnet_last) {
+            if let Some(adc) = &report.he_adc {
+                let base = test.baseline().unwrap_or(&[]);
+                for (i, c) in adc.channels.iter().enumerate().take(3) {
+                    let start = base.get(i).copied().unwrap_or(c.mean());
+                    body = body.push(sensor_bar(i, c.mean(), start, test.key(i)));
+                }
+            }
+            if test.done() {
+                body = body.push(text("All three sensors see the magnet.").size(12).color(
+                    if test.checks().iter().all(|c| c.status == CheckStatus::Pass) {
+                        theme::GREEN
+                    } else {
+                        theme::YELLOW
+                    },
+                ));
+            }
+        }
+        if let Some(e) = &self.magnet_error {
+            body = body.push(text(e.clone()).size(12).color(theme::RED));
+        }
+
+        container(body)
+            .padding(16)
+            .width(Length::Fill)
+            .style(theme::card)
             .into()
     }
 
@@ -1670,15 +1771,31 @@ impl DiagnosticsState {
     }
 }
 
-/// Generates a structured JSON diagnostic bundle from app and diagnostics state
-fn board_test_results(report: &BoardTestReport) -> Element<'_, Message> {
-    let checks = board_test::evaluate(report);
-    let status_color = |s: CheckStatus| match s {
+fn status_color(s: CheckStatus) -> iced::Color {
+    match s {
         CheckStatus::Pass => theme::GREEN,
         CheckStatus::Warn => theme::YELLOW,
         CheckStatus::Fail => theme::RED,
         CheckStatus::Skip => theme::MUTED,
-    };
+    }
+}
+
+fn has_sensors(report: &BoardTestReport) -> bool {
+    report
+        .he_adc
+        .as_ref()
+        .is_some_and(|a| a.ran && !a.channels.is_empty())
+}
+
+/// Every check, the magnet test's too, under one heading per part of the board
+fn board_test_results<'a>(
+    report: &'a BoardTestReport,
+    magnet: Option<&MagnetTest>,
+) -> Element<'a, Message> {
+    let mut checks = board_test::evaluate(report);
+    if let Some(m) = magnet.filter(|_| has_sensors(report)) {
+        checks.extend(m.checks());
+    }
     let overall = board_test::overall(&checks);
 
     let mut rows = column![row![
@@ -1692,46 +1809,72 @@ fn board_test_results(report: &BoardTestReport) -> Element<'_, Message> {
     .align_y(Alignment::Center)]
     .spacing(12);
 
-    for c in checks {
-        let mut detail = column![
-            text(c.name).size(13).font(theme::FONT_BOLD),
-            muted(c.detail).size(12),
-        ]
-        .spacing(2)
-        .width(Length::Fill);
-        if c.fix == Some(BoardFix::UseCarrierKeyPins) {
-            detail = detail.push(
-                button(text("Set Key 1 = GPIO10, Key 2 = GPIO7").size(12))
-                    .padding([4, 10])
-                    .style(theme::secondary)
-                    .on_press(Message::Diagnostics(DiagnosticsMessage::UseCarrierKeyPins)),
-            );
-        }
+    let mut groups: Vec<CheckGroup> = checks.iter().map(|c| c.group).collect();
+    groups.sort();
+    groups.dedup();
+    for group in groups {
+        let in_group: Vec<&BoardCheck> = checks.iter().filter(|c| c.group == group).collect();
+        let worst = in_group
+            .iter()
+            .map(|c| c.status)
+            .max()
+            .unwrap_or(CheckStatus::Skip);
+        let passed = in_group
+            .iter()
+            .filter(|c| c.status == CheckStatus::Pass)
+            .count();
         rows = rows.push(
             row![
-                text(c.status.label().to_uppercase())
-                    .size(12)
-                    .font(theme::FONT_BOLD)
-                    .color(status_color(c.status))
-                    .width(48),
-                detail,
+                caption(group.label().to_uppercase()),
+                Space::new().width(Length::Fill),
+                text(format!("{passed}/{} passed", in_group.len()))
+                    .size(11)
+                    .color(status_color(worst)),
             ]
-            .spacing(12),
+            .align_y(Alignment::Center),
         );
+        for c in in_group {
+            let mut detail = column![
+                text(c.name).size(13).font(theme::FONT_BOLD),
+                muted(c.detail.clone()).size(12),
+            ]
+            .spacing(2)
+            .width(Length::Fill);
+            if c.fix == Some(BoardFix::UseCarrierKeyPins) {
+                detail = detail.push(
+                    button(text("Set Key 1 = GPIO10, Key 2 = GPIO7").size(12))
+                        .padding([4, 10])
+                        .style(theme::secondary)
+                        .on_press(Message::Diagnostics(DiagnosticsMessage::UseCarrierKeyPins)),
+                );
+            }
+            rows = rows.push(
+                row![
+                    text(c.status.label().to_uppercase())
+                        .size(12)
+                        .font(theme::FONT_BOLD)
+                        .color(status_color(c.status))
+                        .width(48),
+                    detail,
+                ]
+                .spacing(12),
+            );
+        }
     }
 
     if report.ran {
         let mv = |v: Option<u32>| v.map_or("—".to_string(), |v| format!("{v} mV"));
         rows = rows.push(
             caption(format!(
-                "Measured: {} (at boot: {}) · ID {} / {} loaded · reverse probe {} · keys GPIO{} / GPIO{}",
+                "Measured: {} (at boot: {}) · ID {} / {} loaded · reverse probe {} · keys GPIO{} / GPIO{}{}",
                 report.module.label(),
                 report.boot_module.label(),
                 mv(report.id_mv),
                 mv(report.id_loaded_mv),
                 mv(report.reverse_probe_mv),
                 report.key1_gpio,
-                report.key2_gpio
+                report.key2_gpio,
+                if report.cable_reversed { " · cable turned over" } else { "" }
             ))
             .size(11),
         );
@@ -1742,6 +1885,138 @@ fn board_test_results(report: &BoardTestReport) -> Element<'_, Message> {
         .width(Length::Fill)
         .style(theme::card)
         .into()
+}
+
+/// The raw numbers behind the Hall Effect V3 checks: the SPI sweep and each sensor
+fn board_test_measurements(report: &BoardTestReport) -> Option<Element<'_, Message>> {
+    let adc = report.he_adc.as_ref().filter(|a| a.ran)?;
+    let hex = |v: Option<u8>| v.map_or("—".to_string(), |v| format!("0x{v:02X}"));
+    let mut body = column![
+        text("Measurements").size(15).font(theme::FONT_BOLD),
+        muted(format!(
+            "ADC status {} after reset, {} after clearing, {} at the end · {} of {} register \
+             writes wrong · offset calibration {}",
+            hex(adc.status_after_reset),
+            hex(adc.status_after_clear),
+            hex(adc.status_end),
+            adc.walk_mismatches,
+            adc.walk_writes,
+            if adc.cal_done { "done" } else { "not done" }
+        ))
+        .size(12),
+        caption("SPI SIGNAL MARGIN (FIXED PATTERN 0xA5A)"),
+    ]
+    .spacing(8);
+
+    let mut sweep = row![].spacing(8);
+    for sp in &adc.speeds {
+        let (label, color) = if sp.frames == 0 {
+            ("not tried".to_string(), theme::MUTED)
+        } else if sp.errors == 0 {
+            (format!("0 / {}", sp.frames), theme::GREEN)
+        } else {
+            (format!("{} / {}", sp.errors, sp.frames), theme::RED)
+        };
+        sweep = sweep.push(
+            container(
+                column![
+                    text(format!("{:.0} MHz", sp.sclk_hz as f64 / 1e6))
+                        .size(13)
+                        .font(theme::FONT_BOLD),
+                    text(label).size(11).color(color),
+                ]
+                .spacing(2)
+                .align_x(Alignment::Center),
+            )
+            .padding([6, 10])
+            .width(Length::Fill)
+            .style(theme::outlined_card),
+        );
+    }
+    body = body.push(sweep).push(caption("SENSORS AT REST"));
+
+    for (i, c) in adc.channels.iter().enumerate() {
+        body = body.push(
+            row![
+                text(format!("Key {}", i + 1))
+                    .size(13)
+                    .font(theme::FONT_BOLD)
+                    .width(60),
+                muted(format!("AIN{}", c.ain)).size(12).width(50),
+                text(format!("{:.3} V", c.volts())).size(13).width(80),
+                muted(format!("{:.0} codes", c.mean())).size(12).width(90),
+                muted(format!("noise {:.2} rms", c.noise()))
+                    .size(12)
+                    .width(120),
+                muted(format!(
+                    "{}–{} ({} p-p)",
+                    c.min,
+                    c.max,
+                    c.max.saturating_sub(c.min)
+                ))
+                .size(12),
+            ]
+            .align_y(Alignment::Center),
+        );
+    }
+
+    Some(
+        container(body)
+            .padding(16)
+            .width(Length::Fill)
+            .style(theme::card)
+            .into(),
+    )
+}
+
+/// One sensor in the magnet test: where it reads now across the ADC's range,
+/// how far it moved from rest, and whether it passed
+fn sensor_bar<'a>(i: usize, now: f64, start: f64, state: MagnetKey) -> Element<'a, Message> {
+    let full = board_test::HE_V3_FULL_SCALE;
+    let filled = now.clamp(1.0, full - 1.0) as u16;
+    let (mark, color) = match state {
+        MagnetKey::Waiting { .. } => ("waiting", theme::MUTED),
+        MagnetKey::Seen { .. } => ("seen", theme::GREEN),
+        MagnetKey::Crosstalk { .. } => ("crosstalk", theme::YELLOW),
+    };
+    let bar_color = match state {
+        MagnetKey::Waiting { .. } => theme::CYAN,
+        _ => color,
+    };
+    let track = container(
+        row![
+            container(Space::new().height(10))
+                .width(Length::FillPortion(filled))
+                .style(move |_| container::Style {
+                    background: Some(bar_color.into()),
+                    border: Border {
+                        radius: 3.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }),
+            Space::new().width(Length::FillPortion(full as u16 - filled)),
+        ]
+        .width(Length::Fill),
+    )
+    .padding(2)
+    .width(Length::Fill)
+    .style(theme::outlined_card);
+    row![
+        text(format!("Key {}", i + 1))
+            .size(13)
+            .font(theme::FONT_BOLD)
+            .width(60),
+        track,
+        text(format!("{:.3} V", now * board_test::HE_V3_AVDD_V / full))
+            .size(12)
+            .width(70),
+        muted(format!("{:+.0}", now - start)).size(12).width(60),
+        text(mark).size(12).color(color).width(80),
+    ]
+    .spacing(10)
+    .align_y(Alignment::Center)
+    .into()
 }
 
 pub fn generate_diagnostic_bundle(app: &App, diag: &DiagnosticsState) -> String {

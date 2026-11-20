@@ -26,7 +26,14 @@ void usb_hid_set_keycodes(uint8_t key1_code, uint8_t key2_code);
 /**
  * @brief Update configured HID keycode for Key 3 (Touch Retry).
  */
-void usb_hid_set_key3_code(uint8_t key3_code);
+/**
+ * @brief Key 3's HID usage (0 = sends nothing) and the game keys (bit k = key
+ * k+1), which choose the report key 3 rides on: never one another game key uses.
+ */
+void usb_hid_set_key3(uint8_t key3_code, uint8_t game_keys);
+
+/** @brief The key the touchscreen holds for Quick Retry (default '`'). */
+void usb_hid_set_touch_retry_code(uint8_t code);
 
 /**
  * @brief Set the touchscreen quick retry key state (pressed/released).

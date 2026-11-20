@@ -12,6 +12,9 @@ typedef struct {
     uint32_t generation;
     uint64_t lifetime_key1;
     uint64_t lifetime_key2;
+    // Hall Effect V3's key 3: its own counter, never part of the host's
+    // key 1/2 reconciliation (a pad without key 3 keeps it at 0)
+    uint64_t lifetime_key3;
 } counters_snapshot_t;
 
 /**

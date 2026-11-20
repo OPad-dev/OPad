@@ -252,6 +252,10 @@ pub struct App {
     // Settings form
     pub k1_input: String,
     pub k2_input: String,
+    /// Key 3 (Hall Effect V3); empty sends nothing
+    pub k3_input: String,
+    /// Settings form: the game keys (bit k = key k+1)
+    pub game_keys: u32,
     pub k1_gpio: u32,
     pub k2_gpio: u32,
     /// Each swipe direction, in SwipeDir::ALL order
@@ -295,6 +299,8 @@ pub struct App {
     /// The Stats page's tap rate (KPM) statistics
     pub stats: stats::StatsState,
     pub he_calibration: Option<opad_model::HeCalibrationStatus>,
+    /// Key 3's counters, with a pad that has three keys
+    pub key3: Option<opad_model::Key3Counters>,
     pub cal_progress: Option<opad_model::HeCalibrationProgress>,
     pub keys: keys::KeysState,
     pub cal_status_msg: Option<String>,
@@ -385,6 +391,9 @@ pub enum Message {
     // Settings
     Key1(String),
     Key2(String),
+    Key3(String),
+    /// Count this key (1-3) toward totals and the tap rate, or not
+    GameKey(u8, bool),
     Key1Pin(KeyPin),
     Key2Pin(KeyPin),
     Swipe(SwipeDir, SwipeChoice),
@@ -498,6 +507,8 @@ impl App {
             ui_values: HashMap::new(),
             k1_input: "Z".into(),
             k2_input: "X".into(),
+            k3_input: "C".into(),
+            game_keys: opad_model::DEFAULT_GAME_KEYS,
             k1_gpio: opad_model::DEFAULT_KEY1_GPIO,
             k2_gpio: opad_model::DEFAULT_KEY2_GPIO,
             swipes: SwipeDir::ALL.map(|d| DeviceConfig::default().swipe(d)),
@@ -531,6 +542,7 @@ impl App {
             settings_tab: pages::SettingsTab::default(),
             stats: stats::StatsState::default(),
             he_calibration: None,
+            key3: None,
             cal_progress: None,
             keys: keys::KeysState::default(),
             cal_status_msg: None,
@@ -756,6 +768,7 @@ impl App {
                         last_backup: _,
                         foreign_pad: _,
                         he_calibration,
+                        key3,
                     }) => {
                         let was_offline = !self.daemon_online;
                         let device_just_connected = !self.device_connected && device_connected;
@@ -784,6 +797,7 @@ impl App {
                         self.tosu_connected = tosu_connected;
                         self.latency = latency;
                         self.he_calibration = he_calibration;
+                        self.key3 = key3;
                         self.last_sync_time = last_sync_time;
                         // Always adopt device config when device connects or config changes
                         if device_connected
@@ -1334,6 +1348,25 @@ impl App {
                     self.k2_input = s.chars().take(1).collect::<String>().to_uppercase();
                 }
             }
+            Message::Key3(s) => {
+                if self.device_connected {
+                    self.k3_input = s.chars().take(1).collect::<String>().to_uppercase();
+                }
+            }
+            Message::GameKey(key, on) => {
+                if self.device_connected && (1..=3).contains(&key) {
+                    let bit = 1u32 << (key - 1);
+                    let next = if on {
+                        self.game_keys | bit
+                    } else {
+                        self.game_keys & !bit
+                    };
+                    // At least one key always counts
+                    if next != 0 {
+                        self.game_keys = next;
+                    }
+                }
+            }
             Message::Key1Pin(pin) => {
                 if self.device_connected {
                     self.k1_gpio = pin.gpio;
@@ -1573,6 +1606,34 @@ impl App {
                     self.diagnostics.board_test_running = false;
                     self.diagnostics.board_test = Some(res);
                 }
+                diagnostics::DiagnosticsMessage::StartMagnetTest => {
+                    self.diagnostics.magnet = Some(opad_model::board_test::MagnetTest::new());
+                    self.diagnostics.magnet_running = true;
+                    self.diagnostics.magnet_last = None;
+                    self.diagnostics.magnet_error = None;
+                    return magnet_tick();
+                }
+                diagnostics::DiagnosticsMessage::StopMagnetTest => {
+                    self.diagnostics.magnet_running = false;
+                }
+                diagnostics::DiagnosticsMessage::MagnetTick(res) => match res {
+                    Ok(report) => {
+                        if let Some(test) = self.diagnostics.magnet.as_mut() {
+                            test.update(&report);
+                            if test.done() {
+                                self.diagnostics.magnet_running = false;
+                            }
+                        }
+                        self.diagnostics.magnet_last = Some(report);
+                        if self.diagnostics.magnet_running {
+                            return magnet_tick();
+                        }
+                    }
+                    Err(e) => {
+                        self.diagnostics.magnet_running = false;
+                        self.diagnostics.magnet_error = Some(e);
+                    }
+                },
                 diagnostics::DiagnosticsMessage::UseCarrierKeyPins => {
                     self.k1_gpio = opad_model::board_test::CARRIER_KEY1_GPIO;
                     self.k2_gpio = opad_model::board_test::CARRIER_KEY2_GPIO;
@@ -1663,6 +1724,13 @@ impl App {
                         .unwrap_or(self.config.key1_hid_usage),
                     key2_hid_usage: char_to_hid_usage(&self.k2_input)
                         .unwrap_or(self.config.key2_hid_usage),
+                    // Empty: key 3 sends nothing
+                    key3_hid_usage: if self.k3_input.trim().is_empty() {
+                        0
+                    } else {
+                        char_to_hid_usage(&self.k3_input).unwrap_or(self.config.key3_hid_usage)
+                    },
+                    game_keys: self.game_keys,
                     debounce_us: self.debounce,
                     key1_gpio: self.k1_gpio,
                     key2_gpio: self.k2_gpio,
@@ -3065,6 +3133,12 @@ impl App {
     fn adopt_config(&mut self, config: &DeviceConfig) {
         self.k1_input = config.key1_char();
         self.k2_input = config.key2_char();
+        self.k3_input = if config.key3_hid_usage == 0 {
+            String::new()
+        } else {
+            config.key3_char()
+        };
+        self.game_keys = config.game_keys;
         self.k1_gpio = config.key1_gpio;
         self.k2_gpio = config.key2_gpio;
         self.swipes = SwipeDir::ALL.map(|d| config.swipe(d));
@@ -3252,6 +3326,22 @@ pub fn tosu_source_status(override_path: Option<&std::path::Path>) -> String {
         }
     }
     "Bundled (default)".to_string()
+}
+
+/// One step of the PCB tab's magnet test: a board test, a short pause so the
+/// pad's protocol task is not kept busy, then its report
+fn magnet_tick() -> Task<Message> {
+    Task::perform(
+        async {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            match ipc::request(IpcRequest::RunBoardTest).await {
+                Ok(IpcResponse::BoardTest(report)) => Ok(report),
+                Ok(IpcResponse::Error(e)) | Err(e) => Err(e),
+                Ok(other) => Err(format!("Unexpected response: {:?}", other)),
+            }
+        },
+        |res| Message::Diagnostics(diagnostics::DiagnosticsMessage::MagnetTick(res)),
+    )
 }
 
 #[cfg(test)]

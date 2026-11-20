@@ -423,6 +423,7 @@ mod tests {
         let controller = crate::runtime::RuntimeController::new(
             opad_model::DeviceConfig::default(),
             Some(DeviceInfo {
+                key_count: 2,
                 device_id: "OSUPAD-TEST".to_string(),
                 board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                 firmware_version: firmware.to_string(),

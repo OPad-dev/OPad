@@ -22,6 +22,10 @@ extern "C" {
 #define DEVICE_CONFIG_VERSION               7
 #define DEVICE_CONFIG_DEFAULT_KEY1          0x1D // 'Z'
 #define DEVICE_CONFIG_DEFAULT_KEY2          0x1B // 'X'
+#define DEVICE_CONFIG_DEFAULT_KEY3          0x06 // 'C' (Hall Effect V3's third key)
+// Keys whose presses count toward the total, tap rate and map stats: bit k =
+// key k+1. Every key keeps its own lifetime counter regardless.
+#define DEVICE_CONFIG_DEFAULT_GAME_KEYS     0x03 // keys 1 and 2
 #define DEVICE_CONFIG_DEFAULT_DEBOUNCE_US   5000
 #define DEVICE_CONFIG_DEFAULT_BRIGHTNESS    100
 #define DEVICE_CONFIG_DEFAULT_SLEEP_S       600
@@ -88,6 +92,17 @@ typedef struct __attribute__((packed)) {
     uint8_t swipe_mods[4];
 } device_config_data_t;
 
+// Settings added after v7, in an NVS record of their own ("cfg_ext"): the v7
+// blob above must never grow, or firmware rolled back to cannot read it.
+typedef struct __attribute__((packed)) {
+    uint8_t version;     // DEVICE_CONFIG_EXT_VERSION
+    uint8_t key3_usage;  // key 3 (Hall Effect V3) HID usage, 0 = sends nothing
+    uint8_t game_keys;   // DEVICE_CONFIG_DEFAULT_GAME_KEYS; never 0
+    uint8_t reserved;
+} device_config_ext_t;
+
+#define DEVICE_CONFIG_EXT_VERSION 1
+
 /**
  * @brief Initialize device configuration from NVS (or set defaults).
  * Non-fatal: falls back to safe defaults on any NVS or validation failure.
@@ -109,6 +124,7 @@ bool device_config_blob_layout_ok(size_t len, uint32_t version);
  * @brief Validate Hall Effect key configuration parameters.
  */
 bool device_config_validate_he(const he_key_settings_t in[2], char *err_msg, size_t err_msg_len);
+// HE settings are kept for HE_KEYS_MAX keys; validate_he checks two at a time
 
 /**
  * @brief Header GPIOs a key switch can be wired to. The bench debug GPIO may be
@@ -144,22 +160,34 @@ esp_err_t device_config_set(const device_config_data_t *cfg);
  */
 esp_err_t device_config_flush(void);
 
+/** @brief True if the ext settings are values the pad accepts. */
+bool device_config_validate_ext(const device_config_ext_t *ext, char *err_msg, size_t err_msg_len);
+
+/** @brief The settings that live outside the v7 blob. */
+void device_config_get_ext(device_config_ext_t *out);
+
+/**
+ * @brief Set, apply and save them (deferred to IDLE like the rest).
+ * No write when unchanged.
+ */
+esp_err_t device_config_set_ext(const device_config_ext_t *ext);
+
 /**
  * @brief Get current Hall Effect key configuration snapshot.
  */
-void device_config_get_he(he_key_settings_t out[2]);
+void device_config_get_he(he_key_settings_t out[HE_KEYS_MAX]);
 
 /**
  * @brief Apply Hall Effect configuration to hardware and subsystems in RAM.
  */
-void device_config_apply_he(const he_key_settings_t in[2]);
+void device_config_apply_he(const he_key_settings_t in[HE_KEYS_MAX]);
 
 /**
  * @brief Set and save new Hall Effect key configuration.
  * Applies to RAM immediately; if state is IDLE, commits to NVS immediately.
  * If active (PLAYING or COOLDOWN), marks dirty and defers NVS write until IDLE.
  */
-esp_err_t device_config_set_he(const he_key_settings_t in[2]);
+esp_err_t device_config_set_he(const he_key_settings_t in[HE_KEYS_MAX]);
 
 /**
  * @brief Copies the current owner id out. All zero when unclaimed.

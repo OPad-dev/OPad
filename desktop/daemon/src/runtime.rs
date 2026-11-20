@@ -112,6 +112,8 @@ pub struct DaemonState {
     pub tap: TapState,
     pub he_calibration: Option<opad_model::HeCalibrationStatus>,
     pub latest_he_progress: Option<opad_model::HeCalibrationProgress>,
+    /// Key 3's counters, while a pad with three keys is connected
+    pub key3: Option<opad_model::Key3Counters>,
 }
 
 impl DaemonState {
@@ -195,6 +197,7 @@ pub enum RuntimeEvent {
     DeviceStatus {
         latency: LatencyStats,
         he_calibration: Option<opad_model::HeCalibrationStatus>,
+        key3: opad_model::Key3Counters,
     },
     DeviceHeCalibrationProgress(opad_model::HeCalibrationProgress),
     DeviceLayoutAck {
@@ -424,6 +427,7 @@ impl RuntimeController {
             },
             he_calibration: None,
             latest_he_progress: None,
+            key3: None,
         };
 
         Self {
@@ -593,7 +597,15 @@ impl RuntimeController {
             if at < origin {
                 continue;
             }
-            let (k1, k2) = if key == 1 { (1, 0) } else { (0, 1) };
+            // The pad sends game keys only; the lowest is the first finger
+            // whichever keys they are (Z/C plays key 3 as the second)
+            let (k1, k2) = match self.state.config.game_key_slot(key) {
+                Some(0) => (1, 0),
+                Some(_) => (0, 1),
+                // Firmware predating game keys sends keys 1 and 2
+                None if key == 1 => (1, 0),
+                None => (0, 1),
+            };
             tracker.presses(k1, k2, at);
             fed = true;
         }
@@ -904,6 +916,7 @@ impl RuntimeController {
                 self.state.foreign_pad = false;
                 self.state.he_calibration = None;
                 self.state.latest_he_progress = None;
+                self.state.key3 = None;
                 self.cal_gui_launched = false;
             }
 
@@ -923,8 +936,15 @@ impl RuntimeController {
             RuntimeEvent::DeviceStatus {
                 latency,
                 he_calibration,
+                key3,
             } => {
                 self.state.latency = Some(latency);
+                let three_keys = self
+                    .state
+                    .device_info
+                    .as_ref()
+                    .is_some_and(|i| i.key_count >= 3);
+                self.state.key3 = three_keys.then_some(key3);
                 // Only HelloAck.he_calibration says the pad can calibrate.
                 // Firmware from before the calibration flow (e23a43e..83c821d)
                 // sends HeCalibrationStatus on every pad, MX ones included,
@@ -938,7 +958,10 @@ impl RuntimeController {
                     self.state.he_calibration = None;
                 } else {
                     let uncalibrated = he_calibration.as_ref().is_some_and(|cal| {
-                        cal.is_locked || !cal.key1_calibrated || !cal.key2_calibrated
+                        cal.is_locked
+                            || !cal.key1_calibrated
+                            || !cal.key2_calibrated
+                            || (three_keys && !cal.key3_calibrated)
                     });
                     self.state.he_calibration = he_calibration;
                     if uncalibrated && !self.cal_gui_launched {

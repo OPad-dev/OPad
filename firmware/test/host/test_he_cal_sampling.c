@@ -3,6 +3,18 @@
 #include <stdlib.h>
 #include "input/he_cal_runner.h"
 
+// Two-key (V1) wrappers for the 3-key API (HE_KEYS_MAX)
+static inline bool feed2(he_cal_runner_t *r, int32_t raw0, int32_t raw1)
+{
+    const int32_t raw[HE_KEYS_MAX] = {raw0, raw1, 0};
+    return he_cal_runner_feed(r, raw);
+}
+static inline bool locked2(bool running, bool v1, bool v2)
+{
+    he_calibration_t cal[HE_KEYS_MAX] = {{.valid = v1}, {.valid = v2}, {.valid = false}};
+    return he_cal_is_locked_decision(running, cal, 2);
+}
+
 static uint32_t rng = 42;
 
 // Rounded sum of 12 uniform nibbles: sd = sqrt(255) * .35 ~= 5.6 counts.
@@ -26,11 +38,11 @@ typedef struct {
 
 static void frame(stream_t *s, int32_t raw0, int32_t raw1)
 {
-    he_cal_samples_push(&s->batch, raw0, raw1);
+    he_cal_samples_push(&s->batch, (const int32_t[HE_KEYS_MAX]){raw0, raw1, 0}, 2);
     if (++s->frames % 80 == 0) { // LVGL consumes every 20 ms
         he_cal_runner_feed_samples(&s->runner, &s->batch);
         he_cal_samples_reset(&s->batch);
-        he_cal_runner_feed(&s->old, raw0, raw1); // previous firmware
+        feed2(&s->old, raw0, raw1); // previous firmware
     }
 }
 
@@ -118,7 +130,7 @@ static void test_rest_extrema_and_lost_data_fail_closed(void)
     he_cal_samples_reset(&s);
     for (int i = 0; i < 128; i++) {
         // One moving rest sample between timer snapshots must not be missed.
-        he_cal_samples_push(&s, i == 100 ? 2160 : 2086, 2086);
+        he_cal_samples_push(&s, (const int32_t[HE_KEYS_MAX]){i == 100 ? 2160 : 2086, 2086, 0}, 2);
     }
     assert(s.min[0] == 2086 && s.max[0] == 2160);
     assert(he_cal_runner_feed_samples(&r, &s));
@@ -126,14 +138,14 @@ static void test_rest_extrema_and_lost_data_fail_closed(void)
 
     he_cal_runner_start(&r);
     he_cal_samples_reset(&s);
-    for (int i = 0; i <= HE_CAL_SAMPLE_CAPACITY; i++) he_cal_samples_push(&s, 2086, 2086);
+    for (int i = 0; i <= HE_CAL_SAMPLE_CAPACITY; i++) he_cal_samples_push(&s, (const int32_t[HE_KEYS_MAX]){2086, 2086, 0}, 2);
     assert(s.lost && s.count == HE_CAL_SAMPLE_CAPACITY);
     assert(he_cal_runner_feed_samples(&r, &s));
     assert(r.stage == HE_RUNNER_FAILED);
 
     he_cal_runner_start(&r);
     he_cal_samples_reset(&s);
-    he_cal_samples_push(&s, -1, 2086);
+    he_cal_samples_push(&s, (const int32_t[HE_KEYS_MAX]){-1, 2086, 0}, 2);
     assert(s.lost);
     assert(he_cal_runner_feed_samples(&r, &s));
     assert(r.stage == HE_RUNNER_FAILED);

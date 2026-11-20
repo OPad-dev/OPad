@@ -19,6 +19,7 @@
  */
 
 #include <stdint.h>
+#include "input/he_params.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,9 +31,10 @@ extern "C" {
 #define HE_FRAME_MEDIAN_MAX 16  // readings per key the median keeps (the newest)
 
 typedef struct {
-    int32_t newest[2];   // per key, -1 = no valid reading in the frame
-    int32_t median[2];   // per key, -1 likewise; even counts round the middle pair down
-    uint16_t count[2];   // valid readings per key
+    // Per key (V1 fills keys 1 and 2; key 3 stays -1). -1 = no valid reading
+    int32_t newest[HE_KEYS_MAX];
+    int32_t median[HE_KEYS_MAX];  // -1 likewise; even counts round the middle pair down
+    uint16_t count[HE_KEYS_MAX];  // valid readings per key
     uint16_t foreign;    // words from another unit or channel
     uint16_t railed;     // key words at 0 or HE_FRAME_RAW_MAX
 } he_frame_t;

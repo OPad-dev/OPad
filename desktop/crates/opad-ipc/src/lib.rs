@@ -354,6 +354,9 @@ pub enum IpcResponse {
         /// Hall Effect calibration status from the connected pad
         #[serde(default)]
         he_calibration: Option<opad_model::HeCalibrationStatus>,
+        /// Key 3's counters, with a pad that has three keys (Hall Effect V3)
+        #[serde(default)]
+        key3: Option<opad_model::Key3Counters>,
     },
     ConfigUpdated {
         config: DeviceConfig,

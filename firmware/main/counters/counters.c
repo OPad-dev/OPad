@@ -17,6 +17,7 @@ static const char *NVS_NAMESPACE = "osupad";
 static uint32_t s_generation = 1;
 static uint64_t s_last_saved_key1 = 0;
 static uint64_t s_last_saved_key2 = 0;
+static uint64_t s_last_saved_key3 = 0;
 static bool s_initialized = false;
 static bool s_counters_nvs_ok = false;
 static uint32_t s_nvs_writes = 0;
@@ -112,6 +113,12 @@ esp_err_t counters_init(void)
         nvs_set_u64(handle, "key2_cnt", k2);
     }
 
+    // Key 3 (HE V3): written by the first checkpoint that has a press to keep
+    uint64_t k3 = 0;
+    if (nvs_get_u64(handle, "key3_cnt", &k3) != ESP_OK) {
+        k3 = 0;
+    }
+
     nvs_commit(handle);
     nvs_close(handle);
 
@@ -119,9 +126,11 @@ esp_err_t counters_init(void)
     // (key_event_add_lifetime_presses) rather than overwriting, so any keypresses
     // that occurred between HID-ready and counters_init are preserved.
     key_event_add_lifetime_presses(k1, k2);
+    key_event_add_lifetime_key3(k3);
 
     s_last_saved_key1 = k1;
     s_last_saved_key2 = k2;
+    s_last_saved_key3 = k3;
     s_initialized = true;
     s_counters_nvs_ok = true;
 
@@ -145,6 +154,7 @@ void counters_get(counters_snapshot_t *snapshot)
     snapshot->generation = s_generation;
     snapshot->lifetime_key1 = ram_k1;
     snapshot->lifetime_key2 = ram_k2;
+    snapshot->lifetime_key3 = key_event_get_lifetime_key3();
 }
 
 esp_err_t counters_sync_from_host(uint32_t generation, uint64_t k1, uint64_t k2, bool force, char *err_msg, size_t err_msg_len)
@@ -194,7 +204,8 @@ bool counters_is_dirty(void)
 {
     uint64_t k1 = 0, k2 = 0;
     key_event_get_lifetime_presses(&k1, &k2);
-    return k1 != s_last_saved_key1 || k2 != s_last_saved_key2;
+    return k1 != s_last_saved_key1 || k2 != s_last_saved_key2 ||
+           key_event_get_lifetime_key3() != s_last_saved_key3;
 }
 
 void counters_request_checkpoint(void)
@@ -230,7 +241,8 @@ static esp_err_t checkpoint_locked(bool force)
     counters_snapshot_t current;
     counters_get(&current);
 
-    if (!force && current.lifetime_key1 == s_last_saved_key1 && current.lifetime_key2 == s_last_saved_key2) {
+    if (!force && current.lifetime_key1 == s_last_saved_key1 && current.lifetime_key2 == s_last_saved_key2 &&
+        current.lifetime_key3 == s_last_saved_key3) {
         return ESP_OK; // Clean, no writes needed
     }
 
@@ -244,12 +256,16 @@ static esp_err_t checkpoint_locked(bool force)
     nvs_set_u32(handle, "generation", current.generation);
     nvs_set_u64(handle, "key1_cnt", current.lifetime_key1);
     nvs_set_u64(handle, "key2_cnt", current.lifetime_key2);
+    if (current.lifetime_key3 != 0 || s_last_saved_key3 != 0) {
+        nvs_set_u64(handle, "key3_cnt", current.lifetime_key3);
+    }
     nvs_commit(handle);
     nvs_close(handle);
 
     s_nvs_writes++;
     s_last_saved_key1 = current.lifetime_key1;
     s_last_saved_key2 = current.lifetime_key2;
+    s_last_saved_key3 = current.lifetime_key3;
 
     ESP_LOGI(TAG, "Counters checkpointed to NVS: Gen=%lu, K1=%llu, K2=%llu (total writes=%lu)",
              (unsigned long)current.generation,
@@ -273,6 +289,7 @@ esp_err_t counters_reset(void)
     counters_get(&current);
     s_generation++;
     rebase_lifetime_presses(&current, 0, 0);
+    key_event_add_lifetime_key3(0 - current.lifetime_key3);  // to 0, modulo 2^64
     esp_err_t err = checkpoint_locked(true);
     xSemaphoreGive(s_lock);
     return err;

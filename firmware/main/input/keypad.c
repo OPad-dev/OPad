@@ -16,7 +16,7 @@
 static const char *TAG = "keypad";
 
 static portMUX_TYPE s_keypad_spinlock = portMUX_INITIALIZER_UNLOCKED;
-static debounce_state_t s_key_debounce[KEY_ID_COUNT];
+static debounce_state_t s_key_debounce[KEYPAD_KEY_COUNT];
 
 #define KEYPAD_DEFAULT_KEY1_GPIO 14
 #define KEYPAD_DEFAULT_KEY2_GPIO 9
@@ -46,8 +46,8 @@ static uint32_t s_line_test_req_id = 0;
 static uint32_t s_line_test_done_id = 0;
 static keypad_line_test_t s_line_test_result;
 
-static volatile bool s_key_state[KEY_ID_COUNT] = {false, false};
-static volatile int64_t s_last_transition_us[KEY_ID_COUNT] = {0, 0};
+static volatile bool s_key_state[KEYPAD_KEY_COUNT] = {false, false};
+static volatile int64_t s_last_transition_us[KEYPAD_KEY_COUNT] = {0, 0};
 
 static TaskHandle_t s_input_task_handle = NULL;
 // Off when the input module is one v1 cannot read (Hall Effect): its analog
@@ -57,7 +57,7 @@ static volatile bool s_input_enabled = true;
 static void IRAM_ATTR gpio_isr_handler(void *arg)
 {
     int key_index = (intptr_t)arg - 1;
-    if (key_index < 0 || key_index >= KEY_ID_COUNT || !s_input_enabled) {
+    if (key_index < 0 || key_index >= KEYPAD_KEY_COUNT || !s_input_enabled) {
         return;
     }
 
@@ -111,9 +111,9 @@ static bool read_key_level(int key_index)
 // pressed, so the caller can have the keypad task report it.
 static bool restart_debounce_from_pins(void)
 {
-    bool levels[KEY_ID_COUNT] = {read_key_level(0), read_key_level(1)};
+    bool levels[KEYPAD_KEY_COUNT] = {read_key_level(0), read_key_level(1)};
     portENTER_CRITICAL(&s_keypad_spinlock);
-    for (int i = 0; i < KEY_ID_COUNT; i++) {
+    for (int i = 0; i < KEYPAD_KEY_COUNT; i++) {
         debounce_init(&s_key_debounce[i], levels[i]);
         s_key_state[i] = levels[i];
         s_last_transition_us[i] = esp_timer_get_time();
@@ -142,7 +142,7 @@ static void line_test_run(keypad_line_test_t *r)
     keypad_config_t cfg = s_config;
     portEXIT_CRITICAL(&s_keypad_spinlock);
 
-    gpio_num_t pins[KEY_ID_COUNT] = {(gpio_num_t)cfg.key1_gpio, (gpio_num_t)cfg.key2_gpio};
+    gpio_num_t pins[KEYPAD_KEY_COUNT] = {(gpio_num_t)cfg.key1_gpio, (gpio_num_t)cfg.key2_gpio};
     *r = (keypad_line_test_t){
         .gpio = {cfg.key1_gpio, cfg.key2_gpio},
     };
@@ -151,12 +151,12 @@ static void line_test_run(keypad_line_test_t *r)
     }
 
     s_input_enabled = false;
-    for (int i = 0; i < KEY_ID_COUNT; i++) {
+    for (int i = 0; i < KEYPAD_KEY_COUNT; i++) {
         r->high_with_pullup[i] = gpio_get_level(pins[i]) != 0;
         gpio_set_pull_mode(pins[i], GPIO_PULLDOWN_ONLY);
     }
     esp_rom_delay_us(LINE_TEST_SETTLE_US);
-    for (int i = 0; i < KEY_ID_COUNT; i++) {
+    for (int i = 0; i < KEYPAD_KEY_COUNT; i++) {
         r->high_with_pulldown[i] = gpio_get_level(pins[i]) != 0;
         gpio_set_pull_mode(pins[i], GPIO_PULLUP_ONLY);
     }
@@ -334,7 +334,7 @@ static void keypad_task(void *pvParameters)
     (void)pvParameters;
     ESP_LOGI(TAG, "Keypad high-priority processing task started on core %d", xPortGetCoreID());
 
-    bool reported_state[KEY_ID_COUNT] = {false, false};
+    bool reported_state[KEYPAD_KEY_COUNT] = {false, false};
     detect_scan_t scan = {0};
     // Off at boot (Hall Effect module): app_main parked the pins already
     bool parked = !s_input_enabled;
@@ -346,7 +346,7 @@ static void keypad_task(void *pvParameters)
         int64_t min_rem_us = -1;
 
         portENTER_CRITICAL(&s_keypad_spinlock);
-        for (int i = 0; i < KEY_ID_COUNT; i++) {
+        for (int i = 0; i < KEYPAD_KEY_COUNT; i++) {
             if (!s_key_debounce[i].resampled && s_key_debounce[i].lockout_end_us > 0) {
                 int64_t rem = s_key_debounce[i].lockout_end_us - now_us;
                 if (rem <= 0) {
@@ -388,7 +388,7 @@ static void keypad_task(void *pvParameters)
         now_us = esp_timer_get_time();
 
         // 1. Re-sample keys whose lockout has expired
-        for (int i = 0; i < KEY_ID_COUNT; i++) {
+        for (int i = 0; i < KEYPAD_KEY_COUNT; i++) {
             bool need_resample = false;
             portENTER_CRITICAL(&s_keypad_spinlock);
             if (!s_key_debounce[i].resampled && s_key_debounce[i].lockout_end_us > 0 &&
@@ -433,7 +433,7 @@ static void keypad_task(void *pvParameters)
         }
 
         // 2. Submit state changes to USB HID
-        for (int i = 0; i < KEY_ID_COUNT; i++) {
+        for (int i = 0; i < KEYPAD_KEY_COUNT; i++) {
             bool current;
             int64_t edge_us;
 

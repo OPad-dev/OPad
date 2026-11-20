@@ -26,6 +26,13 @@ esp_err_t board_keys_set_gpio(int key1_gpio, int key2_gpio);
 void board_keys_set_analog(bool analog);
 
 /**
+ * @brief Leave the key pins alone entirely: an HE V3 module's SPI lines run
+ * on them. Call before keypad_init. board_keys_set_gpio then only records
+ * the pins, and no key ISR is attached.
+ */
+void board_keys_set_detached(bool detached);
+
+/**
  * @brief Initialize LCD backlight PWM (LEDC).
  */
 esp_err_t board_backlight_init(void);
@@ -100,19 +107,24 @@ int board_get_key1_gpio(void);
 int board_get_key2_gpio(void);
 
 /**
- * @brief Detected input module type from the ID voltage divider on GPIO8.
+ * @brief Detected input module type from the ID voltage divider (GPIO8, or
+ * GPIO7 for a V3 module on a turned-over FFC). Values match module_id_t
+ * (input/module_id.h), which holds the thresholds.
  */
 typedef enum {
-    BOARD_MODULE_NONE = 0,   /**< No module detected (ID line floating) */
-    BOARD_MODULE_MX   = 1,   /**< MX mechanical switch module (~0.30 V) */
-    BOARD_MODULE_HE   = 2,   /**< Hall Effect rapid-trigger module (~1.06 V) */
+    BOARD_MODULE_NONE  = 0,  /**< No module detected (ID line floating) */
+    BOARD_MODULE_MX    = 1,  /**< MX V1, two keys (~0.30 V) */
+    BOARD_MODULE_HE    = 2,  /**< Hall Effect V1, analog on the key pins (~1.06 V) */
+    BOARD_MODULE_HE_V3 = 3,  /**< Hall Effect V3, ADS7028 over SPI (~1.65 V) */
+    BOARD_MODULE_MX_V3 = 4,  /**< MX V3, three keys (~2.24 V) */
 } board_module_type_t;
 
 /**
- * @brief Read the module ID voltage on GPIO8 (ADC1_CH7) and identify the
- *        input module on the carrier's connector. BOARD_MODULE_NONE also
- *        covers hand-wired pads, where nothing drives GPIO8.
- *        Call once at boot before keypad_init.
+ * @brief Identify the input module on the carrier's connector: ID on GPIO8
+ *        (ADC1_CH7), and when nothing is there, GPIO7 (ADC1_CH6) for a V3
+ *        module on a turned-over FFC. BOARD_MODULE_NONE also covers
+ *        hand-wired pads, where nothing drives either. Later ID reads use
+ *        the pin the module was found on. Call once at boot before keypad_init.
  */
 board_module_type_t board_detect_module(void);
 
@@ -122,7 +134,20 @@ board_module_type_t board_detect_module(void);
 board_module_type_t board_boot_module(void);
 
 /**
- * @brief Measure the module ID voltage on GPIO8: with the internal pull-down
+ * @brief True when board_detect_module found a V3 module's ID on GPIO7: its
+ *        FFC is turned over (contact k to 15 - k), so every module line sits on
+ *        another GPIO (board_pins.h, BOARD_V3_*).
+ */
+bool board_boot_cable_reversed(void);
+
+/**
+ * @brief GPIO the module ID is read from: GPIO8, or GPIO7 after
+ *        board_detect_module found a turned-over V3 cable.
+ */
+int board_module_id_gpio(void);
+
+/**
+ * @brief Measure the module ID voltage (board_module_id_gpio): with the internal pull-down
  *        off (open) and on (loaded), in mV, -1 where a read failed. Takes
  *        about 10 ms. ADC1 must be free (nothing else here uses it).
  */
@@ -142,9 +167,15 @@ esp_err_t board_module_present_fast(bool *out_present, int *out_mv);
 void board_module_id_release(void);
 
 /**
- * @brief Which module an ID reading names (the thresholds board_detect_module uses).
+ * @brief Which module an ID reading names (module_id_classify).
  */
 board_module_type_t board_module_from_id(int open_mv, int loaded_mv);
+
+/**
+ * @brief Measure the ID voltage on one pin (GPIO8 or GPIO7), as
+ *        board_read_module_id does: the board test reads both on a V3 carrier.
+ */
+esp_err_t board_read_module_id_on(int gpio, int *out_open_mv, int *out_loaded_mv);
 
 /**
  * @brief ID voltage (mV) with GPIO2 pulled up and ID pulled down: about

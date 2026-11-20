@@ -36,7 +36,7 @@ pub enum Field {
 
 #[derive(Debug, Clone)]
 pub enum KeysMessage {
-    /// `true`: Key 1 and Key 2 get their own settings
+    /// `true`: each key gets its own settings
     Separate(bool),
     ToggleAdvanced,
     Set(usize, Field, u32),
@@ -57,28 +57,46 @@ pub struct KeysState {
     separate: bool,
     advanced: bool,
     /// Edited values, not yet saved. `None` until the pad's are adopted.
-    edit: Option<[HeKeyConfig; 2]>,
+    edit: Option<[HeKeyConfig; KEYS]>,
     dirty: bool,
     live: Option<HeLiveSample>,
     /// What the live view draws: each key's reading through a One Euro
     /// filter. Display only; the pad decides presses from raw readings.
-    smooth: [OneEuro; 2],
+    smooth: [OneEuro; KEYS],
     /// Where the stems are drawn: glides towards `smooth` every frame, so
     /// the motion has no steps between the ~50 readings a second
-    drawn: [Option<f32>; 2],
+    drawn: [Option<f32>; KEYS],
     /// The filtered reading with jitter suppression: moves only once the
     /// reading leaves a dead zone around it, so a still key stays still
-    held: [Option<f32>; 2],
+    held: [Option<f32>; KEYS],
     last_frame: Option<iced::time::Instant>,
     live_supported: bool,
     live_inflight: bool,
 }
 
-fn pad_settings(config: &DeviceConfig) -> [HeKeyConfig; 2] {
+/// Keys a pad can have (Hall Effect V3 has three); [`key_count`] says how
+/// many this one does
+const KEYS: usize = 3;
+
+/// Keys the connected pad reads: 2, or 3 with a Hall Effect V3 module
+fn key_count(app: &App) -> usize {
+    app.device_info
+        .as_ref()
+        .map_or(2, |i| i.key_count as usize)
+        .clamp(2, KEYS)
+}
+
+fn pad_settings(config: &DeviceConfig) -> [HeKeyConfig; KEYS] {
     [
         config.key1_he.unwrap_or_default(),
         config.key2_he.unwrap_or_default(),
+        config.key3_he.unwrap_or_default(),
     ]
+}
+
+/// Whether the keys in use have different settings
+fn differ(edit: &[HeKeyConfig; KEYS], keys: usize) -> bool {
+    edit[..keys].iter().any(|c| *c != edit[0])
 }
 
 impl KeysState {
@@ -89,7 +107,7 @@ impl KeysState {
         }
         let pad = pad_settings(config);
         if self.edit.is_none() {
-            self.separate = pad[0] != pad[1];
+            self.separate = pad[0] != pad[1] || (config.key3_he.is_some() && pad[2] != pad[0]);
         }
         self.edit = Some(pad);
     }
@@ -99,8 +117,8 @@ impl KeysState {
         self.live = None;
         self.live_inflight = false;
         self.smooth = Default::default();
-        self.drawn = [None; 2];
-        self.held = [None; 2];
+        self.drawn = [None; KEYS];
+        self.held = [None; KEYS];
         self.last_frame = None;
     }
 
@@ -113,7 +131,7 @@ impl KeysState {
         // Most of the way in ~3 time constants: fast enough to keep up with
         // a press, slow enough to hide the 20 ms steps between readings
         let follow = 1.0 - (-dt / DRAW_TAU_S).exp();
-        for k in 0..2 {
+        for k in 0..KEYS {
             self.held[k] = match (self.held[k], self.smooth[k].value) {
                 (Some(h), Some(v)) => Some(hold(h, v)),
                 (_, v) => v,
@@ -126,12 +144,12 @@ impl KeysState {
     }
 
     fn take_sample(&mut self, sample: Option<HeLiveSample>, now: std::time::Instant) {
-        let was_down = self.live.map(|s| [s.key1_down, s.key2_down]);
+        let was_down = self.live.map(|s| [s.key1_down, s.key2_down, s.key3_down]);
         self.live = sample;
         match sample {
             Some(s) => {
-                let down = [s.key1_down, s.key2_down];
-                for (k, raw) in [s.key1_raw, s.key2_raw].into_iter().enumerate() {
+                let down = [s.key1_down, s.key2_down, s.key3_down];
+                for (k, raw) in [s.key1_raw, s.key2_raw, s.key3_raw].into_iter().enumerate() {
                     if raw == 0 {
                         self.smooth[k] = OneEuro::default();
                     } else if was_down.is_some_and(|d| d[k] != down[k]) {
@@ -237,10 +255,12 @@ pub fn update(app: &mut App, msg: KeysMessage) -> Task<Message> {
             for (k, c) in edit.iter_mut().enumerate() {
                 c.actuation = c.actuation.max(slider_min(app, app.keys.separate, k, c));
             }
-            let [k1, k2] = edit;
+            let [k1, k2, k3] = edit;
             let config = DeviceConfig {
                 key1_he: Some(k1),
                 key2_he: Some(k2),
+                // Only a pad with key 3 gets its settings
+                key3_he: (key_count(app) >= 3).then_some(k3).or(app.config.key3_he),
                 ..app.config.clone()
             };
             app.keys.dirty = false;
@@ -280,7 +300,7 @@ pub fn update(app: &mut App, msg: KeysMessage) -> Task<Message> {
             Task::none()
         }
         edit_msg => {
-            app.keys.edit_settings(edit_msg, pad);
+            app.keys.edit_settings(edit_msg, pad, key_count(app));
             // Without the opt-out, the actuation point cannot go below where
             // the key really presses (lowering the release distance or
             // switching the opt-out off can move that up)
@@ -297,22 +317,23 @@ pub fn update(app: &mut App, msg: KeysMessage) -> Task<Message> {
 }
 
 impl KeysState {
-    fn edit_settings(&mut self, msg: KeysMessage, pad: [HeKeyConfig; 2]) {
+    fn edit_settings(&mut self, msg: KeysMessage, pad: [HeKeyConfig; KEYS], keys: usize) {
         let separate = self.separate;
         let edit = self.edit.get_or_insert(pad);
-        // Linked: every change goes to both keys
-        let apply = |edit: &mut [HeKeyConfig; 2], key: usize, f: &dyn Fn(&mut HeKeyConfig)| {
+        // Linked: every change goes to every key
+        let apply = |edit: &mut [HeKeyConfig; KEYS], key: usize, f: &dyn Fn(&mut HeKeyConfig)| {
             if separate {
                 f(&mut edit[key]);
             } else {
-                edit.iter_mut().for_each(f);
+                edit[..keys].iter_mut().for_each(f);
             }
         };
         match msg {
             KeysMessage::Separate(on) => {
                 self.separate = on;
-                if !on && edit[0] != edit[1] {
-                    edit[1] = edit[0];
+                if !on && differ(edit, keys) {
+                    let first = edit[0];
+                    edit[1..keys].iter_mut().for_each(|c| *c = first);
                     self.dirty = true;
                 }
             }
@@ -361,7 +382,7 @@ impl KeysState {
             KeysMessage::Revert => {
                 self.dirty = false;
                 self.edit = Some(pad);
-                self.separate = pad[0] != pad[1];
+                self.separate = differ(&pad, keys);
             }
             KeysMessage::Save
             | KeysMessage::PollLive
@@ -594,10 +615,10 @@ fn key_controls<'a>(app: &'a App, key: usize, c: HeKeyConfig) -> Element<'a, Mes
 }
 
 fn cal_span(cal: &HeCalibrationStatus, key: usize) -> Option<(u32, u32)> {
-    let (ok, rest, full) = if key == 0 {
-        (cal.key1_calibrated, cal.key1_rest, cal.key1_full)
-    } else {
-        (cal.key2_calibrated, cal.key2_rest, cal.key2_full)
+    let (ok, rest, full) = match key {
+        0 => (cal.key1_calibrated, cal.key1_rest, cal.key1_full),
+        1 => (cal.key2_calibrated, cal.key2_rest, cal.key2_full),
+        _ => (cal.key3_calibrated, cal.key3_rest, cal.key3_full),
     };
     (ok && full > rest).then_some((rest, full))
 }
@@ -611,7 +632,8 @@ fn live_view<'a>(app: &'a App, key: usize, c: HeKeyConfig) -> Element<'a, Messag
     // Pressed comes from the pad as is; only the drawn position is smoothed
     let down = match sample {
         Some(s) if key == 0 => s.key1_down,
-        Some(s) => s.key2_down,
+        Some(s) if key == 1 => s.key2_down,
+        Some(s) => s.key3_down,
         None => false,
     };
     let shown = app.keys.drawn[key];
@@ -671,10 +693,11 @@ pub fn view(app: &App) -> Element<'_, Message> {
         return scrollable(content.push(card(text("Connect your OPad to change its keys."))))
             .into();
     }
+    let keys = key_count(app);
     let calibrated = app
         .he_calibration
         .as_ref()
-        .is_some_and(|c| c.key1_calibrated && c.key2_calibrated);
+        .is_some_and(|c| c.key1_calibrated && c.key2_calibrated && (keys < 3 || c.key3_calibrated));
     if !calibrated {
         return scrollable(content.push(card(
             column![
@@ -727,23 +750,26 @@ pub fn view(app: &App) -> Element<'_, Message> {
             .spacing(12),
         )
     };
+    const TITLES: [&str; KEYS] = ["Key 1", "Key 2", "Key 3"];
     if separate {
-        content = content.push(
-            row![key_column(0, "Key 1"), key_column(1, "Key 2")]
-                .spacing(14)
-                .width(Length::Fill),
-        );
+        let mut columns = row![].spacing(14).width(Length::Fill);
+        for (k, title) in TITLES.iter().enumerate().take(keys) {
+            columns = columns.push(key_column(k, title));
+        }
+        content = content.push(columns);
     } else {
-        // Linked: one set of controls, both keys' live views
+        // Linked: one set of controls, every key's live view
+        let mut views =
+            row![container(key_controls(app, 0, edit[0])).width(Length::Fill)].spacing(20);
+        for (k, c) in edit.iter().enumerate().take(keys) {
+            views = views.push(live_view(app, k, *c));
+        }
         content = content.push(card(
             column![
-                text("Both keys").size(16).font(theme::FONT_BOLD),
-                row![
-                    container(key_controls(app, 0, edit[0])).width(Length::Fill),
-                    live_view(app, 0, edit[0]),
-                    live_view(app, 1, edit[1]),
-                ]
-                .spacing(20),
+                text(if keys == 3 { "All keys" } else { "Both keys" })
+                    .size(16)
+                    .font(theme::FONT_BOLD),
+                views,
             ]
             .spacing(12),
         ));
@@ -1136,7 +1162,8 @@ impl canvas::Program<Message> for SwitchView {
 mod tests {
     use super::*;
 
-    fn pad(a: u32, b: u32) -> [HeKeyConfig; 2] {
+    // A two-key pad (key 3 unused, as on V1 and MX)
+    fn pad(a: u32, b: u32) -> [HeKeyConfig; KEYS] {
         [
             HeKeyConfig {
                 actuation: a,
@@ -1146,10 +1173,11 @@ mod tests {
                 actuation: b,
                 ..HeKeyConfig::default()
             },
+            HeKeyConfig::default(),
         ]
     }
 
-    fn config(p: [HeKeyConfig; 2]) -> DeviceConfig {
+    fn config(p: [HeKeyConfig; KEYS]) -> DeviceConfig {
         DeviceConfig {
             key1_he: Some(p[0]),
             key2_he: Some(p[1]),
@@ -1158,11 +1186,39 @@ mod tests {
     }
 
     #[test]
+    fn three_keys_link_and_unlink_together() {
+        let mut s = KeysState::default();
+        let three = [
+            HeKeyConfig {
+                actuation: 500,
+                ..HeKeyConfig::default()
+            },
+            HeKeyConfig {
+                actuation: 500,
+                ..HeKeyConfig::default()
+            },
+            HeKeyConfig {
+                actuation: 400,
+                ..HeKeyConfig::default()
+            },
+        ];
+        // Linked edits reach key 3 too
+        s.edit_settings(KeysMessage::Set(0, Field::Actuation, 300), three, 3);
+        assert!(s.edit.unwrap().iter().all(|c| c.actuation == 300));
+        // Separate, key 3 alone, then linking copies key 1 over it
+        s.edit_settings(KeysMessage::Separate(true), three, 3);
+        s.edit_settings(KeysMessage::Set(2, Field::Actuation, 700), three, 3);
+        assert_eq!(s.edit.unwrap()[2].actuation, 700);
+        s.edit_settings(KeysMessage::Separate(false), three, 3);
+        assert_eq!(s.edit.unwrap()[2].actuation, 300);
+    }
+
+    #[test]
     fn linked_edits_change_both_keys() {
         let mut s = KeysState::default();
         s.adopt(&config(pad(500, 500)));
         assert!(!s.separate, "equal keys start linked");
-        s.edit_settings(KeysMessage::Set(0, Field::Actuation, 300), pad(500, 500));
+        s.edit_settings(KeysMessage::Set(0, Field::Actuation, 300), pad(500, 500), 2);
         let e = s.edit.unwrap();
         assert_eq!((e[0].actuation, e[1].actuation), (300, 300));
         assert!(s.dirty);
@@ -1173,10 +1229,10 @@ mod tests {
         let mut s = KeysState::default();
         s.adopt(&config(pad(500, 400)));
         assert!(s.separate, "different keys start separate");
-        s.edit_settings(KeysMessage::Set(1, Field::Actuation, 250), pad(500, 400));
+        s.edit_settings(KeysMessage::Set(1, Field::Actuation, 250), pad(500, 400), 2);
         let e = s.edit.unwrap();
         assert_eq!((e[0].actuation, e[1].actuation), (500, 250));
-        s.edit_settings(KeysMessage::Separate(false), pad(500, 400));
+        s.edit_settings(KeysMessage::Separate(false), pad(500, 400), 2);
         let e = s.edit.unwrap();
         assert_eq!((e[0].actuation, e[1].actuation), (500, 500));
     }
@@ -1185,14 +1241,14 @@ mod tests {
     fn unsaved_edits_survive_status_polls_and_revert_restores_the_pad() {
         let mut s = KeysState::default();
         s.adopt(&config(pad(500, 500)));
-        s.edit_settings(KeysMessage::Set(0, Field::Actuation, 200), pad(500, 500));
+        s.edit_settings(KeysMessage::Set(0, Field::Actuation, 200), pad(500, 500), 2);
         s.adopt(&config(pad(500, 500)));
         assert_eq!(
             s.edit.unwrap()[0].actuation,
             200,
             "a poll must not undo an edit"
         );
-        s.edit_settings(KeysMessage::Revert, pad(500, 500));
+        s.edit_settings(KeysMessage::Revert, pad(500, 500), 2);
         assert!(!s.dirty);
         assert_eq!(s.edit.unwrap()[0].actuation, 500);
     }
@@ -1353,17 +1409,17 @@ mod tests {
         let p = pad(500, 500);
         s.adopt(&config(p));
         // Continuous does nothing while rapid trigger is off
-        s.edit_settings(KeysMessage::Continuous(0, true), p);
+        s.edit_settings(KeysMessage::Continuous(0, true), p, 2);
         assert_eq!(s.edit.unwrap()[0].rt_mode, HeRtMode::Off);
-        s.edit_settings(KeysMessage::RapidTrigger(0, true), p);
+        s.edit_settings(KeysMessage::RapidTrigger(0, true), p, 2);
         assert_eq!(s.edit.unwrap()[0].rt_mode, HeRtMode::Normal);
-        s.edit_settings(KeysMessage::Continuous(0, true), p);
+        s.edit_settings(KeysMessage::Continuous(0, true), p, 2);
         assert_eq!(s.edit.unwrap()[1].rt_mode, HeRtMode::Continuous);
         // Switching rapid trigger off and on again keeps its last mode only while on
-        s.edit_settings(KeysMessage::RapidTrigger(0, false), p);
+        s.edit_settings(KeysMessage::RapidTrigger(0, false), p, 2);
         assert_eq!(s.edit.unwrap()[0].rt_mode, HeRtMode::Off);
         // Simple sensitivity sets press and release together
-        s.edit_settings(KeysMessage::Set(0, Field::Sensitivity, 120), p);
+        s.edit_settings(KeysMessage::Set(0, Field::Sensitivity, 120), p, 2);
         let e = s.edit.unwrap()[0];
         assert_eq!((e.rt_press, e.rt_release), (120, 120));
     }

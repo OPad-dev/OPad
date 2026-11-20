@@ -27,6 +27,10 @@ extern "C" {
 
 #define HE_PCT_FULL 1000  // settings unit: 0.1 % of the calibrated span
 
+// Keys an HE module can have: V1 has 2, V3 has 3. Arrays are this big; the
+// running count is the module's (he_backend_key_count).
+#define HE_KEYS_MAX 3
+
 typedef struct {
     uint16_t actuation;     // depth of the first press
     uint16_t release_hyst;  // plain release this far above `actuation`

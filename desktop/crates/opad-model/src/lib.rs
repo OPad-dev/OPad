@@ -71,6 +71,22 @@ pub struct DeviceInfo {
     /// The pad supports Hall Effect calibration storage
     #[serde(default)]
     pub he_calibration: bool,
+    /// Keys the pad reads now: 3 with a Hall Effect V3 module, otherwise 2
+    /// (also from firmware that predates key 3)
+    #[serde(default = "default_key_count")]
+    pub key_count: u32,
+}
+
+fn default_key_count() -> u32 {
+    2
+}
+
+/// Key 3 (Hall Effect V3): its own counters, apart from keys 1 and 2 and
+/// never part of their reconciliation
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct Key3Counters {
+    pub lifetime: u64,
+    pub map: u32,
 }
 
 /// Press counters maintained on both device and host (§12, §13)
@@ -194,6 +210,19 @@ pub const DEFAULT_KEY2_GPIO: u32 = 9;
 
 pub fn key_pin(gpio: u32) -> Option<KeyPin> {
     KEY_PINS.iter().copied().find(|p| p.gpio == gpio)
+}
+
+/// Key 3's default: 'C', after Z and X
+pub const DEFAULT_KEY3_HID_USAGE: u32 = 0x06;
+/// Keys 1 and 2 count toward totals and the tap rate
+pub const DEFAULT_GAME_KEYS: u32 = 0b011;
+
+fn default_key3_usage() -> u32 {
+    DEFAULT_KEY3_HID_USAGE
+}
+
+fn default_game_keys() -> u32 {
+    DEFAULT_GAME_KEYS
 }
 
 fn default_key1_gpio() -> u32 {
@@ -365,6 +394,15 @@ pub struct DeviceConfig {
     pub key1_he: Option<HeKeyConfig>,
     #[serde(default)]
     pub key2_he: Option<HeKeyConfig>,
+    /// Key 3 (Hall Effect V3) HID usage; 0 sends nothing
+    #[serde(default = "default_key3_usage")]
+    pub key3_hid_usage: u32,
+    #[serde(default)]
+    pub key3_he: Option<HeKeyConfig>,
+    /// The keys whose presses count toward the total, tap rate and map stats:
+    /// bit k = key k+1. Every key keeps its own lifetime counter.
+    #[serde(default = "default_game_keys")]
+    pub game_keys: u32,
 }
 
 /// Rapid trigger mode on the wire
@@ -541,6 +579,11 @@ impl HeKeyConfig {
 pub struct HeLiveSample {
     pub key1_raw: u32,
     pub key2_raw: u32,
+    /// Hall Effect V3; 0 otherwise
+    #[serde(default)]
+    pub key3_raw: u32,
+    #[serde(default)]
+    pub key3_down: bool,
     /// What the pad reports to the PC
     pub key1_down: bool,
     pub key2_down: bool,
@@ -565,6 +608,13 @@ pub struct HeCalibrationStatus {
     pub noise_floor_rest: u32,
     #[serde(default)]
     pub noise_floor_movement: u32,
+    /// Key 3 (Hall Effect V3)
+    #[serde(default)]
+    pub key3_calibrated: bool,
+    #[serde(default)]
+    pub key3_rest: u32,
+    #[serde(default)]
+    pub key3_full: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -577,6 +627,8 @@ pub enum HeCalStage {
     Key2,
     Success,
     Failed,
+    /// Hall Effect V3 only, after Key2
+    Key3,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -611,6 +663,10 @@ pub struct HeCalibrationProgress {
     pub key2_rest: u32,
     #[serde(default)]
     pub key2_full: u32,
+    #[serde(default)]
+    pub key3_rest: u32,
+    #[serde(default)]
+    pub key3_full: u32,
 }
 
 impl Default for DeviceConfig {
@@ -640,6 +696,9 @@ impl Default for DeviceConfig {
             result_animations: result_anim::ResultAnimations::default(),
             key1_he: None,
             key2_he: None,
+            key3_hid_usage: DEFAULT_KEY3_HID_USAGE,
+            key3_he: None,
+            game_keys: DEFAULT_GAME_KEYS,
         }
     }
 }
@@ -704,6 +763,21 @@ impl DeviceConfig {
         if let Some(he) = &self.key2_he {
             he.validate("key 2")?;
         }
+        if self.key3_hid_usage != 0 && !(0x04..=0xE7).contains(&self.key3_hid_usage) {
+            return Err(format!(
+                "Invalid key3 HID usage: 0x{:02X}",
+                self.key3_hid_usage
+            ));
+        }
+        if let Some(he) = &self.key3_he {
+            he.validate("key 3")?;
+        }
+        if self.game_keys == 0 || self.game_keys > 0b111 {
+            return Err(format!(
+                "Game keys must name at least one of keys 1-3 (got 0b{:b})",
+                self.game_keys
+            ));
+        }
         validate_key_gpios(self.key1_gpio, self.key2_gpio)
     }
 
@@ -713,6 +787,29 @@ impl DeviceConfig {
 
     pub fn key2_char(&self) -> String {
         hid_usage_to_char(self.key2_hid_usage)
+    }
+
+    pub fn key3_char(&self) -> String {
+        if self.key3_hid_usage == 0 {
+            "none".to_string()
+        } else {
+            hid_usage_to_char(self.key3_hid_usage)
+        }
+    }
+
+    /// Whether key `key` (1-3) is a game key
+    pub fn is_game_key(&self, key: u8) -> bool {
+        (1..=3).contains(&key) && self.game_keys & (1 << (key - 1)) != 0
+    }
+
+    /// Which tap-rate finger a game key's press goes to: the lowest game key
+    /// is the first (0), any other the second (1). `None` for other keys.
+    pub fn game_key_slot(&self, key: u8) -> Option<usize> {
+        if !self.is_game_key(key) {
+            return None;
+        }
+        let lowest = (1..=3u8).find(|&k| self.is_game_key(k))?;
+        Some(if key == lowest { 0 } else { 1 })
     }
 }
 
@@ -1049,6 +1146,7 @@ mod tests {
     fn valid_backup() -> JsonBackup {
         JsonBackup::new(
             &DeviceInfo {
+                key_count: 2,
                 device_id: "OSUPAD-TEST".to_string(),
                 board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                 firmware_version: "1.0.0".to_string(),
@@ -1274,5 +1372,67 @@ mod tests {
             ..Default::default()
         });
         assert!(cfg.validate().is_err());
+    }
+}
+
+#[cfg(test)]
+mod game_key_tests {
+    use super::*;
+
+    fn with(game_keys: u32) -> DeviceConfig {
+        DeviceConfig {
+            game_keys,
+            ..DeviceConfig::default()
+        }
+    }
+
+    #[test]
+    fn default_plays_keys_1_and_2() {
+        let c = DeviceConfig::default();
+        assert_eq!(c.game_key_slot(1), Some(0));
+        assert_eq!(c.game_key_slot(2), Some(1));
+        assert_eq!(c.game_key_slot(3), None);
+        assert_eq!(c.key3_char(), "C");
+    }
+
+    #[test]
+    fn z_c_and_x_c_put_key_3_second() {
+        let zc = with(0b101);
+        assert_eq!(zc.game_key_slot(1), Some(0));
+        assert_eq!(zc.game_key_slot(3), Some(1));
+        assert_eq!(zc.game_key_slot(2), None);
+        let xc = with(0b110);
+        assert_eq!(xc.game_key_slot(2), Some(0));
+        assert_eq!(xc.game_key_slot(3), Some(1));
+    }
+
+    #[test]
+    fn game_keys_and_key3_are_validated() {
+        assert!(with(0).validate().is_err());
+        assert!(with(0b1000).validate().is_err());
+        assert!(with(0b111).validate().is_ok());
+        let none = DeviceConfig {
+            key3_hid_usage: 0,
+            ..DeviceConfig::default()
+        };
+        assert!(none.validate().is_ok());
+        assert_eq!(none.key3_char(), "none");
+        let bad = DeviceConfig {
+            key3_hid_usage: 0x02,
+            ..DeviceConfig::default()
+        };
+        assert!(bad.validate().is_err());
+    }
+
+    #[test]
+    fn config_from_an_older_app_gets_the_defaults() {
+        let mut v = serde_json::to_value(DeviceConfig::default()).unwrap();
+        let o = v.as_object_mut().unwrap();
+        o.remove("key3_hid_usage");
+        o.remove("game_keys");
+        o.remove("key3_he");
+        let c: DeviceConfig = serde_json::from_value(v).unwrap();
+        assert_eq!(c.key3_hid_usage, DEFAULT_KEY3_HID_USAGE);
+        assert_eq!(c.game_keys, DEFAULT_GAME_KEYS);
     }
 }

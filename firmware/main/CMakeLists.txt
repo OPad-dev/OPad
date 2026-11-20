@@ -13,6 +13,10 @@ idf_component_register(
         "input/swipe_labels.c"
         "input/module_watch.c"
         "input/module_monitor.c"
+        "input/module_id.c"
+        "input/ads7028.c"
+        "input/he_spi_frame.c"
+        "input/he_spi_source.c"
         "input/he_rt.c"
         "input/he_params.c"
         "input/he_frame.c"
@@ -53,6 +57,7 @@ idf_component_register(
         "protocol/nanopb/pb_decode.c"
         "diag/diag.c"
         "diag/board_test.c"
+        "diag/he_adc_test.c"
         "diag/hall_bench.c"
     INCLUDE_DIRS
         "."

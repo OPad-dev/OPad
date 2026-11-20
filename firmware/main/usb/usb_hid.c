@@ -13,11 +13,15 @@ static const char *TAG = "usb_hid";
 
 static uint8_t s_key1_code = 0x1D; // 'z'
 static uint8_t s_key2_code = 0x1B; // 'x'
-static uint8_t s_key3_code = 0x35; // '`' / '~' (osu! Quick Retry)
+static uint8_t s_key3_code = 0x06; // 'c' (Hall Effect V3's third key)
+static uint8_t s_retry_code = 0x35; // '`' / '~' (osu! Quick Retry, the touchscreen)
 
 /*
  * Two keyboard reports, each on its own endpoint: key 1 and the touchscreen
- * key on the keyboard interface, key 2 on the media interface. A report can
+ * key on the keyboard interface, key 2 on the media interface. Key 3 (HE V3)
+ * rides on the endpoint the other game key does not use (usb_hid_set_key3_link):
+ * playing Z/C it goes with key 2, X/C with key 1, so two game keys never share
+ * an endpoint. A report can
  * only be submitted once the host has collected the one before it on the same
  * endpoint (up to 1 ms); with one endpoint, K2 changing within 1 ms of K1 in a
  * stream waited for that. Now a key only waits on its own previous report
@@ -39,6 +43,7 @@ static uint8_t s_key3_code = 0x35; // '`' / '~' (osu! Quick Retry)
  */
 static volatile bool s_key1_pressed = false;
 static volatile bool s_key2_pressed = false;
+static volatile bool s_key3_pressed = false;
 // Key the touchscreen holds down (0 = none), and the modifiers with it
 static volatile uint8_t s_touch_code = 0;
 static volatile uint8_t s_touch_mods = 0;
@@ -58,6 +63,8 @@ static hid_link_t s_links[LINK_COUNT] = {
     [LINK_KEY1_TOUCH] = {.instance = HID_INSTANCE_KEYBOARD, .report_id = 0},
     [LINK_KEY2] = {.instance = HID_INSTANCE_MEDIA, .report_id = MEDIA_REPORT_ID_KEYBOARD},
 };
+// Which report carries key 3 (written by the protocol task, read by submitters)
+static volatile uint8_t s_key3_link = LINK_KEY2;
 
 // a is at or past b, with wrap-around
 static inline bool seq_reached(unsigned a, unsigned b)
@@ -79,10 +86,9 @@ esp_err_t usb_hid_init(void)
     keypad_get_config(&cfg);
     s_key1_code = cfg.keycode1;
     s_key2_code = cfg.keycode2;
-    s_key3_code = 0x35; // Default: '`' (Grave accent / Tilde for osu! Quick Retry)
 
-    ESP_LOGI(TAG, "USB HID keyboard initialized (Key1: 0x%02X, Key2: 0x%02X, TouchRetry: 0x%02X)",
-             s_key1_code, s_key2_code, s_key3_code);
+    ESP_LOGI(TAG, "USB HID keyboard initialized (Key1: 0x%02X, Key2: 0x%02X, Key3: 0x%02X, TouchRetry: 0x%02X)",
+             s_key1_code, s_key2_code, s_key3_code, s_retry_code);
     return ESP_OK;
 }
 
@@ -91,15 +97,38 @@ bool usb_hid_is_ready(void)
     return tud_hid_n_ready(HID_INSTANCE_KEYBOARD);
 }
 
+static bool try_submit(hid_link_t *link);
+
 void usb_hid_set_keycodes(uint8_t key1_code, uint8_t key2_code)
 {
     s_key1_code = key1_code;
     s_key2_code = key2_code;
 }
 
-void usb_hid_set_key3_code(uint8_t key3_code)
+void usb_hid_set_key3(uint8_t key3_code, uint8_t game_keys)
 {
+    // Key 3 rides with key 2 unless key 2 is a game key and key 1 is not
+    uint8_t link = (game_keys & 0x2) && !(game_keys & 0x1) ? LINK_KEY1_TOUCH : LINK_KEY2;
+    if (key3_code == s_key3_code && link == s_key3_link) {
+        return;
+    }
+    uint8_t old = s_key3_link;
     s_key3_code = key3_code;
+    s_key3_link = link;
+    if (s_key3_pressed) {
+        // Held across the change: both reports get resent with it moved
+        for (uint8_t i = 0; i < LINK_COUNT; i++) {
+            if (i == old || i == link) {
+                atomic_fetch_add(&s_links[i].change_seq, 1);
+                try_submit(&s_links[i]);
+            }
+        }
+    }
+}
+
+void usb_hid_set_touch_retry_code(uint8_t code)
+{
+    s_retry_code = code;
 }
 
 static bool submit_current_state(hid_link_t *link)
@@ -107,14 +136,21 @@ static bool submit_current_state(hid_link_t *link)
     uint8_t keycodes[6] = {0};
     uint8_t mods = 0;
 
+    uint8_t count = 0;
+    bool key3_here = s_key3_pressed && s_key3_code && link == &s_links[s_key3_link];
     if (link == &s_links[LINK_KEY2]) {
         if (s_key2_pressed) {
-            keycodes[0] = s_key2_code;
+            keycodes[count++] = s_key2_code;
+        }
+        if (key3_here) {
+            keycodes[count++] = s_key3_code;
         }
     } else {
-        uint8_t count = 0;
         if (s_key1_pressed) {
             keycodes[count++] = s_key1_code;
+        }
+        if (key3_here) {
+            keycodes[count++] = s_key3_code;
         }
         uint8_t touch_code = s_touch_code;
         if (touch_code) {
@@ -161,7 +197,7 @@ void usb_hid_set_touch_key(uint8_t keycode, uint8_t modifiers)
 
 void usb_hid_set_touch_retry(bool pressed)
 {
-    usb_hid_set_touch_key(pressed ? s_key3_code : 0, 0);
+    usb_hid_set_touch_key(pressed ? s_retry_code : 0, 0);
 }
 
 bool usb_hid_touch_key_delivered(void)
@@ -173,7 +209,10 @@ bool usb_hid_touch_key_delivered(void)
 bool IRAM_ATTR usb_hid_handle_key_event(uint8_t key_index, bool pressed, int64_t edge_us)
 {
     hid_link_t *link;
-    if (key_index == 1) {
+    if (key_index == 2) {
+        s_key3_pressed = pressed;
+        link = &s_links[s_key3_link];
+    } else if (key_index == 1) {
         s_key2_pressed = pressed;
         link = &s_links[LINK_KEY2];
     } else {

@@ -119,7 +119,8 @@ enum Commands {
         period: Option<u32>,
     },
     /// Test the carrier and input module PCBs: module ID, cable direction,
-    /// key lines and connector shorts. Release both keys while it runs.
+    /// key lines, connector shorts, and a Hall Effect V3 module's ADC and
+    /// sensors. Release both keys while it runs.
     BoardTest {
         #[arg(
             long,
@@ -127,6 +128,12 @@ enum Commands {
                     Key 2 = GPIO7, then test again"
         )]
         fix_pins: bool,
+        #[arg(
+            long,
+            help = "Hall Effect V3: then watch the sensors live while you hold a magnet over \
+                    each key in turn (up to 60 s, Ctrl-C to stop)"
+        )]
+        magnet: bool,
     },
     /// Play a result animation on the pad, as osu!'s results screen would
     Animation {
@@ -166,33 +173,110 @@ fn format_board_test(
 ) -> String {
     use board_test::CheckStatus;
     let mut out = String::from("=== Board test (carrier + input module) ===\n");
+    let mut group = None;
     for c in checks {
+        if group != Some(c.group) {
+            group = Some(c.group);
+            out += &format!("\n[{}]\n", c.group.label());
+        }
         let mark = match c.status {
             CheckStatus::Pass => "✓",
             CheckStatus::Warn => "!",
             CheckStatus::Fail => "✗",
             CheckStatus::Skip => "-",
         };
-        out += &format!("{mark} {:<13} {}\n", c.name, c.detail);
+        out += &format!("{mark} {:<18} {}\n", c.name, c.detail);
     }
     if report.ran {
         let mv = |v: Option<u32>| v.map_or("-".to_string(), |v| format!("{v} mV"));
         out += &format!(
-            "\nMeasured: module {} (boot: {}), ID {} / {} loaded, reverse probe {}, keys GPIO{} / GPIO{}\n",
+            "\nMeasured: module {} (boot: {}), ID {} / {} loaded, reverse probe {}, keys GPIO{} / GPIO{}{}\n",
             report.module.label(),
             report.boot_module.label(),
             mv(report.id_mv),
             mv(report.id_loaded_mv),
             mv(report.reverse_probe_mv),
             report.key1_gpio,
-            report.key2_gpio
+            report.key2_gpio,
+            if report.cable_reversed { ", cable turned over" } else { "" }
         );
+        if let Some(a) = &report.he_adc {
+            let hex = |v: Option<u8>| v.map_or("-".to_string(), |v| format!("0x{v:02X}"));
+            out += &format!(
+                "ADC: status {} / {} / {} (reset / cleared / end), walk {}/{} wrong bits 0x{:02X}, cal {}\n",
+                hex(a.status_after_reset),
+                hex(a.status_after_clear),
+                hex(a.status_end),
+                a.walk_mismatches,
+                a.walk_writes,
+                a.walk_wrong_bits,
+                if a.cal_done { "done" } else { "not done" }
+            );
+            for (i, c) in a.channels.iter().enumerate() {
+                out += &format!(
+                    "Key {} sensor: AIN{} {:.3} V ({:.1} codes), min {} max {}, noise {:.2} rms\n",
+                    i + 1,
+                    c.ain,
+                    c.volts(),
+                    c.mean(),
+                    c.min,
+                    c.max,
+                    c.noise()
+                );
+            }
+        }
     }
     out += &format!(
         "Result: {}\n",
         board_test::overall(checks).label().to_uppercase()
     );
     out
+}
+
+/// Run the board test over and over while the person moves a magnet over each
+/// Hall Effect V3 key, printing the sensors live
+async fn magnet_test(stream: &mut IpcStream) -> Result<board_test::MagnetTest> {
+    use std::io::Write;
+    let mut test = board_test::MagnetTest::new();
+    println!(
+        "\nMagnet test: hold a magnet over key 1, then key 2, then key 3 (a key's own magnet \
+         or any small magnet). Each sensor must move {:.0} codes on its own.",
+        board_test::MAGNET_MOVE_CODES
+    );
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    while tokio::time::Instant::now() < deadline {
+        let report = run_board_test(stream).await?;
+        test.update(&report);
+        let Some(adc) = report
+            .he_adc
+            .as_ref()
+            .filter(|a| a.ran && !a.channels.is_empty())
+        else {
+            bail!("the pad returned no sensor readings: is a Hall Effect V3 module connected?");
+        };
+        let base = test.baseline().unwrap_or(&[]);
+        let line: Vec<String> = adc
+            .channels
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                let d = c.mean() - base.get(i).copied().unwrap_or(c.mean());
+                let mark = match test.key(i) {
+                    board_test::MagnetKey::Waiting { .. } => " ",
+                    board_test::MagnetKey::Seen { .. } => "✓",
+                    board_test::MagnetKey::Crosstalk { .. } => "!",
+                };
+                format!("{mark} K{} {:.3} V ({:+5.0})", i + 1, c.volts(), d)
+            })
+            .collect();
+        print!("\r{}   ", line.join("   "));
+        std::io::stdout().flush().ok();
+        if test.done() {
+            break;
+        }
+    }
+    println!("\n");
+    Ok(test)
 }
 
 #[tokio::main]
@@ -247,6 +331,7 @@ async fn main() -> Result<()> {
                 last_backup,
                 pending_takeover,
                 he_calibration,
+                key3,
                 ..
             } = resp
             {
@@ -282,11 +367,21 @@ async fn main() -> Result<()> {
                 }
                 let he_active = device_info.as_ref().is_some_and(|i| i.he_calibration);
                 if let Some(cal) = he_calibration.as_ref().filter(|_| he_active) {
-                    println!(
-                        "HE Calibrated:    K1: {}, K2: {}",
-                        if cal.key1_calibrated { "yes" } else { "no" },
-                        if cal.key2_calibrated { "yes" } else { "no" }
-                    );
+                    let yes = |b: bool| if b { "yes" } else { "no" };
+                    if key3.is_some() {
+                        println!(
+                            "HE Calibrated:    K1: {}, K2: {}, K3: {}",
+                            yes(cal.key1_calibrated),
+                            yes(cal.key2_calibrated),
+                            yes(cal.key3_calibrated)
+                        );
+                    } else {
+                        println!(
+                            "HE Calibrated:    K1: {}, K2: {}",
+                            yes(cal.key1_calibrated),
+                            yes(cal.key2_calibrated)
+                        );
+                    }
                 }
                 println!(
                     "Key 1 (K1):       {} (Total: {} presses)",
@@ -298,7 +393,30 @@ async fn main() -> Result<()> {
                     config.key2_char(),
                     counters.lifetime_key2
                 );
-                println!("Total Presses:    {}", counters.total_lifetime_presses());
+                if let Some(k3) = key3 {
+                    println!(
+                        "Key 3 (K3):       {} (Total: {} presses)",
+                        config.key3_char(),
+                        k3.lifetime
+                    );
+                    let names: Vec<String> = (1..=3u8)
+                        .filter(|&k| config.is_game_key(k))
+                        .map(|k| format!("K{k}"))
+                        .collect();
+                    println!("Game Keys:        {}", names.join(" + "));
+                }
+                // The game keys' presses (keys 1 and 2 unless others are picked)
+                let total: u64 = [
+                    counters.lifetime_key1,
+                    counters.lifetime_key2,
+                    key3.map_or(0, |k| k.lifetime),
+                ]
+                .iter()
+                .enumerate()
+                .filter(|(k, _)| config.is_game_key(*k as u8 + 1))
+                .map(|(_, v)| v)
+                .sum();
+                println!("Total Presses:    {}", total);
                 println!("Generation:       {}", counters.counter_generation);
                 println!(
                     "Last Sync:        {}",
@@ -839,7 +957,7 @@ async fn main() -> Result<()> {
             }
         }
 
-        Commands::BoardTest { fix_pins } => {
+        Commands::BoardTest { fix_pins, magnet } => {
             let stream = daemon(&mut stream)?;
             let mut report = run_board_test(stream).await?;
             let mut checks = board_test::evaluate(&report);
@@ -866,6 +984,18 @@ async fn main() -> Result<()> {
                 checks = board_test::evaluate(&report);
             }
             print!("{}", format_board_test(&report, &checks));
+            if magnet {
+                let test = magnet_test(stream).await?;
+                for c in test.checks() {
+                    println!(
+                        "{} {:<18} {}",
+                        c.status.label().to_uppercase(),
+                        c.name,
+                        c.detail
+                    );
+                }
+                checks.extend(test.checks());
+            }
             if board_test::overall(&checks) == board_test::CheckStatus::Fail {
                 if !fix_pins && needs_pins {
                     println!("Run `opadctl board-test --fix-pins` to set the key pins.");

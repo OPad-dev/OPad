@@ -65,6 +65,7 @@ pub fn current(
             running_partition: None,
             he_input: false,
             he_calibration: false,
+            key_count: 2,
         });
     Some(JsonBackup::new(&info, &st.counters, &st.config))
 }
@@ -208,6 +209,7 @@ mod tests {
     fn backup_at(secs: i64, key1: u64) -> JsonBackup {
         let mut b = JsonBackup::new(
             &DeviceInfo {
+                key_count: 2,
                 device_id: "pad-1".into(),
                 board_profile: "waveshare_esp32s3_touch_lcd_2".into(),
                 firmware_version: "1.0.0".into(),

@@ -5,6 +5,9 @@
 #include "esp_err.h"
 #include "input/key_event.h"
 
+// The MX switches on GPIOs: keys 1 and 2 (key 3 only exists on Hall Effect V3)
+#define KEYPAD_KEY_COUNT 2
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -52,9 +55,9 @@ bool keypad_detect_pin_result(uint32_t id, int *out_pin);
 /** Result of keypad_line_test */
 typedef struct {
     bool ran;                                 // false: key input is off (Hall Effect module)
-    uint8_t gpio[KEY_ID_COUNT];               // the pins tested
-    bool high_with_pullup[KEY_ID_COUNT];      // false: switch held, or line shorted to GND
-    bool high_with_pulldown[KEY_ID_COUNT];    // true: an external pull-up (MX module) reaches the pin
+    uint8_t gpio[KEYPAD_KEY_COUNT];               // the pins tested
+    bool high_with_pullup[KEYPAD_KEY_COUNT];      // false: switch held, or line shorted to GND
+    bool high_with_pulldown[KEYPAD_KEY_COUNT];    // true: an external pull-up (MX module) reaches the pin
 } keypad_line_test_t;
 
 /**

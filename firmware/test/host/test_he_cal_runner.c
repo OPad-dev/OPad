@@ -3,22 +3,34 @@
 #include <string.h>
 #include "input/he_cal_runner.h"
 
+// Two-key (V1) wrappers for the 3-key API (HE_KEYS_MAX)
+static inline bool feed2(he_cal_runner_t *r, int32_t raw0, int32_t raw1)
+{
+    const int32_t raw[HE_KEYS_MAX] = {raw0, raw1, 0};
+    return he_cal_runner_feed(r, raw);
+}
+static inline bool locked2(bool running, bool v1, bool v2)
+{
+    he_calibration_t cal[HE_KEYS_MAX] = {{.valid = v1}, {.valid = v2}, {.valid = false}};
+    return he_cal_is_locked_decision(running, cal, 2);
+}
+
 static void simulate_stroke(he_cal_runner_t *r, int key, int32_t rest, int32_t peak)
 {
     // Rising stroke
     for (int32_t v = rest; v <= peak; v += 30) {
         if (key == 1) {
-            he_cal_runner_feed(r, v, rest);
+            feed2(r, v, rest);
         } else {
-            he_cal_runner_feed(r, rest, v);
+            feed2(r, rest, v);
         }
     }
     // Falling stroke back below release arm threshold
     for (int32_t v = peak; v >= rest; v -= 30) {
         if (key == 1) {
-            he_cal_runner_feed(r, v, rest);
+            feed2(r, v, rest);
         } else {
-            he_cal_runner_feed(r, rest, v);
+            feed2(r, rest, v);
         }
     }
 }
@@ -38,7 +50,7 @@ static void test_full_successful_run(void)
 
     // Feed settle + 64 rest samples for both keys at rest = 2080
     for (int i = 0; i < 64 + 64; i++) {
-        he_cal_runner_feed(&runner, 2080, 2090);
+        feed2(&runner, 2080, 2090);
     }
     assert(runner.stage == HE_RUNNER_KEY1);
 
@@ -78,7 +90,7 @@ static void test_full_successful_run(void)
     assert(prog.stage == HE_RUNNER_SUCCESS);
     assert(prog.presses_done == 5);
 
-    he_calibration_t results[2];
+    he_calibration_t results[HE_KEYS_MAX];
     bool ok = he_cal_runner_get_results(&runner, results);
     assert(ok);
     assert(results[0].valid);
@@ -99,15 +111,15 @@ static void test_rest_noisy_fails(void)
 
     // Settle
     for (int i = 0; i < 64; i++) {
-        he_cal_runner_feed(&runner, 2080, 2080);
+        feed2(&runner, 2080, 2080);
     }
 
     // Feed noisy samples for Key 1 (spread = 50 > max_spread 36)
     for (int i = 0; i < 32; i++) {
-        he_cal_runner_feed(&runner, 2050, 2080);
+        feed2(&runner, 2050, 2080);
     }
     for (int i = 0; i < 32; i++) {
-        he_cal_runner_feed(&runner, 2100, 2080);
+        feed2(&runner, 2100, 2080);
     }
 
     assert(runner.stage == HE_RUNNER_FAILED);
@@ -130,7 +142,7 @@ static void test_span_too_small_fails(void)
 
     // Settle + rest at 2080
     for (int i = 0; i < 64 + 64; i++) {
-        he_cal_runner_feed(&runner, 2080, 2080);
+        feed2(&runner, 2080, 2080);
     }
     assert(runner.stage == HE_RUNNER_KEY1);
 
@@ -158,7 +170,7 @@ static void test_cancel(void)
     he_cal_runner_start(&runner);
 
     for (int i = 0; i < 64 + 64; i++) {
-        he_cal_runner_feed(&runner, 2080, 2080);
+        feed2(&runner, 2080, 2080);
     }
     assert(runner.stage == HE_RUNNER_KEY1);
 
@@ -171,18 +183,18 @@ static void test_cancel(void)
 static void test_lock_decision(void)
 {
     // Never locked on MX (he_running == false)
-    assert(!he_cal_is_locked_decision(false, false, false));
-    assert(!he_cal_is_locked_decision(false, true, false));
-    assert(!he_cal_is_locked_decision(false, false, true));
-    assert(!he_cal_is_locked_decision(false, true, true));
+    assert(!locked2(false, false, false));
+    assert(!locked2(false, true, false));
+    assert(!locked2(false, false, true));
+    assert(!locked2(false, true, true));
 
     // Locked when HE running and either key uncalibrated
-    assert(he_cal_is_locked_decision(true, false, false));
-    assert(he_cal_is_locked_decision(true, true, false));
-    assert(he_cal_is_locked_decision(true, false, true));
+    assert(locked2(true, false, false));
+    assert(locked2(true, true, false));
+    assert(locked2(true, false, true));
 
     // Unlocked when both keys are calibrated
-    assert(!he_cal_is_locked_decision(true, true, true));
+    assert(!locked2(true, true, true));
 
     printf("✓ test_lock_decision passed\n");
 }
@@ -244,7 +256,7 @@ static void test_start_refusals(void)
 
 static void test_failures_and_cancel_keep_old_calibration(void)
 {
-    he_calibration_t saved[2] = {
+    he_calibration_t saved[HE_KEYS_MAX] = {
         {.rest = 2050, .full = 2500, .valid = true},
         {.rest = 2060, .full = 2510, .valid = true},
     };
@@ -255,10 +267,10 @@ static void test_failures_and_cancel_keep_old_calibration(void)
     // 1. Failure during rest leaves saved calibration untouched
     he_cal_runner_start(&runner);
     for (int i = 0; i < 64; i++) {
-        he_cal_runner_feed(&runner, 2080, 2080);
+        feed2(&runner, 2080, 2080);
     }
     for (int i = 0; i < 64; i++) {
-        he_cal_runner_feed(&runner, (i < 32) ? 2000 : 2100, 2080);
+        feed2(&runner, (i < 32) ? 2000 : 2100, 2080);
     }
     assert(runner.stage == HE_RUNNER_FAILED);
     assert(!he_cal_runner_apply_to_saved(&runner, saved));
@@ -268,7 +280,7 @@ static void test_failures_and_cancel_keep_old_calibration(void)
     // 2. Failure during Key 2 (after Key 1 succeeded) leaves saved calibration untouched
     he_cal_runner_start(&runner);
     for (int i = 0; i < 64 + 64; i++) {
-        he_cal_runner_feed(&runner, 2080, 2090);
+        feed2(&runner, 2080, 2090);
     }
     for (int p = 0; p < 5; p++) {
         simulate_stroke(&runner, 1, 2080, 2550);
@@ -289,7 +301,7 @@ static void test_failures_and_cancel_keep_old_calibration(void)
     // 3. Cancel / app disconnect mid-flow leaves saved calibration untouched
     he_cal_runner_start(&runner);
     for (int i = 0; i < 64 + 64; i++) {
-        he_cal_runner_feed(&runner, 2080, 2090);
+        feed2(&runner, 2080, 2090);
     }
     simulate_stroke(&runner, 1, 2080, 2550);
     he_cal_runner_cancel(&runner);
@@ -301,10 +313,57 @@ static void test_failures_and_cancel_keep_old_calibration(void)
     printf("✓ test_failures_and_cancel_keep_old_calibration passed\n");
 }
 
+// Hall Effect V3: rest for all three, then keys 1, 2, 3 in turn
+static void stroke3(he_cal_runner_t *r, int key, const int32_t rest[3], int32_t peak)
+{
+    int32_t raw[HE_KEYS_MAX] = {rest[0], rest[1], rest[2]};
+    for (int32_t v = rest[key]; v <= peak; v += 30) {
+        raw[key] = v;
+        he_cal_runner_feed(r, raw);
+    }
+    for (int32_t v = peak; v >= rest[key]; v -= 30) {
+        raw[key] = v;
+        he_cal_runner_feed(r, raw);
+    }
+}
+
+static void test_three_key_run(void)
+{
+    he_cal_runner_t runner;
+    he_cal_runner_init(&runner, NULL);
+    he_cal_runner_set_keys(&runner, 3);
+    he_cal_runner_start(&runner);
+    const int32_t rest[3] = {2198, 2197, 2190};
+    for (int i = 0; i < 64 + 64; i++) {
+        he_cal_runner_feed(&runner, rest);
+    }
+    assert(runner.stage == HE_RUNNER_KEY1);
+    for (int k = 0; k < 3; k++) {
+        he_runner_progress_t prog;
+        he_cal_runner_get_progress(&runner, &prog);
+        assert(prog.active_key == k + 1 && prog.keys == 3);
+        for (int p = 0; p < 5; p++) {
+            stroke3(&runner, k, rest, rest[k] + 500);
+        }
+    }
+    assert(runner.stage == HE_RUNNER_SUCCESS);
+    he_calibration_t results[HE_KEYS_MAX];
+    assert(he_cal_runner_get_results(&runner, results));
+    for (int k = 0; k < 3; k++) {
+        assert(results[k].valid && results[k].rest == rest[k]);
+    }
+    // A key 3 without calibration keeps a V3 pad locked; a V1 pad never looks at it
+    he_calibration_t cal[HE_KEYS_MAX] = {{.valid = true}, {.valid = true}, {.valid = false}};
+    assert(he_cal_is_locked_decision(true, cal, 3));
+    assert(!he_cal_is_locked_decision(true, cal, 2));
+    printf("✓ test_three_key_run passed\n");
+}
+
 int main(void)
 {
     printf("=== Running Hall Effect Calibration Runner Host Tests ===\n");
     test_full_successful_run();
+    test_three_key_run();
     test_rest_noisy_fails();
     test_span_too_small_fails();
     test_cancel();

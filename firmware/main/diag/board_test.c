@@ -4,6 +4,7 @@
 #include "driver/gpio.h"
 #include "esp_rom_sys.h"
 #include "esp_log.h"
+#include <stdio.h>
 
 static const char *TAG = "board_test";
 
@@ -77,6 +78,17 @@ static void test_spares(board_test_result_t *r)
     }
 }
 
+typedef struct {
+    bool cable_reversed;
+    he_adc_test_t *out;
+} he_adc_args_t;
+
+static void run_he_adc_test(void *arg)
+{
+    he_adc_args_t *a = arg;
+    he_adc_test_run(a->cable_reversed, a->out);
+}
+
 esp_err_t board_test_run(board_test_result_t *out)
 {
     if (!out) {
@@ -100,7 +112,7 @@ esp_err_t board_test_run(board_test_result_t *out)
     r.key2_gpio = lines.gpio[KEY_ID_2];
     r.keys_enabled = lines.ran;
     if (lines.ran) {
-        for (int i = 0; i < KEY_ID_COUNT; i++) {
+        for (int i = 0; i < KEYPAD_KEY_COUNT; i++) {
             uint64_t bit = 1ULL << lines.gpio[i];
             r.tested_gpios |= bit;
             if (lines.high_with_pullup[i]) {
@@ -112,8 +124,8 @@ esp_err_t board_test_run(board_test_result_t *out)
         }
     }
 
-    if (he_backend_running()) {
-        // ADC1 belongs to the HE input: a oneshot read would fail, and once
+    if (he_backend_running() && he_backend_source() == HE_SOURCE_ESP_ADC) {
+        // ADC1 belongs to the V1 HE input: a oneshot read would fail, and once
         // stopped the conversions. The module is what boot found.
         r.module = r.boot_module;
     } else {
@@ -127,10 +139,36 @@ esp_err_t board_test_run(board_test_result_t *out)
         board_probe_reversed_cable(&r.reverse_probe_mv);
     }
 
-    // Spare lines only with a module answering: the wiring is then known.
-    // A hand-wired pad may have anything on GPIO2/4/6.
-    if (r.module != BOARD_MODULE_NONE) {
+    r.cable_reversed = board_boot_cable_reversed();
+
+    // Spare lines only with a V1 module answering: the wiring is then known.
+    // A hand-wired pad may have anything on GPIO2/4/6, and on a V3 carrier
+    // they are the HE module's SPI lines or the MX module's key 3.
+    if (r.module == BOARD_MODULE_MX || r.module == BOARD_MODULE_HE) {
         test_spares(&r);
+    }
+
+    if (r.module == BOARD_MODULE_HE_V3) {
+        r.he_adc_present = true;
+        if (he_backend_running() && he_backend_source() == HE_SOURCE_ADS7028) {
+            // The keys read this ADC: release them, stop the stream, test, restart
+            he_adc_args_t a = {.cable_reversed = r.cable_reversed, .out = &r.he_adc};
+            esp_err_t perr = he_backend_run_paused(run_he_adc_test, &a);
+            if (perr != ESP_OK) {
+                r.he_adc = (he_adc_test_t){.status_after_reset = -1, .status_after_clear = -1, .status_end = -1};
+                snprintf(r.he_adc.message, sizeof(r.he_adc.message), "key input busy: %s",
+                         esp_err_to_name(perr));
+            }
+        } else if (lines.ran) {
+            // CS is GPIO10: with the keys armed, selecting the ADC would press one
+            snprintf(r.he_adc.message, sizeof(r.he_adc.message),
+                     "key input is on: restart the pad");
+            r.he_adc.status_after_reset = -1;
+            r.he_adc.status_after_clear = -1;
+            r.he_adc.status_end = -1;
+        } else {
+            he_adc_test_run(r.cable_reversed, &r.he_adc);
+        }
     }
 
     ESP_LOGI(TAG, "Module %d (boot %d), ID %d mV / %d mV loaded, reverse probe %d mV, "

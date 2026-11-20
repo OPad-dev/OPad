@@ -492,6 +492,8 @@ mod tests {
                     key1_full: 2560,
                     key2_rest: 2050,
                     key2_full: 2580,
+                    key3_rest: 0,
+                    key3_full: 0,
                 },
             )),
         };

@@ -29,28 +29,31 @@ typedef enum {
     HE_RUNNER_REST,
     HE_RUNNER_KEY1,
     HE_RUNNER_KEY2,
+    HE_RUNNER_KEY3,     // HE V3 only (he_cal_runner_set_keys)
     HE_RUNNER_SUCCESS,
     HE_RUNNER_FAILED,
 } he_runner_stage_t;
 
 typedef struct {
     he_runner_stage_t stage;
-    uint8_t active_key;       // 1 for Key 1, 2 for Key 2, 0 otherwise
+    uint8_t active_key;       // 1, 2 or 3 for the key being pressed, 0 otherwise
     uint8_t presses_done;     // 0..5
     he_cal_error_t error;
-    uint8_t error_key;        // Key index that failed (0 or 1), or 255
+    uint8_t error_key;        // Key index that failed (0-2), or 255
     const char *error_desc;
-    int32_t last_raw[2];
+    int32_t last_raw[HE_KEYS_MAX];
+    uint8_t keys;             // keys this calibration covers (2 or 3)
 } he_runner_progress_t;
 
 typedef struct {
     he_cal_capture_cfg_t cfg;
     he_runner_stage_t stage;
-    he_cal_capture_t cap[2];
+    uint8_t keys;               // 2 (V1, the default) or 3 (V3)
+    he_cal_capture_t cap[HE_KEYS_MAX];
     he_cal_error_t error;
     uint8_t error_key;
-    he_calibration_t results[2];
-    int32_t last_raw[2];
+    he_calibration_t results[HE_KEYS_MAX];
+    int32_t last_raw[HE_KEYS_MAX];
     uint16_t rest_settle_count; // Brief settle delay before collecting rest
 } he_cal_runner_t;
 
@@ -62,6 +65,8 @@ void he_cal_runner_init(he_cal_runner_t *r, const he_cal_capture_cfg_t *cfg);
 /**
  * @brief Start calibration process (transitions from IDLE/FAILED/SUCCESS to REST).
  */
+/** Calibrate this many keys (2 or 3). Before he_cal_runner_start. */
+void he_cal_runner_set_keys(he_cal_runner_t *r, uint8_t keys);
 void he_cal_runner_start(he_cal_runner_t *r);
 
 /**
@@ -70,13 +75,10 @@ void he_cal_runner_start(he_cal_runner_t *r);
 void he_cal_runner_cancel(he_cal_runner_t *r);
 
 /**
- * @brief Feed raw ADC readings for both keys.
- * @param r Pointer to runner.
- * @param raw0 Reading for Key 1.
- * @param raw1 Reading for Key 2.
+ * @brief Feed one sample: raw[] holds a reading per key, r->keys of them.
  * @return True if stage changed or press count incremented.
  */
-bool he_cal_runner_feed(he_cal_runner_t *r, int32_t raw0, int32_t raw1);
+bool he_cal_runner_feed(he_cal_runner_t *r, const int32_t *raw);
 
 // Drain an ordered ISR batch. Missing/overflowed data fails the attempt;
 // extrema alone cannot preserve stroke arming and release order.
@@ -90,7 +92,8 @@ void he_cal_runner_get_progress(const he_cal_runner_t *r, he_runner_progress_t *
 /**
  * @brief Get calibration results when stage is HE_RUNNER_SUCCESS.
  */
-bool he_cal_runner_get_results(const he_cal_runner_t *r, he_calibration_t out[2]);
+/** out[] gets r->keys results; later entries are left alone. */
+bool he_cal_runner_get_results(const he_cal_runner_t *r, he_calibration_t out[HE_KEYS_MAX]);
 
 /**
  * @brief Friendly short error description for display on screen.
@@ -115,7 +118,8 @@ typedef enum {
  * Locked iff the HE backend is running and either key lacks a valid calibration.
  * Never locked on MX (he_running == false).
  */
-bool he_cal_is_locked_decision(bool he_running, bool key1_valid, bool key2_valid);
+/** Locked while any of the module's keys (keys of cal[]) has no calibration. */
+bool he_cal_is_locked_decision(bool he_running, const he_calibration_t *cal, uint8_t keys);
 
 /**
  * @brief Pure decision: should key and touch/swipe input be suppressed from reaching the PC?
@@ -140,7 +144,7 @@ he_cal_start_check_t he_cal_can_start(bool he_running, bool is_idle, bool alread
  * @brief Apply runner results to saved calibration only if stage == HE_RUNNER_SUCCESS.
  * Leaves saved[0..1] untouched on failure or cancel.
  */
-bool he_cal_runner_apply_to_saved(const he_cal_runner_t *r, he_calibration_t saved[2]);
+bool he_cal_runner_apply_to_saved(const he_cal_runner_t *r, he_calibration_t saved[HE_KEYS_MAX]);
 
 #ifdef __cplusplus
 }

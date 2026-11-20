@@ -43,10 +43,10 @@ static void show_module_notice(board_module_type_t now)
 {
     if (now == BOARD_MODULE_NONE) {
         ui_show_notice("Input module unplugged.\nKeys are off until it is back.");
-    } else if (now == BOARD_MODULE_HE || now == BOARD_MODULE_MX) {
-        ui_show_notice(now == BOARD_MODULE_HE
-                           ? "Hall Effect module connected.\nRestart the pad to use it\n(Restart in the OPad app, or replug USB)."
-                           : "MX module connected.\nRestart the pad to use it\n(Restart in the OPad app, or replug USB).");
+    } else if (now == BOARD_MODULE_HE || now == BOARD_MODULE_HE_V3) {
+        ui_show_notice("Hall Effect module connected.\nRestart the pad to use it\n(Restart in the OPad app, or replug USB).");
+    } else if (now == BOARD_MODULE_MX || now == BOARD_MODULE_MX_V3) {
+        ui_show_notice("MX module connected.\nRestart the pad to use it\n(Restart in the OPad app, or replug USB).");
     }
     // MODULE_WATCH_UNKNOWN: named by the next full reading
 }
@@ -67,12 +67,18 @@ static void act(module_watch_t *watch, uint8_t now, int open_mv)
         }
         break;
     case MODULE_WATCH_KEYS_ON:
-        if (boot == BOARD_MODULE_HE && he_backend_running()) {
+        if ((boot == BOARD_MODULE_HE || boot == BOARD_MODULE_HE_V3) && he_backend_running()) {
             ui_clear_notice();  // the sensors read again; keys return once seen up
             ESP_LOGI(TAG, "HE module back");
         } else if (boot == BOARD_MODULE_HE) {
             // Back to how it booted: this firmware cannot read an HE module
             ui_show_notice("Hall Effect module needs firmware v2.\nKeys are disabled.");
+        } else if (boot == BOARD_MODULE_HE_V3 || boot == BOARD_MODULE_MX_V3) {
+            // V3 modules the pad booted with but reads no keys from (an MX V3
+            // on a straight cable never gets here: its pad has no monitor;
+            // an HE V3 with its input running took the branch above)
+            ui_clear_notice();
+            ESP_LOGI(TAG, "Boot module back (no key input for it yet)");
         } else {
             keypad_set_input_enabled(true);
             ui_clear_notice();
@@ -86,13 +92,14 @@ static void act(module_watch_t *watch, uint8_t now, int open_mv)
 }
 
 // The full reading. With HE input running: sensors that read are the HE
-// module, and only when both stop is the ADC paused for the ID
+// module the pad booted with (V1 or V3), and only when both stop is the ADC
+// paused for the ID
 static bool read_module(uint8_t *out, int *open_mv)
 {
     int loaded_mv = -1;
     if (he_backend_running()) {
         if (!he_backend_keys_absent()) {
-            *out = BOARD_MODULE_HE;
+            *out = (uint8_t)board_boot_module();
             return true;
         }
         if (he_backend_probe_module(open_mv, &loaded_mv) != ESP_OK) {

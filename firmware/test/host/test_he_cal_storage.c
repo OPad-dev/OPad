@@ -63,9 +63,9 @@ esp_err_t nvs_commit(nvs_handle_t h)
 
 void nvs_close(nvs_handle_t h) { (void)h; }
 
-static void expect_active(const he_calibration_t expected[2])
+static void expect_active(const he_calibration_t expected[HE_KEYS_MAX])
 {
-    he_calibration_t got[2];
+    he_calibration_t got[HE_KEYS_MAX];
     he_cal_get_all(got);
     for (int k = 0; k < 2; k++) {
         assert(got[k].rest == expected[k].rest);
@@ -82,12 +82,12 @@ static void *save_repeatedly(void *calibration)
 
 int main(void)
 {
-    const he_calibration_t old[2] = {{.rest = 2080, .full = 2540, .valid = true},
+    const he_calibration_t old[HE_KEYS_MAX] = {{.rest = 2080, .full = 2540, .valid = true},
                                       {.rest = 2090, .full = 2580, .valid = true}};
-    const he_calibration_t next[2] = {{.rest = 2086, .full = 2566, .valid = true},
+    const he_calibration_t next[HE_KEYS_MAX] = {{.rest = 2086, .full = 2566, .valid = true},
                                        {.rest = 2087, .full = 2590, .valid = true}};
     assert(he_cal_init() == ESP_OK);
-    he_calibration_t uncalibrated[2];
+    he_calibration_t uncalibrated[HE_KEYS_MAX];
     he_cal_get_all(uncalibrated);
     assert(!uncalibrated[0].valid && !uncalibrated[1].valid);
     fail_at = 3;
@@ -152,7 +152,7 @@ int main(void)
     assert(he_cal_record_validate(&slots[0]) && he_cal_record_validate(&slots[1]));
     assert((slots[0].seq == before_seq + 20 && slots[1].seq == before_seq + 19) ||
            (slots[1].seq == before_seq + 20 && slots[0].seq == before_seq + 19));
-    he_calibration_t latest[2];
+    he_calibration_t latest[HE_KEYS_MAX];
     he_cal_get_all(latest);
     assert(he_cal_init() == ESP_OK);
     expect_active(latest);
