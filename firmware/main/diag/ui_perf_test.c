@@ -1,6 +1,6 @@
 /*
- * UI performance test (CONFIG_OSUPAD_UI_PERF_TEST): an evaluation build to
- * compare LVGL's memory in internal RAM vs PSRAM (CONFIG_OSUPAD_LVGL_PSRAM)
+ * UI performance test (CONFIG_OPAD_UI_PERF_TEST): an evaluation build to
+ * compare LVGL's memory in internal RAM vs PSRAM (CONFIG_OPAD_LVGL_PSRAM)
  * and the refresh period (CONFIG_LV_DEF_REFR_PERIOD). Not a product build.
  *
  * Loops a fake osu! session on the real screens, driven the way the host
@@ -15,7 +15,7 @@
 #include "ui_perf_test.h"
 #include "sdkconfig.h"
 
-#ifdef CONFIG_OSUPAD_UI_PERF_TEST
+#ifdef CONFIG_OPAD_UI_PERF_TEST
 
 #include "ui/ui.h"
 #include "ui/core/ui_anim.h"
@@ -123,7 +123,7 @@ void ui_perf_test_start(void)
     lv_obj_set_style_bg_color(label, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(label, LV_OPA_60, 0);
     lv_label_set_text_fmt(label, "LVGL %s %d KB | LCD %d MHz | %d ms",
-#ifdef CONFIG_OSUPAD_LVGL_PSRAM
+#ifdef CONFIG_OPAD_LVGL_PSRAM
                           "PSRAM",
 #else
                           "internal",
@@ -135,4 +135,4 @@ void ui_perf_test_start(void)
     ui_unlock();
 }
 
-#endif  // CONFIG_OSUPAD_UI_PERF_TEST
+#endif  // CONFIG_OPAD_UI_PERF_TEST

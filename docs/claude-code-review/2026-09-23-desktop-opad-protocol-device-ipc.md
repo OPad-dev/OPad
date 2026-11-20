@@ -49,9 +49,9 @@ The "reopen the port after `HELLOS_BEFORE_REOPEN` unanswered Hellos" fallback is
 **File:** `desktop/crates/opad-device/src/lib.rs:1086`
 **Category:** correctness
 
-`locate_pad` falls back to `device_id` only when the platform reports no USB serial at all (`serial.or(device_id)`), so a reported serial that is not an `OSUPAD-` string suppresses the MAC even though the HelloAck `device_id` carries it.
+`locate_pad` falls back to `device_id` only when the platform reports no USB serial at all (`serial.or(device_id)`), so a reported serial that is not an `OPAD-` string suppresses the MAC even though the HelloAck `device_id` carries it.
 
-**Failure scenario:** Windows reports a composite-device instance id such as `7&2ABC&0&0000` as the CDC port's serial → `.or(device_id)` never consults `device_id` → `strip_prefix("OSUPAD-")` fails → `mac: None`, and `usb_path` is None off-Linux → `select_bootloader_port` degrades to "the only new 303a:1001 port"; with a second ESP dev board plugged in, the flash goes Ambiguous or to the wrong chip.
+**Failure scenario:** Windows reports a composite-device instance id such as `7&2ABC&0&0000` as the CDC port's serial → `.or(device_id)` never consults `device_id` → `strip_prefix("OPAD-")` fails → `mac: None`, and `usb_path` is None off-Linux → `select_bootloader_port` degrades to "the only new 303a:1001 port"; with a second ESP dev board plugged in, the flash goes Ambiguous or to the wrong chip.
 
 **Suggested fix:** Apply `strip_prefix` to the serial and fall back to `device_id` when that yields None.
 
@@ -104,7 +104,7 @@ The `proto::ConfigPayload → DeviceConfig` mapping (including the `== 0 → DEF
 **File:** `desktop/crates/opad-device/src/lib.rs:955`
 **Category:** reuse
 
-`probe_port` re-implements the dual-framing Hello handshake (send Marked, then Legacy, decode until an OSUPAD HelloAck) that the worker loop also implements at 300-363 with different timing rules (`hello_framing` alternation vs "legacy at half the window") and its own buffer/decode loop.
+`probe_port` re-implements the dual-framing Hello handshake (send Marked, then Legacy, decode until an OPAD HelloAck) that the worker loop also implements at 300-363 with different timing rules (`hello_framing` alternation vs "legacy at half the window") and its own buffer/decode loop.
 
 **Failure scenario:** Two copies of the framing-negotiation policy drift: a change to how the host tries framings (e.g. adding a third framing or changing the order for old-app↔new-pad compatibility) has to be made in both places, and the probe and the worker can disagree about which pads are found.
 

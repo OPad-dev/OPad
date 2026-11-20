@@ -5,7 +5,7 @@ Glyphs are polylines on a 0..5 (x) by 0..7 (y) cell, baseline at y = 0 and cap
 height at y = 7; descenders go down to y = -2. ``advance`` is the pen movement
 per character in cell units.
 
-Only the characters actually used by the osuPad boards are defined. Rendering an
+Only the characters actually used by the OPad boards are defined. Rendering an
 undefined character raises KeyError on purpose: a silently dropped glyph would
 show up as a missing silkscreen mark on a real panel.
 """

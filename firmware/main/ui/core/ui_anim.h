@@ -5,7 +5,7 @@
 // of the ui core, so the PC preview plays the same code. All functions must be
 // called with the LVGL lock held.
 //
-// Ids are the wire values of PlayAnimation.animation (protocol/osupad.proto):
+// Ids are the wire values of PlayAnimation.animation (protocol/opad.proto):
 // 0 stops, 1..UI_ANIM_BUILTIN_COUNT are built in, UI_ANIM_CUSTOM_BASE + n is
 // reserved for uploaded animations (one slot per trigger, overwritten by the
 // next upload). Never renumber a built-in: the PC stores these ids.

@@ -1,6 +1,6 @@
 (kicad_pcb
 	(version 20240108)
-	(generator "osupad")
+	(generator "opad")
 	(generator_version "8.0")
 	(general
 		(thickness 1.6)
@@ -8,10 +8,10 @@
 	)
 	(paper "A4")
 	(title_block
-		(title "osuPad Hall Effect Input Module V1")
+		(title "OPad Hall Effect Input Module V1")
 		(date "2026-10-10")
 		(rev "V1.1")
-		(company "osuPad")
+		(company "OPad")
 	)
 	(layers
 		(0 "F.Cu" signal)
@@ -50,7 +50,7 @@
 	(net 6 "/IO6")
 	(net 7 "/IO4")
 	(net 8 "/IO2")
-	(footprint "osupad:JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal"
+	(footprint "opad:JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal"
 		(layer "B.Cu")
 		(uuid "1cdc935b-71f9-5e73-8b5f-3b6722364ca7")
 		(at 138 72.175)
@@ -280,7 +280,7 @@
 			(uuid "a9f19479-4c18-5a1d-9712-9a8541d698fb")
 		)
 	)
-	(footprint "osupad:SOT-23"
+	(footprint "opad:SOT-23"
 		(layer "B.Cu")
 		(uuid "01be0c04-5074-54b5-aefb-5db8d607c2e4")
 		(at 128.475 83.5 180)
@@ -447,7 +447,7 @@
 			(uuid "efdf7f90-06b2-5b24-ba27-f8a274cb1867")
 		)
 	)
-	(footprint "osupad:SOT-23"
+	(footprint "opad:SOT-23"
 		(layer "B.Cu")
 		(uuid "2abd1525-2a2c-5720-aae5-149d9adbf45a")
 		(at 147.525 83.5 180)
@@ -614,7 +614,7 @@
 			(uuid "d69f223b-c491-5426-b6cc-9be113614898")
 		)
 	)
-	(footprint "osupad:C_0603_1608Metric"
+	(footprint "opad:C_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "c9e6971f-dcd0-592e-aa27-3dfa58d9f623")
 		(at 130.5 74.175)
@@ -771,7 +771,7 @@
 			(uuid "e6417958-f48b-50a1-b79f-f75a90365949")
 		)
 	)
-	(footprint "osupad:C_0603_1608Metric"
+	(footprint "opad:C_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "04a0fed6-a5c1-517c-ab7b-8a7a735f1b4c")
 		(at 125.95 80.8)
@@ -928,7 +928,7 @@
 			(uuid "c7e90f42-b05a-5e20-976c-1d3c64fd2915")
 		)
 	)
-	(footprint "osupad:C_0603_1608Metric"
+	(footprint "opad:C_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "4668ca84-cccb-5d70-9e44-ce40147fc25a")
 		(at 145 80.8)
@@ -1085,7 +1085,7 @@
 			(uuid "bb2eca4b-28fc-57e2-9e15-9dae59a3eb35")
 		)
 	)
-	(footprint "osupad:R_0603_1608Metric"
+	(footprint "opad:R_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "3ddd37b6-2b86-51a7-b3fb-ade5b16df169")
 		(at 145.5 72)
@@ -1242,7 +1242,7 @@
 			(uuid "c3856963-8a86-57aa-9275-082630ff1ae1")
 		)
 	)
-	(footprint "osupad:R_0603_1608Metric"
+	(footprint "opad:R_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "690ac397-973e-558a-bdbc-dad514a140ac")
 		(at 145.5 74)
@@ -1399,7 +1399,7 @@
 			(uuid "3cfdd32c-faf1-5a33-98d7-866838b7f95a")
 		)
 	)
-	(footprint "osupad:TestPoint_Pad_1.0x1.0mm"
+	(footprint "opad:TestPoint_Pad_1.0x1.0mm"
 		(layer "B.Cu")
 		(uuid "1b025747-c8be-5179-8dfb-36ecc87b5224")
 		(at 139.5 76.5)
@@ -1530,7 +1530,7 @@
 			(uuid "a3cb57b6-5050-585a-8473-7042e8c92404")
 		)
 	)
-	(footprint "osupad:TestPoint_Pad_1.0x1.0mm"
+	(footprint "opad:TestPoint_Pad_1.0x1.0mm"
 		(layer "B.Cu")
 		(uuid "f15ae19f-adf2-5f64-a57f-98c516a1b2f0")
 		(at 141.2 76.5)
@@ -1661,7 +1661,7 @@
 			(uuid "88c63d35-937c-5e14-9976-949cd7588758")
 		)
 	)
-	(footprint "osupad:TestPoint_Pad_1.0x1.0mm"
+	(footprint "opad:TestPoint_Pad_1.0x1.0mm"
 		(layer "B.Cu")
 		(uuid "b38954db-807f-503c-899a-2c28b7b2028f")
 		(at 142.9 76.5)
@@ -1792,7 +1792,7 @@
 			(uuid "78dd2eae-d14a-57a6-b286-3e4cc1c07e6a")
 		)
 	)
-	(footprint "osupad:MountingHole_2.2mm_M2"
+	(footprint "opad:MountingHole_2.2mm_M2"
 		(layer "F.Cu")
 		(uuid "4a557619-4a1a-5dd4-998b-278e72675ce0")
 		(at 115.5 83.5)
@@ -1829,7 +1829,7 @@
 			(uuid "1dfd033b-4bb3-50e9-ae1f-e05d6d6072c8")
 		)
 	)
-	(footprint "osupad:MountingHole_2.2mm_M2"
+	(footprint "opad:MountingHole_2.2mm_M2"
 		(layer "F.Cu")
 		(uuid "40b903e9-1ed3-52c7-9a81-ea7e22c2c8d4")
 		(at 160.5 83.5)
@@ -1866,7 +1866,7 @@
 			(uuid "3390fdb9-cf2c-5de0-b88e-a2d19b728af4")
 		)
 	)
-	(footprint "osupad:SW_MX_Hall_PlateMount_SolidCentre"
+	(footprint "opad:SW_MX_Hall_PlateMount_SolidCentre"
 		(layer "B.Cu")
 		(uuid "212c94a0-f69e-5ce8-b810-f8764f78b6ba")
 		(at 128.475 83.5)
@@ -2029,7 +2029,7 @@
 		)
 		(attr board_only exclude_from_pos_files exclude_from_bom dnp allow_missing_courtyard)
 	)
-	(footprint "osupad:SW_MX_Hall_PlateMount_SolidCentre"
+	(footprint "opad:SW_MX_Hall_PlateMount_SolidCentre"
 		(layer "B.Cu")
 		(uuid "0fe19d60-66e5-51f8-aea8-71c2755ab30e")
 		(at 147.525 83.5)
@@ -2276,7 +2276,7 @@
 		(layer "Edge.Cuts")
 		(uuid "1d313980-7102-5141-82b2-6437478d1020")
 	)
-	(gr_text "OSUPAD HE V1.1"
+	(gr_text "OPAD HE V1.1"
 		(at 138 90.8 0)
 		(layer "B.SilkS")
 		(uuid "e5d68b50-35f3-56ea-9c31-4509ea9fd949")
@@ -2444,7 +2444,7 @@
 			(justify mirror)
 		)
 	)
-	(gr_text "OSUPAD HE V1.1"
+	(gr_text "OPAD HE V1.1"
 		(at 138 71.4 0)
 		(layer "F.SilkS")
 		(uuid "558fe4af-2957-55d4-b09a-38ae54d73b0c")

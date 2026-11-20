@@ -35,7 +35,7 @@
     "unconnected_items": [],
     "violations": [
         {
-            "description": "Footprint 'MountingHole_2.2mm_M2' does not match copy in library 'osupad'",
+            "description": "Footprint 'MountingHole_2.2mm_M2' does not match copy in library 'opad'",
             "items": [
                 {
                     "description": "Footprint H1",
@@ -50,7 +50,7 @@
             "type": "lib_footprint_mismatch"
         },
         {
-            "description": "Footprint 'MountingHole_2.2mm_M2' does not match copy in library 'osupad'",
+            "description": "Footprint 'MountingHole_2.2mm_M2' does not match copy in library 'opad'",
             "items": [
                 {
                     "description": "Footprint H2",
@@ -65,7 +65,7 @@
             "type": "lib_footprint_mismatch"
         },
         {
-            "description": "Footprint 'R_0603_1608Metric' does not match copy in library 'osupad'",
+            "description": "Footprint 'R_0603_1608Metric' does not match copy in library 'opad'",
             "items": [
                 {
                     "description": "Footprint R1",
@@ -80,7 +80,7 @@
             "type": "lib_footprint_mismatch"
         },
         {
-            "description": "Footprint 'C_0603_1608Metric' does not match copy in library 'osupad'",
+            "description": "Footprint 'C_0603_1608Metric' does not match copy in library 'opad'",
             "items": [
                 {
                     "description": "Footprint C1",
@@ -95,7 +95,7 @@
             "type": "lib_footprint_mismatch"
         },
         {
-            "description": "Footprint 'JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal' does not match copy in library 'osupad'",
+            "description": "Footprint 'JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal' does not match copy in library 'opad'",
             "items": [
                 {
                     "description": "Footprint J1",
@@ -110,7 +110,7 @@
             "type": "lib_footprint_mismatch"
         },
         {
-            "description": "Footprint 'R_0603_1608Metric' does not match copy in library 'osupad'",
+            "description": "Footprint 'R_0603_1608Metric' does not match copy in library 'opad'",
             "items": [
                 {
                     "description": "Footprint R2",
@@ -125,7 +125,7 @@
             "type": "lib_footprint_mismatch"
         },
         {
-            "description": "Footprint 'R_0603_1608Metric' does not match copy in library 'osupad'",
+            "description": "Footprint 'R_0603_1608Metric' does not match copy in library 'opad'",
             "items": [
                 {
                     "description": "Footprint R3",
@@ -140,7 +140,7 @@
             "type": "lib_footprint_mismatch"
         },
         {
-            "description": "Footprint 'R_0603_1608Metric' does not match copy in library 'osupad'",
+            "description": "Footprint 'R_0603_1608Metric' does not match copy in library 'opad'",
             "items": [
                 {
                     "description": "Footprint R4",

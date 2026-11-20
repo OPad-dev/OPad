@@ -54,8 +54,8 @@ void counters_record_nvs_write(void)
 
 esp_err_t counters_init(void)
 {
-#if defined(CONFIG_OSUPAD_TEST_FAIL_NVS) || defined(OSUPAD_TEST_FAIL_NVS)
-    ESP_LOGW(TAG, "FORCED NVS FAILURE (OSUPAD_TEST_FAIL_NVS active)");
+#if defined(CONFIG_OPAD_TEST_FAIL_NVS) || defined(OPAD_TEST_FAIL_NVS)
+    ESP_LOGW(TAG, "FORCED NVS FAILURE (OPAD_TEST_FAIL_NVS active)");
     s_counters_nvs_ok = false;
     return ESP_FAIL;
 #endif
@@ -160,7 +160,7 @@ void counters_get(counters_snapshot_t *snapshot)
 esp_err_t counters_sync_from_host(uint32_t generation, uint64_t k1, uint64_t k2, const uint64_t *k3, bool force,
                                   char *err_msg, size_t err_msg_len)
 {
-    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+    if (runtime_get_state() != OPAD_STATE_IDLE) {
         ESP_LOGW(TAG, "Cannot sync counters while active (state != IDLE)");
         if (err_msg && err_msg_len > 0) {
             snprintf(err_msg, err_msg_len, "not idle");
@@ -238,7 +238,7 @@ static esp_err_t checkpoint_locked(bool force)
 {
 
     // STRICT SPEC INVARIANT: Zero flash writes during gameplay and cooldown
-    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+    if (runtime_get_state() != OPAD_STATE_IDLE) {
         return ESP_OK; // Silently skip write
     }
 
@@ -281,7 +281,7 @@ static esp_err_t checkpoint_locked(bool force)
 
 esp_err_t counters_reset(void)
 {
-    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+    if (runtime_get_state() != OPAD_STATE_IDLE) {
         return ESP_ERR_INVALID_STATE;
     }
     if (!s_counters_nvs_ok) {

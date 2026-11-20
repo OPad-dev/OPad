@@ -45,8 +45,8 @@ void board_display_wake(void)
 
 esp_err_t board_display_init(esp_lcd_panel_io_handle_t *out_io, esp_lcd_panel_handle_t *out_panel)
 {
-#if defined(CONFIG_OSUPAD_TEST_FAIL_LCD) || defined(OSUPAD_TEST_FAIL_LCD)
-    ESP_LOGW(TAG, "FORCED LCD FAILURE (OSUPAD_TEST_FAIL_LCD active)");
+#if defined(CONFIG_OPAD_TEST_FAIL_LCD) || defined(OPAD_TEST_FAIL_LCD)
+    ESP_LOGW(TAG, "FORCED LCD FAILURE (OPAD_TEST_FAIL_LCD active)");
     return ESP_FAIL;
 #endif
 

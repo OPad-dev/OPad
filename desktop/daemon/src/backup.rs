@@ -82,10 +82,10 @@ pub fn current(
 /// without turning the directory into an unbounded log.
 pub const KEEP: usize = 10;
 
-const PREFIX: &str = "osupad-backup-";
+const PREFIX: &str = "opad-backup-";
 const SUFFIX: &str = ".json";
 
-/// `<data>/backups`, beside `osupad.db` so one directory holds everything the
+/// `<data>/backups`, beside `opad.db` so one directory holds everything the
 /// uninstaller has to know about (§W2-3, §W0-4).
 pub fn backup_dir() -> Result<PathBuf, paths::PathError> {
     Ok(paths::data_dir()?.join("backups"))

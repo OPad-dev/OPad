@@ -18,16 +18,16 @@
 
 static const char *TAG = "he_cal_ui";
 
-// send_proto_progress() casts he_cal_error_t straight to osupad_HeCalError
-_Static_assert((int)HE_CAL_ERR_NONE == (int)osupad_HeCalError_HE_CAL_ERROR_NONE, "HeCalError");
-_Static_assert((int)HE_CAL_ERR_REST_NOT_STILL == (int)osupad_HeCalError_HE_CAL_ERROR_REST_NOT_STILL, "HeCalError");
-_Static_assert((int)HE_CAL_ERR_REST_OUT_OF_RANGE == (int)osupad_HeCalError_HE_CAL_ERROR_REST_OUT_OF_RANGE, "HeCalError");
-_Static_assert((int)HE_CAL_ERR_REST_PRESSED == (int)osupad_HeCalError_HE_CAL_ERROR_REST_PRESSED, "HeCalError");
-_Static_assert((int)HE_CAL_ERR_SIGNAL_NOT_RISING == (int)osupad_HeCalError_HE_CAL_ERROR_SIGNAL_NOT_RISING, "HeCalError");
-_Static_assert((int)HE_CAL_ERR_SPAN_TOO_SMALL == (int)osupad_HeCalError_HE_CAL_ERROR_SPAN_TOO_SMALL, "HeCalError");
-_Static_assert((int)HE_CAL_ERR_PEAKS_INCONSISTENT == (int)osupad_HeCalError_HE_CAL_ERROR_PEAKS_INCONSISTENT, "HeCalError");
-_Static_assert((int)HE_CAL_ERR_TOO_FEW_PEAKS == (int)osupad_HeCalError_HE_CAL_ERROR_TOO_FEW_PEAKS, "HeCalError");
-_Static_assert((int)HE_CAL_ERR_TOO_MANY_PEAKS == (int)osupad_HeCalError_HE_CAL_ERROR_TOO_MANY_PEAKS, "HeCalError");
+// send_proto_progress() casts he_cal_error_t straight to opad_HeCalError
+_Static_assert((int)HE_CAL_ERR_NONE == (int)opad_HeCalError_HE_CAL_ERROR_NONE, "HeCalError");
+_Static_assert((int)HE_CAL_ERR_REST_NOT_STILL == (int)opad_HeCalError_HE_CAL_ERROR_REST_NOT_STILL, "HeCalError");
+_Static_assert((int)HE_CAL_ERR_REST_OUT_OF_RANGE == (int)opad_HeCalError_HE_CAL_ERROR_REST_OUT_OF_RANGE, "HeCalError");
+_Static_assert((int)HE_CAL_ERR_REST_PRESSED == (int)opad_HeCalError_HE_CAL_ERROR_REST_PRESSED, "HeCalError");
+_Static_assert((int)HE_CAL_ERR_SIGNAL_NOT_RISING == (int)opad_HeCalError_HE_CAL_ERROR_SIGNAL_NOT_RISING, "HeCalError");
+_Static_assert((int)HE_CAL_ERR_SPAN_TOO_SMALL == (int)opad_HeCalError_HE_CAL_ERROR_SPAN_TOO_SMALL, "HeCalError");
+_Static_assert((int)HE_CAL_ERR_PEAKS_INCONSISTENT == (int)opad_HeCalError_HE_CAL_ERROR_PEAKS_INCONSISTENT, "HeCalError");
+_Static_assert((int)HE_CAL_ERR_TOO_FEW_PEAKS == (int)opad_HeCalError_HE_CAL_ERROR_TOO_FEW_PEAKS, "HeCalError");
+_Static_assert((int)HE_CAL_ERR_TOO_MANY_PEAKS == (int)opad_HeCalError_HE_CAL_ERROR_TOO_MANY_PEAKS, "HeCalError");
 
 // Button bounds in screen coordinates (320x240)
 #define CAL_BTN_X 70
@@ -121,22 +121,22 @@ static void show_lock_screen(int64_t now_us)
 
 static void send_proto_progress(const he_runner_progress_t *prog, const he_calibration_t results[HE_KEYS_MAX])
 {
-    osupad_HeCalibrationProgress p = osupad_HeCalibrationProgress_init_zero;
+    opad_HeCalibrationProgress p = opad_HeCalibrationProgress_init_zero;
     switch (prog->stage) {
     case HE_RUNNER_REST:
-        p.stage = osupad_HeCalStage_HE_CAL_STAGE_REST;
+        p.stage = opad_HeCalStage_HE_CAL_STAGE_REST;
         break;
     case HE_RUNNER_KEY1:
-        p.stage = osupad_HeCalStage_HE_CAL_STAGE_KEY1;
+        p.stage = opad_HeCalStage_HE_CAL_STAGE_KEY1;
         break;
     case HE_RUNNER_KEY2:
-        p.stage = osupad_HeCalStage_HE_CAL_STAGE_KEY2;
+        p.stage = opad_HeCalStage_HE_CAL_STAGE_KEY2;
         break;
     case HE_RUNNER_KEY3:
-        p.stage = osupad_HeCalStage_HE_CAL_STAGE_KEY3;
+        p.stage = opad_HeCalStage_HE_CAL_STAGE_KEY3;
         break;
     case HE_RUNNER_SUCCESS:
-        p.stage = osupad_HeCalStage_HE_CAL_STAGE_SUCCESS;
+        p.stage = opad_HeCalStage_HE_CAL_STAGE_SUCCESS;
         if (results) {
             p.key1_rest = results[0].rest >= 0 ? (uint32_t)results[0].rest : 0;
             p.key1_full = results[0].full >= 0 ? (uint32_t)results[0].full : 0;
@@ -149,15 +149,15 @@ static void send_proto_progress(const he_runner_progress_t *prog, const he_calib
         }
         break;
     case HE_RUNNER_FAILED:
-        p.stage = osupad_HeCalStage_HE_CAL_STAGE_FAILED;
+        p.stage = opad_HeCalStage_HE_CAL_STAGE_FAILED;
         break;
     default:
-        p.stage = osupad_HeCalStage_HE_CAL_STAGE_NONE;
+        p.stage = opad_HeCalStage_HE_CAL_STAGE_NONE;
         break;
     }
     p.key_index = prog->active_key;
     p.presses_done = prog->presses_done;
-    p.error = (osupad_HeCalError)prog->error;
+    p.error = (opad_HeCalError)prog->error;
     const char *error = s_system_error ? s_system_error : prog->error_desc;
     if (error) {
         strncpy(p.error_message, error, sizeof(p.error_message) - 1);
@@ -522,8 +522,8 @@ bool he_cal_ui_start_calibration(bool from_app)
 {
     if (!ui_lock()) {
         if (from_app) {
-            osupad_HeCalibrationProgress p = osupad_HeCalibrationProgress_init_zero;
-            p.stage = osupad_HeCalStage_HE_CAL_STAGE_FAILED;
+            opad_HeCalibrationProgress p = opad_HeCalibrationProgress_init_zero;
+            p.stage = opad_HeCalStage_HE_CAL_STAGE_FAILED;
             strncpy(p.error_message, "Calibration UI unavailable", sizeof(p.error_message) - 1);
             protocol_send_he_calibration_progress(&p);
         }
@@ -539,16 +539,16 @@ bool he_cal_ui_start_calibration(bool from_app)
     const char *reason = NULL;
     he_cal_start_check_t chk = he_cal_can_start(
         he_backend_running(),
-        runtime_get_state() == OSUPAD_STATE_IDLE,
+        runtime_get_state() == OPAD_STATE_IDLE,
         he_backend_is_calibrating(),
         &reason);
     bool touch_reserved = chk == HE_CAL_START_OK && touch_retry_reserve_calibration();
     if (chk == HE_CAL_START_OK && !touch_reserved) reason = "Release the touchscreen first";
     if (!touch_reserved) {
         if (from_app) {
-            osupad_HeCalibrationProgress p = osupad_HeCalibrationProgress_init_zero;
-            p.stage = osupad_HeCalStage_HE_CAL_STAGE_FAILED;
-            p.error = osupad_HeCalError_HE_CAL_ERROR_NONE;
+            opad_HeCalibrationProgress p = opad_HeCalibrationProgress_init_zero;
+            p.stage = opad_HeCalStage_HE_CAL_STAGE_FAILED;
+            p.error = opad_HeCalError_HE_CAL_ERROR_NONE;
             if (reason) {
                 strncpy(p.error_message, reason, sizeof(p.error_message) - 1);
             }

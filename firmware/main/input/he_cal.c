@@ -212,7 +212,7 @@ static esp_err_t flush_locked(void)
     bool dirty = s_dirty;
     memcpy(snapshot, s_active_cal, sizeof(snapshot));
     portEXIT_CRITICAL(&s_cal_lock);
-    if (!dirty || runtime_get_state() != OSUPAD_STATE_IDLE) return ESP_OK;
+    if (!dirty || runtime_get_state() != OPAD_STATE_IDLE) return ESP_OK;
     esp_err_t err = persist_locked(snapshot);
     if (err == ESP_OK) {
         portENTER_CRITICAL(&s_cal_lock);
@@ -259,7 +259,7 @@ esp_err_t he_cal_set(const he_calibration_t in[HE_KEYS_MAX])
     esp_err_t err = flush_locked();
     xSemaphoreGive(s_write_mutex);
 
-#ifdef OSUPAD_HE_INPUT
+#ifdef OPAD_HE_INPUT
     if (he_backend_running()) {
         he_backend_reload_params();
     }
@@ -280,7 +280,7 @@ esp_err_t he_cal_save(const he_calibration_t in[HE_KEYS_MAX])
     for (int k = 0; k < s_keys; k++) {
         full[k] = in[k];
     }
-    esp_err_t err = runtime_get_state() == OSUPAD_STATE_IDLE ?
+    esp_err_t err = runtime_get_state() == OPAD_STATE_IDLE ?
         persist_locked(full) : ESP_ERR_INVALID_STATE;
     if (err == ESP_OK) {
         // Publish only after both NVS calls succeed. An error keeps old RAM

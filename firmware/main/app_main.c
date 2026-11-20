@@ -119,7 +119,7 @@ void app_main(void)
         he_cal_use_v3_store();
     }
     he_cal_init();
-#ifndef CONFIG_OSUPAD_HALL_BENCH
+#ifndef CONFIG_OPAD_HALL_BENCH
     bool he_v3 = module == BOARD_MODULE_HE_V3;
 #else
     bool he_v3 = false;
@@ -142,7 +142,7 @@ void app_main(void)
         dev_cfg.key2_gpio = BOARD_MX_KEY2_GPIO;
         device_config_set(&dev_cfg);
     } else if (module == BOARD_MODULE_HE) {
-#ifdef CONFIG_OSUPAD_HE_BACKEND
+#ifdef CONFIG_OPAD_HE_BACKEND
         ESP_LOGW(TAG, "Hall Effect module: experimental HE input, provisional thresholds");
 #else
         ESP_LOGW(TAG, "Hall Effect module: needs firmware v2, key input disabled");
@@ -197,12 +197,12 @@ void app_main(void)
     ESP_LOGI(TAG, "Configuring TinyUSB Composite Stack (HID 1000Hz + CDC-ACM)...");
     usb_descriptors_init();
     tinyusb_config_t tusb_cfg = TINYUSB_DEFAULT_CONFIG();
-    tusb_cfg.descriptor.device = &osupad_usb_device_desc;
-    tusb_cfg.descriptor.full_speed_config = osupad_usb_config_desc;
-    tusb_cfg.descriptor.string = osupad_usb_string_desc;
+    tusb_cfg.descriptor.device = &opad_usb_device_desc;
+    tusb_cfg.descriptor.full_speed_config = opad_usb_config_desc;
+    tusb_cfg.descriptor.string = opad_usb_string_desc;
     tusb_cfg.descriptor.string_count = STRID_COUNT;
 #if (TUD_OPT_HIGH_SPEED)
-    tusb_cfg.descriptor.high_speed_config = osupad_usb_config_desc;
+    tusb_cfg.descriptor.high_speed_config = opad_usb_config_desc;
 #endif
     // Core 0 with the key ISR and keypad task (the only higher priority), so HID
     // submits and USB completions never wait on the display or protocol on core 1
@@ -215,7 +215,7 @@ void app_main(void)
 
     // Step ii complete: HID is now fully operational! Everything below is NON-FATAL.
 
-#if defined(CONFIG_OSUPAD_BENCH_HID_ONLY) || defined(OSUPAD_BENCH_HID_ONLY)
+#if defined(CONFIG_OPAD_BENCH_HID_ONLY) || defined(OPAD_BENCH_HID_ONLY)
     ESP_LOGW(TAG, "========================================");
     ESP_LOGW(TAG, "  BENCHMARK STAGE A: HID-ONLY MODE      ");
     ESP_LOGW(TAG, "  CDC, Runtime, and Display Disabled    ");
@@ -247,7 +247,7 @@ void app_main(void)
         }
     }
 
-#ifdef CONFIG_OSUPAD_HE_BACKEND
+#ifdef CONFIG_OPAD_HE_BACKEND
     if (module == BOARD_MODULE_HE) {
         // After TinyUSB: reports before the host configures USB are not delivered.
         // The module ID read at boot left its oneshot unit open: ADC1 is HE's now
@@ -267,7 +267,7 @@ void app_main(void)
         }
     }
 
-#ifdef CONFIG_OSUPAD_HALL_BENCH
+#ifdef CONFIG_OPAD_HALL_BENCH
     err = hall_bench_start();
     ESP_LOGW(TAG, "HALL BENCH build: raw sensor stream on CDC (%s)", esp_err_to_name(err));
 #endif
@@ -287,7 +287,7 @@ void app_main(void)
         ESP_LOGE(TAG, "runtime_init failed: %s (continuing)", esp_err_to_name(err));
     }
 
-#if !defined(CONFIG_OSUPAD_BENCH_NO_DISPLAY) && !defined(OSUPAD_BENCH_NO_DISPLAY)
+#if !defined(CONFIG_OPAD_BENCH_NO_DISPLAY) && !defined(OPAD_BENCH_NO_DISPLAY)
     // 7. Backlight PWM and Display UI (LVGL, core 1, NON-FATAL)
     err = board_backlight_init();
     if (err != ESP_OK) {
@@ -311,10 +311,10 @@ void app_main(void)
     } else if (module != BOARD_MODULE_HE && !keys_unsupported && !he_v3) {
         mx_debug_start();
     }
-#ifdef CONFIG_OSUPAD_HALL_BENCH
+#ifdef CONFIG_OPAD_HALL_BENCH
     hall_bench_show_ui();
 #endif
-#ifdef CONFIG_OSUPAD_UI_PERF_TEST
+#ifdef CONFIG_OPAD_UI_PERF_TEST
     ui_perf_test_start();
 #endif
 
@@ -335,7 +335,7 @@ void app_main(void)
     ESP_LOGW(TAG, "BENCHMARK STAGE B: Display UI and Backlight Disabled");
 #endif
 
-#ifndef CONFIG_OSUPAD_HALL_BENCH  // the bench owns ADC1 in continuous mode
+#ifndef CONFIG_OPAD_HALL_BENCH  // the bench owns ADC1 in continuous mode
     // 9. Input module swapped while powered: keys off, LCD notice (core 1, NON-FATAL).
     // Not on an MX pad: its ID is read once, at boot, and ADC1 is let go, so
     // nothing samples next to the key pins (GPIO8 sits between GPIO7 and

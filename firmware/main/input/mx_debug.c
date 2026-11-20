@@ -1,6 +1,6 @@
 #include "input/mx_debug.h"
 
-#ifdef CONFIG_OSUPAD_HE_DEBUG
+#ifdef CONFIG_OPAD_HE_DEBUG
 
 #include <limits.h>
 #include <stdio.h>

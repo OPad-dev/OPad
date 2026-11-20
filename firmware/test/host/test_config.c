@@ -202,17 +202,17 @@ static void test_key_gpio_allow_list(void)
     assert(KEY_GPIO_ALLOWED_COUNT == sizeof(allowed) / sizeof(allowed[0]));
     for (size_t i = 0; i < sizeof(allowed) / sizeof(allowed[0]); i++) {
         assert(KEY_GPIO_ALLOWED[i] == allowed[i]);
-#if defined(CONFIG_OSUPAD_BENCH_DEBUG_GPIO)
-        if (allowed[i] == CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM) {
+#if defined(CONFIG_OPAD_BENCH_DEBUG_GPIO)
+        if (allowed[i] == CONFIG_OPAD_BENCH_DEBUG_GPIO_NUM) {
             continue;
         }
 #endif
         assert(device_config_key_gpio_supported(allowed[i]));
     }
-#if defined(CONFIG_OSUPAD_BENCH_DEBUG_GPIO)
+#if defined(CONFIG_OPAD_BENCH_DEBUG_GPIO)
     // The bench debug output is driven by the firmware, never a key
-    assert(!device_config_key_gpio_supported(CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM));
-    cfg.key1_gpio = CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM;
+    assert(!device_config_key_gpio_supported(CONFIG_OPAD_BENCH_DEBUG_GPIO_NUM));
+    cfg.key1_gpio = CONFIG_OPAD_BENCH_DEBUG_GPIO_NUM;
     memset(err, 0, sizeof(err));
     assert(!device_config_validate(&cfg, err, sizeof(err)));
     assert(strstr(err, "key1 gpio") != NULL);

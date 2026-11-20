@@ -1,6 +1,6 @@
 #include "input/he_debug.h"
 
-#ifdef CONFIG_OSUPAD_HE_DEBUG
+#ifdef CONFIG_OPAD_HE_DEBUG
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -204,13 +204,13 @@ static void format_edge(const edge_t *e)
     push_line_at("he.pre", 1, pre, at_ms);
 }
 
-static const char *state_name(osupad_state_t s)
+static const char *state_name(opad_state_t s)
 {
     switch (s) {
-    case OSUPAD_STATE_IDLE: return "idle";
-    case OSUPAD_STATE_PLAYING: return "playing";
-    case OSUPAD_STATE_COOLDOWN: return "cooldown";
-    case OSUPAD_STATE_SYNC: return "sync";
+    case OPAD_STATE_IDLE: return "idle";
+    case OPAD_STATE_PLAYING: return "playing";
+    case OPAD_STATE_COOLDOWN: return "cooldown";
+    case OPAD_STATE_SYNC: return "sync";
     default: return "?";
     }
 }
@@ -226,7 +226,7 @@ static void debug_task(void *arg)
     he_backend_stats_t prev = {0};
     he_backend_get_stats(&prev);
     int64_t next_sec = esp_timer_get_time() + 1000000;
-    osupad_state_t last_state = runtime_get_state();
+    opad_state_t last_state = runtime_get_state();
     bool last_anim = ui_anim_active();
     bool last_touch = touch_retry_is_pressed();
     uint32_t touch_ticks = 0;  // 20 ms ticks with a finger on the screen, this second
@@ -257,7 +257,7 @@ static void debug_task(void *arg)
         }
 
         // Context changes are logged when they happen, not only each second
-        osupad_state_t st = runtime_get_state();
+        opad_state_t st = runtime_get_state();
         bool anim = ui_anim_active();
         if (st != last_state || anim != last_anim) {
             he_debug_line("he.ctx", 1, "state %s anim %d", state_name(st), anim);

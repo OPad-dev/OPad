@@ -8,13 +8,13 @@
 
 ## 1. Work Accomplished Commit-by-Commit
 
-The overnight session completed Tasks 3.1 through 3.7 with conventional commits. Every commit was verified against `make check` (desktop tests, clippy `-D warnings`, rustfmt, firmware host tests) and both firmware builds (default MX and `CONFIG_OSUPAD_HE_BACKEND=y`).
+The overnight session completed Tasks 3.1 through 3.7 with conventional commits. Every commit was verified against `make check` (desktop tests, clippy `-D warnings`, rustfmt, firmware host tests) and both firmware builds (default MX and `CONFIG_OPAD_HE_BACKEND=y`).
 
 ### Commit 1: `459ff7e` — `feat(he): calibration record and A/B NVS storage`
 - **Task 3.1:** Per confirmed decision D7, implemented explicit per-key calibration storage that is separate from sensor health and never erased automatically.
 - **Pure-C Record (`firmware/main/input/he_cal_record.{c,h}`):** Defined `he_cal_record_t` with magic `0x4F504341` ("OPCA"), schema version 1, 32-bit sequence number, per-key `rest`, `full`, `valid` flags, and a CRC32 checksum.
 - **NVS Storage Scheme (`firmware/main/input/he_cal.{c,h}`):** Implemented an alternating A/B slot ping-pong storage scheme in NVS namespace `"osupad_cal"` using keys `"cal_a"` and `"cal_b"`. Active slot selection chooses the highest sequence number among valid slots using modular 32-bit comparison (`he_cal_record_compare_seq`). If power is lost mid-write, the interrupted slot fails CRC validation and the prior slot remains active. Missing or corrupted data falls back to factory defaults (`valid = false`) without erasing NVS.
-- **Runtime Deferral:** Writes are permitted only during `OSUPAD_STATE_IDLE`. During `PLAYING` or `COOLDOWN`, `he_cal_flush()` marks dirty and defers writing to flash until the next idle transition (`firmware/main/runtime/runtime.c`).
+- **Runtime Deferral:** Writes are permitted only during `OPAD_STATE_IDLE`. During `PLAYING` or `COOLDOWN`, `he_cal_flush()` marks dirty and defers writing to flash until the next idle transition (`firmware/main/runtime/runtime.c`).
 - **Engine Integration:** Boot loads calibration via `he_backend_start()` and feeds it into `he_params_build()` (`firmware/main/input/he_backend.c`), replacing provisional factory defaults when valid. Rapid trigger remains disabled (`HE_PARAMS_RT_NEEDS_CALIBRATION`) if uncalibrated.
 - **Host Tests:** Added 6 host unit tests in `firmware/test/host/test_he_cal.c`.
 
@@ -51,7 +51,7 @@ The overnight session completed Tasks 3.1 through 3.7 with conventional commits.
 
 ### Commit 6: `e23a43e` — `feat(protocol): Hall Effect capability flags, settings, and status`
 - **Task 3.6:** Additive protocol and full desktop suite integration.
-- **Protobuf (`protocol/osupad.proto`):**
+- **Protobuf (`protocol/opad.proto`):**
   - `HelloAck`: added `bool he_input = 15;` and `bool he_calibration = 16;`.
   - `DeviceStatus`: added `HeCalibrationStatus he_calibration = 18;`.
   - `ConfigPayload`: added `HeKeySettings key1_he = 23;` and `HeKeySettings key2_he = 24;`.
@@ -96,7 +96,7 @@ Every line of diff between `feat/he-engine` and `feat/he-night` was reviewed fro
 ### 2.4 Storage & Power Loss Safety
 - **NVS Isolation:** Calibration data is stored in dedicated namespace `"osupad_cal"` using separate keys `"cal_a"` and `"cal_b"`. Main device configuration resides in `"osupad_cfg"`.
 - **Atomic Slot Ping-Pong:** Writes alternate between slots A and B. Sequence numbers monotonically increment. An interrupted write fails CRC32 validation on subsequent boot; `he_cal_record_select_active` automatically selects the alternate valid slot.
-- **Gameplay Protection:** Gated on `runtime_get_state() == OSUPAD_STATE_IDLE`. During gameplay (`PLAYING` or `COOLDOWN`), writes are deferred.
+- **Gameplay Protection:** Gated on `runtime_get_state() == OPAD_STATE_IDLE`. During gameplay (`PLAYING` or `COOLDOWN`), writes are deferred.
 
 ### 2.5 Keys Stuck Down & Phantom Presses
 - **Fault Recovery:** In `he_health.c`, a faulted key is released immediately via `he_rt_fault()` -> `publish()`. When readings resume, `he_rt.c` enforces that the sensor reading must return to or below the release threshold before re-arming.
@@ -196,7 +196,7 @@ The following items are ready for review and design decisions:
 ### Question 2: Noise floor margin for rapid trigger (OPEN A)
 - Bench measurements indicate 1 ms-average p-p noise of 17–24 counts and single-conversion sd of ~5.6 counts.
 - Replay tool `firmware/tools/he_replay.c` and `scripts/he_trace.py` are in place to determine false trigger rates on real pads.
-- *Recommendation:* Run a 30-minute hold recording with `CONFIG_OSUPAD_HE_TRACE` on the physical pad to establish the empirical floor.
+- *Recommendation:* Run a 30-minute hold recording with `CONFIG_OPAD_HE_TRACE` on the physical pad to establish the empirical floor.
 
 ### Question 3: ADC stall timeout threshold (OPEN G)
 - Currently provisional at 5000 µs (`HE_STALL_US`).

@@ -1,7 +1,7 @@
 // Intersection of one reference part with one case part; empty means clear.
 // Driven by check_fit.py:  openscad -D 'REF="carrier"' -D 'CASE="bottom"' ...
 // include (not use) so that -D overrides reach the case parts too
-include <../osupad_enclosure.scad>
+include <../opad_enclosure.scad>
 include <reference_models.scad>
 PART = "none";
 

@@ -425,7 +425,7 @@ mod tests {
             Some(DeviceInfo {
                 key_count: 2,
                 input_module: Default::default(),
-                device_id: "OSUPAD-TEST".to_string(),
+                device_id: "OPAD-TEST".to_string(),
                 board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                 firmware_version: firmware.to_string(),
                 protocol_version: 1,
@@ -457,7 +457,7 @@ mod tests {
                 artifacts: vec![Artifact {
                     target: opad_update::firmware::FIRMWARE_TARGET.to_string(),
                     kind: ArtifactKind::Firmware,
-                    url: "https://x/osupad-firmware.bin".to_string(),
+                    url: "https://x/opad-firmware.bin".to_string(),
                     sha256: "00".to_string(),
                     size: None,
                     board: None,

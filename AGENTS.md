@@ -122,8 +122,8 @@ to follow.
 
 ## 5. Rules that are easy to break
 
-- **Generated protobuf:** `firmware/main/protocol/osupad.pb.c/.h` are
-  generated. Edit `protocol/osupad.proto` (and `osupad.options`), then run
+- **Generated protobuf:** `firmware/main/protocol/opad.pb.c/.h` are
+  generated. Edit `protocol/opad.proto` (and `opad.options`), then run
   `scripts/gen_proto.sh`. Never hand-edit the generated files. Vendored nanopb
   lives in `firmware/main/protocol/nanopb/`; don't modify it.
 - **`sdkconfig.defaults`:** after editing it, delete `firmware/sdkconfig` and

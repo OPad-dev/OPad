@@ -23,7 +23,7 @@ pub const DEFAULT_FEED_BASE: &str = "https://opad-dev.github.io/OPad/updates/";
 /// The feed URL for a channel, honouring `$OPAD_MANIFEST_URL`
 pub fn feed_url(channel: &str) -> String {
     std::env::var("OPAD_MANIFEST_URL")
-        .or_else(|_| std::env::var("OSUPAD_MANIFEST_URL"))
+        .or_else(|_| std::env::var("OPAD_MANIFEST_URL"))
         .unwrap_or_else(|_| format!("{DEFAULT_FEED_BASE}{channel}.json"))
 }
 
@@ -224,7 +224,7 @@ mod tests {
     fn the_default_feed_is_https_and_per_channel() {
         assert!(DEFAULT_FEED_BASE.starts_with("https://"));
         if std::env::var_os("OPAD_MANIFEST_URL").is_none()
-            && std::env::var_os("OSUPAD_MANIFEST_URL").is_none()
+            && std::env::var_os("OPAD_MANIFEST_URL").is_none()
         {
             assert!(feed_url("beta").ends_with("/updates/beta.json"));
         }

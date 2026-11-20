@@ -154,7 +154,7 @@ static bool he_equal_all(const he_key_settings_t a[HE_KEYS_MAX], const he_key_se
 static esp_err_t write_to_nvs(const device_config_data_t *cfg)
 {
     // STRICT SPEC INVARIANT: zero NVS writes during PLAYING and COOLDOWN
-    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+    if (runtime_get_state() != OPAD_STATE_IDLE) {
         ESP_LOGW(TAG, "NVS write blocked: state != IDLE (deferred to supervisor)");
         set_dirty(true);
         return ESP_OK;
@@ -220,7 +220,7 @@ static void apply_ext(const device_config_ext_t *ext)
 
 static esp_err_t write_ext_to_nvs(const device_config_ext_t *ext)
 {
-    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+    if (runtime_get_state() != OPAD_STATE_IDLE) {
         portENTER_CRITICAL(&s_config_lock);
         s_ext_dirty = true;
         portEXIT_CRITICAL(&s_config_lock);
@@ -283,7 +283,7 @@ void device_config_apply_he(const he_key_settings_t in[HE_KEYS_MAX])
 static esp_err_t write_he_to_nvs(const he_key_settings_t in[HE_KEYS_MAX])
 {
     // STRICT SPEC INVARIANT: zero NVS writes during PLAYING and COOLDOWN
-    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+    if (runtime_get_state() != OPAD_STATE_IDLE) {
         ESP_LOGW(TAG, "HE NVS write blocked: state != IDLE (deferred to supervisor)");
         portENTER_CRITICAL(&s_config_lock);
         s_he_dirty = true;
@@ -478,7 +478,7 @@ void device_config_get_owner(uint8_t out_owner[OWNER_ID_LEN])
 
 esp_err_t device_config_claim_owner(const uint8_t owner[OWNER_ID_LEN])
 {
-    owner_runtime_state_t state = (runtime_get_state() == OSUPAD_STATE_IDLE)
+    owner_runtime_state_t state = (runtime_get_state() == OPAD_STATE_IDLE)
                                       ? OWNER_STATE_IDLE
                                       : OWNER_STATE_ACTIVE;
 
@@ -518,7 +518,7 @@ esp_err_t device_config_flush(void)
     if (!dirty && !he_dirty && !any_ext) {
         return ESP_OK;
     }
-    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+    if (runtime_get_state() != OPAD_STATE_IDLE) {
         return ESP_OK;
     }
     esp_err_t res = ESP_OK;

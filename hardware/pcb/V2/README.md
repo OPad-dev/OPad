@@ -64,7 +64,7 @@ V2 needs a new HE input driver before it does anything:
 ```
 V2/
 ├── README.md
-├── lib/                       osupad.pretty + osupad.kicad_sym: the V1 parts used, plus
+├── lib/                       opad.pretty + opad.kicad_sym: the V1 parts used, plus
 │                              WQFN-16 (TI RTE0016C land pattern), L_0603, ADS7038, FerriteBead
 ├── HE/he_input_v2.*           KiCad 10 project, schematic, routed board
 │   └── production/            exports (see below)

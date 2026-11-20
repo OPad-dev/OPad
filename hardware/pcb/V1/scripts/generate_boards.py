@@ -22,8 +22,8 @@ import uuid
 import pcbnew
 
 V1 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FP_LIB = os.path.join(V1, "lib", "osupad.pretty")
-SYM_LIB = os.path.join(V1, "lib", "osupad.kicad_sym")
+FP_LIB = os.path.join(V1, "lib", "opad.pretty")
+SYM_LIB = os.path.join(V1, "lib", "opad.kicad_sym")
 REV = "V1.0"
 DATE = "2026-09-14"
 
@@ -46,9 +46,9 @@ class Part:
     def __init__(self, ref, symbol, value, footprint, pins, sch, pcb, side="top", rot=0,
                  lcsc="", mpn="", description=""):
         self.ref = ref
-        self.symbol = symbol          # symbol name in lib/osupad.kicad_sym
+        self.symbol = symbol          # symbol name in lib/opad.kicad_sym
         self.value = value
-        self.footprint = footprint    # footprint name in lib/osupad.pretty
+        self.footprint = footprint    # footprint name in lib/opad.pretty
         self.pins = pins              # {pin/pad number: net name or None (no connect)}
         self.sch = sch                # schematic position (mm, on the 2.54 grid)
         self.pcb = pcb                # board position (mm)
@@ -131,7 +131,7 @@ class BoardBuilder:
 
     def part(self, part, sheetfile):
         fp = pcbnew.FootprintLoad(FP_LIB, part.footprint)
-        fp.SetFPID(pcbnew.LIB_ID("osupad", part.footprint))
+        fp.SetFPID(pcbnew.LIB_ID("opad", part.footprint))
         self.board.Add(fp)
         fp.SetReference(part.ref)
         fp.SetValue(part.value)
@@ -166,7 +166,7 @@ class BoardBuilder:
 
     def hole(self, ref, x, y):
         fp = pcbnew.FootprintLoad(FP_LIB, "MountingHole_2.2mm_M2")
-        fp.SetFPID(pcbnew.LIB_ID("osupad", "MountingHole_2.2mm_M2"))
+        fp.SetFPID(pcbnew.LIB_ID("opad", "MountingHole_2.2mm_M2"))
         self.board.Add(fp)
         fp.SetPosition(pt(x, y))
         fp.SetReference(ref)
@@ -339,11 +339,11 @@ def write_project(directory, project):
     with open(os.path.join(directory, project + ".kicad_pro"), "w") as f:
         json.dump(pro, f, indent=2)
     with open(os.path.join(directory, "fp-lib-table"), "w") as f:
-        f.write('(fp_lib_table\n\t(version 7)\n\t(lib (name "osupad") (type "KiCad") '
-                '(uri "${KIPRJMOD}/../lib/osupad.pretty") (options "") (descr "OPad project footprints"))\n)\n')
+        f.write('(fp_lib_table\n\t(version 7)\n\t(lib (name "opad") (type "KiCad") '
+                '(uri "${KIPRJMOD}/../lib/opad.pretty") (options "") (descr "OPad project footprints"))\n)\n')
     with open(os.path.join(directory, "sym-lib-table"), "w") as f:
-        f.write('(sym_lib_table\n\t(version 7)\n\t(lib (name "osupad") (type "KiCad") '
-                '(uri "${KIPRJMOD}/../lib/osupad.kicad_sym") (options "") (descr "OPad project symbols"))\n)\n')
+        f.write('(sym_lib_table\n\t(version 7)\n\t(lib (name "opad") (type "KiCad") '
+                '(uri "${KIPRJMOD}/../lib/opad.kicad_sym") (options "") (descr "OPad project symbols"))\n)\n')
 
 
 # -----------------------------------------------------------------------------
@@ -371,7 +371,7 @@ def load_symbols():
         for m in re.finditer(r'\(pin\s+\w+\s+\w+\s*\(at ([-\d.]+) ([-\d.]+) ([-\d.]+)\).*?\(number "([^"]+)"',
                              block, re.S):
             pins[m.group(4)] = (float(m.group(1)), float(m.group(2)), int(float(m.group(3))))
-        embedded = block.replace('(symbol "%s"' % name, '(symbol "osupad:%s"' % name, 1)
+        embedded = block.replace('(symbol "%s"' % name, '(symbol "opad:%s"' % name, 1)
         symbols[name] = (embedded, pins)
     return symbols
 
@@ -401,7 +401,7 @@ def write_schematic(directory, project, title, parts, notes):
         sx, sy = p.sch
         pins = symbols[p.symbol][1]
         vertical = p.symbol in ("R", "C")
-        out.append('\t(symbol (lib_id "osupad:%s") (at %.2f %.2f 0) (unit 1) (exclude_from_sim no) '
+        out.append('\t(symbol (lib_id "opad:%s") (at %.2f %.2f 0) (unit 1) (exclude_from_sim no) '
                    '(in_bom yes) (on_board yes) (dnp no) (uuid "%s")\n' % (p.symbol, sx, sy, p.uuid))
         if vertical:
             out.append(prop("Reference", p.ref, sx + 2.54, sy - 1.27))
@@ -414,7 +414,7 @@ def write_schematic(directory, project, title, parts, notes):
             bottom = min(y for _, y, _ in pins.values())
             out.append(prop("Reference", p.ref, sx, sy - top - 3.81))
             out.append(prop("Value", p.value, sx, sy - bottom + 3.81))
-        out.append(prop("Footprint", "osupad:" + p.footprint, sx, sy, hide=True))
+        out.append(prop("Footprint", "opad:" + p.footprint, sx, sy, hide=True))
         out.append(prop("Datasheet", "", sx, sy, hide=True))
         out.append(prop("Description", p.description, sx, sy, hide=True))
         out.append(prop("LCSC", p.lcsc, sx, sy, hide=True))
@@ -445,7 +445,7 @@ def write_schematic(directory, project, title, parts, notes):
 # -----------------------------------------------------------------------------
 # PCB coordinates: X = case X + 100, Y = 100 - case Y (KiCad Y points down, so the rear of
 # the case, towards the screen, is up in the editor). Case coordinates are the ones in
-# hardware/3d/custom_case/V1/osupad_enclosure.scad (origin: front-left outer corner).
+# hardware/3d/custom_case/V1/opad_enclosure.scad (origin: front-left outer corner).
 
 def case_to_pcb(x, y):
     return (100.0 + x, 100.0 - y)

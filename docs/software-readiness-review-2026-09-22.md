@@ -15,10 +15,10 @@ Severity: **P0** = blocks a release or breaks a fresh install. **P1** = breaks a
 |---|---|---|---|
 | 1 | P0 | Linux binaries are built on Arch and need **glibc 2.44** (`opad-gui`) / 2.39 (`opad-daemon`, `opadctl`). They do not start on Ubuntu 22.04/24.04, Debian 12/13, or Fedora before 2.44. | release build process |
 | 2 | P0 | The deb/rpm **never start the daemon at login**: no enabled user unit, no autostart entry. After a reboot nothing runs until the GUI is opened by hand. | `packaging/linux/deb/postinst`, rpm scripts |
-| 3 | P0 | **Leftover `osupad` names** break real features: `opadctl flash <dir>` and `--full` look for `osupad-firmware.bin` (the build makes `opad-firmware.bin`), and the manifest generator ignores every artifact the release scripts produce, so **no update is ever offered**. | `cli/src/main.rs:743`, `opad-manifest.rs:232-251` |
+| 3 | P0 | **Leftover `opad` names** break real features: `opadctl flash <dir>` and `--full` look for `opad-firmware.bin` (the build makes `opad-firmware.bin`), and the manifest generator ignores every artifact the release scripts produce, so **no update is ever offered**. | `cli/src/main.rs:743`, `opad-manifest.rs:232-251` |
 | 4 | P0 | **Flashing needs `espflash`, which no package ships.** The in-app firmware update and `opadctl flash` fail on any machine without it. | `opad-device/src/flash.rs:144-166` |
 | 5 | P0 | **The Windows installer ships no tosu.** Nothing builds `tosu.exe`, and the installer skips the missing file without any message. | `Makefile:82`, `installer.iss:95` |
-| 6 | P0 | **CI on `main` is red:** Windows GUI job uses `-p osupad-gui`, and `gen_proto.sh` points at `protocol/opad.proto`, which does not exist. | `.github/workflows/ci.yml:136`, `scripts/gen_proto.sh` |
+| 6 | P0 | **CI on `main` is red:** Windows GUI job uses `-p opad-gui`, and `gen_proto.sh` points at `protocol/opad.proto`, which does not exist. | `.github/workflows/ci.yml:136`, `scripts/gen_proto.sh` |
 | 7 | P1 | Pad detection accepts **any** `303a:4001` device (Espressif's stock TinyUSB CDC PID), and flashing accepts **any** `303a:1001` device (every ESP32-S3/C3/C6 USB-Serial-JTAG). A second Espressif board on the desk can be opened, or even flashed, by mistake. | `opad-device/src/lib.rs:712-727`, `flash.rs:115` |
 | 8 | P1 | Designer preview is a **stub** in any build made from a clean checkout (LVGL comes from `managed_components/`, which is gitignored and only exists after `idf.py build`). | `opad-ui-preview/build.rs:22-37` |
 | 9 | P1 | Linux-only GUI gaps: autostart writes `Exec=opad-gui` with no path, the GUI-launched tosu writes `tosu.env` to the wrong place, file dialogs need an xdg-desktop-portal, the Wayland app id doesn't match the `.desktop` file, and the AppImage cannot register a service or autostart that survives. | see §3 |
@@ -40,7 +40,7 @@ The problems are with **what** it matches and with a few leftovers that still na
 - With two pads connected, the first one listed wins and the other is ignored without a word.
 
 **Fix:**
-- Match on VID/PID **and** the USB serial prefix `OSUPAD-` (or the product string `OPad ESP32-S3`). `serialport`'s `UsbPortInfo` already has `serial_number` and `product` on both OSes.
+- Match on VID/PID **and** the USB serial prefix `OPAD-` (or the product string `OPad ESP32-S3`). `serialport`'s `UsbPortInfo` already has `serial_number` and `product` on both OSes.
 - Only report "connected" after `HelloAck`. Drop the port and move to the next candidate if no `HelloAck` arrives within about 3 s.
 - For the bootloader: note the app port's USB location (serial number, or `/sys` path / Windows location path) before rebooting it, and accept only a `303a:1001` port at the same location. If more than one `303a:1001` is present and none can be matched, refuse and ask for `--port`.
 - When moving to `1209:4F50` (pid.codes, see the 2026-09-21 todo), change `find_target_port`, `70-opad.rules`, `trigger_easter_egg.py` and the docs in the same commit, and keep accepting `303a:4001` for one release.
@@ -137,8 +137,8 @@ Windows has a single installer that sets up everything: the Run keys, tosu (when
 
 ### 3.5 P2: name and path mismatches
 
-- Wayland `application_id: "osupad"` (`gui/src/main.rs:434`) vs `StartupWMClass=opad` in every `.desktop` file. GNOME/KDE show a generic icon and don't group the window with its launcher.
-- A detached daemon logs to `$XDG_STATE_HOME/osupad/daemon.log` (`platform_linux.rs:99-103`). Everything else uses `.../opad/` (`paths::daemon_log_path`).
+- Wayland `application_id: "opad"` (`gui/src/main.rs:434`) vs `StartupWMClass=opad` in every `.desktop` file. GNOME/KDE show a generic icon and don't group the window with its launcher.
+- A detached daemon logs to `$XDG_STATE_HOME/opad/daemon.log` (`platform_linux.rs:99-103`). Everything else uses `.../opad/` (`paths::daemon_log_path`).
 - IPC socket: `XDG_RUNTIME_DIR/opad/daemon.sock`, else `/tmp/opad-<uid>/` (`opad-ipc/src/transport/unix.rs:13-19`). If the GUI or `opadctl` runs without `XDG_RUNTIME_DIR` (su, some cron/ssh contexts) while the daemon has it, they can't find each other and the GUI starts a second daemon. **Fix:** fall back to `/run/user/<uid>` when it exists before using `/tmp`.
 - `opadctl setup` tells the user to `sudo cp packaging/linux/udev/70-opad.rules ...`. That relative path only exists in a source checkout. It already embeds the file: write it out through `sudo tee` instead.
 
@@ -158,27 +158,27 @@ No StatusNotifier host means no tray. This is handled: the window opens and quit
 - **P0, no espflash:** `espflash.exe` is copied only if it's already in `target/release`. Fetch a pinned release in CI.
 - **P2:** `find_tosu_binary()` looks in `~/.local/opt/tosu/tosu.exe` on Windows, a Linux path. Harmless, but use `%LOCALAPPDATA%` or drop it.
 - **P2:** the installer runs `taskkill /F /IM tosu.exe`, which also kills a tosu the user runs on their own for overlays. Kill only the one under `{app}\tosu` (e.g. PowerShell filtering on `Path`).
-- **P2:** `OutputBaseFilename=opad-setup` has no version, and the manifest expects `osupad-setup-<ver>.exe` (see §5).
+- **P2:** `OutputBaseFilename=opad-setup` has no version, and the manifest expects `opad-setup-<ver>.exe` (see §5).
 - WIN-06 (flash with the GUI running) passed on bare metal. Keep it on the release checklist, because it's the most fragile Windows path (exclusive COM handles).
 
 ---
 
-## 5. Leftovers from the `osupad` → `opad` rename that break things
+## 5. Leftovers from the `opad` → `opad` rename that break things
 
 | Where | Expects | Actually produced | Effect |
 |---|---|---|---|
-| `cli/src/main.rs:743` (`resolve_flash_set`) | `<dir>/osupad-firmware.bin` | `firmware/build/opad-firmware.bin` | `opadctl flash firmware/build` and `--full` fail "App image not found". The tests pass only because they create `osupad-firmware.bin` themselves. |
-| `opad-manifest.rs:251` | `osupad-firmware.bin` | `dist/opad-firmware.bin` | Firmware never in manifest → no in-app firmware updates. |
-| `opad-manifest.rs:232` | `osupad-setup-*.exe` | `opad-setup.exe` | No Windows app updates. |
-| `opad-manifest.rs:241` | `osupad-linux-x86_64-*.tar.gz` | `opad-linux-x86_64-<ver>.tar.gz` | No `install-user` updates. |
-| `.github/workflows/ci.yml:98-144` | package `osupad-gui` | `opad-gui` | Windows GUI job fails (`package ID specification 'osupad-gui' did not match`). |
-| `scripts/gen_proto.sh` | `protocol/opad.proto` | `protocol/osupad.proto` | Protobuf drift job fails. |
-| `README.md` 31, 96-222 | `osupadctl`, `osupad-daemon.service`, `packaging/linux/desktop/...` | `opadctl`, `opad-daemon.service` | Install instructions don't work. |
-| `opad-tosu` / GUI | `$OSUPAD_TOSU_PATH`, `$OSUPAD_MANIFEST_URL` | — | Works, but inconsistent. Accept both, document `OPAD_*`. |
-| `opad-update/src/http.rs:12` | User-Agent `osupad/…` | — | Cosmetic. |
-| `daemon/src/backup.rs:73`, GUI export names | `osupad-backup-*`, `osupad-*.json`, `osupad.log` | — | Cosmetic. Keep reading the old prefix. |
+| `cli/src/main.rs:743` (`resolve_flash_set`) | `<dir>/opad-firmware.bin` | `firmware/build/opad-firmware.bin` | `opadctl flash firmware/build` and `--full` fail "App image not found". The tests pass only because they create `opad-firmware.bin` themselves. |
+| `opad-manifest.rs:251` | `opad-firmware.bin` | `dist/opad-firmware.bin` | Firmware never in manifest → no in-app firmware updates. |
+| `opad-manifest.rs:232` | `opad-setup-*.exe` | `opad-setup.exe` | No Windows app updates. |
+| `opad-manifest.rs:241` | `opad-linux-x86_64-*.tar.gz` | `opad-linux-x86_64-<ver>.tar.gz` | No `install-user` updates. |
+| `.github/workflows/ci.yml:98-144` | package `opad-gui` | `opad-gui` | Windows GUI job fails (`package ID specification 'opad-gui' did not match`). |
+| `scripts/gen_proto.sh` | `protocol/opad.proto` | `protocol/opad.proto` | Protobuf drift job fails. |
+| `README.md` 31, 96-222 | `opadctl`, `opad-daemon.service`, `packaging/linux/desktop/...` | `opadctl`, `opad-daemon.service` | Install instructions don't work. |
+| `opad-tosu` / GUI | `$OPAD_TOSU_PATH`, `$OPAD_MANIFEST_URL` | — | Works, but inconsistent. Accept both, document `OPAD_*`. |
+| `opad-update/src/http.rs:12` | User-Agent `opad/…` | — | Cosmetic. |
+| `daemon/src/backup.rs:73`, GUI export names | `opad-backup-*`, `opad-*.json`, `opad.log` | — | Cosmetic. Keep reading the old prefix. |
 
-**Fix:** one pass with `git grep -n osupad`. Decide for each hit whether it is a *compat alias to keep reading* (DB, data dir, env vars, old backups) or a *name to change*. Add a test that runs `build_release.sh`'s naming through `app_artifact`/`firmware_artifact`, so the two can't drift again.
+**Fix:** one pass with `git grep -n opad`. Decide for each hit whether it is a *compat alias to keep reading* (DB, data dir, env vars, old backups) or a *name to change*. Add a test that runs `build_release.sh`'s naming through `app_artifact`/`firmware_artifact`, so the two can't drift again.
 
 ---
 
@@ -195,15 +195,15 @@ No StatusNotifier host means no tray. This is handled: the window opens and quit
 - **P2, daemon side effects before the single-instance check.** `main.rs` starts the tosu supervisor (line 197) and the `DeviceManager` (line 207) *before* `create_listener` (line 212) can report `AlreadyRunning`. A second daemon (GUI auto-spawn racing systemd) can briefly launch tosu and grab the serial port before it exits. Move `create_listener` up to right after the first `connect` check.
 - **P2, write latency.** The device loop blocks in `read()` for up to 100 ms and then sleeps 5 ms (`lib.rs:174, 265`), so a queued command can wait about 105 ms before it's written. That's fine for config, but noticeable for HUD `DataUpdate` values. Use a shorter read timeout (10 ms) or a separate writer thread.
 - **P2, `paths.rs` side effects.** `data_dir()`/`state_dir()`/`database_path()` try the legacy→modern rename on every call. Do the migration once at daemon startup, and log a failed rename (for example across filesystems) instead of ignoring it.
-- **P2, `paths.rs` docs** still say `osupad` in the table (lines 12-14).
+- **P2, `paths.rs` docs** still say `opad` in the table (lines 12-14).
 
 ---
 
 ## 8. Documentation drift
 
 - `README.md` install and CLI sections: old names and paths (see §5).
-- `docs/specs/packaging-distribution.md` still quotes `osupad-device/src/lib.rs:577` and other pre-rename paths.
-- The testing checklist says WIN-06 passed with `osupad-firmware.bin`, a file the current build no longer produces.
+- `docs/specs/packaging-distribution.md` still quotes `opad-device/src/lib.rs:577` and other pre-rename paths.
+- The testing checklist says WIN-06 passed with `opad-firmware.bin`, a file the current build no longer produces.
 - Add a "Linux requirements" section to the README: udev rule (or `dialout`/`uucp`), xdg-desktop-portal, the AppIndicator extension on GNOME, ptrace note for tosu (§3.6), and the minimum glibc once §2.1 is fixed.
 
 ---

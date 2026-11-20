@@ -454,7 +454,7 @@ impl App {
             .map(std::path::PathBuf::from)
             .or_else(|| {
                 std::env::var_os("OPAD_TOSU_PATH")
-                    .or_else(|| std::env::var_os("OSUPAD_TOSU_PATH"))
+                    .or_else(|| std::env::var_os("OPAD_TOSU_PATH"))
                     .map(std::path::PathBuf::from)
             });
 
@@ -1911,7 +1911,7 @@ impl App {
                     let _ = std::fs::remove_file(d.join("tosu_path"));
                 }
                 std::env::remove_var("OPAD_TOSU_PATH");
-                std::env::remove_var("OSUPAD_TOSU_PATH");
+                std::env::remove_var("OPAD_TOSU_PATH");
                 self.tosu_override_path = None;
                 self.banner = Some("Reset to bundled tosu".into());
             }
@@ -3243,7 +3243,7 @@ fn next_log_cursor(cursor: u64, entries: &[LogEntry], latest_seq: u64) -> u64 {
 
 async fn save_logs_dialog(content: String) -> Result<String, String> {
     let file = rfd::AsyncFileDialog::new()
-        .set_file_name("osupad.log")
+        .set_file_name("opad.log")
         .add_filter("Log file", &["log", "txt"])
         .save_file()
         .await
@@ -3268,10 +3268,7 @@ async fn save_diagnostic_dialog(content: String) -> Result<String, String> {
 }
 
 async fn export_backup_dialog(backup: JsonBackup) -> Result<String, String> {
-    let filename = format!(
-        "osupad-backup-{}.json",
-        chrono::Local::now().format("%Y%m%d")
-    );
+    let filename = format!("opad-backup-{}.json", chrono::Local::now().format("%Y%m%d"));
     let file = rfd::AsyncFileDialog::new()
         .set_file_name(filename)
         .add_filter("JSON Backup", &["json"])
@@ -3349,7 +3346,7 @@ pub fn tosu_source_status(override_path: Option<&std::path::Path>) -> String {
         return format!("Custom ({})", p.display());
     }
     if let Some(p) =
-        std::env::var_os("OPAD_TOSU_PATH").or_else(|| std::env::var_os("OSUPAD_TOSU_PATH"))
+        std::env::var_os("OPAD_TOSU_PATH").or_else(|| std::env::var_os("OPAD_TOSU_PATH"))
     {
         return format!("Custom ({})", std::path::Path::new(&p).display());
     }

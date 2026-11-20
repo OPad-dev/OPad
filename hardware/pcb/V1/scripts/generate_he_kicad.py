@@ -4,7 +4,7 @@
     python3 hardware/pcb/V1/scripts/generate_he_kicad.py
 
 No KiCad installation is needed: the footprints are read from
-``lib/osupad.pretty`` and the symbols from ``lib/osupad.kicad_sym`` as
+``lib/opad.pretty`` and the symbols from ``lib/opad.kicad_sym`` as
 s-expressions, transformed, and written into the board and schematic.
 
 File format
@@ -29,8 +29,8 @@ import uuid as _uuid
 import he_board as B
 
 V1 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FP_LIB = os.path.join(V1, "lib", "osupad.pretty")
-SYM_LIB = os.path.join(V1, "lib", "osupad.kicad_sym")
+FP_LIB = os.path.join(V1, "lib", "opad.pretty")
+SYM_LIB = os.path.join(V1, "lib", "opad.kicad_sym")
 HE_DIR = os.path.join(V1, "HE")
 
 # Board coordinates -> KiCad editor coordinates (see he_board's module docstring).
@@ -49,7 +49,7 @@ def uid(seed=None):
     """Deterministic UUIDs so regenerating does not churn the files."""
     if seed is None:
         return str(_uuid.uuid4())
-    return str(_uuid.uuid5(_uuid.NAMESPACE_URL, "osupad/he_input_v1/" + seed))
+    return str(_uuid.uuid5(_uuid.NAMESPACE_URL, "opad/he_input_v1/" + seed))
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +213,7 @@ def place_footprint(part, nets):
         if effects is not None and find(effects, "justify") is None:
             effects.append(["justify", "mirror"])
 
-    out = ["footprint", '"osupad:%s"' % part.footprint,
+    out = ["footprint", '"opad:%s"' % part.footprint,
            ["layer", '"B.Cu"'],
            ["uuid", '"%s"' % uid("fp/" + part.ref)],
            ["at", "%g" % kx(part.centre[0]), "%g" % ky(part.centre[1])]
@@ -466,7 +466,7 @@ def write_board():
     nets = net_table()
     lines = ["(kicad_pcb",
              '\t(version 20240108)',
-             '\t(generator "osupad")',
+             '\t(generator "opad")',
              '\t(generator_version "8.0")',
              "\t(general",
              "\t\t(thickness %g)" % B.THICKNESS,
@@ -507,7 +507,7 @@ def write_board():
 
 
 def mounting_hole(ref, x, y):
-    return ["footprint", '"osupad:MountingHole_2.2mm_M2"',
+    return ["footprint", '"opad:MountingHole_2.2mm_M2"',
             ["layer", '"F.Cu"'],
             ["uuid", '"%s"' % uid("hole/" + ref)],
             ["at", "%g" % kx(x), "%g" % ky(y)],
@@ -570,7 +570,7 @@ def load_symbols(names):
         for m in re.finditer(r'\(pin\s+\w+\s+\w+\s*\(at ([-\d.]+) ([-\d.]+) ([-\d.]+)\)'
                              r'.*?\(number "([^"]+)"', raw, re.S):
             pins[m.group(4)] = (float(m.group(1)), float(m.group(2)), int(float(m.group(3))))
-        embedded = raw.replace('(symbol "%s"' % name, '(symbol "osupad:%s"' % name, 1)
+        embedded = raw.replace('(symbol "%s"' % name, '(symbol "opad:%s"' % name, 1)
         symbols[name] = (embedded, pins)
     return symbols
 
@@ -583,8 +583,8 @@ SYMBOL_OF = {B.FP_C0603: "C", B.FP_R0603: "R", B.FP_SOT23: "DRV5055",
 POWER_FLAGS = [("3V3", (182.88, 38.1)), ("GND", (198.12, 38.1))]
 
 NOTES = [
-    "osuPad Hall Effect (Rapid Trigger) input module V1 - two DRV5055 linear Hall sensors",
-    "Module connector pinout, identical on every osuPad input module:",
+    "OPad Hall Effect (Rapid Trigger) input module V1 - two DRV5055 linear Hall sensors",
+    "Module connector pinout, identical on every OPad input module:",
     "1 3V3 | 2 GND | 3 IN1 = GPIO10 (ADC1_CH9) | 4 IN2 = GPIO7 (ADC1_CH6) | "
     "5 ID = GPIO8 (ADC1_CH7) | 6 GPIO6 | 7 GPIO4 | 8 GPIO2",
     "U1/U2 output a ratiometric analog voltage centred on VCC/2; the firmware "
@@ -612,7 +612,7 @@ def prop(name, value, x, y, hide=False, angle=0):
 def write_schematic():
     symbols = load_symbols(sorted({SYMBOL_OF[p.footprint] for p in B.PARTS} | {"PWR_FLAG"}))
     root = uid("sheet/root")
-    out = ['(kicad_sch\n\t(version 20250114)\n\t(generator "osupad")\n'
+    out = ['(kicad_sch\n\t(version 20250114)\n\t(generator "opad")\n'
            '\t(generator_version "9.0")\n',
            '\t(uuid "%s")\n\t(paper "A4")\n' % root,
            '\t(title_block (title "%s") (date "%s") (rev "%s") (company "%s"))\n'
@@ -631,7 +631,7 @@ def write_schematic():
         name = SYMBOL_OF[part.footprint]
         sx, sy = part.sch
         pins = symbols[name][1]
-        out.append('\t(symbol (lib_id "osupad:%s") (at %.2f %.2f 0) (unit 1) '
+        out.append('\t(symbol (lib_id "opad:%s") (at %.2f %.2f 0) (unit 1) '
                    '(exclude_from_sim no) (in_bom %s) (on_board yes) (dnp no) '
                    '(uuid "%s")\n'
                    % (name, sx, sy, "yes" if part.assembled else "no",
@@ -644,7 +644,7 @@ def write_schematic():
             bottom = min(y for _x, y, _a in pins.values())
             out.append(prop("Reference", part.ref, sx, sy - top - 3.81))
             out.append(prop("Value", part.value, sx, sy - bottom + 3.81))
-        out.append(prop("Footprint", "osupad:" + part.footprint, sx, sy, hide=True))
+        out.append(prop("Footprint", "opad:" + part.footprint, sx, sy, hide=True))
         out.append(prop("Datasheet", "", sx, sy, hide=True))
         out.append(prop("Description", part.description, sx, sy, hide=True))
         out.append(prop("LCSC", part.lcsc, sx, sy, hide=True))
@@ -674,7 +674,7 @@ def write_schematic():
 
     for i, (net, (fx, fy)) in enumerate(POWER_FLAGS):
         ref = "#FLG%02d" % (i + 1)
-        out.append('\t(symbol (lib_id "osupad:PWR_FLAG") (at %.2f %.2f 0) (unit 1) '
+        out.append('\t(symbol (lib_id "opad:PWR_FLAG") (at %.2f %.2f 0) (unit 1) '
                    '(exclude_from_sim no) (in_bom no) (on_board yes) (dnp no) (uuid "%s")\n'
                    % (fx, fy, uid("sym/" + ref)))
         out.append(prop("Reference", ref, fx, fy - 1.905, hide=True))
@@ -770,14 +770,14 @@ def write_project():
         json.dump(pro, f, indent=2)
         f.write("\n")
 
-    tables = [("fp-lib-table", "fp_lib_table", "osupad.pretty",
-               "osuPad project footprints"),
-              ("sym-lib-table", "sym_lib_table", "osupad.kicad_sym",
-               "osuPad project symbols")]
+    tables = [("fp-lib-table", "fp_lib_table", "opad.pretty",
+               "OPad project footprints"),
+              ("sym-lib-table", "sym_lib_table", "opad.kicad_sym",
+               "OPad project symbols")]
     for filename, root, target, descr in tables:
         body = ['(%s' % root,
                 '\t(version 7)',
-                '\t(lib (name "osupad") (type "KiCad") '
+                '\t(lib (name "opad") (type "KiCad") '
                 '(uri "${KIPRJMOD}/../lib/%s") (options "") (descr "%s"))' % (target, descr),
                 ')']
         with open(os.path.join(HE_DIR, filename), "w", newline="\n") as f:

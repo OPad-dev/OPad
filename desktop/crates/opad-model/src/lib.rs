@@ -263,7 +263,7 @@ fn validate_key_gpios(key1_gpio: u32, key2_gpio: u32) -> Result<(), String> {
 
 /// What a swipe on the pad's touchscreen does. Volume steps repeat along a
 /// long drag; everything else fires once per touch. The wire values are
-/// osupad.proto's `SwipeAction`.
+/// opad.proto's `SwipeAction`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SwipeAction {

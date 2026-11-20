@@ -11,7 +11,7 @@ Both the ESP32-S3 and the host PC maintain lifetime press counters for both phys
 ## 2. Counter Generation & Monotonic Reconciliation
 
 Each counter record contains:
-- `device_id`: Hardware unique ID derived from the ESP32-S3 MAC address (`OSUPAD-<MAC>`).
+- `device_id`: Hardware unique ID derived from the ESP32-S3 MAC address (`OPAD-<MAC>`).
 - `counter_generation`: Monotonically incrementing integer. Bumped whenever counters are intentionally reset or restored from backup.
 - `lifetime_key1`: Total lifetime presses for Key 1.
 - `lifetime_key2`: Total lifetime presses for Key 2.
@@ -43,7 +43,7 @@ When a player replaces their OPad or swaps hardware:
 1. The daemon detects a connection from an unknown `device_id`, but finds exactly one existing device record in SQLite.
 2. The daemon creates a pending replacement recommendation (`suggested_replacement: Some(old_device_id)`).
 3. The GUI displays a non-blocking replacement banner:
-   > *"New pad detected (`OSUPAD-NEW`). Transfer lifetime presses from your previous pad (`OSUPAD-OLD`)?"*
+   > *"New pad detected (`OPAD-NEW`). Transfer lifetime presses from your previous pad (`OPAD-OLD`)?"*
 4. **If User Accepts (`InheritDeviceCounters`)**:
    - Daemon increments `counter_generation` by 1.
    - Migrates old lifetime counts to the new `device_id` in SQLite.
@@ -79,7 +79,7 @@ play session:
 
 | | |
 |---|---|
-| Where | `<data>/backups/osupad-backup-YYYYMMDDTHHMMSSZ.json` — `~/.local/share/osupad/backups` on Linux, `%APPDATA%\osupad\backups` on Windows |
+| Where | `<data>/backups/opad-backup-YYYYMMDDTHHMMSSZ.json` — `~/.local/share/opad/backups` on Linux, `%APPDATA%\opad\backups` on Windows |
 | When | **20 seconds** after a session has settled into `IDLE` |
 | How many | The **10 most recent**. Older ones are deleted; files the daemon did not write are never touched. |
 | Restore | `opadctl import <file>` — identical to a manual export, because it is the same document built by the same code |
@@ -148,7 +148,7 @@ Your host keeps its own copy of the counters in SQLite, but export the portable
 JSON anyway — it is the only copy that survives reinstalling the app:
 
 ```bash
-opadctl export ~/osupad-backup.json     # or: the app → Device → Export backup
+opadctl export ~/opad-backup.json     # or: the app → Device → Export backup
 ```
 
 **There is probably already one.** Since the automatic backups landed (§5.1)
@@ -158,7 +158,7 @@ anything:
 
 ```bash
 opadctl status | grep 'Last Backup'
-ls -t ~/.local/share/osupad/backups/ | head        # %APPDATA%\osupad\backups on Windows
+ls -t ~/.local/share/opad/backups/ | head        # %APPDATA%\opad\backups on Windows
 ```
 
 Export by hand anyway. It costs a second, it puts the file somewhere you chose
@@ -166,7 +166,7 @@ rather than inside the directory a reinstall may clear, and the automatic one
 is as old as your last session — which is not the same as "as old as the
 counters", if you have played since the pad last synced.
 
-Restore it afterwards with `opadctl import ~/osupad-backup.json`, which bumps
+Restore it afterwards with `opadctl import ~/opad-backup.json`, which bumps
 the counter generation and writes the counts back to the pad (§5).
 
 **One thing to understand before you erase.** Reflashing makes the pad
@@ -184,7 +184,7 @@ that claims it.
 opadctl bootloader
 ```
 
-That does both halves: it asks `osupad-daemon` to release the serial port, then
+That does both halves: it asks `opad-daemon` to release the serial port, then
 reboots the pad into the ROM download bootloader hands-free and prints the port
 it came back on. It works with no daemon running at all.
 
@@ -216,14 +216,14 @@ With the pad sitting in download mode:
 
 ```bash
 espflash erase-flash -p /dev/ttyACM0 --before no-reset --after no-reset-no-stub
-opadctl flash --full ~/Downloads/osupad-1.0.0/          # or firmware/build
+opadctl flash --full ~/Downloads/opad-1.0.0/          # or firmware/build
 ```
 
 **Windows (PowerShell or cmd)**
 
 ```powershell
 espflash erase-flash -p COM3 --before no-reset --after no-reset-no-stub
-opadctl flash --full C:\Users\you\Downloads\osupad-1.0.0\
+opadctl flash --full C:\Users\you\Downloads\opad-1.0.0\
 ```
 
 `--before no-reset` matters: the pad is already in download mode, and letting

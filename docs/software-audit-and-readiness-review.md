@@ -72,7 +72,7 @@ flowchart TD
 #### Specification of the Robust Discovery Protocol:
 1. **Tier 1 (Fast Path):** Query `serialport::available_ports()`. If a device matches known VIDs (`0x303A`, `0x1209`) and PIDs (`0x4001`, `0x1001`), immediately select it as the primary candidate.
 2. **Tier 2 (Probing Path):** If no device matches Tier 1, take all available serial ports (ignoring standard system serial ports like `COM1`/`COM2` or `/dev/ttyS*`), open each candidate with a 150 ms timeout, and transmit a framed `Hello` message.
-3. **Handshake Verification:** Only promote a port to "Connected" when a valid `HelloAck` protobuf envelope is received containing `device_id` starting with `"OSUPAD-"`.
+3. **Handshake Verification:** Only promote a port to "Connected" when a valid `HelloAck` protobuf envelope is received containing `device_id` starting with `"OPAD-"`.
 4. **Dynamic Reconnection:** If the active port drops (unplugged or rebooted into bootloader), return to continuous Tier 1 & Tier 2 scanning without requiring daemon restart or configuration changes.
 
 ---
@@ -135,10 +135,10 @@ flowchart TD
 ### 3.5 Legacy Path Inconsistencies on Linux
 * **Problem:** In [`desktop/gui/src/platform_linux.rs:103`](file:///home/paella/Documents/projects/esp32/osu-pad-esp32/desktop/gui/src/platform_linux.rs#L103):
   ```rust
-  let log_dir = ... .join("osupad");
+  let log_dir = ... .join("opad");
   ```
   The main path library ([`desktop/crates/opad-model/src/paths.rs:52`](file:///home/paella/Documents/projects/esp32/osu-pad-esp32/desktop/crates/opad-model/src/paths.rs#L52)) was migrated to `.join("opad")`.
-* **Impact:** When `opad-gui` launches `opad-daemon` directly, the daemon log is created in `~/.local/state/osupad/daemon.log`, while the daemon itself and tosu write logs to `~/.local/state/opad/`. This splits logs across disparate folders.
+* **Impact:** When `opad-gui` launches `opad-daemon` directly, the daemon log is created in `~/.local/state/opad/daemon.log`, while the daemon itself and tosu write logs to `~/.local/state/opad/`. This splits logs across disparate folders.
 * **Solution:** Replace all hardcoded string paths with canonical calls to `opad_model::paths::state_dir()` and `opad_model::paths::data_dir()`.
 
 ### 3.6 IPC Single-Instance Pipe Security (Windows)
@@ -204,7 +204,7 @@ To guarantee zero-desync communication across unreliable serial streams:
 | **P1** | **Linux Diagnostics** | Implement Linux `evdev` reader for in-game switch chatter testing and audio feedback parity with Windows `GetAsyncKeyState`/`Beep`. | Planned |
 | **P1** | **Protocol Resilience**| Introduce framing sync preamble (`0xAA 0x55` or COBS) to eliminate desync on stray serial bytes. | Planned |
 | **P1** | **Service Autostart**| Change systemd user unit target to `WantedBy=default.target` in `packaging/linux/systemd-user/opad-daemon.service.in`. | Planned |
-| **P2** | **Path Uniformity** | Replace all lingering `"osupad"` directory references in `desktop/gui/src/platform_linux.rs` with `opad_model::paths`. | Planned |
+| **P2** | **Path Uniformity** | Replace all lingering `"opad"` directory references in `desktop/gui/src/platform_linux.rs` with `opad_model::paths`. | Planned |
 | **P2** | **Tray Fallback** | Add a timeout to `self.tray_available` in `opad-gui` so closing the window on desktops without a StatusNotifierItem host does not create zombie processes. | Planned |
 | **P3** | **IPC Hardening** | Apply restrictive SDDL security descriptor to the GUI single-instance pipe on Windows (`single_instance.rs`). | Planned |
 

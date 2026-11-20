@@ -3,13 +3,13 @@
 
 Writes, from the tables below:
 
-- lib/osupad.pretty/{C_0603_1608Metric, R_0603_1608Metric, SOT-23,
+- lib/opad.pretty/{C_0603_1608Metric, R_0603_1608Metric, SOT-23,
   JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal,
   PinSocket_1x14_P2.54mm_Vertical, MountingHole_2.2mm_M2}.kicad_mod
-- lib/osupad.kicad_sym (every symbol: R, C, SW_Push, Conn_01x08,
+- lib/opad.kicad_sym (every symbol: R, C, SW_Push, Conn_01x08,
   Conn_01x08_1MP, Conn_01x14, DRV5055, TestPoint, PWR_FLAG)
 
-The other footprints in lib/osupad.pretty (Kailh hot-swap, the Hall switch
+The other footprints in lib/opad.pretty (Kailh hot-swap, the Hall switch
 positions, the test pad) are drawn by hand and are not touched.
 
 Pad and pin tables are the parts' land patterns and connection points, taken
@@ -29,8 +29,8 @@ import os
 import uuid
 
 V1 = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FP_DIR = os.path.join(V1, "lib", "osupad.pretty")
-SYM_FILE = os.path.join(V1, "lib", "osupad.kicad_sym")
+FP_DIR = os.path.join(V1, "lib", "opad.pretty")
+SYM_FILE = os.path.join(V1, "lib", "opad.kicad_sym")
 
 NAMESPACE = uuid.UUID("5b1d0c3e-6f0a-4a57-9b43-0bad0c0ffee0")
 
@@ -320,7 +320,7 @@ def footprint(fp):
     ]
     node = [Sym("footprint"), q(name),
             [Sym("version"), Sym("20240108")],
-            [Sym("generator"), q("osupad")],
+            [Sym("generator"), q("opad")],
             [Sym("generator_version"), q("8.0")],
             [Sym("layer"), q("F.Cu")],
             [Sym("descr"), q(fp["descr"])],
@@ -455,7 +455,7 @@ SYMBOLS = [
     connector(14),
     dict(
         name="DRV5055", ref="U", value="DRV5055", ref_at=(0, 6.35), value_at=(0, -6.35),
-        footprint="osupad:SOT-23",
+        footprint="opad:SOT-23",
         datasheet="https://www.ti.com/lit/ds/symlink/drv5055.pdf",
         descr="TI DRV5055 ratiometric linear Hall effect sensor, SOT-23",
         keywords="hall magnetic linear sensor", fp_filters=None,
@@ -467,7 +467,7 @@ SYMBOLS = [
     ),
     dict(
         name="TestPoint", ref="TP", value="TestPoint", ref_at=(0, 3.81), value_at=(0, -2.54),
-        footprint="osupad:TestPoint_Pad_1.0x1.0mm",
+        footprint="opad:TestPoint_Pad_1.0x1.0mm",
         descr="SMD probe pad for a reserved connector pin", keywords="test point probe pad",
         fp_filters=None,
         pin_numbers_hidden=True, pin_names=(0.762, True), in_pos_files=None, in_bom=False,
@@ -527,7 +527,7 @@ def main():
             f.write(footprint(fp))
         print("wrote", os.path.relpath(path, V1))
     lib = [Sym("kicad_symbol_lib"), [Sym("version"), Sym("20251024")],
-           [Sym("generator"), q("osupad")], [Sym("generator_version"), q("10.0")]]
+           [Sym("generator"), q("opad")], [Sym("generator_version"), q("10.0")]]
     lib += [symbol(s) for s in SYMBOLS]
     with open(SYM_FILE, "w", encoding="utf8") as f:
         f.write(dump(lib) + "\n")

@@ -45,7 +45,7 @@ fn decode_reason_to_str(code: u32) -> &'static str {
     }
 }
 
-/// The HostToDevice payload a field number carries (`protocol/osupad.proto`)
+/// The HostToDevice payload a field number carries (`protocol/opad.proto`)
 fn host_payload_name(field: u32) -> &'static str {
     match field {
         2 => "Hello",

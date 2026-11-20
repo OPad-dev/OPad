@@ -1,7 +1,7 @@
 #pragma once
 
 /*
- * Hall Effect key input (V3 always; V1 with CONFIG_OSUPAD_HE_BACKEND). V1: ADC1 continuous DMA on both sensors; V3: the module's ADS7028
+ * Hall Effect key input (V3 always; V1 with CONFIG_OPAD_HE_BACKEND). V1: ADC1 continuous DMA on both sensors; V3: the module's ADS7028
  * over SPI (he_spi_source.h). Either way the decision engine (he_rt.h) runs per frame, and a
  * core-0 task that hands key changes to key_event_report. Started only when
  * the HE module is fitted; with MX nothing here runs.
@@ -42,11 +42,11 @@ typedef enum {
 // Built with Hall Effect input: every firmware build (V3), except the hall
 // bench measurement build, which reads V1's sensors its own way. Not the host
 // tests (no ESP_PLATFORM): they build the pure parts without the backend.
-#if defined(ESP_PLATFORM) && !defined(CONFIG_OSUPAD_HALL_BENCH)
-#define OSUPAD_HE_INPUT 1
+#if defined(ESP_PLATFORM) && !defined(CONFIG_OPAD_HALL_BENCH)
+#define OPAD_HE_INPUT 1
 #endif
 
-#ifdef OSUPAD_HE_INPUT
+#ifdef OPAD_HE_INPUT
 
 /**
  * @brief Start HE input: creates the core-0 task, which sets up and starts
@@ -94,7 +94,7 @@ void he_backend_reload_params(void);
 
 void he_backend_get_stats(he_backend_stats_t *out);
 
-#ifdef CONFIG_OSUPAD_HE_DEBUG
+#ifdef CONFIG_OPAD_HE_DEBUG
 /** @brief The thresholds a key runs with now (debug log only). */
 void he_backend_debug_params(uint8_t key_index, he_rt_params_t *out);
 #endif

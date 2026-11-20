@@ -289,7 +289,7 @@ OPad bundles or interacts with the following third-party software:
 - **Author**: Mikhail Babynichev and the tosu contributors
 - **License**: [GNU Lesser General Public License v3.0 (LGPL-3.0)](licenses/tosu/LICENSE)
 - **Redistribution Notice**: See [licenses/tosu/NOTICE](licenses/tosu/NOTICE)
-- **User Replacement Rights**: Under the terms of LGPL-3.0, users are entitled to replace the bundled tosu binary with their own version. You can point the `OPAD_TOSU_PATH` (or legacy `OSUPAD_TOSU_PATH`) environment variable to a custom tosu executable, or configure an external path in the OPad desktop GUI (**Settings → tosu**).
+- **User Replacement Rights**: Under the terms of LGPL-3.0, users are entitled to replace the bundled tosu binary with their own version. You can point the `OPAD_TOSU_PATH` environment variable to a custom tosu executable, or configure an external path in the OPad desktop GUI (**Settings → tosu**).
 
 ---
 

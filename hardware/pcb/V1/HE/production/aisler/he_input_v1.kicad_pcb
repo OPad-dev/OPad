@@ -8,10 +8,10 @@
 	)
 	(paper "A4")
 	(title_block
-		(title "osuPad Hall Effect Input Module V1")
+		(title "OPad Hall Effect Input Module V1")
 		(date "2026-10-10")
 		(rev "V1.1")
-		(company "osuPad")
+		(company "OPad")
 	)
 	(layers
 		(0 "F.Cu" signal)
@@ -91,7 +91,7 @@
 			(outputdirectory "")
 		)
 	)
-	(footprint "osupad:MountingHole_2.2mm_M2"
+	(footprint "opad:MountingHole_2.2mm_M2"
 		(layer "F.Cu")
 		(uuid "40b903e9-1ed3-52c7-9a81-ea7e22c2c8d4")
 		(at 160.5 83.5)
@@ -152,7 +152,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:MountingHole_2.2mm_M2"
+	(footprint "opad:MountingHole_2.2mm_M2"
 		(layer "F.Cu")
 		(uuid "4a557619-4a1a-5dd4-998b-278e72675ce0")
 		(at 115.5 83.5)
@@ -213,7 +213,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:SOT-23"
+	(footprint "opad:SOT-23"
 		(layer "B.Cu")
 		(uuid "01be0c04-5074-54b5-aefb-5db8d607c2e4")
 		(at 128.475 83.5 180)
@@ -373,7 +373,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:C_0603_1608Metric"
+	(footprint "opad:C_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "04a0fed6-a5c1-517c-ab7b-8a7a735f1b4c")
 		(at 125.95 80.8)
@@ -525,7 +525,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:SW_MX_Hall_PlateMount_SolidCentre"
+	(footprint "opad:SW_MX_Hall_PlateMount_SolidCentre"
 		(layer "B.Cu")
 		(uuid "0fe19d60-66e5-51f8-aea8-71c2755ab30e")
 		(at 147.525 83.5)
@@ -688,7 +688,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:TestPoint_Pad_1.0x1.0mm"
+	(footprint "opad:TestPoint_Pad_1.0x1.0mm"
 		(layer "B.Cu")
 		(uuid "1b025747-c8be-5179-8dfb-36ecc87b5224")
 		(at 139.5 76.5)
@@ -818,7 +818,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal"
+	(footprint "opad:JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal"
 		(layer "B.Cu")
 		(uuid "1cdc935b-71f9-5e73-8b5f-3b6722364ca7")
 		(at 138 72.175)
@@ -1034,7 +1034,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:SW_MX_Hall_PlateMount_SolidCentre"
+	(footprint "opad:SW_MX_Hall_PlateMount_SolidCentre"
 		(layer "B.Cu")
 		(uuid "212c94a0-f69e-5ce8-b810-f8764f78b6ba")
 		(at 128.475 83.5)
@@ -1197,7 +1197,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:SOT-23"
+	(footprint "opad:SOT-23"
 		(layer "B.Cu")
 		(uuid "2abd1525-2a2c-5720-aae5-149d9adbf45a")
 		(at 147.525 83.5 180)
@@ -1357,7 +1357,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:R_0603_1608Metric"
+	(footprint "opad:R_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "3ddd37b6-2b86-51a7-b3fb-ade5b16df169")
 		(at 145.5 72)
@@ -1509,7 +1509,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:C_0603_1608Metric"
+	(footprint "opad:C_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "4668ca84-cccb-5d70-9e44-ce40147fc25a")
 		(at 145 80.8)
@@ -1661,7 +1661,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:R_0603_1608Metric"
+	(footprint "opad:R_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "690ac397-973e-558a-bdbc-dad514a140ac")
 		(at 145.5 74)
@@ -1813,7 +1813,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:TestPoint_Pad_1.0x1.0mm"
+	(footprint "opad:TestPoint_Pad_1.0x1.0mm"
 		(layer "B.Cu")
 		(uuid "b38954db-807f-503c-899a-2c28b7b2028f")
 		(at 142.9 76.5)
@@ -1943,7 +1943,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:C_0603_1608Metric"
+	(footprint "opad:C_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "c9e6971f-dcd0-592e-aa27-3dfa58d9f623")
 		(at 130.5 74.175)
@@ -2095,7 +2095,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:TestPoint_Pad_1.0x1.0mm"
+	(footprint "opad:TestPoint_Pad_1.0x1.0mm"
 		(layer "B.Cu")
 		(uuid "f15ae19f-adf2-5f64-a57f-98c516a1b2f0")
 		(at 141.2 76.5)
@@ -2564,7 +2564,7 @@
 			)
 		)
 	)
-	(gr_text "OSUPAD HE V1.1"
+	(gr_text "OPAD HE V1.1"
 		(at 138 71.4 0)
 		(layer "F.SilkS")
 		(uuid "558fe4af-2957-55d4-b09a-38ae54d73b0c")
@@ -2719,7 +2719,7 @@
 			(justify mirror)
 		)
 	)
-	(gr_text "OSUPAD HE V1.1"
+	(gr_text "OPAD HE V1.1"
 		(at 138 90.8 0)
 		(layer "B.SilkS")
 		(uuid "e5d68b50-35f3-56ea-9c31-4509ea9fd949")

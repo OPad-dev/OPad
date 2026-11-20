@@ -1,5 +1,5 @@
 // Assembly render with the parts inside (for the README pictures)
-include <../osupad_enclosure.scad>
+include <../opad_enclosure.scad>
 include <reference_models.scad>
 PART = "none";
 SHOW_CASE = true;

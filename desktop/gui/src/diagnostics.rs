@@ -212,7 +212,7 @@ fn find_opad_evdev() -> Option<evdev::Device> {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
             let lower = name.to_lowercase();
-            if lower.contains("opad") || lower.contains("osupad") {
+            if lower.contains("opad") || lower.contains("opad") {
                 if lower.contains("event-kbd") {
                     if let Ok(dev) = evdev::Device::open(entry.path()) {
                         return Some(dev);

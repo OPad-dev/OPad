@@ -1,0 +1,618 @@
+syntax = "proto3";
+
+package opad;
+
+// Protocol version definition
+enum ProtocolVersion {
+    PROTOCOL_VERSION_UNSPECIFIED = 0;
+    PROTOCOL_VERSION_V1 = 1;
+}
+
+// System / Operational state
+enum DeviceState {
+    DEVICE_STATE_UNKNOWN = 0;
+    DEVICE_STATE_IDLE = 1;
+    DEVICE_STATE_PLAYING = 2;
+    DEVICE_STATE_COOLDOWN = 3;
+    DEVICE_STATE_SYNC = 4;
+}
+
+// Severity level for diagnostic events
+enum LogLevel {
+    LOG_LEVEL_DEBUG = 0;
+    LOG_LEVEL_INFO = 1;
+    LOG_LEVEL_WARN = 2;
+    LOG_LEVEL_ERROR = 3;
+}
+
+// -----------------------------------------------------------------------------
+// Core Handshake & Status Messages
+// -----------------------------------------------------------------------------
+
+message Hello {
+    uint32 protocol_version = 1;
+    string client_version = 2;
+    // Host supports interactive Hall Effect calibration flow
+    bool he_calibration = 3;
+}
+
+message HelloAck {
+    uint32 protocol_version = 1;
+    string firmware_version = 2;
+    string board_profile = 3;
+    string device_id = 4;
+    uint32 counter_generation = 5;
+    uint64 lifetime_key1 = 6;
+    uint64 lifetime_key2 = 7;
+    // Which host install owns this pad (§W3-1, §W3-2). 16 bytes; empty or all
+    // zero means unclaimed, which is also what firmware predating W3-2 sends.
+    bytes owner_id = 8;
+    // Which app partition the running image booted from (§U-3a): "ota_0",
+    // "ota_1", or "factory" for a pad still on the pre-OTA single-app layout.
+    // Empty means firmware predating the two-slot table.
+    string running_partition = 9;
+    ConfigPayload current_config = 10;
+    // The pad sends KeyPressBatch while a map is played (issue #2). False from
+    // firmware predating it: the host then measures the tap rate from tosu.
+    bool key_press_times = 11;
+    // The pad answers run_board_test with a BoardTestResult. False from
+    // firmware predating it: the host then offers no board test.
+    bool board_test = 12;
+    // Highest built-in result animation id the pad plays (PlayAnimation).
+    // 0 from firmware predating them: the host then sends no PlayAnimation.
+    uint32 builtin_animations = 13;
+    // The pad restarts when asked (HostToDevice.restart). False from firmware
+    // predating it: the host then offers no restart.
+    bool restart = 14;
+    // Firmware is built with CONFIG_OPAD_HE_BACKEND. Does not mean an HE
+    // module is plugged in: BoardTestResult.module says what is.
+    bool he_input = 15;
+    // The pad has an active Hall Effect input backend and supports interactive
+    // Hall Effect calibration. False on MX pads or firmware without HE calibration.
+    bool he_calibration = 16;
+    // The pad streams HeLiveSample while the host keeps asking (he_live_view).
+    // False on MX pads and firmware predating it: the host then shows no live view.
+    bool he_live = 17;
+    // The pad shows tap rate widgets with UI_FLAG_PER_SECOND in keys per second
+    // (issue #8). False from firmware predating it, which ignores the flag and
+    // shows keys per minute: the host then refuses layouts that use it.
+    bool tap_rate_per_second = 18;
+    // Keys the pad reads now: 3 with a Hall Effect V3 module, else 2. 0 from
+    // firmware predating key 3, which a host reads as 2.
+    uint32 key_count = 19;
+    // The module the pad found at boot, which chose its key pins. UNKNOWN from
+    // firmware predating it. A host offers the key pin settings only on a pad
+    // without one (NONE: switches wired to the header by hand) or UNKNOWN.
+    InputModule input_module = 20;
+}
+
+// Record a new owner in NVS (§W3-2). An NVS write, so the firmware must honour
+// it only in IDLE, never during PLAYING or COOLDOWN (P1-3). The host only ever
+// sends it at connect time, which is already an IDLE-only moment.
+message ClaimOwnership {
+    bytes owner_id = 1;  // 16 bytes
+}
+
+message DeviceStatus {
+    uint32 uptime_seconds = 1;
+    DeviceState state = 2;
+    uint32 brightness = 3;
+    bool display_asleep = 4;
+    uint64 lifetime_key1 = 5;
+    uint64 lifetime_key2 = 6;
+    uint32 map_key1 = 7;
+    uint32 map_key2 = 8;
+    // Key edge (GPIO ISR) to HID report submit, since boot or last reset
+    uint32 latency_samples = 9;
+    uint32 latency_p50_us = 10;
+    uint32 latency_p99_us = 11;
+    uint32 latency_p999_us = 12;
+    uint32 latency_max_us = 13;
+    uint32 hid_deferred_reports = 14; // Key changes that waited for the next USB poll, then resent
+    bool display_ok = 15;
+    bool nvs_ok = 16;
+    uint32 nvs_writes = 17;
+    HeCalibrationStatus he_calibration = 18;
+    // Key 3 (Hall Effect V3): its own counters, not part of key 1/2's totals
+    // or reconciliation. 0 from firmware predating it.
+    uint64 lifetime_key3 = 19;
+    uint32 map_key3 = 20;
+}
+
+message HeCalibrationStatus {
+    bool key1_calibrated = 1;
+    bool key2_calibrated = 2;
+    uint32 key1_rest = 3;
+    uint32 key1_full = 4;
+    uint32 key2_rest = 5;
+    uint32 key2_full = 6;
+    bool is_locked = 7;
+    bool is_calibrating = 8;
+    // The pad's noise floors in raw counts: a release point at least
+    // noise_floor_rest above rest, and every movement setting (hysteresis,
+    // rapid trigger sensitivities) at least noise_floor_movement, unless a
+    // key allows below them (HeKeySettings.allow_below_noise_floor). 0 from
+    // firmware predating them, whose release floor is the top reset depth.
+    uint32 noise_floor_rest = 9;
+    uint32 noise_floor_movement = 10;
+    // Key 3 (Hall Effect V3); false / 0 from firmware predating it
+    bool key3_calibrated = 11;
+    uint32 key3_rest = 12;
+    uint32 key3_full = 13;
+}
+
+// -----------------------------------------------------------------------------
+// Configuration
+// -----------------------------------------------------------------------------
+
+message ConfigPayload {
+    uint32 key1_hid_usage = 1;       // Default: 0x1D ('Z')
+    uint32 key2_hid_usage = 2;       // Default: 0x1B ('X')
+    uint32 debounce_us = 3;          // Lockout window, default: 5000 (5ms)
+    uint32 brightness = 4;           // 0 to 100%, default: 100
+    uint32 display_sleep_seconds = 5;// Inactivity timeout, default: 600 (10 min)
+    uint32 gameplay_display_hz = 6;  // Gameplay refresh rate cap, default: 10
+    uint32 press_color_rgb = 7 [deprecated = true]; // Deprecated: key highlight colors now come from layouts
+    uint32 key1_gpio = 8;            // Switch GPIO for key 1, default: 14. 0 = keep current
+    uint32 key2_gpio = 9;            // Switch GPIO for key 2, default: 9. 0 = keep current
+    // What each touchscreen swipe does (SwipeAction). Firmware predating
+    // swipes ignores these and reports 0, which a host reads as the defaults
+    // (up/down volume, left/right previous / next track).
+    SwipeAction swipe_left_action = 10;  // Default: SWIPE_ACTION_PREV_TRACK. 0 = keep current
+    SwipeAction swipe_right_action = 11; // Default: SWIPE_ACTION_NEXT_TRACK. 0 = keep current
+    uint32 swipe_left_key = 12;      // HID usage for SWIPE_ACTION_KEY. 0 = keep current
+    uint32 swipe_right_key = 13;     // HID usage for SWIPE_ACTION_KEY. 0 = keep current
+    reserved 14;                     // swipe_vertical, replaced by swipe_up/down_action before release
+    SwipeAction swipe_up_action = 15;    // Default: SWIPE_ACTION_VOLUME_UP. 0 = keep current
+    SwipeAction swipe_down_action = 16;  // Default: SWIPE_ACTION_VOLUME_DOWN. 0 = keep current
+    uint32 swipe_up_key = 17;        // HID usage for SWIPE_ACTION_KEY. 0 = keep current
+    uint32 swipe_down_key = 18;      // HID usage for SWIPE_ACTION_KEY. 0 = keep current
+    // Modifiers sent with swipe_*_key (HID modifier bits: 0x01 Ctrl, 0x02
+    // Shift, 0x04 Alt, 0x08 GUI), e.g. Ctrl+O for osu!'s settings. Sent with
+    // every SetConfig; firmware predating them sends the key alone.
+    uint32 swipe_up_modifiers = 19;
+    uint32 swipe_down_modifiers = 20;
+    uint32 swipe_left_modifiers = 21;
+    uint32 swipe_right_modifiers = 22;
+    // Per-key Hall Effect settings. 0 = keep current
+    HeKeySettings key1_he = 23;
+    HeKeySettings key2_he = 24;
+    // Key 3 (Hall Effect V3). Absent = keep current; firmware predating them
+    // ignores these and leaves them out.
+    optional uint32 key3_hid_usage = 25;  // Default: 0x06 ('C'). 0 = sends nothing
+    HeKeySettings key3_he = 26;
+    // Keys whose presses count toward the total, tap rate and map stats: bit
+    // k = key k+1 (default 0x03, keys 1 and 2), one or two of them: osu!standard
+    // plays with two keys, and the pad refuses all three. Every key keeps its
+    // own lifetime counter. The pad also sends KeyPress only for these keys.
+    optional uint32 game_keys = 27;
+}
+
+// Rapid trigger mode on the wire. 0 is wire-only keep current.
+enum HeRtMode {
+    HE_RT_MODE_KEEP = 0;           // Wire only: leave the current mode
+    HE_RT_MODE_OFF = 1;            // Plain mode
+    HE_RT_MODE_NORMAL = 2;         // Rapid trigger with top reset
+    HE_RT_MODE_CONTINUOUS = 3;     // Continuous rapid trigger
+}
+
+message HeKeySettings {
+    // Travel values in 0.1 % of calibrated span (1..1000). 0 = keep current
+    uint32 actuation = 1;
+    uint32 release_hyst = 2;
+    uint32 top_reset = 3;
+    uint32 rt_press = 4;
+    uint32 rt_release = 5;
+    optional uint32 bottom_dead_zone = 6;
+    HeRtMode rt_mode = 7;
+    // Use every setting as is, below the noise floors too; the sensor's noise
+    // can then press the key by itself. Absent = keep current.
+    optional bool allow_below_noise_floor = 8;
+}
+
+// What a swipe does. Volume steps repeat along a long drag; every other
+// action fires once per touch. Keyboard keys (SWIPE_ACTION_KEY) are never
+// sent while a map is played: the keyboard report then carries only K1, K2
+// and Quick Retry.
+enum SwipeAction {
+    SWIPE_ACTION_KEEP = 0;           // Wire only: leave the current action
+    SWIPE_ACTION_NONE = 1;
+    SWIPE_ACTION_PREV_TRACK = 2;
+    SWIPE_ACTION_NEXT_TRACK = 3;
+    SWIPE_ACTION_PLAY_PAUSE = 4;
+    SWIPE_ACTION_MUTE = 5;
+    SWIPE_ACTION_KEY = 6;            // The swipe_*_key keyboard key, with swipe_*_modifiers
+    // osu!'s volume while osu! is active (HostStatus.osu_active), otherwise
+    // the system volume
+    SWIPE_ACTION_VOLUME_UP = 7;
+    SWIPE_ACTION_VOLUME_DOWN = 8;
+}
+
+message SetConfig {
+    ConfigPayload config = 1;
+}
+
+message ConfigAck {
+    bool success = 1;
+    string message = 2;
+    ConfigPayload current_config = 3;
+}
+
+// -----------------------------------------------------------------------------
+// Time Synchronization
+// -----------------------------------------------------------------------------
+
+message TimeSync {
+    uint32 year = 1;
+    uint32 month = 2;    // 1 - 12
+    uint32 day = 3;      // 1 - 31
+    uint32 hour = 4;     // 0 - 23
+    uint32 minute = 5;   // 0 - 59
+    uint32 second = 6;   // 0 - 59
+}
+
+// -----------------------------------------------------------------------------
+// Gameplay Telemetry Stream
+// -----------------------------------------------------------------------------
+
+message GameplayDisplayState {
+    string title = 1;
+    string artist = 2;
+    float current_pp = 3;
+    float progress_ratio = 4;         // 0.0 to 1.0
+    uint32 current_map_presses_k1 = 5;
+    uint32 current_map_presses_k2 = 6;
+    uint32 play_id = 7;               // Changes on every new attempt (new map, retry); device zeroes map counters
+    string difficulty = 8;            // Difficulty name, e.g. "Lunatic"
+    float stars = 9;                  // Star rating including mods
+}
+
+// Host-side integration status, sent periodically and on every change
+message HostStatus {
+    bool tosu_connected = 1;          // Daemon has a live tosu WebSocket
+    bool playing = 2;                 // osu! is currently playing a map
+    uint32 play_id = 3;               // Changes on every new attempt (new map, retry); device zeroes map counters
+    // Volume swipes go to osu! (Alt+wheel, or the plain wheel during a map)
+    // rather than the system volume. Windows: osu! is the foreground window.
+    // Linux: osu!lazer is running. Hosts predating swipes leave it false.
+    bool osu_active = 4;
+}
+
+// One UI data source value. Source ids: firmware/main/ui/core/ui_ids.h (ui_source_t)
+message DataValue {
+    uint32 source = 1;
+    oneof value {
+        double number = 2;
+        string text = 3;
+        bool clear = 4;               // Source has no value
+    }
+}
+
+// Changed data source values only; the host resends everything after a reconnect
+message DataUpdate {
+    repeated DataValue values = 1;
+}
+
+// -----------------------------------------------------------------------------
+// Screen layouts (PC designer). Field meanings: firmware/main/ui/core/ui_core.h (ui_widget_t)
+// -----------------------------------------------------------------------------
+
+message UiWidget {
+    uint32 kind = 1;         // ui_widget_kind_t
+    uint32 source = 2;       // ui_source_t
+    uint32 font = 3;         // ui_font_id_t
+    uint32 align = 4;        // ui_align_t
+    sint32 x = 5;
+    sint32 y = 6;
+    uint32 w = 7;
+    uint32 h = 8;
+    uint32 fg = 9;           // 0xRRGGBB
+    uint32 bg = 10;
+    uint32 accent = 11;
+    uint32 radius = 12;
+    uint32 decimals = 13;    // 255 = source default
+    uint32 flags = 14;       // UI_FLAG_*
+    string label = 15;
+    string suffix = 16;
+}
+
+message SetLayout {
+    uint32 screen = 1;       // ui_screen_id_t
+    uint32 background = 2;   // 0xRRGGBB
+    repeated UiWidget widgets = 3;
+}
+
+message LayoutAck {
+    uint32 screen = 1;
+    bool success = 2;
+    string message = 3;
+}
+
+// -----------------------------------------------------------------------------
+// Result animations (issue #3). Ids: firmware/main/ui/core/ui_anim.h
+// -----------------------------------------------------------------------------
+
+// Play a short animation over the current screen, e.g. the grade on the
+// results screen. The pad ignores it during a map and stops it the moment a
+// map starts. 0 stops the one playing; 1..127 are built in (up to
+// HelloAck.builtin_animations); 128 + n is reserved for uploaded animations,
+// one slot per trigger, which a pad without that slot plays as built-in 1.
+message PlayAnimation {
+    uint32 animation = 1;
+    string grade = 2;        // "SS", "S", "A", ... as tosu names it: what the built-ins draw
+}
+
+// -----------------------------------------------------------------------------
+// Counter Synchronization & Recovery
+// -----------------------------------------------------------------------------
+
+message CounterState {
+    string device_id = 1;
+    uint32 counter_generation = 2;
+    uint64 lifetime_key1 = 3;
+    uint64 lifetime_key2 = 4;
+    // Key 3's lifetime count, sent only when restoring a backup that has it.
+    // Absent (older apps, every ordinary sync) leaves the pad's key 3 count as
+    // it is; firmware without key 3 skips the field.
+    optional uint64 lifetime_key3 = 5;
+}
+
+message CounterSyncRequest {
+    CounterState target_state = 1;
+    bool force_restore = 2;          // Explicit restore from PC/Backup
+}
+
+message CounterSyncResponse {
+    bool success = 1;
+    CounterState synchronized_state = 2;
+    string message = 3;
+}
+
+// -----------------------------------------------------------------------------
+// Diagnostic Events
+// -----------------------------------------------------------------------------
+
+message LogEvent {
+    uint32 timestamp_ms = 1;
+    LogLevel level = 2;
+    string tag = 3;
+    string message = 4;
+    uint32 event_id = 5;
+    uint32 arg0 = 6;
+    uint32 arg1 = 7;
+}
+
+message LogEventBatch {
+    repeated LogEvent events = 1;
+}
+
+// -----------------------------------------------------------------------------
+// Key press times (tap rate, issue #2)
+// -----------------------------------------------------------------------------
+
+// One accepted key-down, timed where the pad accepts it: the switch edge for
+// MX, the actuation point for any other input module
+message KeyPress {
+    uint32 key = 1;      // 1 = K1, 2 = K2
+    uint64 t_us = 2;     // pad clock (esp_timer, us since boot)
+}
+
+// Key-downs since the last batch, oldest first. Sent only while the host says
+// a map is being played (HostStatus.playing), from the protocol task, never
+// from the input path.
+message KeyPressBatch {
+    uint64 now_us = 1;              // pad clock when the batch was built
+    repeated KeyPress presses = 2;
+    uint32 dropped = 3;             // presses lost to a full buffer since the last batch
+}
+
+// -----------------------------------------------------------------------------
+// Interactive Hardware Pin Detection
+// -----------------------------------------------------------------------------
+
+message DetectPinRequest {
+    uint32 key_id = 1;       // 1 = Key 1, 2 = Key 2
+    uint32 timeout_ms = 2;   // Listening timeout in ms
+    uint32 exclude_gpio = 3; // GPIO to ignore (e.g. key1 when detecting key2)
+}
+
+message DetectPinResponse {
+    uint32 key_id = 1;
+    uint32 gpio = 2;         // Detected GPIO pin number (0 = none/timeout)
+    bool success = 3;
+}
+
+// -----------------------------------------------------------------------------
+// Board test (carrier + input module PCBs)
+// -----------------------------------------------------------------------------
+
+// Input module on the carrier's connector, from its ID voltage on GPIO8 (or
+// GPIO7 for a V3 module on a turned-over FFC). Hosts that predate a value
+// read it as UNKNOWN.
+enum InputModule {
+    INPUT_MODULE_UNKNOWN = 0;
+    INPUT_MODULE_NONE = 1;           // ID floating: no module, or a hand-wired pad
+    INPUT_MODULE_MX = 2;             // 100k/10k divider, 0.30 V
+    INPUT_MODULE_HALL_EFFECT = 3;    // 100k/47k divider, 1.06 V
+    INPUT_MODULE_HALL_EFFECT_V3 = 4; // 100k/100k, 1.65 V: ADS7028 over SPI, three keys
+    INPUT_MODULE_MX_V3 = 5;          // 47k/100k, 2.24 V: three keys
+}
+
+// Measurements only; the host turns them into pass/fail checks. Run in IDLE
+// only, on request. GPIO bitmasks have bit n for GPIOn.
+message BoardTestResult {
+    bool ran = 1;                    // false: refused, see message
+    string message = 2;
+    InputModule boot_module = 3;     // what the pad saw at boot (sets key pins, HE lockout)
+    InputModule module = 4;          // what it measures now
+    sint32 id_mv = 5;                // ID voltage, pull-down off. -1 = not measured
+    sint32 id_loaded_mv = 6;         // ID voltage with the ~45k internal pull-down on
+    // ID voltage with GPIO2 pulled up: a reversed cable (pin 1 <-> 8) powers
+    // the module from GPIO2 and its IN2 pull-up lands on ID. -1 = not run
+    sint32 reverse_probe_mv = 7;
+    uint32 key1_gpio = 8;
+    uint32 key2_gpio = 9;
+    bool keys_enabled = 10;          // false: key input off (Hall Effect module on v1)
+    uint64 tested_gpios = 11;        // pins with the pull tests below
+    uint64 high_with_pullup = 12;    // read high with only the internal pull-up
+    uint64 high_with_pulldown = 13;  // read high with only the internal pull-down
+    uint64 bridged_gpios = 14;       // spare pins that follow a neighbour driven low
+    // A V3 module's ID came on GPIO7 at boot: its FFC is turned over. False
+    // on V1 boards and from firmware predating V3.
+    bool cable_reversed = 15;
+    // The ADC test of a Hall Effect V3 module. Absent with any other module
+    // and from firmware predating it.
+    HeAdcTest he_adc = 16;
+}
+
+// SCLK sweep with the ADC's fixed output pattern (0xA5A): how much margin the
+// module cable has
+message HeAdcSpeed {
+    uint32 sclk_hz = 1;
+    uint32 frames = 2;               // 0: the pad's pins cannot run this fast (not tried)
+    uint32 errors = 3;               // frames that did not read 0xA5A
+}
+
+// One sensor read in a burst, 12-bit codes (AVDD full scale)
+message HeAdcChannel {
+    uint32 ain = 1;                  // ADC input
+    uint32 samples = 2;
+    uint32 min = 3;
+    uint32 max = 4;
+    uint32 mean_x16 = 5;             // mean × 16
+    uint32 noise_x100 = 6;           // standard deviation × 100
+}
+
+// Hall Effect V3 module: its ADS7028 and sensors (firmware/main/diag/he_adc_test.h)
+message HeAdcTest {
+    bool ran = 1;                    // false: not run, see message
+    string message = 2;              // why not, or the step that failed
+    uint32 sclk_hz = 3;              // SCLK for everything but the sweep
+    sint32 status_after_reset = 4;   // SYSTEM_STATUS after a software reset, 0x81 expected. -1 = not read
+    sint32 status_after_clear = 5;   // after clearing BOR, 0x80 expected
+    uint32 walk_writes = 6;          // register write/read-back pairs
+    uint32 walk_mismatches = 7;
+    uint32 walk_wrong_bits = 8;      // bits that ever read back wrong
+    bool cal_done = 9;               // offset calibration finished
+    sint32 status_end = 10;          // SYSTEM_STATUS when done: BOR set again = a supply dip
+    repeated HeAdcSpeed speeds = 11;
+    repeated HeAdcChannel channels = 12;  // key 1, 2, 3
+}
+
+// -----------------------------------------------------------------------------
+// Hall Effect Calibration Flow
+// -----------------------------------------------------------------------------
+
+enum HeCalStage {
+    HE_CAL_STAGE_NONE = 0;
+    HE_CAL_STAGE_REST = 1;
+    HE_CAL_STAGE_KEY1 = 2;
+    HE_CAL_STAGE_KEY2 = 3;
+    HE_CAL_STAGE_SUCCESS = 4;
+    HE_CAL_STAGE_FAILED = 5;
+    HE_CAL_STAGE_KEY3 = 6;        // Hall Effect V3 only, after KEY2
+}
+
+// Values 1..8 match he_cal_error_t in firmware/main/input/he_cal_capture.h
+// (he_cal_ui.c asserts this at compile time).
+enum HeCalError {
+    HE_CAL_ERROR_NONE = 0;
+    HE_CAL_ERROR_REST_NOT_STILL = 1;
+    HE_CAL_ERROR_REST_OUT_OF_RANGE = 2;
+    HE_CAL_ERROR_REST_PRESSED = 3;
+    HE_CAL_ERROR_SIGNAL_NOT_RISING = 4;
+    HE_CAL_ERROR_SPAN_TOO_SMALL = 5;
+    HE_CAL_ERROR_PEAKS_INCONSISTENT = 6;
+    HE_CAL_ERROR_TOO_FEW_PEAKS = 7;
+    HE_CAL_ERROR_TOO_MANY_PEAKS = 8;
+    // Never sent: calibration has no timeout (owner decision). Kept so the
+    // value is not reused.
+    HE_CAL_ERROR_TIMEOUT = 9;
+}
+
+// Latest progress, periodically refreshed while calibrating and on transitions;
+// intermediate updates may coalesce before CDC sends them. Refused starts
+// (not IDLE, already calibrating, no HE backend, unavailable UI), save failures
+// and lost frame samples use stage = FAILED, error = NONE, with error_message.
+message HeCalibrationProgress {
+    HeCalStage stage = 1;
+    uint32 key_index = 2;         // 1, 2 or 3 = the key being pressed (0 during rest/idle/complete)
+    uint32 presses_done = 3;      // 0..5
+    HeCalError error = 4;
+    string error_message = 5;
+    // Latest consumed frame reading for key_index (key 1 when key_index = 0).
+    // 0 means no reading yet; valid frame readings exclude ADC rails.
+    uint32 raw_value = 6;
+    uint32 key1_rest = 7;         // Populated on HE_CAL_STAGE_SUCCESS
+    uint32 key1_full = 8;         // Populated on HE_CAL_STAGE_SUCCESS
+    uint32 key2_rest = 9;         // Populated on HE_CAL_STAGE_SUCCESS
+    uint32 key2_full = 10;        // Populated on HE_CAL_STAGE_SUCCESS
+    uint32 key3_rest = 11;        // Populated on HE_CAL_STAGE_SUCCESS (Hall Effect V3)
+    uint32 key3_full = 12;
+}
+
+// One live reading per key, for the app's key view (he_live_view). Raw ADC
+// counts as the engine sees them; the host turns them into travel with
+// DeviceStatus.he_calibration. Never sent during a map or its cooldown.
+message HeLiveSample {
+    uint32 key1_raw = 1;          // 0 = no reading yet
+    uint32 key2_raw = 2;
+    bool key1_down = 3;           // what the pad reports to the PC
+    bool key2_down = 4;
+    uint32 key3_raw = 5;          // Hall Effect V3; 0 otherwise
+    bool key3_down = 6;
+}
+
+// -----------------------------------------------------------------------------
+// Top-Level Envelopes
+// -----------------------------------------------------------------------------
+
+message HostToDevice {
+    uint32 sequence_number = 1;
+    oneof payload {
+        Hello hello = 2;
+        SetConfig set_config = 3;
+        TimeSync time_sync = 4;
+        GameplayDisplayState gameplay_state = 5;
+        CounterSyncRequest counter_sync = 6;
+        bool request_status = 7;
+        HostStatus host_status = 8;
+        bool reset_latency_stats = 9;
+        DataUpdate data_update = 10;
+        SetLayout set_layout = 11;
+        uint32 reset_layout = 12;    // screen id: back to the built-in default
+        bool request_logs = 13;
+        ClaimOwnership claim_ownership = 14;
+        DetectPinRequest detect_pin = 15;
+        bool run_board_test = 16;    // answered with BoardTestResult
+        PlayAnimation play_animation = 17;
+        // Restart the pad, e.g. after swapping its input module, which is
+        // only detected at boot. It saves its counters and restarts once idle
+        // (never in a map or its cooldown); no answer, it reconnects.
+        bool restart = 18;
+        // Interactive Hall Effect calibration commands
+        bool start_he_calibration = 19;
+        bool cancel_he_calibration = 20;
+        // true: stream HeLiveSample about 50 times a second for the next 2 s;
+        // send it again to keep the stream going. false: stop now. Ignored on
+        // MX pads, and nothing is streamed during a map or its cooldown.
+        bool he_live_view = 21;
+    }
+}
+
+message DeviceToHost {
+    uint32 sequence_number = 1;
+    oneof payload {
+        HelloAck hello_ack = 2;
+        DeviceStatus status = 3;
+        ConfigAck config_ack = 4;
+        CounterSyncResponse counter_sync_resp = 5;
+        LogEventBatch log_batch = 6;
+        LayoutAck layout_ack = 7;
+        DetectPinResponse detect_pin_resp = 8;
+        KeyPressBatch key_presses = 9;
+        BoardTestResult board_test = 10;
+        HeCalibrationProgress he_calibration_progress = 11;
+        HeLiveSample he_live_sample = 12;
+    }
+}

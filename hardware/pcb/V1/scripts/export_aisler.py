@@ -40,7 +40,7 @@ NOTES = {
           "  mounting holes and SW1/SW2 the switch positions: board features (DNP), not\n"
           "  parts. The Gateron magnetic switches go in later by hand.\n"
           "  U1/U2 (SOT-23): the single lead (pin 3, GND) points to the front edge (the\n"
-          "  \"OSUPAD HE\" text), the two leads to the connector; pin 1 (VCC) is next to\n"
+          "  \"OPAD HE\" text), the two leads to the connector; pin 1 (VCC) is next to\n"
           "  the silkscreen dot. A SOT-23 cannot be placed mirrored, so if the leads sit\n"
           "  on the pads the orientation is right.",
     "Carrier": "J_MOD (JST SH) is the only SMD part, on the BOTTOM side. J_P1/J_P2 are\n"
@@ -90,7 +90,7 @@ def prepare(tree):
 
 def _uuid(seed):
     import uuid
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, "osupad/aisler/" + seed))
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, "opad/aisler/" + seed))
 
 
 def parts(tree):

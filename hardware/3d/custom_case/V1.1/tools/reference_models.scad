@@ -1,6 +1,6 @@
 // =============================================================================
 //  Reference models for the V1.1 fit check: what goes inside the case, as
-//  simple envelopes in world coordinates. Include after osupad_params.scad.
+//  simple envelopes in world coordinates. Include after opad_params.scad.
 //  Sources: Waveshare 2024-11-08 drawing + STEP (waveshare_back.scad),
 //  hardware/pcb/V1 (carrier, MX and HE modules).
 // =============================================================================

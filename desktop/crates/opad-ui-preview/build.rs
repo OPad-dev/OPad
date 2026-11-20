@@ -54,7 +54,7 @@ fn main() {
             .opt_level(2)
             .warnings(false)
             .file(manifest.join("csrc/preview_stub.c"));
-        build.compile("osupad_ui_lvgl");
+        build.compile("opad_ui_lvgl");
         println!("cargo:rerun-if-changed=csrc/preview_stub.c");
         return;
     }
@@ -95,7 +95,7 @@ fn main() {
         build.file(ui_core.join(name));
     }
     build.file(manifest.join("csrc/preview.c"));
-    build.compile("osupad_ui_lvgl");
+    build.compile("opad_ui_lvgl");
 
     println!("cargo:rerun-if-changed={}", sdkconfig.display());
     println!("cargo:rerun-if-changed=csrc/preview.c");

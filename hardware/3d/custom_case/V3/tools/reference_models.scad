@@ -1,9 +1,9 @@
 // =============================================================================
 //  Reference models for the V3 fit check: what goes inside the case, as simple
-//  envelopes in world coordinates. Include after osupad_params.scad.
+//  envelopes in world coordinates. Include after opad_params.scad.
 //  Sources: Waveshare 2024-11-08 drawing + STEP (waveshare_back.scad),
 //  hardware/pcb/V3 (carrier, USB board, MX and HE modules; KiCad coordinates converted
-//  with car_to_deck / usb_to_world / mod_to_world in osupad_params.scad).
+//  with car_to_deck / usb_to_world / mod_to_world in opad_params.scad).
 // =============================================================================
 
 include <waveshare_back.scad>

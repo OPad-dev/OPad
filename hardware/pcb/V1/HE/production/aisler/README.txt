@@ -1,4 +1,4 @@
-osuPad Hall Effect Input Module V1 for AISLER
+OPad Hall Effect Input Module V1 for AISLER
 =============================================
 
 Upload he_input_v1.kicad_pcb (native KiCad board, zones filled, parts carry
@@ -15,7 +15,7 @@ Assembly
   mounting holes and SW1/SW2 the switch positions: board features (DNP), not
   parts. The Gateron magnetic switches go in later by hand.
   U1/U2 (SOT-23): the single lead (pin 3, GND) points to the front edge (the
-  "OSUPAD HE" text), the two leads to the connector; pin 1 (VCC) is next to
+  "OPAD HE" text), the two leads to the connector; pin 1 (VCC) is next to
   the silkscreen dot. A SOT-23 cannot be placed mirrored, so if the leads sit
   on the pads the orientation is right.
     U1,U2        Texas Instruments DRV5055A3QDBZR (DRV5055A3, bottom, SMD, LCSC C266128)

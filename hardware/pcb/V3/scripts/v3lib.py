@@ -32,8 +32,8 @@ PCB = os.path.dirname(V3)
 V1LIB = os.path.join(PCB, "V1", "lib")
 V2LIB = os.path.join(PCB, "V2", "lib")
 LIB = os.path.join(V3, "lib")
-FP_LIB = os.path.join(LIB, "osupad.pretty")
-SYM_LIB = os.path.join(LIB, "osupad.kicad_sym")
+FP_LIB = os.path.join(LIB, "opad.pretty")
+SYM_LIB = os.path.join(LIB, "opad.kicad_sym")
 
 COPIED = {
     V1LIB: ["C_0603_1608Metric", "R_0603_1608Metric", "SOT-23", "MountingHole_2.2mm_M2",
@@ -76,7 +76,7 @@ def _rect(layer, x0, y0, x1, y1, width):
 
 
 def _footprint(name, descr, tags, body, attr="smd"):
-    return ('(footprint "%s"\n\t(version 20240108)\n\t(generator "osupad")\n\t(generator_version "8.0")\n'
+    return ('(footprint "%s"\n\t(version 20240108)\n\t(generator "opad")\n\t(generator_version "8.0")\n'
             '\t(layer "F.Cu")\n\t(descr "%s")\n\t(tags "%s")\n'
             '\t(property "Reference" "REF**" (at 0 -3 0) (layer "F.Fab") (effects (font (size 0.8 0.8) (thickness 0.12))))\n'
             '\t(property "Value" "%s" (at 0 3 0) (layer "F.Fab") (effects (font (size 0.8 0.8) (thickness 0.12))))\n'
@@ -209,7 +209,7 @@ def box(name, ref, footprint, description, left, right):
                     % (k, v, y, "(hide yes) " if hide else "")
                     for k, v, y, hide in (("Reference", ref, top + 1.27, False),
                                           ("Value", name, -top - 1.27, False),
-                                          ("Footprint", "osupad:" + footprint, 0, True),
+                                          ("Footprint", "opad:" + footprint, 0, True),
                                           ("Datasheet", "", 0, True),
                                           ("Description", description, 0, True)))
     return ('\t(symbol "%s"\n\t\t(pin_names (offset 1.016))\n\t\t(exclude_from_sim no) (in_bom yes) (on_board yes)\n%s'
@@ -261,11 +261,11 @@ def write_library():
     os.makedirs(FP_LIB, exist_ok=True)
     for src, names in COPIED.items():
         for n in names:
-            shutil.copy(os.path.join(src, "osupad.pretty", n + ".kicad_mod"), FP_LIB)
+            shutil.copy(os.path.join(src, "opad.pretty", n + ".kicad_mod"), FP_LIB)
     for n, fn in NEW.items():
         open(os.path.join(FP_LIB, n + ".kicad_mod"), "w").write(fn())
     import re
-    v1 = open(os.path.join(V1LIB, "osupad.kicad_sym")).read()
+    v1 = open(os.path.join(V1LIB, "opad.kicad_sym")).read()
 
     def block(text, name):
         start = text.index('(symbol "%s"' % name)
@@ -279,7 +279,7 @@ def write_library():
                     return text[start:i + 1]
         raise ValueError(name)
 
-    out = ['(kicad_symbol_lib\n\t(version 20251024)\n\t(generator "osupad")\n\t(generator_version "10.0")\n']
+    out = ['(kicad_symbol_lib\n\t(version 20251024)\n\t(generator "opad")\n\t(generator_version "10.0")\n']
     for n in ("R", "C", "PWR_FLAG"):
         out.append("\t" + block(v1, n) + "\n")
     for n, text in SYMBOLS.items():

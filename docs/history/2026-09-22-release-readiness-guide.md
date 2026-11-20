@@ -20,7 +20,7 @@
 | `firmware/test/host/run_tests.sh` | all 6 suites pass (33 cases) |
 | Last CI run on `main` (`35763954377`) | **failing**: Protobuf Drift Check and Windows GUI job (see §9) |
 | License scan of all 684 Rust crates (`cargo metadata`) | all open source (details §1.4) |
-| Firmware link map (`build/osupad-firmware.map`) | no closed Wi-Fi/BT/PHY blobs linked (§1.5) |
+| Firmware link map (`build/opad-firmware.map`) | no closed Wi-Fi/BT/PHY blobs linked (§1.5) |
 | `objdump -T` on release binaries | need glibc 2.39 (daemon, CLI) and 2.44 (GUI) (companion doc §2.1) |
 | KiCad DRC/ERC JSON (MX, Carrier) | 0 violations (§10) |
 
@@ -73,7 +73,7 @@ The standalone tosu (`TOSU_STANDALONE=1`, the default for deb/rpm/AppImage) is a
 To do:
 - In the release job, produce `tosu-4.26.2-source.tar.gz` (the upstream tag plus the exact `pnpm-lock.yaml` and the build commands from the `Makefile` `tosu` target) and attach it to every GitHub release.
 - Generate a notices file for the pkg binary: Node's `LICENSE` from the pkg base binary version, plus `pnpm licenses list --prod --json` from the tosu checkout rendered to text. Ship it as `tosu/THIRD_PARTY_NOTICES.txt` next to the binary.
-- Rename the env var the NOTICE mentions (`$OSUPAD_TOSU_PATH`) together with the code (§5), or document both names.
+- Rename the env var the NOTICE mentions (`$OPAD_TOSU_PATH`) together with the code (§5), or document both names.
 
 ### 1.4 P1: third-party notices for OPad's own binaries
 
@@ -183,7 +183,7 @@ The same file already explains, for `BOOTLOADER` (lines 143-150), why this must 
 | `sdkconfig` | `# CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE is not set` | Needed before real OTA (§6.2): a bad image must roll back instead of looping |
 | `device_config.c` | `s_current_config` (a struct) is written by the protocol task and read by the runtime and keypad tasks with no lock | Guard with a spinlock or copy under a critical section (torn reads are unlikely but possible) |
 | `keypad.c:35-36` | 64-bit `s_key*_last_press_us` written in the ISR and read on the other core without atomics | `atomic_llong`, like the counters |
-| `usb_descriptors.c:51` | Manufacturer string is `"GFerreiroS"` | `"OPad"` reads better in OS device lists (cosmetic; the serial `OSUPAD-…` must **not** change, since device ids depend on it) |
+| `usb_descriptors.c:51` | Manufacturer string is `"GFerreiroS"` | `"OPad"` reads better in OS device lists (cosmetic; the serial `OPAD-…` must **not** change, since device ids depend on it) |
 | `counters.c:11` | NVS namespace `"osupad"` | **Keep it.** Renaming it would lose every pad's counters. Add a comment saying so, so a future rename pass doesn't "fix" it. |
 | `keypad.c:430` / `config_validate.c:15` | Pin allow-list duplicated in two firmware files and in `opad-model` (`KEY_GPIO_PINS`) | One header, plus a unit test on the Rust side comparing against it |
 
@@ -193,15 +193,15 @@ The pad sends HID **usage codes**, which are key *positions*, not letters. `0x1D
 
 ---
 
-## 3. Protocol (`protocol/osupad.proto`, framing)
+## 3. Protocol (`protocol/opad.proto`, framing)
 
 | # | Sev | Issue | Fix |
 |---|---|---|---|
 | 3.1 | P1 | No sync marker or CRC. One lost or extra byte desynchronises the stream until luck realigns it (see §2.3) | v1: host resets its buffer on error. v2: `0xA5 0x5A` magic + length + CRC-16, or COBS with a zero delimiter |
-| 3.2 | P0 | `scripts/gen_proto.sh` compiles `protocol/opad.proto`, which doesn't exist (the file is `osupad.proto`). The CI drift check fails on every push, so generated code drift is not checked at all | Point the script at `osupad.proto` (keep the file name, since the nanopb type names `osupad_*` come from it) |
+| 3.2 | P0 | `scripts/gen_proto.sh` compiles `protocol/opad.proto`, which doesn't exist (the file is `opad.proto`). The CI drift check fails on every push, so generated code drift is not checked at all | Point the script at `opad.proto` (keep the file name, since the nanopb type names `opad_*` come from it) |
 | 3.3 | P2 | Host `Hello.client_version` is hard-coded `"1.0.0"` (`opad-device/src/lib.rs:224`) | `env!("CARGO_PKG_VERSION")` |
 | 3.4 | P2 | Compatibility is `protocol_version == 1` everywhere (`ipc_handlers.rs:956,1012`). The first additive change forces a lock-step upgrade | Define "same major = compatible". Add a capability bitfield to `HelloAck` so new optional features don't need a version bump |
-| 3.5 | P2 | `docs/protocol.md` is the only spec | Keep `osupad.proto` as the source of truth and generate a message table into the doc in CI, so they can't drift |
+| 3.5 | P2 | `docs/protocol.md` is the only spec | Keep `opad.proto` as the source of truth and generate a message table into the doc in CI, so they can't drift |
 
 ---
 
@@ -240,11 +240,11 @@ There are 93 `lock().unwrap()` calls on `std::sync::Mutex` in non-test code (64 
 |---|---|---|
 | `main.rs:197-219` | tosu supervisor and serial worker start **before** the single-instance listener is bound; a second daemon briefly launches tosu and opens the port | Bind the listener first (companion doc §7) |
 | `opad-device/src/lib.rs:203` | "Connected" is set when the port opens, before `HelloAck` | Set it on `HelloAck`; give up after ~3 s and try the next matching port (companion doc §1.1) |
-| `opad-device/src/lib.rs:712-727` | Accepts any `303a:4001` / `303a:1001` | Check the `OSUPAD-` serial prefix (companion doc §1.1) |
+| `opad-device/src/lib.rs:712-727` | Accepts any `303a:4001` / `303a:1001` | Check the `OPAD-` serial prefix (companion doc §1.1) |
 | `main.rs:38-39` | `EnvFilter::from_default_env().add_directive(INFO)`: the added level directive most likely replaces the one from `RUST_LOG`, so `RUST_LOG=debug` has no effect **(verify)** | `EnvFilter::try_from_default_env().unwrap_or_else(\|_\| EnvFilter::new("info"))` |
 | `main.rs:47` | Logs `v1.0.0` | `env!("CARGO_PKG_VERSION")` |
 | `opad-model/src/paths.rs:35-76` | Legacy→modern renames on every call; failures ignored | Migrate once at start-up and log failures |
-| `opad-tosu/src/lib.rs:258-281` | `$OSUPAD_TOSU_PATH`, and `~/.local/opt/tosu` on Windows | Accept `OPAD_TOSU_PATH` too; use `%LOCALAPPDATA%` on Windows |
+| `opad-tosu/src/lib.rs:258-281` | `$OPAD_TOSU_PATH`, and `~/.local/opt/tosu` on Windows | Accept `OPAD_TOSU_PATH` too; use `%LOCALAPPDATA%` on Windows |
 
 ---
 
@@ -257,10 +257,10 @@ Details for the Linux items are in the companion doc §3.
 | 5.1 | P1 | GUI "Start tosu" has its own launcher that writes `tosu.env` next to the binary (wrong place on Linux, read-only on deb/rpm) and sends tosu's output to `/dev/null` | `gui/src/main.rs:2614-2660` |
 | 5.2 | P1 | Autostart entry is `Exec=opad-gui --tray` without a path (Windows writes an absolute path) | `gui/src/platform_linux.rs:156` |
 | 5.3 | P1 | AppImage: service and autostart point inside the temporary FUSE mount | `platform_linux.rs:72-77` |
-| 5.4 | P2 | Wayland `application_id: "osupad"` ≠ `StartupWMClass=opad` | `gui/src/main.rs:434` |
-| 5.5 | P2 | Detached daemon logs to `…/osupad/daemon.log`, everything else uses `…/opad/` | `platform_linux.rs:99-103` |
+| 5.4 | P2 | Wayland `application_id: "opad"` ≠ `StartupWMClass=opad` | `gui/src/main.rs:434` |
+| 5.5 | P2 | Detached daemon logs to `…/opad/daemon.log`, everything else uses `…/opad/` | `platform_linux.rs:99-103` |
 | 5.6 | P2 | File dialogs (rfd 0.15) go through xdg-desktop-portal only; without a portal backend the Import/Export/Choose-tosu buttons do nothing | `gui/Cargo.toml` (`rfd`) |
-| 5.7 | P2 | Export defaults still named `osupad-*.json`, `osupad.log`, `osupad-backup-*` | `gui/src/designer/mod.rs:894`, `main.rs:2519,2545` |
+| 5.7 | P2 | Export defaults still named `opad-*.json`, `opad.log`, `opad-backup-*` | `gui/src/designer/mod.rs:894`, `main.rs:2519,2545` |
 | 5.8 | P2 | No "About / Licenses" view (needed for §1.4) and no version/commit shown | new |
 | 5.9 | P2 | Undecorated window with custom chrome: test on GNOME Wayland with fractional scaling, KDE, and Windows at 150% | `gui/src/chrome.rs` |
 | 5.10 | P2 | English only; no i18n framework | later |
@@ -273,9 +273,9 @@ Details for the Linux items are in the companion doc §3.
 
 | Consumer | Looks for | Build produces |
 |---|---|---|
-| `opadctl flash <dir>` / `--full` (`cli/src/main.rs:743`) | `osupad-firmware.bin` | `opad-firmware.bin` |
-| `opad-manifest` (`opad-update/src/bin/opad-manifest.rs:232,241,251`) | `osupad-firmware.bin`, `osupad-setup-*.exe`, `osupad-linux-x86_64-*.tar.gz` | `opad-firmware.bin`, `opad-setup.exe` (no version), `opad-linux-x86_64-<ver>.tar.gz` |
-| `opad-manifest` default key (`opad-manifest.rs:361-374`) | `~/.config/osupad/opad-manifest.key` | `build_release.sh:105` checks `~/.config/opad/opad-manifest.key` |
+| `opadctl flash <dir>` / `--full` (`cli/src/main.rs:743`) | `opad-firmware.bin` | `opad-firmware.bin` |
+| `opad-manifest` (`opad-update/src/bin/opad-manifest.rs:232,241,251`) | `opad-firmware.bin`, `opad-setup-*.exe`, `opad-linux-x86_64-*.tar.gz` | `opad-firmware.bin`, `opad-setup.exe` (no version), `opad-linux-x86_64-<ver>.tar.gz` |
+| `opad-manifest` default key (`opad-manifest.rs:361-374`) | `~/.config/opad/opad-manifest.key` | `build_release.sh:105` checks `~/.config/opad/opad-manifest.key` |
 
 The last row is new here. The release script checks one path and then runs a tool that reads another, so signing either fails or uses a key other than the one checked. **Fix:** one naming pass, plus a test that feeds `build_release.sh`'s output names through `app_artifact`/`firmware_artifact`. Pass `--secret-key` explicitly from the script.
 
@@ -337,7 +337,7 @@ In a clean `ubuntu:22.04` container and on a clean Windows runner, the documente
 
 | # | Sev | Issue | Fix |
 |---|---|---|---|
-| 9.1 | P0 | Windows GUI job: `-p osupad-gui` doesn't match any package, so it fails. The other Windows job's `--exclude osupad-gui` excludes nothing, so it now builds the GUI too | `opad-gui` in lines 94-144 |
+| 9.1 | P0 | Windows GUI job: `-p opad-gui` doesn't match any package, so it fails. The other Windows job's `--exclude opad-gui` excludes nothing, so it now builds the GUI too | `opad-gui` in lines 94-144 |
 | 9.2 | P0 | Protobuf drift job fails (`gen_proto.sh` path, §3.2) | Fix the script |
 | 9.3 | P1 | No release workflow; releases are built by hand on one machine | Tag-triggered `release.yml`: firmware in `espressif/idf:v5.5.2` → Linux packages in `ubuntu:22.04` → Windows installer on `windows-latest` → notices (§1.4) → manifest + signature (secret in GitHub Actions secrets) → draft release with `SHA256SUMS` |
 | 9.4 | P1 | No license, advisory or REUSE checks | `cargo deny check`, `reuse lint` (§1.4, §1.6) |
@@ -355,10 +355,10 @@ State: MX module and Carrier pass DRC/ERC with 0 violations (KiCad 10.0.6, 2026-
 |---|---|---|---|
 | 10.1 | P1 | **Firmware and PCB disagree on key pins.** The carrier routes KEY1/KEY2 to GPIO10/GPIO7 (`hardware/pcb/V1/README.md`), but the firmware and app default to GPIO14/GPIO9 (`keypad.c:19-20`, `opad-model/src/lib.rs:182-183`). A pad built from the PCBs doesn't type until the user changes pins in the app, which needs the app. | Implement module detection: read the ID divider on GPIO8 (ADC1_CH7) at boot. 0.30 V → MX V1 → GPIO10/7; nothing (pull-down, ~0 V) → hand-wired defaults 14/9; 1.06 V → HE (not supported, see 10.2). Store "auto" as the default pin mode. |
 | 10.2 | P1 | **The HE module has no firmware.** Hall sensors need ADC continuous mode and rapid-trigger logic (`docs/specs/v2-rapid-trigger.md`, planned after v1.0). Its analog outputs on GPIO10/7 are read as digital inputs today, which gives nonsense. | Don't sell or advertise the HE module with v1.0. Mark it "v2, experimental" in `hardware/pcb/V1/README.md` and the main README. Firmware should detect 1.06 V and show "Hall module needs firmware v2" on screen instead of reading garbage. |
-| 10.3 | P1 | **The V1 case has no mounts for the PCBs.** `osupad_enclosure.scad` has no M2 bosses at case (15.5, 16.5) / (60.5, 16.5) for the MX module, and no carrier/JST routing. The v2 spec says the V1 case reserves no space under the keys. The MX README asks for heat-set bosses at exactly those positions. | Either ship V1 as "hand-wired switches only" (and say so), or do a case V1.1 with bosses, a 5.0 mm plate-to-PCB stack, a cable path and carrier clearance. Print it and test-fit before ordering boards in quantity. |
+| 10.3 | P1 | **The V1 case has no mounts for the PCBs.** `opad_enclosure.scad` has no M2 bosses at case (15.5, 16.5) / (60.5, 16.5) for the MX module, and no carrier/JST routing. The v2 spec says the V1 case reserves no space under the keys. The MX README asks for heat-set bosses at exactly those positions. | Either ship V1 as "hand-wired switches only" (and say so), or do a case V1.1 with bosses, a 5.0 mm plate-to-PCB stack, a cable path and carrier clearance. Print it and test-fit before ordering boards in quantity. |
 | 10.4 | P2 | HE board never opened in KiCad (per the 2026-09-21 todo) | Open once, run KiCad's own DRC/ERC, and save the reports in `HE/production/` like the other two |
 | 10.5 | P2 | Nothing has been ordered and assembled yet **(verify)** | Order a small batch (5 each), run `docs/testing-checklist.md` on assembled boards, and put photos and results in the repo |
-| 10.6 | P2 | `lib/osupad.kicad_sym` / `osupad.pretty`: the name is fine to keep (it's in board files), but mention in the README that it isn't the product name | none needed |
+| 10.6 | P2 | `lib/opad.kicad_sym` / `opad.pretty`: the name is fine to keep (it's in board files), but mention in the README that it isn't the product name | none needed |
 
 ---
 
@@ -366,7 +366,7 @@ State: MX module and Carrier pass DRC/ERC with 0 violations (KiCad 10.0.6, 2026-
 
 | # | Sev | Issue | Fix |
 |---|---|---|---|
-| 11.1 | P0 | README install, build and CLI sections use the old names: `osupadctl`, `osupad-daemon.service`, `packaging/linux/desktop/osupad-gui.desktop` (doesn't exist), `osupad-setup-<version>.exe`. A new user following it fails at every step. 25 `osupad` mentions. | Rewrite "Install" per platform around the packages; move "build from source" below it |
+| 11.1 | P0 | README install, build and CLI sections use the old names: `opadctl`, `opad-daemon.service`, `packaging/linux/desktop/opad-gui.desktop` (doesn't exist), `opad-setup-<version>.exe`. A new user following it fails at every step. 25 `opad` mentions. | Rewrite "Install" per platform around the packages; move "build from source" below it |
 | 11.2 | P1 | Old names across `docs/`: `packaging-distribution.md` (90), `testing-checklist.md` (63), `remaining-work-v1.md` (49), `technical-spec-v1.md` (22), `recovery.md` (18), `architecture.md` (15), `windows-portability.md` (13), `latency-testing.md` (11) | One pass. Where history is recorded (test results), keep the old name and note the rename date |
 | 11.3 | P1 | Docs describe features the hardware can't use yet (HE module, module ID) without saying so | Add a "Status" line to each hardware and spec doc: shipped / experimental / planned |
 | 11.4 | P2 | `docs/` has several dated todo/review files (`todo-2026-09-21-evening.md`, and now the two Claude reviews) | After acting on them, move them to `docs/archive/` and keep one living `docs/status.md` |

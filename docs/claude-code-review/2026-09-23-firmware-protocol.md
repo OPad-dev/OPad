@@ -61,7 +61,7 @@ Resync slides one byte at a time with `drop_front(parser, 1)`, which memmoves th
 
 Only marked oversized headers raise `DIAG_EVENT_FRAME_TOO_LARGE`; bytes skipped via the new legacy-branch rejection (`resync_bytes`) produce no diag event or log, so the most common resync path after this change is invisible in diagnostics.
 
-**Failure scenario:** The pad resyncs through 3 KB of junk via the legacy branch (`frame_parser.c:148`) → `resync_bytes` grows, nothing is recorded, `osupadctl` logs show nothing while the user reports missed telemetry. Additionally the "Dropping stale partial frame" warning at line 581 can effectively never fire because `usb_cdc_task_poll` calls `protocol_rx_idle()` (line 603) first, which silently resets the same stale frame.
+**Failure scenario:** The pad resyncs through 3 KB of junk via the legacy branch (`frame_parser.c:148`) → `resync_bytes` grows, nothing is recorded, `opadctl` logs show nothing while the user reports missed telemetry. Additionally the "Dropping stale partial frame" warning at line 581 can effectively never fire because `usb_cdc_task_poll` calls `protocol_rx_idle()` (line 603) first, which silently resets the same stale frame.
 
 **Suggested fix:** Record `resync_bytes` deltas (e.g. `DIAG_EVENT_FRAME_TOO_LARGE` `arg1` or a new event) and put the stale log in the shared path.
 

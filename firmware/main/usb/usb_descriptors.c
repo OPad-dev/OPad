@@ -26,7 +26,7 @@ _Static_assert(CFG_TUD_CDC >= 1,
 
 #define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_CDC_DESC_LEN + TUD_HID_DESC_LEN)
 
-const tusb_desc_device_t osupad_usb_device_desc = {
+const tusb_desc_device_t opad_usb_device_desc = {
     .bLength            = sizeof(tusb_desc_device_t),
     .bDescriptorType    = TUSB_DESC_DEVICE,
     .bcdUSB             = 0x0210,   // USB 2.1 (required for BOS & MS OS 2.0 descriptors)
@@ -46,7 +46,7 @@ const tusb_desc_device_t osupad_usb_device_desc = {
     .bNumConfigurations = 0x01
 };
 
-const uint8_t osupad_hid_report_desc[] = {
+const uint8_t opad_hid_report_desc[] = {
     TUD_HID_REPORT_DESC_KEYBOARD()
 };
 
@@ -56,19 +56,19 @@ const uint8_t osupad_hid_report_desc[] = {
 // well within 1 ms of each other. The S3 has no endpoint left for a third HID
 // interface (five IN endpoints at most, EP0 included), so key 2 shares this
 // one, where only swipes send anything.
-const uint8_t osupad_media_report_desc[] = {
+const uint8_t opad_media_report_desc[] = {
     TUD_HID_REPORT_DESC_CONSUMER(HID_REPORT_ID(MEDIA_REPORT_ID_CONSUMER)),
     TUD_HID_REPORT_DESC_MOUSE(HID_REPORT_ID(MEDIA_REPORT_ID_MOUSE)),
     TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(MEDIA_REPORT_ID_KEYBOARD)),
 };
 
-const uint8_t osupad_usb_config_desc[] = {
+const uint8_t opad_usb_config_desc[] = {
     // Config number, interface count, string index, total length, attribute, power in mA
     TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0, 500),
 
     // Interface 0: HID Keyboard (polling rate = 1ms -> 1000 Hz USB polling)
     TUD_HID_DESCRIPTOR(ITF_NUM_HID, STRID_HID, HID_ITF_PROTOCOL_KEYBOARD,
-                       sizeof(osupad_hid_report_desc), 0x81, 8, 1),
+                       sizeof(opad_hid_report_desc), 0x81, 8, 1),
 
     // Interface 1 & 2: CDC-ACM (Notification EP: 0x82, Data OUT: 0x03, Data IN: 0x83)
     TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, STRID_CDC, 0x82, 8, 0x03, 0x83, 64),
@@ -78,10 +78,10 @@ const uint8_t osupad_usb_config_desc[] = {
     // for each: at 10 ms a step held it ~20 ms. 16 bytes: key 2's report is
     // its id and 8 bytes.
     TUD_HID_DESCRIPTOR(ITF_NUM_MEDIA, STRID_MEDIA, HID_ITF_PROTOCOL_NONE,
-                       sizeof(osupad_media_report_desc), 0x84, 16, 1),
+                       sizeof(opad_media_report_desc), 0x84, 16, 1),
 };
 
-const char *osupad_usb_string_desc[] = {
+const char *opad_usb_string_desc[] = {
     (const char[]) { 0x09, 0x04 },  // 0: Supported language (English 0x0409)
     "GFerreiroS",                   // 1: Manufacturer
     "OPad ESP32-S3",                // 2: Product
@@ -94,7 +94,7 @@ const char *osupad_usb_string_desc[] = {
 
 uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance)
 {
-    return instance == HID_INSTANCE_MEDIA ? osupad_media_report_desc : osupad_hid_report_desc;
+    return instance == HID_INSTANCE_MEDIA ? opad_media_report_desc : opad_hid_report_desc;
 }
 
 uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t *buffer, uint16_t reqlen)
@@ -119,7 +119,7 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
 #define VENDOR_REQUEST_MICROSOFT 0x01
 
 // Binary Device Object Store (BOS) Descriptor exposing MS OS 2.0 platform capability
-const uint8_t osupad_usb_bos_desc[] = {
+const uint8_t opad_usb_bos_desc[] = {
     // BOS descriptor header: bLength (5), bDescriptorType (0x0F = TUSB_DESC_BOS), wTotalLength (33 bytes = 0x0021), bNumDeviceCaps (1)
     0x05, TUSB_DESC_BOS, 0x21, 0x00, 0x01,
 
@@ -140,7 +140,7 @@ const uint8_t osupad_usb_bos_desc[] = {
 // Microsoft OS 2.0 Descriptor Set (Total 72 bytes)
 // Assigns FriendlyName = "OPad" to Interface 1 (CDC-ACM) so Windows Device Manager
 // displays "OPad (COMx)" instead of the generic "USB Serial Device (COMx)".
-const uint8_t osupad_usb_ms_os_20_desc[] = {
+const uint8_t opad_usb_ms_os_20_desc[] = {
     // Set Header: wLength (10), wDescriptorType (0x0000), dwWindowsVersion (0x06030000), wTotalLength (72 = 0x0048)
     0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x06, 0x48, 0x00,
 
@@ -165,7 +165,7 @@ const uint8_t osupad_usb_ms_os_20_desc[] = {
 
 uint8_t const *tud_descriptor_bos_cb(void)
 {
-    return osupad_usb_bos_desc;
+    return opad_usb_bos_desc;
 }
 
 bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const *request)
@@ -177,7 +177,7 @@ bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_requ
     if (request->bmRequestType_bit.type == TUSB_REQ_TYPE_VENDOR &&
         request->bRequest == VENDOR_REQUEST_MICROSOFT &&
         request->wIndex == 7) {
-        return tud_control_xfer(rhport, request, (void *)(uintptr_t)osupad_usb_ms_os_20_desc, sizeof(osupad_usb_ms_os_20_desc));
+        return tud_control_xfer(rhport, request, (void *)(uintptr_t)opad_usb_ms_os_20_desc, sizeof(opad_usb_ms_os_20_desc));
     }
 
     return false;

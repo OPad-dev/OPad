@@ -1,5 +1,5 @@
 //! Board test: what the pad measures on the carrier and input module PCBs
-//! (`BoardTestResult` in `protocol/osupad.proto`), and the pass/fail checks
+//! (`BoardTestResult` in `protocol/opad.proto`), and the pass/fail checks
 //! the CLI and GUI show for it.
 //!
 //! The pad only measures; every judgement is made here so it can change

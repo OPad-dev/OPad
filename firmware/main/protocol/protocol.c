@@ -56,14 +56,14 @@ static uint32_t s_out_sequence = 1;
 #define HE_LIVE_KEEPALIVE_US 2000000
 #define HE_LIVE_PERIOD_US    20000
 static int64_t s_live_until_us;
-#ifdef OSUPAD_HE_INPUT
+#ifdef OPAD_HE_INPUT
 static int64_t s_live_sent_us;
 #endif
 
 // UI producers publish the latest progress; only the CDC task frames/writes it.
 // This keeps framing state, output sequence and whole-frame TX single-owner.
 static portMUX_TYPE s_progress_lock = portMUX_INITIALIZER_UNLOCKED;
-static osupad_HeCalibrationProgress s_progress;
+static opad_HeCalibrationProgress s_progress;
 static bool s_progress_pending;
 
 static void get_device_mac_string(char *buf, size_t max_len)
@@ -74,7 +74,7 @@ static void get_device_mac_string(char *buf, size_t max_len)
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
-esp_err_t protocol_encode_device_message(const osupad_DeviceToHost *msg, uint8_t *out_buf, size_t max_len, size_t *out_len)
+esp_err_t protocol_encode_device_message(const opad_DeviceToHost *msg, uint8_t *out_buf, size_t max_len, size_t *out_len)
 {
     if (!msg || !out_buf || !out_len || max_len <= FRAME_HEADER_SIZE) {
         return ESP_ERR_INVALID_ARG;
@@ -85,7 +85,7 @@ esp_err_t protocol_encode_device_message(const osupad_DeviceToHost *msg, uint8_t
         room = FRAME_MAX_PAYLOAD;
     }
     pb_ostream_t stream = pb_ostream_from_buffer(out_buf + FRAME_HEADER_SIZE, room);
-    if (!pb_encode(&stream, osupad_DeviceToHost_fields, msg)) {
+    if (!pb_encode(&stream, opad_DeviceToHost_fields, msg)) {
         ESP_LOGE(TAG, "NanoPB encode failed: %s", PB_GET_ERROR(&stream));
         return ESP_FAIL;
     }
@@ -138,7 +138,7 @@ static uint32_t payload_field_of(const uint8_t *payload, size_t payload_len)
         if (!pb_decode_tag(&stream, &wire_type, &tag, &eof) || eof) {
             break;
         }
-        if (tag != osupad_HostToDevice_sequence_number_tag) {
+        if (tag != opad_HostToDevice_sequence_number_tag) {
             field = tag;  // the last one wins, as in nanopb's oneof decoding
         }
         if (!pb_skip_field(&stream, wire_type)) {
@@ -158,14 +158,14 @@ static uint32_t payload_word(const uint8_t *payload, size_t payload_len, size_t 
     return w;
 }
 
-bool protocol_decode_host_message(const uint8_t *payload, size_t payload_len, osupad_HostToDevice *out_msg)
+bool protocol_decode_host_message(const uint8_t *payload, size_t payload_len, opad_HostToDevice *out_msg)
 {
     if (!payload || !out_msg) {
         return false;
     }
 
     pb_istream_t stream = pb_istream_from_buffer(payload, payload_len);
-    if (!pb_decode(&stream, osupad_HostToDevice_fields, out_msg)) {
+    if (!pb_decode(&stream, opad_HostToDevice_fields, out_msg)) {
         const char *err = PB_GET_ERROR(&stream);
         uint32_t reason = decode_reason(err);
         uint32_t field = payload_field_of(payload, payload_len);
@@ -183,7 +183,7 @@ bool protocol_decode_host_message(const uint8_t *payload, size_t payload_len, os
     return true;
 }
 
-static esp_err_t send_envelope(const osupad_DeviceToHost *msg)
+static esp_err_t send_envelope(const opad_DeviceToHost *msg)
 {
     if (!s_host_framing_known) {
         return ESP_ERR_INVALID_STATE;
@@ -209,7 +209,7 @@ static esp_err_t send_envelope(const osupad_DeviceToHost *msg)
     return ESP_OK;
 }
 
-static void fill_he_settings(osupad_HeKeySettings *o, const he_key_settings_t *k)
+static void fill_he_settings(opad_HeKeySettings *o, const he_key_settings_t *k)
 {
     o->actuation = k->actuation;
     o->release_hyst = k->release_hyst;
@@ -220,13 +220,13 @@ static void fill_he_settings(osupad_HeKeySettings *o, const he_key_settings_t *k
     o->bottom_dead_zone = k->bottom_dz;
     o->has_allow_below_noise_floor = true;
     o->allow_below_noise_floor = k->no_floor;
-    o->rt_mode = !k->rapid_trigger ? osupad_HeRtMode_HE_RT_MODE_OFF :
-        k->continuous ? osupad_HeRtMode_HE_RT_MODE_CONTINUOUS :
-        osupad_HeRtMode_HE_RT_MODE_NORMAL;
+    o->rt_mode = !k->rapid_trigger ? opad_HeRtMode_HE_RT_MODE_OFF :
+        k->continuous ? opad_HeRtMode_HE_RT_MODE_CONTINUOUS :
+        opad_HeRtMode_HE_RT_MODE_NORMAL;
 }
 
 // The fields the host sent; 0 / absent keeps the current value
-static void apply_he_settings(he_key_settings_t *k, const osupad_HeKeySettings *c)
+static void apply_he_settings(he_key_settings_t *k, const opad_HeKeySettings *c)
 {
     if (c->actuation > 0) k->actuation = (uint16_t)c->actuation;
     if (c->release_hyst > 0) k->release_hyst = (uint16_t)c->release_hyst;
@@ -235,19 +235,19 @@ static void apply_he_settings(he_key_settings_t *k, const osupad_HeKeySettings *
     if (c->rt_release > 0) k->rt_release = (uint16_t)c->rt_release;
     if (c->has_bottom_dead_zone) k->bottom_dz = (uint16_t)c->bottom_dead_zone;
     if (c->has_allow_below_noise_floor) k->no_floor = c->allow_below_noise_floor;
-    if (c->rt_mode == osupad_HeRtMode_HE_RT_MODE_OFF) {
+    if (c->rt_mode == opad_HeRtMode_HE_RT_MODE_OFF) {
         k->rapid_trigger = false;
         k->continuous = false;
-    } else if (c->rt_mode == osupad_HeRtMode_HE_RT_MODE_NORMAL) {
+    } else if (c->rt_mode == opad_HeRtMode_HE_RT_MODE_NORMAL) {
         k->rapid_trigger = true;
         k->continuous = false;
-    } else if (c->rt_mode == osupad_HeRtMode_HE_RT_MODE_CONTINUOUS) {
+    } else if (c->rt_mode == opad_HeRtMode_HE_RT_MODE_CONTINUOUS) {
         k->rapid_trigger = true;
         k->continuous = true;
     }
 }
 
-static void fill_config_payload(osupad_ConfigPayload *out, const device_config_data_t *cfg)
+static void fill_config_payload(opad_ConfigPayload *out, const device_config_data_t *cfg)
 {
     out->key1_hid_usage = cfg->key1_usage;
     out->key2_hid_usage = cfg->key2_usage;
@@ -258,12 +258,12 @@ static void fill_config_payload(osupad_ConfigPayload *out, const device_config_d
     out->press_color_rgb = 0;
     out->key1_gpio = cfg->key1_gpio;
     out->key2_gpio = cfg->key2_gpio;
-    out->swipe_left_action = (osupad_SwipeAction)cfg->swipe_left_action;
-    out->swipe_right_action = (osupad_SwipeAction)cfg->swipe_right_action;
+    out->swipe_left_action = (opad_SwipeAction)cfg->swipe_left_action;
+    out->swipe_right_action = (opad_SwipeAction)cfg->swipe_right_action;
     out->swipe_left_key = cfg->swipe_left_key;
     out->swipe_right_key = cfg->swipe_right_key;
-    out->swipe_up_action = (osupad_SwipeAction)cfg->swipe_up_action;
-    out->swipe_down_action = (osupad_SwipeAction)cfg->swipe_down_action;
+    out->swipe_up_action = (opad_SwipeAction)cfg->swipe_up_action;
+    out->swipe_down_action = (opad_SwipeAction)cfg->swipe_down_action;
     out->swipe_up_key = cfg->swipe_up_key;
     out->swipe_down_key = cfg->swipe_down_key;
     out->swipe_up_modifiers = cfg->swipe_mods[0];
@@ -287,7 +287,7 @@ static void fill_config_payload(osupad_ConfigPayload *out, const device_config_d
     out->game_keys = ext.game_keys;
 }
 
-static osupad_InputModule input_module_to_proto(board_module_type_t m);
+static opad_InputModule input_module_to_proto(board_module_type_t m);
 
 esp_err_t protocol_send_hello_ack(uint32_t seq)
 {
@@ -297,13 +297,13 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     char dev_id[32];
     get_device_mac_string(dev_id, sizeof(dev_id));
 
-    osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+    opad_DeviceToHost msg = opad_DeviceToHost_init_zero;
     msg.sequence_number = seq ? seq : s_out_sequence++;
     const esp_app_desc_t *app_desc = esp_app_get_description();
-    msg.which_payload = osupad_DeviceToHost_hello_ack_tag;
-    msg.payload.hello_ack.protocol_version = osupad_ProtocolVersion_PROTOCOL_VERSION_V1;
+    msg.which_payload = opad_DeviceToHost_hello_ack_tag;
+    msg.payload.hello_ack.protocol_version = opad_ProtocolVersion_PROTOCOL_VERSION_V1;
     strncpy(msg.payload.hello_ack.firmware_version, app_desc->version, sizeof(msg.payload.hello_ack.firmware_version) - 1);
-#ifdef CONFIG_OSUPAD_HE_DEBUG
+#ifdef CONFIG_OPAD_HE_DEBUG
     // Never mistaken for a release build, in the app or in a bug report
     strncat(msg.payload.hello_ack.firmware_version, "+hedebug",
             sizeof(msg.payload.hello_ack.firmware_version) - 1 - strlen(msg.payload.hello_ack.firmware_version));
@@ -342,7 +342,7 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     msg.payload.hello_ack.tap_rate_per_second = true;
     // Hosts show the key pin settings only without a module (hand-wired)
     msg.payload.hello_ack.input_module = input_module_to_proto(board_boot_module());
-#ifdef OSUPAD_HE_INPUT
+#ifdef OPAD_HE_INPUT
     msg.payload.hello_ack.he_input = true;
     msg.payload.hello_ack.he_calibration = he_backend_running();
     msg.payload.hello_ack.he_live = he_backend_running();
@@ -365,11 +365,11 @@ esp_err_t protocol_send_status(void)
     counters_snapshot_t snap;
     counters_get(&snap);
 
-    osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+    opad_DeviceToHost msg = opad_DeviceToHost_init_zero;
     msg.sequence_number = s_out_sequence++;
-    msg.which_payload = osupad_DeviceToHost_status_tag;
+    msg.which_payload = opad_DeviceToHost_status_tag;
     msg.payload.status.uptime_seconds = runtime_get_uptime_seconds();
-    msg.payload.status.state = (osupad_DeviceState)runtime_get_state();
+    msg.payload.status.state = (opad_DeviceState)runtime_get_state();
     msg.payload.status.brightness = board_backlight_get();
     msg.payload.status.display_asleep = ui_is_asleep();
     msg.payload.status.lifetime_key1 = snap.lifetime_key1;
@@ -424,9 +424,9 @@ esp_err_t protocol_send_config_ack(uint32_t seq, bool success, const char *text)
     device_config_data_t cfg;
     device_config_get(&cfg);
 
-    osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+    opad_DeviceToHost msg = opad_DeviceToHost_init_zero;
     msg.sequence_number = seq ? seq : s_out_sequence++;
-    msg.which_payload = osupad_DeviceToHost_config_ack_tag;
+    msg.which_payload = opad_DeviceToHost_config_ack_tag;
     msg.payload.config_ack.success = success;
     if (text) {
         strncpy(msg.payload.config_ack.message, text, sizeof(msg.payload.config_ack.message) - 1);
@@ -445,9 +445,9 @@ esp_err_t protocol_send_counter_sync_resp(uint32_t seq, bool success, const char
     char dev_id[32];
     get_device_mac_string(dev_id, sizeof(dev_id));
 
-    osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+    opad_DeviceToHost msg = opad_DeviceToHost_init_zero;
     msg.sequence_number = seq ? seq : s_out_sequence++;
-    msg.which_payload = osupad_DeviceToHost_counter_sync_resp_tag;
+    msg.which_payload = opad_DeviceToHost_counter_sync_resp_tag;
     msg.payload.counter_sync_resp.success = success;
     if (msg_text && msg_text[0]) {
         strncpy(msg.payload.counter_sync_resp.message, msg_text, sizeof(msg.payload.counter_sync_resp.message) - 1);
@@ -463,9 +463,9 @@ esp_err_t protocol_send_counter_sync_resp(uint32_t seq, bool success, const char
 
 esp_err_t protocol_send_layout_ack(uint32_t seq, uint32_t screen, bool success, const char *text)
 {
-    osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+    opad_DeviceToHost msg = opad_DeviceToHost_init_zero;
     msg.sequence_number = seq ? seq : s_out_sequence++;
-    msg.which_payload = osupad_DeviceToHost_layout_ack_tag;
+    msg.which_payload = opad_DeviceToHost_layout_ack_tag;
     msg.payload.layout_ack.screen = screen;
     msg.payload.layout_ack.success = success;
     if (text) {
@@ -476,30 +476,30 @@ esp_err_t protocol_send_layout_ack(uint32_t seq, uint32_t screen, bool success, 
 
 esp_err_t protocol_send_detect_pin_resp(uint32_t seq, uint32_t key_id, uint32_t gpio, bool success)
 {
-    osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+    opad_DeviceToHost msg = opad_DeviceToHost_init_zero;
     msg.sequence_number = seq ? seq : s_out_sequence++;
-    msg.which_payload = osupad_DeviceToHost_detect_pin_resp_tag;
+    msg.which_payload = opad_DeviceToHost_detect_pin_resp_tag;
     msg.payload.detect_pin_resp.key_id = key_id;
     msg.payload.detect_pin_resp.gpio = gpio;
     msg.payload.detect_pin_resp.success = success;
     return send_envelope(&msg);
 }
 
-static osupad_InputModule input_module_to_proto(board_module_type_t m)
+static opad_InputModule input_module_to_proto(board_module_type_t m)
 {
     switch (m) {
-    case BOARD_MODULE_MX: return osupad_InputModule_INPUT_MODULE_MX;
-    case BOARD_MODULE_HE: return osupad_InputModule_INPUT_MODULE_HALL_EFFECT;
-    case BOARD_MODULE_HE_V3: return osupad_InputModule_INPUT_MODULE_HALL_EFFECT_V3;
-    case BOARD_MODULE_MX_V3: return osupad_InputModule_INPUT_MODULE_MX_V3;
-    default:              return osupad_InputModule_INPUT_MODULE_NONE;
+    case BOARD_MODULE_MX: return opad_InputModule_INPUT_MODULE_MX;
+    case BOARD_MODULE_HE: return opad_InputModule_INPUT_MODULE_HALL_EFFECT;
+    case BOARD_MODULE_HE_V3: return opad_InputModule_INPUT_MODULE_HALL_EFFECT_V3;
+    case BOARD_MODULE_MX_V3: return opad_InputModule_INPUT_MODULE_MX_V3;
+    default:              return opad_InputModule_INPUT_MODULE_NONE;
     }
 }
 
-static void fill_he_adc(const he_adc_test_t *a, osupad_BoardTestResult *out)
+static void fill_he_adc(const he_adc_test_t *a, opad_BoardTestResult *out)
 {
     out->has_he_adc = true;
-    osupad_HeAdcTest *t = &out->he_adc;
+    opad_HeAdcTest *t = &out->he_adc;
     t->ran = a->ran;
     strncpy(t->message, a->message, sizeof(t->message) - 1);
     t->sclk_hz = a->sclk_hz;
@@ -511,7 +511,7 @@ static void fill_he_adc(const he_adc_test_t *a, osupad_BoardTestResult *out)
     t->cal_done = a->cal_done;
     t->status_end = a->status_end;
     for (int i = 0; i < a->speed_count && i < (int)(sizeof(t->speeds) / sizeof(t->speeds[0])); i++) {
-        t->speeds[i] = (osupad_HeAdcSpeed){
+        t->speeds[i] = (opad_HeAdcSpeed){
             .sclk_hz = a->speeds[i].sclk_hz,
             .frames = a->speeds[i].frames,
             .errors = a->speeds[i].errors,
@@ -520,7 +520,7 @@ static void fill_he_adc(const he_adc_test_t *a, osupad_BoardTestResult *out)
     }
     for (int i = 0; i < a->channel_count && i < (int)(sizeof(t->channels) / sizeof(t->channels[0])); i++) {
         const he_adc_channel_t *c = &a->channels[i];
-        t->channels[i] = (osupad_HeAdcChannel){
+        t->channels[i] = (opad_HeAdcChannel){
             .ain = c->ain,
             .samples = c->samples,
             .min = c->min,
@@ -534,16 +534,16 @@ static void fill_he_adc(const he_adc_test_t *a, osupad_BoardTestResult *out)
 
 esp_err_t protocol_send_board_test(uint32_t seq, const char *refusal)
 {
-    osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+    opad_DeviceToHost msg = opad_DeviceToHost_init_zero;
     msg.sequence_number = seq ? seq : s_out_sequence++;
-    msg.which_payload = osupad_DeviceToHost_board_test_tag;
-    osupad_BoardTestResult *out = &msg.payload.board_test;
+    msg.which_payload = opad_DeviceToHost_board_test_tag;
+    opad_BoardTestResult *out = &msg.payload.board_test;
 
     static board_test_result_t r;  // protocol task only; keeps ~250 bytes off its stack
     esp_err_t err = ESP_OK;
     if (refusal) {
         strncpy(out->message, refusal, sizeof(out->message) - 1);
-    } else if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+    } else if (runtime_get_state() != OPAD_STATE_IDLE) {
         // It reconfigures pins and ignores key edges for a moment: never in a map
         strncpy(out->message, "not while a map is played", sizeof(out->message) - 1);
     } else if ((err = board_test_run(&r)) != ESP_OK) {
@@ -594,14 +594,14 @@ esp_err_t protocol_send_log_batch(void)
         return ESP_OK;
     }
 
-    osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+    opad_DeviceToHost msg = opad_DeviceToHost_init_zero;
     msg.sequence_number = s_out_sequence++;
-    msg.which_payload = osupad_DeviceToHost_log_batch_tag;
+    msg.which_payload = opad_DeviceToHost_log_batch_tag;
     msg.payload.log_batch.events_count = (pb_size_t)count;
 
     for (size_t i = 0; i < count; i++) {
         msg.payload.log_batch.events[i].timestamp_ms = entries[i].timestamp_ms;
-        msg.payload.log_batch.events[i].level = (osupad_LogLevel)entries[i].level;
+        msg.payload.log_batch.events[i].level = (opad_LogLevel)entries[i].level;
         msg.payload.log_batch.events[i].event_id = entries[i].event_id;
         msg.payload.log_batch.events[i].arg0 = entries[i].arg0;
         msg.payload.log_batch.events[i].arg1 = entries[i].arg1;
@@ -617,7 +617,7 @@ void protocol_drain_diag_logs(void)
     if (!usb_cdc_is_connected() || !s_host_framing_known) {
         return;
     }
-    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+    if (runtime_get_state() != OPAD_STATE_IDLE) {
         return;
     }
 
@@ -646,7 +646,7 @@ void protocol_send_key_presses(void)
     // Only a played map's presses are wanted; outside one, or with nobody to
     // send to, they are dropped so the log is empty when the next map starts
     if (!usb_cdc_is_connected() || !s_host_framing_known ||
-        runtime_get_state() != OSUPAD_STATE_PLAYING) {
+        runtime_get_state() != OPAD_STATE_PLAYING) {
         press_log_clear();
         return;
     }
@@ -654,10 +654,10 @@ void protocol_send_key_presses(void)
     while (press_log_pending() > 0) {
         static press_log_entry_t entries[32];  // protocol task only
         size_t n = press_log_drain(entries, 32, &s_dropped);
-        osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+        opad_DeviceToHost msg = opad_DeviceToHost_init_zero;
         msg.sequence_number = s_out_sequence++;
-        msg.which_payload = osupad_DeviceToHost_key_presses_tag;
-        osupad_KeyPressBatch *batch = &msg.payload.key_presses;
+        msg.which_payload = opad_DeviceToHost_key_presses_tag;
+        opad_KeyPressBatch *batch = &msg.payload.key_presses;
         batch->now_us = (uint64_t)esp_timer_get_time();
         batch->presses_count = (pb_size_t)n;
         for (size_t i = 0; i < n; i++) {
@@ -677,13 +677,13 @@ void protocol_send_key_presses(void)
 // False if a widget holds a value that has no place in ui_layout_t: those are
 // clamped into ones the validator rejects where it checks the field, and fail
 // here where it does not
-static bool layout_from_proto(const osupad_SetLayout *in, ui_layout_t *out, char *err, size_t err_len)
+static bool layout_from_proto(const opad_SetLayout *in, ui_layout_t *out, char *err, size_t err_len)
 {
     memset(out, 0, sizeof(*out));
     out->background = in->background;
     out->count = in->widgets_count > UI_MAX_WIDGETS ? UI_MAX_WIDGETS : in->widgets_count;
     for (int i = 0; i < out->count; i++) {
-        const osupad_UiWidget *src = &in->widgets[i];
+        const opad_UiWidget *src = &in->widgets[i];
         ui_widget_t *w = &out->widgets[i];
         w->kind = src->kind > UINT8_MAX ? UINT8_MAX : src->kind;
         w->source = src->source > UINT8_MAX ? UINT8_MAX : src->source;
@@ -722,21 +722,21 @@ static struct {
     uint32_t key_id;
 } s_detect;
 
-static void handle_host_message(const osupad_HostToDevice *msg)
+static void handle_host_message(const opad_HostToDevice *msg)
 {
     switch (msg->which_payload) {
-    case osupad_HostToDevice_hello_tag:
+    case opad_HostToDevice_hello_tag:
         he_cal_ui_set_app_capable(msg->payload.hello.he_calibration);
         protocol_send_hello_ack(msg->sequence_number);
         break;
 
-    case osupad_HostToDevice_claim_ownership_tag: {
+    case opad_HostToDevice_claim_ownership_tag: {
         // §W3-2. The host prompts the user before sending this, so the
         // firmware records it rather than arbitrating between hosts. It is an
         // NVS write, so it is refused outright while a map is running (P1-3)
         // instead of being deferred: the host claims at connect time, which is
         // already IDLE, and a deferred claim would be a silent one.
-        const osupad_ClaimOwnership_owner_id_t *req = &msg->payload.claim_ownership.owner_id;
+        const opad_ClaimOwnership_owner_id_t *req = &msg->payload.claim_ownership.owner_id;
         if (req->size != OWNER_ID_LEN) {
             ESP_LOGW(TAG, "Ownership claim refused: %u bytes, expected %d",
                      (unsigned)req->size, OWNER_ID_LEN);
@@ -749,9 +749,9 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         break;
     }
 
-    case osupad_HostToDevice_set_config_tag:
+    case opad_HostToDevice_set_config_tag:
         if (msg->payload.set_config.has_config) {
-            const osupad_ConfigPayload *c = &msg->payload.set_config.config;
+            const opad_ConfigPayload *c = &msg->payload.set_config.config;
             device_config_data_t dcfg;
             device_config_get(&dcfg);
             he_key_settings_t he_keys[HE_KEYS_MAX];
@@ -828,7 +828,7 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         }
         break;
 
-    case osupad_HostToDevice_time_sync_tag:
+    case opad_HostToDevice_time_sync_tag:
         ui_set_time(
             msg->payload.time_sync.year,
             msg->payload.time_sync.month,
@@ -839,9 +839,9 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         );
         break;
 
-    case osupad_HostToDevice_counter_sync_tag:
+    case opad_HostToDevice_counter_sync_tag:
         if (msg->payload.counter_sync.has_target_state) {
-            const osupad_CounterState *tgt = &msg->payload.counter_sync.target_state;
+            const opad_CounterState *tgt = &msg->payload.counter_sync.target_state;
             char err_msg[64] = "";
             esp_err_t err = counters_sync_from_host(
                 tgt->counter_generation,
@@ -859,38 +859,38 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         }
         break;
 
-    case osupad_HostToDevice_request_status_tag:
+    case opad_HostToDevice_request_status_tag:
         protocol_send_status();
         break;
 
-    case osupad_HostToDevice_reset_latency_stats_tag:
+    case opad_HostToDevice_reset_latency_stats_tag:
         latency_stats_reset();
         break;
 
-    case osupad_HostToDevice_host_status_tag: {
-        const osupad_HostStatus *hs = &msg->payload.host_status;
+    case opad_HostToDevice_host_status_tag: {
+        const opad_HostStatus *hs = &msg->payload.host_status;
         if (hs->play_id != s_play_id) {
             s_play_id = hs->play_id;
             key_event_reset_map_presses();
         }
-#ifndef CONFIG_OSUPAD_UI_PERF_TEST  // the test drives the UI and state itself (ui_perf_test.c)
+#ifndef CONFIG_OPAD_UI_PERF_TEST  // the test drives the UI and state itself (ui_perf_test.c)
         ui_set_tosu_connected(hs->tosu_connected);
 #endif
         touch_retry_set_host_status(hs->tosu_connected, hs->osu_active);
-#ifndef CONFIG_OSUPAD_UI_PERF_TEST
+#ifndef CONFIG_OPAD_UI_PERF_TEST
         runtime_notify_gameplay(hs->playing);
 #endif
         break;
     }
 
-    case osupad_HostToDevice_set_layout_tag: {
+    case opad_HostToDevice_set_layout_tag: {
         static ui_layout_t layout;  // ~2 KB, protocol task only
-        const osupad_SetLayout *sl = &msg->payload.set_layout;
+        const opad_SetLayout *sl = &msg->payload.set_layout;
         char err[64] = "";
         bool ok = layout_from_proto(sl, &layout, err, sizeof(err)) &&
                   ui_set_layout((uint8_t)sl->screen, &layout, err, sizeof(err));
         if (ok) {
-            if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+            if (runtime_get_state() != OPAD_STATE_IDLE) {
                 // Flash writes would stall the key core: apply in RAM now, deferred to IDLE
                 ui_store_save((uint8_t)sl->screen, &layout);
                 snprintf(err, sizeof(err), "applied, will be saved after gameplay");
@@ -904,13 +904,13 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         break;
     }
 
-    case osupad_HostToDevice_reset_layout_tag: {
+    case opad_HostToDevice_reset_layout_tag: {
         uint32_t screen = msg->payload.reset_layout;
         const ui_layout_t *def = ui_default_layout(screen <= UINT8_MAX ? (uint8_t)screen : UINT8_MAX);
         char err[64] = "";
         bool ok = def && ui_set_layout((uint8_t)screen, def, err, sizeof(err));
         if (ok) {
-            if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+            if (runtime_get_state() != OPAD_STATE_IDLE) {
                 ui_store_erase((uint8_t)screen);
                 snprintf(err, sizeof(err), "reset applied, will be persisted after gameplay");
             } else if (ui_store_erase((uint8_t)screen) != ESP_OK) {
@@ -923,13 +923,13 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         break;
     }
 
-    case osupad_HostToDevice_data_update_tag: {
-        const osupad_DataUpdate *du = &msg->payload.data_update;
+    case opad_HostToDevice_data_update_tag: {
+        const opad_DataUpdate *du = &msg->payload.data_update;
         if (!ui_lock()) {
             break; // headless: nothing to show it on
         }
         for (pb_size_t i = 0; i < du->values_count; i++) {
-            const osupad_DataValue *v = &du->values[i];
+            const opad_DataValue *v = &du->values[i];
             if (v->source == 67) {
                 ui_trigger_easter_egg(); // the LVGL lock is recursive
                 continue;
@@ -938,8 +938,8 @@ static void handle_host_message(const osupad_HostToDevice *msg)
                 continue;
             }
             switch (v->which_value) {
-            case osupad_DataValue_number_tag: ui_data_set_number((uint8_t)v->source, v->value.number); break;
-            case osupad_DataValue_text_tag:   ui_data_set_string((uint8_t)v->source, v->value.text); break;
+            case opad_DataValue_number_tag: ui_data_set_number((uint8_t)v->source, v->value.number); break;
+            case opad_DataValue_text_tag:   ui_data_set_string((uint8_t)v->source, v->value.text); break;
             default:                          ui_data_clear((uint8_t)v->source); break;
             }
         }
@@ -947,8 +947,8 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         break;
     }
 
-    case osupad_HostToDevice_request_logs_tag:
-        if (msg->payload.request_logs && runtime_get_state() == OSUPAD_STATE_IDLE) {
+    case opad_HostToDevice_request_logs_tag:
+        if (msg->payload.request_logs && runtime_get_state() == OPAD_STATE_IDLE) {
             for (int b = 0; b < 8 && diag_available() > 0; b++) {
                 if (protocol_send_log_batch() != ESP_OK) {
                     break;
@@ -957,11 +957,11 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         }
         break;
 
-    case osupad_HostToDevice_detect_pin_tag: {
+    case opad_HostToDevice_detect_pin_tag: {
         // The scan runs on the keypad task; protocol_poll_detect_pin answers
         // when it ends. A new request replaces one still scanning, whose
         // host-side wait then times out, as it did when the host gave up.
-        const osupad_DetectPinRequest *req = &msg->payload.detect_pin;
+        const opad_DetectPinRequest *req = &msg->payload.detect_pin;
         uint32_t timeout = req->timeout_ms > 0 ? req->timeout_ms : DETECT_PIN_DEFAULT_MS;
         if (timeout > DETECT_PIN_MAX_MS) {
             timeout = DETECT_PIN_MAX_MS;
@@ -977,7 +977,7 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         break;
     }
 
-    case osupad_HostToDevice_run_board_test_tag:
+    case opad_HostToDevice_run_board_test_tag:
         if (msg->payload.run_board_test) {
             // The pin scan holds GPIO2/4/6 as pulled-up inputs, which the test reconfigures
             protocol_send_board_test(msg->sequence_number,
@@ -985,35 +985,35 @@ static void handle_host_message(const osupad_HostToDevice *msg)
         }
         break;
 
-    case osupad_HostToDevice_play_animation_tag: {
+    case opad_HostToDevice_play_animation_tag: {
         // The host sends it on the results screen; a map that has started since wins
-        const osupad_PlayAnimation *pa = &msg->payload.play_animation;
-        if (runtime_get_state() != OSUPAD_STATE_PLAYING) {
+        const opad_PlayAnimation *pa = &msg->payload.play_animation;
+        if (runtime_get_state() != OPAD_STATE_PLAYING) {
             ui_play_animation(pa->animation <= UINT8_MAX ? (uint8_t)pa->animation : UI_ANIM_POP,
                               pa->grade);
         }
         break;
     }
 
-    case osupad_HostToDevice_restart_tag:
+    case opad_HostToDevice_restart_tag:
         if (msg->payload.restart) {
             runtime_request_restart();  // once idle, counters saved first
         }
         break;
 
-    case osupad_HostToDevice_start_he_calibration_tag:
+    case opad_HostToDevice_start_he_calibration_tag:
         if (msg->payload.start_he_calibration) {
             he_cal_ui_start_calibration(true);
         }
         break;
 
-    case osupad_HostToDevice_cancel_he_calibration_tag:
+    case opad_HostToDevice_cancel_he_calibration_tag:
         if (msg->payload.cancel_he_calibration) {
             he_cal_ui_cancel_calibration();
         }
         break;
 
-    case osupad_HostToDevice_he_live_view_tag:
+    case opad_HostToDevice_he_live_view_tag:
         // Same task as protocol_poll_he_live, so no lock
         s_live_until_us = msg->payload.he_live_view && he_backend_running()
                               ? esp_timer_get_time() + HE_LIVE_KEEPALIVE_US
@@ -1030,13 +1030,13 @@ static void handle_host_message(const osupad_HostToDevice *msg)
 static void on_frame_received(const uint8_t *payload, size_t payload_len, void *user_data)
 {
     (void)user_data;
-    static osupad_HostToDevice msg;
-    msg = (osupad_HostToDevice)osupad_HostToDevice_init_zero;
+    static opad_HostToDevice msg;
+    msg = (opad_HostToDevice)opad_HostToDevice_init_zero;
     if (protocol_decode_host_message(payload, payload_len, &msg)) {
         // nanopb accepts most varint garbage with no payload set: only a
         // recognised message is evidence of the host's framing
-        if (!s_host_framing_known && msg.which_payload >= osupad_HostToDevice_hello_tag &&
-            msg.which_payload <= osupad_HostToDevice_cancel_he_calibration_tag) {
+        if (!s_host_framing_known && msg.which_payload >= opad_HostToDevice_hello_tag &&
+            msg.which_payload <= opad_HostToDevice_cancel_he_calibration_tag) {
             s_host_framing = s_parser.last_format;
             s_host_framing_known = true;
         }
@@ -1103,7 +1103,7 @@ bool protocol_rx_idle(void)
     return frame_parser_is_idle(&s_parser);
 }
 
-esp_err_t protocol_send_he_calibration_progress(const osupad_HeCalibrationProgress *prog)
+esp_err_t protocol_send_he_calibration_progress(const opad_HeCalibrationProgress *prog)
 {
     if (!prog) {
         return ESP_ERR_INVALID_ARG;
@@ -1117,7 +1117,7 @@ esp_err_t protocol_send_he_calibration_progress(const osupad_HeCalibrationProgre
 
 void protocol_poll_he_calibration(void)
 {
-    osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+    opad_DeviceToHost msg = opad_DeviceToHost_init_zero;
     portENTER_CRITICAL(&s_progress_lock);
     bool pending = s_progress_pending;
     msg.payload.he_calibration_progress = s_progress;
@@ -1125,7 +1125,7 @@ void protocol_poll_he_calibration(void)
     portEXIT_CRITICAL(&s_progress_lock);
     if (!pending) return;
     msg.sequence_number = s_out_sequence++;
-    msg.which_payload = osupad_DeviceToHost_he_calibration_progress_tag;
+    msg.which_payload = opad_DeviceToHost_he_calibration_progress_tag;
     if (send_envelope(&msg) != ESP_OK) {
         portENTER_CRITICAL(&s_progress_lock);
         if (!s_progress_pending) {
@@ -1143,7 +1143,7 @@ bool protocol_he_live_active(void)
 
 void protocol_poll_he_live(void)
 {
-#ifdef OSUPAD_HE_INPUT
+#ifdef OPAD_HE_INPUT
     if (s_live_until_us == 0) {
         return;
     }
@@ -1153,15 +1153,15 @@ void protocol_poll_he_live(void)
         return;
     }
     // Never during a map or its cooldown; resumes after if the host still asks
-    if (runtime_get_state() != OSUPAD_STATE_IDLE || now - s_live_sent_us < HE_LIVE_PERIOD_US) {
+    if (runtime_get_state() != OPAD_STATE_IDLE || now - s_live_sent_us < HE_LIVE_PERIOD_US) {
         return;
     }
     s_live_sent_us = now;
     he_backend_stats_t st;
     he_backend_get_stats(&st);
-    osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+    opad_DeviceToHost msg = opad_DeviceToHost_init_zero;
     msg.sequence_number = s_out_sequence++;
-    msg.which_payload = osupad_DeviceToHost_he_live_sample_tag;
+    msg.which_payload = opad_DeviceToHost_he_live_sample_tag;
     msg.payload.he_live_sample.key1_raw = st.raw[0] > 0 ? (uint32_t)st.raw[0] : 0;
     msg.payload.he_live_sample.key2_raw = st.raw[1] > 0 ? (uint32_t)st.raw[1] : 0;
     msg.payload.he_live_sample.key1_down = key_event_is_down(KEY_ID_1);
@@ -1174,7 +1174,7 @@ void protocol_poll_he_live(void)
 
 void protocol_send_he_debug_logs(void)
 {
-#ifdef CONFIG_OSUPAD_HE_DEBUG
+#ifdef CONFIG_OPAD_HE_DEBUG
     // Debug firmware: in every state, a map included; that is the point of it
     if (!usb_cdc_is_connected() || !s_host_framing_known) {
         return;
@@ -1182,14 +1182,14 @@ void protocol_send_he_debug_logs(void)
     for (int b = 0; b < 8 && he_debug_pending(); b++) {
         he_debug_line_t lines[8];
         size_t n = he_debug_take(lines, 8);
-        osupad_DeviceToHost msg = osupad_DeviceToHost_init_zero;
+        opad_DeviceToHost msg = opad_DeviceToHost_init_zero;
         msg.sequence_number = s_out_sequence++;
-        msg.which_payload = osupad_DeviceToHost_log_batch_tag;
+        msg.which_payload = opad_DeviceToHost_log_batch_tag;
         msg.payload.log_batch.events_count = (pb_size_t)n;
         for (size_t i = 0; i < n; i++) {
-            osupad_LogEvent *ev = &msg.payload.log_batch.events[i];
+            opad_LogEvent *ev = &msg.payload.log_batch.events[i];
             ev->timestamp_ms = lines[i].ms;
-            ev->level = (osupad_LogLevel)lines[i].level;
+            ev->level = (opad_LogLevel)lines[i].level;
             ev->event_id = 0;  // text event: the host shows `message`
             strncpy(ev->tag, lines[i].tag, sizeof(ev->tag) - 1);
             strncpy(ev->message, lines[i].msg, sizeof(ev->message) - 1);

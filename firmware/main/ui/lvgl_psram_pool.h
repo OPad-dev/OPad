@@ -1,7 +1,7 @@
 #pragma once
 
 /*
- * Included by LVGL's builtin allocator when CONFIG_OSUPAD_LVGL_PSRAM is set
+ * Included by LVGL's builtin allocator when CONFIG_OPAD_LVGL_PSRAM is set
  * (LV_MEM_POOL_INCLUDE, firmware/CMakeLists.txt): lv_mem_init then takes its
  * pool from PSRAM through LV_MEM_POOL_ALLOC instead of a static array in
  * internal RAM.

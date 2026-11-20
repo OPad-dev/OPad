@@ -8,13 +8,13 @@ The case for the V3 boards (`hardware/pcb/V3`):
 It is built on [V1.1](../V1.1/README.md). The coordinates and design approach are
 the same; what changed is below. **Not printed or test-fitted yet**; the boards are not built either.
 
-![V3 assembled](osupad_render.png)
+![V3 assembled](opad_render.png)
 
-![Inside, from above, without the top case](osupad_inside.png)
+![Inside, from above, without the top case](opad_inside.png)
 
-![Bottom plate](osupad_bottom_plate.png)
+![Bottom plate](opad_bottom_plate.png)
 
-![The USB board's corner, without the top case](osupad_usb.png)
+![The USB board's corner, without the top case](opad_usb.png)
 
 | | V1.1 | V3 |
 |---|---|---|
@@ -178,8 +178,8 @@ The unmodified case passes.
 ```
 python3 tools/check_fit.py              # about 30 s with OpenSCAD 2021.01
 python3 tools/test_fit_mutations.py     # about 7 min
-openscad -o osupad_case_top.stl    -D 'PART="top_case"'     osupad_enclosure.scad
-openscad -o osupad_case_bottom.stl -D 'PART="bottom_plate"' osupad_enclosure.scad
+openscad -o opad_case_top.stl    -D 'PART="top_case"'     opad_enclosure.scad
+openscad -o opad_case_bottom.stl -D 'PART="bottom_plate"' opad_enclosure.scad
 ```
 
 What it cannot check:
@@ -205,10 +205,10 @@ As V1.1:
 
 | File | |
 |---|---|
-| `osupad_params.scad` | every dimension, the board-to-case coordinate conversions, the cable routes |
-| `osupad_enclosure.scad` | the parts: `PART = "top_case"`, `"bottom_plate"`, `"assembly"` or `"side_by_side"` |
-| `osupad_case_top.stl`, `osupad_case_bottom.stl` | print files |
-| `osupad_render.png`, `osupad_inside.png`, `osupad_bottom_plate.png`, `osupad_usb.png` | assembled, from the rear; from above without the top case; the bottom plate; the USB board's corner |
+| `opad_params.scad` | every dimension, the board-to-case coordinate conversions, the cable routes |
+| `opad_enclosure.scad` | the parts: `PART = "top_case"`, `"bottom_plate"`, `"assembly"` or `"side_by_side"` |
+| `opad_case_top.stl`, `opad_case_bottom.stl` | print files |
+| `opad_render.png`, `opad_inside.png`, `opad_bottom_plate.png`, `opad_usb.png` | assembled, from the rear; from above without the top case; the bottom plate; the USB board's corner |
 | `tools/check_fit.py`, `tools/fit_check.scad` | the fit check |
 | `tools/test_fit_mutations.py` | the deliberate faults |
 | `tools/reference_models.scad` | everything inside, as envelopes (V3 carrier, USB board and modules, both FFC ribbons) |

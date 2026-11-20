@@ -1,7 +1,7 @@
 #pragma once
 
 /*
- * Hall Effect debug log (CONFIG_OSUPAD_HE_DEBUG). A debug firmware, not a
+ * Hall Effect debug log (CONFIG_OPAD_HE_DEBUG). A debug firmware, not a
  * product build: it logs every press and release the engine makes, with the
  * readings just before it, plus per-second reading ranges, ADC health and
  * context (pad state, screen animation, chip temperature). Lines go to the
@@ -32,7 +32,7 @@ typedef struct {
     uint8_t level;  // 0 debug, 1 info, 2 warn, 3 error (LogLevel)
 } he_debug_line_t;
 
-#ifdef CONFIG_OSUPAD_HE_DEBUG
+#ifdef CONFIG_OPAD_HE_DEBUG
 
 // Frame interrupt, under the backend's s_lock: newest reading per key (-1 = none)
 void he_debug_isr_frame(int32_t raw0, int32_t raw1);

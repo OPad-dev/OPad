@@ -1,9 +1,9 @@
 # OPad — Packaging, Distribution and Device Pairing
 
-**Companion to:** `osupad_technical_spec_v1.md`, `osupad_remaining_work_v1.md`, `docs/windows-portability.md`
+**Companion to:** `opad_technical_spec_v1.md`, `opad_remaining_work_v1.md`, `docs/windows-portability.md`
 **Audience:** the project owner, Antigravity and other coding agents
 **Baseline:** `main` at `0a5c13e` (v1.0.0 tagged, Linux complete)
-**Supersedes:** amendment **A3** ("Windows support is deferred") in `osupad_remaining_work_v1.md`
+**Supersedes:** amendment **A3** ("Windows support is deferred") in `opad_remaining_work_v1.md`
 
 ---
 
@@ -61,8 +61,8 @@ This is an **ownership model**, not a DRM scheme. Stating that plainly here so n
 Confirmed by reading the tree at `0a5c13e`:
 
 - **Firmware: zero changes.** The HID interface binds to `hidclass.sys` and CDC-ACM to inbox `usbser.sys` on Win10 1709+. No `.inf`, no WinUSB, no Zadig.
-- **Device discovery: already portable.** `desktop/crates/osupad-device/src/lib.rs:577` filters `serialport::available_ports()` by VID/PID and returns `/dev/ttyACM0` on Linux and `COM3` on Windows from the same code path. `find_target_port` (`:568`) and `find_bootloader_port` (`:573`) both work unchanged.
-- **Platform-agnostic crates:** `osupad-protocol`, `osupad-model`, `osupad-layout`, `osupad-tosu`, `osupad-storage`, `osupad-ui-preview`. SQLite/`rusqlite` WAL behaves the same on NTFS.
+- **Device discovery: already portable.** `desktop/crates/opad-device/src/lib.rs:577` filters `serialport::available_ports()` by VID/PID and returns `/dev/ttyACM0` on Linux and `COM3` on Windows from the same code path. `find_target_port` (`:568`) and `find_bootloader_port` (`:573`) both work unchanged.
+- **Platform-agnostic crates:** `opad-protocol`, `opad-model`, `opad-layout`, `opad-tosu`, `opad-storage`, `opad-ui-preview`. SQLite/`rusqlite` WAL behaves the same on NTFS.
 - **`iced` 0.13** renders on Windows via wgpu DX12/Vulkan.
 
 **Latency note:** the transport choice is latency-irrelevant. CDC is a separate USB endpoint from the HID interface; protocol traffic never touches the keystroke path. The only option that would have risked the invariant was a vendor-HID protocol interface sharing the HID stack, and it is rejected for that reason.
@@ -75,10 +75,10 @@ Nothing else can be tested until `cargo build --target x86_64-pc-windows-msvc` s
 
 ### W0-1. Abstract the IPC transport
 
-**Problem.** `osupad-ipc` does not merely *use* Unix sockets internally — the concrete type is in the **public API**, so it leaks into every consumer and cannot be fixed with a `cfg` swap at the call sites.
+**Problem.** `opad-ipc` does not merely *use* Unix sockets internally — the concrete type is in the **public API**, so it leaks into every consumer and cannot be fixed with a `cfg` swap at the call sites.
 
 **Where.**
-- `desktop/crates/osupad-ipc/src/lib.rs:11` — `use tokio::net::{UnixListener, UnixStream}`
+- `desktop/crates/opad-ipc/src/lib.rs:11` — `use tokio::net::{UnixListener, UnixStream}`
 - `:206` `connect_and_handshake() -> (UnixStream, IpcResponse)`
 - `:213` `connect_and_handshake_at(..) -> (UnixStream, IpcResponse)`
 - `:245` `send_request(stream: &mut UnixStream, ..)`
@@ -89,16 +89,16 @@ Nothing else can be tested until `cargo build --target x86_64-pc-windows-msvc` s
 - Consumers: `desktop/daemon/src/main.rs:45`, `desktop/cli/src/main.rs:10,491`, `desktop/gui/src/ipc.rs`
 
 **Required change.**
-1. Introduce `IpcStream` and `IpcListener` type aliases in `osupad-ipc`, selected by `#[cfg]`:
+1. Introduce `IpcStream` and `IpcListener` type aliases in `opad-ipc`, selected by `#[cfg]`:
    - unix → `tokio::net::{UnixStream, UnixListener}`
    - windows → `tokio::net::windows::named_pipe::{NamedPipeClient, NamedPipeServer}`
 2. Change every public signature above to take `&mut IpcStream` / return `IpcStream`. The framing (`[len: u32 LE][json]`) and the `IpcRequest`/`IpcResponse` enums do **not** change — they are already transport-agnostic.
-3. Named pipe: `\\.\pipe\osupad-ipc-{user_sid}`. Include the SID so two users on one machine get separate pipes, mirroring the current per-uid socket path.
+3. Named pipe: `\\.\pipe\opad-ipc-{user_sid}`. Include the SID so two users on one machine get separate pipes, mirroring the current per-uid socket path.
 4. Accept loop differs by platform and must be written per-platform, not shared: a `NamedPipeServer` is consumed on connect and a fresh instance must be created for the next client. Do not try to force this into the Unix accept-loop shape.
 
 **Acceptance.**
-- `osupad-ipc` builds for both targets.
-- `crates/osupad-ipc/tests/ipc_test.rs` passes on both. The permissions assertion at `:335` becomes the Windows ACL check below, `#[cfg]`-gated.
+- `opad-ipc` builds for both targets.
+- `crates/opad-ipc/tests/ipc_test.rs` passes on both. The permissions assertion at `:335` becomes the Windows ACL check below, `#[cfg]`-gated.
 - Daemon, GUI and CLI compile against the new signatures with no behaviour change on Linux.
 
 ---
@@ -120,7 +120,7 @@ Nothing else can be tested until `cargo build --target x86_64-pc-windows-msvc` s
 
 **Problem.** `desktop/gui/src/single_instance.rs:5-54` is a Unix socket lock (`PermissionsExt`, `UnixListener`, `UnixStream`) that also carries the "raise the existing window" handoff.
 
-**Required change.** On Windows use a named mutex (`CreateMutexW` with a `Local\osupad-gui` name) for the lock, plus the existing IPC pipe (or a `WM_COPYDATA` broadcast) for the raise-window handoff. Keep the `OnceLock` shape so the Linux path is untouched.
+**Required change.** On Windows use a named mutex (`CreateMutexW` with a `Local\opad-gui` name) for the lock, plus the existing IPC pipe (or a `WM_COPYDATA` broadcast) for the raise-window handoff. Keep the `OnceLock` shape so the Linux path is untouched.
 
 **Acceptance.** Launching the GUI twice on Windows focuses the existing window instead of opening a second one, matching Linux.
 
@@ -128,15 +128,15 @@ Nothing else can be tested until `cargo build --target x86_64-pc-windows-msvc` s
 
 ### W0-4. Storage and config paths
 
-**Problem.** `desktop/daemon/src/main.rs:437-446` resolves the DB from `XDG_DATA_HOME`, then `HOME`, then falls back to a bare relative `osupad.db` — on Windows that fallback lands in the working directory, which for a login-launched daemon is unpredictable (often `C:\Windows\System32`).
+**Problem.** `desktop/daemon/src/main.rs:437-446` resolves the DB from `XDG_DATA_HOME`, then `HOME`, then falls back to a bare relative `opad.db` — on Windows that fallback lands in the working directory, which for a login-launched daemon is unpredictable (often `C:\Windows\System32`).
 
 **Required change.** Replace with `dirs::data_dir()`:
-- Linux: `~/.local/share/osupad/osupad.db` (unchanged — keep honouring `XDG_DATA_HOME` first so existing installs do not migrate)
-- Windows: `%APPDATA%\osupad\osupad.db`
+- Linux: `~/.local/share/opad/opad.db` (unchanged — keep honouring `XDG_DATA_HOME` first so existing installs do not migrate)
+- Windows: `%APPDATA%\opad\opad.db`
 
 Remove the bare-relative fallback; if no directory can be resolved, fail loudly. Audit every other path construction in the daemon and GUI for the same pattern (logs, layout exports, JSON backup default directory).
 
-**Acceptance.** Fresh Windows install creates exactly `%APPDATA%\osupad\`. Existing Linux installs keep using their current DB with no migration step. **Record every path written, for W2-3.**
+**Acceptance.** Fresh Windows install creates exactly `%APPDATA%\opad\`. Existing Linux installs keep using their current DB with no migration step. **Record every path written, for W2-3.**
 
 ---
 
@@ -172,7 +172,7 @@ Remove the bare-relative fallback; if no directory can be resolved, fail loudly.
 **Problem.** `desktop/gui/src/platform_linux.rs` is entirely `systemctl --user` (service install, enable, start, status) — see R7, which fixed this for Linux. Windows has no equivalent.
 
 **Required change.** New `desktop/gui/src/platform_windows.rs` exposing the same functions the GUI already calls:
-- **Autostart:** write `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\osupad-daemon`. Prefer this over Task Scheduler — it is trivially inspectable by the user and trivially removable by the uninstaller, which matters for W2-3.
+- **Autostart:** write `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\opad-daemon`. Prefer this over Task Scheduler — it is trivially inspectable by the user and trivially removable by the uninstaller, which matters for W2-3.
 - **Start/stop daemon:** spawn/terminate the process directly. Do **not** build a Windows Service; the daemon is per-user, needs the user's session for tray and IPC, and a service adds an uninstall footprint for no benefit.
 - **Status:** detect a running daemon by attempting the IPC pipe connection, not by process enumeration.
 
@@ -209,16 +209,16 @@ Note the R7 lesson: the Linux version was broken precisely by writing a *second*
 **Where.** `packaging/windows/installer.iss`, plus a build script alongside `scripts/release`.
 
 **Installs:**
-- `osupad-gui.exe`, `osupad-daemon.exe`, `osupad-cli.exe` → `%LOCALAPPDATA%\Programs\osupad\`
+- `opad-gui.exe`, `opad-daemon.exe`, `opad-cli.exe` → `%LOCALAPPDATA%\Programs\opad\`
 
   Per-user install, not `Program Files`. This avoids requiring admin rights, matches the per-user daemon model, and keeps the uninstall entirely inside the user's own profile.
 - Start Menu shortcut for the GUI. **No desktop shortcut by default** — offer it as an unchecked checkbox.
 - The `HKCU\...\Run` autostart value from W1-1, as an opt-in checkbox on the final page ("Start OPad when I log in", default checked).
-- Uninstall entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\osupad`.
+- Uninstall entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\opad`.
 
 **Does not install:** any driver, any `.inf`, any service, any redistributable. If a VC++ runtime turns out to be needed, prefer static CRT linking in the MSVC build over shipping a redist.
 
-**Upgrade behaviour:** `AppId` GUID fixed across versions so upgrades replace rather than stack. Must stop a running daemon and GUI before replacing binaries (`CloseApplications`), and must **not** touch `%APPDATA%\osupad\` — counters survive upgrades unconditionally.
+**Upgrade behaviour:** `AppId` GUID fixed across versions so upgrades replace rather than stack. Must stop a running daemon and GUI before replacing binaries (`CloseApplications`), and must **not** touch `%APPDATA%\opad\` — counters survive upgrades unconditionally.
 
 ---
 
@@ -248,14 +248,14 @@ Note the R7 lesson: the Linux version was broken precisely by writing a *second*
 This is an explicit owner requirement. The uninstaller must be *provably* complete, which means an inventory, not an intention.
 
 **Must remove unconditionally:**
-- `%LOCALAPPDATA%\Programs\osupad\` — all binaries, including any file the app wrote into its own install dir
-- `HKCU\...\Run\osupad-daemon`
-- `HKCU\...\Uninstall\osupad`
+- `%LOCALAPPDATA%\Programs\opad\` — all binaries, including any file the app wrote into its own install dir
+- `HKCU\...\Run\opad-daemon`
+- `HKCU\...\Uninstall\opad`
 - Start Menu and (if created) desktop shortcuts
 - Any `%TEMP%` scratch files the app created
 
 **Must prompt (a clear, explicit dialog, default = keep):**
-- `%APPDATA%\osupad\` — the SQLite DB with **lifetime counters**, config, layouts, logs
+- `%APPDATA%\opad\` — the SQLite DB with **lifetime counters**, config, layouts, logs
 
   > "Also delete your OPad settings and lifetime key counters? This cannot be undone."
 
@@ -266,7 +266,7 @@ This is an explicit owner requirement. The uninstaller must be *provably* comple
 - The COM port assignment — owned by Windows' `usbser.sys` enumeration, not by us
 - The pad's own NVS — deliberately untouched; see W3-4
 
-**Acceptance.** Install → use → uninstall (choosing "delete everything") leaves **zero** OPad files and **zero** registry values. Verify with a filesystem+registry diff across the whole cycle, and record the procedure in `docs/testing-checklist.md` as a new section. Run the same check for the "keep my data" path and confirm that `%APPDATA%\osupad\` is the *only* thing left.
+**Acceptance.** Install → use → uninstall (choosing "delete everything") leaves **zero** OPad files and **zero** registry values. Verify with a filesystem+registry diff across the whole cycle, and record the procedure in `docs/testing-checklist.md` as a new section. Run the same check for the "keep my data" path and confirm that `%APPDATA%\opad\` is the *only* thing left.
 
 ---
 
@@ -284,7 +284,7 @@ Cross-platform — this ships on Linux too, not just Windows.
 
 **Required change.**
 - Store `owner_id` (16 bytes, zero = unclaimed) in the existing NVS config namespace (`firmware/main/config/device_config.c`).
-- Add `owner_id` to `HelloAck` in `protocol/osupad.proto` (next free field number — do not renumber existing fields; `device_id` is 4 and `counter_generation` is 5).
+- Add `owner_id` to `HelloAck` in `protocol/opad.proto` (next free field number — do not renumber existing fields; `device_id` is 4 and `counter_generation` is 5).
 - Add a `ClaimOwnership { owner_id }` command that writes the field.
 - **Respect P1-3:** the claim write is an NVS write, so it is permitted **only** in IDLE. Never during PLAYING or COOLDOWN. It happens at connect time, which is already an IDLE-only moment.
 - An unclaimed pad (all-zero owner) is claimed silently on first connect. No prompt for the common case.
@@ -357,7 +357,7 @@ make install-user                       # ~/.local layout (replaces install.sh)
 
 | Target | Does |
 |---|---|
-| `all` | Release-build `osupad-daemon`, `osupad-gui`, `osupadctl` |
+| `all` | Release-build `opad-daemon`, `opad-gui`, `opadctl` |
 | `tosu` | Build tosu from source into `build/tosu/` (B-3) |
 | `firmware` | `idf.py build`; skipped with a clear message if ESP-IDF is absent |
 | `install` | Install into `$(DESTDIR)$(PREFIX)` using the L-1 system layout |
@@ -370,7 +370,7 @@ make install-user                       # ~/.local layout (replaces install.sh)
 
 ### B-3. Solves L-1's templating problem
 
-L-1 needs one systemd unit source producing both `%h/.local/bin/osupad-daemon` and `/usr/bin/osupad-daemon`. The Makefile is where that happens: keep a single `osupad-daemon.service.in` with an `@BINDIR@` placeholder and substitute `$(PREFIX)/bin` (or `~/.local/bin` for `install-user`) at install time. One source file, no divergent copies — the R7 failure mode closed structurally rather than by discipline.
+L-1 needs one systemd unit source producing both `%h/.local/bin/opad-daemon` and `/usr/bin/opad-daemon`. The Makefile is where that happens: keep a single `opad-daemon.service.in` with an `@BINDIR@` placeholder and substitute `$(PREFIX)/bin` (or `~/.local/bin` for `install-user`) at install time. One source file, no divergent copies — the R7 failure mode closed structurally rather than by discipline.
 
 Apply the same treatment to the `.desktop` files and the udev rule.
 
@@ -388,10 +388,10 @@ Verified against tosu's manifests:
 
 1. `pnpm install --frozen-lockfile`
 2. `pnpm run genver && pnpm run ts:compile` → `dist/index.js` (plus the built `tsprocess` addon)
-3. Install `dist/` to `$(DESTDIR)$(PREFIX)/lib/osupad/tosu/`
+3. Install `dist/` to `$(DESTDIR)$(PREFIX)/lib/opad/tosu/`
 4. Install a small wrapper script named **`tosu`** next to it that `exec`s `node index.js "$@"`
 
-`find_tosu_binary` (`desktop/crates/osupad-tosu/src/lib.rs:256`) only checks that the path is a file and then spawns it as a process, so a wrapper script works with **no code change**.
+`find_tosu_binary` (`desktop/crates/opad-tosu/src/lib.rs:256`) only checks that the path is a file and then spawns it as a process, so a wrapper script works with **no code change**.
 
 **The wrapper is for Arch only (`make tosu TOSU_STANDALONE=0`).** The `.deb`, `.rpm` and AppImage use the default `TOSU_STANDALONE=1`, which runs upstream's `compile:linux` and ships the self-contained `pkg` binary. Found on 2026-09-21: the wrapper approach broke on Ubuntu, because Debian/Ubuntu/Fedora ship Node 18-22, tosu needs 24.x, and its native `.node` addons are built for the Node 24 ABI. The wrapper also needs `{"type":"module"}` in a `package.json` next to `index.js` (the bundle is an ES module); the Makefile writes it.
 
@@ -422,23 +422,23 @@ It is also the only workable one. Both archives require every Rust dependency to
 
 | Distro | Command |
 |---|---|
-| Debian / Ubuntu / Mint / Pop | `apt install ./osupad_<ver>_amd64.deb` |
-| Fedora / RHEL / openSUSE | `dnf install ./osupad-<ver>.x86_64.rpm` |
-| Arch / Manjaro | `yay -S osupad` |
+| Debian / Ubuntu / Mint / Pop | `apt install ./opad_<ver>_amd64.deb` |
+| Fedora / RHEL / openSUSE | `dnf install ./opad-<ver>.x86_64.rpm` |
+| Arch / Manjaro | `yay -S opad` |
 
 **Three consequences that follow directly, and must be handled rather than discovered:**
 
 1. **Dependency declarations matter more, not less.** `apt install ./file.deb` and `dnf install ./file.rpm` both still resolve declared dependencies against the user's configured repositories. Getting the per-distro package names right in L-3 is what makes a local install work at all — a missing dependency here is a hard failure with no repo to fall back on.
 2. **No repository signature.** Packages installed from a file are not verified against repo metadata; `dnf` will warn about an unsigned package. GPG-sign the `.rpm` with `rpmsign` and publish the public key in the README. The minisign-signed release manifest (**U-0.3**) is the primary integrity mechanism for every artifact on every platform, and it covers this case too.
-3. **Discovery is entirely on you.** There is no `apt search osupad`. The README, the releases page and the project site are the only ways anyone finds this, so the install instructions above need to be prominent and copy-pasteable.
+3. **Discovery is entirely on you.** There is no `apt search opad`. The README, the releases page and the project site are the only ways anyone finds this, so the install instructions above need to be prominent and copy-pasteable.
 
 ### L-1. System-wide vs per-user layout
 
-**Problem.** The current assets are per-user and **hardcode a per-user path**: `packaging/linux/systemd-user/osupad-daemon.service` has `ExecStart=%h/.local/bin/osupad-daemon`. A distro package installs binaries to `/usr/bin`, so that unit is wrong inside a package and the daemon will fail to start.
+**Problem.** The current assets are per-user and **hardcode a per-user path**: `packaging/linux/systemd-user/opad-daemon.service` has `ExecStart=%h/.local/bin/opad-daemon`. A distro package installs binaries to `/usr/bin`, so that unit is wrong inside a package and the daemon will fail to start.
 
 **Required change.**
-- Binaries → `/usr/bin/{osupad-daemon,osupad-gui,osupadctl}`
-- systemd **user** unit → `/usr/lib/systemd/user/osupad-daemon.service`, with `ExecStart=/usr/bin/osupad-daemon`
+- Binaries → `/usr/bin/{opad-daemon,opad-gui,opadctl}`
+- systemd **user** unit → `/usr/lib/systemd/user/opad-daemon.service`, with `ExecStart=/usr/bin/opad-daemon`
 - `.desktop` files → `/usr/share/applications/`
 - udev rules → `/usr/lib/udev/rules.d/70-opad.rules` (**not** `/etc/udev/rules.d/`, which is reserved for local administrator overrides)
 - Icons → `/usr/share/icons/hicolor/...`
@@ -463,7 +463,7 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", TAG+="uaccess"
 SUBSYSTEM=="usb", ATTRS{idVendor}=="303a", TAG+="uaccess"
 ```
 
-Narrow `ATTRS{idVendor}=="303a"` to also match the specific PIDs the code already knows (`OSUPAD_APP_PID` and `ESP_ROM_BOOTLOADER_PID` in `desktop/crates/osupad-device/src/lib.rs`) so the rule does not claim every Espressif device the user owns.
+Narrow `ATTRS{idVendor}=="303a"` to also match the specific PIDs the code already knows (`OPAD_APP_PID` and `ESP_ROM_BOOTLOADER_PID` in `desktop/crates/opad-device/src/lib.rs`) so the rule does not claim every Espressif device the user owns.
 
 **Acceptance.** A normal desktop user can open the pad on Debian, Fedora and Arch with no group membership change and no logout, and no other user on the machine can. Verify on all three.
 
@@ -473,7 +473,7 @@ Narrow `ATTRS{idVendor}=="303a"` to also match the specific PIDs the code alread
 |---|---|---|
 | `.deb` | `cargo-deb` | Per-crate metadata in `Cargo.toml`; `maintainer-scripts` for `udevadm control --reload` and `systemctl --user daemon-reload` |
 | `.rpm` | `cargo-generate-rpm` | `%post`/`%postun` scriptlets for the same |
-| Arch | hand-written `PKGBUILD` | Wraps the **B** Makefile: `make DESTDIR="$pkgdir" PREFIX=/usr install tosu`. Builds tosu from source (B-4), so no vendored binary. Publish `osupad` (source) and optionally `osupad-git` |
+| Arch | hand-written `PKGBUILD` | Wraps the **B** Makefile: `make DESTDIR="$pkgdir" PREFIX=/usr install tosu`. Builds tosu from source (B-4), so no vendored binary. Publish `opad` (source) and optionally `opad-git` |
 
 **Runtime dependencies differ per distro and must be declared explicitly.** `iced`/wgpu needs Vulkan plus X11/Wayland client libraries, and `ksni` needs D-Bus. Get the per-distro package names right (`libvulkan1` vs `vulkan-loader`, `libwayland-client0` vs `wayland`, and so on) — a missing dependency here surfaces as a GUI that fails to start with an opaque wgpu error.
 
@@ -491,7 +491,7 @@ An AppImage covers every other distro with one artifact and is cheap to add once
 
 **tosu is LGPL-3.0** (Mikhail Babynichev). OPad is GPL-3.0-or-later. These interact cleanly here, for a specific reason worth writing down so it is not re-litigated later:
 
-**OPad does not link tosu in any way.** `desktop/crates/osupad-tosu/src/lib.rs` talks to it over a WebSocket at `ws://127.0.0.1:24050/websocket/v2` (`DEFAULT_TOSU_ENDPOINT`), and `spawn_tosu_supervisor` (`:275`) launches it as a **separate process**. Separate programs communicating over a socket are not a derivative work, and executing a program is not linking. **No copyleft obligation reaches OPad's own GPL-3.0-or-later code.** This is true whether or not tosu is bundled.
+**OPad does not link tosu in any way.** `desktop/crates/opad-tosu/src/lib.rs` talks to it over a WebSocket at `ws://127.0.0.1:24050/websocket/v2` (`DEFAULT_TOSU_ENDPOINT`), and `spawn_tosu_supervisor` (`:275`) launches it as a **separate process**. Separate programs communicating over a socket are not a derivative work, and executing a program is not linking. **No copyleft obligation reaches OPad's own GPL-3.0-or-later code.** This is true whether or not tosu is bundled.
 
 **Redistribution is the only thing that creates obligations.** If an installer or package *ships the tosu binary*, that is conveying an LGPL-3.0 work, which requires shipping the license text and copyright notice, and providing the corresponding source (or a valid written offer / access from the same place the binary is offered). All of this is satisfiable — it is permitted, not forbidden — but it is an ongoing maintenance burden: every tosu version bump means re-checking the source offer.
 
@@ -502,13 +502,13 @@ An AppImage covers every other distro with one artifact and is cheap to add once
 The auto-update requirement resolves the main practical objection to bundling. A bundled-and-pinned tosu goes stale as osu! changes and silently stops working; a bundled tosu that updates itself does not. What remains true is that bundling means **conveying an LGPL-3.0 work**, which carries the obligations in T-3. Those are satisfiable and routine, but they must actually be in the artifacts, not just intended.
 
 **What ships:**
-- Windows: `tosu.exe` inside the Inno package, installed to `%LOCALAPPDATA%\Programs\osupad\tosu\`.
-- Linux `.deb`/`.rpm`: the tosu binary under `/usr/lib/osupad/tosu/`, **not** `/usr/bin` — it is a private, auto-updating component, not a system command, and it must not collide with a tosu the user installed themselves.
-- **AUR: bundled too, but built from source** (see **B-3**). Arch policy rejects vendored *prebuilt* binaries, but building from source is the normal AUR path, so the package compiles tosu on the user's machine and installs it to `/usr/lib/osupad/tosu/`. Same end result as the other platforms, arrived at the Arch-correct way.
+- Windows: `tosu.exe` inside the Inno package, installed to `%LOCALAPPDATA%\Programs\opad\tosu\`.
+- Linux `.deb`/`.rpm`: the tosu binary under `/usr/lib/opad/tosu/`, **not** `/usr/bin` — it is a private, auto-updating component, not a system command, and it must not collide with a tosu the user installed themselves.
+- **AUR: bundled too, but built from source** (see **B-3**). Arch policy rejects vendored *prebuilt* binaries, but building from source is the normal AUR path, so the package compiles tosu on the user's machine and installs it to `/usr/lib/opad/tosu/`. Same end result as the other platforms, arrived at the Arch-correct way.
 
 **Auto-update is disabled for package-manager-owned builds.** On AUR (and on any `.deb`/`.rpm` installed system-wide), the package manager owns the tosu binary, so U-1 must not replace it — `pacman`/`apt`/`dnf` would be overwritten behind their back and the file would be reported as modified. The rule generalises cleanly: **OPad only ever auto-updates a tosu it owns and installed into a user-writable location.** Everything else is reported, not touched.
 
-**The existing resolution order stays and gains one step at the end.** `find_tosu_binary` (`desktop/crates/osupad-tosu/src/lib.rs:256`) resolves `$OSUPAD_TOSU_PATH` → `~/.local/opt/tosu/tosu` → `$PATH`. Append the bundled location **last**, so a tosu the user installed deliberately always wins over the bundled copy. Never overwrite or auto-update a tosu found outside the bundled directory — that binary is not yours to manage.
+**The existing resolution order stays and gains one step at the end.** `find_tosu_binary` (`desktop/crates/opad-tosu/src/lib.rs:256`) resolves `$OPAD_TOSU_PATH` → `~/.local/opt/tosu/tosu` → `$PATH`. Append the bundled location **last**, so a tosu the user installed deliberately always wins over the bundled copy. Never overwrite or auto-update a tosu found outside the bundled directory — that binary is not yours to manage.
 
 ### T-3. LGPL-3.0 compliance for the bundled binary
 
@@ -519,7 +519,7 @@ Conveying tosu requires three things per artifact. None are difficult; all must 
 2. **Corresponding source.** LGPL-3.0 conveying obligations are satisfied by offering source from the same place the binary is offered. Publish, next to each OPad release artifact, the matching tosu source tarball or an explicit written offer naming the exact upstream tag. **Generate this automatically from the version the build pulled**, so it cannot drift from the binary actually shipped.
 3. **Distro metadata.** `.deb` needs `debian/copyright` listing LGPL-3.0 for the bundled component; `.rpm` needs the composite `License:` field. A package whose metadata names only OPad's licence while shipping an LGPL binary is simply incorrect.
 
-**Also required, and easy to forget:** LGPL-3.0 grants the user the right to **replace** the bundled component with their own version. The `$OSUPAD_TOSU_PATH` override and the "use my own tosu install" setting satisfy this in practice, so keep both working and mention them in the NOTICE.
+**Also required, and easy to forget:** LGPL-3.0 grants the user the right to **replace** the bundled component with their own version. The `$OPAD_TOSU_PATH` override and the "use my own tosu install" setting satisfy this in practice, so keep both working and mention them in the NOTICE.
 
 **Acceptance.** A release script check fails the build if the bundled tosu version does not match the shipped NOTICE and source offer. Verify on all artifacts, including the Windows installer.
 
@@ -527,7 +527,7 @@ Conveying tosu requires three things per artifact. None are difficult; all must 
 
 **Do:**
 - Device or Settings page shows tosu status: *bundled (version)* / *using your install at PATH* / *running* / *connected*.
-- A setting to use an external tosu instead of the bundled one, with a file picker, writing the same value `$OSUPAD_TOSU_PATH` provides.
+- A setting to use an external tosu instead of the bundled one, with a file picker, writing the same value `$OPAD_TOSU_PATH` provides.
 - A setting to pin the bundled tosu to its current version and disable U-1 updates.
 - The supervisor already skips launching when something is listening on port 24050 (`spawn_tosu_supervisor`, `:275`), so a hand-started tosu keeps working untouched. Do not change this.
 
@@ -581,7 +581,7 @@ Three separate updaters with three different risk profiles. **None of them exist
 
 **Why `.deb`/`.rpm` needs that one prompt.** The binaries live in `/usr/bin`, owned by root and recorded in the dpkg/rpm database. The daemon runs as the user and cannot write there. Requiring authentication is not a limitation to engineer around — it is the OS working correctly, and every native Linux updater behaves this way.
 
-**The thing that must not be done:** overwriting `/usr/bin/osupad-daemon` directly, even if a way is found to get write access. That desynchronises the package database — `dpkg -V` / `rpm -V` then report modified files, and the next reinstall or `apt upgrade` silently reverts the update. **Always apply through the package manager**, never around it. Because these packages come from GitHub rather than a repository, `apt install ./new.deb` records the new version cleanly and nothing will later contradict it.
+**The thing that must not be done:** overwriting `/usr/bin/opad-daemon` directly, even if a way is found to get write access. That desynchronises the package database — `dpkg -V` / `rpm -V` then report modified files, and the next reinstall or `apt upgrade` silently reverts the update. **Always apply through the package manager**, never around it. Because these packages come from GitHub rather than a repository, `apt install ./new.deb` records the new version cleanly and nothing will later contradict it.
 
 `pkexec` plus the native package manager is the baseline. PackageKit's D-Bus `InstallFiles` is the more "correct" desktop API and handles polkit natively, but it is not installed everywhere (notably not on most Arch systems), so treat it as an optional nicety rather than the mechanism.
 
@@ -589,7 +589,7 @@ Three separate updaters with three different risk profiles. **None of them exist
 
 The updater must know which row of that table it is in, and **must not guess**.
 
-**Do:** have each packaging path drop a marker file at `$(PREFIX)/lib/osupad/install-origin` containing exactly one of `windows`, `deb`, `rpm`, `aur`, `appimage`, `user`, `source`. The Makefile (**B-2**) writes `user` or `source`; `cargo-deb`, `cargo-generate-rpm`, the `PKGBUILD` and the Inno script each write their own.
+**Do:** have each packaging path drop a marker file at `$(PREFIX)/lib/opad/install-origin` containing exactly one of `windows`, `deb`, `rpm`, `aur`, `appimage`, `user`, `source`. The Makefile (**B-2**) writes `user` or `source`; `cargo-deb`, `cargo-generate-rpm`, the `PKGBUILD` and the Inno script each write their own.
 
 Probing the system instead (`dpkg -S`, `rpm -qf`, `pacman -Qo`, path prefix checks) is slower, needs those tools present, and gets ambiguous cases wrong — a `.deb` that a user unpacked by hand, for example. A marker written at package time is unambiguous and costs one line per packaging path.
 
@@ -620,7 +620,7 @@ Probing the system instead (`dpkg -S`, `rpm -qf`, `pacman -Qo`, path prefix chec
 
 ### U-3. ESP32-S3 firmware update
 
-This reverses **Appendix B** of `osupad_remaining_work_v1.md` ("a custom OTA subsystem is out of scope; flashing stays espflash over USB"). Note the reversal explicitly when updating that document.
+This reverses **Appendix B** of `opad_remaining_work_v1.md` ("a custom OTA subsystem is out of scope; flashing stays espflash over USB"). Note the reversal explicitly when updating that document.
 
 **The device is a keyboard. A firmware update is the only operation in this entire project that can stop it being one.** Everything below follows from that.
 
@@ -704,7 +704,7 @@ Re-run the `docs/latency-testing.md` stages on Windows and add rows to the resul
 - README: Windows install instructions, SmartScreen note if unsigned, and the reflash/unbind section.
 - `docs/architecture.md`: the IPC transport abstraction and the pairing model.
 - `docs/protocol.md`: `owner_id` in `HelloAck`, the `ClaimOwnership` command.
-- Record the pairing model as an amendment appendix in `osupad_technical_spec_v1.md`, and mark **A3 superseded** in `osupad_remaining_work_v1.md`.
+- Record the pairing model as an amendment appendix in `opad_technical_spec_v1.md`, and mark **A3 superseded** in `opad_remaining_work_v1.md`.
 
 ---
 
@@ -786,7 +786,7 @@ Then **W0-1**, which gates every remaining Windows task, and **U-0**, which gate
 - Hosted APT/DNF repositories (including the GitHub Pages route in U-2), and therefore *unattended* `.deb`/`.rpm` updates. v1.0 updates from inside the app with one polkit prompt.
 - OTA firmware transfer code (U-3c). The **partition layout** for it is in scope (U-3a).
 - EV code signing (W2-2).
-- v2 rapid trigger — see `osupad_v2_rapid_trigger_plan.md`.
+- v2 rapid trigger — see `opad_v2_rapid_trigger_plan.md`.
 
 ---
 
@@ -799,13 +799,13 @@ Two agents work this plan at the same time: **Claude** and **Antigravity**. They
 **Superseded 2026-09-18 by the owner. There is now one branch and one remote.**
 
 The parallel split below ran its course: `v1.0-agy` and `v1.0-claude` were merged
-into `main` at `482a51b`, both branches deleted, and the `../osupad-agy` worktree
+into `main` at `482a51b`, both branches deleted, and the `../opad-agy` worktree
 removed. `main` is the only branch, and the only checkout is this one. **Do not
 recreate the per-agent branches.** If two agents genuinely need to work at once,
 cut a short-lived branch for the task and merge it when it closes.
 
 > *Historical, for reading the A.7 table:* Antigravity worked on `v1.0-agy` in a
-> `../osupad-agy` worktree, Claude on `v1.0-claude` in the main checkout, and
+> `../opad-agy` worktree, Claude on `v1.0-claude` in the main checkout, and
 > `main` was the integration target. Rows before `482a51b` refer to that layout.
 
 **There is now a remote.** `origin` is
@@ -831,33 +831,33 @@ Column C is hardware-gated (A.5) and is scheduled by the owner, not claimed by a
 
 | Path | Owner |
 |---|---|
-| `desktop/crates/osupad-ipc/**` | A |
+| `desktop/crates/opad-ipc/**` | A |
 | `desktop/daemon/**` | A |
 | `desktop/cli/**` | A |
-| `desktop/crates/osupad-tosu/**` | A |
+| `desktop/crates/opad-tosu/**` | A |
 | `desktop/gui/**` | B |
 | `packaging/**`, `Makefile`, `*.iss`, `PKGBUILD` | B |
 | `firmware/**`, `protocol/*.proto` | C |
 | `docs/**`, `*.md` | whoever owns the task; keep the hunk small |
 
-`desktop/crates/osupad-model`, `-protocol`, `-storage`, `-layout` are shared. Touch them only when your task requires it, keep the change minimal, and say so in the commit subject.
+`desktop/crates/opad-model`, `-protocol`, `-storage`, `-layout` are shared. Touch them only when your task requires it, keep the change minimal, and say so in the commit subject.
 
-**The one cross-column dependency.** W0-1 changes public signatures in `osupad-ipc` (`connect_and_handshake`, `send_request`, `read_request`, `send_response` move from `UnixStream` to an `IpcStream` alias). `desktop/gui/src/ipc.rs` and `desktop/gui/src/single_instance.rs` are **B's files** and must adapt afterwards.
+**The one cross-column dependency.** W0-1 changes public signatures in `opad-ipc` (`connect_and_handshake`, `send_request`, `read_request`, `send_response` move from `UnixStream` to an `IpcStream` alias). `desktop/gui/src/ipc.rs` and `desktop/gui/src/single_instance.rs` are **B's files** and must adapt afterwards.
 
-Protocol: **A lands W0-1 first** and writes `BREAKING: osupad-ipc signatures` in the commit subject. B rebases and adapts. B does not start W0-3 before that commit exists. Until then B has L-2, B-1…B-4, L-1 and L-3, none of which touch Rust.
+Protocol: **A lands W0-1 first** and writes `BREAKING: opad-ipc signatures` in the commit subject. B rebases and adapts. B does not start W0-3 before that commit exists. Until then B has L-2, B-1…B-4, L-1 and L-3, none of which touch Rust.
 
 ### A.4. Read before starting
 
-1. `osupad_technical_spec_v1.md` — the contract
-2. `osupad_packaging_distribution_plan.md` — this document, especially §0
-3. `osupad_remaining_work_v1.md` §0 and Appendix A — conventions and v1 status
+1. `opad_technical_spec_v1.md` — the contract
+2. `opad_packaging_distribution_plan.md` — this document, especially §0
+3. `opad_remaining_work_v1.md` §0 and Appendix A — conventions and v1 status
 4. `docs/architecture.md`
 
 ### A.5. Hardware is exclusive — one agent at a time
 
-There is **one pad**. `/dev/ttyACM0` takes one process, `osupad-daemon` has a single-instance guard, and flashing obviously cannot overlap.
+There is **one pad**. `/dev/ttyACM0` takes one process, `opad-daemon` has a single-instance guard, and flashing obviously cannot overlap.
 
-- Never run `osupad-daemon` or open the serial port unless the owner has handed you the pad.
+- Never run `opad-daemon` or open the serial port unless the owner has handed you the pad.
 - Never flash without being told to.
 - If a task needs the device, **stop and say so** rather than taking it. The owner serialises column C.
 - Everything in columns A and B is pure code and needs no device.
@@ -877,59 +877,59 @@ Keep it to one line per task. This is how the other agent learns what landed.
 
 | Date | Column | Task | Commit | Notes |
 |---|---|---|---|---|
-| 2026-09-16 | A | W0-1 | `3bfbbc7` | **B is unblocked for W0-3.** `osupad-ipc` public types are now `IpcStream` (client), `IpcServerStream` (accepted server end) and `IpcListener`; `create_listener` returns `IpcListener` and `accept()` yields one stream, not a tuple. The framing helpers are generic over `IpcTransport`, so `&mut IpcStream` call sites are unchanged. `gui/src/ipc.rs` needed no edit. |
+| 2026-09-16 | A | W0-1 | `3bfbbc7` | **B is unblocked for W0-3.** `opad-ipc` public types are now `IpcStream` (client), `IpcServerStream` (accepted server end) and `IpcListener`; `create_listener` returns `IpcListener` and `accept()` yields one stream, not a tuple. The framing helpers are generic over `IpcTransport`, so `&mut IpcStream` call sites are unchanged. `gui/src/ipc.rs` needed no edit. |
 | 2026-09-16 | A | W0-2 | `84ff5d8` | Windows pipe instances get a protected DACL (SYSTEM + the calling user only); `create_listener` fails rather than creating an unrestricted pipe if the SID is unknown. The two-account "another user cannot open the pipe" check is a W4-2 manual item. |
-| 2026-09-16 | A | W0-4 | `5074a6b` | New `osupad_model::paths` resolves every app path via `dirs` and fails loudly instead of falling back to a relative one. **B: use it for W2-3's uninstall list** — everything written is `<data>/osupad.db`, `<state>/tosu.log`, `<state>/daemon.log`, plus the socket/pipe. Also `install_lib_dir()` / `install_prefix()` / `bundled_tosu_binary()` / `install_origin_path()`. |
-| 2026-09-16 | A | W1-1 | `c30aeaf` | **Touches `gui/` (B's).** New `gui/src/platform_windows.rs`; autostart is `HKCU\…\Run`. **The installer must write these byte-for-byte:** `osupad-daemon` → `"<dir>\osupad-daemon.exe"`, `osupad-gui` → `"<dir>\osupad-gui.exe" --tray`. Five of W0-6's six `cfg(linux)` sites now have Windows branches — treat them as done. `gui/Cargo.toml` gained a windows-only `winreg`. |
+| 2026-09-16 | A | W0-4 | `5074a6b` | New `opad_model::paths` resolves every app path via `dirs` and fails loudly instead of falling back to a relative one. **B: use it for W2-3's uninstall list** — everything written is `<data>/opad.db`, `<state>/tosu.log`, `<state>/daemon.log`, plus the socket/pipe. Also `install_lib_dir()` / `install_prefix()` / `bundled_tosu_binary()` / `install_origin_path()`. |
+| 2026-09-16 | A | W1-1 | `c30aeaf` | **Touches `gui/` (B's).** New `gui/src/platform_windows.rs`; autostart is `HKCU\…\Run`. **The installer must write these byte-for-byte:** `opad-daemon` → `"<dir>\opad-daemon.exe"`, `opad-gui` → `"<dir>\opad-gui.exe" --tray`. Five of W0-6's six `cfg(linux)` sites now have Windows branches — treat them as done. `gui/Cargo.toml` gained a windows-only `winreg`. |
 | 2026-09-16 | A | W1-2 | `9610481` | Reconnect poll, not `WM_DEVICECHANGE` (§W1-2 allows this): 400 ms scan + 300 ms settle keeps the 2 s acceptance with margin, and a headless daemon needs no message pump. |
-| 2026-09-16 | A | U-0 | `395c5f6` | New `osupad-update` crate: signed manifest, minisign + SHA-256 verification, atomic staged installs, daily ETag-cached schedule, IDLE-only gate. **Updates are inert until the owner generates a signing key** (added to A.8). tosu artifacts must be recorded in our signed manifest to be installable — see the manifest module docs. |
-| 2026-09-16 | A | U-2a | `8320676` | **Contract for B:** each packaging path writes `$(PREFIX)/lib/osupad/install-origin` (Windows: `install-origin` in the install dir) containing exactly one of `windows`/`deb`/`rpm`/`aur`/`appimage`/`user`/`source`. Newlines, spaces and case are tolerated. Missing or unknown ⇒ notify-only, never modify. Verify in L-3's clean-container tests. |
+| 2026-09-16 | A | U-0 | `395c5f6` | New `opad-update` crate: signed manifest, minisign + SHA-256 verification, atomic staged installs, daily ETag-cached schedule, IDLE-only gate. **Updates are inert until the owner generates a signing key** (added to A.8). tosu artifacts must be recorded in our signed manifest to be installable — see the manifest module docs. |
+| 2026-09-16 | A | U-2a | `8320676` | **Contract for B:** each packaging path writes `$(PREFIX)/lib/opad/install-origin` (Windows: `install-origin` in the install dir) containing exactly one of `windows`/`deb`/`rpm`/`aur`/`appimage`/`user`/`source`. Newlines, spaces and case are tolerated. Missing or unknown ⇒ notify-only, never modify. Verify in L-3's clean-container tests. |
 | 2026-09-16 | A | U-1 | `1a25c0c` | Bundled tosu updates itself, IDLE-only, and only where we own the binary (`windows`/`user`/`appimage`). NOTICE and VERSION are rewritten on every swap, so a self-updated install stays §T-3 compliant. `spawn_tosu_supervisor` now returns a `TosuSupervisor` handle — **signature change, B has no call sites**. Storage migration v7 adds `app_state`. |
 | 2026-09-16 | A | U-2 | `f53b048` | App updates apply through whatever owns the files (installer / pkexec+apt/dnf / direct / notify-only). Never automatic: a person presses Install. **The IPC handshake now rejects a version mismatch**, since GUI/CLI/daemon always ship together. **B: the GUI side of §U-0.4 is unbuilt** — `GetUpdateStatus`, `SetUpdateEnabled`, `InstallUpdate` and `ComponentUpdate` are the surface it needs. |
 | 2026-09-16 | A | W3-1 | `a52e7ae` | Per-install UUIDv4 in `app_state`, generated on first run. No storage ⇒ no identity ⇒ claims nothing, prompts about nothing. |
 | 2026-09-16 | A | W3-3 | `723b3ef` | **Touches `protocol/` (C's).** Added `HelloAck.owner_id` (field 8) and `ClaimOwnership` (HostToDevice 14); nothing renumbered. **W3-2 is still C's** — NVS storage, the IDLE-only claim write, firmware tests. Until then every pad reports no owner and is claimed silently. "Leave it alone" suppresses config, layouts, telemetry and all syncing while the pad stays a keyboard. **B: the prompt UI is unbuilt**; `Status.pending_takeover` + `ResolveTakeover` are the surface. |
-| 2026-09-16 | A | audit fix | `aaf6ca9` | Taking a pad over never wrote the new owner to it, so it would have re-prompted on every reconnect; the test drove a method production never called. Fixed, plus the applied `.deb`/installer is now deleted and `osupadctl setup` no longer prints Linux udev instructions on Windows. **B, for T-2/T-3:** U-1 reads the installed tosu version from `<bundled tosu dir>/VERSION` (one line, e.g. `4.26.2`) — packaging must write it alongside `NOTICE`, or the updater cannot tell what is installed. Paths already match: `$(PREFIX)/lib/osupad/tosu/tosu`. |
+| 2026-09-16 | A | audit fix | `aaf6ca9` | Taking a pad over never wrote the new owner to it, so it would have re-prompted on every reconnect; the test drove a method production never called. Fixed, plus the applied `.deb`/installer is now deleted and `opadctl setup` no longer prints Linux udev instructions on Windows. **B, for T-2/T-3:** U-1 reads the installed tosu version from `<bundled tosu dir>/VERSION` (one line, e.g. `4.26.2`) — packaging must write it alongside `NOTICE`, or the updater cannot tell what is installed. Paths already match: `$(PREFIX)/lib/opad/tosu/tosu`. |
 | 2026-09-16 | A | U-2 / W3-3 GUI | `61d3da1` | **Touches `gui/` (B's).** The GUI halves of two A tasks I had wrongly left to B: the §W3-3 takeover prompt (three buttons, both counter pairs, a pointer to `docs/recovery.md`) and the §U-0.4 update panel on Settings (installed/available versions, last check, per-updater switch, Install button only when something is ready, notify-only installs say to use the package manager). Plus a restart banner after an in-place update. `pages::grouped` is now `pub(crate)`; `tray.rs` still has its own copy as `format_grouped`, worth folding together during W0-5. |
-| 2026-09-16 | C | W3-2 | `22f00ca` | **Touches `firmware/` (C's), done at the owner's request.** `owner_id[16]` in the NVS config blob as v3; v1/v2 blobs migrate and read as unclaimed. Decision logic is in `config/owner.c` with no IDF dependencies, covered by 7 host tests: claim, re-claim (no write), takeover, IDLE-only, and an all-zero claim refused so there is no wire path to unpairing (§W3-4). `osupad.pb.c/.h` regenerated with nanopb 0.4.9.1. **Not compiled** — no ESP-IDF on the machine it was written on — and the hardware acceptance is still open. **Still unstarted in column C: U-3a (partition table) and U-3b.** |
+| 2026-09-16 | C | W3-2 | `22f00ca` | **Touches `firmware/` (C's), done at the owner's request.** `owner_id[16]` in the NVS config blob as v3; v1/v2 blobs migrate and read as unclaimed. Decision logic is in `config/owner.c` with no IDF dependencies, covered by 7 host tests: claim, re-claim (no write), takeover, IDLE-only, and an all-zero claim refused so there is no wire path to unpairing (§W3-4). `opad.pb.c/.h` regenerated with nanopb 0.4.9.1. **Not compiled** — no ESP-IDF on the machine it was written on — and the hardware acceptance is still open. **Still unstarted in column C: U-3a (partition table) and U-3b.** |
 | 2026-09-16 | B | L-2 | `f1ccbfd` | Drop Arch-specific `GROUP="uucp"` and insecure `MODE="0666"`, keep `TAG+="uaccess"`, narrow `ATTRS{idProduct}` to `4001|1001` (app and bootloader). |
 | 2026-09-16 | B | B-1…B-4 | `21bbab3` | Top-level Makefile with GNU PREFIX/DESTDIR, all/tosu/firmware/install/install-user/check targets, install-origin marker, and `@BINDIR@` templating for unit and desktop entries. |
 | 2026-09-16 | B | L-1 | `f5e7860` | Template user unit and desktop launcher with `@BINDIR@`, install to `/usr/bin`, `/usr/lib/systemd/user`, `/usr/share/applications`, `/usr/lib/udev/rules.d`. |
 | 2026-09-16 | B | L-3 | `64d5c56` | Add PKGBUILD (source build wrapping Makefile), `cargo-deb` metadata with maintainer scripts and `debian/copyright`, and `cargo-generate-rpm` metadata with udev scriptlets. |
-| 2026-09-17 | B | W0-3 | `8596568` | Single-instance guard on Windows using `Local\osupad-gui` named mutex, plus handoff via per-user named pipe `\\.\pipe\osupad-gui-{sid}`. |
+| 2026-09-17 | B | W0-3 | `8596568` | Single-instance guard on Windows using `Local\opad-gui` named mutex, plus handoff via per-user named pipe `\\.\pipe\opad-gui-{sid}`. |
 | 2026-09-17 | B | W0-5 | `fc7cf7f` | Cross-platform tray: ksni scoped to Linux, tray-icon on Windows with dedicated thread and Win32 pump, shared TrayViewModel and unified status formatting via `pages::grouped`. |
 | 2026-09-17 | B | W0-6 | `a485a5e` | Audit and complete `cfg(target_os = "linux")` sites in main.rs: autostart toggle, login autostart registration, and platform fallbacks without silent no-ops. |
-| 2026-09-17 | B | W2-1, W2-3 | `f834de7` | Inno Setup installer (`packaging/windows/installer.iss`): per-user install, install-origin = "windows", Run autostart keys, and strong uninstall with confirmation prompt for `%APPDATA%\osupad`. |
+| 2026-09-17 | B | W2-1, W2-3 | `f834de7` | Inno Setup installer (`packaging/windows/installer.iss`): per-user install, install-origin = "windows", Run autostart keys, and strong uninstall with confirmation prompt for `%APPDATA%\opad`. |
 | 2026-09-17 | B | T-2, T-3 | `f348018` | Bundle tosu VERSION, NOTICE, and LICENSE alongside tosu binary across Makefile, PKGBUILD, and Inno Setup package paths. |
 | 2026-09-17 | B | T-4, T-5 | `cf29e3f` | Add tosu source/status display, custom executable file picker override with persistence, and full LGPL-3.0 attribution in GUI Settings and README. |
 | 2026-09-17 | B | L-4 | `9b21604` | Add AppImage packaging script (`packaging/linux/appimage/build_appimage.sh`), AppRun entrypoint, install-origin = "appimage", and Makefile target. |
 | 2026-09-17 | A | version | `da27ae3` | Local `v1.0.0` tag deleted, workspace now `1.0.0-rc` (owner approved, A.8 settled). Re-cut the tag only when W4 passes. Firmware `PROJECT_VER` stays `1.0.0` — nothing compares it to the host version. **B: `cargo` metadata now reports `1.0.0-rc`, so any packaging version string derived from it changes.** |
-| 2026-09-17 | C | U-3a | `3abb5b1` | **Touches `firmware/`, `protocol/`.** `firmware/partitions.csv` is §U-3a's table verbatim; nvs is untouched at `0x9000`/`0x6000`, so counters and `owner_id` survive. **The app offset moves `0x10000` → `0x20000`** — `osupadctl flash` and `flash_board.sh` updated, and anything else that writes an app image must follow. `HelloAck.running_partition` (field 9) reports the running slot; surfaced by `osupadctl status`. **ESP-IDF v5.5.2 does exist on this machine**, so this and W3-2 are now compile-verified; hardware acceptance is still open (A.5). |
-| 2026-09-17 | A | W1-3 | `3dbb303` | **`scripts/flash_board.sh` is deleted** — `osupadctl flash [--full]` replaces it, and coordinates the daemon over IPC instead of `systemctl`. Bootloader entry is an explicit three-trigger ladder with DTR/RTS set by hand: Linux asserts DTR on open, Windows does not, and the old code inherited whichever. `reset_to_app` retries the open for 3 s because Windows handles are exclusive. Flashing now works with no daemon running. **The Windows run itself is unexecuted** — no Windows machine here; it is a W4-2 item. |
+| 2026-09-17 | C | U-3a | `3abb5b1` | **Touches `firmware/`, `protocol/`.** `firmware/partitions.csv` is §U-3a's table verbatim; nvs is untouched at `0x9000`/`0x6000`, so counters and `owner_id` survive. **The app offset moves `0x10000` → `0x20000`** — `opadctl flash` and `flash_board.sh` updated, and anything else that writes an app image must follow. `HelloAck.running_partition` (field 9) reports the running slot; surfaced by `opadctl status`. **ESP-IDF v5.5.2 does exist on this machine**, so this and W3-2 are now compile-verified; hardware acceptance is still open (A.5). |
+| 2026-09-17 | A | W1-3 | `3dbb303` | **`scripts/flash_board.sh` is deleted** — `opadctl flash [--full]` replaces it, and coordinates the daemon over IPC instead of `systemctl`. Bootloader entry is an explicit three-trigger ladder with DTR/RTS set by hand: Linux asserts DTR on open, Windows does not, and the old code inherited whichever. `reset_to_app` retries the open for 3 s because Windows handles are exclusive. Flashing now works with no daemon running. **The Windows run itself is unexecuted** — no Windows machine here; it is a W4-2 item. |
 | 2026-09-17 | A | W3-4 | `247e741` | `docs/recovery.md` §7 is the reflash/unbind path; the takeover prompt's link is no longer dangling. Says outright that `erase-flash` takes the lifetime counters with the owner record, points at a JSON export first, and covers Linux, Windows, the USJ reboot quirk and port exclusivity. Also notes the trap: a reflashed pad is re-claimed *and* counter-restored by the host that erased it, so handing the pad on means claiming it elsewhere first. Linked from the README. |
-| 2026-09-17 | A | refactor | `29a77c2` | **Touches the shared `osupad-device`.** The flashing engine moved out of `cli/src/esp_rom.rs` into `osupad_device::flash` so `osupadctl` and the daemon share one copy: `reset_to_app`, the trigger ladder, espflash driving and the ESP32-S3 image-header check. Typed `FlashError`, progress via callback. `APP_PARTITION_OFFSET` lives there now.
-| 2026-09-17 | C | U-3b | `bda4924` | Host-driven flash: consent → counters synced to the PC → SHA-256 from the signed manifest *and* the chip ID in the image header → port released → **app partition only, never `erase-flash`** → the pad must come back as the version we wrote. New `osupad_update::firmware` (pure decisions) and `daemon/firmware_update.rs`. **B: `GetFirmwareUpdate` returns a `FirmwareOffer` (installed, available, running slot, blockers, consent text, outage seconds) and is side-effect-free, so it is safe to poll; `InstallFirmwareUpdate { confirm }` does it. `UpdateStatus` is unchanged on purpose.** CLI: `osupadctl firmware-update [--yes]`. The successful path needs hardware (A.5). |
-| 2026-09-17 | A | W4-1 | `2f46bf4` | Two `windows-latest` jobs, not a cross-compile: `rust-windows` does fmt/clippy/build/test over the workspace **minus `osupad-gui`**, and `rust-windows-gui` builds the GUI on its own. **`rust-windows-gui` is red until B lands W0-5** — `osupad-gui` depends on `ksni` unconditionally and ksni is Linux-only D-Bus. It is a separate job so it cannot hide regressions in the other eleven crates. Confirmed from here: the core crates cross-check for the target, but the daemon cannot be checked from Linux at all (rusqlite bundled wants `lib.exe`). **No CI job has ever run — there is no remote (A.2).** |
-| 2026-09-17 | A | P3-1 tooling | `1e06f04` | `scripts/latency_row.py` turns an `osupadctl latency` run into the finished markdown row: `--reset`, tap, `--stage "C (10 Hz)"`, paste. Refuses to emit a row for a pad with 0 samples, and marks the firmware hash `-dirty` when `firmware/` or `protocol/` is uncommitted. `--self-test` needs no hardware. **The measurements themselves are still the owner's (A.8).** |
+| 2026-09-17 | A | refactor | `29a77c2` | **Touches the shared `opad-device`.** The flashing engine moved out of `cli/src/esp_rom.rs` into `opad_device::flash` so `opadctl` and the daemon share one copy: `reset_to_app`, the trigger ladder, espflash driving and the ESP32-S3 image-header check. Typed `FlashError`, progress via callback. `APP_PARTITION_OFFSET` lives there now.
+| 2026-09-17 | C | U-3b | `bda4924` | Host-driven flash: consent → counters synced to the PC → SHA-256 from the signed manifest *and* the chip ID in the image header → port released → **app partition only, never `erase-flash`** → the pad must come back as the version we wrote. New `opad_update::firmware` (pure decisions) and `daemon/firmware_update.rs`. **B: `GetFirmwareUpdate` returns a `FirmwareOffer` (installed, available, running slot, blockers, consent text, outage seconds) and is side-effect-free, so it is safe to poll; `InstallFirmwareUpdate { confirm }` does it. `UpdateStatus` is unchanged on purpose.** CLI: `opadctl firmware-update [--yes]`. The successful path needs hardware (A.5). |
+| 2026-09-17 | A | W4-1 | `2f46bf4` | Two `windows-latest` jobs, not a cross-compile: `rust-windows` does fmt/clippy/build/test over the workspace **minus `opad-gui`**, and `rust-windows-gui` builds the GUI on its own. **`rust-windows-gui` is red until B lands W0-5** — `opad-gui` depends on `ksni` unconditionally and ksni is Linux-only D-Bus. It is a separate job so it cannot hide regressions in the other eleven crates. Confirmed from here: the core crates cross-check for the target, but the daemon cannot be checked from Linux at all (rusqlite bundled wants `lib.exe`). **No CI job has ever run — there is no remote (A.2).** |
+| 2026-09-17 | A | P3-1 tooling | `1e06f04` | `scripts/latency_row.py` turns an `opadctl latency` run into the finished markdown row: `--reset`, tap, `--stage "C (10 Hz)"`, paste. Refuses to emit a row for a pad with 0 samples, and marks the firmware hash `-dirty` when `firmware/` or `protocol/` is uncommitted. `--self-test` needs no hardware. **The measurements themselves are still the owner's (A.8).** |
 | 2026-09-17 | A | W4-2, W4-2b, W4-3 | `5d07e6e` | Checklists only — **nothing in them has been run**, and the Windows column is left empty rather than inferred from Linux. `testing-checklist.md` gains a Windows column plus WIN-01…08 (including W0-2's deferred two-account pipe check, W1-1's exact Run values, W1-3's and W3-4's acceptance criteria), PKG-01…06 for **B's W2-3** install/uninstall diff, and UPD-01…11 for W4-2b. **Section 7 is blocked on the §U-0.3 signing key** — until it exists every updater fails closed. `latency-testing.md` gains §4b: stages A–C measure on the pad so the host OS does not enter the number; only the evdev host-side half needs a Windows equivalent. Linux must be measured first — the gate is a delta against Stage A. |
-| 2026-09-17 | A | W4-4 | `cf0949d`, `add7459` | `docs/windows-portability.md` rewritten as-built, opening with "none of it has run on Windows". `architecture.md` gains the IPC transport abstraction (§6b) and the pairing model (§6c) plus four decision-matrix rows; `protocol.md` documents `owner_id`, `ClaimOwnership`, `running_partition`, the three bootloader triggers and the `0x10000` → `0x20000` move. README covers Windows install and the SmartScreen warning. **A3 marked superseded** and Appendix B's OTA exclusion marked **partially reversed** in `osupad_remaining_work_v1.md`; the pairing model is **Appendix A1** of `osupad_technical_spec_v1.md`, including the clause that no later task may harden it into enforcement. Also: **W0-5 is already on `v1.0-agy` (`fc7cf7f`)**, so `rust-windows-gui` should go green at the integration merge, not later. |
+| 2026-09-17 | A | W4-4 | `cf0949d`, `add7459` | `docs/windows-portability.md` rewritten as-built, opening with "none of it has run on Windows". `architecture.md` gains the IPC transport abstraction (§6b) and the pairing model (§6c) plus four decision-matrix rows; `protocol.md` documents `owner_id`, `ClaimOwnership`, `running_partition`, the three bootloader triggers and the `0x10000` → `0x20000` move. README covers Windows install and the SmartScreen warning. **A3 marked superseded** and Appendix B's OTA exclusion marked **partially reversed** in `opad_remaining_work_v1.md`; the pairing model is **Appendix A1** of `opad_technical_spec_v1.md`, including the clause that no later task may harden it into enforcement. Also: **W0-5 is already on `v1.0-agy` (`fc7cf7f`)**, so `rust-windows-gui` should go green at the integration merge, not later. |
 | 2026-09-17 | A | integration merge | `6edd7e8` | **`main` now has both columns — Antigravity is unblocked.** `main` fast-forwarded to `v1.0-agy` (`aa3a4b0`), then `v1.0-claude` merged on top. Only three files overlapped: `README.md` and `desktop/Cargo.lock` merged cleanly, and `Cargo.lock` was then **regenerated from scratch** at `1.0.0-rc` rather than hand-merged, so B's `tray-icon`/`winreg`/`rfd` entries and A's are one consistent resolution. The A.7 conflict was two sets of appended rows; **both are kept**. Verified on the merge result: `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`, `cargo test --workspace`, `firmware/test/host/run_tests.sh`, and a full **ESP-IDF v5.5.2 firmware build** (app at `0x20000`, `ota_data` at `0xf000`) — all green. `v1.0-claude` is fast-forwarded to `main`. |
 | 2026-09-17 | B | U-3b GUI | `0a9ac57` | Firmware update panel on Settings beside software updates with explicit consent every time, verbatim `consent_text` modal, blocker rendering, running slot on Device page, and prominent flashing status with recovery.md reference. |
 | 2026-09-17 | B | W2-1 version | `b66ca82` | Derive Inno Setup `MyAppVersion` dynamically from `desktop/Cargo.toml` via ISPP, failing loudly with `#error` on open/parse error instead of defaulting to literal `1.0.0`. |
-| 2026-09-17 | B | W2-1 symlink | `3ef5b3f` | Remove Windows-breaking `osupad.iss` git symlink, retain `installer.iss` as real file, and update §W2-1 reference. |
+| 2026-09-17 | B | W2-1 symlink | `3ef5b3f` | Remove Windows-breaking `opad.iss` git symlink, retain `installer.iss` as real file, and update §W2-1 reference. |
 | 2026-09-17 | B | L-3, T-2 | `98e0f98` | Unified package build script (`scripts/release/build_packages.sh`) producing .deb, .rpm, AppImage, and Windows .exe (when iscc available); bundled tosu v4.26.2, /usr/bin systemd unit templating, and newline-stripped install-origin markers. |
 | 2026-09-17 | B | L-3 verify | `9cfd2b8`, `8c52b08` | Verify .deb and .rpm in clean `debian:latest` and `fedora:latest` Docker containers; fill PKG-01..06 Linux column with container evidence. |
-| 2026-09-17 | A | U-0.3 signing key | `74d8973` | **A.8 settled — the updaters are no longer failing closed.** Keypair generated; the public half is in `osupad_update::verify::MANIFEST_PUBLIC_KEY`, the secret half is at `~/.config/osupad/osupad-manifest.key` (0600, outside the repo, never committed or logged). New bin `osupad-manifest` in `osupad-update` hashes `dist/`, serialises the same `ReleaseManifest` the client parses, signs via the `minisign` CLI and **re-verifies its own output against the compiled-in key**, so an unreadable manifest cannot be published. Tests cover a real signature from a different keypair being rejected (with a positive control under its own key) and a post-signing byte flip. **⚠ The key is stored UNENCRYPTED** (`minisign -G` needs an interactive passphrase; `-W` was used): that is RCE into every user's machine for anyone who reads the file, tolerable only while the repo is private — **re-cut it with a passphrase before publishing**, which also changes the compiled-in public key. **B: `scripts/release/build_release.sh` is yours; it should call `cargo run -p osupad-update --bin osupad-manifest -- --dist dist --base-url <url> --firmware-version <v>` after SHA256SUMS.** Checklist §7's prerequisite is rewritten with the invocation. |
-| 2026-09-17 | A | auto-backup | `94c1058` | **Owner-requested, new.** The daemon writes a §21 `JsonBackup` by itself 20 s after a play session settles into IDLE — `RuntimeEvent::Tick` arms the deadline from the post-play `SyncCompleted`, and a new `RuntimeAction::WriteAutoBackup` does the write. **The 20 s is the P1-3 mechanism, not padding**: IDLE only, re-checked when it fires, and a map starting inside the window cancels the write rather than deferring it. Only a play session's sync arms one (not the 5-minute periodic sync); a *failed* sync still does. `<data>/backups/osupad-backup-<stamp>.json`, atomic temp+rename+fsync like `stage_bytes`, ten newest kept, files we did not write never pruned, every failure logged and swallowed. `ExportBackup` now shares the same builder, so manual and automatic exports cannot diverge. **Touches `gui/src/main.rs` (B's) by one line**: `IpcResponse::Status` gained `last_backup` (RFC 3339, `serde(default)`) and the GUI destructures exhaustively, so it is ignored there — **B, a GUI surface for it is yours if you want one.** `osupadctl status` prints `Last Backup`. Documented in `docs/recovery.md` §5.1, with §7.2 pointing at it. **Not yet exercised against a live daemon** — that needs the pad (A.5). |
+| 2026-09-17 | A | U-0.3 signing key | `74d8973` | **A.8 settled — the updaters are no longer failing closed.** Keypair generated; the public half is in `opad_update::verify::MANIFEST_PUBLIC_KEY`, the secret half is at `~/.config/opad/opad-manifest.key` (0600, outside the repo, never committed or logged). New bin `opad-manifest` in `opad-update` hashes `dist/`, serialises the same `ReleaseManifest` the client parses, signs via the `minisign` CLI and **re-verifies its own output against the compiled-in key**, so an unreadable manifest cannot be published. Tests cover a real signature from a different keypair being rejected (with a positive control under its own key) and a post-signing byte flip. **⚠ The key is stored UNENCRYPTED** (`minisign -G` needs an interactive passphrase; `-W` was used): that is RCE into every user's machine for anyone who reads the file, tolerable only while the repo is private — **re-cut it with a passphrase before publishing**, which also changes the compiled-in public key. **B: `scripts/release/build_release.sh` is yours; it should call `cargo run -p opad-update --bin opad-manifest -- --dist dist --base-url <url> --firmware-version <v>` after SHA256SUMS.** Checklist §7's prerequisite is rewritten with the invocation. |
+| 2026-09-17 | A | auto-backup | `94c1058` | **Owner-requested, new.** The daemon writes a §21 `JsonBackup` by itself 20 s after a play session settles into IDLE — `RuntimeEvent::Tick` arms the deadline from the post-play `SyncCompleted`, and a new `RuntimeAction::WriteAutoBackup` does the write. **The 20 s is the P1-3 mechanism, not padding**: IDLE only, re-checked when it fires, and a map starting inside the window cancels the write rather than deferring it. Only a play session's sync arms one (not the 5-minute periodic sync); a *failed* sync still does. `<data>/backups/opad-backup-<stamp>.json`, atomic temp+rename+fsync like `stage_bytes`, ten newest kept, files we did not write never pruned, every failure logged and swallowed. `ExportBackup` now shares the same builder, so manual and automatic exports cannot diverge. **Touches `gui/src/main.rs` (B's) by one line**: `IpcResponse::Status` gained `last_backup` (RFC 3339, `serde(default)`) and the GUI destructures exhaustively, so it is ignored there — **B, a GUI surface for it is yours if you want one.** `opadctl status` prints `Last Backup`. Documented in `docs/recovery.md` §5.1, with §7.2 pointing at it. **Not yet exercised against a live daemon** — that needs the pad (A.5). |
 | 2026-09-17 | C | U-3a, W3-2, U-3b hardware | `4dcd684`, `e1f3e58` | **Column C's hardware acceptance is largely done** — owner authorised the pad (A.5). `flash --full` put the two-slot table on the real pad and **the counters survived** (3745 / 20594, `Running Slot: ota_0`): `nvs` at `0x9000`/`0x6000` is byte-identical to the old `SINGLE_APP_LARGE` layout, so it was never in the written range. Four of five W3-2 checks pass (re-claim, wiped-`app_state` takeover including the `aaf6ca9` regression, claim-during-PLAYING refused **with a control proving it was the state guard**, all-zero claim refused); the fifth needs a physical cable replug. U-3b's happy path ran end to end against a signed, locally served manifest: 1.0.0 → 1.0.1, counters intact (**UPD-06 PASS**), pad then returned to the committed 1.0.0. Full results in `docs/testing-checklist.md` §9. **Observability gap recorded, not fixed:** the claim path emits only `ESP_LOGx`, which the pad does not forward, and nothing host-side reads `DeviceStatus.nvs_writes` — the checks were run by reading `HelloAck.owner_id` back instead. |
-| 2026-09-17 | A | three hardware-found fixes | `4dcd684` | Found by running the checklist, invisible to the tests. **(1)** The first update check fired at 90 s **+ a full 15-minute tick**, not 90 s — the loop's first statement was `sleep(TICK)`; now a `tokio::interval`, whose first tick is immediate. **(2)** A manifest missing one component threw the whole manifest away, because `check_app`'s error propagated out of `tick()` — and the §U-3b firmware offer is read from that same stored manifest, so a release with no app artifact for your platform silently disabled *firmware* updates. Now reported and carried on from, like the tosu arm above it. **(3)** `osupadctl status` never showed a pending takeover, so a headless install saw a connected pad that silently never synced; it now prints the warning and both counter pairs. |
-| 2026-09-17 | A | W4-1 actually run | `1c0fb3f`, `67f00fc`, `cd33dc4`, `9c8c5fc` | **The `rust-windows` job passes on a real windows-msvc host — fmt, clippy `-D warnings`, build and the full test suite over all eleven non-GUI crates.** First time any CI job in this repo has executed anywhere (A.2). Run by hand in a Win 11 Pro 25H2 VM (Rust 1.98.1 MSVC, VS2022 BuildTools 14.44). **Three defects had to be fixed first, and the first one broke Linux CI too:** (1) **`protoc` was installed by no job** — `osupad-protocol`'s build.rs needs it on every platform and prost-build stopped vendoring it in 0.11, so the *first crate in the graph* failed in all three Rust jobs; (2) MSVC strips the quotes from `-DX="..."`, so LVGL's `#include LV_CONF_KCONFIG_EXTERNAL_INCLUDE` expanded bare and killed every `.c` file with `error C2006`; (3) `canonicalize()`'s `\\?\` prefix made `cc` emit source paths like `'\\lv_group.c'`. Full detail in `docs/testing-checklist.md` §10. |
-| 2026-09-17 | A→B | `osupad-gui` is red on Windows | — | **B: four real compile errors, your files, not touched by me (A.3).** `single_instance.rs:111` `E0425` `CreateMutexW` missing from `windows_sys::Win32::System::Threading` (feature flag or moved path); `single_instance.rs:86` `E0308` `if self.0 != 0` — it is a `*mut c_void`, not a `usize`, so compare with `std::ptr::null_mut()`; `tray.rs:341` unused import `TrayIcon`, fatal under `-D warnings`; `main.rs:358` `E0560` `iced::window::settings::PlatformSpecific` has no `application_id` on Windows — that field is Linux-only and needs a `cfg`. **Also blocking you and everyone else:** `osupad-ui-preview` (which `osupad-gui` depends on) cannot build from a clean checkout, because `firmware/sdkconfig` and `firmware/managed_components/lvgl__lvgl` are both **gitignored** — §10.3, owner decision. |
+| 2026-09-17 | A | three hardware-found fixes | `4dcd684` | Found by running the checklist, invisible to the tests. **(1)** The first update check fired at 90 s **+ a full 15-minute tick**, not 90 s — the loop's first statement was `sleep(TICK)`; now a `tokio::interval`, whose first tick is immediate. **(2)** A manifest missing one component threw the whole manifest away, because `check_app`'s error propagated out of `tick()` — and the §U-3b firmware offer is read from that same stored manifest, so a release with no app artifact for your platform silently disabled *firmware* updates. Now reported and carried on from, like the tosu arm above it. **(3)** `opadctl status` never showed a pending takeover, so a headless install saw a connected pad that silently never synced; it now prints the warning and both counter pairs. |
+| 2026-09-17 | A | W4-1 actually run | `1c0fb3f`, `67f00fc`, `cd33dc4`, `9c8c5fc` | **The `rust-windows` job passes on a real windows-msvc host — fmt, clippy `-D warnings`, build and the full test suite over all eleven non-GUI crates.** First time any CI job in this repo has executed anywhere (A.2). Run by hand in a Win 11 Pro 25H2 VM (Rust 1.98.1 MSVC, VS2022 BuildTools 14.44). **Three defects had to be fixed first, and the first one broke Linux CI too:** (1) **`protoc` was installed by no job** — `opad-protocol`'s build.rs needs it on every platform and prost-build stopped vendoring it in 0.11, so the *first crate in the graph* failed in all three Rust jobs; (2) MSVC strips the quotes from `-DX="..."`, so LVGL's `#include LV_CONF_KCONFIG_EXTERNAL_INCLUDE` expanded bare and killed every `.c` file with `error C2006`; (3) `canonicalize()`'s `\\?\` prefix made `cc` emit source paths like `'\\lv_group.c'`. Full detail in `docs/testing-checklist.md` §10. |
+| 2026-09-17 | A→B | `opad-gui` is red on Windows | — | **B: four real compile errors, your files, not touched by me (A.3).** `single_instance.rs:111` `E0425` `CreateMutexW` missing from `windows_sys::Win32::System::Threading` (feature flag or moved path); `single_instance.rs:86` `E0308` `if self.0 != 0` — it is a `*mut c_void`, not a `usize`, so compare with `std::ptr::null_mut()`; `tray.rs:341` unused import `TrayIcon`, fatal under `-D warnings`; `main.rs:358` `E0560` `iced::window::settings::PlatformSpecific` has no `application_id` on Windows — that field is Linux-only and needs a `cfg`. **Also blocking you and everyone else:** `opad-ui-preview` (which `opad-gui` depends on) cannot build from a clean checkout, because `firmware/sdkconfig` and `firmware/managed_components/lvgl__lvgl` are both **gitignored** — §10.3, owner decision. |
 | 2026-09-17 | A | W4-2 Windows run | `f1433a5` | **Windows is no longer theoretical.** Built a Win 11 Pro 25H2 VM (UEFI+SecureBoot+TPM 2.0, unattended, two local accounts for WIN-03) and passed the pad through with the two `<hostdev>` entries. **PASS: WIN-01** (HID + inbox `usbser.sys`, no prompt, on a machine that never saw the installer — the §0 invariant), **WIN-02**, **WIN-03** (`tester2` gets access-denied on the pipe, the W0-2 deferral closed), **WIN-05** (0.75 s reconnect), **WIN-08** (COM15). **WIN-06 FAILS for an environmental reason**: `startupPolicy='optional'` covers VM start, *not* hot-attach, so when the pad flipped to `303a:1001` libvirt handed it back to the host mid-flash — needs bare metal or a PCI-passed USB controller, and the controller here also carries the webcam/Bluetooth so it was not taken. **WIN-04/WIN-07 blocked on B's GUI.** Also verified: **W0-4 paths on Windows**, and **W3-3 ownership across two machines on real hardware** — the Windows install saw a Linux-owned pad, paused sync and wrote nothing. **W32-01's replug half is now done** too: handing the pad to the VM and back is a real re-enumeration. `docs/testing-checklist.md` §§9–11. |
-| 2026-09-17 | A | full integration | `482a51b` | **`main`, `v1.0-claude` and `v1.0-agy` are all at this commit** — both columns merged, both worktrees clean, one starting point for whatever comes next. Only three files overlapped; `gui/src/main.rs` and `testing-checklist.md` auto-merged (B's rewrite kept the `last_backup: _,` line the auto-backup needs, and the checklist now carries B's Linux PKG column beside A's §§9–11), and the A.7 conflict was two sets of appended rows, both kept. Green on the result: `cargo fmt --check`, `clippy --workspace --all-targets -D warnings`, `cargo test --workspace` (226), firmware host tests, full ESP-IDF build. **Unchanged by the merge: `osupad-gui` still does not compile for windows-msvc** (§10.2) — B's four errors, and they block WIN-04, WIN-07 and PKG-Windows. |
-| 2026-09-18 | — | one branch, one remote | `39f9965` | **Owner decision.** `v1.0-agy` and `v1.0-claude` are deleted and the `../osupad-agy` worktree removed — they were three labels on one commit after `482a51b`, nothing was unmerged, and nothing was lost (that worktree held only 18 GB of regenerable build artifacts). **`main` is now the only branch and this is the only checkout**; A.1 says not to recreate the per-agent branches. `origin` added: `https://git.gferreiro.com/GFerreiroS/OPad.git`, a **private** Gitea with Actions on a Proxmox CT runner. **W2-2 stays deferred** — SignPath needs a *public* repo. Expect the first CI run to be red for the reason in §10.3 (`osupad-ui-preview` cannot build from a clean checkout), and the two `windows-latest` jobs to queue against a Linux-only runner until they are gated. |
-| 2026-09-18 | B | Windows GUI fixes & manifest hook | `4b74ac0` | **All four Windows compile errors in `osupad-gui` fixed (§10.2).** (1) Added `Win32_Security` feature to `windows-sys` in `desktop/gui/Cargo.toml` (`CreateMutexW` requirement); (2) Checked `HANDLE` against `.is_null()` instead of `0` in `single_instance.rs`; (3) Dropped unused `TrayIcon` import in `tray.rs`; (4) Guarded `PlatformSpecific.application_id` with `#[cfg(target_os = "linux")]` in `main.rs`. Added step 4 to `scripts/release/build_release.sh` to generate and sign `osupad-manifest.json` with the secret key when present (§U-0.3). Verified: `cargo fmt`, `clippy -D warnings`, `cargo test` (226 passed), package builds (`.deb`, `.rpm`, `AppImage`) and signed manifest generation. |
-| 2026-09-19 | B | CI stub, tosu clippy, Inno installer | `d078edd` | **Clean-checkout CI blocker resolved (§10.3) and Windows installer verified.** Added `csrc/preview_stub.c` and updated `build.rs` so `osupad-ui-preview` compiles a headless fallback with valid default layouts and layout validation when managed LVGL sources are missing, allowing clean checkouts to pass `cargo build`, `clippy -D warnings`, and `cargo test --workspace` (230 passed) without requiring an ESP-IDF step. Fixed `osupad-tosu` `clippy::type_complexity` with `LogLineCallback`. Verified Windows installer compilation with `ISCC.exe` producing `build/installer/osupad-setup.exe` (40.6 MB). Updated `docs/testing-checklist.md` with automated test verification for UPD-01 through UPD-05, UPD-07, UPD-08, and UPD-10. |
-| 2026-09-19 | B | Gitea CI on Proxmox CT & VM | — | **CI workflow adapted for Gitea Actions with Proxmox CT (Linux) & VM (Windows) runners.** Kept Windows runner targets native on `windows-latest` for the Proxmox Windows VM; added fallback `sudo` detection and `DEBIAN_FRONTEND=noninteractive` for minimal CT environments; added `continue-on-error: true` on `rust-cache` to tolerate unconfigured cache servers; added `cargo test -p osupad-gui` to the Windows GUI CI job. |
+| 2026-09-17 | A | full integration | `482a51b` | **`main`, `v1.0-claude` and `v1.0-agy` are all at this commit** — both columns merged, both worktrees clean, one starting point for whatever comes next. Only three files overlapped; `gui/src/main.rs` and `testing-checklist.md` auto-merged (B's rewrite kept the `last_backup: _,` line the auto-backup needs, and the checklist now carries B's Linux PKG column beside A's §§9–11), and the A.7 conflict was two sets of appended rows, both kept. Green on the result: `cargo fmt --check`, `clippy --workspace --all-targets -D warnings`, `cargo test --workspace` (226), firmware host tests, full ESP-IDF build. **Unchanged by the merge: `opad-gui` still does not compile for windows-msvc** (§10.2) — B's four errors, and they block WIN-04, WIN-07 and PKG-Windows. |
+| 2026-09-18 | — | one branch, one remote | `39f9965` | **Owner decision.** `v1.0-agy` and `v1.0-claude` are deleted and the `../opad-agy` worktree removed — they were three labels on one commit after `482a51b`, nothing was unmerged, and nothing was lost (that worktree held only 18 GB of regenerable build artifacts). **`main` is now the only branch and this is the only checkout**; A.1 says not to recreate the per-agent branches. `origin` added: `https://git.gferreiro.com/GFerreiroS/OPad.git`, a **private** Gitea with Actions on a Proxmox CT runner. **W2-2 stays deferred** — SignPath needs a *public* repo. Expect the first CI run to be red for the reason in §10.3 (`opad-ui-preview` cannot build from a clean checkout), and the two `windows-latest` jobs to queue against a Linux-only runner until they are gated. |
+| 2026-09-18 | B | Windows GUI fixes & manifest hook | `4b74ac0` | **All four Windows compile errors in `opad-gui` fixed (§10.2).** (1) Added `Win32_Security` feature to `windows-sys` in `desktop/gui/Cargo.toml` (`CreateMutexW` requirement); (2) Checked `HANDLE` against `.is_null()` instead of `0` in `single_instance.rs`; (3) Dropped unused `TrayIcon` import in `tray.rs`; (4) Guarded `PlatformSpecific.application_id` with `#[cfg(target_os = "linux")]` in `main.rs`. Added step 4 to `scripts/release/build_release.sh` to generate and sign `opad-manifest.json` with the secret key when present (§U-0.3). Verified: `cargo fmt`, `clippy -D warnings`, `cargo test` (226 passed), package builds (`.deb`, `.rpm`, `AppImage`) and signed manifest generation. |
+| 2026-09-19 | B | CI stub, tosu clippy, Inno installer | `d078edd` | **Clean-checkout CI blocker resolved (§10.3) and Windows installer verified.** Added `csrc/preview_stub.c` and updated `build.rs` so `opad-ui-preview` compiles a headless fallback with valid default layouts and layout validation when managed LVGL sources are missing, allowing clean checkouts to pass `cargo build`, `clippy -D warnings`, and `cargo test --workspace` (230 passed) without requiring an ESP-IDF step. Fixed `opad-tosu` `clippy::type_complexity` with `LogLineCallback`. Verified Windows installer compilation with `ISCC.exe` producing `build/installer/opad-setup.exe` (40.6 MB). Updated `docs/testing-checklist.md` with automated test verification for UPD-01 through UPD-05, UPD-07, UPD-08, and UPD-10. |
+| 2026-09-19 | B | Gitea CI on Proxmox CT & VM | — | **CI workflow adapted for Gitea Actions with Proxmox CT (Linux) & VM (Windows) runners.** Kept Windows runner targets native on `windows-latest` for the Proxmox Windows VM; added fallback `sudo` detection and `DEBIAN_FRONTEND=noninteractive` for minimal CT environments; added `continue-on-error: true` on `rust-cache` to tolerate unconfigured cache servers; added `cargo test -p opad-gui` to the Windows GUI CI job. |
 
 ### A.8. Open owner decisions
 
@@ -937,5 +937,5 @@ These are not for an agent to settle:
 
 - **Publish the repository?** Required before SignPath free code signing (W2-2).
 - ~~**`v1.0.0` tag.**~~ **Settled 2026-09-17:** the owner approved it. The local tag is deleted and the workspace reads `1.0.0-rc`; re-cut `v1.0.0` only when W4 passes.
-- ~~**Update signing key.**~~ **Settled 2026-09-17:** the owner delegated it. The keypair exists; the public half is in `osupad_update::verify::MANIFEST_PUBLIC_KEY` and the secret half is at `~/.config/osupad/osupad-manifest.key`, outside the repository and never committed. `osupad-manifest` (a bin in `osupad-update`) builds and signs the manifest. **One caveat, deliberately left open:** the key is stored **unencrypted** — `minisign -G` requires an interactive passphrase, so it was cut with `-W`. Anyone who reads that one file can publish a manifest the app installs, i.e. RCE into every user's machine. Acceptable only while the repository is private and has no users; **re-cut it with a passphrase before publishing**, which also changes the compiled-in public key.
+- ~~**Update signing key.**~~ **Settled 2026-09-17:** the owner delegated it. The keypair exists; the public half is in `opad_update::verify::MANIFEST_PUBLIC_KEY` and the secret half is at `~/.config/opad/opad-manifest.key`, outside the repository and never committed. `opad-manifest` (a bin in `opad-update`) builds and signs the manifest. **One caveat, deliberately left open:** the key is stored **unencrypted** — `minisign -G` requires an interactive passphrase, so it was cut with `-W`. Anyone who reads that one file can publish a manifest the app installs, i.e. RCE into every user's machine. Acceptable only while the repository is private and has no users; **re-cut it with a passphrase before publishing**, which also changes the compiled-in public key.
 - **Latency table** (`docs/latency-testing.md`, P3-1) — hardware runs, owner only. Still the last open v1 item.

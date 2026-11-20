@@ -44,7 +44,7 @@ rest capture; see its "Superseded" table.
   (`gpio_isr_handler` in `firmware/main/input/keypad.c`), yet a sensor output
   near mid-rail can fire it continuously on core 0, the key core. To fix
   first, whatever else we decide (§9, step 1).
-- A measurement build: `CONFIG_OSUPAD_HALL_BENCH` streams both sensors as 1 ms
+- A measurement build: `CONFIG_OPAD_HALL_BENCH` streams both sensors as 1 ms
   averages plus per-second spread (`firmware/main/diag/hall_bench.c`,
   `scripts/hall_bench.py`); it also draws both sensors live on the LCD
   (`hall_bench_show_ui`). First V1.1 readings in §10b; no recorded traces
@@ -65,7 +65,7 @@ rest capture; see its "Superseded" table.
 ## 2. Firmware architecture
 
 One firmware for both modules: the module is detected at boot and picks the
-input backend. The spec's Kconfig switch (`OSUPAD_INPUT_DIGITAL/HALL`,
+input backend. The spec's Kconfig switch (`OPAD_INPUT_DIGITAL/HALL`,
 v2-rapid-trigger §V2-1) does not fit swappable modules on one cable.
 
 ```text
@@ -183,7 +183,7 @@ traces.
 
 | Change | Old app, new pad | New app, old pad |
 |---|---|---|
-| `HelloAck.input_module` (the existing `InputModule` enum, `protocol/osupad.proto`) and `HelloAck.rapid_trigger` capability | ignored | absent → no RT UI |
+| `HelloAck.input_module` (the existing `InputModule` enum, `protocol/opad.proto`) and `HelloAck.rapid_trigger` capability | ignored | absent → no RT UI |
 | `ConfigPayload`: per key actuation, press/release sensitivity, dead zones, continuous (0 = keep current, like the swipe fields) | pad keeps its own | not sent |
 | `DeviceStatus.calibrated` | ignored | absent |
 | Calibration start / step / result messages | never sent | not offered |
@@ -266,7 +266,7 @@ by hand to confirm.
 DBZ top view (datasheet Figure 4-1) has pin 1 top-left, pin 2 bottom-left,
 pin 3 right; turned so pins 1–2 are on top, pin 1 is on the right. The
 footprint in `hardware/pcb/V1/scripts/he_board.py` (`FOOTPRINTS[FP_SOT23]`)
-and `scripts/gen_library.py` (`lib/osupad.pretty/SOT-23.kicad_mod`) puts
+and `scripts/gen_library.py` (`lib/opad.pretty/SOT-23.kicad_mod`) puts
 pin 1 on the left, i.e. the mirror image. The bottom-side transform then
 mirrors it correctly, so the copper ends up with top-side chirality: in the
 KiCad board (pcbnew API) U1 pad 1 (3V3) is at x = 129.425 and pad 2 (IN1)

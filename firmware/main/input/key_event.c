@@ -19,17 +19,17 @@ static volatile uint8_t s_game_keys = 0x03;
 
 void key_event_init(void)
 {
-#if defined(CONFIG_OSUPAD_BENCH_DEBUG_GPIO) || defined(OSUPAD_BENCH_DEBUG_GPIO)
+#if defined(CONFIG_OPAD_BENCH_DEBUG_GPIO) || defined(OPAD_BENCH_DEBUG_GPIO)
     gpio_config_t dbg_io_conf = {
-        .pin_bit_mask = (1ULL << CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM),
+        .pin_bit_mask = (1ULL << CONFIG_OPAD_BENCH_DEBUG_GPIO_NUM),
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_ENABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
     gpio_config(&dbg_io_conf);
-    gpio_set_level(CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM, 0);
-    ESP_LOGI("key_event", "Debug GPIO initialized on pin %d", CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM);
+    gpio_set_level(CONFIG_OPAD_BENCH_DEBUG_GPIO_NUM, 0);
+    ESP_LOGI("key_event", "Debug GPIO initialized on pin %d", CONFIG_OPAD_BENCH_DEBUG_GPIO_NUM);
 #endif
 }
 
@@ -70,8 +70,8 @@ void IRAM_ATTR key_event_report(uint8_t key_index, bool pressed, int64_t edge_us
         // Resent by the HID layer, which records the latency then
         latency_stats_record_deferred();
     }
-#if defined(CONFIG_OSUPAD_BENCH_DEBUG_GPIO) || defined(OSUPAD_BENCH_DEBUG_GPIO)
-    gpio_set_level(CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM, pressed ? 1 : 0);
+#if defined(CONFIG_OPAD_BENCH_DEBUG_GPIO) || defined(OPAD_BENCH_DEBUG_GPIO)
+    gpio_set_level(CONFIG_OPAD_BENCH_DEBUG_GPIO_NUM, pressed ? 1 : 0);
 #endif
     if (pressed) {
         ui_notify_activity();

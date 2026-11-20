@@ -10,10 +10,10 @@ The system is separated into two strictly decoupled layers:
    - Dedicated hardware GPIO interrupts waking the highest-priority input task on Core 0.
    - Operates fully independently from display, host software, CDC telemetry, tosu, or persistence.
 2. **Auxiliary Telemetry & Management Subsystem (Host Daemon + Display)**:
-   - Single-owner headless daemon (`osupad-daemon`) handling SQLite storage, tosu WebSocket connection, USB CDC protocol framing, and background synchronization.
-   - Desktop application (`osupad-gui`) hosting the system tray, configuration controls, layout designer, and live diagnostics.
-   - Command-line tool (`osupadctl`) for scripting, diagnostics, backups, and native USB firmware flashing.
-   - Inter-process communication exclusively through local Unix domain socket IPC (`osupad-ipc`).
+   - Single-owner headless daemon (`opad-daemon`) handling SQLite storage, tosu WebSocket connection, USB CDC protocol framing, and background synchronization.
+   - Desktop application (`opad-gui`) hosting the system tray, configuration controls, layout designer, and live diagnostics.
+   - Command-line tool (`opadctl`) for scripting, diagnostics, backups, and native USB firmware flashing.
+   - Inter-process communication exclusively through local Unix domain socket IPC (`opad-ipc`).
 
 ---
 
@@ -67,8 +67,8 @@ The telemetry display is driven by LVGL v8 via Espressif's `esp_lvgl_port` compo
 ## 5. Layout Designer & Data-Source Pipeline (A2)
 
 The display interface is completely customizable through the PC layout designer:
-1. **Layout Designer**: Built into `osupad-gui` using `iced`. Users can position labels, gauge arcs, hit counters, UR bars, and telemetry widgets on a 240x320 canvas.
-2. **Preview Engine**: Powered by `osupad-ui-preview`, an embedded host-side C renderer mirroring firmware draw calls with 100% pixel-level parity.
+1. **Layout Designer**: Built into `opad-gui` using `iced`. Users can position labels, gauge arcs, hit counters, UR bars, and telemetry widgets on a 240x320 canvas.
+2. **Preview Engine**: Powered by `opad-ui-preview`, an embedded host-side C renderer mirroring firmware draw calls with 100% pixel-level parity.
 3. **Data Sources**: Data sources are numbered `0..95` (`firmware/main/ui/core/ui_ids.h`, listed in `docs/protocol.md`). Sources include:
    - Live gameplay: Current PP, Combo, Accuracy, beatmap BPM, Map Progress, Star Rating, Hits (300/100/50/Miss), Key 1/2 Session & Map counts.
    - Player tap rate in KPM (keys per minute, not the beatmap BPM; the designer can show any rate in KPS per widget): current/average/peak per attempt, combined and per key, plus averages and peaks over a configurable history period. Computed by the daemon; the pad only displays them.
@@ -80,11 +80,11 @@ The display interface is completely customizable through the PC layout designer:
 
 ## 6. System Tray & Desktop Integration (A5)
 
-The system tray icon is hosted by `osupad-gui` rather than the background daemon:
-- **Headless Daemon**: `osupad-daemon` runs as a lightweight `systemd --user` service with zero X11, Wayland, DBus UI, or graphics dependencies.
+The system tray icon is hosted by `opad-gui` rather than the background daemon:
+- **Headless Daemon**: `opad-daemon` runs as a lightweight `systemd --user` service with zero X11, Wayland, DBus UI, or graphics dependencies.
 - **Desktop StatusNotifierItem**: On Linux the GUI implements the modern Freedesktop StatusNotifierItem protocol via `ksni` with XEmbed fallback, integrating smoothly into GNOME (via AppIndicator), KDE Plasma, Sway, and Waybar. On Windows the same tray is `tray-icon` over `Shell_NotifyIcon`, behind the same `cfg` split.
-- **Single Instance Control**: `osupad-gui` enforces single-instance execution via a dedicated Unix domain socket (`osupad-gui.sock`), or a named object on Windows. Launching a second instance sends a focus message to the existing window and exits cleanly.
-- **Autostart**: On Linux the GUI installs `osupad-gui.desktop` to `~/.config/autostart/` with the `--minimized` flag. On Windows it writes `HKCU\...\Run` instead. Either way, startup is silent and straight to the tray.
+- **Single Instance Control**: `opad-gui` enforces single-instance execution via a dedicated Unix domain socket (`opad-gui.sock`), or a named object on Windows. Launching a second instance sends a focus message to the existing window and exits cleanly.
+- **Autostart**: On Linux the GUI installs `opad-gui.desktop` to `~/.config/autostart/` with the `--minimized` flag. On Windows it writes `HKCU\...\Run` instead. Either way, startup is silent and straight to the tray.
 
 ---
 
@@ -107,8 +107,8 @@ a trait or a runtime choice:
 | `IpcServerStream` | `UnixStream` | `NamedPipeServer` |
 | `IpcListener` | wraps `UnixListener` | one pipe instance per accept |
 
-`$XDG_RUNTIME_DIR/osupad/daemon.sock` on Unix,
-`\\.\pipe\osupad-ipc-<user SID>` on Windows. The address is per-user on both,
+`$XDG_RUNTIME_DIR/opad/daemon.sock` on Unix,
+`\\.\pipe\opad-ipc-<user SID>` on Windows. The address is per-user on both,
 and so is the access control: `0700` plus a peer check on the socket, a
 protected DACL granting only SYSTEM and the calling user on the pipe. If the
 Windows side cannot determine the SID it refuses to listen rather than create an
@@ -171,13 +171,13 @@ The daemon tracks osu!lazer gameplay status through tosu's WebSocket API and adv
 
 | Topic | Decision | Technical Rationale |
 |---|---|---|
-| **Switch Pinout** | Default `GPIO 14` (Key 1), `GPIO 9` (Key 2); configurable | Defaults are on Header P2 (pins 11 & 12) next to GND (pin 13). Other pins are chosen from a fixed list of header GPIOs (`config_validate.c`, `KEY_PINS` in `osupad-model`) that avoids strapping pins, USB, UART0, the I2C bus, and `GPIO 17` (board pull-down). |
+| **Switch Pinout** | Default `GPIO 14` (Key 1), `GPIO 9` (Key 2); configurable | Defaults are on Header P2 (pins 11 & 12) next to GND (pin 13). Other pins are chosen from a fixed list of header GPIOs (`config_validate.c`, `KEY_PINS` in `opad-model`) that avoids strapping pins, USB, UART0, the I2C bus, and `GPIO 17` (board pull-down). |
 | **Graphics Engine** | LVGL v8 (`esp_lvgl_port`) | Provides anti-aliased font rendering, robust object hierarchy, and native FreeRTOS SPI DMA task synchronization on Core 1. |
 | **Core Affinity** | Core 0: Input & HID; Core 1: Display & Protocol | Guarantees hard physical isolation so display rendering and serial framing cannot interrupt or jitter the 1000 Hz USB HID loop. |
 | **Gameplay Hz** | Default 10 Hz (configurable 1–60 Hz) | Eliminates bus contention on Core 1 during dense mania/standard maps while maintaining fluid visual feedback. |
-| **Firmware Flashing** | Native `espflash` integration in `osupadctl` and the daemon | Enables single-binary flashing over USB CDC / ROM DFU without requiring Python, esptool, or external dependencies. One engine (`osupad_device::flash`) serves both, so the sequence that can stop the pad being a keyboard exists once. |
+| **Firmware Flashing** | Native `espflash` integration in `opadctl` and the daemon | Enables single-binary flashing over USB CDC / ROM DFU without requiring Python, esptool, or external dependencies. One engine (`opad_device::flash`) serves both, so the sequence that can stop the pad being a keyboard exists once. |
 | **Partition Layout** | Two 2 MB OTA slots, `nvs` unmoved at `0x9000` (§U-3a) | The table at `0x8000` cannot be rewritten by an OTA update; it needs a serial reflash of every pad in the field. Done while the field is empty, and before the OTA code that will need it. |
 | **Firmware Updates** | Host-driven flash of the app partition only, explicit consent every time (§U-3b) | A firmware update is the one operation that can stop the pad being a keyboard. Counters are synced to the host first, the image is verified against the signed manifest *and* its own chip ID, and `erase-flash` is never used because that is where the counters live. |
 | **Device Pairing** | Ownership claim in NVS, no enforcement (§W3) | Protects counter integrity from a pad changing hands silently. Deliberately not DRM: anything baked into firmware plus app is extractable from either, so pretending otherwise would buy nothing and cost the user their own hardware. |
-| **USB Serial** | Runtime MAC-derived (`OSUPAD-<MAC>`) | Ensures multiple connected pads get unique `/dev/serial/by-id/` entries with zero serial collisions. |
+| **USB Serial** | Runtime MAC-derived (`OPAD-<MAC>`) | Ensures multiple connected pads get unique `/dev/serial/by-id/` entries with zero serial collisions. |
 

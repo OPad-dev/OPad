@@ -223,7 +223,7 @@ struct Handshake {
     /// None = a Hello is due now. Never a backdated Instant: on Windows
     /// `Instant::now() - d` panics during the first `d` after boot.
     last_hello: Option<Instant>,
-    /// The last Hello was answered with an OSUPAD HelloAck
+    /// The last Hello was answered with an OPAD HelloAck
     answered: bool,
     /// The pad's framing, from its first HelloAck; frames go out in it and
     /// only it is parsed. Unknown until the first answer.
@@ -265,7 +265,7 @@ impl Handshake {
         self.last_hello = None;
     }
 
-    /// Records an OSUPAD HelloAck that arrived in `framing`. Returns true when
+    /// Records an OPAD HelloAck that arrived in `framing`. Returns true when
     /// this answer is what taught the pad's framing.
     fn answered_in(&mut self, framing: Framing) -> bool {
         self.answered = true;
@@ -1549,7 +1549,7 @@ impl ProbeHistory {
 }
 
 /// Tier 1, then tier 2: ports that might be a pad are opened and sent Hello,
-/// and only one that answers with an OSUPAD- device_id is returned.
+/// and only one that answers with an OPAD- device_id is returned.
 fn discover_port(probes: &mut ProbeHistory) -> Option<String> {
     let ports = serialport::available_ports().ok()?;
     // Forget ports that went away, so a replugged one is probed afresh
@@ -1688,7 +1688,7 @@ fn hello_message() -> HostToDevice {
 /// bootloader port" can be someone else's dev board.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PadLocation {
-    /// Chip MAC as 12 uppercase hex digits: the app's serial is OSUPAD-<MAC>,
+    /// Chip MAC as 12 uppercase hex digits: the app's serial is OPAD-<MAC>,
     /// the ROM's is the same MAC written XX:XX:XX:XX:XX:XX
     pub mac: Option<String>,
     /// Physical USB path (Linux sysfs, e.g. "1-3"); the bootloader re-enumerates
@@ -1755,8 +1755,8 @@ pub fn locate_pad(app_port: &str, device_id: Option<&str>) -> PadLocation {
     }
 }
 
-/// The pad's MAC from its `OSUPAD-` USB serial, else from the HelloAck
-/// `device_id`. A serial that is not an `OSUPAD-` string (Windows can report a
+/// The pad's MAC from its `OPAD-` USB serial, else from the HelloAck
+/// `device_id`. A serial that is not an `OPAD-` string (Windows can report a
 /// composite-device instance id) does not hide the `device_id`.
 fn pad_mac(serial: Option<&str>, device_id: Option<&str>) -> Option<String> {
     let mac_of = |id: Option<&str>| {

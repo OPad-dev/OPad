@@ -46,8 +46,8 @@ sys.path.insert(0, os.path.join(V1, "scripts"))
 import generate_boards as g1  # noqa: E402  (V1 helpers: board builder, project files)
 
 LIB = os.path.join(V2, "lib")
-FP_LIB = os.path.join(LIB, "osupad.pretty")
-SYM_LIB = os.path.join(LIB, "osupad.kicad_sym")
+FP_LIB = os.path.join(LIB, "opad.pretty")
+SYM_LIB = os.path.join(LIB, "opad.kicad_sym")
 PROJECT = "he_input_v2"
 TITLE = "OPad Hall Effect Input Module V2"
 REV = "V2.0"
@@ -88,7 +88,7 @@ def wqfn16_footprint():
         pads.append((str(9 + i), across, y, pl, pw))
     for i, x in enumerate(reversed(offs)):           # 13-16 top side, right to left
         pads.append((str(13 + i), x, -across, pw, pl))
-    out = ['(footprint "WQFN-16-1EP_3x3mm_P0.5mm_EP1.68mm"\n\t(version 20240108)\n\t(generator "osupad")\n'
+    out = ['(footprint "WQFN-16-1EP_3x3mm_P0.5mm_EP1.68mm"\n\t(version 20240108)\n\t(generator "opad")\n'
            '\t(generator_version "8.0")\n\t(layer "F.Cu")\n'
            '\t(descr "TI RTE0016C WQFN-16 3x3 mm, 0.5 mm pitch, 1.68 mm exposed pad (ADS7038 datasheet SBAS979C)")\n'
            '\t(tags "WQFN QFN 16 RTE0016C")\n'
@@ -119,7 +119,7 @@ def wqfn16_footprint():
 
 def bead_footprint():
     """0603 ferrite bead: the 0603 resistor land pattern under its own name."""
-    text = open(os.path.join(V1, "lib", "osupad.pretty", "R_0603_1608Metric.kicad_mod")).read()
+    text = open(os.path.join(V1, "lib", "opad.pretty", "R_0603_1608Metric.kicad_mod")).read()
     text = text.replace('(footprint "R_0603_1608Metric"', '(footprint "L_0603_1608Metric"', 1)
     text = text.replace('"R_0603_1608Metric"', '"L_0603_1608Metric"')
     text = re.sub(r'\(descr "[^"]*"\)', '(descr "Ferrite bead / inductor, 0603 (1608 metric) SMD chip")', text, count=1)
@@ -154,29 +154,29 @@ def ads7038_symbol():
     pins += [pin(kind, n, num, 12.7, 8.89 - 2.54 * i, 180) for i, (n, num, kind) in enumerate(right)]
     pins.append(pin("power_in", "GND", "9", 12.7, -10.16, 180))
     pins.append(pin("passive", "EP", "17", 12.7, -12.7, 180))
-    return symbol("ADS7038", "U", "ADS7038", "osupad:WQFN-16-1EP_3x3mm_P0.5mm_EP1.68mm",
+    return symbol("ADS7038", "U", "ADS7038", "opad:WQFN-16-1EP_3x3mm_P0.5mm_EP1.68mm",
                   "TI ADS7038 8-channel 12-bit SAR ADC, SPI, WQFN-16", (-10.16, 11.43, 10.16, -15.24), pins,
                   "https://www.ti.com/lit/ds/symlink/ads7038.pdf")
 
 
 def bead_symbol():
     pins = [pin("passive", "1", "1", 0, 3.81, 270), pin("passive", "2", "2", 0, -3.81, 90)]
-    return symbol("FerriteBead", "FB", "FerriteBead", "osupad:L_0603_1608Metric", "Ferrite bead",
+    return symbol("FerriteBead", "FB", "FerriteBead", "opad:L_0603_1608Metric", "Ferrite bead",
                   (-1.016, 1.27, 1.016, -1.27), pins)
 
 
 def write_library():
     os.makedirs(FP_LIB, exist_ok=True)
     for name in V1_FOOTPRINTS:
-        shutil.copy(os.path.join(V1, "lib", "osupad.pretty", name + ".kicad_mod"), FP_LIB)
+        shutil.copy(os.path.join(V1, "lib", "opad.pretty", name + ".kicad_mod"), FP_LIB)
     with open(os.path.join(FP_LIB, "WQFN-16-1EP_3x3mm_P0.5mm_EP1.68mm.kicad_mod"), "w") as f:
         f.write(wqfn16_footprint())
     with open(os.path.join(FP_LIB, "L_0603_1608Metric.kicad_mod"), "w") as f:
         f.write(bead_footprint())
-    text = open(os.path.join(V1, "lib", "osupad.kicad_sym")).read()
+    text = open(os.path.join(V1, "lib", "opad.kicad_sym")).read()
     blocks = [g1.sexpr_block(text, text.index('(symbol "%s"' % n)) for n in V1_SYMBOLS]
     with open(SYM_LIB, "w") as f:
-        f.write('(kicad_symbol_lib\n\t(version 20251024)\n\t(generator "osupad")\n\t(generator_version "10.0")\n')
+        f.write('(kicad_symbol_lib\n\t(version 20251024)\n\t(generator "opad")\n\t(generator_version "10.0")\n')
         for b in blocks:
             f.write("\t" + b + "\n")
         f.write(ads7038_symbol())
@@ -300,7 +300,7 @@ def write_schematic(directory, parts_list):
         for m in re.finditer(r'\(pin\s+\w+\s+\w+\s*\(at ([-\d.]+) ([-\d.]+) ([-\d.]+)\).*?\(number "([^"]+)"',
                              block, re.S):
             pins[m.group(4)] = (float(m.group(1)), float(m.group(2)), int(float(m.group(3))))
-        sym[name] = (block.replace('(symbol "%s"' % name, '(symbol "osupad:%s"' % name, 1), pins)
+        sym[name] = (block.replace('(symbol "%s"' % name, '(symbol "opad:%s"' % name, 1), pins)
     root = g1.uid()
     out = ['(kicad_sch\n\t(version 20250114)\n\t(generator "eeschema")\n\t(generator_version "9.0")\n',
            '\t(uuid "%s")\n\t(paper "A3")\n' % root,
@@ -323,7 +323,7 @@ def write_schematic(directory, parts_list):
 
     flags = [("#FLG01", "3V3", (25.4, 30.48)), ("#FLG02", "GND", (35.56, 30.48)), ("#FLG03", "AVDD", (45.72, 30.48))]
     for ref, net, (sx, sy) in flags:
-        out.append('\t(symbol (lib_id "osupad:PWR_FLAG") (at %.2f %.2f 0) (unit 1) (exclude_from_sim no) '
+        out.append('\t(symbol (lib_id "opad:PWR_FLAG") (at %.2f %.2f 0) (unit 1) (exclude_from_sim no) '
                    '(in_bom no) (on_board yes) (dnp no) (uuid "%s")\n' % (sx, sy, g1.uid()))
         out.append(g1.prop("Reference", ref, sx, sy - 3.81, hide=True))
         out.append(g1.prop("Value", "PWR_FLAG", sx, sy - 5.08))
@@ -336,7 +336,7 @@ def write_schematic(directory, parts_list):
     for p in parts_list:
         sx, sy = p.sch
         pins = sym[p.symbol][1]
-        out.append('\t(symbol (lib_id "osupad:%s") (at %.2f %.2f 0) (unit 1) (exclude_from_sim no) '
+        out.append('\t(symbol (lib_id "opad:%s") (at %.2f %.2f 0) (unit 1) (exclude_from_sim no) '
                    '(in_bom %s) (on_board yes) (dnp %s) (uuid "%s")\n'
                    % (p.symbol, sx, sy, "no" if p.symbol == "TestPoint" else "yes",
                       "yes" if p.symbol == "TestPoint" else "no", p.uuid))
@@ -344,7 +344,7 @@ def write_schematic(directory, parts_list):
         bottom = min(y for _, y, _ in pins.values())
         out.append(g1.prop("Reference", p.ref, sx + 3.81, sy - top - 2.54))
         out.append(g1.prop("Value", p.value, sx + 3.81, sy - bottom + 2.54))
-        out.append(g1.prop("Footprint", "osupad:" + p.footprint, sx, sy, hide=True))
+        out.append(g1.prop("Footprint", "opad:" + p.footprint, sx, sy, hide=True))
         out.append(g1.prop("Datasheet", "", sx, sy, hide=True))
         out.append(g1.prop("Description", p.description, sx, sy, hide=True))
         out.append(g1.prop("LCSC", p.lcsc, sx, sy, hide=True))
@@ -440,7 +440,7 @@ def write_board(directory, parts_list):
     # Plate-mount peg holes of each magnetic switch (V1 footprint, holes only)
     for k, x in enumerate(KEYS, 1):
         fp = pcbnew.FootprintLoad(FP_LIB, "SW_MX_Hall_PlateMount_SolidCentre")
-        fp.SetFPID(pcbnew.LIB_ID("osupad", "SW_MX_Hall_PlateMount_SolidCentre"))
+        fp.SetFPID(pcbnew.LIB_ID("opad", "SW_MX_Hall_PlateMount_SolidCentre"))
         bb.board.Add(fp)
         fp.SetPosition(g1.pt(x, KEY_Y))   # top side: the switch sits there, the pegs go through
         fp.SetReference("SW%d" % k)

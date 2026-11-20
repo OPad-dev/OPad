@@ -143,7 +143,7 @@ esp_err_t ui_store_save(uint8_t screen, const ui_layout_t *layout)
     }
     esp_err_t err = ESP_OK;
     xSemaphoreTake(store_lock(), portMAX_DELAY);
-    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+    if (runtime_get_state() != OPAD_STATE_IDLE) {
         ESP_LOGW(TAG, "Layout save blocked: state != IDLE (deferred to supervisor)");
         s_pending_layouts[screen] = *layout;
         s_dirty_save_mask |= (1 << screen);
@@ -165,7 +165,7 @@ esp_err_t ui_store_erase(uint8_t screen)
     }
     esp_err_t err = ESP_OK;
     xSemaphoreTake(store_lock(), portMAX_DELAY);
-    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+    if (runtime_get_state() != OPAD_STATE_IDLE) {
         ESP_LOGW(TAG, "Layout erase blocked: state != IDLE (deferred to supervisor)");
         s_dirty_erase_mask |= (1 << screen);
         s_dirty_save_mask &= ~(1 << screen);
@@ -180,7 +180,7 @@ esp_err_t ui_store_erase(uint8_t screen)
 
 esp_err_t ui_store_flush_dirty(void)
 {
-    if (runtime_get_state() != OSUPAD_STATE_IDLE) {
+    if (runtime_get_state() != OPAD_STATE_IDLE) {
         return ESP_OK;
     }
     int64_t now = esp_timer_get_time();

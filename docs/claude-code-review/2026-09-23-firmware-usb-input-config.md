@@ -83,7 +83,7 @@ The staged config is committed to `s_config` before `board_keys_set_gpio` runs; 
 
 `config_validate.c` redefines `DEBOUNCE_MIN_US`/`DEBOUNCE_MAX_US` (already in `input/debounce.h`, which is host-safe) and duplicates the key GPIO allow-list that `keypad.c` keeps separately as `SCAN_PINS`.
 
-**Failure scenario:** Two copies of the pin list and two copies of the debounce bounds must be edited together; they have already drifted in the `CONFIG_OSUPAD_BENCH_DEBUG_GPIO` handling (validate excludes the debug pin, `SCAN_PINS` does not, so a scan reconfigures and `gpio_reset_pin()`s the debug output) and both share the GPIO8 mistake (finding 1).
+**Failure scenario:** Two copies of the pin list and two copies of the debounce bounds must be edited together; they have already drifted in the `CONFIG_OPAD_BENCH_DEBUG_GPIO` handling (validate excludes the debug pin, `SCAN_PINS` does not, so a scan reconfigures and `gpio_reset_pin()`s the debug output) and both share the GPIO8 mistake (finding 1).
 
 **Suggested fix:** Include `debounce.h` and export one `device_config_key_gpio_list()` / shared array used by both.
 
@@ -110,4 +110,4 @@ The staged config is committed to `s_config` before `board_keys_set_gpio` runs; 
 
 **Suggested fix:** Drop the scan (or gate it behind a debug Kconfig) and only read `TOUCH_NUM` when INT is active or a touch was recently down.
 
-**Status note (A2, 2026-09-24):** The boot scan is now behind `CONFIG_OSUPAD_DEBUG_I2C_SCAN` (default off). The idle-read gating was **not** applied because it is not provably behaviour-preserving. The loop treats a touch as down on `INT low || TOUCH_NUM > 0` on purpose (3fec148), so the register read catches touches the 10 ms INT sample misses. If the CST816 pulses INT instead of holding it low, reading only after INT is seen would delay or drop the first sample of a tap. This needs a measurement on the pad (INT waveform while tapping and holding) before the read is gated.
+**Status note (A2, 2026-09-24):** The boot scan is now behind `CONFIG_OPAD_DEBUG_I2C_SCAN` (default off). The idle-read gating was **not** applied because it is not provably behaviour-preserving. The loop treats a touch as down on `INT low || TOUCH_NUM > 0` on purpose (3fec148), so the register read catches touches the 10 ms INT sample misses. If the CST816 pulses INT instead of holding it low, reading only after INT is seen would delay or drop the first sample of a tap. This needs a measurement on the pad (INT waveform while tapping and holding) before the read is gated.

@@ -55,14 +55,14 @@ With no module plugged in, GPIO8 floats. The firmware can enable the internal pu
 
 ## MX input module (`MX/`)
 
-- **Case coordinates** below are those of `hardware/3d/custom_case/V1/osupad_enclosure.scad`: origin at the front-left outer corner, X to the right, Y toward the screen. KiCad uses X = 100 + case X and Y = 100 − case Y, so the top of the KiCad editor is the rear of the case and the layout is not mirrored.
+- **Case coordinates** below are those of `hardware/3d/custom_case/V1/opad_enclosure.scad`: origin at the front-left outer corner, X to the right, Y toward the screen. KiCad uses X = 100 + case X and Y = 100 − case Y, so the top of the KiCad editor is the rear of the case and the layout is not mirrored.
 - **Key centres:** case (28.475, 16.5) and (47.525, 16.5), 19.05 mm pitch, the same as the plate cutouts.
 - **Outline:** case X 12…64, Y 7…31, 1.5 mm corner radius.
 - **Mounting holes:** 2× M2 (2.2 mm NPTH) at case (15.5, 16.5) and (60.5, 16.5), on the key axis and clear of the switch footprints. The PCB must be held there, or it moves when a switch is pulled. Case V1.1 does this without screws: pins in the key deck go through the holes and posts on the bottom plate clamp the PCB against the deck.
 - **Height:** the PCB top is **5.0 mm below the top of the plate** (plate 1.5 mm, case z = 10.0). About 3.5 mm of free space is needed under the PCB bottom for the sockets (1.85 mm) and J1 (2.9 mm).
 - **Everything is on the bottom side** (sockets, J1, R1–R4, C1), so JLCPCB assembles one side only. The switches go in from the top through the plate.
 - **J1** sits at the rear edge, centred on the keys, with the opening facing the screen. The cable leaves toward the controller.
-- **Footprint:** `lib/osupad.pretty/Kailh_CPG151101S11_MX_Hotswap_Bottom` is the Kailh land pattern (3.05 mm pin holes, 4.0 mm centre, 1.75 mm pegs, 2.55 × 2.5 mm pads), drawn from the socket side and placed flipped. The switch pins point to the rear (standard orientation).
+- **Footprint:** `lib/opad.pretty/Kailh_CPG151101S11_MX_Hotswap_Bottom` is the Kailh land pattern (3.05 mm pin holes, 4.0 mm centre, 1.75 mm pegs, 2.55 × 2.5 mm pads), drawn from the socket side and placed flipped. The switch pins point to the rear (standard orientation).
 
 ## Hall Effect input module (`HE/`)
 
@@ -258,7 +258,7 @@ J_MOD is the only SMD part, on the bottom. The two sockets are through-hole on t
 **Check the part rotation in JLCPCB's placement preview before paying.** KiCad and LCSC define rotation differently for some parts, most often the Kailh socket, the JST connector and SOT-23 parts:
 - the socket's two pads must cover the two copper pads next to the 3.05 mm holes;
 - the JST's 8 contacts sit toward the inside of the board, with the plug opening at the board edge;
-- on the HE module U1 and U2 are at **180°**: the single lead (pin 3, GND) must point toward the board's front edge (the `OSUPAD HE` text), the two-lead side (pins 1 and 2) toward the connector, inside the silkscreen square. JLCPCB's preview shows the bottom as seen from below; with the connector edge away from you, pin 1 (VCC) is then the **right-hand** lead of the pair, next to the silkscreen dot. A SOT-23 cannot be placed mirrored, so if the pins sit on the pads the orientation is right; if a sensor shows rotated 90° or 180° with its leads off the pads, rotate it in the preview. Both sensors face the same way, so if one looks wrong they both are.
+- on the HE module U1 and U2 are at **180°**: the single lead (pin 3, GND) must point toward the board's front edge (the `OPAD HE` text), the two-lead side (pins 1 and 2) toward the connector, inside the silkscreen square. JLCPCB's preview shows the bottom as seen from below; with the connector edge away from you, pin 1 (VCC) is then the **right-hand** lead of the pair, next to the silkscreen dot. A SOT-23 cannot be placed mirrored, so if the pins sit on the pads the orientation is right; if a sensor shows rotated 90° or 180° with its leads off the pads, rotate it in the preview. Both sensors face the same way, so if one looks wrong they both are.
 
 ### AISLER
 
@@ -318,8 +318,8 @@ Key 1 and Key 2 must each register on their own.
 ```
 V1/
 ├── lib/                      project library shared by all boards
-│   ├── osupad.kicad_sym      R, C, SW_Push, DRV5055, Conn_01x08, Conn_01x08_1MP, Conn_01x14, TestPoint, PWR_FLAG
-│   └── osupad.pretty/        0603 R/C, SOT-23, JST SH, pin socket, M2 hole, Kailh hot-swap, Hall switch positions, test pad
+│   ├── opad.kicad_sym      R, C, SW_Push, DRV5055, Conn_01x08, Conn_01x08_1MP, Conn_01x14, TestPoint, PWR_FLAG
+│   └── opad.pretty/        0603 R/C, SOT-23, JST SH, pin socket, M2 hole, Kailh hot-swap, Hall switch positions, test pad
 ├── Carrier/                  controller_carrier_v1.kicad_pro / .kicad_sch / .kicad_pcb, production/
 ├── MX/                       mx_input_v1.kicad_pro / .kicad_sch / .kicad_pcb, production/
 ├── HE/                       he_input_v1.kicad_pro / .kicad_sch / .kicad_pcb, production/

@@ -32,7 +32,7 @@
             "uuid_path": "/5a671330-cedf-477e-a8c5-11a24db8fd6a",
             "violations": [
                 {
-                    "description": "Symbol 'Conn_01x08' doesn't match copy in library 'osupad'",
+                    "description": "Symbol 'Conn_01x08' doesn't match copy in library 'opad'",
                     "items": [
                         {
                             "description": "Symbol J1 [Conn_01x08]",
@@ -47,7 +47,7 @@
                     "type": "lib_symbol_mismatch"
                 },
                 {
-                    "description": "Symbol 'R' doesn't match copy in library 'osupad'",
+                    "description": "Symbol 'R' doesn't match copy in library 'opad'",
                     "items": [
                         {
                             "description": "Symbol R1 [R]",
@@ -62,7 +62,7 @@
                     "type": "lib_symbol_mismatch"
                 },
                 {
-                    "description": "Symbol 'R' doesn't match copy in library 'osupad'",
+                    "description": "Symbol 'R' doesn't match copy in library 'opad'",
                     "items": [
                         {
                             "description": "Symbol R2 [R]",
@@ -77,7 +77,7 @@
                     "type": "lib_symbol_mismatch"
                 },
                 {
-                    "description": "Symbol 'SW_Push' doesn't match copy in library 'osupad'",
+                    "description": "Symbol 'SW_Push' doesn't match copy in library 'opad'",
                     "items": [
                         {
                             "description": "Symbol SW1 [SW_Push]",
@@ -92,7 +92,7 @@
                     "type": "lib_symbol_mismatch"
                 },
                 {
-                    "description": "Symbol 'SW_Push' doesn't match copy in library 'osupad'",
+                    "description": "Symbol 'SW_Push' doesn't match copy in library 'opad'",
                     "items": [
                         {
                             "description": "Symbol SW2 [SW_Push]",
@@ -107,7 +107,7 @@
                     "type": "lib_symbol_mismatch"
                 },
                 {
-                    "description": "Symbol 'R' doesn't match copy in library 'osupad'",
+                    "description": "Symbol 'R' doesn't match copy in library 'opad'",
                     "items": [
                         {
                             "description": "Symbol R3 [R]",
@@ -122,7 +122,7 @@
                     "type": "lib_symbol_mismatch"
                 },
                 {
-                    "description": "Symbol 'R' doesn't match copy in library 'osupad'",
+                    "description": "Symbol 'R' doesn't match copy in library 'opad'",
                     "items": [
                         {
                             "description": "Symbol R4 [R]",
@@ -137,7 +137,7 @@
                     "type": "lib_symbol_mismatch"
                 },
                 {
-                    "description": "Symbol 'C' doesn't match copy in library 'osupad'",
+                    "description": "Symbol 'C' doesn't match copy in library 'opad'",
                     "items": [
                         {
                             "description": "Symbol C1 [C]",

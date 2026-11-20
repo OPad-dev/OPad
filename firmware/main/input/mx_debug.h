@@ -1,7 +1,7 @@
 #pragma once
 
 /*
- * MX debug log, the MX half of the debug firmware (CONFIG_OSUPAD_HE_DEBUG):
+ * MX debug log, the MX half of the debug firmware (CONFIG_OPAD_HE_DEBUG):
  * for chasing taps an MX pad never sent. Tagged "he.mx*" so opad-daemon
  * writes the lines to he-debug.log as it does the HE ones:
  *
@@ -27,7 +27,7 @@
 extern "C" {
 #endif
 
-#ifdef CONFIG_OSUPAD_HE_DEBUG
+#ifdef CONFIG_OPAD_HE_DEBUG
 
 // Key ISR or keypad task, under the keypad spinlock: debouncing accepted a
 // transition (`resample`: at the end of a lockout, not on an edge)

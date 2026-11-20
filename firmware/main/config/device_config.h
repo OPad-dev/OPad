@@ -43,7 +43,7 @@ extern "C" {
 #define DEVICE_CONFIG_DEFAULT_HE_RAPID_TRIGGER HE_CONFIG_DEFAULT_RAPID_TRIGGER
 #define DEVICE_CONFIG_DEFAULT_HE_CONTINUOUS    HE_CONFIG_DEFAULT_CONTINUOUS
 
-// What a swipe does. Values are osupad.proto's SwipeAction; 0 (keep current)
+// What a swipe does. Values are opad.proto's SwipeAction; 0 (keep current)
 // is wire only and never stored.
 typedef enum {
     SWIPE_ACTION_NONE = 1,

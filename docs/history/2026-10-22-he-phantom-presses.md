@@ -145,7 +145,7 @@ Recorded so they are not repeated:
 
 ## Tools built
 
-- **HE debug firmware** (`CONFIG_OSUPAD_HE_DEBUG`, `firmware/main/input/he_debug.c`,
+- **HE debug firmware** (`CONFIG_OPAD_HE_DEBUG`, `firmware/main/input/he_debug.c`,
   `firmware/sdkconfig.hedebug`, build dir `build-hed`). Logs every press with the
   12 frames before it, per-second ranges and ADC health, state, animation,
   touch (finger and controller reads), chip temperature, thresholds. Build and

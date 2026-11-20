@@ -1,5 +1,5 @@
 /*
- * Hall bench (CONFIG_OSUPAD_HALL_BENCH): raw readings of the HE module's two
+ * Hall bench (CONFIG_OPAD_HALL_BENCH): raw readings of the HE module's two
  * analog sensors, for docs/specs/v2-rapid-trigger.md phase V2-0. Not a
  * product build: it streams text over the CDC port, which only works with
  * opad-daemon stopped, and it does so during key presses.

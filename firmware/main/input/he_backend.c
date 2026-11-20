@@ -24,7 +24,7 @@
  * the module ID (he_backend_probe_module): nothing plugged in or an MX
  * module shows on the LCD, which asks for a restart for MX.
  *
- * CONFIG_OSUPAD_HE_TRACE (measurement build only) also streams every raw
+ * CONFIG_OPAD_HE_TRACE (measurement build only) also streams every raw
  * conversion over CDC for scripts/he_trace.py; see he_trace_task.
  *
  * Hall Effect V3 (always built in): the readings come from the module's
@@ -37,7 +37,7 @@
  */
 #include "he_backend.h"
 
-#ifdef OSUPAD_HE_INPUT
+#ifdef OPAD_HE_INPUT
 
 #include "input/he_frame.h"
 #include "input/he_params.h"
@@ -49,7 +49,7 @@
 #include "input/key_event.h"
 #include "usb/usb_report_barrier.h"
 #include "input/he_spi_source.h"
-#ifdef CONFIG_OSUPAD_HE_BACKEND
+#ifdef CONFIG_OPAD_HE_BACKEND
 #include "esp_adc/adc_continuous.h"
 #endif
 #include "esp_attr.h"
@@ -61,7 +61,7 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "boards/waveshare_esp32s3_touch_lcd_2/board.h"
-#ifdef CONFIG_OSUPAD_HE_TRACE
+#ifdef CONFIG_OPAD_HE_TRACE
 #include "usb/usb_cdc.h"
 #include <string.h>
 #endif
@@ -77,7 +77,7 @@ _Static_assert(HE_SAMPLE_HZ == HE_FRAME_CONVS * HE_CAL_SAMPLE_HZ,
 // V3 runs faster than V1; calibration takes every HE_CAL_EVERY_V3-th frame
 _Static_assert(HE_FRAME_US % HE_SPI_FRAME_US == 0, "V3's frame period must divide 250 us");
 #define HE_CAL_EVERY_V3 (HE_FRAME_US / HE_SPI_FRAME_US)
-#ifdef CONFIG_OSUPAD_HE_TRACE
+#ifdef CONFIG_OPAD_HE_TRACE
 #define HE_STORE_FRAMES 64     // 16 ms for he_trace_task to drain
 #else
 // The driver also copies each frame into a ringbuffer nobody reads here; the
@@ -125,7 +125,7 @@ static const he_rt_params_t HE_PARAMS_NEVER = {
 static he_source_t s_source;
 // The source has been set up once (V1: s_adc exists): restarts stop and start it
 static bool s_source_created;
-#ifdef CONFIG_OSUPAD_HE_BACKEND
+#ifdef CONFIG_OPAD_HE_BACKEND
 // Started (he_task only). The ADC driver's ADC1 lock is a mutex taken by
 // adc_continuous_start and given back by adc_continuous_stop, so both must run
 // in the same task: he_task. Releasing it from another task trips FreeRTOS's
@@ -140,7 +140,7 @@ typedef enum { PROBE_IDLE, PROBE_ASKED, PROBE_PAUSED, PROBE_DONE } probe_state_t
 static volatile probe_state_t s_probe;
 static SemaphoreHandle_t s_probe_ack;
 static StaticSemaphore_t s_probe_ack_buf;
-#ifdef CONFIG_OSUPAD_HE_TRACE
+#ifdef CONFIG_OPAD_HE_TRACE
 static volatile uint32_t s_trace_dropped;  // frames the ringbuffer had no room for
 static void he_trace_task(void *arg);
 #endif
@@ -208,12 +208,12 @@ static bool IRAM_ATTR process_frame(const he_frame_t *f, int64_t now)
         if (he_health_is_key_faulted(&s_health, k)) {
             continue;
         }
-#ifdef CONFIG_OSUPAD_HE_DEBUG
+#ifdef CONFIG_OPAD_HE_DEBUG
         he_rt_state_t from = s_keys[k].state;
 #endif
         he_rt_event_t ev = he_rt_step(&s_keys[k], f->median[k]);
         if (ev != HE_RT_NONE) {
-#ifdef CONFIG_OSUPAD_HE_DEBUG
+#ifdef CONFIG_OPAD_HE_DEBUG
             he_debug_isr_edge((uint8_t)k, ev, from, s_keys[k].state, s_keys[k].extreme, f->median[k], now);
 #endif
             s_down[k] = ev == HE_RT_DOWN;
@@ -228,7 +228,7 @@ static bool IRAM_ATTR process_frame(const he_frame_t *f, int64_t now)
     return changed;
 }
 
-#ifdef CONFIG_OSUPAD_HE_BACKEND
+#ifdef CONFIG_OPAD_HE_BACKEND
 static bool IRAM_ATTR on_frame(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata,
                                void *user_data)
 {
@@ -269,8 +269,8 @@ static void IRAM_ATTR on_spi_frame(const he_frame_t *f, const int32_t raw[HE_SPI
     portEXIT_CRITICAL(&s_lock);
 }
 
-#ifdef CONFIG_OSUPAD_HE_BACKEND
-#ifdef CONFIG_OSUPAD_HE_TRACE
+#ifdef CONFIG_OPAD_HE_BACKEND
+#ifdef CONFIG_OPAD_HE_TRACE
 static bool IRAM_ATTR on_pool_ovf(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata,
                                   void *user_data)
 {
@@ -306,7 +306,7 @@ static esp_err_t adc_setup(void)
         .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2,
     };
     adc_continuous_evt_cbs_t cbs = {.on_conv_done = on_frame};
-#ifdef CONFIG_OSUPAD_HE_TRACE
+#ifdef CONFIG_OPAD_HE_TRACE
     cbs.on_pool_ovf = on_pool_ovf;
 #endif
     err = adc_continuous_config(s_adc, &cfg);
@@ -324,7 +324,7 @@ static esp_err_t adc_setup(void)
         s_adc = NULL;
         return err;
     }
-#ifdef CONFIG_OSUPAD_HE_TRACE
+#ifdef CONFIG_OPAD_HE_TRACE
     // Once: s_adc is kept from here on. Core 1, below the protocol task, so it
     // never competes with the key path
     xTaskCreatePinnedToCore(he_trace_task, "he_trace", 4096, NULL, tskIDLE_PRIORITY + 2, NULL, 1);
@@ -332,7 +332,7 @@ static esp_err_t adc_setup(void)
     return ESP_OK;
 }
 
-#endif  // OSUPAD_HE_INPUT
+#endif  // OPAD_HE_INPUT
 
 // The frame source: V1's ADC DMA or V3's SPI sampler. he_task only.
 static esp_err_t source_setup(void)
@@ -341,7 +341,7 @@ static esp_err_t source_setup(void)
     if (s_source == HE_SOURCE_ADS7028) {
         err = he_spi_source_start(board_boot_cable_reversed(), on_spi_frame);
     }
-#ifdef CONFIG_OSUPAD_HE_BACKEND
+#ifdef CONFIG_OPAD_HE_BACKEND
     else {
         err = adc_setup();
     }
@@ -355,7 +355,7 @@ static esp_err_t source_start(void)
     if (s_source == HE_SOURCE_ADS7028) {
         return he_spi_source_start(board_boot_cable_reversed(), on_spi_frame);
     }
-#ifdef CONFIG_OSUPAD_HE_BACKEND
+#ifdef CONFIG_OPAD_HE_BACKEND
     return adc_continuous_start(s_adc);
 #else
     return ESP_ERR_NOT_SUPPORTED;
@@ -368,7 +368,7 @@ static void source_stop(void)
         he_spi_source_stop();
         return;
     }
-#ifdef CONFIG_OSUPAD_HE_BACKEND
+#ifdef CONFIG_OPAD_HE_BACKEND
     adc_continuous_stop(s_adc);
 #endif
 }
@@ -443,7 +443,7 @@ static bool check_health(int64_t now)
     return res.adc_stalled;
 }
 
-#ifdef CONFIG_OSUPAD_HE_TRACE
+#ifdef CONFIG_OPAD_HE_TRACE
 /*
  * Raw conversion stream, little-endian, for scripts/he_trace.py. Per DMA frame:
  *   A5 5A, u16 frame sequence, u16 frames dropped so far (ringbuffer full),
@@ -637,7 +637,7 @@ esp_err_t he_backend_start(he_source_t source)
     if (s_running) {
         return ESP_ERR_INVALID_STATE;
     }
-#ifndef CONFIG_OSUPAD_HE_BACKEND
+#ifndef CONFIG_OPAD_HE_BACKEND
     if (source != HE_SOURCE_ADS7028) {
         return ESP_ERR_NOT_SUPPORTED;
     }
@@ -840,7 +840,7 @@ void he_backend_set_params(uint8_t key_index, const he_rt_params_t *p)
     he_debug_params(key_index, p);
 }
 
-#ifdef CONFIG_OSUPAD_HE_DEBUG
+#ifdef CONFIG_OPAD_HE_DEBUG
 void he_backend_debug_params(uint8_t key_index, he_rt_params_t *out)
 {
     portENTER_CRITICAL(&s_lock);
@@ -915,4 +915,4 @@ void he_backend_get_stats(he_backend_stats_t *out)
     portEXIT_CRITICAL(&s_lock);
 }
 
-#endif  // OSUPAD_HE_INPUT
+#endif  // OPAD_HE_INPUT

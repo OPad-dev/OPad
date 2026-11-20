@@ -51,7 +51,7 @@ idf_component_register(
         "runtime/runtime.c"
         "protocol/protocol.c"
         "protocol/frame_parser.c"
-        "protocol/osupad.pb.c"
+        "protocol/opad.pb.c"
         "protocol/nanopb/pb_common.c"
         "protocol/nanopb/pb_encode.c"
         "protocol/nanopb/pb_decode.c"

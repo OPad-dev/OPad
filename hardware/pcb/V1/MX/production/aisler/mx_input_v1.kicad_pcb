@@ -8,10 +8,10 @@
 	)
 	(paper "A4")
 	(title_block
-		(title "osuPad MX Input Module V1")
+		(title "OPad MX Input Module V1")
 		(date "2026-09-14")
 		(rev "V1.0")
-		(company "osuPad")
+		(company "OPad")
 	)
 	(layers
 		(0 "F.Cu" signal)
@@ -95,7 +95,7 @@
 			(outputdirectory "")
 		)
 	)
-	(footprint "osupad:MountingHole_2.2mm_M2"
+	(footprint "opad:MountingHole_2.2mm_M2"
 		(layer "F.Cu")
 		(uuid "169dc973-ea3f-4413-9a15-0ff9ba8a9f75")
 		(at 115.5 83.5)
@@ -202,7 +202,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:MountingHole_2.2mm_M2"
+	(footprint "opad:MountingHole_2.2mm_M2"
 		(layer "F.Cu")
 		(uuid "75d17eac-1584-4619-bfa2-36f0962006f2")
 		(at 160.5 83.5)
@@ -309,7 +309,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:R_0603_1608Metric"
+	(footprint "opad:R_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "15ed0e3f-5298-45e0-a032-63d3cbe3998f")
 		(at 131 75.2)
@@ -502,7 +502,7 @@
 			)
 		)
 	)
-	(footprint "osupad:C_0603_1608Metric"
+	(footprint "opad:C_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "16710b56-3ad6-44aa-a510-bbb169b71438")
 		(at 130.4 72)
@@ -695,7 +695,7 @@
 			)
 		)
 	)
-	(footprint "osupad:JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal"
+	(footprint "opad:JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal"
 		(layer "B.Cu")
 		(uuid "436ec7e1-127d-40e7-b61d-23ff5aa9ccdf")
 		(at 138 72.175)
@@ -1188,7 +1188,7 @@
 			)
 		)
 	)
-	(footprint "osupad:R_0603_1608Metric"
+	(footprint "opad:R_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "6227e76b-9503-488d-91cc-7e4509a42ce3")
 		(at 145.5 75.2)
@@ -1381,7 +1381,7 @@
 			)
 		)
 	)
-	(footprint "osupad:R_0603_1608Metric"
+	(footprint "opad:R_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "aec91f98-c778-4000-9a83-9fe394fbcbc5")
 		(at 150.5 72)
@@ -1574,7 +1574,7 @@
 			)
 		)
 	)
-	(footprint "osupad:Kailh_CPG151101S11_MX_Hotswap_Bottom"
+	(footprint "opad:Kailh_CPG151101S11_MX_Hotswap_Bottom"
 		(layer "B.Cu")
 		(uuid "da65b3c2-3bdb-40a8-a23d-bb0b419aecdc")
 		(at 147.525 83.5 180)
@@ -1844,7 +1844,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:Kailh_CPG151101S11_MX_Hotswap_Bottom"
+	(footprint "opad:Kailh_CPG151101S11_MX_Hotswap_Bottom"
 		(layer "B.Cu")
 		(uuid "e6cc99a6-824b-4e0f-b821-f402a9d6d8a7")
 		(at 128.475 83.5 180)
@@ -2114,7 +2114,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:R_0603_1608Metric"
+	(footprint "opad:R_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "fd09df74-b131-4e9d-b9f6-4ef74c1c013d")
 		(at 150.5 74)
@@ -2427,7 +2427,7 @@
 			(justify mirror)
 		)
 	)
-	(gr_text "osuPad MX module V1.0"
+	(gr_text "OPad MX module V1.0"
 		(at 138 89.6 0)
 		(layer "B.SilkS")
 		(uuid "bb1066c4-ed59-40d0-9e97-dfe7df07b485")

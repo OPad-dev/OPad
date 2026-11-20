@@ -3,7 +3,7 @@
 /*
  * Board test of a Hall Effect V3 module's ADC (ADS7028 over SPI, three
  * DRV5055 sensors on AIN5/AIN4/AIN3). Measurements only, like the rest of the
- * board test: the host decides pass or fail (HeAdcTest in protocol/osupad.proto).
+ * board test: the host decides pass or fail (HeAdcTest in protocol/opad.proto).
  *
  * In order: software reset and SYSTEM_STATUS (the chip answers, and BOR shows
  * it reset), clearing BOR, a write/read walk over the 8 bits of

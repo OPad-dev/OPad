@@ -147,7 +147,7 @@ static void IRAM_ATTR touch_int_isr(void *arg)
 }
 
 // One sample: the active-low INT level or a non-zero touch count means down.
-#ifdef CONFIG_OSUPAD_HE_DEBUG
+#ifdef CONFIG_OPAD_HE_DEBUG
 // HE debug firmware: I2C reads of the touch controller, finger or not
 static volatile uint32_t s_debug_reads;
 uint32_t touch_retry_debug_reads(void) { return s_debug_reads; }
@@ -156,7 +156,7 @@ bool touch_retry_debug_int_wakeup(void) { return s_int_wakeup; }
 
 static touch_sample_t touch_read(void)
 {
-#ifdef CONFIG_OSUPAD_HE_DEBUG
+#ifdef CONFIG_OPAD_HE_DEBUG
     s_debug_reads++;  // touch task only
 #endif
     touch_sample_t s = {0};
@@ -197,7 +197,7 @@ static touch_mode_t touch_mode_now(void)
     if (seen == 0 || esp_timer_get_time() - seen > HOST_STATUS_TIMEOUT_US) {
         return TOUCH_MODE_RETRY;
     }
-    return runtime_get_state() == OSUPAD_STATE_PLAYING ? TOUCH_MODE_PLAY : TOUCH_MODE_MENU;
+    return runtime_get_state() == OPAD_STATE_PLAYING ? TOUCH_MODE_PLAY : TOUCH_MODE_MENU;
 }
 
 static void wait_touch_key_delivered(void)
@@ -610,7 +610,7 @@ esp_err_t touch_retry_init(void)
         return err;
     }
 
-#if CONFIG_OSUPAD_DEBUG_I2C_SCAN
+#if CONFIG_OPAD_DEBUG_I2C_SCAN
     // 3. Scan I2C bus to discover devices (debug only: up to ~1.3 s of boot)
     ESP_LOGI(TAG, "Scanning I2C bus (SDA: GPIO%d, SCL: GPIO%d)...", BOARD_I2C_SDA_GPIO, BOARD_I2C_SCL_GPIO);
     int devices_found = 0;

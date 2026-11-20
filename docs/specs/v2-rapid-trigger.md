@@ -1,6 +1,6 @@
 # OPad v2 — Rapid Trigger (Hall-Effect Keys) Plan
 
-**Companion to:** `osupad_technical_spec_v1.md` and `osupad_remaining_work_v1.md`
+**Companion to:** `opad_technical_spec_v1.md` and `opad_remaining_work_v1.md`
 **Audience:** the project owner, Antigravity and other coding agents
 **Starts after:** the Linux v1.0 release (v1 hardware and firmware must keep working)
 
@@ -35,7 +35,7 @@ Fingers barely have to lift between taps. That needs analog key travel, which me
 
 ### Spec amendments this plan introduces
 
-These override `osupad_technical_spec_v1.md` for v2 only:
+These override `opad_technical_spec_v1.md` for v2 only:
 
 1. **§2.2 non-goals:** "Hall-effect support" and "rapid trigger" are removed from the non-goals. Everything else in §2.2 stays.
 2. **§9 key input critical path:** with the Hall backend there is no GPIO edge. Keys are sampled at a fixed rate, and the critical path becomes *sample → position → rapid-trigger decision → HID submit*. The same rules apply: highest priority, core 0, no blocking, no allocation, no logging.
@@ -216,7 +216,7 @@ Each phase ends with its acceptance checks. Don't start V2-6 (PCB) before V2-0 h
 **Do:**
 1. Hand-wire two magnetic switches with sensors for options A, B and C (breakout boards are fine) to the Waveshare board.
 2. Confirm the free header GPIOs from the Waveshare schematic, and which are ADC1.
-3. Add a **debug firmware build** (Kconfig `OSUPAD_HALL_BENCH`) that samples both keys and streams raw values to the host. Only in this bench build is streaming during key presses allowed.
+3. Add a **debug firmware build** (Kconfig `OPAD_HALL_BENCH`) that samples both keys and streams raw values to the host. Only in this bench build is streaming during key presses allowed.
 4. Write a host script (`scripts/hall_bench.py`) that records traces to CSV and reports the numbers below.
 5. For each option and switch model, measure:
    - Noise peak-to-peak at rest and at bottom-out (in raw units and in mm after scaling)
@@ -235,7 +235,7 @@ Each phase ends with its acceptance checks. Don't start V2-6 (PCB) before V2-0 h
 **Do:**
 - Introduce an `input_backend` interface with `init`, `start`, `get_pressed`, `get_position` (Hall only) and `get_latency_stats`.
 - Move today's code into the **digital backend** unchanged.
-- Select the backend with Kconfig (`OSUPAD_INPUT_DIGITAL` / `OSUPAD_INPUT_HALL`). `HelloAck` reports `input_type`.
+- Select the backend with Kconfig (`OPAD_INPUT_DIGITAL` / `OPAD_INPUT_HALL`). `HelloAck` reports `input_type`.
 
 **Acceptance:** the digital build behaves exactly like v1. Latency stats are unchanged and all existing tests pass.
 
@@ -330,7 +330,7 @@ Each phase ends with its acceptance checks. Don't start V2-6 (PCB) before V2-0 h
 ### V2-9. Documentation
 
 - Update `docs/architecture.md` (input backends, sampling), `docs/protocol.md` (new fields), `docs/latency-testing.md` (Hall stages) and the hardware README (PCB, new case).
-- Record the spec amendments from §0 in `osupad_technical_spec_v1.md` as a "v2 amendments" appendix.
+- Record the spec amendments from §0 in `opad_technical_spec_v1.md` as a "v2 amendments" appendix.
 
 ---
 

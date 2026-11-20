@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Record and analyse the raw Hall Effect stream (CONFIG_OSUPAD_HE_TRACE).
+"""Record and analyse the raw Hall Effect stream (CONFIG_OPAD_HE_TRACE).
 
 For OPEN A/D in docs/specs/v2-hall-effect-decisions.md: the noise every raw
 conversion carries, and the rapid-trigger sensitivity a still key survives.
@@ -43,7 +43,7 @@ def record(port, seconds, out):
         daemon.close()
     print(f"{total} bytes in {seconds:g} s ({total / seconds / 1000:.0f} kB/s; a full stream is ~153 kB/s)")
     if total == 0:
-        sys.exit("Nothing received: is this a CONFIG_OSUPAD_HE_TRACE build with the HE module fitted?")
+        sys.exit("Nothing received: is this a CONFIG_OPAD_HE_TRACE build with the HE module fitted?")
 
 
 def analyse(path):

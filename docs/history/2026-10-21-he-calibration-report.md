@@ -243,7 +243,7 @@ touch controller or USB key report was exercised.
   not a peak or every ADC conversion. Non-key stages use key 1. Progress is
   periodically refreshed and can coalesce before transmission. All nine
   shared error values 0..8 have compile-time assertions; timeout 9 is reserved
-  and unused (`protocol/osupad.proto`, `firmware/main/ui/he_cal_ui.c`,
+  and unused (`protocol/opad.proto`, `firmware/main/ui/he_cal_ui.c`,
   `firmware/main/input/he_frame.c`).
 - Renamed the boolean-decision test from `test_no_key_during_lock_or_calibration`
   to `test_input_suppression_decision`: it tests a predicate, not emitted HID
@@ -255,13 +255,13 @@ touch controller or USB key report was exercised.
 
 These are decoder/control-path checks and host tests, not tests on frozen old
 firmware/app binaries or on a pad. No wire tag, enum value or NVS record layout
-was changed by the review fixes (`protocol/osupad.proto`,
+was changed by the review fixes (`protocol/opad.proto`,
 `firmware/main/input/he_cal_record.h`).
 
 | Pair | Decode/capability path | Result and evidence |
 |---|---|---|
 | New app + old firmware | Missing/false HelloAck capability; optional old calibration status is discarded by the daemon. New Hello tag 3 is additive. | No calibration controls or auto-launch. `pre_calibration_firmware_status_does_not_launch_or_offer_calibration`; old/new Hello projection test in `desktop/crates/opad-protocol/src/lib.rs`; device handshake in `desktop/crates/opad-device/src/lib.rs`. |
-| Old app + new firmware | Hello without tag 3 initializes capability false (`osupad_Hello_init_zero` and nanopb decode); protocol dispatch passes false to the UI. | No capable app: on-pad fallback after grace/disconnect; routine progress is capability-gated (an explicit calibration command can still receive a refusal). Existing framing is negotiated from the received frame. `firmware/main/protocol/protocol.c`, `osupad.pb.h`, `firmware/main/ui/he_cal_ui.c`; Hello default and lock-mode host tests. |
+| Old app + new firmware | Hello without tag 3 initializes capability false (`opad_Hello_init_zero` and nanopb decode); protocol dispatch passes false to the UI. | No capable app: on-pad fallback after grace/disconnect; routine progress is capability-gated (an explicit calibration command can still receive a refusal). Existing framing is negotiated from the received frame. `firmware/main/protocol/protocol.c`, `opad.pb.h`, `firmware/main/ui/he_cal_ui.c`; Hello default and lock-mode host tests. |
 | New app + new firmware + MX | `he_input` describes the build; `he_calibration` follows the running HE backend, which is false on MX. Status calibration is absent. | No lock/calibration timer/page/commands. `protocol_send_hello_ack`, `protocol_send_status`, `he_cal_ui_init`; `calibrated_he_and_mx_pads_do_not_launch_gui_calibration` and IPC capability tests. |
 | New app + new firmware + HE | Capability true; status includes lock/calibration flags; start/cancel/progress use additive variants and the host's framing. | One GUI launch per connection, guarded start/cancel, success requests fresh status. Firmware start is refused outside IDLE or while busy. Protocol round trips, daemon reconnect/IPC tests, runner start-refusal tests; `firmware/main/protocol/protocol.c`, `desktop/daemon/src/runtime.rs`. |
 
@@ -510,14 +510,14 @@ CDC-disconnect cancellation (`firmware/main/ui/he_cal_ui.c`).
 
 **Owner decision (2026-10-21): no timeout.** The flow stays on its current
 step until it gets its presses. `HE_CAL_ERROR_TIMEOUT` stays reserved and is
-never sent (`protocol/osupad.proto`).
+never sent (`protocol/opad.proto`).
 
 
 Options: none (current); 60 s without a captured press; or 120 s without a
 captured press. Recommendation: 60 s of inactivity, returning to the lock
 screen and preserving old calibration, once approved. Nothing currently
 sends `HE_CAL_ERROR_TIMEOUT`; no timer was invented here
-(`protocol/osupad.proto`, `firmware/main/ui/he_cal_ui.c`).
+(`protocol/opad.proto`, `firmware/main/ui/he_cal_ui.c`).
 
 ### Q3. Wording and design
 

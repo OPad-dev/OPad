@@ -1,4 +1,4 @@
-osuPad MX Input Module V1 for AISLER
+OPad MX Input Module V1 for AISLER
 ====================================
 
 Upload mx_input_v1.kicad_pcb (native KiCad board, zones filled, parts carry

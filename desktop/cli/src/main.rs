@@ -1420,18 +1420,7 @@ fn resolve_flash_set(path: &Path, full: bool) -> Result<Vec<(u32, PathBuf)>> {
     }
 
     let (build_dir, app_image) = if path.is_dir() {
-        let opad_bin = path.join("opad-firmware.bin");
-        let bin = if opad_bin.exists() {
-            opad_bin
-        } else {
-            let legacy_bin = path.join("osupad-firmware.bin");
-            if legacy_bin.exists() {
-                legacy_bin
-            } else {
-                opad_bin
-            }
-        };
-        (path.to_path_buf(), bin)
+        (path.to_path_buf(), path.join("opad-firmware.bin"))
     } else {
         let parent = path.parent().unwrap_or(Path::new("."));
         (parent.to_path_buf(), path.to_path_buf())

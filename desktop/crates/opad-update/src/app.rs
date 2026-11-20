@@ -227,13 +227,13 @@ mod tests {
                 upstream_tag: None,
                 notes: Some("Fixed the thing".to_string()),
                 artifacts: vec![
-                    artifact(ArtifactKind::Deb, "https://x/osupad.deb"),
-                    artifact(ArtifactKind::Rpm, "https://x/osupad.rpm"),
-                    artifact(ArtifactKind::Archive, "https://x/osupad.tar.gz"),
+                    artifact(ArtifactKind::Deb, "https://x/opad.deb"),
+                    artifact(ArtifactKind::Rpm, "https://x/opad.rpm"),
+                    artifact(ArtifactKind::Archive, "https://x/opad.tar.gz"),
                     Artifact {
                         target: "windows-x86_64".to_string(),
                         kind: ArtifactKind::Installer,
-                        url: "https://x/osupad-setup.exe".to_string(),
+                        url: "https://x/opad-setup.exe".to_string(),
                         sha256: "00".to_string(),
                         size: None,
                         board: None,
@@ -375,15 +375,15 @@ mod tests {
     fn apply_commands_go_through_the_package_manager_never_around_it() {
         // Writing /usr/bin directly would make dpkg -V report modified files
         // and the next apt upgrade silently revert the update.
-        let deb = Path::new("/tmp/osupad.deb");
+        let deb = Path::new("/tmp/opad.deb");
         assert_eq!(
             apply_command(ApplyPolicy::PackageManager(PackageManager::Apt), deb).unwrap(),
-            vec!["pkexec", "apt-get", "install", "-y", "/tmp/osupad.deb"]
+            vec!["pkexec", "apt-get", "install", "-y", "/tmp/opad.deb"]
         );
-        let rpm = Path::new("/tmp/osupad.rpm");
+        let rpm = Path::new("/tmp/opad.rpm");
         assert_eq!(
             apply_command(ApplyPolicy::PackageManager(PackageManager::Dnf), rpm).unwrap(),
-            vec!["pkexec", "dnf", "install", "-y", "/tmp/osupad.rpm"]
+            vec!["pkexec", "dnf", "install", "-y", "/tmp/opad.rpm"]
         );
     }
 
@@ -413,9 +413,9 @@ mod tests {
 
     #[test]
     fn the_windows_installer_runs_silently_without_rebooting() {
-        let exe = Path::new("osupad-setup.exe");
+        let exe = Path::new("opad-setup.exe");
         let cmd = apply_command(ApplyPolicy::Installer, exe).unwrap();
-        assert_eq!(cmd[0], "osupad-setup.exe");
+        assert_eq!(cmd[0], "opad-setup.exe");
         assert!(cmd.contains(&"/SILENT".to_string()));
         assert!(
             cmd.contains(&"/NORESTART".to_string()),

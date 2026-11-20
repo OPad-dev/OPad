@@ -95,7 +95,7 @@
 			(outputdirectory "")
 		)
 	)
-	(footprint "osupad:MountingHole_2.2mm_M2"
+	(footprint "opad:MountingHole_2.2mm_M2"
 		(layer "F.Cu")
 		(uuid "0bc26b62-3e09-4bd1-a329-0fa4a2aa6884")
 		(at 132 145.2)
@@ -190,7 +190,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:MountingHole_2.2mm_M2"
+	(footprint "opad:MountingHole_2.2mm_M2"
 		(layer "F.Cu")
 		(uuid "0d7398b0-7e79-479d-96d7-24b869bc5c90")
 		(at 132 103)
@@ -285,7 +285,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:PinSocket_1x14_P2.54mm_Vertical"
+	(footprint "opad:PinSocket_1x14_P2.54mm_Vertical"
 		(layer "F.Cu")
 		(uuid "1bc53be6-c752-42a7-a02c-54d0bb7af8e0")
 		(at 102.26 107.59)
@@ -585,7 +585,7 @@
 			)
 		)
 	)
-	(footprint "osupad:MountingHole_2.2mm_M2"
+	(footprint "opad:MountingHole_2.2mm_M2"
 		(layer "F.Cu")
 		(uuid "30725d4d-bd70-4571-b3b1-caa8465a406c")
 		(at 103 103)
@@ -680,7 +680,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:MountingHole_2.2mm_M2"
+	(footprint "opad:MountingHole_2.2mm_M2"
 		(layer "F.Cu")
 		(uuid "6c96f522-d883-4e50-8cf3-6a496d750d97")
 		(at 103 145.2)
@@ -775,7 +775,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:PinSocket_1x14_P2.54mm_Vertical"
+	(footprint "opad:PinSocket_1x14_P2.54mm_Vertical"
 		(layer "F.Cu")
 		(uuid "87fae5ae-f68e-401f-a1a1-45255cb57271")
 		(at 132.74 107.59)
@@ -1075,7 +1075,7 @@
 			)
 		)
 	)
-	(footprint "osupad:JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal"
+	(footprint "opad:JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal"
 		(layer "B.Cu")
 		(uuid "8451dd20-1e48-4eb7-bbf0-9dd793c7bdf0")
 		(at 117.5 103.2)

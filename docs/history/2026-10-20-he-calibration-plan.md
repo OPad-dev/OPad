@@ -47,17 +47,17 @@ However, `firmware/main/input/he_cal_capture.c` (`he_cal_capture_default_cfg()`)
 
 ## 3. Protocol Definitions & Exact Tags
 
-All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts/gen_proto.sh`. Hand editing of generated files is strictly forbidden (`AGENTS.md` §5).
+All protocol updates are in `protocol/opad.proto` and compiled with `./scripts/gen_proto.sh`. Hand editing of generated files is strictly forbidden (`AGENTS.md` §5).
 
 ### 3.1 New & Modified Fields
 
-1. `message Hello` (`protocol/osupad.proto`):
+1. `message Hello` (`protocol/opad.proto`):
    - `bool he_calibration = 3;` (host indicates it supports HE calibration flow)
 
-2. `message HelloAck` (`protocol/osupad.proto`):
+2. `message HelloAck` (`protocol/opad.proto`):
    - `bool he_calibration = 16;` (set to `he_backend_running()`, i.e. `true` only when the HE backend is active at runtime and interactive calibration is available)
 
-3. `message HeCalibrationStatus` (`protocol/osupad.proto`):
+3. `message HeCalibrationStatus` (`protocol/opad.proto`):
    - Existing fields 1..6: `key1_calibrated`, `key2_calibrated`, `key1_rest`, `key1_full`, `key2_rest`, `key2_full`
    - `bool is_locked = 7;` (pad is currently locked due to missing calibration)
    - `bool is_calibrating = 8;` (pad is currently executing calibration)
@@ -95,7 +95,7 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
        uint32 key_index = 2;         // 1 = Key 1, 2 = Key 2 (0 during rest/idle/complete)
        uint32 presses_done = 3;      // 0..5
        HeCalError error = 4;
-       string error_message = 5;     // Fixed size in osupad.options: max_size 48
+       string error_message = 5;     // Fixed size in opad.options: max_size 48
        uint32 raw_value = 6;         // Current live raw sensor count
        uint32 key1_rest = 7;         // Populated on HE_CAL_STAGE_SUCCESS
        uint32 key1_full = 8;         // Populated on HE_CAL_STAGE_SUCCESS
@@ -104,15 +104,15 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
    }
    ```
 
-6. `HostToDevice` Envelope (`protocol/osupad.proto`):
+6. `HostToDevice` Envelope (`protocol/opad.proto`):
    - `bool start_he_calibration = 19;`
    - `bool cancel_he_calibration = 20;`
 
-7. `DeviceToHost` Envelope (`protocol/osupad.proto`):
+7. `DeviceToHost` Envelope (`protocol/opad.proto`):
    - `HeCalibrationProgress he_calibration_progress = 11;`
 
-8. `protocol/osupad.options`:
-   - `osupad.HeCalibrationProgress.error_message max_size:48`
+8. `protocol/opad.options`:
+   - `opad.HeCalibrationProgress.error_message max_size:48`
 
 ---
 
@@ -175,7 +175,7 @@ All protocol updates are in `protocol/osupad.proto` and compiled with `./scripts
 
 ### 5.4 Firmware Protocol Handler
 - `firmware/main/protocol/protocol.c`:
-  - Sets `hello_ack.he_calibration = he_backend_running()` in builds with `CONFIG_OSUPAD_HE_BACKEND`, `false` otherwise (`firmware/main/protocol/protocol.c`, `protocol_send_hello_ack`).
+  - Sets `hello_ack.he_calibration = he_backend_running()` in builds with `CONFIG_OPAD_HE_BACKEND`, `false` otherwise (`firmware/main/protocol/protocol.c`, `protocol_send_hello_ack`).
   - Records `he_calibration` capability from incoming `Hello` message (`s_app_capable = msg->payload.hello.he_calibration`).
   - Populates `status.he_calibration.is_locked` and `status.he_calibration.is_calibrating`.
   - Dispatches `start_he_calibration` and `cancel_he_calibration`.

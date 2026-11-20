@@ -263,7 +263,7 @@ async fn test_daemon_connection_states_and_reconnect() {
     let dev_info = DeviceInfo {
         key_count: 2,
         input_module: Default::default(),
-        device_id: "OSUPAD-TEST01".to_string(),
+        device_id: "OPAD-TEST01".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
@@ -475,7 +475,7 @@ async fn test_playing_cooldown_sync_idle_exactly_one_sync() {
 
     // 6. Sync completes -> transitions to Idle
     let synced = CounterState {
-        device_id: "OSUPAD-01".to_string(),
+        device_id: "OPAD-01".to_string(),
         counter_generation: 1,
         lifetime_key1: 100,
         lifetime_key2: 200,
@@ -503,7 +503,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
     let dev_info = DeviceInfo {
         key_count: 2,
         input_module: Default::default(),
-        device_id: "OSUPAD-SAFE".to_string(),
+        device_id: "OPAD-SAFE".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
@@ -514,7 +514,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
         he_calibration: false,
     };
     let initial_counters = CounterState {
-        device_id: "OSUPAD-SAFE".to_string(),
+        device_id: "OPAD-SAFE".to_string(),
         counter_generation: 1,
         lifetime_key1: 10,
         lifetime_key2: 20,
@@ -716,7 +716,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             .lock()
             .as_ref()
             .unwrap()
-            .load_device_state("OSUPAD-SAFE")
+            .load_device_state("OPAD-SAFE")
             .unwrap()
             .unwrap();
         assert_eq!(loaded.lifetime_key1, 10);
@@ -730,7 +730,7 @@ async fn test_reconcile_and_replacement_scenarios() {
     let dev_info = DeviceInfo {
         key_count: 2,
         input_module: Default::default(),
-        device_id: "OSUPAD-RECON".to_string(),
+        device_id: "OPAD-RECON".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
@@ -745,7 +745,7 @@ async fn test_reconcile_and_replacement_scenarios() {
     {
         let storage = Storage::open_in_memory().unwrap();
         let pc_state = CounterState {
-            device_id: "OSUPAD-RECON".to_string(),
+            device_id: "OPAD-RECON".to_string(),
             counter_generation: 5,
             lifetime_key1: 500,
             lifetime_key2: 600,
@@ -758,7 +758,7 @@ async fn test_reconcile_and_replacement_scenarios() {
         let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
         let esp_state = CounterState {
-            device_id: "OSUPAD-RECON".to_string(),
+            device_id: "OPAD-RECON".to_string(),
             counter_generation: 4,
             lifetime_key1: 100,
             lifetime_key2: 200,
@@ -808,7 +808,7 @@ async fn test_reconcile_and_replacement_scenarios() {
     {
         let storage = Storage::open_in_memory().unwrap();
         let pc_state = CounterState {
-            device_id: "OSUPAD-RECON".to_string(),
+            device_id: "OPAD-RECON".to_string(),
             counter_generation: 2,
             lifetime_key1: 10,
             lifetime_key2: 20,
@@ -821,7 +821,7 @@ async fn test_reconcile_and_replacement_scenarios() {
         let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
         let esp_state = CounterState {
-            device_id: "OSUPAD-RECON".to_string(),
+            device_id: "OPAD-RECON".to_string(),
             counter_generation: 3,
             lifetime_key1: 300,
             lifetime_key2: 400,
@@ -865,7 +865,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             .lock()
             .as_ref()
             .unwrap()
-            .load_device_state("OSUPAD-RECON")
+            .load_device_state("OPAD-RECON")
             .unwrap()
             .unwrap();
         assert_eq!(saved.counter_generation, 3);
@@ -880,17 +880,17 @@ async fn test_reconcile_and_replacement_scenarios() {
             DeviceConfig::default(),
             None,
             // The previous pad's counters, which a restore would bring back
-            counters("OSUPAD-OLD", 1, 5_000, 4_000),
+            counters("OPAD-OLD", 1, 5_000, 4_000),
             HashMap::new(),
             None,
-            vec!["OSUPAD-OLD".to_string()],
+            vec!["OPAD-OLD".to_string()],
             now,
         );
 
         let new_pad_info = DeviceInfo {
             key_count: 2,
             input_module: Default::default(),
-            device_id: "OSUPAD-NEW".to_string(),
+            device_id: "OPAD-NEW".to_string(),
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),
             protocol_version: 1,
@@ -907,7 +907,7 @@ async fn test_reconcile_and_replacement_scenarios() {
         let _ = controller.on_event(RuntimeEvent::DeviceConnected(new_pad_info, None), now);
         assert_eq!(
             controller.state.pending_replacement,
-            Some("OSUPAD-OLD".to_string())
+            Some("OPAD-OLD".to_string())
         );
     }
 }
@@ -919,7 +919,7 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
     let dev_info = DeviceInfo {
         key_count: 2,
         input_module: Default::default(),
-        device_id: "OSUPAD-RETRY".to_string(),
+        device_id: "OPAD-RETRY".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
@@ -930,7 +930,7 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
         he_calibration: false,
     };
     let initial_counters = CounterState {
-        device_id: "OSUPAD-RETRY".to_string(),
+        device_id: "OPAD-RETRY".to_string(),
         counter_generation: 1,
         lifetime_key1: 10,
         lifetime_key2: 20,
@@ -998,7 +998,7 @@ async fn a_non_monotonic_rejection_is_retried_with_the_pads_current_counters() {
     let dev_info = DeviceInfo {
         key_count: 2,
         input_module: Default::default(),
-        device_id: "OSUPAD-RACE".to_string(),
+        device_id: "OPAD-RACE".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
@@ -1009,7 +1009,7 @@ async fn a_non_monotonic_rejection_is_retried_with_the_pads_current_counters() {
         he_calibration: false,
     };
     let snapshot = CounterState {
-        device_id: "OSUPAD-RACE".to_string(),
+        device_id: "OPAD-RACE".to_string(),
         counter_generation: 1,
         lifetime_key1: 10,
         lifetime_key2: 20,
@@ -1079,7 +1079,7 @@ async fn test_json_validation_preview_and_confirm() {
     let dev_info = DeviceInfo {
         key_count: 2,
         input_module: Default::default(),
-        device_id: "OSUPAD-JSON".to_string(),
+        device_id: "OPAD-JSON".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
@@ -1090,7 +1090,7 @@ async fn test_json_validation_preview_and_confirm() {
         he_calibration: false,
     };
     let current_counters = CounterState {
-        device_id: "OSUPAD-JSON".to_string(),
+        device_id: "OPAD-JSON".to_string(),
         counter_generation: 2,
         lifetime_key1: 1000,
         lifetime_key2: 2000,
@@ -1214,7 +1214,7 @@ async fn test_json_import_restores_key3_and_game_keys() {
     let dev_info = DeviceInfo {
         key_count: 3,
         input_module: Default::default(),
-        device_id: "OSUPAD-K3".to_string(),
+        device_id: "OPAD-K3".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
@@ -1223,7 +1223,7 @@ async fn test_json_import_restores_key3_and_game_keys() {
         he_calibration: true,
     };
     let counters = CounterState {
-        device_id: "OSUPAD-K3".to_string(),
+        device_id: "OPAD-K3".to_string(),
         counter_generation: 2,
         lifetime_key1: 1000,
         lifetime_key2: 2000,
@@ -1699,26 +1699,26 @@ async fn test_replacement_detected_with_real_event_order() {
     let now = Instant::now();
     let mut controller = RuntimeController::new(
         DeviceConfig::default(),
-        Some(pad_info("OSUPAD-OLD")),
-        counters("OSUPAD-OLD", 3, 50_000, 40_000),
+        Some(pad_info("OPAD-OLD")),
+        counters("OPAD-OLD", 3, 50_000, 40_000),
         HashMap::new(),
         None,
-        vec!["OSUPAD-OLD".to_string()],
+        vec!["OPAD-OLD".to_string()],
         now,
     );
 
     let _ = controller.on_event(
-        RuntimeEvent::DeviceCounters(counters("OSUPAD-NEW", 1, 3, 4)),
+        RuntimeEvent::DeviceCounters(counters("OPAD-NEW", 1, 3, 4)),
         now,
     );
     let actions = controller.on_event(
-        RuntimeEvent::DeviceConnected(pad_info("OSUPAD-NEW"), None),
+        RuntimeEvent::DeviceConnected(pad_info("OPAD-NEW"), None),
         now,
     );
 
     assert_eq!(
         controller.state.pending_replacement,
-        Some("OSUPAD-OLD".to_string())
+        Some("OPAD-OLD".to_string())
     );
     assert!(!actions
         .iter()
@@ -1812,10 +1812,10 @@ async fn test_apply_event_keeps_ipc_changes() {
         None,
         // The previous pad's counters, so the replacement prompt below has
         // something to offer
-        counters("OSUPAD-OLD", 1, 5_000, 4_000),
+        counters("OPAD-OLD", 1, 5_000, 4_000),
         HashMap::new(),
         None,
-        vec!["OSUPAD-OLD".to_string()],
+        vec!["OPAD-OLD".to_string()],
         now,
     );
     let shared = Arc::new(Mutex::new(controller.state.clone()));
@@ -1836,7 +1836,7 @@ async fn test_apply_event_keeps_ipc_changes() {
         &mut controller,
         &shared,
         &pending,
-        RuntimeEvent::DeviceConnected(pad_info("OSUPAD-OLD"), None),
+        RuntimeEvent::DeviceConnected(pad_info("OPAD-OLD"), None),
         now,
     );
     assert!(actions
@@ -1848,14 +1848,14 @@ async fn test_apply_event_keeps_ipc_changes() {
         &mut controller,
         &shared,
         &pending,
-        RuntimeEvent::DeviceCounters(counters("OSUPAD-NEW", 1, 0, 0)),
+        RuntimeEvent::DeviceCounters(counters("OPAD-NEW", 1, 0, 0)),
         now,
     );
     let _ = opad_daemon::runtime::apply_event(
         &mut controller,
         &shared,
         &pending,
-        RuntimeEvent::DeviceConnected(pad_info("OSUPAD-NEW"), None),
+        RuntimeEvent::DeviceConnected(pad_info("OPAD-NEW"), None),
         now,
     );
     assert!(shared.lock().pending_replacement.is_some());
@@ -1867,17 +1867,17 @@ async fn test_apply_event_keeps_ipc_changes() {
         RuntimeEvent::Tick(now),
         now,
     );
-    assert!(controller.known_devices.contains("OSUPAD-NEW"));
+    assert!(controller.known_devices.contains("OPAD-NEW"));
 }
 
 // perform_sync must not lift the storage write guard: if a map started while it ran, writes
 // stay blocked until the runtime allows them again.
 #[tokio::test]
 async fn test_perform_sync_leaves_write_guard_to_runtime() {
-    let dev = pad_info("OSUPAD-GUARD");
+    let dev = pad_info("OPAD-GUARD");
     let storage = Storage::open_in_memory().unwrap();
     storage
-        .save_device_state(&dev, &counters("OSUPAD-GUARD", 1, 10, 10))
+        .save_device_state(&dev, &counters("OPAD-GUARD", 1, 10, 10))
         .unwrap();
     let guard = storage.writes_allowed_handle();
     storage.set_writes_allowed(false);
@@ -1886,10 +1886,10 @@ async fn test_perform_sync_leaves_write_guard_to_runtime() {
     let mut state = RuntimeController::new(
         DeviceConfig::default(),
         Some(dev),
-        counters("OSUPAD-GUARD", 1, 20, 20),
+        counters("OPAD-GUARD", 1, 20, 20),
         HashMap::new(),
         None,
-        vec!["OSUPAD-GUARD".to_string()],
+        vec!["OPAD-GUARD".to_string()],
         Instant::now(),
     )
     .state;
@@ -1922,7 +1922,7 @@ fn test_key3_sync_target() {
 // record the pad's, and a counter reset zeroes it on both sides
 #[tokio::test]
 async fn test_key3_count_survives_an_erased_nvs_and_follows_a_reset() {
-    let id = "OSUPAD-K3SYNC";
+    let id = "OPAD-K3SYNC";
     let dev = pad_info(id);
     let storage = Storage::open_in_memory().unwrap();
     storage
@@ -2009,7 +2009,7 @@ async fn test_replug_during_play_keeps_the_state_machine_and_write_guard() {
     let dev_info = DeviceInfo {
         key_count: 2,
         input_module: Default::default(),
-        device_id: "OSUPAD-HOTPLUG".to_string(),
+        device_id: "OPAD-HOTPLUG".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
@@ -2147,7 +2147,7 @@ fn pad(device_id: &str) -> DeviceInfo {
 #[tokio::test]
 async fn test_unclaimed_pad_is_claimed_without_a_prompt() {
     let id = uuid::Uuid::new_v4().to_string();
-    let info = pad("OSUPAD-FRESH");
+    let info = pad("OPAD-FRESH");
     let mut controller = ownership_controller(Some(&id), vec![info.device_id.clone()]);
     let now = Instant::now();
 
@@ -2164,7 +2164,7 @@ async fn test_unclaimed_pad_is_claimed_without_a_prompt() {
 #[tokio::test]
 async fn test_our_own_pad_connects_silently() {
     let id = uuid::Uuid::new_v4().to_string();
-    let info = pad("OSUPAD-MINE");
+    let info = pad("OPAD-MINE");
     let mut controller = ownership_controller(Some(&id), vec![info.device_id.clone()]);
     let now = Instant::now();
 
@@ -2185,7 +2185,7 @@ async fn test_our_own_pad_connects_silently() {
 async fn test_a_pad_owned_elsewhere_prompts_and_blocks_sync() {
     let id = uuid::Uuid::new_v4().to_string();
     let other = uuid::Uuid::new_v4().to_string();
-    let info = pad("OSUPAD-THEIRS");
+    let info = pad("OPAD-THEIRS");
     let mut controller = ownership_controller(Some(&id), vec![info.device_id.clone()]);
     let now = Instant::now();
 
@@ -2232,7 +2232,7 @@ async fn test_a_pad_owned_elsewhere_prompts_and_blocks_sync() {
 async fn test_leaving_a_foreign_pad_alone_writes_nothing() {
     let id = uuid::Uuid::new_v4().to_string();
     let other = uuid::Uuid::new_v4().to_string();
-    let info = pad("OSUPAD-THEIRS");
+    let info = pad("OPAD-THEIRS");
     let mut controller = ownership_controller(Some(&id), vec![info.device_id.clone()]);
     let now = Instant::now();
 
@@ -2290,7 +2290,7 @@ async fn test_leaving_a_foreign_pad_alone_writes_nothing() {
 async fn test_taking_over_claims_the_pad_and_resumes() {
     let id = uuid::Uuid::new_v4().to_string();
     let other = uuid::Uuid::new_v4().to_string();
-    let info = pad("OSUPAD-THEIRS");
+    let info = pad("OPAD-THEIRS");
     let mut controller = ownership_controller(Some(&id), vec![info.device_id.clone()]);
     let now = Instant::now();
 
@@ -2361,7 +2361,7 @@ async fn test_taking_over_claims_the_pad_and_resumes() {
 #[tokio::test]
 async fn test_takeover_without_an_identity_is_refused_and_stays_pending() {
     let other = uuid::Uuid::new_v4().to_string();
-    let info = pad("OSUPAD-THEIRS");
+    let info = pad("OPAD-THEIRS");
     let mut controller = ownership_controller(
         Some(&uuid::Uuid::new_v4().to_string()),
         vec![info.device_id.clone()],
@@ -2412,13 +2412,13 @@ async fn test_a_second_pad_is_never_judged_by_the_first_pads_owner() {
     let other = uuid::Uuid::new_v4().to_string();
     let mut controller = ownership_controller(
         Some(&id),
-        vec!["OSUPAD-ONE".to_string(), "OSUPAD-TWO".to_string()],
+        vec!["OPAD-ONE".to_string(), "OPAD-TWO".to_string()],
     );
     let now = Instant::now();
 
     // A pad owned by someone else connects and is left alone
     controller.on_event(RuntimeEvent::DeviceOwnership(owner_bytes(&other)), now);
-    controller.on_event(RuntimeEvent::DeviceConnected(pad("OSUPAD-ONE"), None), now);
+    controller.on_event(RuntimeEvent::DeviceConnected(pad("OPAD-ONE"), None), now);
     assert!(controller.state.pending_takeover.is_some());
     controller.on_event(RuntimeEvent::DeviceDisconnected, now);
 
@@ -2426,7 +2426,7 @@ async fn test_a_second_pad_is_never_judged_by_the_first_pads_owner() {
     // standing, this one would be wrongly prompted about — and worse, a pad we
     // do own could be wrongly claimed under someone else's id.
     controller.on_event(RuntimeEvent::DeviceOwnership(Vec::new()), now);
-    let actions = controller.on_event(RuntimeEvent::DeviceConnected(pad("OSUPAD-TWO"), None), now);
+    let actions = controller.on_event(RuntimeEvent::DeviceConnected(pad("OPAD-TWO"), None), now);
     assert!(
         controller.state.pending_takeover.is_none(),
         "the previous pad's owner leaked into this connect"
@@ -2439,7 +2439,7 @@ async fn test_a_second_pad_is_never_judged_by_the_first_pads_owner() {
 #[tokio::test]
 async fn test_an_install_with_no_identity_neither_claims_nor_prompts() {
     let other = uuid::Uuid::new_v4().to_string();
-    let info = pad("OSUPAD-THEIRS");
+    let info = pad("OPAD-THEIRS");
     let mut controller = ownership_controller(None, vec![info.device_id.clone()]);
     let now = Instant::now();
 
@@ -2470,7 +2470,7 @@ fn firmware_update_fixture(mode: RuntimeMode, connected: bool) -> IpcFixture {
     let dev_info = DeviceInfo {
         key_count: 2,
         input_module: Default::default(),
-        device_id: "OSUPAD-FW".to_string(),
+        device_id: "OPAD-FW".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
@@ -2481,7 +2481,7 @@ fn firmware_update_fixture(mode: RuntimeMode, connected: bool) -> IpcFixture {
         he_calibration: false,
     };
     let counters = CounterState {
-        device_id: "OSUPAD-FW".to_string(),
+        device_id: "OPAD-FW".to_string(),
         counter_generation: 3,
         lifetime_key1: 100,
         lifetime_key2: 200,
@@ -3014,7 +3014,7 @@ async fn test_device_connected_with_config_adopts_device_config() {
     let dev_info = DeviceInfo {
         key_count: 2,
         input_module: Default::default(),
-        device_id: "OSUPAD-CONFIG-TEST".to_string(),
+        device_id: "OPAD-CONFIG-TEST".to_string(),
         board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
         firmware_version: "1.0.0".to_string(),
         protocol_version: 1,
@@ -3070,19 +3070,19 @@ async fn a_known_pad_with_erased_nvs_is_restored_not_adopted() {
     };
     let mut controller = RuntimeController::new(
         ours.clone(),
-        Some(pad_info("OSUPAD-WIPED")),
-        counters("OSUPAD-WIPED", 1, 5000, 4000),
+        Some(pad_info("OPAD-WIPED")),
+        counters("OPAD-WIPED", 1, 5000, 4000),
         HashMap::new(),
         None,
-        vec!["OSUPAD-WIPED".to_string()],
+        vec!["OPAD-WIPED".to_string()],
         now,
     );
     let _ = controller.on_event(
-        RuntimeEvent::DeviceCounters(counters("OSUPAD-WIPED", 1, 0, 0)),
+        RuntimeEvent::DeviceCounters(counters("OPAD-WIPED", 1, 0, 0)),
         now,
     );
     let actions = controller.on_event(
-        RuntimeEvent::DeviceConnected(pad_info("OSUPAD-WIPED"), Some(DeviceConfig::default())),
+        RuntimeEvent::DeviceConnected(pad_info("OPAD-WIPED"), Some(DeviceConfig::default())),
         now,
     );
 
@@ -3103,19 +3103,19 @@ async fn a_known_pad_with_its_counters_is_not_flagged() {
     let now = Instant::now();
     let mut controller = RuntimeController::new(
         DeviceConfig::default(),
-        Some(pad_info("OSUPAD-FINE")),
-        counters("OSUPAD-FINE", 1, 5000, 4000),
+        Some(pad_info("OPAD-FINE")),
+        counters("OPAD-FINE", 1, 5000, 4000),
         HashMap::new(),
         None,
-        vec!["OSUPAD-FINE".to_string()],
+        vec!["OPAD-FINE".to_string()],
         now,
     );
     let _ = controller.on_event(
-        RuntimeEvent::DeviceCounters(counters("OSUPAD-FINE", 1, 5001, 4000)),
+        RuntimeEvent::DeviceCounters(counters("OPAD-FINE", 1, 5001, 4000)),
         now,
     );
     let _ = controller.on_event(
-        RuntimeEvent::DeviceConnected(pad_info("OSUPAD-FINE"), Some(DeviceConfig::default())),
+        RuntimeEvent::DeviceConnected(pad_info("OPAD-FINE"), Some(DeviceConfig::default())),
         now,
     );
     assert!(!controller.state.nvs_restore_pending);
@@ -3128,15 +3128,15 @@ async fn a_known_pad_with_its_counters_is_not_flagged() {
 #[test]
 fn the_pc_is_ahead_only_with_more_presses_on_a_key() {
     use opad_daemon::runtime::pc_is_ahead;
-    let pad = counters("OSUPAD-X", 1, 100, 100);
+    let pad = counters("OPAD-X", 1, 100, 100);
     assert!(
         !pc_is_ahead(None, &pad),
         "a PC that never counted is not ahead"
     );
-    assert!(!pc_is_ahead(Some(&counters("OSUPAD-X", 1, 100, 100)), &pad));
-    assert!(!pc_is_ahead(Some(&counters("OSUPAD-X", 1, 50, 99)), &pad));
-    assert!(pc_is_ahead(Some(&counters("OSUPAD-X", 1, 101, 0)), &pad));
-    assert!(pc_is_ahead(Some(&counters("OSUPAD-X", 1, 0, 101)), &pad));
+    assert!(!pc_is_ahead(Some(&counters("OPAD-X", 1, 100, 100)), &pad));
+    assert!(!pc_is_ahead(Some(&counters("OPAD-X", 1, 50, 99)), &pad));
+    assert!(pc_is_ahead(Some(&counters("OPAD-X", 1, 101, 0)), &pad));
+    assert!(pc_is_ahead(Some(&counters("OPAD-X", 1, 0, 101)), &pad));
 }
 
 /// Sets up a pad owned by another install with `pad_k` presses, and this PC's
@@ -3147,7 +3147,7 @@ async fn foreign_pad_with(
 ) -> (bool, DaemonState, MockDeviceLink) {
     let id = uuid::Uuid::new_v4().to_string();
     let other = uuid::Uuid::new_v4().to_string();
-    let info = pad("OSUPAD-SHARED");
+    let info = pad("OPAD-SHARED");
     let mut controller = ownership_controller(Some(&id), vec![info.device_id.clone()]);
     let now = Instant::now();
     controller.on_event(
@@ -3211,30 +3211,30 @@ async fn a_new_pad_ahead_of_the_previous_one_is_not_asked_about() {
     let now = Instant::now();
     let mut controller = RuntimeController::new(
         DeviceConfig::default(),
-        Some(pad_info("OSUPAD-OLD")),
-        counters("OSUPAD-OLD", 1, 10, 20),
+        Some(pad_info("OPAD-OLD")),
+        counters("OPAD-OLD", 1, 10, 20),
         HashMap::new(),
         None,
-        vec!["OSUPAD-OLD".to_string()],
+        vec!["OPAD-OLD".to_string()],
         now,
     );
     let _ = controller.on_event(
-        RuntimeEvent::DeviceCounters(counters("OSUPAD-NEW", 1, 30, 40)),
+        RuntimeEvent::DeviceCounters(counters("OPAD-NEW", 1, 30, 40)),
         now,
     );
     let actions = controller.on_event(
-        RuntimeEvent::DeviceConnected(pad_info("OSUPAD-NEW"), None),
+        RuntimeEvent::DeviceConnected(pad_info("OPAD-NEW"), None),
         now,
     );
     assert!(controller.state.pending_replacement.is_none());
-    assert!(controller.known_devices.contains("OSUPAD-NEW"));
+    assert!(controller.known_devices.contains("OPAD-NEW"));
     assert!(actions.contains(&RuntimeAction::TriggerSync));
 }
 
 /// A foreign pad after the user said "leave it alone": the prompt is gone but
 /// `foreign_pad` stays set.
 fn left_alone_foreign_pad() -> (RuntimeController, DeviceInfo) {
-    let info = pad("OSUPAD-THEIRS");
+    let info = pad("OPAD-THEIRS");
     let mut controller = ownership_controller(
         Some(&uuid::Uuid::new_v4().to_string()),
         vec![info.device_id.clone()],
@@ -3262,13 +3262,13 @@ fn only_a_pad_with_no_open_question_may_be_touched() {
     st.foreign_pad = false;
     assert!(st.may_touch_pad());
     st.pending_takeover = Some(opad_daemon::runtime::PendingTakeover {
-        device_id: "OSUPAD-THEIRS".into(),
+        device_id: "OPAD-THEIRS".into(),
         device_key1: 0,
         device_key2: 0,
     });
     assert!(!st.may_touch_pad(), "takeover prompt open");
     st.pending_takeover = None;
-    st.pending_replacement = Some("OSUPAD-OLD".into());
+    st.pending_replacement = Some("OPAD-OLD".into());
     assert!(!st.may_touch_pad(), "replacement prompt open");
 }
 
@@ -3349,10 +3349,10 @@ async fn kps_layouts_are_refused_for_a_pad_that_shows_only_kpm() {
     let controller = RuntimeController::new(
         DeviceConfig::default(),
         None,
-        counters("OSUPAD-KPS", 1, 0, 0),
+        counters("OPAD-KPS", 1, 0, 0),
         HashMap::new(),
         None,
-        vec!["OSUPAD-KPS".to_string()],
+        vec!["OPAD-KPS".to_string()],
         now,
     );
     let mut state = controller.state.clone();
@@ -3545,7 +3545,7 @@ async fn status_says_the_pad_is_foreign_after_the_prompt_is_answered() {
 #[tokio::test]
 async fn taking_over_pushes_the_layouts_held_back_on_connect() {
     let id = uuid::Uuid::new_v4().to_string();
-    let info = pad("OSUPAD-THEIRS");
+    let info = pad("OPAD-THEIRS");
     let mut controller = ownership_controller(Some(&id), vec![info.device_id.clone()]);
     let layout = Layout {
         background: 0,
@@ -3597,18 +3597,18 @@ async fn taking_over_pushes_the_layouts_held_back_on_connect() {
 #[test]
 fn an_incompatible_pad_is_not_adopted() {
     let now = Instant::now();
-    let ours = counters("OSUPAD-OURS", 3, 500, 600);
+    let ours = counters("OPAD-OURS", 3, 500, 600);
     let mut controller = RuntimeController::new(
         DeviceConfig::default(),
-        Some(pad_info("OSUPAD-OURS")),
+        Some(pad_info("OPAD-OURS")),
         ours.clone(),
         HashMap::new(),
         None,
-        vec!["OSUPAD-OURS".to_string()],
+        vec!["OPAD-OURS".to_string()],
         now,
     );
     let config_before = controller.state.config.clone();
-    let mut v2 = pad_info("OSUPAD-V2");
+    let mut v2 = pad_info("OPAD-V2");
     v2.protocol_version = 2;
     let v2_config = DeviceConfig {
         brightness: config_before.brightness.saturating_sub(10).max(1),
@@ -3618,7 +3618,7 @@ fn an_incompatible_pad_is_not_adopted() {
     let mut actions = Vec::new();
     actions.extend(controller.on_event(RuntimeEvent::DeviceOwnership(Vec::new()), now));
     actions.extend(controller.on_event(
-        RuntimeEvent::DeviceCounters(counters("OSUPAD-V2", 1, 7, 8)),
+        RuntimeEvent::DeviceCounters(counters("OPAD-V2", 1, 7, 8)),
         now,
     ));
     actions.extend(controller.on_event(RuntimeEvent::DeviceConnected(v2, Some(v2_config)), now));
@@ -3632,7 +3632,7 @@ fn an_incompatible_pad_is_not_adopted() {
     assert!(st.esp_counters.is_none());
     assert_eq!(
         st.device_info.as_ref().map(|i| i.device_id.as_str()),
-        Some("OSUPAD-OURS")
+        Some("OPAD-OURS")
     );
     assert_eq!(
         st.incompatible.as_ref().map(|i| i.protocol_version),
@@ -3664,9 +3664,9 @@ fn an_incompatible_pad_is_not_adopted() {
 /// DA#5: counters the pad rejected are not presented as the pad's
 #[tokio::test]
 async fn a_failed_sync_leaves_the_pads_counters_in_memory() {
-    let info = pad_info("OSUPAD-REJECT");
-    let pc = counters("OSUPAD-REJECT", 1, 100, 200);
-    let on_pad = counters("OSUPAD-REJECT", 1, 10, 20);
+    let info = pad_info("OPAD-REJECT");
+    let pc = counters("OPAD-REJECT", 1, 100, 200);
+    let on_pad = counters("OPAD-REJECT", 1, 10, 20);
     let storage = Storage::open_in_memory().unwrap();
     storage.save_device_state(&info, &pc).unwrap();
     let storage = Arc::new(Mutex::new(Some(storage)));
@@ -3743,7 +3743,7 @@ async fn a_counter_reset_while_disconnected_survives_the_next_connect() {
         let info = DeviceInfo {
             key_count: 2,
             input_module: Default::default(),
-            device_id: "OSUPAD-RESET".to_string(),
+            device_id: "OPAD-RESET".to_string(),
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: "1.0.0".to_string(),
             protocol_version: 1,
@@ -3831,7 +3831,7 @@ async fn a_queued_counter_reset_is_kept_for_its_own_pad() {
     let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
     let device = MockDeviceLink::new(true);
     let other = CounterState {
-        device_id: "OSUPAD-OTHER".to_string(),
+        device_id: "OPAD-OTHER".to_string(),
         counter_generation: 1,
         lifetime_key1: 50,
         lifetime_key2: 60,
@@ -3841,7 +3841,7 @@ async fn a_queued_counter_reset_is_kept_for_its_own_pad() {
     *device.device_counters.lock() = Some(other.clone());
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
     pending_ops.lock().pending_device_push = Some(opad_daemon::runtime::PendingCounterReset {
-        device_id: Some("OSUPAD-RESET".to_string()),
+        device_id: Some("OPAD-RESET".to_string()),
     });
     let daemon_state = Arc::new(Mutex::new(idle_state(
         true,

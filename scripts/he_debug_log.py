@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Analyse the HE debug firmware's log (CONFIG_OSUPAD_HE_DEBUG, he-debug.log).
+"""Analyse the HE debug firmware's log (CONFIG_OPAD_HE_DEBUG, he-debug.log).
 
 Built while chasing phantom key presses on an HE pad
 (docs/history/2026-10-22-he-phantom-presses.md). A press counts as a phantom

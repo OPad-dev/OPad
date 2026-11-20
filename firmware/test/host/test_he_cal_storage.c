@@ -16,9 +16,9 @@ static bool valid[2];
 static int fail_at; // 1 = open, 2 = set_blob, 3 = commit
 static unsigned writes;
 static bool exercise_concurrency;
-static osupad_state_t mode = OSUPAD_STATE_IDLE;
+static opad_state_t mode = OPAD_STATE_IDLE;
 
-osupad_state_t runtime_get_state(void) { return mode; }
+opad_state_t runtime_get_state(void) { return mode; }
 void counters_record_nvs_write(void) { writes++; }
 
 esp_err_t nvs_open(const char *name, int access, nvs_handle_t *handle)
@@ -120,13 +120,13 @@ int main(void)
         }
     }
     fail_at = 0;
-    mode = OSUPAD_STATE_PLAYING;
+    mode = OPAD_STATE_PLAYING;
     assert(he_cal_save(next) == ESP_ERR_INVALID_STATE);
-    mode = OSUPAD_STATE_COOLDOWN;
+    mode = OPAD_STATE_COOLDOWN;
     assert(he_cal_save(next) == ESP_ERR_INVALID_STATE);
     expect_active(old);
     assert(writes == expected_writes);
-    mode = OSUPAD_STATE_IDLE;
+    mode = OPAD_STATE_IDLE;
     assert(he_cal_save(next) == ESP_OK);
     assert(writes == ++expected_writes);
     assert(valid[0] && valid[1]);
@@ -134,10 +134,10 @@ int main(void)
     expect_active(next);
 
     // Existing deferred API still flushes once IDLE, serialized with saves.
-    mode = OSUPAD_STATE_PLAYING;
+    mode = OPAD_STATE_PLAYING;
     assert(he_cal_set(old) == ESP_OK && he_cal_is_dirty());
     assert(he_cal_flush() == ESP_OK && writes == expected_writes);
-    mode = OSUPAD_STATE_IDLE;
+    mode = OPAD_STATE_IDLE;
     assert(he_cal_flush() == ESP_OK && writes == ++expected_writes);
     assert(!he_cal_is_dirty());
     assert(he_cal_init() == ESP_OK);

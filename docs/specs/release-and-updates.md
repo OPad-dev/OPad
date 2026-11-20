@@ -93,7 +93,7 @@ compatibility check against this machine and this pad.
 |---|---|---|---|
 | App (daemon, GUI, `opadctl`) | `1.0.0-rc` | `desktop/Cargo.toml` | app release |
 | Firmware | `1.0.0` | `firmware/CMakeLists.txt` (`PROJECT_VER`) | firmware release |
-| App ↔ pad protocol | `PROTOCOL_VERSION_V1` | `protocol/osupad.proto` | only on an incompatible wire change |
+| App ↔ pad protocol | `PROTOCOL_VERSION_V1` | `protocol/opad.proto` | only on an incompatible wire change |
 | Daemon ↔ GUI IPC | `1` | `IPC_PROTOCOL_VERSION`, `desktop/crates/opad-ipc/src/lib.rs:21` | only on an incompatible IPC change |
 | Update feed format | schema `1` → `2` | `SUPPORTED_SCHEMA`, `opad-update/src/manifest.rs` | only on an incompatible feed change |
 | tosu | `4.26.2` | `TOSU_VERSION` (pin, AGENTS.md §5) | when we bump the pin |
@@ -106,7 +106,7 @@ not need a firmware release, and the other way round (AGENTS.md §1.3).
 
 SemVer says how big a change is. It does not decide compatibility; the
 protocol does. The pad already announces what it is and what it can do in
-`HelloAck` (`protocol/osupad.proto:37`): `protocol_version`, `board_profile`,
+`HelloAck` (`protocol/opad.proto:37`): `protocol_version`, `board_profile`,
 `running_partition` and capability flags such as `board_test`, where a field
 missing in older firmware reads as false and the host simply hides that
 feature.

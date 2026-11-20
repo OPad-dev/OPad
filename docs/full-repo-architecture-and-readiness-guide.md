@@ -83,7 +83,7 @@ The hardware stack is modular, decoupling the controller logic from switch actua
   * Designed for linear Hall-effect sensors (e.g. WCH CH440G or Allegro A1304) for continuous rapid-trigger actuation (`docs/specs/v2-rapid-trigger.md`).
   * Dedicated low-noise analog reference traces and bypass filtering.
 * **Parametric Enclosure (`hardware/3d/custom_case/V1/`):**
-  * Modeled 100% in parametric OpenSCAD (`osupad_enclosure.scad`).
+  * Modeled 100% in parametric OpenSCAD (`opad_enclosure.scad`).
   * Renders top case and bottom plate with recessed glass pocket for the Waveshare LCD, $22^\circ$ ergonomic deck angle, internal cable routing, and brass M2 heat-set threaded insert standoffs.
 
 ### 2.2 Firmware Architecture (`firmware/`)
@@ -106,7 +106,7 @@ Engineered on ESP-IDF v5.x with FreeRTOS SMP task segregation:
   * `ota_1` ($1920\,\text{KB}$ at `0x200000`): Application slot 1.
 
 ### 2.3 Wire Protocol (`protocol/`)
-Defined in Google Protocol Buffers v3 (`protocol/osupad.proto`):
+Defined in Google Protocol Buffers v3 (`protocol/opad.proto`):
 * **HostToDevice Messages:** `Hello`, `SetConfig`, `ClaimOwnership`, `UpdateDataSources`, `SetDisplayLayout`, `ResetCounters`, `TriggerEasterEgg`, `Ping`.
 * **DeviceToHost Messages:** `HelloAck`, `DeviceStatus`, `CounterSnapshot`, `ConfigAck`, `LogEventBatch`, `PinDetectedEvent`.
 * **Framing Structure:**
@@ -153,7 +153,7 @@ The discovery engine must eliminate all port pinning and broad matching by imple
 ```mermaid
 flowchart TD
     Start["Scan Cycle Triggered (every 400ms)"] --> Ports["Enumerate serialport::available_ports()"]
-    Ports --> MatchVID{"Any port matches VID 0x303A / 0x1209<br/>AND Product contains 'OPad' or Serial 'OSUPAD-'?"}
+    Ports --> MatchVID{"Any port matches VID 0x303A / 0x1209<br/>AND Product contains 'OPad' or Serial 'OPAD-'?"}
     
     MatchVID -- "Yes (Fast Path)" --> FastCandidate["Select Matched Port"]
     FastCandidate --> OpenFast["Open Port @ 115200 Baud"]
@@ -167,7 +167,7 @@ flowchart TD
     Filter --> LoopPort["Iterate Remaining Ports"]
     LoopPort --> ProbeOpen["Open Port with 150ms Timeout"]
     ProbeOpen --> ProbeHello["Send Non-Destructive Hello"]
-    ProbeHello --> ProbeAck{"Valid HelloAck with<br/>device_id 'OSUPAD-*'?"}
+    ProbeHello --> ProbeAck{"Valid HelloAck with<br/>device_id 'OPAD-*'?"}
     ProbeAck -- Yes --> Connected
     ProbeAck -- No --> NextPort{"More Ports?"}
     NextPort -- Yes --> LoopPort
@@ -176,7 +176,7 @@ flowchart TD
 
 #### Technical Guarantees:
 * **Zero User Pinning:** The user never needs to supply `--port` or select a port in settings.
-* **Safe Handshake Confirmation:** A port is **never** declared connected until a valid Protobuf `HelloAck` frame containing a verified `device_id` prefix (`OSUPAD-`) is parsed.
+* **Safe Handshake Confirmation:** A port is **never** declared connected until a valid Protobuf `HelloAck` frame containing a verified `device_id` prefix (`OPAD-`) is parsed.
 * **Bootloader Location Tracking:** Before rebooting into the ROM bootloader, record the physical USB location/serial number of the app port, and only bind to a `0x303A:0x1001` device at that identical hardware path.
 * **ModemManager Immunity:** In `packaging/linux/udev/70-opad.rules`, add `ENV{ID_MM_DEVICE_IGNORE}="1"` so Linux modem daemons do not toggle DTR/RTS and accidentally trigger download mode.
 
@@ -193,10 +193,10 @@ flowchart TD
   * Add a CI verification check using `objdump -T` that enforces the maximum permitted glibc symbol version.
 
 ### 4.2 Leftover Legacy Naming in Release Tooling (P0)
-* **The Symptom:** `opadctl flash <dir>` fails looking for `osupad-firmware.bin`; `opad-manifest` ignores release artifacts and offers no updates.
-* **Root Cause:** When renaming the project from `osupad` to `opad`:
-  * `desktop/cli/src/main.rs:743` still checks for `osupad-firmware.bin` while IDF builds produce `opad-firmware.bin`.
-  * `opad-update/src/bin/opad-manifest.rs:232-251` still filters artifact names using legacy `osupad-` prefixes.
+* **The Symptom:** `opadctl flash <dir>` fails looking for `opad-firmware.bin`; `opad-manifest` ignores release artifacts and offers no updates.
+* **Root Cause:** When renaming the project from `opad` to `opad`:
+  * `desktop/cli/src/main.rs:743` still checks for `opad-firmware.bin` while IDF builds produce `opad-firmware.bin`.
+  * `opad-update/src/bin/opad-manifest.rs:232-251` still filters artifact names using legacy `opad-` prefixes.
 * **The Fix:** Update all path resolution and artifact naming filters in `opadctl` and `opad-manifest` to canonical `opad-` names.
 
 ### 4.3 Missing Bundled Flashing Tooling: `espflash` (P0)
@@ -226,7 +226,7 @@ flowchart TD
 | **`tosu` Memory Telemetry** | Attaches to `osu!.exe` natively using Win32 `OpenProcess` / `ReadProcessMemory`. | Wine's `osu!.exe` memory access blocked by `kernel.yama.ptrace_scope = 1`. | Grant `setcap cap_sys_ptrace=eip` to `/usr/lib/opad/tosu/tosu` in packaging; provide GUI diagnostic guide for Yama scope. |
 | **System Tray Integration** | Uses `tray-icon` + `muda` with Win32 message loop; always present. | Uses `ksni` (D-Bus StatusNotifierItem); fails on default GNOME Shell (Ubuntu/Fedora). | Provide deterministic timeout for tray detection; avoid closing window to background if no tray exists. |
 | **Daemon Autostart** | Registers in `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. | Systemd user unit specifies `WantedBy=graphical-session.target`. | Switch unit to `WantedBy=default.target` so it activates on tiling WMs, Wayland compositors, and custom shells. |
-| **State & Log Paths** | Centralized in `%APPDATA%\opad`. | `platform_linux.rs` hardcodes `~/.local/state/osupad/`, while daemon uses `opad/`. | Replace hardcoded string with canonical `opad_model::paths::state_dir()`. |
+| **State & Log Paths** | Centralized in `%APPDATA%\opad`. | `platform_linux.rs` hardcodes `~/.local/state/opad/`, while daemon uses `opad/`. | Replace hardcoded string with canonical `opad_model::paths::state_dir()`. |
 | **GUI Single Instance** | Uses Win32 Mutex `Local\opad-gui` and named pipe. | Uses Unix domain socket `gui.sock`. | Apply explicit security DACL to the Windows named pipe; ensure Unix socket cleans stale lock files on crash. |
 | **Graphics Rendering Backend** | `iced` wgpu initializes DirectX 12 / Vulkan. | Requires `libvulkan.so.1` or EGL/GLX. Crashes on headless or minimal VMs. | Add fallback detection to software/GL rasterizer if Vulkan physical adapter initialization fails. |
 
@@ -257,7 +257,7 @@ The easter egg animation ("freaky 67 cat") is embedded directly into the firmwar
 2. **Firmware Decoupling & Build Option:** To ensure strict distribution channels (e.g., official Debian `main` or Fedora repositories, which mandate that all assets have an identified open-source provenance) can build the package without obstruction:
    * Maintain the default firmware build with the community GIF included.
    * Provide an optional Kconfig flag in ESP-IDF (`CONFIG_OPAD_DISABLE_MEME_ANIMATION=y`) that replaces the byte array with an algorithmic procedural pulse or simple vector animation if a strictly auditable build is required.
-3. **Packaging Isolation:** The GIF is compiled into the firmware binary (`osupad-firmware.bin`) and is **never** distributed as a loose image file in desktop Linux packages (`.deb`, `.rpm`, `.AppImage`). The desktop packages distribute only compiled Rust binaries, license files, fonts, and the standalone `tosu` binary.
+3. **Packaging Isolation:** The GIF is compiled into the firmware binary (`opad-firmware.bin`) and is **never** distributed as a loose image file in desktop Linux packages (`.deb`, `.rpm`, `.AppImage`). The desktop packages distribute only compiled Rust binaries, license files, fonts, and the standalone `tosu` binary.
 
 ### 6.3 USB Identification: The pid.codes Transition
 * **Current Status:** Reports `0x303A:0x4001` (Espressif experimental test VID/PID).
@@ -320,7 +320,7 @@ gantt
     
     section Phase 1: Build & Portability
     Containerized Build (glibc 2.31)   :p1_1, 0, 3
-    Fix Legacy osupad References       :p1_2, 1, 3
+    Fix Legacy opad References       :p1_2, 1, 3
     Windows tosu.exe Compilation       :p1_3, 2, 4
     Bundle espflash into Packages      :p1_4, 2, 5
     
@@ -342,10 +342,10 @@ gantt
 ### Phase 1: Build Portability & Tooling Fixes (Immediate)
 1. **Containerized Linux Builds:**
    * Configure release CI to build desktop binaries in `ubuntu:22.04` or via `cargo zigbuild --target x86_64-unknown-linux-gnu.2.31` to enforce glibc $\le 2.31$ compatibility.
-2. **Purge Remaining `osupad` Artifact Names:**
+2. **Purge Remaining `opad` Artifact Names:**
    * Update `desktop/cli/src/main.rs:743` to expect `opad-firmware.bin`.
    * Update `desktop/crates/opad-update/src/bin/opad-manifest.rs` to parse `opad-` artifacts.
-   * Fix CI workflow files (`.github/workflows/ci.yml`) referencing `-p osupad-gui` and `protocol/opad.proto`.
+   * Fix CI workflow files (`.github/workflows/ci.yml`) referencing `-p opad-gui` and `protocol/opad.proto`.
 3. **Compile `tosu.exe` for Windows:**
    * Add Windows CI task executing `pnpm --filter tosu run compile:win`. Remove `skipifsourcedoesntexist` from `installer.iss`.
 4. **Bundle `espflash`:**
@@ -353,7 +353,7 @@ gantt
 
 ### Phase 2: Core Transport & Zero-Pinning (Days 4–7)
 1. **Implement Zero-Pinning Probing in `opad-device`:**
-   * Match on VID/PID **and** USB product string `"OPad ESP32-S3"` or serial prefix `"OSUPAD-"`.
+   * Match on VID/PID **and** USB product string `"OPad ESP32-S3"` or serial prefix `"OPAD-"`.
    * Add active candidate probing via `Hello`/`HelloAck` when VID/PID matches are unavailable or ambiguous.
    * Update CLI `--port` to serve strictly as an optional override rather than a requirement.
 2. **Frame Preamble Upgrade:**
@@ -372,7 +372,7 @@ gantt
 3. **Systemd Unit Update:**
    * Change `packaging/linux/systemd-user/opad-daemon.service.in` from `WantedBy=graphical-session.target` to `WantedBy=default.target`.
 4. **Path Unification:**
-   * Eliminate all remaining `.join("osupad")` references in `desktop/gui/src/platform_linux.rs`.
+   * Eliminate all remaining `.join("opad")` references in `desktop/gui/src/platform_linux.rs`.
 5. **Tray Lifecycle Safety:**
    * Implement a 2-second resolution timeout for `tray_available` in `opad-gui`. If no StatusNotifier host responds, fall back to "keep running in window / minimize to taskbar" mode to prevent headless zombie processes.
 6. **Windows Single-Instance Hardening:**

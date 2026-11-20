@@ -20,10 +20,10 @@ The on-device histogram (`firmware/main/input/latency_stats.c`) uses 10 µs buck
 ## 2. Benchmark Stages
 
 - **Stage A: HID-Only Firmware Baseline**
-  Built with `CONFIG_OSUPAD_BENCH_HID_ONLY=y`. GPIO interrupt + eager debounce with lockout re-sample + TinyUSB HID keyboard only, 1000 Hz endpoint. UI, CDC protocol task and runtime supervisor are disabled.
+  Built with `CONFIG_OPAD_BENCH_HID_ONLY=y`. GPIO interrupt + eager debounce with lockout re-sample + TinyUSB HID keyboard only, 1000 Hz endpoint. UI, CDC protocol task and runtime supervisor are disabled.
   TinyUSB owns the USB PHY and there is no CDC in this build, so the stats printed every 10 s only reach **UART0** (TX = GPIO43, 115200 baud). Reading them needs a USB-UART adapter on that pin.
 - **Stage B: HID + CDC Protocol (No Display)**
-  Built with `CONFIG_OSUPAD_BENCH_NO_DISPLAY=y`. Daemon connected via USB CDC-ACM (heartbeats, status requests, telemetry frames). Display UI and backlight PWM are disabled.
+  Built with `CONFIG_OPAD_BENCH_NO_DISPLAY=y`. Daemon connected via USB CDC-ACM (heartbeats, status requests, telemetry frames). Display UI and backlight PWM are disabled.
 - **Stage C: HID + CDC + Gameplay Display**
   Standard firmware with the daemon connected and active gameplay streaming via tosu (PP, progress bar, map press counters). Run at the default gameplay display rate (10 Hz) and at the 2 Hz and 30 Hz limits.
 - **Stage D: Full Stack Integration**
@@ -34,16 +34,16 @@ The on-device histogram (`firmware/main/input/latency_stats.c`) uses 10 µs buck
 ## 3. Testing Procedure
 
 1. **Firmware configuration**
-   - Stage A: enable `CONFIG_OSUPAD_BENCH_HID_ONLY`.
-   - Stage B: enable `CONFIG_OSUPAD_BENCH_NO_DISPLAY`.
+   - Stage A: enable `CONFIG_OPAD_BENCH_HID_ONLY`.
+   - Stage B: enable `CONFIG_OPAD_BENCH_NO_DISPLAY`.
    - Stages C and D: standard build.
-   - Optional: `CONFIG_OSUPAD_BENCH_DEBUG_GPIO=y` toggles a pin right after the HID submit for logic-analyzer measurement. The default pin is GPIO 4; **check that it is free on the board header before enabling it**.
+   - Optional: `CONFIG_OPAD_BENCH_DEBUG_GPIO=y` toggles a pin right after the HID submit for logic-analyzer measurement. The default pin is GPIO 4; **check that it is free on the board header before enabling it**.
 
 2. **Execution**
    - Flash the build for the stage.
-   - Reset the stats: `osupadctl latency --reset` (Stage A: reboot the pad).
+   - Reset the stats: `opadctl latency --reset` (Stage A: reboot the pad).
    - Tap both keys alternately and fast (> 15 presses/s) for 2 minutes.
-   - Read the stats: `osupadctl latency` (Stage A: UART0 output).
+   - Read the stats: `opadctl latency` (Stage A: UART0 output).
    - Optionally record host-side evdev intervals with `python3 scripts/bench_latency.py`.
 
 ---
@@ -87,11 +87,11 @@ on each platform and compare within the platform.
 Stages A–D are firmware builds, so they are identical. The on-device histogram
 is measured on the pad, between the GPIO edge and the HID submit, and never
 touches the host — so **for stages A–C the host operating system is irrelevant
-to the number**, and `osupadctl latency` reads the same statistics on Windows
+to the number**, and `opadctl latency` reads the same statistics on Windows
 that it does on Linux.
 
 That is the cheap and honest Windows run: same stages, same
-`osupadctl latency --reset` / tap / `osupadctl latency` procedure as §3.
+`opadctl latency --reset` / tap / `opadctl latency` procedure as §3.
 
 ### What does not carry over
 
@@ -99,7 +99,7 @@ That is the cheap and honest Windows run: same stages, same
 host-side interval and jitter measurement is missing. Three options, in order of
 what they cost:
 
-1. **Device-side only.** Report stages A–D from `osupadctl latency` and leave
+1. **Device-side only.** Report stages A–D from `opadctl latency` and leave
    the host-side table Linux-only. This measures the firmware, which is what the
    §1 gate is actually written about, and is enough for a release decision.
 2. **Raw Input.** A small host tool registering for `WM_INPUT` keyboard events
@@ -148,5 +148,5 @@ shows a new outlier above 1 ms, and no stuck or missed keys were observed.
 - **Linux:** not measured. This is P3-1, the last open v1 item (A.8).
 - **Windows:** not measured, and blocked on Linux for a baseline (§4b).
 
-`scripts/latency_row.py` turns an `osupadctl latency` run into the markdown row
+`scripts/latency_row.py` turns an `opadctl latency` run into the markdown row
 for either table, so filling these in is flash, tap, paste.

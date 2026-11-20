@@ -41,12 +41,12 @@ JLC_CPL_FIXES = {
 }
 
 # DRC warnings that may be accepted. The MX board's footprint copies were placed
-# before lib/osupad.pretty was rewritten by gen_library.py (same pads, different
+# before lib/opad.pretty was rewritten by gen_library.py (same pads, different
 # description and graphics), and that board is built and working, so the copies
 # in the board are the reference and the mismatch is informational.
 ACCEPTED_WARNINGS = {"lib_footprint_mismatch"}
 # The same for the symbols embedded in the MX schematic (R, C) against the
-# regenerated lib/osupad.kicad_sym: pins and numbers match, graphics differ.
+# regenerated lib/opad.kicad_sym: pins and numbers match, graphics differ.
 ACCEPTED_ERC = {"lib_symbol_mismatch"}
 
 

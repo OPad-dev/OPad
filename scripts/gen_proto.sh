@@ -28,5 +28,5 @@ if [ -z "${NANOPB_GEN}" ]; then
 fi
 
 echo "Generating protobuf files with: ${NANOPB_GEN}"
-${NANOPB_GEN} -L '#include "nanopb/%s"' -I "${REPO_ROOT}/protocol" -D "${REPO_ROOT}/firmware/main/protocol" "${REPO_ROOT}/protocol/osupad.proto"
+${NANOPB_GEN} -L '#include "nanopb/%s"' -I "${REPO_ROOT}/protocol" -D "${REPO_ROOT}/firmware/main/protocol" "${REPO_ROOT}/protocol/opad.proto"
 echo "Done."

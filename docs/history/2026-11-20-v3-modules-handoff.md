@@ -61,7 +61,7 @@ pin analog (`1fab1fe`).
    (231 and 175 bytes) as the map ended. `5715b9f` makes the next one say
    nanopb's reason, the HostToDevice payload and its first bytes
    (`opadctl monitor`). It has not happened again yet. When it does, fix the
-   host or the nanopb limits (`protocol/osupad.options`).
+   host or the nanopb limits (`protocol/opad.options`).
 2. **Not run, judged not needed by the owner:** the magnet test (HW-07),
    `evtest` and an empty key 3 (HW-08), the lock with key 3 uncalibrated
    (HW-10), calibration at 20 kHz on the last build, a failed HE sensor, CRC
@@ -113,7 +113,7 @@ pin analog (`1fab1fe`).
     `counters/counters.c` (`key3_cnt`).
   - Decode diagnostics: `protocol_decode_host_message` in
     `protocol/protocol.c`, `DIAG_DECODE_*` in `diag/diag.h`.
-- **Protocol:** `protocol/osupad.proto`. Fields added on this branch include
+- **Protocol:** `protocol/opad.proto`. Fields added on this branch include
   `HelloAck.key_count` and `input_module`, `DeviceStatus.lifetime_key3` and
   `map_key3`, `HeCalibrationStatus.key3_*`, `ConfigPayload.key3_hid_usage`,
   `key3_he` and `game_keys`, `HE_CAL_STAGE_KEY3`, `HeLiveSample.key3_*`,

@@ -23,7 +23,7 @@ const SERVICE_NAME: &str = "opad-daemon.service";
 const PACKAGED_UNIT: &str =
     include_str!("../../../packaging/linux/systemd-user/opad-daemon.service");
 /// Written by earlier GUI builds under another name; removed so two units never start two daemons
-const LEGACY_SERVICE_NAME: &str = "osupad.service";
+const LEGACY_SERVICE_NAME: &str = "opad.service";
 
 fn systemctl_user(args: &[&str]) -> Result<(), String> {
     let status = Command::new("systemctl")

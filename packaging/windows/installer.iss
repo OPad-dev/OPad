@@ -70,7 +70,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 
 ; Upgrade behaviour: cleanly stop running instances before replacing binaries
 CloseApplications=yes
-CloseApplicationsFilter=opad-gui.exe,opad-daemon.exe,opadctl.exe,osupad-gui.exe,osupad-daemon.exe,osupadctl.exe,tosu.exe
+CloseApplicationsFilter=opad-gui.exe,opad-daemon.exe,opadctl.exe,opad-gui.exe,opad-daemon.exe,opadctl.exe,tosu.exe
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -130,8 +130,8 @@ Filename: "{app}\{#MyAppExeName}"; Parameters: "--tray"; Flags: nowait; Check: I
 Type: filesandordirs; Name: "{app}"
 Type: files; Name: "{userappdata}\opad\daemon.log"
 Type: files; Name: "{userappdata}\opad\tosu.log"
-Type: files; Name: "{userappdata}\osupad\daemon.log"
-Type: files; Name: "{userappdata}\osupad\tosu.log"
+Type: files; Name: "{userappdata}\opad\daemon.log"
+Type: files; Name: "{userappdata}\opad\tosu.log"
 
 [Code]
 // The in-app updater passes /RELAUNCH=1 (opad-update app::apply_command)
@@ -159,7 +159,7 @@ procedure StopRunningProcesses;
 var
   ResultCode: Integer;
 begin
-  Exec('taskkill.exe', '/F /T /IM opad-daemon.exe /IM opad-gui.exe /IM opadctl.exe /IM osupad-daemon.exe /IM osupad-gui.exe /IM osupadctl.exe /IM tosu.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /T /IM opad-daemon.exe /IM opad-gui.exe /IM opadctl.exe /IM opad-daemon.exe /IM opad-gui.exe /IM opadctl.exe /IM tosu.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
 function InitializeUninstall(): Boolean;
@@ -183,12 +183,12 @@ begin
     // Unconditionally remove Run registry entries (may have been toggled by the app at runtime)
     RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'opad-daemon');
     RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'opad-gui');
-    RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'osupad-daemon');
-    RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'osupad-gui');
+    RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'opad-daemon');
+    RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'opad-gui');
 
     AppDataDir := ExpandConstant('{userappdata}\opad');
     if not DirExists(AppDataDir) then
-      AppDataDir := ExpandConstant('{userappdata}\osupad');
+      AppDataDir := ExpandConstant('{userappdata}\opad');
 
     if DirExists(AppDataDir) then
     begin

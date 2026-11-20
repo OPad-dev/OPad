@@ -382,15 +382,14 @@ fn friendly_state(name: &str) -> String {
 // tosu process supervisor
 // -----------------------------------------------------------------------------
 
-/// Resolve the tosu binary: `$OPAD_TOSU_PATH`, legacy `$OSUPAD_TOSU_PATH`,
+/// Resolve the tosu binary: `$OPAD_TOSU_PATH`,
 /// `~/.local/opt/tosu/tosu`, `tosu` on `$PATH`, then the bundled copy (§T-2).
 ///
 /// The bundled copy is deliberately last: a tosu the user installed themselves
 /// always wins, and §T-2 forbids us from updating or overwriting one we did
 /// not install.
 pub fn find_tosu_binary() -> Option<PathBuf> {
-    let overridden =
-        std::env::var_os("OPAD_TOSU_PATH").or_else(|| std::env::var_os("OSUPAD_TOSU_PATH"));
+    let overridden = std::env::var_os("OPAD_TOSU_PATH");
     if let Some(p) = overridden.and_then(|p| usable_override(PathBuf::from(p))) {
         return Some(p);
     }

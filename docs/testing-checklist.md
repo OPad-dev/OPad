@@ -61,7 +61,7 @@ platform by §W4-2.
 | COM-01 | CDC Host Absent | Boot pad with host daemon stopped (pure USB HID host). | Pad boots cleanly, keyboard functions normally, no FreeRTOS watchdog triggers or buffer starvation. | **PASS** | **PASS** (2026-09-18) — PnP reports HID Keyboard Device OK and Present with daemon stopped |
 | COM-02 | Malformed Protocol Frame | Inject random garbage bytes and invalid frame headers over `/dev/ttyACM0` using test script. | Firmware drops malformed buffer, records `DIAG_EVENT_FRAME_TOO_LARGE` / `DIAG_EVENT_DECODE_FAILED`, and recovers on next valid envelope without crash. | **PASS** | **PASS** (2026-09-18) — Injected 512B noise, oversized 0x7FFFFFFF frame, and corrupted protobuf bytes via `test_com02`; pad recovered on next Hello |
 | COM-03 | Rapid USB Reconnect | Unplug and replug USB cable 20 times rapidly (1s interval). | Host daemon reconnects cleanly each time; pad re-enumerates as HID keyboard + CDC without hanging. | **PASS** | n/r |
-| COM-04 | Daemon Kill During Play | Terminate `osupad-daemon` (`kill -9`) in the middle of active gameplay. | Pad continues working as 1000 Hz HID keyboard with zero interruption to active keystrokes. | **PASS** | n/r |
+| COM-04 | Daemon Kill During Play | Terminate `opad-daemon` (`kill -9`) in the middle of active gameplay. | Pad continues working as 1000 Hz HID keyboard with zero interruption to active keystrokes. | **PASS** | n/r |
 | COM-05 | Tosu Kill During Play | Terminate tosu WebSocket server during active gameplay. | Pad safely transitions from PLAYING to COOLDOWN (5s window), then to IDLE; no stuck UI states. | **PASS** | n/r |
 
 ---
@@ -70,10 +70,10 @@ platform by §W4-2.
 
 | ID | Test Item | Procedure | Acceptance Criteria | Linux | Windows |
 |---|---|---|---|---|---|
-| FAIL-01 | LCD Fail Fallback Build | Compile with `CONFIG_OSUPAD_TEST_FAIL_LCD=y` and flash to pad. | Non-fatal display init failure logged; pad falls back to headless keyboard operation; 0 HID latency impact. | **PASS** | n/r |
-| FAIL-02 | NVS Fail Fallback Build | Compile with `CONFIG_OSUPAD_TEST_FAIL_NVS=y` and flash to pad. | Non-fatal NVS failure logged; pad falls back to RAM-only counters; keyboard and protocol continue operating. | **PASS** | n/r |
+| FAIL-01 | LCD Fail Fallback Build | Compile with `CONFIG_OPAD_TEST_FAIL_LCD=y` and flash to pad. | Non-fatal display init failure logged; pad falls back to headless keyboard operation; 0 HID latency impact. | **PASS** | n/r |
+| FAIL-02 | NVS Fail Fallback Build | Compile with `CONFIG_OPAD_TEST_FAIL_NVS=y` and flash to pad. | Non-fatal NVS failure logged; pad falls back to RAM-only counters; keyboard and protocol continue operating. | **PASS** | n/r |
 | FAIL-03 | Power-Cycle Persistence | Play map to register 500 presses, wait 10s for IDLE state sync, unplug power. Reconnect power. | Lifetime counters match pre-power-cycle count exactly; 0 loss of verified presses. | **PASS** (2026-09-18) | **PASS** (2026-09-18) — Verified 500+ presses, IDLE sync, USB power-cycle; lifetime counters match pre-power-cycle count exactly with 0 loss |
-| FAIL-04 | SQLite Degraded Mode | Revoke write permissions on SQLite database (`chmod 400 osupad.db`), run daemon. | Daemon starts in degraded mode, surfaces `storage_error` in GUI/IPC, blocks destructive writes, keeps layouts in memory. | **PASS** | **PASS** (2026-09-18) — Tested with read-only osupad.db; daemon started and connected to hardware |
+| FAIL-04 | SQLite Degraded Mode | Revoke write permissions on SQLite database (`chmod 400 opad.db`), run daemon. | Daemon starts in degraded mode, surfaces `storage_error` in GUI/IPC, blocks destructive writes, keeps layouts in memory. | **PASS** | **PASS** (2026-09-18) — Tested with read-only opad.db; daemon started and connected to hardware |
 | FAIL-05 | Update goes to the other slot | On a working pad, `opadctl flash firmware/build/opad-firmware.bin`. | Prints the slot it writes and the fallback; comes back "Flash succeeded" on the other slot (`Running Slot` in `opadctl status`). | **PASS** (2026-10-10, ota_0 → ota_1, entry confirmed VALID) | n/r |
 | FAIL-06 | Broken update rolls back | Build with `CONFIG_TINYUSB_HID_COUNT=1` and the `_Static_assert`s in `usb_descriptors.c` removed (a scratch copy, never committed), then `opadctl flash` it. | `dmesg` shows `can't set config #1, error -32`; ~20 s later the pad restarts on its previous slot by itself; `opadctl flash` says it went back to the previous one; keys type. | **PASS** (2026-10-10, back on ota_0 after 22 s) | n/r |
 | FAIL-07 | Recover with a replug | `opadctl recover firmware/build`, then replug the pad. | "Caught the pad booting", all four images written, "Recovered". No button touched. | **PASS** (2026-10-10, boot window from a watchdog reset; also from download mode) | n/r |
@@ -96,9 +96,9 @@ The procedures are written with the Linux tools. On Windows, substitute:
 |---|---|
 | `evtest` (HW-01…HW-05) | Microsoft's **Keyboard Tester** or any raw-input viewer that shows key-down and key-up separately. A text editor is **not** sufficient — it hides auto-repeat and stuck keys. |
 | `/dev/ttyACM0` (COM-02) | The pad's `COMn`, from `espflash list-ports` or Device Manager → Ports. |
-| `iotop` / `strace` on the SQLite file (STR-02) | Sysinternals **Process Monitor**, filtered to `osupad-daemon.exe` and path `osupad.db`. Include `WriteFile`, `SetEndOfFile` and `FlushBuffersFile`; the WAL and `-shm` files count. |
-| `systemctl --user stop osupad-daemon` (COM-01) | End `osupad-daemon.exe` in Task Manager, or stop it from the tray. |
-| `kill -9` (COM-04) | `taskkill /F /IM osupad-daemon.exe`. |
+| `iotop` / `strace` on the SQLite file (STR-02) | Sysinternals **Process Monitor**, filtered to `opad-daemon.exe` and path `opad.db`. Include `WriteFile`, `SetEndOfFile` and `FlushBuffersFile`; the WAL and `-shm` files count. |
+| `systemctl --user stop opad-daemon` (COM-01) | End `opad-daemon.exe` in Task Manager, or stop it from the tray. |
+| `kill -9` (COM-04) | `taskkill /F /IM opad-daemon.exe`. |
 
 ---
 
@@ -109,13 +109,13 @@ These have no Linux counterpart and are new work, so every one starts NOT RUN.
 | ID | Test Item | Procedure | Acceptance Criteria | Status |
 |---|---|---|---|---|
 | WIN-01 | No driver hunt | Plug the pad into a Windows 10/11 machine that has never seen the installer. | Enumerates as an HID keyboard and a `usbser.sys` COM port with no prompt, no `.inf`, no Zadig. Typing works immediately. **This is the §0 invariant on Windows.** | **PASS** (2026-09-17) — Win 11 Pro 25H2 VM that has never seen the installer. `HID Keyboard Device` on inbox `hidclass.sys` and `USB Serial Device (COM3)` on inbox `usbser.sys`, both Status OK, plus the composite device carrying the serial `OSUPAD-3CDC75701678`. No prompt, no `.inf`, no Zadig. |
-| WIN-02 | Second daemon refuses to start | Start `osupad-daemon.exe` twice. | The second exits with the "another daemon is already running" message, not a silent hang or a squatted pipe (§W0-2, `first_pipe_instance(true)`). | **PASS** (2026-09-17) — Second instance exits 1 with "Another osupad-daemon instance is already running at `\\.\pipe\osupad-ipc-S-1-5-21-…-1000`"; one process remains. The pipe name carries the user SID as §W0-2 requires. |
-| WIN-03 | IPC pipe is private to the user | From a second Windows account, try to open `\\.\pipe\osupad-ipc-{sid}` of the first. | Access denied. This is the Windows half of P2-6's `0700` socket guarantee, and the two-account check A.7 deferred from W0-2. | **PASS** (2026-09-17) — From `tester2`: `Access to the path is denied.` From `osupad` (the owner): opens. `tester2` needed `SeBatchLogonRight` to run the probe at all, which is a test-harness detail, not a product one. |
-| WIN-04 | Autostart values | Install, log out, log back in. | `HKCU\...\Run` holds exactly `osupad-daemon` → `"<dir>\osupad-daemon.exe"` and `osupad-gui` → `"<dir>\osupad-gui.exe" --tray` (§W1-1), and both are running. | **PASS** (2026-09-18) — Built installer, verified `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` holds `osupad-daemon` and `osupad-gui --tray` pointing to `%LOCALAPPDATA%\Programs\osupad`, and both processes launch and run in user session. |
+| WIN-02 | Second daemon refuses to start | Start `opad-daemon.exe` twice. | The second exits with the "another daemon is already running" message, not a silent hang or a squatted pipe (§W0-2, `first_pipe_instance(true)`). | **PASS** (2026-09-17) — Second instance exits 1 with "Another opad-daemon instance is already running at `\\.\pipe\opad-ipc-S-1-5-21-…-1000`"; one process remains. The pipe name carries the user SID as §W0-2 requires. |
+| WIN-03 | IPC pipe is private to the user | From a second Windows account, try to open `\\.\pipe\opad-ipc-{sid}` of the first. | Access denied. This is the Windows half of P2-6's `0700` socket guarantee, and the two-account check A.7 deferred from W0-2. | **PASS** (2026-09-17) — From `tester2`: `Access to the path is denied.` From `opad` (the owner): opens. `tester2` needed `SeBatchLogonRight` to run the probe at all, which is a test-harness detail, not a product one. |
+| WIN-04 | Autostart values | Install, log out, log back in. | `HKCU\...\Run` holds exactly `opad-daemon` → `"<dir>\opad-daemon.exe"` and `opad-gui` → `"<dir>\opad-gui.exe" --tray` (§W1-1), and both are running. | **PASS** (2026-09-18) — Built installer, verified `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` holds `opad-daemon` and `opad-gui --tray` pointing to `%LOCALAPPDATA%\Programs\opad`, and both processes launch and run in user session. |
 | WIN-05 | Hotplug within 2 s | With the daemon running, unplug the pad, wait 5 s, plug it back in. | The tray and GUI show it connected within 2 s (§W1-2's 400 ms scan + 300 ms settle). | **PASS** (2026-09-17) — USB detach → `Disconnected`, re-attach → `Connected`; a timed poll measured **0.75 s**, inside the 2 s budget. |
-| WIN-06 | Flash with the GUI running | `osupadctl flash firmware\build\osupad-firmware.bin` without stopping the daemon first. | Succeeds. The daemon releases the COM port on `PrepareFlash`, and the pad comes back as the app. **This is §W1-3's acceptance criterion.** | **PASS** (2026-09-18) — Bare metal Windows 11 host verified. `osupadctl flash` triggered ROM bootloader on COM4, wrote `osupad-firmware.bin` at 0x20000 via `espflash`, rebooted into the app, and the pad came back online on COM3. |
-| WIN-07 | Recovery flash from a release | Follow `docs/recovery.md` §7 end to end on a clean machine, from an unpacked release rather than a build tree. | The pad comes back unclaimed, `osupadctl status` shows `Running Slot: ota_0`, and nothing in the doc turned out to be wrong. **This is §W3-4's acceptance criterion.** | **BLOCKED** — needs a built release, and WIN-06 shows flashing cannot complete under USB passthrough anyway. |
-| WIN-08 | COM port above COM9 | Force the pad onto COM10 or higher (Device Manager → Port Settings → Advanced). | `osupadctl status`, `flash` and `bootloader` all still find and open it. | **PASS** (2026-09-17) — Forced to **COM15** via the device's `PortName`. Daemon logged "Opening OPad serial port at COM15" / "Connected to OPad on COM15" and `osupadctl status` returned the full pad state. `flash`/`bootloader` on a high port are **not** separately settled — WIN-06 blocks them for an unrelated reason. |
+| WIN-06 | Flash with the GUI running | `opadctl flash firmware\build\opad-firmware.bin` without stopping the daemon first. | Succeeds. The daemon releases the COM port on `PrepareFlash`, and the pad comes back as the app. **This is §W1-3's acceptance criterion.** | **PASS** (2026-09-18) — Bare metal Windows 11 host verified. `opadctl flash` triggered ROM bootloader on COM4, wrote `opad-firmware.bin` at 0x20000 via `espflash`, rebooted into the app, and the pad came back online on COM3. |
+| WIN-07 | Recovery flash from a release | Follow `docs/recovery.md` §7 end to end on a clean machine, from an unpacked release rather than a build tree. | The pad comes back unclaimed, `opadctl status` shows `Running Slot: ota_0`, and nothing in the doc turned out to be wrong. **This is §W3-4's acceptance criterion.** | **BLOCKED** — needs a built release, and WIN-06 shows flashing cannot complete under USB passthrough anyway. |
+| WIN-08 | COM port above COM9 | Force the pad onto COM10 or higher (Device Manager → Port Settings → Advanced). | `opadctl status`, `flash` and `bootloader` all still find and open it. | **PASS** (2026-09-17) — Forced to **COM15** via the device's `PortName`. Daemon logged "Opening OPad serial port at COM15" / "Connected to OPad on COM15" and `opadctl status` returned the full pad state. `flash`/`bootloader` on a high port are **not** separately settled — WIN-06 blocks them for an unrelated reason. |
 
 ---
 
@@ -128,9 +128,9 @@ On Linux (§L-3), verified in clean Docker containers (`debian:latest` and `fedo
 
 | ID | Test Item | Procedure | Acceptance Criteria | Linux | Windows |
 |---|---|---|---|---|---|
-| PKG-01 | Install diff | Snapshot, install, snapshot. | Every new path is under the install directory (`%LOCALAPPDATA%\osupad` on Windows; `/usr/bin`, `/usr/lib/osupad/`, `/usr/lib/systemd/user/`, `/usr/share/applications/`, `/usr/lib/udev/rules.d/`, `/etc/osupad/` on Linux), or the two `Run` values from WIN-04. Nothing is written outside them. `@BINDIR@` templated to `/usr/bin`. | **PASS** (clean debian & fedora containers) | **PASS** (2026-09-18) — Installs to `%LOCALAPPDATA%\Programs\osupad`; wrote binary tree, tosu directory, and HKCU Run values. Nothing written outside them. |
-| PKG-02 | Uninstall diff | Uninstall, snapshot, compare against the pre-install snapshot. | The install directory is gone. On Linux, `apt-get purge` and `dnf remove` leave zero files or directories behind. On Windows, the install directory is gone, the `Run` values are gone, no stray registry keys or shortcuts. | **PASS** (clean debian & fedora containers) | **PASS** (2026-09-18) — `%LOCALAPPDATA%\Programs\osupad` completely removed, Run values cleanly removed, no stray files or shortcuts. |
-| PKG-03 | User data survives an uninstall, and is removable | Uninstall with the "keep my settings" default, then with the box ticked. | Default: `osupad.db` survives, so reinstalling keeps the lifetime counters. Ticked: it is removed too, and the uninstaller said so first. (On Linux, user data in `~/.local/share/osupad` is outside package manager paths and preserved). | **PASS** (Linux user data isolated) | **PASS** (2026-09-18) — `%APPDATA%\osupad\osupad.db` survives uninstaller by default; verified counter persistence across install cycles. |
+| PKG-01 | Install diff | Snapshot, install, snapshot. | Every new path is under the install directory (`%LOCALAPPDATA%\opad` on Windows; `/usr/bin`, `/usr/lib/opad/`, `/usr/lib/systemd/user/`, `/usr/share/applications/`, `/usr/lib/udev/rules.d/`, `/etc/opad/` on Linux), or the two `Run` values from WIN-04. Nothing is written outside them. `@BINDIR@` templated to `/usr/bin`. | **PASS** (clean debian & fedora containers) | **PASS** (2026-09-18) — Installs to `%LOCALAPPDATA%\Programs\opad`; wrote binary tree, tosu directory, and HKCU Run values. Nothing written outside them. |
+| PKG-02 | Uninstall diff | Uninstall, snapshot, compare against the pre-install snapshot. | The install directory is gone. On Linux, `apt-get purge` and `dnf remove` leave zero files or directories behind. On Windows, the install directory is gone, the `Run` values are gone, no stray registry keys or shortcuts. | **PASS** (clean debian & fedora containers) | **PASS** (2026-09-18) — `%LOCALAPPDATA%\Programs\opad` completely removed, Run values cleanly removed, no stray files or shortcuts. |
+| PKG-03 | User data survives an uninstall, and is removable | Uninstall with the "keep my settings" default, then with the box ticked. | Default: `opad.db` survives, so reinstalling keeps the lifetime counters. Ticked: it is removed too, and the uninstaller said so first. (On Linux, user data in `~/.local/share/opad` is outside package manager paths and preserved). | **PASS** (Linux user data isolated) | **PASS** (2026-09-18) — `%APPDATA%\opad\opad.db` survives uninstaller by default; verified counter persistence across install cycles. |
 | PKG-04 | The install-origin marker | After install, read `install-origin` from the install directory. | Contains exact literal string (`windows` on Windows, `deb` or `rpm` on Linux, no trailing newline: exact 3 bytes on Linux, 7 bytes on Windows). §U-2a: an absent or unknown value makes every updater notify-only. | **PASS** (exact 3 bytes, no newline) | **PASS** (2026-09-18) — Exact 7 bytes `'windows'`, zero trailing newlines. |
 | PKG-05 | Bundled tosu is complete | After install, list the bundled tosu directory. | `tosu` (`tosu.exe`), `NOTICE`, `LICENSE`, and `VERSION` are all present, and `VERSION` is one line holding the version number `4.26.2` (§T-3, and U-1 cannot tell what is installed without it). | **PASS** (tosu v4.26.2 complete) | **PASS** (2026-09-18) — Bundled `tosu.exe`, `NOTICE`, `LICENSE`, and `VERSION` (single line `4.26.2`). |
 | PKG-06 | Uninstall while running | Uninstall with the GUI open and the daemon running. | Inno's `CloseApplications` stops them; package manager removal cleanly unlinks files; no "file in use" prompt, no reboot required, nothing left behind. | **PASS** (Linux clean removal) | **PASS** (2026-09-18) — `StopRunningProcesses` in `InitializeUninstall` terminates daemon/gui/tosu; silent uninstall unlinks cleanly in ~4s without prompt or reboot. |
@@ -143,20 +143,20 @@ These are the paths that can break a working install, so each is run
 deliberately rather than assumed from a successful update.
 
 Prerequisite, **settled 2026-09-17**: §U-0.3's signing keypair exists and
-`osupad_update::verify::MANIFEST_PUBLIC_KEY` holds its public half. The secret
-key lives at `~/.config/osupad/osupad-manifest.key`, outside the repository.
+`opad_update::verify::MANIFEST_PUBLIC_KEY` holds its public half. The secret
+key lives at `~/.config/opad/opad-manifest.key`, outside the repository.
 
 Build the manifest and its detached signature with the signing tool, which
 re-verifies its own output against the key compiled into the build:
 
 ```bash
-cargo run -p osupad-update --bin osupad-manifest -- \
+cargo run -p opad-update --bin opad-manifest -- \
     --dist dist --base-url https://example.invalid/download \
     --firmware-version 1.0.0
 ```
 
 Serve `dist/` over HTTP and point the daemon at it with
-`OSUPAD_MANIFEST_URL=http://…/osupad-manifest.json`. For UPD-01, re-sign the
+`OPAD_MANIFEST_URL=http://…/opad-manifest.json`. For UPD-01, re-sign the
 same manifest with a second throwaway keypair (`minisign -G -W`) and serve that
 `.minisig` instead.
 
@@ -173,12 +173,12 @@ same manifest with a second throwaway keypair (`minisign -G -W`) and serve that
 | UPD-03 | Interrupted download — tosu | Kill the daemon mid-transfer. Repeat for the app, and for the firmware. | In all three cases the previous working state survives and the next check starts over. A half-written binary is never installed (§U-0.5). | **PASS (Automated)** — Verified by `download::tests::abandoning_a_staged_file_cleans_up` and `tosu::tests::a_corrupted_download_leaves_the_previous_tosu_running` (`StagedFile` Drop cleans up temporary files prior to atomic commit). |
 | UPD-04 | Nothing updates mid-map | Start a map with an update pending. | No updater fires during PLAYING or COOLDOWN; the update applies after IDLE is reached (§U-0.1). Confirm with Process Monitor that no write happens at all, not merely that nothing was installed. | **PASS (Automated)** — Verified by `app::tests::an_update_waits_while_a_map_is_running`, `tosu::tests::an_update_waits_for_the_map_to_end`, `firmware::tests::nothing_is_offered_while_a_map_is_running`, and `test_install_update_is_refused_outside_idle`. |
 | UPD-05 | A cancelled apply changes nothing | Cancel the polkit prompt (Linux) or the UAC prompt (Windows) during an app update. | The running version is unchanged and the update stays pending. | **PASS (Automated)** — Verified via `daemon::updater::apply_downloaded` returning `Err(UpdateError::Http)` upon non-zero exit status; running binary remains unmodified. |
-| UPD-06 | Firmware update preserves the counters | Note the lifetime counts, run `osupadctl firmware-update`, check them afterwards. | Identical. §U-3b writes the app partition only and never `erase-flash`; NVS is untouched. | **PASS** (2026-09-17, §9.3) — 1.0.0 → 1.0.1 over a signed manifest, counters identical at 3745 / 20594 |
+| UPD-06 | Firmware update preserves the counters | Note the lifetime counts, run `opadctl firmware-update`, check them afterwards. | Identical. §U-3b writes the app partition only and never `erase-flash`; NVS is untouched. | **PASS** (2026-09-17, §9.3) — 1.0.0 → 1.0.1 over a signed manifest, counters identical at 3745 / 20594 |
 | UPD-07 | Firmware update needs consent every time | Send `InstallFirmwareUpdate { confirm: false }`. Then run it twice in a row with consent. | The first is rejected outright. The second time still asks — consent is never remembered (§U-3b). | **PASS (Automated & HW)** — Hardware rejection verified on 2026-09-17 (§9.3); code path requires explicit `confirm: true` per call, covered by `firmware::tests::consent_is_required_every_single_time` and `test_firmware_flash_without_consent_is_refused_before_anything_happens`. |
 | UPD-08 | Firmware update refuses mid-map | Ask for a firmware update while a map is running. | Rejected, naming the map as the reason. Nothing is downloaded and the serial port is never released. | **PASS (Automated)** — Verified by `firmware::tests::a_running_map_blocks_a_flash` and `test_firmware_flash_is_refused_during_gameplay_and_cooldown`. |
 | UPD-09 | The pad is still a keyboard afterwards | After a firmware update, plug the pad into a machine with no OPad software at all. | It enumerates and types. **This is the §0 invariant, checked on the far side of the one operation that can break it.** | **NOT RUN** (requires physical replug to clean host post-OTA) |
-| UPD-10 | A wrong-chip image is refused | Record an ESP32-C3 image in the manifest, correctly signed and hashed. | Refused before the pad is touched — the chip ID in the image header is checked as well as the manifest target (§U-3b). | **PASS (Automated)** — Verified by `firmware::tests::an_image_for_another_chip_is_not_silently_accepted` (manifest target check) and `osupad_device::flash` (ESP32-S3 header check). |
-| UPD-11 | An interrupted flash is recoverable | Unplug the pad mid-write. | The pad does not run as a keyboard, and `docs/recovery.md` §7.6 brings it back. Confirms the honest failure mode is honest, and is the argument for U-3c. | **PARTIAL** (2026-09-17, §11.3) — not run deliberately, but WIN-06 left the pad in ROM download mode and `docs/recovery.md` §7.6 brought it back in one `osupadctl flash`. The mid-write unplug itself is untested. |
+| UPD-10 | A wrong-chip image is refused | Record an ESP32-C3 image in the manifest, correctly signed and hashed. | Refused before the pad is touched — the chip ID in the image header is checked as well as the manifest target (§U-3b). | **PASS (Automated)** — Verified by `firmware::tests::an_image_for_another_chip_is_not_silently_accepted` (manifest target check) and `opad_device::flash` (ESP32-S3 header check). |
+| UPD-11 | An interrupted flash is recoverable | Unplug the pad mid-write. | The pad does not run as a keyboard, and `docs/recovery.md` §7.6 brings it back. Confirms the honest failure mode is honest, and is the argument for U-3c. | **PARTIAL** (2026-09-17, §11.3) — not run deliberately, but WIN-06 left the pad in ROM download mode and `docs/recovery.md` §7.6 brought it back in one `opadctl flash`. The mid-write unplug itself is untested. |
 
 ---
 
@@ -192,10 +192,10 @@ nothing here is inferred.
 
 | ID | Test | Result | Evidence |
 |---|---|---|---|
-| U3A-01 | Pre-flash export | **PASS** | `osupadctl export ~/osupad-backup-preU3a.json` → `lifetime_key1: 3745`, `lifetime_key2: 20594`, generation 12 |
+| U3A-01 | Pre-flash export | **PASS** | `opadctl export ~/opad-backup-preU3a.json` → `lifetime_key1: 3745`, `lifetime_key2: 20594`, generation 12 |
 | U3A-02 | First `flash --full` of the new table | **PASS** | Wrote bootloader `0x0`, table `0x8000`, `ota_data_initial` `0xf000`, app `0x20000`. No `erase-flash`. `nvs` at `0x9000`/`0x6000` is byte-identical to the old `SINGLE_APP_LARGE` layout, so it was never in the written range. |
 | U3A-03 | Counters survive the table change | **PASS** | 3745 / 20594, generation 12, unchanged after the flash. **This is the whole point of the test and it held.** |
-| U3A-04 | Running slot is reported | **PASS** | `osupadctl status` → `Running Slot: ota_0` |
+| U3A-04 | Running slot is reported | **PASS** | `opadctl status` → `Running Slot: ota_0` |
 
 ### 9.2 W3-2 — the five ownership checks
 
@@ -222,8 +222,8 @@ verified.
 
 | ID | Test | Result | Evidence |
 |---|---|---|---|
-| UPD-06 | Firmware update preserves the counters | **PASS** | Built a 1.0.1 image, signed a manifest with the §U-0.3 key, served it, `osupadctl firmware-update --yes` → `Firmware updated from 1.0.0 to 1.0.1`, `Running Slot: ota_0`, counters still **3745 / 20594**. The pad was then flashed back to the committed 1.0.0. |
-| UPD-07 | Consent is required | **PASS (first half)** | `osupadctl firmware-update` without `--yes` printed the full offer and refused: "A firmware update needs confirmation." The "asks again the second time" half is not yet run. |
+| UPD-06 | Firmware update preserves the counters | **PASS** | Built a 1.0.1 image, signed a manifest with the §U-0.3 key, served it, `opadctl firmware-update --yes` → `Firmware updated from 1.0.0 to 1.0.1`, `Running Slot: ota_0`, counters still **3745 / 20594**. The pad was then flashed back to the committed 1.0.0. |
+| UPD-07 | Consent is required | **PASS (first half)** | `opadctl firmware-update` without `--yes` printed the full offer and refused: "A firmware update needs confirmation." The "asks again the second time" half is not yet run. |
 
 **How to reproduce the update rows.** The updater requires HTTPS and pins
 bundled Mozilla roots, so a plain local server is refused — correctly. This run
@@ -256,9 +256,9 @@ daemon with the real pad attached. Nothing in the daemon knew it was a test.
 | During COOLDOWN (t = 20 s) | No backup |
 | IDLE reached | t = 25 s; post-play sync settled 06:54:25Z |
 | Backup written | 06:54:45Z — **exactly 20 s after IDLE**, seen between the t = 40 s and t = 45 s polls |
-| File | `osupad-backup-20260917T065445Z.json`, a valid `format_version: 1` document with `3745 / 20594` and generation 15 |
-| `osupadctl status` | `Last Backup: 2026-09-17T06:54:45Z` |
-| Daemon log | `Automatic counter backup written: …/osupad-backup-20260917T065445Z.json (3745 / 20594)` |
+| File | `opad-backup-20260917T065445Z.json`, a valid `format_version: 1` document with `3745 / 20594` and generation 15 |
+| `opadctl status` | `Last Backup: 2026-09-17T06:54:45Z` |
+| Daemon log | `Automatic counter backup written: …/opad-backup-20260917T065445Z.json (3745 / 20594)` |
 
 Rotation to ten and cancellation by a new map inside the window are covered by
 unit tests only — reproducing them live needs eleven sessions and a second
@@ -276,12 +276,12 @@ Tools 14.44.
 | Job / step | Result |
 |---|---|
 | `rust-windows` / `cargo fmt --check` | **PASS** |
-| `rust-windows` / `cargo clippy --workspace --exclude osupad-gui --all-targets -- -D warnings` | **PASS** |
-| `rust-windows` / `cargo build --workspace --exclude osupad-gui` | **PASS** |
-| `rust-windows` / `cargo test --workspace --exclude osupad-gui` | **PASS** |
-| `rust-windows-gui` / `cargo clippy -p osupad-gui --all-targets -- -D warnings` | **PASS** (§10.2) |
-| `rust-windows-gui` / `cargo build -p osupad-gui` | **PASS** (§10.2) |
-| `rust-windows-gui` / `cargo test -p osupad-gui` | **PASS** (4 passed) |
+| `rust-windows` / `cargo clippy --workspace --exclude opad-gui --all-targets -- -D warnings` | **PASS** |
+| `rust-windows` / `cargo build --workspace --exclude opad-gui` | **PASS** |
+| `rust-windows` / `cargo test --workspace --exclude opad-gui` | **PASS** |
+| `rust-windows-gui` / `cargo clippy -p opad-gui --all-targets -- -D warnings` | **PASS** (§10.2) |
+| `rust-windows-gui` / `cargo build -p opad-gui` | **PASS** (§10.2) |
+| `rust-windows-gui` / `cargo test -p opad-gui` | **PASS** (4 passed) |
 
 **All twelve crates are green on Windows**: they compile, lint clean
 under `-D warnings`, and their whole test suite passes on a real windows-msvc
@@ -289,7 +289,7 @@ host. That is the first actual evidence for §W4-2 that the port works.
 
 ### 10.1 Three defects had to be fixed before any of it could run
 
-1. **`protoc` was installed by no job at all** (`1c0fb3f`). `osupad-protocol`'s
+1. **`protoc` was installed by no job at all** (`1c0fb3f`). `opad-protocol`'s
    build script drives prost-build, which needs `protoc` on every platform and
    has not vendored it since 0.11. Neither the Ubuntu apt list nor the two
    Windows jobs provided it, so the first crate in the graph failed everywhere.
@@ -302,7 +302,7 @@ host. That is the first actual evidence for §W4-2 that the port works.
    long command lines by relative-ising source paths, and doing that to a
    verbatim path yielded `'\\lv_group.c'`.
 
-### 10.2 `osupad-gui` — four Windows errors (FIXED)
+### 10.2 `opad-gui` — four Windows errors (FIXED)
 
 All four errors resolved:
 
@@ -315,13 +315,13 @@ All four errors resolved:
 
 ### 10.3 Clean-checkout CI blocker — RESOLVED
 
-`osupad-ui-preview` previously required `firmware/sdkconfig` and
+`opad-ui-preview` previously required `firmware/sdkconfig` and
 `firmware/managed_components/lvgl__lvgl`, which are gitignored. This blocked
 clean checkouts on remote CI runners.
 
 **Resolution:** Added `csrc/preview_stub.c` and updated `build.rs` to detect
 when LVGL sources are missing. On clean checkouts without managed ESP-IDF
-components, `osupad-ui-preview` compiles a headless stub fallback providing
+components, `opad-ui-preview` compiles a headless stub fallback providing
 real default layouts, layout validation, and mock frame rendering with a
 cargo warning, allowing `cargo check`, `cargo build`, and `cargo test --workspace`
 to pass 100% on any clean machine or runner. When LVGL components are present,
@@ -336,7 +336,7 @@ the full pixel-exact preview is compiled as normal.
 Windows 11 Pro 25H2 (build 26200.8037) in a libvirt/QEMU VM: q35, UEFI with
 Secure Boot, emulated TPM 2.0 (swtpm), 4 vCPU, 6 GB, SATA disk, e1000e NIC.
 Installed fully unattended. Rust 1.98.1 `x86_64-pc-windows-msvc`, VS 2022 Build
-Tools 14.44, protoc 36.0, Inno Setup 6.7.3. Two local accounts, `osupad`
+Tools 14.44, protoc 36.0, Inno Setup 6.7.3. Two local accounts, `opad`
 (admin) and `tester2` (standard), created at install time for WIN-03.
 
 **The installer was never run on this machine**, which is what makes WIN-01 a
@@ -354,7 +354,7 @@ the VM and taking it back is a genuine USB re-enumeration, which is how
 
 ### 11.3 WIN-06 failed for an environmental reason, and that matters
 
-`osupadctl flash` got as far as "Asking osupad-daemon to release the serial
+`opadctl flash` got as far as "Asking opad-daemon to release the serial
 port…", the pad rebooted into the ROM bootloader, and the flash then died with
 `COM3 could not be opened`. The cause is the one §W4-2's own instructions
 warned about: **`startupPolicy='optional'` governs VM start, not hot-attach.**
@@ -366,7 +366,7 @@ When the pad re-enumerated as `303a:1001`, libvirt left that entry
 - It is **not a pass** either. Flashing from Windows is unverified.
 - The pad was left in ROM download mode, exactly the recoverable state
   `docs/recovery.md` §7.6 describes, and was recovered from Linux in one
-  `osupadctl flash`. The honest failure mode really is honest.
+  `opadctl flash`. The honest failure mode really is honest.
 - **To settle WIN-06:** bare metal, or PCI-pass the whole USB controller. The
   latter was **not** attempted here: the pad shares bus 001 with this machine's
   webcam, Bluetooth radio and another HID device, so passing the controller
@@ -375,19 +375,19 @@ When the pad re-enumerated as `303a:1001`, libvirt left that entry
 ### 11.4 Verified along the way, outside the numbered rows
 
 - **§W0-4 paths on Windows.** The daemon resolved
-  `C:\Users\osupad\AppData\Roaming\osupad\osupad.db` and
-  `…\osupad\backups` with no configuration.
+  `C:\Users\opad\AppData\Roaming\opad\opad.db` and
+  `…\opad\backups` with no configuration.
 - **§W3-3 ownership across two machines, on real hardware.** The pad is owned
   by the Linux install. The Windows daemon saw a foreign pad, **paused counter
   sync** (`Last Sync: Never`) and printed the takeover warning with both
   counter pairs. Nothing was written and the counters were untouched — the pad
   kept working as a keyboard throughout, and it came back to Linux still owned
   by Linux.
-- **The new `Ownership:` line in `osupadctl status`** is what made that legible
+- **The new `Ownership:` line in `opadctl status`** is what made that legible
   on a machine with no GUI. Without it the pad looks connected and simply never
   syncs.
 
-One cosmetic thing to be aware of: for a foreign pad, `osupadctl status` prints
+One cosmetic thing to be aware of: for a foreign pad, `opadctl status` prints
 the **host's** `Key Pins` (the local default, `GPIO14`/`GPIO9`), not the pad's
 (`GPIO2`/`GPIO13`), because config is not synced from a pad this install does
 not own. Correct behaviour, mildly misleading presentation.
@@ -400,28 +400,28 @@ Run on host `DESKTOP-U6AF6VD` (Windows 11 x86_64, MSVC 14.51.36231, Windows SDK 
 with physical ESP32-S3 pad (`OSUPAD-3CDC75701678`) on `COM3`.
 
 ### 12.1 Codebase Compilation & Test Suite (100% Green)
-- Fixed compilation of `osupad-gui` on Windows: added `Win32_Security` to `windows-sys`, fixed pointer null comparisons for `HANDLE`, cleaned up unused tray imports, and conditionally configured `PlatformSpecific` window settings for Linux-only fields.
-- Fixed tray icon menu warning in `osupad-gui` on Windows (using `Icon::from_rgba` with valid RGBA buffer instead of raw PNG bytes).
+- Fixed compilation of `opad-gui` on Windows: added `Win32_Security` to `windows-sys`, fixed pointer null comparisons for `HANDLE`, cleaned up unused tray imports, and conditionally configured `PlatformSpecific` window settings for Linux-only fields.
+- Fixed tray icon menu warning in `opad-gui` on Windows (using `Icon::from_rgba` with valid RGBA buffer instead of raw PNG bytes).
 - All 12 crates in the workspace compile without error or warning under `-D warnings`.
 - Workspace unit and integration tests run and pass 100%:
-  - Non-GUI crates: `cargo test --workspace --exclude osupad-gui` passes all tests.
-  - `osupad-update`: 75 library tests + 5 manifest tests passing, verifying hash checks, signature rejection, manifest verification, chip ID rejection, and idle gates.
-  - `osupad-gui`: all 4 unit tests passing, including Windows autostart path quoting.
+  - Non-GUI crates: `cargo test --workspace --exclude opad-gui` passes all tests.
+  - `opad-update`: 75 library tests + 5 manifest tests passing, verifying hash checks, signature rejection, manifest verification, chip ID rejection, and idle gates.
+  - `opad-gui`: all 4 unit tests passing, including Windows autostart path quoting.
 
 ### 12.2 Protocol & Fault Isolation on Live Hardware
 - **COM-01 (CDC Host Absent):** Pad enumerates cleanly as HID keyboard and USB serial device without host daemon running; Windows PnP status OK.
-- **COM-02 (Malformed Protocol Frames):** Hardware test executed via `desktop/crates/osupad-device/examples/test_com02.rs`. Injected 512-byte random noise, oversized 2 GB frame header (`0x7FFFFFFF`), and corrupted protobuf payloads over `COM3`. Firmware discarded bad frames, logged diagnostic events, and recovered immediately upon receiving valid `Hello` envelope (replied with valid `HelloAck`).
-- **FAIL-04 (SQLite Degraded Mode):** Revoked write access on `%APPDATA%\osupad\osupad.db` (`IsReadOnly = $true`). Daemon launched, detected degraded read-only mode, and safely connected to physical pad over serial.
+- **COM-02 (Malformed Protocol Frames):** Hardware test executed via `desktop/crates/opad-device/examples/test_com02.rs`. Injected 512-byte random noise, oversized 2 GB frame header (`0x7FFFFFFF`), and corrupted protobuf payloads over `COM3`. Firmware discarded bad frames, logged diagnostic events, and recovered immediately upon receiving valid `Hello` envelope (replied with valid `HelloAck`).
+- **FAIL-04 (SQLite Degraded Mode):** Revoked write access on `%APPDATA%\opad\opad.db` (`IsReadOnly = $true`). Daemon launched, detected degraded read-only mode, and safely connected to physical pad over serial.
 
 ### 12.3 Windows Packaging & Lifecycle (PKG-01 to PKG-06, WIN-04)
-- **Installer Build:** Inno Setup 6 compiled `packaging/windows/installer.iss` producing `osupad-setup-1.0.0.exe`.
-- **PKG-01 (Install Diff):** Installs cleanly to `%LOCALAPPDATA%\Programs\osupad`. Only writes program binaries, bundled tosu, and `HKCU\...\Run` keys.
-- **PKG-02 (Uninstall Diff):** Uninstaller completely removes `%LOCALAPPDATA%\Programs\osupad` and deletes `HKCU` autostart entries.
-- **PKG-03 (User Data Persistence):** User database (`%APPDATA%\osupad\osupad.db`) preserved across uninstall cycles. Ticking wipe option removes it.
+- **Installer Build:** Inno Setup 6 compiled `packaging/windows/installer.iss` producing `opad-setup-1.0.0.exe`.
+- **PKG-01 (Install Diff):** Installs cleanly to `%LOCALAPPDATA%\Programs\opad`. Only writes program binaries, bundled tosu, and `HKCU\...\Run` keys.
+- **PKG-02 (Uninstall Diff):** Uninstaller completely removes `%LOCALAPPDATA%\Programs\opad` and deletes `HKCU` autostart entries.
+- **PKG-03 (User Data Persistence):** User database (`%APPDATA%\opad\opad.db`) preserved across uninstall cycles. Ticking wipe option removes it.
 - **PKG-04 (Install Origin):** Verified exact 7 bytes `'windows'`, zero trailing newlines.
 - **PKG-05 (Bundled tosu):** Bundles `tosu.exe` (v4.26.2), `NOTICE`, `LICENSE`, and `VERSION` (`4.26.2\n`).
 - **PKG-06 (Uninstall While Running):** Fixed Inno Setup uninstall script by adding `StopRunningProcesses` using `taskkill` in `InitializeUninstall`. Running daemon and GUI are terminated before unlinking files; uninstallation finishes in ~4 seconds with zero errors or file locks.
-- **WIN-04 (Autostart):** Verified registry `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` correctly registers `osupad-daemon` and `osupad-gui --tray`.
+- **WIN-04 (Autostart):** Verified registry `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` correctly registers `opad-daemon` and `opad-gui --tray`.
 
 ### 12.4 Friendly Device Naming (Microsoft OS 2.0 Descriptors)
 - Implemented Microsoft OS 2.0 Descriptors in `firmware/main/usb/usb_descriptors.c`:
@@ -474,7 +474,7 @@ row says otherwise.
 
 ## 15. Hall Effect calibration lock screen, on-pad flow and app flow
 
-Applies when the firmware is built with `CONFIG_OSUPAD_HE_BACKEND=y` and a Hall
+Applies when the firmware is built with `CONFIG_OPAD_HE_BACKEND=y` and a Hall
 Effect module is detected at boot (`he_backend_running()`). Firmware:
 `firmware/main/input/he_backend.c`, `he_cal_runner.c`, `he_cal_button.c`,
 `firmware/main/ui/he_cal_ui.c`, `firmware/main/protocol/protocol.c`. Desktop:
@@ -488,7 +488,7 @@ Effect module is detected at boot (`he_backend_running()`). Firmware:
 | HE-CAL-04 | Full on-pad calibration flow | With no daemon running, tap **Calibrate**, keep both keys released during Rest, press Key 1 fully 5 times, then press Key 2 fully 5 times. | 5 indicator boxes fill per key; `Calibrated!` shows for ~1 s; calibration is saved as a v1 record (`firmware/main/input/he_cal_record.h`) and the lock lifts after saving, without waiting for the success overlay to disappear (`firmware/main/ui/he_cal_ui.c`). | **NOT RUN** | **NOT RUN** |
 | HE-CAL-05 | App-driven flow & auto-open | Connect an uncalibrated HE pad with `opad-daemon` running. Click **Start Calibration** in the GUI and complete Rest + 5 presses per key. | Pad shows `Calibrate in the OPad app` (no on-pad button); daemon auto-launches `opad-gui --page calibrate` once; GUI shows live stage, 0–5 boxes, and rest/full counts on completion; Settings → Keypad shows **Recalibrate Keys** afterward. | **NOT RUN** | **NOT RUN** |
 | HE-CAL-06 | CDC disconnect / cancel mid-flow | Start calibration from the app (both on an uncalibrated pad and when recalibrating a calibrated pad), then cancel or stop the daemon mid-flow. Closing just the GUI leaves CDC connected. | Active app-started calibration stops and previous calibration remains. Cancel returns a locked pad to the lock screen; CDC disconnect shows failure for ~2 s first. A calibrated pad resumes with its previous calibration and offers no on-pad recalibration (`firmware/main/ui/he_cal_ui.c`). | **NOT RUN** | **NOT RUN** |
-| HE-CAL-07 | MX module unaffected | Boot the `CONFIG_OSUPAD_HE_BACKEND=y` firmware with an MX module fitted. | `he_backend_running()` is false; pad is not locked, `HelloAck.he_calibration` is false, `DeviceStatus.he_calibration` is absent, daemon does not open the calibration page, and MX keys work as normal. | **NOT RUN** | **NOT RUN** |
+| HE-CAL-07 | MX module unaffected | Boot the `CONFIG_OPAD_HE_BACKEND=y` firmware with an MX module fitted. | `he_backend_running()` is false; pad is not locked, `HelloAck.he_calibration` is false, `DeviceStatus.he_calibration` is absent, daemon does not open the calibration page, and MX keys work as normal. | **NOT RUN** | **NOT RUN** |
 | HE-CAL-08 | Unlock without reboot | Immediately after HE-CAL-04 or HE-CAL-05 finishes, press Key 1, Key 2, and swipe on the touchscreen without rebooting or replugging. | Both keys emit Z/X and touchscreen swipes/Quick Retry work immediately with no reboot. | **NOT RUN** | **NOT RUN** |
 | HE-CAL-09 | Key held at boot or calibration start | Hold Key 1 down while booting a calibrated HE pad, and while starting/finishing calibration. Test a steady partial hold as well. | Boot remains disarmed until release (`firmware/main/input/he_rt.c`). Rest capture rejects a mean outside 1500..2500 or spread above 36. A key held part way down during rest fails with "A key was pressed while resting" once it comes back up more than 72 counts below that rest (`rest_pressed_margin`, `firmware/main/input/he_cal_capture.c`); record the hold depth that triggers it and any false failure with fingers off. No calibration keystrokes should be emitted. | **NOT RUN** | **NOT RUN** |
 | HE-CAL-10 | Calibration start during a swipe | Start app calibration while a menu volume swipe holds Alt, while a configured keyboard swipe is sending, and as a pending Quick Retry touch lifts; retry after release cleanup finishes. | Start is refused with “Release the touchscreen first” until contact and cleanup finish, then succeeds on a new request. Race a fresh touch against start: that contact must remain gated until release. No stuck Quick Retry/Alt or new touch-action report submission after accepted start (`firmware/main/input/touch_retry.c`, `he_cal_touch_guard.h`, `firmware/main/ui/he_cal_ui.c`; report Q4). Previously submitted USB transfers may finish. | **NOT RUN** | **NOT RUN** |

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Record and summarise the Hall bench stream (CONFIG_OSUPAD_HALL_BENCH).
+"""Record and summarise the Hall bench stream (CONFIG_OPAD_HALL_BENCH).
 
 V2-0 of docs/specs/v2-rapid-trigger.md. If opad-daemon is running, the script
 asks it to release the port (the PrepareFlash request `opadctl flash` uses) and
@@ -84,7 +84,7 @@ def main():
             fh.writelines(f"{t},{a},{b}\n" for t, a, b in rows)
 
     if not rows:
-        sys.exit("No H lines: is this a CONFIG_OSUPAD_HALL_BENCH build, and the daemon stopped?")
+        sys.exit("No H lines: is this a CONFIG_OPAD_HALL_BENCH build, and the daemon stopped?")
     span_ms = rows[-1][0] - rows[0][0]
     print(f"{len(rows)} averaged samples over {span_ms} ms ({len(rows) / max(span_ms, 1) * 1000:.0f} per s)")
     for k in (1, 2):

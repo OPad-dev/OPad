@@ -95,7 +95,7 @@
 			(outputdirectory "")
 		)
 	)
-	(footprint "osupad:MountingHole_2.2mm_M2"
+	(footprint "opad:MountingHole_2.2mm_M2"
 		(layer "F.Cu")
 		(uuid "46198249-af20-4171-88e7-116c1315c619")
 		(at 115.5 72.5)
@@ -190,7 +190,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:MountingHole_2.2mm_M2"
+	(footprint "opad:MountingHole_2.2mm_M2"
 		(layer "F.Cu")
 		(uuid "9fa31d8f-d35b-495a-a740-6d6938a9fadc")
 		(at 179.55 89.5)
@@ -285,7 +285,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:MountingHole_2.2mm_M2"
+	(footprint "opad:MountingHole_2.2mm_M2"
 		(layer "F.Cu")
 		(uuid "e939cc8b-0799-4b80-83cd-17634948d4d1")
 		(at 115.5 89.5)
@@ -380,7 +380,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:MountingHole_2.2mm_M2"
+	(footprint "opad:MountingHole_2.2mm_M2"
 		(layer "F.Cu")
 		(uuid "f635da7a-bcc7-43bb-a4bc-2c527e7f1f5b")
 		(at 179.55 72.5)
@@ -475,7 +475,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:R_0603_1608Metric"
+	(footprint "opad:R_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "02b2a247-2f31-4fc8-8221-84eb4a6379d8")
 		(at 161 73)
@@ -643,7 +643,7 @@
 			)
 		)
 	)
-	(footprint "osupad:R_0603_1608Metric"
+	(footprint "opad:R_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "12f07bba-7067-49ac-869b-8c2b6c6b8eeb")
 		(at 132.6 71.4)
@@ -811,7 +811,7 @@
 			)
 		)
 	)
-	(footprint "osupad:C_0603_1608Metric"
+	(footprint "opad:C_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "20c3b9dc-67d6-4a6b-b838-0ba7c485f8bd")
 		(at 161 71.4)
@@ -959,7 +959,7 @@
 			)
 		)
 	)
-	(footprint "osupad:R_0603_1608Metric"
+	(footprint "opad:R_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "837b42af-f854-46b3-a063-eb14cc565211")
 		(at 132.6 73)
@@ -1127,7 +1127,7 @@
 			)
 		)
 	)
-	(footprint "osupad:Kailh_CPG151101S11_MX_Hotswap_Bottom"
+	(footprint "opad:Kailh_CPG151101S11_MX_Hotswap_Bottom"
 		(layer "B.Cu")
 		(uuid "b19b1c07-0715-4036-ab11-9f2799fb0b8b")
 		(at 147.525 83.5 180)
@@ -1384,7 +1384,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:R_0603_1608Metric"
+	(footprint "opad:R_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "c633f725-c27d-4690-a0f7-3026a04d7771")
 		(at 132.6 74.6)
@@ -1552,7 +1552,7 @@
 			)
 		)
 	)
-	(footprint "osupad:Kailh_CPG151101S11_MX_Hotswap_Bottom"
+	(footprint "opad:Kailh_CPG151101S11_MX_Hotswap_Bottom"
 		(layer "B.Cu")
 		(uuid "c6e2eb67-1d0f-4dc1-b00d-dd2dae641cef")
 		(at 128.475 83.5 180)
@@ -1809,7 +1809,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:R_0603_1608Metric"
+	(footprint "opad:R_0603_1608Metric"
 		(layer "B.Cu")
 		(uuid "cee87538-854a-4caf-8c70-d15738a63378")
 		(at 161 74.6)
@@ -1977,7 +1977,7 @@
 			)
 		)
 	)
-	(footprint "osupad:FFC_JUSHUO_AFA07-S14FCA_1x14-1MP_P1.0mm_Horizontal"
+	(footprint "opad:FFC_JUSHUO_AFA07-S14FCA_1x14-1MP_P1.0mm_Horizontal"
 		(layer "B.Cu")
 		(uuid "e7a7f16a-eb05-44c4-960e-9191b48f0fa7")
 		(at 147.525 73.9)
@@ -2342,7 +2342,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:Kailh_CPG151101S11_MX_Hotswap_Bottom"
+	(footprint "opad:Kailh_CPG151101S11_MX_Hotswap_Bottom"
 		(layer "B.Cu")
 		(uuid "e953c072-592a-454f-9d18-fc45531a4963")
 		(at 166.575 83.5 180)

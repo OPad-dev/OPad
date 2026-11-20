@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Single source of truth for the osuPad Hall Effect input module (he_input_v1).
+"""Single source of truth for the OPad Hall Effect input module (he_input_v1).
 
 Everything downstream -- Gerbers, drills, BOM, CPL, and the KiCad schematic and
 board -- is derived from the tables in this module, so the fabrication data and
@@ -20,7 +20,7 @@ X = 112 .. 164, Y = 69 .. 93 (see ``case_to_pcb`` in generate_boards.py), so::
 Bottom-side placement
 ---------------------
 Every component is on the bottom copper (B.Cu) so JLCPCB assembles one side.
-The footprints in ``lib/osupad.pretty`` are drawn on F.Cu with KiCad's Y-down
+The footprints in ``lib/opad.pretty`` are drawn on F.Cu with KiCad's Y-down
 convention.  Flipping a footprint to the back negates the local Y, and
 converting to this module's Y-up board frame negates it again, so for a
 bottom-side part at 0 degrees::
@@ -61,10 +61,10 @@ import os
 # ---------------------------------------------------------------------------
 
 PROJECT = "he_input_v1"
-TITLE = "osuPad Hall Effect Input Module V1"
+TITLE = "OPad Hall Effect Input Module V1"
 REV = "V1.1"
 DATE = "2026-10-10"
-COMPANY = "osuPad"
+COMPANY = "OPad"
 
 # ---------------------------------------------------------------------------
 # Outline and mechanics
@@ -120,7 +120,7 @@ EDGE_W = 0.1
 
 # ---------------------------------------------------------------------------
 # Footprints: pads as (number, (local_x, local_y), (w, h))
-# Taken from lib/osupad.pretty, which is the library KiCad also uses.
+# Taken from lib/opad.pretty, which is the library KiCad also uses.
 # ---------------------------------------------------------------------------
 
 FP_C0603 = "C_0603_1608Metric"
@@ -162,7 +162,7 @@ COURTYARD = {
 
 NET_3V3, NET_GND, NET_IN1, NET_IN2, NET_ID = "3V3", "GND", "IN1", "IN2", "ID"
 
-# Module connector pin map, identical on every osuPad input module.
+# Module connector pin map, identical on every OPad input module.
 MODULE_PINOUT = {
     "1": NET_3V3,
     "2": NET_GND,
@@ -389,7 +389,7 @@ JLC_MARKER = ("JLCJLCJLCJLC", 8.5, 22.1)
 PCBWAY_MARKER = ("WayWayWay", 8.5, 22.1)
 
 BOTTOM_SILK = [
-    ("OSUPAD HE " + REV, 26.0, 2.2, 0.9, "center"),
+    ("OPAD HE " + REV, 26.0, 2.2, 0.9, "center"),
     ("KEY1", KEY1[0], 4.6, 0.8, "center"),
     ("KEY2", KEY2[0], 4.6, 0.8, "center"),
     ("U1", 13.2, 9.5, 0.8, "center"),
@@ -406,7 +406,7 @@ BOTTOM_SILK = [
 ]
 
 TOP_SILK = [
-    ("OSUPAD HE " + REV, 26.0, 21.6, 0.9, "center"),
+    ("OPAD HE " + REV, 26.0, 21.6, 0.9, "center"),
     ("KEY1", KEY1[0], 13.6, 0.8, "center"),
     ("KEY2", KEY2[0], 13.6, 0.8, "center"),
     ("HALL SENSOR UNDER BOARD - DO NOT DRILL", 26.0, 1.4, 0.7, "center"),
@@ -853,9 +853,9 @@ def _kicad_pad_nets(text, ref):
 
 
 def _symbol_pin_names(symbol):
-    """{pin number: pin name} of ``symbol`` in lib/osupad.kicad_sym."""
+    """{pin number: pin name} of ``symbol`` in lib/opad.kicad_sym."""
     import re
-    text = open(os.path.join(V1_DIR, "lib", "osupad.kicad_sym"), encoding="utf8").read()
+    text = open(os.path.join(V1_DIR, "lib", "opad.kicad_sym"), encoding="utf8").read()
     start = text.index('(symbol "%s"' % symbol)
     depth, i = 0, start
     while True:

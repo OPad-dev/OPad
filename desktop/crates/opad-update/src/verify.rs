@@ -139,14 +139,14 @@ mod tests {
     /// signature it really did produce over `WRONG_KEY_MANIFEST`. Its secret
     /// half was discarded; it exists so the rejection below is provably about
     /// *which key signed*, not about a malformed signature.
-    const WRONG_PUBLIC_KEY: &str = "RWRwm1Yg1liKWycfEdoSZapd0XhecKK8/9rao/6nG/PkEZSGJaHTslb1";
+    const WRONG_PUBLIC_KEY: &str = "RWRpErouHzAnEn4UT+faigKbcjunOVRsyBPuEVwcAeBxA9lUn0XI30u0";
     const WRONG_KEY_MANIFEST: &[u8] =
         br#"{"schema":1,"generated":"2026-09-17T00:00:00Z","components":{}}"#;
     const WRONG_KEY_SIGNATURE: &str = concat!(
         "untrusted comment: signature from minisign secret key\n",
-        "RURwm1Yg1liKW2Hjtz4hRdi1ZJBsx/hhU8YIx4+Z9RnAbE3GVpSMlb40aTG5PJ83evWawBCGvrt2k/9ee7aoLRgQwFfNaQ5A+gY=\n",
-        "trusted comment: osupad test vector\n",
-        "y2t+5fkSFjzY7ObWMq4Mci4kwEsgFHWtGHUb9c4MqP99u5DuOGapzDRiF8IIwvh3ugpxMtBMO3T+mwH0uYQ7AA==\n",
+        "RURpErouHzAnEjxsRlBUib+tpDqvTeQ+tTjEIOMb/rytSW0VAbwB5CsTGas1pn40SISZNZYz37C9DAZLfZuiNYZfMLtvmFIYOAE=\n",
+        "trusted comment: opad test vector\n",
+        "nZGaWu42armLVn3cvl3LF4gN5TtlITEiY4T0pOh3edZu+6BdRi3uk2mBzpka9AeJ35+Ti/Hgp6j/26NXEU2iAw==\n",
     );
 
     #[test]

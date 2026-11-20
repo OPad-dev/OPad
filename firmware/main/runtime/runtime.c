@@ -16,7 +16,7 @@
 
 static const char *TAG = "runtime";
 
-static atomic_int s_state = ATOMIC_VAR_INIT(OSUPAD_STATE_IDLE);
+static atomic_int s_state = ATOMIC_VAR_INIT(OPAD_STATE_IDLE);
 static int64_t s_boot_time_us = 0;
 static int64_t s_cooldown_start_us = 0;
 static int64_t s_last_checkpoint_us = 0;
@@ -63,21 +63,21 @@ static void runtime_supervisor_task(void *pvParameters)
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(100));
         // IDLE: counters are never written in a map or its cooldown
-        if (atomic_load(&s_restart_requested) && atomic_load(&s_state) == OSUPAD_STATE_IDLE &&
+        if (atomic_load(&s_restart_requested) && atomic_load(&s_state) == OPAD_STATE_IDLE &&
             image_confirmed()) {
             restart_now();
         }
         int64_t now = esp_timer_get_time();
-        osupad_state_t current = (osupad_state_t)atomic_load(&s_state);
+        opad_state_t current = (opad_state_t)atomic_load(&s_state);
 
-        if (current == OSUPAD_STATE_PLAYING) {
+        if (current == OPAD_STATE_PLAYING) {
             if ((now - atomic_load(&s_last_gameplay_us)) >= GAMEPLAY_TIMEOUT_US) {
                 ESP_LOGI(TAG, "No gameplay updates from host, leaving PLAYING");
                 runtime_notify_gameplay(false);
             }
-        } else if (current == OSUPAD_STATE_COOLDOWN) {
+        } else if (current == OPAD_STATE_COOLDOWN) {
             if ((now - s_cooldown_start_us) >= COOLDOWN_DURATION_US) {
-                atomic_store(&s_state, OSUPAD_STATE_IDLE);
+                atomic_store(&s_state, OPAD_STATE_IDLE);
                 ESP_LOGI(TAG, "State transition: COOLDOWN -> IDLE");
 
                 // Checkpoint dirty counters, config, and layouts safely now that gameplay has ended
@@ -87,7 +87,7 @@ static void runtime_supervisor_task(void *pvParameters)
                 he_cal_flush();
                 s_last_checkpoint_us = now;
             }
-        } else if (current == OSUPAD_STATE_IDLE) {
+        } else if (current == OPAD_STATE_IDLE) {
             device_config_flush();
             flush_layouts();
             he_cal_flush();
@@ -129,9 +129,9 @@ esp_err_t runtime_init(void)
     return ESP_OK;
 }
 
-osupad_state_t runtime_get_state(void)
+opad_state_t runtime_get_state(void)
 {
-    return (osupad_state_t)atomic_load(&s_state);
+    return (opad_state_t)atomic_load(&s_state);
 }
 
 void runtime_request_restart(void)
@@ -141,18 +141,18 @@ void runtime_request_restart(void)
 
 void runtime_notify_gameplay(bool is_playing)
 {
-    osupad_state_t current = (osupad_state_t)atomic_load(&s_state);
+    opad_state_t current = (opad_state_t)atomic_load(&s_state);
 
     if (is_playing) {
         atomic_store(&s_last_gameplay_us, esp_timer_get_time());
-        if (current != OSUPAD_STATE_PLAYING) {
-            atomic_store(&s_state, OSUPAD_STATE_PLAYING);
+        if (current != OPAD_STATE_PLAYING) {
+            atomic_store(&s_state, OPAD_STATE_PLAYING);
             ESP_LOGI(TAG, "State transition: %d -> PLAYING", current);
         }
     } else {
-        if (current == OSUPAD_STATE_PLAYING) {
+        if (current == OPAD_STATE_PLAYING) {
             s_cooldown_start_us = esp_timer_get_time();
-            atomic_store(&s_state, OSUPAD_STATE_COOLDOWN);
+            atomic_store(&s_state, OPAD_STATE_COOLDOWN);
             ESP_LOGI(TAG, "State transition: PLAYING -> COOLDOWN (5s window)");
         }
     }

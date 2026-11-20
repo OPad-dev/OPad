@@ -95,7 +95,7 @@
 			(outputdirectory "")
 		)
 	)
-	(footprint "osupad:L_0603_1608Metric"
+	(footprint "opad:L_0603_1608Metric"
 		(layer "F.Cu")
 		(uuid "0553212a-3764-484c-98cf-7ae1cb1ecdbe")
 		(at 117.4 108.8)
@@ -256,7 +256,7 @@
 			)
 		)
 	)
-	(footprint "osupad:MountingHole_2.2mm_M2"
+	(footprint "opad:MountingHole_2.2mm_M2"
 		(layer "F.Cu")
 		(uuid "30c7ac0d-c698-4653-945f-8ae7be9cff77")
 		(at 117.5 103)
@@ -351,7 +351,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:USB_C_Receptacle_HRO_TYPE-C-31-M-12"
+	(footprint "opad:USB_C_Receptacle_HRO_TYPE-C-31-M-12"
 		(layer "F.Cu")
 		(uuid "34e76bd8-a96d-46d1-b803-9d883ce30356")
 		(at 110 104.084 180)
@@ -687,7 +687,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:R_0603_1608Metric"
+	(footprint "opad:R_0603_1608Metric"
 		(layer "F.Cu")
 		(uuid "435516dc-927e-4ab0-85d2-565bc41a38ee")
 		(at 113.8 108.8)
@@ -848,7 +848,7 @@
 			)
 		)
 	)
-	(footprint "osupad:C_0603_1608Metric"
+	(footprint "opad:C_0603_1608Metric"
 		(layer "F.Cu")
 		(uuid "67bc8310-1363-4604-a045-108630f9a2ec")
 		(at 117.6 106.5)
@@ -989,7 +989,7 @@
 			)
 		)
 	)
-	(footprint "osupad:FFC_JUSHUO_AFA07-S08FCA_1x08-1MP_P1.0mm_Horizontal"
+	(footprint "opad:FFC_JUSHUO_AFA07-S08FCA_1x08-1MP_P1.0mm_Horizontal"
 		(layer "F.Cu")
 		(uuid "70b088cc-ae96-48cb-a1c8-10e3c0f29b05")
 		(at 110 117.1)
@@ -1300,7 +1300,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:MountingHole_2.2mm_M2"
+	(footprint "opad:MountingHole_2.2mm_M2"
 		(layer "F.Cu")
 		(uuid "88051c0c-1730-45c4-9dd8-7cc884b002b1")
 		(at 102.5 103)
@@ -1395,7 +1395,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:R_0603_1608Metric"
+	(footprint "opad:R_0603_1608Metric"
 		(layer "F.Cu")
 		(uuid "887ebde6-47d1-4998-991e-71c76bdcaf69")
 		(at 102.6 108.8)
@@ -1556,7 +1556,7 @@
 			)
 		)
 	)
-	(footprint "osupad:D_SOD-123"
+	(footprint "opad:D_SOD-123"
 		(layer "F.Cu")
 		(uuid "a17b4017-610c-4d85-bea4-a3cda264ac2a")
 		(at 114.6 113.9 180)
@@ -1762,7 +1762,7 @@
 		)
 		(embedded_fonts no)
 	)
-	(footprint "osupad:R_0603_1608Metric"
+	(footprint "opad:R_0603_1608Metric"
 		(layer "F.Cu")
 		(uuid "cbd1c002-53d7-4ec3-b1eb-ef7d5b314042")
 		(at 102.4 106.5)
@@ -1923,7 +1923,7 @@
 			)
 		)
 	)
-	(footprint "osupad:C_0603_1608Metric"
+	(footprint "opad:C_0603_1608Metric"
 		(layer "F.Cu")
 		(uuid "e31dc466-20a2-40e8-a4f3-313ff8a4ed41")
 		(at 106.2 108.8)
@@ -2064,7 +2064,7 @@
 			)
 		)
 	)
-	(footprint "osupad:C_0603_1608Metric"
+	(footprint "opad:C_0603_1608Metric"
 		(layer "F.Cu")
 		(uuid "e51ffb8b-c4a3-493b-b471-041f1c69377e")
 		(at 118.6 113.6 90)
@@ -2205,7 +2205,7 @@
 			)
 		)
 	)
-	(footprint "osupad:SOT-23-6"
+	(footprint "opad:SOT-23-6"
 		(layer "F.Cu")
 		(uuid "f9a442eb-e687-4f58-a3a3-21be9f4f5547")
 		(at 110 111)

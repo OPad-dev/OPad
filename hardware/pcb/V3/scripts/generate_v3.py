@@ -112,7 +112,7 @@ def write_schematic(directory, project, title, parts, notes, flags, date):
         for m in re.finditer(r'\(pin\s+\w+\s+\w+\s*\(at ([-\d.]+) ([-\d.]+) ([-\d.]+)\).*?\(number "([^"]+)"',
                              block, re.S):
             pins.setdefault(m.group(4), []).append((float(m.group(1)), float(m.group(2)), int(float(m.group(3)))))
-        sym[name] = (block.replace('(symbol "%s"' % name, '(symbol "osupad:%s"' % name, 1), pins)
+        sym[name] = (block.replace('(symbol "%s"' % name, '(symbol "opad:%s"' % name, 1), pins)
     root = g1.uid()
     out = ['(kicad_sch\n\t(version 20250114)\n\t(generator "eeschema")\n\t(generator_version "9.0")\n',
            '\t(uuid "%s")\n\t(paper "A2")\n' % root,
@@ -127,7 +127,7 @@ def write_schematic(directory, project, title, parts, notes, flags, date):
     for i, net in enumerate(flags):
         sx, sy = 25.4 + 12.7 * i, 20.32
         ref = "#FLG%02d" % (i + 1)
-        out.append('\t(symbol (lib_id "osupad:PWR_FLAG") (at %.2f %.2f 0) (unit 1) (exclude_from_sim no) '
+        out.append('\t(symbol (lib_id "opad:PWR_FLAG") (at %.2f %.2f 0) (unit 1) (exclude_from_sim no) '
                    '(in_bom no) (on_board yes) (dnp no) (uuid "%s")\n' % (sx, sy, g1.uid()))
         out.append(g1.prop("Reference", ref, sx, sy - 3.81, hide=True))
         out.append(g1.prop("Value", "PWR_FLAG", sx, sy - 5.08))
@@ -140,14 +140,14 @@ def write_schematic(directory, project, title, parts, notes, flags, date):
         sx, sy = 38.1 + 60.96 * (i % 9), 45.72 + 45.72 * (i // 9)
         p.sch = (sx, sy)
         pins = sym[p.symbol][1]
-        out.append('\t(symbol (lib_id "osupad:%s") (at %.2f %.2f 0) (unit 1) (exclude_from_sim no) '
+        out.append('\t(symbol (lib_id "opad:%s") (at %.2f %.2f 0) (unit 1) (exclude_from_sim no) '
                    '(in_bom %s) (on_board yes) (dnp %s) (uuid "%s")\n'
                    % (p.symbol, sx, sy, "no" if p.symbol == "TestPoint" else "yes",
                       "yes" if p.symbol == "TestPoint" else "no", p.uuid))
         ys = [y for v in pins.values() for _, y, _ in v]
         out.append(g1.prop("Reference", p.ref, sx, sy - max(ys) - 3.81))
         out.append(g1.prop("Value", p.value, sx, sy - min(ys) + 3.81))
-        out.append(g1.prop("Footprint", "osupad:" + p.footprint, sx, sy, hide=True))
+        out.append(g1.prop("Footprint", "opad:" + p.footprint, sx, sy, hide=True))
         out.append(g1.prop("Datasheet", "", sx, sy, hide=True))
         out.append(g1.prop("Description", p.description, sx, sy, hide=True))
         out.append(g1.prop("LCSC", p.lcsc, sx, sy, hide=True))
@@ -487,7 +487,7 @@ def he():
         module_common(bb, "OPad HE module")
         for k, x in enumerate(KEYS, 1):      # the switches' two plastic pegs (Lekker standard), holes only
             fp = pcbnew.FootprintLoad(v3lib.FP_LIB, "SW_MX_Hall_PlateMount_SolidCentre")
-            fp.SetFPID(pcbnew.LIB_ID("osupad", "SW_MX_Hall_PlateMount_SolidCentre"))
+            fp.SetFPID(pcbnew.LIB_ID("opad", "SW_MX_Hall_PlateMount_SolidCentre"))
             bb.board.Add(fp)
             fp.SetPosition(g1.pt(x, KEY_Y))
             fp.SetReference("SW%d" % k)

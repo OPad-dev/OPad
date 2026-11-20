@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fabrication data for the osuPad Hall Effect input module (he_input_v1).
+"""Fabrication data for the OPad Hall Effect input module (he_input_v1).
 
 Writes RS-274X Gerbers, Excellon drills, a Gerber job file, and the JLCPCB and
 PCBWay BOM / centroid files straight from ``he_board.py``, one folder per fab:
@@ -35,7 +35,7 @@ OUT = os.path.join(V1, "HE", "production")
 JLC_OUT = os.path.join(OUT, "jlcpcb")
 PCBWAY_OUT = os.path.join(OUT, "pcbway")
 
-SOFTWARE = "osuPad he_board.py"
+SOFTWARE = "OPad he_board.py"
 CREATED = datetime.datetime.now().astimezone().replace(microsecond=0).isoformat()
 
 ARC_STEPS = 12          # segments used to polygonise a 90 degree corner
@@ -406,7 +406,7 @@ def make_drill(plated):
 def make_job(files):
     job = {
         "Header": {
-            "GenerationSoftware": {"Vendor": "osuPad", "Application": "he_board.py",
+            "GenerationSoftware": {"Vendor": "OPad", "Application": "he_board.py",
                                    "Version": B.REV},
             "CreationDate": CREATED,
         },

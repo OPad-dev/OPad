@@ -24,7 +24,7 @@ esp_err_t touch_retry_init(void);
  */
 bool touch_retry_is_pressed(void);
 
-#ifdef CONFIG_OSUPAD_HE_DEBUG
+#ifdef CONFIG_OPAD_HE_DEBUG
 /** HE debug firmware: touch controller reads so far, and whether its INT wakes the task. */
 uint32_t touch_retry_debug_reads(void);
 bool touch_retry_debug_int_wakeup(void);

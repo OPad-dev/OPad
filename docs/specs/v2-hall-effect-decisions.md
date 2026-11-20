@@ -22,14 +22,14 @@ single-conversion rest sd 5.9 / 5.3, about 0.875 mV per count at 12 dB.
 | Settings → thresholds (`firmware/main/input/he_params.c`) | yes | yes (`firmware/test/host/test_he_rt.c`) | no | no |
 | Shared key-event path (`firmware/main/input/key_event.c`): counters, press log, HID report, latency stats for both backends | yes, MX moved onto it | no (needs ESP-IDF) | no: MX needs a recheck on the pad | no: MX latency to remeasure |
 | Frame parser (`firmware/main/input/he_frame.c`) | yes | yes (`firmware/test/host/test_he_frame.c`) | no | no |
-| ADC DMA backend + HID integration (`firmware/main/input/he_backend.c`, `CONFIG_OSUPAD_HE_BACKEND`, default off) | yes, loads calibration from NVS | no (needs ESP-IDF) | no | no |
+| ADC DMA backend + HID integration (`firmware/main/input/he_backend.c`, `CONFIG_OPAD_HE_BACKEND`, default off) | yes, loads calibration from NVS | no (needs ESP-IDF) | no | no |
 | Health and back-off state machine (`firmware/main/input/he_health.c`) | yes | yes (`firmware/test/host/test_he_health.c`) | no | no |
 | Calibration record & A/B NVS storage (`firmware/main/input/he_cal_record.c`, `firmware/main/input/he_cal.c`) | yes | yes (`firmware/test/host/test_he_cal.c`) | no | no |
 | Calibration capture algorithm (`firmware/main/input/he_cal_capture.c`) | yes | yes (`firmware/test/host/test_he_cal_capture.c`) | no | no |
 | Keypad keycode staging (`firmware/main/input/keypad.c`) | yes | yes (`firmware/test/host/test_keypad_staged.c`) | no | no |
 | Per-key HE settings in dedicated NVS record (`firmware/main/config/he_config_record.c`, `device_config.c`) | yes, blob v7 retained + 'he_cfg' key | yes (`firmware/test/host/test_config.c`) | no | no |
-| Protocol & host integration (`protocol/osupad.proto`, `firmware/main/protocol/protocol.c`, `desktop/`) | yes (HelloAck capabilities, ConfigPayload HE settings, DeviceStatus calibration status) | yes (Rust workspace tests + host test_config) | no | no |
-| Raw trace stream + analysis (`CONFIG_OSUPAD_HE_TRACE`, `scripts/he_trace.py`, `firmware/tools/he_replay.c`) | yes | analysis checked on a synthetic trace only | no | no |
+| Protocol & host integration (`protocol/opad.proto`, `firmware/main/protocol/protocol.c`, `desktop/`) | yes (HelloAck capabilities, ConfigPayload HE settings, DeviceStatus calibration status) | yes (Rust workspace tests + host test_config) | no | no |
+| Raw trace stream + analysis (`CONFIG_OPAD_HE_TRACE`, `scripts/he_trace.py`, `firmware/tools/he_replay.c`) | yes | analysis checked on a synthetic trace only | no | no |
 | Calibration wizard UI on pad / app (`firmware/main/ui/he_cal_ui.c`, `desktop/gui/src/pages.rs`) | implemented; review limitations in `docs/history/2026-10-21-he-calibration-report.md` | runner/button/sampling/storage and desktop state tests; not the physical screen/touch flow | no | no |
 
 The backend calls the engine from `on_frame` and builds thresholds at start
@@ -69,7 +69,7 @@ limits what the HE backend can add to internal RAM.
   latency stats measure frame interrupt → USB submit; the newest conversion is
   at most one conversion time (~16 µs) older than the interrupt. The driver's
   ringbuffer is kept at 2 frames and never read: the key path reads the DMA
-  buffer in the interrupt. `CONFIG_OSUPAD_HE_BACKEND` selects
+  buffer in the interrupt. `CONFIG_OPAD_HE_BACKEND` selects
   `ADC_CONTINUOUS_ISR_IRAM_SAFE`; everything the interrupt calls is in IRAM
   and none of it references flash (checked with `nm`/`objdump` on
   `build-he/opad-firmware.elf`). Static DIRAM with HE on: 93.4 % (22 KB left, `idf.py size`, 2026-10-21; the calibration sample buffers take ~4 KB).
@@ -252,7 +252,7 @@ does it itself only when no app is there.
 ## HE debug firmware (owner, 2026-10-22)
 
 A permanent debug build for chasing wrong presses on HE pads, kept after
-any fix (`CONFIG_OSUPAD_HE_DEBUG`, `firmware/main/input/he_debug.c`). It
+any fix (`CONFIG_OPAD_HE_DEBUG`, `firmware/main/input/he_debug.c`). It
 logs every press and release the engine makes with the 12 frames (3 ms) of
 readings before it, per-second reading ranges per key, ADC health (late
 frames, longest gap, stray and railed readings, key faults, stalls,
@@ -285,11 +285,11 @@ frame time (the `[ms]` field). Analyse with `scripts/he_debug_log.py`.
 
 ### Raw noise and the rapid-trigger floor (OPEN A, D)
 
-Build the trace firmware (`CONFIG_OSUPAD_HE_TRACE`, in `firmware/main/Kconfig.projbuild`):
+Build the trace firmware (`CONFIG_OPAD_HE_TRACE`, in `firmware/main/Kconfig.projbuild`):
 
 ```sh
 cd firmware
-printf 'CONFIG_OSUPAD_HE_BACKEND=y\nCONFIG_OSUPAD_HE_TRACE=y\n' > /tmp/sdkconfig.het
+printf 'CONFIG_OPAD_HE_BACKEND=y\nCONFIG_OPAD_HE_TRACE=y\n' > /tmp/sdkconfig.het
 idf.py -B build-het -D SDKCONFIG=build-het/sdkconfig \
   -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;/tmp/sdkconfig.het" build
 opadctl flash build-het/opad-firmware.bin

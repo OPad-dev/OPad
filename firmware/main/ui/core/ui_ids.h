@@ -1,6 +1,6 @@
 #pragma once
 
-// Identifiers shared by the firmware, the host protocol (protocol/osupad.proto) and the
+// Identifiers shared by the firmware, the host protocol (protocol/opad.proto) and the
 // PC designer preview. Values are wire format: append only, never renumber.
 
 typedef enum {

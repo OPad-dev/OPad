@@ -1,5 +1,5 @@
 pub mod proto {
-    include!(concat!(env!("OUT_DIR"), "/osupad.rs"));
+    include!(concat!(env!("OUT_DIR"), "/opad.rs"));
 }
 
 use bytes::{Buf, BytesMut};

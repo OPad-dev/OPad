@@ -810,7 +810,7 @@ mod tests {
             device_info: Some(DeviceInfo {
                 key_count: 2,
                 input_module: Default::default(),
-                device_id: "OSUPAD-TEST".to_string(),
+                device_id: "OPAD-TEST".to_string(),
                 board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
                 firmware_version: "1.0.0".to_string(),
                 protocol_version: 1,
@@ -819,7 +819,7 @@ mod tests {
                 he_calibration: false,
             }),
             counters: CounterState {
-                device_id: "OSUPAD-TEST".to_string(),
+                device_id: "OPAD-TEST".to_string(),
                 counter_generation: 1,
                 lifetime_key1: 50,
                 lifetime_key2: 60,
@@ -829,7 +829,7 @@ mod tests {
             counters_source: CounterSource::Device,
             pc_counters: None,
             esp_counters: Some(CounterState {
-                device_id: "OSUPAD-TEST".to_string(),
+                device_id: "OPAD-TEST".to_string(),
                 counter_generation: 1,
                 lifetime_key1: 50,
                 lifetime_key2: 60,

@@ -16,8 +16,8 @@ const size_t KEY_GPIO_ALLOWED_COUNT = sizeof(KEY_GPIO_ALLOWED) / sizeof(KEY_GPIO
 
 bool device_config_key_gpio_supported(uint32_t gpio)
 {
-#if defined(CONFIG_OSUPAD_BENCH_DEBUG_GPIO)
-    if (gpio == (uint32_t)CONFIG_OSUPAD_BENCH_DEBUG_GPIO_NUM) {
+#if defined(CONFIG_OPAD_BENCH_DEBUG_GPIO)
+    if (gpio == (uint32_t)CONFIG_OPAD_BENCH_DEBUG_GPIO_NUM) {
         return false;
     }
 #endif

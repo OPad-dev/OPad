@@ -1,6 +1,6 @@
 # OPad — Remaining Work to v1.0 (Linux)
 
-**Companion to:** `osupad_technical_spec_v1.md` (the contract)
+**Companion to:** `opad_technical_spec_v1.md` (the contract)
 **Audience:** Antigravity and other coding agents
 **Baseline:** commit `79622d7` plus the uncommitted working tree as of 2026-09-13. Line numbers refer to that state and may drift; search for the quoted symbol if a line no longer matches.
 
@@ -8,7 +8,7 @@
 
 ## 0. How to use this document
 
-1. Read `osupad_technical_spec_v1.md` completely first. This document does **not** replace it. It lists (a) spec amendments the project owner has decided, and (b) the concrete gaps between the spec and the current code.
+1. Read `opad_technical_spec_v1.md` completely first. This document does **not** replace it. It lists (a) spec amendments the project owner has decided, and (b) the concrete gaps between the spec and the current code.
 2. Work in priority order: **P0 → P1 → P2 → P3**. Do not start a P2 item while a P0/P1 item is open unless it is trivially independent.
 3. Each task has: **Problem**, **Where**, **Spec**, **Required change**, **Acceptance**. A task is done only when every acceptance point is met.
 4. The latency invariant (spec §3) still overrides everything. Nothing in this list may add work to the key ISR, the keypad task, or the TinyUSB task on core 0.
@@ -34,25 +34,25 @@ The owner tested the LVGL UI on hardware and noticed no latency regression. LVGL
 
 ### A2. Screen layout designer and data-source protocol are in scope
 
-The PC layout designer (`osupad-layout`, `osupad-ui-preview`, GUI Designer page) and the protocol messages `DataUpdate`, `SetLayout`, `LayoutAck`, `reset_layout`, `HostStatus` are accepted v1.0 features. They must follow the same persistence rules as everything else (no NVS/SQLite writes during PLAYING/COOLDOWN, see P1-3).
+The PC layout designer (`opad-layout`, `opad-ui-preview`, GUI Designer page) and the protocol messages `DataUpdate`, `SetLayout`, `LayoutAck`, `reset_layout`, `HostStatus` are accepted v1.0 features. They must follow the same persistence rules as everything else (no NVS/SQLite writes during PLAYING/COOLDOWN, see P1-3).
 
 ### A3. Windows support is deferred (Phase 10 postponed) — **SUPERSEDED 2026-09-16**
 
-> **SUPERSEDED by `osupad_packaging_distribution_plan.md`.** Windows support is
+> **SUPERSEDED by `opad_packaging_distribution_plan.md`.** Windows support is
 > in v1.0, not after it: named pipes (§W0-1, §W0-2), COM port discovery (§W1-3),
 > login startup (§W1-1) and an Inno Setup installer (§W2-1) are all done. The
 > paragraph below is kept for the record and no longer describes the plan.
 >
 > What survives of it is the *reason* it was written: platform-specific code
-> still lives in `osupad-ipc`, `osupad-device` and `packaging/`, and nothing
+> still lives in `opad-ipc`, `opad-device` and `packaging/`, and nothing
 > outside those places opens a `UnixStream` or a `/dev/...` path directly. That
 > discipline is why the port was a `#[cfg]` alias rather than a rewrite.
 
 Do **not** implement Windows support now: no named pipes, COM port discovery, or login-startup work. Linux must be fully working and released first.
 
 To avoid making the later port harder:
-- Keep platform-specific code inside `osupad-ipc` (socket transport), `osupad-device` (port discovery), and `packaging/`.
-- Do not add new direct `tokio::net::UnixStream` / `/dev/...` / `systemctl` usage outside those places. The GUI's `ipc.rs` and the CLI should call an `osupad-ipc` helper (for example `osupad_ipc::connect()`) instead of opening `UnixStream` themselves.
+- Keep platform-specific code inside `opad-ipc` (socket transport), `opad-device` (port discovery), and `packaging/`.
+- Do not add new direct `tokio::net::UnixStream` / `/dev/...` / `systemctl` usage outside those places. The GUI's `ipc.rs` and the CLI should call an `opad-ipc` helper (for example `opad_ipc::connect()`) instead of opening `UnixStream` themselves.
 
 ### A4. `press_color_rgb` is legacy
 
@@ -60,7 +60,7 @@ The firmware ignores `ConfigPayload.press_color_rgb`; key highlight colors now c
 
 ### A5. The tray lives in the GUI, not the daemon (overrides §6, §16.1, §19, §29, §40 "Owns tray")
 
-The owner chose to keep the current design: `osupad-gui` hosts the system tray (ksni, StatusNotifierItem) and keeps running in the background with no window open (Discord-style, `iced::daemon`, `--tray` starts hidden). The daemon does **not** own a tray.
+The owner chose to keep the current design: `opad-gui` hosts the system tray (ksni, StatusNotifierItem) and keeps running in the background with no window open (Discord-style, `iced::daemon`, `--tray` starts hidden). The daemon does **not** own a tray.
 
 What still holds from the spec:
 - The daemon stays the single owner of the serial port, tosu, SQLite, runtime state, sync, logs, and IPC. The GUI and tray only talk to it over IPC.
@@ -99,7 +99,7 @@ The concrete work is task P2-8.
 3. `nvs_flash_init()` erase-and-retry is acceptable, but the erase must be logged as a diagnostic event because it wipes lifetime counters.
 
 **Acceptance:**
-- Build a test variant with `board_display_init` forced to return `ESP_FAIL` (a temporary `#define` or Kconfig `OSUPAD_TEST_FAIL_LCD`). The pad enumerates, Z/X work, CDC handshake works, and `DeviceStatus.display_ok == false`.
+- Build a test variant with `board_display_init` forced to return `ESP_FAIL` (a temporary `#define` or Kconfig `OPAD_TEST_FAIL_LCD`). The pad enumerates, Z/X work, CDC handshake works, and `DeviceStatus.display_ok == false`.
 - Same with `nvs_flash_init` forced to fail: keyboard works, counters count in RAM, `nvs_ok == false`, and no crash when the host sends `CounterSync`, `SetLayout`, or `SetConfig`.
 - No `ESP_ERROR_CHECK` remains on non-essential init paths.
 
@@ -126,7 +126,7 @@ The concrete work is task P2-8.
 
 **Acceptance:**
 - Unit tests (host-compiled) cover: clean press/release; bounce burst on press; bounce burst on release; glitch shorter than lockout (must end in the correct final state); tap shorter than lockout; both keys interleaved.
-- On hardware: 2 minutes of fast alternating taps with no stuck key and no missed press. `osupadctl latency` p99.9 unchanged within measurement resolution (10 µs buckets) compared to before the change.
+- On hardware: 2 minutes of fast alternating taps with no stuck key and no missed press. `opadctl latency` p99.9 unchanged within measurement resolution (10 µs buckets) compared to before the change.
 - Default debounce everywhere (firmware, proto comment, SQLite default, `DeviceConfig::default`, GUI) is 5000 µs.
 
 ---
@@ -148,7 +148,7 @@ The concrete work is task P2-8.
 6. Defaults: brightness **100**, sleep **600 s**, debounce **5000 µs**, Z (`0x1D`) / X (`0x1B`).
 
 **Acceptance:**
-- Set K1=A, K2=S via GUI, unplug, stop the daemon (`systemctl --user stop osupad-daemon`), plug in: A/S are produced.
+- Set K1=A, K2=S via GUI, unplug, stop the daemon (`systemctl --user stop opad-daemon`), plug in: A/S are produced.
 - Sending `SetConfig` during PLAYING/COOLDOWN performs zero NVS writes (verify with a log line in the NVS write function and a gameplay session).
 - Invalid values produce `ConfigAck.success=false`; the daemon surfaces the message to the GUI/CLI.
 
@@ -158,9 +158,9 @@ The concrete work is task P2-8.
 
 ### P1-1. Post-cooldown counter sync is rejected by the device (race)
 
-**Problem:** The daemon enters COOLDOWN and sends `HostStatus{playing=false}`. Exactly 5.0 s later it runs `perform_sync` and sends `CounterSync`. The device starts its own 5 s cooldown when it *receives* that HostStatus, and its supervisor only checks once per second (`runtime.c:28`), so it reaches IDLE 5–6 s later. `counters_sync_from_host` rejects anything outside IDLE (`counters.c:90`), so the sync almost always arrives during device COOLDOWN and is rejected. The daemon ignores `CounterSyncResponse.success` (`osupad-device/src/lib.rs` `handle_device_message`) and marks the sync "completed successfully". The "PC restores ESP" path therefore only works through a manual Sync.
+**Problem:** The daemon enters COOLDOWN and sends `HostStatus{playing=false}`. Exactly 5.0 s later it runs `perform_sync` and sends `CounterSync`. The device starts its own 5 s cooldown when it *receives* that HostStatus, and its supervisor only checks once per second (`runtime.c:28`), so it reaches IDLE 5–6 s later. `counters_sync_from_host` rejects anything outside IDLE (`counters.c:90`), so the sync almost always arrives during device COOLDOWN and is rejected. The daemon ignores `CounterSyncResponse.success` (`opad-device/src/lib.rs` `handle_device_message`) and marks the sync "completed successfully". The "PC restores ESP" path therefore only works through a manual Sync.
 
-**Where:** `desktop/daemon/src/main.rs` `perform_sync` (`send_counter_sync` at ~409), `firmware/main/runtime/runtime.c:28`, `firmware/main/counters/counters.c:90`, `desktop/crates/osupad-device/src/lib.rs` (`CounterSyncResp` handling).
+**Where:** `desktop/daemon/src/main.rs` `perform_sync` (`send_counter_sync` at ~409), `firmware/main/runtime/runtime.c:28`, `firmware/main/counters/counters.c:90`, `desktop/crates/opad-device/src/lib.rs` (`CounterSyncResp` handling).
 
 **Spec:** §11.3, §13, §40 ("ESP can restore PC and PC can restore ESP").
 
@@ -185,7 +185,7 @@ The concrete work is task P2-8.
 
 **Problem:** Reconciliation only runs after a cooldown or a manual Sync. Recovery cases 1 and 2 (§13) do not happen until the user plays a map. A **replaced** ESP has a new `device_id`, so `load_device_state(new_id)` returns nothing, and the PC would silently adopt the new board's zero counters instead of offering a restore.
 
-**Where:** `desktop/daemon/src/main.rs` `DeviceEvent::Connected` handler and `perform_sync`; `desktop/crates/osupad-storage/src/lib.rs`.
+**Where:** `desktop/daemon/src/main.rs` `DeviceEvent::Connected` handler and `perform_sync`; `desktop/crates/opad-storage/src/lib.rs`.
 
 **Spec:** §13 (recovery cases 1–4), §11.3, §18 (Device actions).
 
@@ -199,7 +199,7 @@ The concrete work is task P2-8.
 4. Storage: add `list_device_states()` and `load_latest_device_state()` (by `last_seen_at`). Also update `last_seen_at` on connect. That write is allowed only in IDLE; when not in IDLE, keep it in memory and write it at the next SYNC.
 
 **Acceptance:**
-- Case 1: delete `~/.local/share/osupad/osupad.db`, start the daemon, and connect the pad. Within 3 s SQLite contains the ESP counters and the GUI shows them.
+- Case 1: delete `~/.local/share/opad/opad.db`, start the daemon, and connect the pad. Within 3 s SQLite contains the ESP counters and the GUI shows them.
 - Case 2: `idf.py erase-flash` then flash the firmware, and connect. Within 3 s the ESP shows the PC counters, and they survive a power cycle.
 - Replacement: change the device_id (for example, a test build with a fake MAC suffix) and connect. The GUI prompts, and nothing is overwritten until a choice is made.
 - Host integration tests for all three (P3-2).
@@ -224,7 +224,7 @@ The concrete work is task P2-8.
    - Reset counters, import backup, force sync, restore actions: **reject** with a clear message (existing behaviour, extended to COOLDOWN everywhere).
    - Flash firmware: reject in PLAYING **and** COOLDOWN.
    - Drain the pending queue at the end of a successful SYNC.
-3. **Firmware.** Replace every `== OSUPAD_STATE_PLAYING` persistence check with `!= OSUPAD_STATE_IDLE`. Keep a "dirty layouts" bitmask and persist in the runtime supervisor when the state becomes IDLE. Log (not per press) when a write is deferred.
+3. **Firmware.** Replace every `== OPAD_STATE_PLAYING` persistence check with `!= OPAD_STATE_IDLE`. Keep a "dirty layouts" bitmask and persist in the runtime supervisor when the state becomes IDLE. Log (not per press) when a write is deferred.
 4. Add a debug counter of NVS writes to `DeviceStatus` (`uint32 nvs_writes`, new field) so tests can assert it did not change across a play session.
 
 **Acceptance:**
@@ -248,8 +248,8 @@ The concrete work is task P2-8.
 4. Keep `GetStatus.last_sync_time` populated from SQLite after a restart.
 
 **Acceptance:**
-- Stop the daemon, unplug the pad, start the daemon: GUI and `osupadctl status` show the last synced counters, labelled as the PC copy.
-- `osupadctl export x.json` with the pad unplugged produces the real counters and device_id.
+- Stop the daemon, unplug the pad, start the daemon: GUI and `opadctl status` show the last synced counters, labelled as the PC copy.
+- `opadctl export x.json` with the pad unplugged produces the real counters and device_id.
 
 ---
 
@@ -257,7 +257,7 @@ The concrete work is task P2-8.
 
 **Problem:** `ImportBackup` applies immediately. It does not reject out-of-range debounce/sleep/hz values or counters that overflow SQLite `INTEGER` (i64), has no device_id mismatch check, shows no diff, and overwrites `tosu_endpoint` with a hard-coded default (`main.rs` ~616).
 
-**Where:** `desktop/crates/osupad-model/src/lib.rs:220` (`JsonBackup::validate`), `desktop/daemon/src/main.rs` `ImportBackup`, `desktop/cli/src/main.rs` `Import`.
+**Where:** `desktop/crates/opad-model/src/lib.rs:220` (`JsonBackup::validate`), `desktop/daemon/src/main.rs` `ImportBackup`, `desktop/cli/src/main.rs` `Import`.
 
 **Spec:** §13 case 4, §21 (validate, reject malformed/overflowing, show what will change, confirm rollback/reset).
 
@@ -298,7 +298,7 @@ The concrete work is task P2-8.
 1. Firmware: take the version from `esp_app_get_description()->version`, set via `PROJECT_VER` in `firmware/CMakeLists.txt` (for example from `git describe` or a `version.txt`).
 2. Host binaries: use `env!("CARGO_PKG_VERSION")`. Set the workspace version to the real release version when tagging.
 3. Daemon: if `HelloAck.protocol_version != 1`, mark the device as `incompatible { firmware_version, protocol_version }`. Send nothing except Hello/status requests, show it in GetStatus/GUI/tray/CLI with a clear "update firmware or host" message, and do not reconcile counters.
-4. IPC: on a `client_protocol` mismatch, reply `HandshakeRejected { daemon_protocol, reason }` and close. The GUI and CLI must perform the handshake first on every connection they open. Currently the GUI's `ipc::request` skips it; move the handshake into the shared `osupad-ipc` connect helper.
+4. IPC: on a `client_protocol` mismatch, reply `HandshakeRejected { daemon_protocol, reason }` and close. The GUI and CLI must perform the handshake first on every connection they open. Currently the GUI's `ipc::request` skips it; move the handshake into the shared `opad-ipc` connect helper.
 5. Flash flow: `FinishFlash` resumes discovery, waits up to 15 s for `HelloAck`, and responds `FlashFinished { firmware_version, protocol_version, compatible }` or an error. The CLI prints the result. A failed flash must never modify SQLite counters (already true; keep it covered by a test).
 
 **Acceptance:** Flashing a build with the protocol version bumped to 2 shows "incompatible" in the GUI and CLI, and no counter sync happens. A normal flash ends with the CLI printing the new firmware version.
@@ -309,7 +309,7 @@ The concrete work is task P2-8.
 
 **Problem:** `DeviceManager` uses `mpsc::channel(64)`, which is only drained while a port is open. Unguarded `send_host_status(...).await` calls in the daemon main loop (tosu connect/disconnect, playing transitions) block forever once the queue fills with no pad attached, freezing the daemon (IPC, tosu, and so on). Commands queued while disconnected are replayed to the device on reconnect: stale time syncs, counter syncs, possibly for a different board.
 
-**Where:** `desktop/crates/osupad-device/src/lib.rs:56`, all `device_manager.send_*` call sites in `desktop/daemon/src/main.rs`.
+**Where:** `desktop/crates/opad-device/src/lib.rs:56`, all `device_manager.send_*` call sites in `desktop/daemon/src/main.rs`.
 
 **Required change:**
 1. The `send_*` methods return `DeviceError::NotConnected` immediately when not connected, and use `try_send`: a full queue returns `DeviceError::Busy`. They never await queue capacity.
@@ -332,7 +332,7 @@ The concrete work is task P2-8.
 **Required change:**
 1. `firmware/main/diag/diag.c/.h`: a fixed-size RAM ring buffer (for example 64 entries) of `{uint32 timestamp_ms, uint16 event_id, uint8 level, uint32 arg0, uint32 arg1}`. `diag_record()` is lock-free or uses a short spinlock, has no string formatting, and is safe from any task (not required from ISR; do not call it in the key ISR).
 2. Events at minimum: boot (reset reason), HID mounted/unmounted/suspended, CDC opened/closed, NVS init failed / erased, LCD init failed, frame too large / decode failed, config rejected, counter sync rejected (reason), layout rejected, deferred NVS write flushed, display sleep/wake, latency outlier (a keypad-task sample > 1000 µs; the record happens after HID submit and can be sampled into a counter plus a single deferred event), watchdog/brownout reset reason on boot.
-3. Proto: extend `LogEvent` with `uint32 event_id = 5; uint32 arg0 = 6; uint32 arg1 = 7;` (additive, compatible). The firmware leaves `tag`/`message` empty. The daemon maps `event_id` to human-readable text in one table (`osupad-model::diag`).
+3. Proto: extend `LogEvent` with `uint32 event_id = 5; uint32 arg0 = 6; uint32 arg1 = 7;` (additive, compatible). The firmware leaves `tag`/`message` empty. The daemon maps `event_id` to human-readable text in one table (`opad-model::diag`).
 4. Draining: the CDC protocol task (core 1) sends batches **only in IDLE** when CDC is connected, at most every 1 s, and also on `request_logs` (new `HostToDevice` field `bool request_logs`). During PLAYING/COOLDOWN, events stay buffered; on overflow the oldest are dropped, with a `dropped` count in the batch.
 5. Replace the most important `ESP_LOGx` calls on hot-ish paths (protocol decode errors, CDC write drops) with `diag_record`. Keep `ESP_LOG` for boot/init only.
 
@@ -352,9 +352,9 @@ The concrete work is task P2-8.
 1. Move the LogHub into `desktop/daemon/src/log_hub.rs`: a ring of `LogEntry { seq: u64, ts: DateTime<Local>, source: Host|Esp, level, target, message }`, capacity 2000.
 2. Implement a `tracing_subscriber::Layer` that pushes `INFO`+ events into the hub, so all existing `info!`/`warn!`/`error!` appear. Remove the duplicate `log_info` strings or turn them into `info!` calls.
 3. IPC: `GetLogEntries { since_seq: Option<u64>, limit }` → `LogEntries { entries: Vec<LogEntry>, latest_seq }`. Polling by `since_seq` is enough; a push subscription is optional.
-4. No disk logging during PLAYING/COOLDOWN. Optionally, rotate a log file under `$XDG_STATE_HOME/osupad/` in IDLE only (not required).
+4. No disk logging during PLAYING/COOLDOWN. Optionally, rotate a log file under `$XDG_STATE_HOME/opad/` in IDLE only (not required).
 5. GUI Monitor: severity filter (Debug/Info/Warn/Error), source filter (All/HOST/ESP), **Clear** (hides entries up to the current seq on the client), **Copy** (visible entries to clipboard), **Save log** (rfd save dialog, plain text), auto-scroll toggle. Format lines as in spec §24.3: `HH:MM:SS SOURCE LEVEL message`.
-6. CLI: `osupadctl monitor --follow` streams via `since_seq` polling, with `--level` and `--source` filters.
+6. CLI: `opadctl monitor --follow` streams via `since_seq` polling, with `--level` and `--source` filters.
 
 **Acceptance:** A GUI filter set to ESP+Warn shows only ESP warnings. Save writes a file identical to the visible list. The daemon's own `tracing` warnings (for example a tosu reconnect) appear.
 
@@ -367,7 +367,7 @@ The concrete work is task P2-8.
 **Spec:** §18 Backup (export, import, validate, show summary/diff, confirm), §21.
 
 **Required change:** Add a Backup card or page:
-- **Export:** rfd save dialog (default name `osupad-backup-YYYYMMDD.json`) → `ExportBackup` → pretty JSON written by the GUI.
+- **Export:** rfd save dialog (default name `opad-backup-YYYYMMDD.json`) → `ExportBackup` → pretty JSON written by the GUI.
 - **Import:** rfd open dialog → parse → `PreviewImport` → modal showing current vs incoming for each field (highlight counter decreases and generation change, and warn on device_id mismatch) → **Apply** requires ticking "I understand this replaces my counters" when `is_counter_rollback` → `ImportBackup{confirm:true}`.
 - Disable both buttons during PLAYING/COOLDOWN, with the reason shown.
 
@@ -388,7 +388,7 @@ The concrete work is task P2-8.
    - `ImportPcFromDevice`: overwrite SQLite with the ESP state, generation = max(pc, esp) + 1, pushed back to the ESP so both match.
    - `ResolveReplacement { restore_from: Option<String> }` for P1-2.
 3. GUI shows a two-column PC | PAD table (K1, K2, total, generation) with mismatches highlighted, plus the actions above, each with a confirmation modal describing exactly what will be overwritten.
-4. **Update firmware** button: rfd picker for `.bin` → run `osupadctl flash <file>` as a child process, stream its stdout into a modal, then refresh status. The GUI must not open the serial port itself (§26).
+4. **Update firmware** button: rfd picker for `.bin` → run `opadctl flash <file>` as a child process, stream its stdout into a modal, then refresh status. The GUI must not open the serial port itself (§26).
 
 **Acceptance:** With the ESP and PC deliberately different (edit SQLite while the daemon is stopped), both restore directions work from the GUI and survive a daemon restart and pad power cycle.
 
@@ -401,8 +401,8 @@ The concrete work is task P2-8.
 **Spec:** §18.1 (clear recovery action such as Start Daemon / Install or Repair).
 
 **Required change:** When the handshake fails, show a banner with:
-- **Start daemon:** `systemctl --user start osupad-daemon.service`; if the unit is missing or systemd user is unavailable, spawn `osupad-daemon` detached (`setsid`, stdout to `$XDG_STATE_HOME/osupad/daemon.log`).
-- **Install service:** if the unit file is missing, copy the bundled unit (embed `packaging/linux/systemd-user/osupad-daemon.service` with `include_str!`) into `~/.config/systemd/user/`, then `daemon-reload` and `enable --now`.
+- **Start daemon:** `systemctl --user start opad-daemon.service`; if the unit is missing or systemd user is unavailable, spawn `opad-daemon` detached (`setsid`, stdout to `$XDG_STATE_HOME/opad/daemon.log`).
+- **Install service:** if the unit file is missing, copy the bundled unit (embed `packaging/linux/systemd-user/opad-daemon.service` with `include_str!`) into `~/.config/systemd/user/`, then `daemon-reload` and `enable --now`.
 
 Put this Linux-specific code in one module (`gui/src/platform_linux.rs`) to keep A3 in mind. Re-handshake automatically every 2 s while offline.
 
@@ -414,20 +414,20 @@ Put this Linux-specific code in one module (`gui/src/platform_linux.rs`) to keep
 
 **Problem:**
 - The socket and its directory get default permissions.
-- The fallback path `/tmp/osupad-<pid>.sock` uses the *process* id, so without `XDG_RUNTIME_DIR` clients can never find the daemon.
+- The fallback path `/tmp/opad-<pid>.sock` uses the *process* id, so without `XDG_RUNTIME_DIR` clients can never find the daemon.
 - `create_listener` deletes any existing socket, so a second daemon silently steals the socket from a running one while both fight over the serial port.
 - `read_request` allocates whatever length the peer claims (up to 4 GiB).
 
-**Where:** `desktop/crates/osupad-ipc/src/lib.rs:109-113`, `:138`, `:162-170`.
+**Where:** `desktop/crates/opad-ipc/src/lib.rs:109-113`, `:138`, `:162-170`.
 
 **Spec:** §22, §32 (socket permissions appropriate to the logged-in user).
 
 **Required change:**
-1. Path: `$XDG_RUNTIME_DIR/osupad/daemon.sock`; fallback `/tmp/osupad-$UID/daemon.sock` (real UID via `rustix::process::getuid()` or `libc::getuid()`).
+1. Path: `$XDG_RUNTIME_DIR/opad/daemon.sock`; fallback `/tmp/opad-$UID/daemon.sock` (real UID via `rustix::process::getuid()` or `libc::getuid()`).
 2. Create the directory with mode `0700` and verify ownership if it already exists; refuse to use a directory owned by someone else. Set socket mode `0600` after bind.
-3. Before removing an existing socket, try to connect to it. If a daemon answers, exit with `"osupad-daemon is already running"` (exit code 0 under systemd is fine). Only remove it if the connect fails (stale socket).
+3. Before removing an existing socket, try to connect to it. If a daemon answers, exit with `"opad-daemon is already running"` (exit code 0 under systemd is fine). Only remove it if the connect fails (stale socket).
 4. Cap the frame length at 1 MiB for requests and 8 MiB for responses; larger frames close the connection with an error.
-5. Provide `osupad_ipc::connect_and_handshake()` for GUI and CLI (see P1-7 and A3).
+5. Provide `opad_ipc::connect_and_handshake()` for GUI and CLI (see P1-7 and A3).
 
 **Acceptance:** Starting a second daemon exits with a clear message and the first keeps working. `stat` shows `0700` on the directory and `0600` on the socket. A test sending a 2 GiB length header does not allocate.
 
@@ -473,17 +473,17 @@ Put this Linux-specific code in one module (`gui/src/platform_linux.rs`) to keep
    Quit OPad app
    ```
    Keep the tooltip as a short summary. Use a status-dependent icon (connected / disconnected / daemon offline) if a suitable themed icon exists; otherwise keep one icon.
-2. **Open Monitor.** Shows the window and switches to `Page::Monitor`. Also accept `osupad-gui --page monitor` (and `--page device`, etc.) so a second launch forwards the page to the running instance through the existing `single_instance` mechanism.
+2. **Open Monitor.** Shows the window and switches to `Page::Monitor`. Also accept `opad-gui --page monitor` (and `--page device`, etc.) so a second launch forwards the page to the running instance through the existing `single_instance` mechanism.
 3. **Quit semantics.** *Quit* exits the GUI only. It must **not** stop the daemon; the label must make that clear. A separate "Stop daemon" action is not needed.
 4. **Status source.** The tray updates from the same IPC status poll as the window, and keeps polling while the window is hidden (at a slower rate, for example every 3 s, to save CPU). When the daemon is offline, show "Daemon offline" and an *Start daemon* item that runs the P2-5 action.
-5. **Background autostart.** Add `packaging/linux/xdg-autostart/osupad-gui.desktop` with `Exec=osupad-gui --tray` (starts hidden in the tray). `install.sh` installs it into `~/.config/autostart/`. Add a GUI setting "Start in tray at login" that creates or removes that file (Linux-only module, see A3).
+5. **Background autostart.** Add `packaging/linux/xdg-autostart/opad-gui.desktop` with `Exec=opad-gui --tray` (starts hidden in the tray). `install.sh` installs it into `~/.config/autostart/`. Add a GUI setting "Start in tray at login" that creates or removes that file (Linux-only module, see A3).
 6. **No tray host.** Keep the current `TrayEvent::Unavailable` behaviour (close window = quit) and show a one-time hint in the GUI: "No system tray found; the app will quit when closed. The pad keeps working."
 7. **Daemon cleanup.** Remove `tray-icon` and `winit` from `desktop/daemon/Cargo.toml` and from `[workspace.dependencies]` if nothing else uses them.
 
 **Acceptance:**
 - After login (with the autostart entry installed) the tray icon appears without opening a window, and its menu shows live pad status and counters that update within 3 s of a change.
-- *Open Monitor* opens the window on the Monitor page; `osupad-gui --page monitor` with the app already running does the same.
-- *Quit* closes the GUI; `osupadctl status` still reports the daemon running and the pad connected.
+- *Open Monitor* opens the window on the Monitor page; `opad-gui --page monitor` with the app already running does the same.
+- *Quit* closes the GUI; `opadctl status` still reports the daemon running and the pad connected.
 - Killing the GUI process does not affect HID, display data, or the next post-cooldown sync.
 - On a session with no StatusNotifier host, the GUI starts and works as a normal window.
 
@@ -493,7 +493,7 @@ Put this Linux-specific code in one module (`gui/src/platform_linux.rs`) to keep
 
 **Spec:** §17.1.
 
-**Required change:** Add `packaging/linux/xdg-autostart/osupad-daemon.desktop` (`Exec=osupad-daemon`, `X-GNOME-Autostart-enabled=true`). `install.sh` detects whether `systemctl --user` works (`systemctl --user is-system-running` or `show-environment`). If it does, install the unit; otherwise copy the autostart entry to `~/.config/autostart/`. Also make sure the unit imports the graphical environment: document `systemctl --user import-environment DISPLAY WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS` or rely on `graphical-session.target`, and verify on the owner's desktop.
+**Required change:** Add `packaging/linux/xdg-autostart/opad-daemon.desktop` (`Exec=opad-daemon`, `X-GNOME-Autostart-enabled=true`). `install.sh` detects whether `systemctl --user` works (`systemctl --user is-system-running` or `show-environment`). If it does, install the unit; otherwise copy the autostart entry to `~/.config/autostart/`. Also make sure the unit imports the graphical environment: document `systemctl --user import-environment DISPLAY WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS` or rely on `graphical-session.target`, and verify on the owner's desktop.
 
 **Acceptance:** On a session without systemd user, the daemon starts at login via XDG autostart.
 
@@ -543,10 +543,10 @@ Put this Linux-specific code in one module (`gui/src/platform_linux.rs`) to keep
 
 **Required change:**
 1. Add a Kconfig menu `OPad benchmark` in `firmware/main/Kconfig.projbuild`:
-   - `OSUPAD_BENCH_HID_ONLY`: skips `ui_init`, the CDC protocol task, and the runtime supervisor (stage A).
-   - `OSUPAD_BENCH_DEBUG_GPIO` + `OSUPAD_BENCH_DEBUG_GPIO_NUM`: toggle a spare GPIO in `keypad_task` right after the HID submit, for logic-analyzer correlation. Verify the pin is free on the Waveshare header; it must not be the key pins, LCD, USB, or strapping pins.
+   - `OPAD_BENCH_HID_ONLY`: skips `ui_init`, the CDC protocol task, and the runtime supervisor (stage A).
+   - `OPAD_BENCH_DEBUG_GPIO` + `OPAD_BENCH_DEBUG_GPIO_NUM`: toggle a spare GPIO in `keypad_task` right after the HID submit, for logic-analyzer correlation. Verify the pin is free on the Waveshare header; it must not be the key pins, LCD, USB, or strapping pins.
 2. Stage A (HID-only) does not have CDC, so the stats cannot be read over the protocol. Print the latency stats on the USB-Serial-JTAG console every 10 s in that build only, or read them via a GPIO-triggered log.
-3. Procedure (write it in `docs/latency-testing.md`): reset stats (`osupadctl latency --reset`), 2 minutes of alternating taps at > 15 presses/s, then read p50/p99/p99.9/max/deferred. Repeat for stages A, B (daemon connected, no display updates: add `OSUPAD_BENCH_NO_DISPLAY`), C (display + gameplay data at the chosen Hz, using a recorded tosu replay or a real map), and D (full stack including sync transitions).
+3. Procedure (write it in `docs/latency-testing.md`): reset stats (`opadctl latency --reset`), 2 minutes of alternating taps at > 15 presses/s, then read p50/p99/p99.9/max/deferred. Repeat for stages A, B (daemon connected, no display updates: add `OPAD_BENCH_NO_DISPLAY`), C (display + gameplay data at the chosen Hz, using a recorded tosu replay or a real map), and D (full stack including sync transitions).
 4. Record a results table (date, firmware commit, stage, samples, p50, p99, p99.9, max, deferred) in `docs/latency-testing.md`. Gate: p99.9 delta from stage A < 0.1 ms, no new > 1 ms outliers, no stuck or missed keys (§33.3).
 5. Also run `scripts/bench_latency.py` (host-side evdev jitter) for stages A and D, and record the numbers.
 
@@ -591,10 +591,10 @@ Put this Linux-specific code in one module (`gui/src/platform_linux.rs`) to keep
 ### P3-3. CI
 
 **Required change:** `.github/workflows/ci.yml` with:
-- Rust: `cargo fmt --check`, `cargo clippy --workspace -- -D warnings`, `cargo test --workspace`. Install the system dependencies needed by iced/rfd/ksni on Ubuntu; the `osupad-ui-preview` C build needs a C compiler.
+- Rust: `cargo fmt --check`, `cargo clippy --workspace -- -D warnings`, `cargo test --workspace`. Install the system dependencies needed by iced/rfd/ksni on Ubuntu; the `opad-ui-preview` C build needs a C compiler.
 - Firmware: `espressif/idf:v5.5.2` container, `idf.py set-target esp32s3 build`, upload `build/*.bin` as an artifact.
 - Firmware host unit tests.
-- Proto drift check: regenerate `osupad.pb.c/.h` with the pinned nanopb generator and fail if `git diff` is non-empty. Add a `scripts/gen_proto.sh` used by both developers and CI.
+- Proto drift check: regenerate `opad.pb.c/.h` with the pinned nanopb generator and fail if `git diff` is non-empty. Add a `scripts/gen_proto.sh` used by both developers and CI.
 
 **Acceptance:** CI is green on `main`.
 
@@ -604,7 +604,7 @@ Put this Linux-specific code in one module (`gui/src/platform_linux.rs`) to keep
 
 **Required change:**
 - Single version source (P1-7): firmware `PROJECT_VER`; host `CARGO_PKG_VERSION`; set the workspace version to `1.0.0` at release.
-- USB serial string is hard-coded `"OSUPAD-S3-0001"` (`usb_descriptors.c`). Generate it from the MAC at runtime (same format as `device_id`) so two pads do not collide in `/dev/serial/by-id/`.
+- USB serial string is hard-coded `"OPAD-S3-0001"` (`usb_descriptors.c`). Generate it from the MAC at runtime (same format as `device_id`) so two pads do not collide in `/dev/serial/by-id/`.
 - `DeviceInfo::default()` should not invent `firmware_version: "1.0.0"` / `device_id: "unknown"`. Use `Option` fields or empty strings, and let the GUI render "—".
 - Hard-coded `firmware_version: "1.0.0"` in the daemon's `ImportBackup` (`main.rs` ~630): use the last known value.
 
@@ -636,7 +636,7 @@ Update these to match reality after the tasks above:
 ### P3-7. Linux release
 
 - `scripts/release/build_release.sh`: builds the firmware `.bin` and release host binaries, and produces `SHA256SUMS`.
-- `osupadctl flash` verifies the file is an ESP32-S3 app image (magic byte `0xE9`, chip id in the extended header) before flashing (§32 "firmware update files should be validated").
+- `opadctl flash` verifies the file is an ESP32-S3 app image (magic byte `0xE9`, chip id in the extended header) before flashing (§32 "firmware update files should be validated").
 - `Cargo.lock` committed and dependencies not bumped after tagging (§16.2).
 - Tag `v1.0.0` once the §40 Definition of Done (Appendix A) is all checked.
 
@@ -696,7 +696,7 @@ Legend: ✅ done · 🟡 partial · ❌ missing. Task IDs show what closes each 
 ## Appendix B: explicitly out of scope for this round
 
 - ~~Windows support (named pipes, COM discovery, login startup): **after** Linux v1.0 (A3).~~
-  **Reversed 2026-09-16** by `osupad_packaging_distribution_plan.md` — it is in
+  **Reversed 2026-09-16** by `opad_packaging_distribution_plan.md` — it is in
   v1.0. See the note on A3 above.
 - ESP-NOW wireless dongle, battery, and heavy-ballast case V2: post-v1.0, and off the roadmap since 2026-11-20 (the V3 case replaces the case V2 idea).
 - Touch UI, Wi-Fi, Bluetooth, NTP, macros, RGB, more than two keys (spec §2.2).
@@ -728,11 +728,11 @@ A review of `v1.0-work` up to `c04fef0` found the issues below. Two agents are n
 |---|---|---|
 | R1 | `docs/latency-testing.md` results table is not real data (Stage A cannot compile; firmware percentiles are 10 µs bucket edges, table shows 34/48/58; debounce description is wrong). Replace it with an empty table to be filled from real hardware runs. | `docs/latency-testing.md` (results section only) |
 | R2 | Stage A benchmark build does not compile (`keypad_get_latency_stats`, `sample_count`, `deferred_count` do not exist). | `firmware/main/app_main.c` (bench block only) |
-| R3 | HelloAck emits `Connected` **before** `Counters`, so the connect handler sees the previous pad's counters: replacement prompt never fires and old counters get saved under the new device_id. | `osupad-device` `handle_device_message` (HelloAck arm only), `daemon/src/runtime.rs` connect handling, daemon tests |
+| R3 | HelloAck emits `Connected` **before** `Counters`, so the connect handler sees the previous pad's counters: replacement prompt never fires and old counters get saved under the new device_id. | `opad-device` `handle_device_message` (HelloAck arm only), `daemon/src/runtime.rs` connect handling, daemon tests |
 | R4 | A failed sync (device not IDLE in 3 s, or 3 rejected attempts) leaves the daemon in `Sync` and may leave storage writes blocked; no retry. | `daemon/src/sync.rs`, `daemon/src/runtime.rs` |
 | R5 | Possible self-deadlock on SQLite recovery (`if let Some(..) = &state.lock()` then re-locking inside). | `daemon/src/main.rs` |
 | R6 | `perform_sync` is awaited inside the main select loop (stalls tosu/status/display for up to ~10 s); `ForceSync` returns `success: true` even when the sync failed. | `daemon/src/main.rs`, `daemon/src/ipc_handlers.rs` (ForceSync arm only) |
-| R7 | GUI "Install service" writes a second unit `osupad.service` (network.target/default.target) instead of the packaged `osupad-daemon.service`; "Start daemon" spawns the binary with output to /dev/null instead of `systemctl --user start`. | `gui/src/platform_linux.rs`, `gui/src/main.rs` (`start_daemon_process` only) |
+| R7 | GUI "Install service" writes a second unit `opad.service` (network.target/default.target) instead of the packaged `opad-daemon.service`; "Start daemon" spawns the binary with output to /dev/null instead of `systemctl --user start`. | `gui/src/platform_linux.rs`, `gui/src/main.rs` (`start_daemon_process` only) |
 
 ### Antigravity (branch `v1.0-work`)
 

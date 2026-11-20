@@ -146,15 +146,15 @@ mod tests {
 
     #[test]
     fn autostart_commands_are_quoted_and_match_the_installer() {
-        let bin = Path::new(r"C:\Users\me\AppData\Local\Programs\osupad\opad-daemon.exe");
+        let bin = Path::new(r"C:\Users\me\AppData\Local\Programs\opad\opad-daemon.exe");
         assert_eq!(
             daemon_autostart_command(bin),
-            r#""C:\Users\me\AppData\Local\Programs\osupad\opad-daemon.exe""#
+            r#""C:\Users\me\AppData\Local\Programs\opad\opad-daemon.exe""#
         );
-        let gui = Path::new(r"C:\Users\me\AppData\Local\Programs\osupad\opad-gui.exe");
+        let gui = Path::new(r"C:\Users\me\AppData\Local\Programs\opad\opad-gui.exe");
         assert_eq!(
             gui_autostart_command(gui),
-            r#""C:\Users\me\AppData\Local\Programs\osupad\opad-gui.exe" --tray"#
+            r#""C:\Users\me\AppData\Local\Programs\opad\opad-gui.exe" --tray"#
         );
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Analyse a raw Hall Effect trace (CONFIG_OSUPAD_HE_TRACE, recorded with
+ * Analyse a raw Hall Effect trace (CONFIG_OPAD_HE_TRACE, recorded with
  * scripts/he_trace.py) of keys that do NOT move: at rest, or held still.
  * For OPEN A/D in docs/specs/v2-hall-effect-decisions.md.
  *

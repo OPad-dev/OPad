@@ -52,7 +52,7 @@ at least 0x55AA bytes, more than any frame may hold.
 
 ## 2. Protobuf Message Envelopes
 
-All messages are defined in [`protocol/osupad.proto`](../protocol/osupad.proto) using NanoPB-compatible schemas.
+All messages are defined in [`protocol/opad.proto`](../protocol/opad.proto) using NanoPB-compatible schemas.
 
 Every message transmitted in either direction is wrapped in a top-level envelope containing a 32-bit sequence number:
 
@@ -216,7 +216,7 @@ hands, and that is all it is for.
 The label of the app partition the running image booted from: `ota_0`, `ota_1`,
 or `factory` for a pad still on the pre-OTA single-app table. An **empty string**
 means firmware older than the field, which the host reads as unknown rather than
-guessing a slot. Surfaced by `osupadctl status` as `Running Slot`.
+guessing a slot. Surfaced by `opadctl status` as `Running Slot`.
 
 ### `KeyPressBatch` (DeviceToHost field 9) and `HelloAck.key_press_times` (field 11)
 
@@ -330,7 +330,7 @@ send field 17.
 The device supports two non-contact methods to enter the ESP32-S3 ROM bootloader for firmware flashing:
 
 1. **Protocol Command (`EnterBootloader`)**:
-   - `osupadctl flash <firmware.bin>` sends `EnterBootloader` over CDC.
+   - `opadctl flash <firmware.bin>` sends `EnterBootloader` over CDC.
    - The firmware calls `esp_restart()` with ROM download mode flags set, immediately re-enumerating as an Espressif USB JTAG/serial DFU device (`VID: 0x303A, PID: 0x1001`).
 2. **1200-Baud Touch (Fallback)**:
    - Setting serial line baud rate to 1200 baud arms download mode; the firmware reboots when DTR drops, i.e. when the host closes the port.
@@ -338,7 +338,7 @@ The esptool DTR/RTS pattern (RTS falling while DTR stays high) is deliberately
 **not** a trigger: ModemManager and other serial probes produce it when they open
 any tty, and each one used to reboot the pad into download mode.
 
-`osupadctl` tries both in that order, setting DTR and RTS explicitly rather
+`opadctl` tries both in that order, setting DTR and RTS explicitly rather
 than relying on what the platform does at open — Linux asserts DTR when a tty is
 opened and Windows does not, so an implicit sequence means different things on
 the two platforms (§W1-3).

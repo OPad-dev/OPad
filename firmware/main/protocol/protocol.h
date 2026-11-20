@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "esp_err.h"
-#include "protocol/osupad.pb.h"
+#include "protocol/opad.pb.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -18,7 +18,7 @@ extern "C" {
  * @param max_len Size of destination buffer
  * @param out_len Total bytes written (including 4-byte length prefix)
  */
-esp_err_t protocol_encode_device_message(const osupad_DeviceToHost *msg, uint8_t *out_buf, size_t max_len, size_t *out_len);
+esp_err_t protocol_encode_device_message(const opad_DeviceToHost *msg, uint8_t *out_buf, size_t max_len, size_t *out_len);
 
 /**
  * @brief Decode a HostToDevice protobuf message from raw payload bytes.
@@ -26,7 +26,7 @@ esp_err_t protocol_encode_device_message(const osupad_DeviceToHost *msg, uint8_t
  * @param payload_len Length of payload bytes
  * @param out_msg Target decoded message struct
  */
-bool protocol_decode_host_message(const uint8_t *payload, size_t payload_len, osupad_HostToDevice *out_msg);
+bool protocol_decode_host_message(const uint8_t *payload, size_t payload_len, opad_HostToDevice *out_msg);
 
 /**
  * @brief Feed raw incoming serial CDC bytes into the protocol framing state machine.
@@ -105,7 +105,7 @@ void protocol_send_key_presses(void);
 /**
  * @brief Queue the latest HE calibration progress (thread-safe; coalesces).
  */
-esp_err_t protocol_send_he_calibration_progress(const osupad_HeCalibrationProgress *prog);
+esp_err_t protocol_send_he_calibration_progress(const opad_HeCalibrationProgress *prog);
 
 // CDC task only: frame and transmit queued progress, retrying a full TX FIFO.
 void protocol_poll_he_calibration(void);

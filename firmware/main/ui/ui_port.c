@@ -180,9 +180,9 @@ static void pad_timer_cb(lv_timer_t *timer)
     (void)timer;
     int64_t now_us = esp_timer_get_time();
 
-    osupad_state_t st = runtime_get_state();
-    static osupad_state_t s_prev_runtime_state = OSUPAD_STATE_IDLE;
-    if (s_prev_runtime_state == OSUPAD_STATE_PLAYING && (st == OSUPAD_STATE_COOLDOWN || st == OSUPAD_STATE_IDLE)) {
+    opad_state_t st = runtime_get_state();
+    static opad_state_t s_prev_runtime_state = OPAD_STATE_IDLE;
+    if (s_prev_runtime_state == OPAD_STATE_PLAYING && (st == OPAD_STATE_COOLDOWN || st == OPAD_STATE_IDLE)) {
         lv_subject_t *subj = ui_data_subject(UI_SRC_PLAY_PP);
         if (subj) {
             int32_t raw_pp = lv_subject_get_int(subj);
@@ -198,7 +198,7 @@ static void pad_timer_cb(lv_timer_t *timer)
     }
     s_prev_runtime_state = st;
 
-    int want = st == OSUPAD_STATE_PLAYING ? UI_SCREEN_PLAYING : UI_SCREEN_IDLE;
+    int want = st == OPAD_STATE_PLAYING ? UI_SCREEN_PLAYING : UI_SCREEN_IDLE;
     if (he_backend_is_locked() || he_backend_is_calibrating()) {
         want = UI_SCREEN_IDLE;
     }
@@ -423,7 +423,7 @@ void ui_play_animation(uint8_t id, const char *grade)
     lvgl_port_lock(0);
     if (id == 0) {
         ui_anim_stop();
-    } else if (runtime_get_state() != OSUPAD_STATE_PLAYING && !easter_egg_is_active()) {
+    } else if (runtime_get_state() != OPAD_STATE_PLAYING && !easter_egg_is_active()) {
         ui_anim_play(id, grade);
     }
     lvgl_port_unlock();

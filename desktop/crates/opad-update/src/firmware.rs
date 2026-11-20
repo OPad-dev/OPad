@@ -265,7 +265,7 @@ mod tests {
                 artifacts: vec![Artifact {
                     target: target.to_string(),
                     kind: ArtifactKind::Firmware,
-                    url: "https://x/osupad-firmware.bin".to_string(),
+                    url: "https://x/opad-firmware.bin".to_string(),
                     sha256: "00".to_string(),
                     size: None,
                     board: None,

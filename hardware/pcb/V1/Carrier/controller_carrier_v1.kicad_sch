@@ -6,7 +6,7 @@
 	(paper "A4")
 	(title_block (title "OPad Controller Carrier V1") (date "2026-09-14") (rev "V1.0") (company "OPad"))
 	(lib_symbols
-		(symbol "osupad:Conn_01x08"
+		(symbol "opad:Conn_01x08"
 		(pin_numbers
 			(hide no)
 		)
@@ -359,7 +359,7 @@
 		)
 		(embedded_fonts no)
 	)
-		(symbol "osupad:Conn_01x14"
+		(symbol "opad:Conn_01x14"
 		(pin_numbers
 			(hide no)
 		)
@@ -904,10 +904,10 @@
 	(text "Module connector: 1 3V3 | 2 GND | 3 IN1 = GPIO10 | 4 IN2 = GPIO7 | 5 ID = GPIO8 | 6 GPIO6 | 7 GPIO4 | 8 GPIO2" (exclude_from_sim no) (at 20.32 167.64 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "4d645dc2-3db6-41cd-80d9-ebcdbcdcbb73"))
 	(text "All six module signals are ADC1-capable (ADC continuous mode on the ESP32-S3 is ADC1 only)." (exclude_from_sim no) (at 20.32 171.45 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "4e9f23cb-637d-4ee1-a225-3a0b4679ecd4"))
 	(text "Passive carrier: the module ID divider lives on each input module." (exclude_from_sim no) (at 20.32 175.26 0) (effects (font (size 1.27 1.27)) (justify left bottom)) (uuid "79a8914e-ef74-4767-9a03-c88f974e7d51"))
-	(symbol (lib_id "osupad:Conn_01x14") (at 152.40 76.20 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "aaa6e947-ed2e-4a27-9174-f82ca05a1742")
+	(symbol (lib_id "opad:Conn_01x14") (at 152.40 76.20 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "aaa6e947-ed2e-4a27-9174-f82ca05a1742")
 		(property "Reference" "J_P1" (at 152.40 57.15 0) (effects (font (size 1.27 1.27))))
 		(property "Value" "WAVESHARE_P1" (at 152.40 97.79 0) (effects (font (size 1.27 1.27))))
-		(property "Footprint" "osupad:PinSocket_1x14_P2.54mm_Vertical" (at 152.40 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "opad:PinSocket_1x14_P2.54mm_Vertical" (at 152.40 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
 		(property "Datasheet" "" (at 152.40 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
 		(property "Description" "Female socket for Waveshare header P1 (8.5 mm)" (at 152.40 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
 		(property "LCSC" "C2897377" (at 152.40 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
@@ -942,10 +942,10 @@
 	(no_connect (at 147.32 88.90) (uuid "5a366f27-ce2a-45e6-a587-8e65b20c0cf9"))
 	(no_connect (at 147.32 91.44) (uuid "741dee71-5e62-40e2-9322-4c79ddc7752e"))
 	(no_connect (at 147.32 93.98) (uuid "4d45437a-f828-42da-a7c8-8d53c010c54e"))
-	(symbol (lib_id "osupad:Conn_01x14") (at 60.96 76.20 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "b24e2559-0662-4c3b-9d4f-24906f8069e1")
+	(symbol (lib_id "opad:Conn_01x14") (at 60.96 76.20 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "b24e2559-0662-4c3b-9d4f-24906f8069e1")
 		(property "Reference" "J_P2" (at 60.96 57.15 0) (effects (font (size 1.27 1.27))))
 		(property "Value" "WAVESHARE_P2" (at 60.96 97.79 0) (effects (font (size 1.27 1.27))))
-		(property "Footprint" "osupad:PinSocket_1x14_P2.54mm_Vertical" (at 60.96 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "opad:PinSocket_1x14_P2.54mm_Vertical" (at 60.96 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
 		(property "Datasheet" "" (at 60.96 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
 		(property "Description" "Female socket for Waveshare header P2 (8.5 mm)" (at 60.96 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
 		(property "LCSC" "C2897377" (at 60.96 76.20 0) (hide yes) (effects (font (size 1.27 1.27))))
@@ -980,10 +980,10 @@
 	(no_connect (at 55.88 88.90) (uuid "cca93996-2917-4566-905f-93d8f232dd8b"))
 	(no_connect (at 55.88 91.44) (uuid "f8aff9b7-36a2-481d-8208-18998443b0fd"))
 	(no_connect (at 55.88 93.98) (uuid "88ba0a36-3e7c-40ca-88c8-19b8939bfb66"))
-	(symbol (lib_id "osupad:Conn_01x08") (at 106.68 116.84 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "46b71473-85fc-4d3e-8172-e3d201f6eb22")
+	(symbol (lib_id "opad:Conn_01x08") (at 106.68 116.84 0) (unit 1) (exclude_from_sim no) (in_bom yes) (on_board yes) (dnp no) (uuid "46b71473-85fc-4d3e-8172-e3d201f6eb22")
 		(property "Reference" "J_MOD" (at 106.68 105.41 0) (effects (font (size 1.27 1.27))))
 		(property "Value" "MODULE" (at 106.68 130.81 0) (effects (font (size 1.27 1.27))))
-		(property "Footprint" "osupad:JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal" (at 106.68 116.84 0) (hide yes) (effects (font (size 1.27 1.27))))
+		(property "Footprint" "opad:JST_SH_SM08B-SRSS-TB_1x08-1MP_P1.00mm_Horizontal" (at 106.68 116.84 0) (hide yes) (effects (font (size 1.27 1.27))))
 		(property "Datasheet" "" (at 106.68 116.84 0) (hide yes) (effects (font (size 1.27 1.27))))
 		(property "Description" "Input module connector (JST SH 8-pin)" (at 106.68 116.84 0) (hide yes) (effects (font (size 1.27 1.27))))
 		(property "LCSC" "C160407" (at 106.68 116.84 0) (hide yes) (effects (font (size 1.27 1.27))))

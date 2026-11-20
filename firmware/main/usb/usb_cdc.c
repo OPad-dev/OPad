@@ -205,7 +205,7 @@ static void usb_cdc_task(void *arg)
     while (1) {
         // 10 ms while the app's live key view is open, so it gets ~50 samples/s;
         // 20 ms in the HE debug firmware, which streams its log
-#ifdef CONFIG_OSUPAD_HE_DEBUG
+#ifdef CONFIG_OPAD_HE_DEBUG
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(protocol_he_live_active() ? 10 : 20));
 #else
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(protocol_he_live_active() ? 10 : 200));

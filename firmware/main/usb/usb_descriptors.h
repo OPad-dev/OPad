@@ -44,13 +44,13 @@ enum {
     MEDIA_REPORT_ID_KEYBOARD = 3,
 };
 
-extern const tusb_desc_device_t osupad_usb_device_desc;
-extern const uint8_t osupad_usb_config_desc[];
-extern const uint8_t osupad_hid_report_desc[];
-extern const uint8_t osupad_media_report_desc[];
-extern const char *osupad_usb_string_desc[];
-extern const uint8_t osupad_usb_bos_desc[];
-extern const uint8_t osupad_usb_ms_os_20_desc[];
+extern const tusb_desc_device_t opad_usb_device_desc;
+extern const uint8_t opad_usb_config_desc[];
+extern const uint8_t opad_hid_report_desc[];
+extern const uint8_t opad_media_report_desc[];
+extern const char *opad_usb_string_desc[];
+extern const uint8_t opad_usb_bos_desc[];
+extern const uint8_t opad_usb_ms_os_20_desc[];
 
 void usb_descriptors_init(void);
 

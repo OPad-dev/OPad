@@ -4,7 +4,7 @@ Revision of `../V1` for the V1 PCBs: the controller carrier on its 8.5 mm socket
 
 **Fully screwless:** the bottom plate snaps on, the input module is clamped between the key deck and the bottom plate, and the screen is held by its glass on a taped ledge.
 
-![V1.1 finished](osupad_render.png)
+![V1.1 finished](opad_render.png)
 
 ## What changed from V1
 
@@ -64,10 +64,10 @@ No screws or inserts are needed for the case itself.
 
 | File | |
 |---|---|
-| `osupad_params.scad` | every dimension, and the derived heights |
-| `osupad_enclosure.scad` | the parts: `PART = "top_case"`, `"bottom_plate"` or `"assembly"` |
-| `osupad_case_top.stl`, `osupad_case_bottom.stl` | print files |
-| `osupad_render.png`, `osupad_preview.png` | finished render (front and underside), and the bare case |
+| `opad_params.scad` | every dimension, and the derived heights |
+| `opad_enclosure.scad` | the parts: `PART = "top_case"`, `"bottom_plate"` or `"assembly"` |
+| `opad_case_top.stl`, `opad_case_bottom.stl` | print files |
+| `opad_render.png`, `opad_preview.png` | finished render (front and underside), and the bare case |
 | `tools/check_fit.py` | intersects everything that goes inside (below) with each case part; exits 1 on any overlap |
 | `tools/reference_models.scad` | the Waveshare stack, carrier, input modules, USB plug and cable as envelopes |
 | `tools/waveshare_back.scad` | the Waveshare's back-side components as boxes, measured from Waveshare's STEP model (the model itself is not included) |
@@ -77,8 +77,8 @@ After changing a parameter:
 ```
 python3 tools/check_fit.py                 # needs OpenSCAD; about a minute
 python3 tools/check_fit.py -D TILT=14      # any parameter can be overridden
-openscad -o osupad_case_top.stl    -D 'PART="top_case"'     osupad_enclosure.scad
-openscad -o osupad_case_bottom.stl -D 'PART="bottom_plate"' osupad_enclosure.scad
+openscad -o opad_case_top.stl    -D 'PART="top_case"'     opad_enclosure.scad
+openscad -o opad_case_bottom.stl -D 'PART="bottom_plate"' opad_enclosure.scad
 ```
 
 Checked on 2026-09-24:

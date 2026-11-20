@@ -89,7 +89,7 @@ to about halfway between 1.06 and 1.65 V (~1.35 V) and add a V2 class.
 
 ### 1.5 Firmware facts that constrain hardware
 
-- **HE input is off in a normal build:** `CONFIG_OSUPAD_HE_BACKEND`, "experimental",
+- **HE input is off in a normal build:** `CONFIG_OPAD_HE_BACKEND`, "experimental",
   `default n` (`firmware/main/Kconfig.projbuild:35`). Only `sdkconfig.hedebug`
   turns it on (with the debug log). **Open:** make one firmware that serves
   every module by ID.

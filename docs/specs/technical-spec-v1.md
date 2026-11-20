@@ -3,7 +3,7 @@
 **Technical Specification / Implementation Contract - v1.0**  
 **Primary target:** Waveshare ESP32-S3-Touch-LCD-2 + Linux + osu!lazer AppImage  
 **Secondary target:** Windows host support without firmware redesign  
-**Working binary names:** `osupad-daemon`, `osupad-gui`, `osupadctl`
+**Working binary names:** `opad-daemon`, `opad-gui`, `opadctl`
 
 ---
 
@@ -227,7 +227,7 @@ If another developer wants to support another board, they may add another compil
                                  |
                                  v
 +----------------------+   +-------------------------+
-|     osupad-gui       |   |     osupad-daemon      |
+|     opad-gui       |   |     opad-daemon      |
 |      iced/Rust       |<->|         Rust            |
 |                      |IPC|                         |
 | configuration        |   | tosu manager            |
@@ -668,7 +668,7 @@ Do not make the tray menu about osu/tosu state.
 
 ## 16.1 Purpose
 
-`osupad-daemon` is the persistent background component. The GUI is not required for normal operation.
+`opad-daemon` is the persistent background component. The GUI is not required for normal operation.
 
 The daemon owns:
 
@@ -870,7 +870,7 @@ The exact rendering is platform-dependent. Use a mature tray library instead of 
 
 Tray failure MUST NOT terminate HID, synchronization, or the daemon core. Treat tray as an optional frontend layer.
 
-`Open Settings` launches or focuses `osupad-gui`. `Open Monitor` launches/focuses the GUI directly on the Monitor section.
+`Open Settings` launches or focuses `opad-gui`. `Open Monitor` launches/focuses the GUI directly on the Monitor section.
 
 ---
 
@@ -1140,12 +1140,12 @@ Use an established tool such as **espflash** or the official ESP-IDF flashing to
 Expected CLI surface:
 
 ```text
-osupadctl status
-osupadctl setup
-osupadctl flash <firmware>
-osupadctl export <file.json>
-osupadctl import <file.json>
-osupadctl monitor
+opadctl status
+opadctl setup
+opadctl flash <firmware>
+opadctl export <file.json>
+opadctl import <file.json>
+opadctl monitor
 ```
 
 The GUI may call daemon/CLI operations for firmware updates, but it does not implement the bootloader protocol.
@@ -1205,7 +1205,7 @@ Document any such exception.
 # 28. Suggested repository layout
 
 ```text
-osupad/
+opad/
   README.md
   LICENSE
   docs/
@@ -1215,7 +1215,7 @@ osupad/
     recovery.md
 
   protocol/
-    osupad.proto
+    opad.proto
 
   firmware/
     CMakeLists.txt
@@ -1236,12 +1236,12 @@ osupad/
     Cargo.toml                # workspace
     Cargo.lock
     crates/
-      osupad-model/
-      osupad-protocol/
-      osupad-ipc/
-      osupad-storage/
-      osupad-device/
-      osupad-tosu/
+      opad-model/
+      opad-protocol/
+      opad-ipc/
+      opad-storage/
+      opad-device/
+      opad-tosu/
     daemon/
     gui/
     cli/
@@ -1574,17 +1574,17 @@ The project does not need a fancy setup wizard, but setup should be reproducible
 Desired initial Linux flow:
 
 ```text
-1. Install/copy osupad-daemon, osupad-gui, osupadctl.
+1. Install/copy opad-daemon, opad-gui, opadctl.
 2. Install user service/autostart integration.
 3. Install any required udev permission rule if necessary.
-4. Flash supported firmware using osupadctl/espflash.
+4. Flash supported firmware using opadctl/espflash.
 5. Start daemon.
 6. Connect ESP.
 7. Verify handshake and counters.
 8. Configure tosu endpoint if default discovery is insufficient.
 ```
 
-`osupadctl setup` MAY automate safe parts of this sequence. Do not create a large custom installer framework unless packaging needs it.
+`opadctl setup` MAY automate safe parts of this sequence. Do not create a large custom installer framework unless packaging needs it.
 
 ---
 
@@ -1739,7 +1739,7 @@ The project is successful when the input path is extremely small, every nonessen
 
 # Appendix A1. Device pairing / ownership claim (amendment, 2026-09-16)
 
-**Source:** `osupad_packaging_distribution_plan.md` §W3, owner decision of
+**Source:** `opad_packaging_distribution_plan.md` §W3, owner decision of
 2026-09-16. This amends §12–§14 (counter reconciliation) and §26 (flashing); it
 does not change §2, §3 or anything on the input path.
 

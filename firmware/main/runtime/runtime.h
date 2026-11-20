@@ -9,12 +9,12 @@ extern "C" {
 #endif
 
 typedef enum {
-    OSUPAD_STATE_UNKNOWN = 0,
-    OSUPAD_STATE_IDLE = 1,
-    OSUPAD_STATE_PLAYING = 2,
-    OSUPAD_STATE_COOLDOWN = 3,
-    OSUPAD_STATE_SYNC = 4,
-} osupad_state_t;
+    OPAD_STATE_UNKNOWN = 0,
+    OPAD_STATE_IDLE = 1,
+    OPAD_STATE_PLAYING = 2,
+    OPAD_STATE_COOLDOWN = 3,
+    OPAD_STATE_SYNC = 4,
+} opad_state_t;
 
 /**
  * @brief Initialize runtime supervisor state machine and background manager task.
@@ -24,7 +24,7 @@ esp_err_t runtime_init(void);
 /**
  * @brief Get current operational state.
  */
-osupad_state_t runtime_get_state(void);
+opad_state_t runtime_get_state(void);
 
 /**
  * @brief Notify runtime of gameplay activity from host telemetry.

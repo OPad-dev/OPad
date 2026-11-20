@@ -32,7 +32,7 @@ protocol traffic never touches the keystroke path.
 
 ## 2. Serial port discovery — shared, not ported
 
-`desktop/crates/osupad-device/src/lib.rs` filters `serialport::available_ports()`
+`desktop/crates/opad-device/src/lib.rs` filters `serialport::available_ports()`
 by VID/PID. The same code path returns `/dev/ttyACM0` on Linux and `COM3` on
 Windows, and `find_target_port` (the app, `303a:4001`) and
 `find_bootloader_port` (the ROM bootloader, `303a:1001`) are both unchanged.
@@ -52,7 +52,7 @@ Two Windows properties of that crate matter downstream:
 
 The framing (`[len: u32 LE][json]`) and the `IpcRequest` / `IpcResponse` enums
 are transport-agnostic and identical on both platforms. What differs is the
-concrete type, and `osupad-ipc` exposes it as three `#[cfg]`-selected aliases:
+concrete type, and `opad-ipc` exposes it as three `#[cfg]`-selected aliases:
 
 | Alias | Unix | Windows |
 |---|---|---|
@@ -62,8 +62,8 @@ concrete type, and `osupad-ipc` exposes it as three `#[cfg]`-selected aliases:
 
 Addresses:
 
-- Unix: `$XDG_RUNTIME_DIR/osupad/daemon.sock`, or `/tmp/osupad-<uid>/daemon.sock`.
-- Windows: `\\.\pipe\osupad-ipc-<user SID>`. The SID is in the name so two users
+- Unix: `$XDG_RUNTIME_DIR/opad/daemon.sock`, or `/tmp/opad-<uid>/daemon.sock`.
+- Windows: `\\.\pipe\opad-ipc-<user SID>`. The SID is in the name so two users
   on one machine get separate pipes, mirroring the per-uid socket path.
 
 The accept loops are written separately on purpose. A `NamedPipeServer` is
@@ -94,16 +94,16 @@ pipe") cannot be automated in CI and is WIN-03 in the checklist.
 
 ## 4. Paths
 
-Everything resolves through `osupad_model::paths`, which uses `dirs` and
+Everything resolves through `opad_model::paths`, which uses `dirs` and
 **fails loudly rather than falling back to a relative path**:
 
 | What | Linux | Windows |
 |---|---|---|
-| `osupad.db` | `~/.local/share/osupad/` | `%APPDATA%\osupad\` |
-| Logs (`daemon.log`, `tosu.log`) | `~/.local/state/osupad/` | `%APPDATA%\osupad\` |
-| Install prefix | `<prefix>/lib/osupad` | the install directory itself |
-| Bundled tosu | `<prefix>/lib/osupad/tosu/` | `<install dir>\tosu\` |
-| `install-origin` marker | `<prefix>/lib/osupad/` | `<install dir>\` |
+| `opad.db` | `~/.local/share/opad/` | `%APPDATA%\opad\` |
+| Logs (`daemon.log`, `tosu.log`) | `~/.local/state/opad/` | `%APPDATA%\opad\` |
+| Install prefix | `<prefix>/lib/opad` | the install directory itself |
+| Bundled tosu | `<prefix>/lib/opad/tosu/` | `<install dir>\tosu\` |
+| `install-origin` marker | `<prefix>/lib/opad/` | `<install dir>\` |
 
 Windows and macOS have no XDG-style state directory, so logs live with the data
 rather than in a second place the uninstaller would have to know about.
@@ -121,8 +121,8 @@ The installer must write these two values **byte for byte**, because the GUI
 compares against them to decide whether autostart is on:
 
 ```
-osupad-daemon = "<dir>\osupad-daemon.exe"
-osupad-gui    = "<dir>\osupad-gui.exe" --tray
+opad-daemon = "<dir>\opad-daemon.exe"
+opad-gui    = "<dir>\opad-gui.exe" --tray
 ```
 
 ---
@@ -145,7 +145,7 @@ and it matters that a headless daemon then needs no window and no message pump.
 
 ## 8. Flashing (§W1-3)
 
-`osupadctl flash` drives `espflash`; there is no shell script on either
+`opadctl flash` drives `espflash`; there is no shell script on either
 platform any more. Three things are Windows-specific:
 
 1. **Line state is set explicitly.** Linux asserts DTR when a tty is opened;

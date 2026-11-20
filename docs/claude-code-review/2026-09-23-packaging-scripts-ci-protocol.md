@@ -3,7 +3,7 @@
 - Date: 2026-09-23
 - Command: `/code-review medium packaging scripts .github protocol`
 - Base: `main` @ `b0e0a37`
-- Scope: no diff touched these paths, so the review covers their current contents. `protocol/` (`osupad.proto`, `.options`) came out clean — every string/repeated field has a nanopb bound.
+- Scope: no diff touched these paths, so the review covers their current contents. `protocol/` (`opad.proto`, `.options`) came out clean — every string/repeated field has a nanopb bound.
 - Verification: findings were not re-verified after the review; treat each as *plausible* until checked.
 - Status legend: `open` / `fixed` / `wontfix` / `invalid`
 

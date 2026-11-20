@@ -12,8 +12,6 @@
 //! | data | `$XDG_DATA_HOME/opad`, else `~/.local/share/opad` | `%APPDATA%\opad` |
 //! | state (logs) | `$XDG_STATE_HOME/opad`, else `~/.local/state/opad` | `%APPDATA%\opad` |
 //! | installed private files | `$(PREFIX)/lib/opad` | the install directory |
-//!
-//! Data left under the old `osupad` names is moved on first use.
 
 use std::path::PathBuf;
 use thiserror::Error;
@@ -32,32 +30,16 @@ pub enum PathError {
 }
 
 /// Per-user data: the SQLite database and anything else that must survive.
-///
-/// Automatically migrates legacy %APPDATA%\osupad (or ~/.local/share/osupad) if present.
 pub fn data_dir() -> Result<PathBuf, PathError> {
     dirs::data_dir()
-        .map(|d| {
-            let modern = d.join("opad");
-            let legacy = d.join("osupad");
-            if !modern.exists() && legacy.exists() {
-                let _ = std::fs::rename(&legacy, &modern);
-            }
-            modern
-        })
+        .map(|d| d.join("opad"))
         .ok_or(PathError::Unresolved { kind: "data" })
 }
 
 /// Per-user state: logs, and anything else that is useful but disposable.
 pub fn state_dir() -> Result<PathBuf, PathError> {
     match dirs::state_dir() {
-        Some(d) => {
-            let modern = d.join("opad");
-            let legacy = d.join("osupad");
-            if !modern.exists() && legacy.exists() {
-                let _ = std::fs::rename(&legacy, &modern);
-            }
-            Ok(modern)
-        }
+        Some(d) => Ok(d.join("opad")),
         // Windows and macOS have no XDG-style state directory; logs live with
         // the data rather than in a second place the uninstaller must know.
         None => data_dir(),
@@ -66,15 +48,7 @@ pub fn state_dir() -> Result<PathBuf, PathError> {
 
 /// The SQLite database holding counters, config, layouts and install identity
 pub fn database_path() -> Result<PathBuf, PathError> {
-    let dir = data_dir()?;
-    let modern = dir.join("opad.db");
-    let legacy = dir.join("osupad.db");
-    if !modern.exists() && legacy.exists() {
-        let _ = std::fs::rename(&legacy, &modern);
-        let _ = std::fs::rename(dir.join("osupad.db-wal"), dir.join("opad.db-wal"));
-        let _ = std::fs::rename(dir.join("osupad.db-shm"), dir.join("opad.db-shm"));
-    }
-    Ok(modern)
+    Ok(data_dir()?.join("opad.db"))
 }
 
 /// stdout/stderr of the supervised tosu process
