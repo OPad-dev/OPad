@@ -110,8 +110,12 @@ static void update_pad_sources(int64_t now_us)
     ui_data_set_number(UI_SRC_PAD_TOTAL_MAP, (double)game_keys_sum(game, map));
 
     // Taps in the last second, or since the oldest sample while the ring fills.
-    // Lifetime counters drop on a forced sync or reset: start the window over.
-    if (s_kps_fill > 0 && total < s_kps_ring[(s_kps_pos + KPS_WINDOW - 1) % KPS_WINDOW]) {
+    // Lifetime counters drop on a forced sync or reset, and the total jumps
+    // when the game keys change: start the window over.
+    static uint8_t s_kps_game = 0xFF;
+    if (game != s_kps_game ||
+        (s_kps_fill > 0 && total < s_kps_ring[(s_kps_pos + KPS_WINDOW - 1) % KPS_WINDOW])) {
+        s_kps_game = game;
         s_kps_fill = 0;
     }
     uint64_t oldest = s_kps_fill ? s_kps_ring[(s_kps_pos + KPS_WINDOW - s_kps_fill) % KPS_WINDOW] : total;
