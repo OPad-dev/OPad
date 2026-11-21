@@ -330,6 +330,8 @@ lvgl:
 NOTICES_OUT ?= dist/THIRD_PARTY_NOTICES.html
 notices:
 	@mkdir -p "$(dir $(NOTICES_OUT))"
+	# The notices cover every platform's crates, and a build only downloads its own
+	$(CARGO) fetch --locked --manifest-path desktop/Cargo.toml
 	cd desktop && $(CARGO) about generate --offline --fail about.hbs -o "$(abspath $(NOTICES_OUT))"
 	@echo "✓ $(NOTICES_OUT)"
 

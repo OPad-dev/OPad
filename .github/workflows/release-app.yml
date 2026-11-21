@@ -292,6 +292,9 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
+          # The notices cover every platform's crates, and the build only
+          # downloaded Windows'
+          cargo fetch --locked --manifest-path desktop/Cargo.toml
           (cd desktop && cargo about generate --offline --fail about.hbs -o ../dist/THIRD_PARTY_NOTICES.html)
 
       - name: Fetch espflash (pinned, checksummed)
