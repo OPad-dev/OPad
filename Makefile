@@ -114,14 +114,21 @@ tosu:
 		git clone --depth 1 --branch $(TOSU_VERSION) $(TOSU_REPO) $(TOSU_SRC_DIR); \
 	fi
 	@echo "Building tosu from source..."
-	cd $(TOSU_SRC_DIR) && $(PNPM) install --frozen-lockfile
-	rm -rf $(TOSU_BUILD_DIR)/dist $(TOSU_BUILD_DIR)/tosu
-ifeq ($(TOSU_STANDALONE),1)
-ifeq ($(TOSU_PORTABLE),1)
+ifeq ($(TOSU_STANDALONE)$(TOSU_PORTABLE),11)
 	@mkdir -p build/zigcc
 	@printf '#!/bin/sh\nexec $(ZIG) cc -target x86_64-linux-gnu.$(TOSU_GLIBC) "$$@"\n' > build/zigcc/cc
 	@printf '#!/bin/sh\nexec $(ZIG) c++ -target x86_64-linux-gnu.$(TOSU_GLIBC) "$$@"\n' > build/zigcc/c++
 	@chmod +x build/zigcc/cc build/zigcc/c++
+	# tsprocess builds itself on install, and its C++20 (<format>) needs a newer
+	# libc++ than Ubuntu 22.04's g++ 11 has, so the install uses zig too
+	cd $(TOSU_SRC_DIR) && CC="$(abspath build/zigcc/cc)" CXX="$(abspath build/zigcc/c++)" \
+		LINK="$(abspath build/zigcc/c++)" $(PNPM) install --frozen-lockfile
+else
+	cd $(TOSU_SRC_DIR) && $(PNPM) install --frozen-lockfile
+endif
+	rm -rf $(TOSU_BUILD_DIR)/dist $(TOSU_BUILD_DIR)/tosu
+ifeq ($(TOSU_STANDALONE),1)
+ifeq ($(TOSU_PORTABLE),1)
 	cd $(TOSU_SRC_DIR)/packages/tsprocess && CC="$(abspath build/zigcc/cc)" CXX="$(abspath build/zigcc/c++)" \
 		LINK="$(abspath build/zigcc/c++)" npx --no-install node-gyp rebuild
 	$(MAKE) lazer-calculator
