@@ -12,7 +12,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DIST="${REPO_ROOT}/dist"
 IMAGES=("$@")
-[ ${#IMAGES[@]} -gt 0 ] || IMAGES=(ubuntu:22.04 ubuntu:24.04 debian:12 debian:13 rockylinux:9 fedora:43)
+[ ${#IMAGES[@]} -gt 0 ] || IMAGES=(ubuntu:22.04 ubuntu:24.04 ubuntu:26.04 debian:12 debian:13 rockylinux:9 fedora:43)
 
 INNER='
 set -u

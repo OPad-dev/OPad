@@ -172,7 +172,7 @@ In this order (release spec §18.2–§18.3, §19):
 - [ ] `make release-local` on Linux builds every installer (Linux packages in the container, Windows programs with `cargo xwin`, Inno Setup in `amake/innosetup`).
 - [ ] `make feed-local` serves a feed, and an installed older build updates from it (AppImage, tarball, `.deb`, `.rpm`, Windows installer).
 - [ ] First release PRs open; each shows all twelve crates bumped in `Cargo.lock` (§18.1 "Known limits").
-- [ ] Merge them: `v1.0.0-rc.1` and `firmware-v1.0.0-rc.1` build, `test_packages.sh` passes on ubuntu 22.04/24.04, debian 12/13, rockylinux 9, fedora 43, and both publish as pre-releases, not Latest for the firmware.
+- [ ] Merge them: `v1.0.0-rc.1` and `firmware-v1.0.0-rc.1` build, `test_packages.sh` passes on ubuntu 22.04/24.04/26.04, debian 12/13, rockylinux 9, fedora 43, and both publish as pre-releases, not Latest for the firmware.
 - [ ] The release workflow's "image reports the tagged version" step passes, and `opadctl status` on a flashed pad shows that version.
 - [ ] *Update feed* deploys; `beta.json` lists the app, firmware and tosu; `opad-feed verify` passes on it.
 - [ ] Signing (§19): `release` environment with you as reviewer; minisign key; SignPath accepted and configured; `SIGNING_ENABLED=true`. (No GPG key: no apt/dnf repositories.)
