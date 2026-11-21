@@ -33,8 +33,8 @@ store, and that migrates (`OPAD-<MAC>`, `opad*` NVS namespaces); checked
 frames (0.12); feed at `updates.opad.dev`, overridable by forks; SECURITY.md,
 issue templates; V3 hardware and case docs; printing guide.
 
-1. [ ] **Pages custom domain** `updates.opad.dev`, HTTPS enforced. *Waits: the
-   `updates` CNAME in Cloudflare.*
+1. [x] **Pages custom domain** `updates.opad.dev`, HTTPS enforced (2026-11-21;
+   the Pages URL redirects to it).
 2. [ ] **tosu, watched:** a weekly job that builds a new upstream tosu, checks it
    starts and that its v2 JSON still has every field `opad-tosu` reads, then
    opens the version bump PR and publishes it to beta. Then an acceptance run
@@ -56,9 +56,13 @@ issue templates; V3 hardware and case docs; printing guide.
    `opadctl` smoke tests on the packages; the AppImage.
 6. [ ] **`make release-local` and `make feed-local` on Linux** (release spec
    §18.3), and an end-to-end update from a local feed for each package type.
-7. [ ] **First release candidate:** tosu `r1`, then merge release PRs #9 / #10
-   (`1.0.0-rc.1`), check every artifact, the feed and an update from it.
-   *Waits: the owner's go.*
+7. [ ] **First release candidate.** Done 2026-11-21: `tosu-v4.26.2-r1`,
+   `firmware-v1.0.0-rc.1` and app `v1.0.0-rc.3` are pre-releases, and
+   `https://updates.opad.dev/beta.json` lists all three (`opad-feed verify`
+   OK). The app's rc.1 and rc.2 builds failed and stay unpublished drafts
+   (tosu updating itself, notices fetch, the package test's quoting). Left:
+   install each artifact and update to it from the feed (needs an older
+   build installed, so it waits for the next rc).
 8. [ ] **The not-run rows of §16 in `docs/testing-checklist.md`:** layouts and
    HE calibration across the upgrade (ID-02), a rollback (ID-03), Windows
    (ID-04, CRC-01/02), the 8-hour soak (CRC-03).
