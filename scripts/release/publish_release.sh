@@ -49,6 +49,18 @@ if ! gh release view "${TAG}" >/dev/null 2>&1; then
     gh release create "${TAG}" "${create_args[@]}"
 fi
 
+# An app release is the download page SignPath Foundation's terms ask to
+# name the code signing policy (README "Code signing policy")
+if [[ "${TAG}" == v* ]]; then
+    body="$(gh release view "${TAG}" --json body -q .body)"
+    if [[ "${body}" != *"Code signing policy"* ]]; then
+        gh release edit "${TAG}" --notes "${body}
+
+---
+[Code signing policy](https://github.com/OPad-dev/OPad#code-signing-policy) · [Privacy](https://github.com/OPad-dev/OPad#privacy)"
+    fi
+fi
+
 echo "--- Uploading ${#files[@]} file(s) to ${TAG} ---"
 gh release upload "${TAG}" --clobber "${files[@]}"
 

@@ -4,6 +4,8 @@
 
 A deterministic, ultra-low-latency mechanical keypad and live telemetry HUD designed for competitive osu!, osu!lazer, and rhythm games on **Linux and Windows 10/11**.
 
+**[Downloads](https://github.com/OPad-dev/OPad/releases)** · [Code signing policy](#code-signing-policy)
+
 ---
 
 ## ⚡ Core Principle: Latency Always Wins
@@ -277,6 +279,31 @@ opadctl monitor
 - [Technical Specification v1](docs/specs/technical-spec-v1.md)
 - [Rapid Trigger v2 Specification](docs/specs/v2-rapid-trigger.md)
 
+
+---
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+The Windows programs (`opad-gui.exe`, `opad-daemon.exe`, `opadctl.exe`) and the Windows installer are built from this repository by GitHub Actions (`.github/workflows/release-app.yml`) and signed only after a maintainer approves each release. Until the SignPath Foundation certificate is in place, Windows releases are published unsigned.
+
+- Committers and reviewers: [GFerreiroS](https://github.com/GFerreiroS)
+- Approvers: [GFerreiroS](https://github.com/GFerreiroS)
+
+The installer also contains two programs that are not built from this repository's code and are not signed by this project: `espflash.exe` ([esp-rs/espflash](https://github.com/esp-rs/espflash), the upstream release binary) and `tosu.exe` ([tosu](https://github.com/KotRikD/tosu), built from upstream source).
+
+Privacy policy: see [Privacy](#privacy) below.
+
+## Privacy
+
+OPad collects no personal data and has no telemetry or analytics. The desktop app makes these network requests, and no others:
+
+- **Update check**, once a day while the app's background service runs, and whenever you press *Check now*: it downloads the public release list from `https://updates.opad.dev/` (served by GitHub Pages). The request carries the app's version in its User-Agent (`opad/<version>`) and nothing about you or your pad. Turning off automatic updates in **Settings → Updates** stops installs, not this check.
+- **Downloads** of an update you accept (or of tosu, if its automatic updates are on), from GitHub Releases.
+- **tosu**, which the app runs, serves osu!'s game state on your own computer (`127.0.0.1`) and does not send it anywhere. When it starts, tosu asks GitHub whether a newer tosu exists; OPad turns its self-update off, so nothing is downloaded.
+
+GitHub, which hosts the update list and the downloads, sees your IP address as it does for any website; see [GitHub's privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement). Everything the app stores (settings, statistics, backups) stays on your computer and your pad.
 
 ---
 
