@@ -45,9 +45,9 @@ export HOME=/root
 # Before the daemon, whose supervisor would start its own tosu on the port.
 # tosu must still be running (serving its dashboard) when the timeout ends it.
 # The tosu.env the daemon writes (opad-tosu FORCED_SETTINGS): with its own
-# updater on, tosu replaces itself with upstream's newest build and restarts
+# updater on, tosu replaces itself with the newest upstream build and restarts
 mkdir -p /root/.config/tosu
-printf 'ENABLE_AUTOUPDATE=false\nOPEN_DASHBOARD_ON_STARTUP=false\n' > /root/.config/tosu/tosu.env
+printf "ENABLE_AUTOUPDATE=false\nOPEN_DASHBOARD_ON_STARTUP=false\n" > /root/.config/tosu/tosu.env
 timeout 8 /usr/lib/opad/tosu/tosu >/tmp/tosu.log 2>&1; rc=$?
 [ $rc -eq 124 ] && sed "s/\x1b\[[0-9;]*m//g" /tmp/tosu.log | grep -q "Dashboard server started" \
   || fail "tosu did not start (exit $rc): $(sed "s/\x1b\[[0-9;]*m//g" /tmp/tosu.log | tail -3)"
