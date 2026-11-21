@@ -1,0 +1,46 @@
+name: Lab check
+
+# Checks the self-hosted test lab (the Windows 11 mini PC, runner label
+# opad-lab): desktop session, osu! and the tosu replay fixture, and that each
+# VirtualBox VM boots from its clean snapshot. Started by hand only: a
+# self-hosted runner never runs code from pull requests.
+
+on:
+  workflow_dispatch:
+    inputs:
+      vms:
+        description: "VMs to boot, comma-separated (empty: all)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opad-lab
+  cancel-in-progress: false
+
+jobs:
+  lab:
+    name: Lab on the mini PC
+    runs-on: [self-hosted, opad-lab]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the lab
+        shell: powershell
+        env:
+          VMS: ${{ inputs.vms }}
+        run: |
+          $vms = @($env:VMS -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+          & scripts\lab\lab-check.ps1 -Vms $vms -OutDir lab-check
+          exit $LASTEXITCODE
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: lab-check-screenshots
+          path: lab-check/*.png
+          retention-days: 14
