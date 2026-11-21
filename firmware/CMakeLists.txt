@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 # Set firmware project version (Single version source)
-set(PROJECT_VER "1.0.0-rc") # x-release-please-version
+set(PROJECT_VER "1.0.0-rc.1") # x-release-please-version
 
 # Include ESP-IDF project boilerplate
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
