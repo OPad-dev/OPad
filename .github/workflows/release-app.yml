@@ -472,6 +472,9 @@ jobs:
   feed:
     name: Update feed
     needs: publish
+    # Without this, sign-rpm being skipped (signing off) skips the feed too,
+    # because a skipped job anywhere upstream fails the default success()
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
     uses: ./.github/workflows/update-feed.yml
     secrets: inherit
     permissions:
