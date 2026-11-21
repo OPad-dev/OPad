@@ -440,7 +440,7 @@ pub fn launch_tosu_process(override_path: Option<&Path>) -> Result<(), String> {
         std::fs::create_dir_all(dir)
             .map_err(|e| format!("Cannot create {}: {e}", dir.display()))?;
     }
-    disable_dashboard_autostart(&bin);
+    pin_tosu_settings(&bin);
 
     let log = std::fs::File::create(&log_path)
         .map_err(|e| format!("Cannot open {}: {e}", log_path.display()))?;
@@ -448,7 +448,7 @@ pub fn launch_tosu_process(override_path: Option<&Path>) -> Result<(), String> {
         .try_clone()
         .map_err(|e| format!("Cannot open {}: {e}", log_path.display()))?;
     let mut cmd = std::process::Command::new(&bin);
-    cmd.env("OPEN_DASHBOARD_ON_STARTUP", "false")
+    cmd.envs(FORCED_SETTINGS.iter().copied())
         .stdin(Stdio::null())
         .stdout(log)
         .stderr(log_err);
@@ -792,26 +792,47 @@ fn tosu_config_dir(bin: &Path) -> Option<PathBuf> {
     }
 }
 
-/// Keeps tosu from opening its web dashboard in a browser when it starts. Its
-/// tosu.env wins over the OPEN_DASHBOARD_ON_STARTUP environment variable, so
-/// the file is what has to say false.
-fn disable_dashboard_autostart(bin: &Path) {
+/// tosu.env settings OPad always overrides. tosu's own updater stays off: it
+/// would replace the bundled tosu with upstream's build, which skips OPad's
+/// signed feed and needs a newer glibc, and a tosu that restarts itself to
+/// update looks like a crash to the supervisor. The dashboard is not opened
+/// in a browser at every start.
+const FORCED_SETTINGS: &[(&str, &str)] = &[
+    ("ENABLE_AUTOUPDATE", "false"),
+    ("OPEN_DASHBOARD_ON_STARTUP", "false"),
+];
+
+/// Writes FORCED_SETTINGS into tosu.env, keeping every other line. tosu.env
+/// wins over environment variables, so the file is what has to say it.
+fn pin_tosu_settings(bin: &Path) {
     let Some(dir) = tosu_config_dir(bin) else {
         return;
     };
     let _ = std::fs::create_dir_all(&dir);
     let env_file = dir.join("tosu.env");
-    if let Ok(content) = std::fs::read_to_string(&env_file) {
-        if content.contains("OPEN_DASHBOARD_ON_STARTUP=true") {
-            let updated = content.replace(
-                "OPEN_DASHBOARD_ON_STARTUP=true",
-                "OPEN_DASHBOARD_ON_STARTUP=false",
-            );
-            let _ = std::fs::write(&env_file, updated);
-        }
-    } else {
-        let _ = std::fs::write(&env_file, "OPEN_DASHBOARD_ON_STARTUP=false\n");
+    let content = std::fs::read_to_string(&env_file).unwrap_or_default();
+    let updated = with_forced_settings(&content);
+    if updated != content {
+        let _ = std::fs::write(&env_file, updated);
     }
+}
+
+fn with_forced_settings(content: &str) -> String {
+    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
+    for (key, value) in FORCED_SETTINGS {
+        let wanted = format!("{key}={value}");
+        let prefix = format!("{key}=");
+        match lines
+            .iter_mut()
+            .find(|l| l.trim_start().starts_with(&prefix))
+        {
+            Some(line) => *line = wanted,
+            None => lines.push(wanted),
+        }
+    }
+    let mut out = lines.join("\n");
+    out.push('\n');
+    out
 }
 
 /// Hands each line of one of tosu's output streams to `cb` (ANSI stripped)
@@ -843,10 +864,10 @@ fn launch_tosu(
     if let Some(dir) = log_path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    disable_dashboard_autostart(bin);
+    pin_tosu_settings(bin);
 
     let mut cmd = tokio::process::Command::new(bin);
-    cmd.env("OPEN_DASHBOARD_ON_STARTUP", "false");
+    cmd.envs(FORCED_SETTINGS.iter().copied());
     cmd.stdin(Stdio::null());
     if let Some(dir) = bin.parent() {
         cmd.current_dir(dir);
@@ -896,6 +917,22 @@ fn endpoint_socket_addr(endpoint: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn forced_settings_override_tosu_env_and_keep_the_rest() {
+        let before = "DEBUG_LOG=false\nENABLE_AUTOUPDATE=true\nOPEN_DASHBOARD_ON_STARTUP=true\nSERVER_PORT=24050\n";
+        let after = with_forced_settings(before);
+        assert_eq!(
+            after,
+            "DEBUG_LOG=false\nENABLE_AUTOUPDATE=false\nOPEN_DASHBOARD_ON_STARTUP=false\nSERVER_PORT=24050\n"
+        );
+        assert_eq!(with_forced_settings(&after), after);
+        assert_eq!(
+            with_forced_settings(""),
+            "ENABLE_AUTOUPDATE=false\nOPEN_DASHBOARD_ON_STARTUP=false\n"
+        );
+    }
+
     use super::*;
 
     #[test]
