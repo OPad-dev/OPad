@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-rc.2](https://github.com/OPad-dev/OPad/compare/v1.0.0-rc.1...v1.0.0-rc.2) (2026-11-21)
+
+
+### Bug Fixes
+
+* **tosu:** the bundled tosu never updates itself; OPad's feed updates it ([076fe14](https://github.com/OPad-dev/OPad/commit/076fe143532bed2e4ac80aabc38b7aa7b9a89092))
+
 ## [1.0.0-rc.1](https://github.com/OPad-dev/OPad/compare/v1.0.0-rc...v1.0.0-rc.1) (2026-11-21)
 
 
