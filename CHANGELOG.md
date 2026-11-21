@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-rc.3](https://github.com/OPad-dev/OPad/compare/v1.0.0-rc.2...v1.0.0-rc.3) (2026-11-21)
+
+
+### Continuous Integration
+
+* **release:** the package test's tosu.env lines no longer break its quoting ([1db55d4](https://github.com/OPad-dev/OPad/commit/1db55d49d9107512fba301db1776327a2853c617))
+
 ## [1.0.0-rc.2](https://github.com/OPad-dev/OPad/compare/v1.0.0-rc.1...v1.0.0-rc.2) (2026-11-21)
 
 
