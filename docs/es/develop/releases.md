@@ -1,6 +1,8 @@
 ---
 title: Automatización de lanzamientos y feeds de actualización
 description: Ingeniería de lanzamientos de OPad mediante release-please, flujos de artefactos multiplataforma, feeds de actualización firmados en GitHub Pages y barreras de seguridad de opad-update.
+sidebar:
+  order: 7
 ---
 
 Como la aplicación de escritorio, el firmware y el `tosu` incluido se actualizan de forma independiente ([/AGENTS.md](/AGENTS.md) §1.3), OPad ejecuta tuberías de lanzamiento desacopladas que alimentan un manifiesto de actualización firmado criptográficamente.
