@@ -1,152 +1,138 @@
 ---
-title: Referencia de Distribución de Pines (Pinout)
-description: Distribución de pines de cabecera, asignaciones GPIO, mapeos de periféricos y conexiones FFC del carrier para OPad.
+title: Referencia de pinout de hardware
+description: Pinout de cabezales, asignaciones GPIO, mapas de periféricos y conexiones FFC del carrier V3 para OPad.
 ---
 
-Esta página documenta la distribución completa de pines de hardware para la placa Waveshare ESP32-S3-Touch-LCD-2, el cableado de interruptores mecánicos independientes y las interconexiones de la placa carrier V3.
-<!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h, /README.md -->
+Esta página documenta el pinout de hardware de la placa Waveshare ESP32-S3-Touch-LCD-2, el cableado autónomo de interruptores mecánicos y las interconexiones FFC del carrier y los módulos OPad V3.
+<!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h, /hardware/pcb/V3/README.md -->
 
 ---
 
-## Waveshare ESP32-S3-Touch-LCD-2 Headers
+## Cabezales de Waveshare ESP32-S3-Touch-LCD-2
 
-La placa de desarrollo expone dos cabeceras de 14 pines con espaciado de 2.54 mm: Cabecera P1 (posterior) y Cabecera P2 (frontal).
-<!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h, /README.md -->
+La Waveshare ESP32-S3-Touch-LCD-2 expone dos cabezales de 14 pines: cabezal P1 y cabezal P2.
+<!-- src: /AGENTS.md, /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
 
-| Pin | Red Cabecera P1 | Función Cabecera P1 | Red Cabecera P2 | Función Cabecera P2 |
+| Pin | Red cabezal P1 | Función cabezal P1 | Red cabezal P2 | Función cabezal P2 |
 |---|---|---|---|---|
-| 1 | `GPIO 2` | GPIO Libre / FFC Carrier SCLK | `3V3` | Línea de Alimentación 3.3 V |
-| 2 | `GPIO 4` | GPIO Libre / FFC Carrier MOSI | `GND` | Referencia de Tierra |
-| 3 | `GPIO 6` | GPIO Libre / FFC Carrier MISO | `GPIO 43` | UART0 TX (Consola) — Reservado |
-| 4 | `GPIO 16` | GPIO Libre | `GPIO 44` | UART0 RX (Consola) — Reservado |
-| 5 | `GPIO 17` | Pull-down 10k en placa (CAM_PWDN) — Reservado | `GPIO 47` | I2C SCL Táctil e IMU — Reservado |
-| 6 | `GPIO 18` | GPIO Libre | `GPIO 48` | I2C SDA Táctil e IMU — Reservado |
-| 7 | `GPIO 21` | GPIO Libre | `GPIO 15` | GPIO Libre |
-| 8 | `GPIO 8` | ADC1_CH7 ID de Módulo / GPIO Libre | `GPIO 13` | GPIO Libre |
-| 9 | `GPIO 7` | ID de Módulo Alt (FFC invertido) / GPIO Libre | `GPIO 11` | GPIO Libre |
-| 10 | `GPIO 10` | FFC Carrier CS / GPIO Libre | `GPIO 12` | GPIO Libre |
-| 11 | `GPIO 20` | USB D+ (PHY USB-C) — Reservado | `GPIO 14` | **Key 1 por Defecto** (`Z`) |
-| 12 | `GPIO 19` | USB D- (PHY USB-C) — Reservado | `GPIO 9` | **Key 2 por Defecto** (`X`) |
-| 13 | `GND` | Referencia de Tierra | `GND` | Referencia de Tierra |
-| 14 | `5V` | Entrada USB VBUS sin regular (5 V) | `VBAT` | Entrada de Batería |
-<!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h, /README.md -->
+| 1 | `GPIO 2` | GPIO libre / FFC carrier V3 `SCLK` | `3V3` | Raíl de alimentación 3.3 V |
+| 2 | `GPIO 4` | GPIO libre / FFC carrier V3 `MOSI` | `GND` | Referencia de masa |
+| 3 | `GPIO 6` | GPIO libre / FFC carrier V3 `MISO` / MX V3 Key 3 | `GPIO 43` | UART0 TX (Consola) — Reservado |
+| 4 | `GPIO 16` | GPIO libre | `GPIO 44` | UART0 RX (Consola) — Reservado |
+| 5 | `GPIO 17` | Pull-down integrado 10 kΩ (`CAM_PWDN`) — Reservado | `GPIO 47` | I2C táctil e IMU `SCL` — Reservado |
+| 6 | `GPIO 18` | GPIO libre | `GPIO 48` | I2C táctil e IMU `SDA` — Reservado |
+| 7 | `GPIO 21` | GPIO libre | `GPIO 15` | GPIO libre |
+| 8 | `GPIO 8` | ID de módulo `ADC1_CH7` (divisor 10 kΩ) — Reservado en firmware | `GPIO 13` | GPIO libre |
+| 9 | `GPIO 7` | MX V3 Key 2 / ID de módulo FFC invertido `ADC1_CH6` / GPIO libre | `GPIO 11` | GPIO libre |
+| 10 | `GPIO 10` | MX V3 Key 1 / FFC carrier V3 `CS` / GPIO libre | `GPIO 12` | GPIO libre |
+| 11 | `GPIO 20` | USB `D+` — Reservado | `GPIO 14` | **Key 1 por defecto** (`Z`) |
+| 12 | `GPIO 19` | USB `D-` — Reservado | `GPIO 9` | **Key 2 por defecto** (`X`) |
+| 13 | `GND` | Referencia de masa | `GND` | Referencia de masa |
+| 14 | `5V` | USB VBUS directo (5 V) | `VBAT` | Entrada de batería |
+<!-- src: /AGENTS.md, /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
 
 ---
 
-## Standalone Switch Wiring (Header P2)
+## Cableado de interruptores autónomos (cabezal P2)
 
-Los interruptores mecánicos convencionales (MX) no tienen polaridad. Al cablear interruptores directamente sin un módulo carrier, conecta cada interruptor entre su pin GPIO designado y tierra:
+Los interruptores mecánicos estándar (MX) no tienen polaridad. Conecta cada interruptor entre su pin GPIO y `GND`:
 <!-- src: /README.md -->
 
-| Tecla | Pin de Cabecera | GPIO | Código de Tecla por Defecto | Instrucciones de Conexión |
+| Tecla | Pin del cabezal | GPIO | Uso HID por defecto | Conexión |
 |---|---|---|---|---|
-| **Key 1** | Cabecera P2, Pin 11 | `GPIO 14` | `0x1D` ('Z') | Pin A del interruptor -> Cabecera P2 Pin 11, Pin B -> GND (P2 Pin 13) |
-| **Key 2** | Cabecera P2, Pin 12 | `GPIO 9` | `0x1B` ('X') | Pin A del interruptor -> Cabecera P2 Pin 12, Pin B -> GND (P2 Pin 13) |
-| **Tierra** | Cabecera P2, Pin 13 | `GND` | — | Referencia de tierra para ambos interruptores |
-<!-- src: /README.md, /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
-
-Los pines 11, 12 y 13 en la Cabecera P2 se ubican contiguos en el borde de la placa, permitiendo conexiones directas con cables Dupont de 3 pines o en placa de prototipos.
-<!-- src: /README.md -->
+| **Key 1** | Cabezal P2, Pin 11 | `GPIO 14` | `0x1D` (`Z`) | Pin A interruptor -> P2 Pin 11, Pin B interruptor -> `GND` (P2 Pin 13) |
+| **Key 2** | Cabezal P2, Pin 12 | `GPIO 9` | `0x1B` (`X`) | Pin A interruptor -> P2 Pin 12, Pin B interruptor -> `GND` (P2 Pin 13 o Pin 2) |
+| **Masa** | Cabezal P2, Pin 13 / Pin 2 | `GND` | — | Referencia de masa |
+<!-- src: /README.md, /firmware/main/input/keypad.c -->
 
 ---
 
-## Valid Switch GPIO Pins
+## Pines GPIO válidos para interruptores
 
-Las teclas pueden reconfigurarse a cualquier pin de cabecera compatible en la aplicación de escritorio (**Ajustes → Teclas**) o mediante `opadctl`. Solo se ofrecen pines compatibles con entrada mediante pull-up interno a 3.3V e interruptor a masa:
-<!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED, /README.md -->
+Para montajes cableados a mano, las teclas pueden reasignarse en `opad-gui` (**Settings** -> **⌨ Keypad**) a cualquiera de los 14 GPIOs aceptados por `KEY_GPIO_ALLOWED` en el firmware:
+<!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED, /desktop/gui/src/pages.rs#settings -->
 
-| Cabecera | Pines y GPIOs Soportados |
+| Cabezal | Pines y GPIOs admitidos |
 |---|---|
-| **P1** | Pin 1 (`GPIO 2`), Pin 2 (`GPIO 4`), Pin 3 (`GPIO 6`), Pin 4 (`GPIO 16`), Pin 6 (`GPIO 18`), Pin 7 (`GPIO 21`), Pin 8 (`GPIO 8`), Pin 9 (`GPIO 7`), Pin 10 (`GPIO 10`) |
+| **P1** | Pin 1 (`GPIO 2`), Pin 2 (`GPIO 4`), Pin 3 (`GPIO 6`), Pin 4 (`GPIO 16`), Pin 6 (`GPIO 18`), Pin 7 (`GPIO 21`), Pin 9 (`GPIO 7`), Pin 10 (`GPIO 10`) |
 | **P2** | Pin 7 (`GPIO 15`), Pin 8 (`GPIO 13`), Pin 9 (`GPIO 11`), Pin 10 (`GPIO 12`), Pin 11 (`GPIO 14`), Pin 12 (`GPIO 9`) |
-<!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED, /README.md -->
+<!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED -->
 
-### Reserved Pins
+### Pines reservados
 
-El firmware rechaza los intentos de configuración en los siguientes pines:
-- **USB D- / D+**: `GPIO 19` y `GPIO 20` (PHY nativo USB OTG).
-  <!-- src: /firmware/main/config/config_validate.c -->
-- **Consola UART0**: `GPIO 43` y `GPIO 44` (Flasheo, mensajes de bootloader, registro por serie).
-  <!-- src: /firmware/main/config/config_validate.c -->
-- **Bus I2C Táctil e IMU**: `GPIO 47` (SCL) y `GPIO 48` (SDA).
-  <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
-- **Interrupción Táctil**: `GPIO 46` (Interrupción táctil por flanco bajo activo del CST816).
-  <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
-- **SPI y PWM de Pantalla**: `GPIO 38` (MOSI), `GPIO 39` (SCLK), `GPIO 42` (DC), `GPIO 45` (CS) y `GPIO 1` (PWM de retroiluminación).
-  <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
-- **Pull-down en Placa**: `GPIO 17` cuenta con un pull-down integrado de 10 kΩ a masa para el apagado de la cámara (`CAM_PWDN`).
-  <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED -->
-- **ADC de ID de Módulo**: `GPIO 8` está conectado al divisor de resistencias para la identificación del módulo carrier.
-  <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
+La validación del firmware (`device_config_validate`) rechaza estos pines:
+- **USB `D-` / `D+`**: `GPIO 19` y `GPIO 20`. <!-- src: /firmware/main/config/config_validate.c -->
+- **Consola UART0**: `GPIO 43` y `GPIO 44`. <!-- src: /firmware/main/config/config_validate.c -->
+- **Bus I2C táctil e IMU**: `GPIO 47` (`SCL`) y `GPIO 48` (`SDA`). <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
+- **Interrupción táctil**: `GPIO 46` (interrupción activa-baja del CST816S). <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
+- **SPI de pantalla y retroiluminación**: `GPIO 38` (`MOSI`), `GPIO 39` (`SCLK`), `GPIO 42` (`DC`), `GPIO 45` (`CS`), `GPIO 1` (retroiluminación LEDC PWM). <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
+- **Pull-down de placa**: `GPIO 17` (`CAM_PWDN`, pull-down integrado de 10 kΩ a `GND`). <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED -->
+- **ADC de ID de módulo**: `GPIO 8` (conectado al divisor de ID de módulo en montajes con carrier; ten en cuenta que `opad-gui` actualmente lista `GPIO8 (P1 pin 8)` en su desplegable, pero el firmware lo rechaza). <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED -->
 
 ---
 
-## On-Board Peripherals
-
-Estos pines se conectan a componentes soldados en la placa con pantalla de Waveshare:
-<!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
+## Periféricos integrados en placa
 
 | Periférico | Señal | GPIO | Notas |
 |---|---|---|---|
-| **LCD ST7789 2.0"** | SCLK | `GPIO 39` | Host SPI2, reloj a 80 MHz |
-| | MOSI | `GPIO 38` | Datos SPI |
-| | DC | `GPIO 42` | Selección de datos / comandos |
-| | CS | `GPIO 45` | Chip select |
-| | Retroiluminación | `GPIO 1` | Control de retroiluminación por PWM LEDC |
-| **Táctil CST816** | SDA | `GPIO 48` | I2C0 (dirección 0x15), 100 kHz |
-| | SCL | `GPIO 47` | Reloj I2C0 |
-| | INT | `GPIO 46` | Interrupción activa en bajo |
+| **ST7789 2.0" LCD** | `SCLK` | `GPIO 39` | `SPI2_HOST`, 80 MHz (`BOARD_LCD_PIXEL_CLOCK_HZ`) |
+| | `MOSI` | `GPIO 38` | Datos SPI |
+| | `DC` | `GPIO 42` | Selección Dato / Comando |
+| | `CS` | `GPIO 45` | Selección de chip |
+| | `BL` | `GPIO 1` | Retroiluminación LEDC PWM |
+| **Táctil CST816S** | `SDA` | `GPIO 48` | I2C0 (dirección `0x15`) |
+| | `SCL` | `GPIO 47` | Reloj I2C0 |
+| | `INT` | `GPIO 46` | Interrupción por flanco activa-baja |
 <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h, /firmware/main/input/touch_retry.c -->
 
 ---
 
-## V3 Carrier & Module Interconnects
+## Interconexiones del carrier y módulos V3
 
-La arquitectura de hardware V3 desacopla el teclado en una Placa Carrier, una placa secundaria USB dedicada y Módulos de Interruptores intercambiables (MX o Hall Effect) conectados mediante cables planos flexibles (FFC).
-<!-- src: /hardware/pcb/V3/Carrier/carrier_v3.kicad_sch, /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
+El hardware V3 divide el teclado en un Controller Carrier, una placa auxiliar USB-C trasera y módulos de entrada intercambiables de 3 teclas MX o Hall Effect conectados mediante cables FFC de 1.0 mm.
+<!-- src: /hardware/pcb/V3/README.md, /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
 
-### 14-Way Module FFC (J_MOD)
+### FFC de módulo de 14 vías (Tipo B, paso 1.0 mm)
 
-El carrier se conecta a los módulos de interruptores mediante un cable FFC horizontal de 14 conductores y paso de 1.0 mm:
-<!-- src: /hardware/pcb/V3/Carrier/carrier_v3.kicad_sch -->
-
-| Contacto | Red Carrier | Función Módulo MX | Función Hall Effect V3 (SPI ADS7028) |
+| Contacto | Pin del carrier | MX Input Module V3 | HE Input Module V3 (ADS7028 SPI3) |
 |---|---|---|---|
-| 1 | `GND` | Tierra | Tierra |
-| 2 | `5V_MOD` | Línea de Alimentación 5 V (Filtrada vía FB1) | Línea de Alimentación 5 V (Filtrada vía FB1) |
-| 3 | `3V3` | Línea de Alimentación 3.3 V | Línea de Alimentación 3.3 V |
-| 4 | `GPIO 8` | Voltaje de ID de Módulo (0.30 V) | Voltaje de ID de Módulo (1.65 V) |
-| 5 | `M_MISO` (`GPIO 6`) | Interruptor Key 3 | SPI MISO |
-| 6 | `GND` | Tierra | Tierra |
-| 7 | `M_SCLK` (`GPIO 2`) | Sin usar | SPI SCLK |
-| 8 | `M_MOSI` (`GPIO 4`) | Sin usar | SPI MOSI |
-| 9 | `GND` | Tierra | Tierra |
-| 10 | `M_CS` (`GPIO 10`) | Interruptor Key 1 | SPI CS |
-| 11 | `GPIO 7` | Interruptor Key 2 | Reserva / ID de Módulo Alt |
-| 12 | `3V3` | Línea de Alimentación 3.3 V | Línea de Alimentación 3.3 V |
-| 13 | `5V_MOD` | Línea de Alimentación 5 V | Línea de Alimentación 5 V |
-| 14 | `GND` | Tierra | Tierra |
-<!-- src: /hardware/pcb/V3/Carrier/carrier_v3.kicad_sch, /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
+| 1 | `GND` | `GND` | `GND` |
+| 2 | `5V` | Sin uso | `5V` (alimenta LDO LP5907 de 3.3 V) |
+| 3 | `3V3` | `3V3` | `3V3` |
+| 4 | `GPIO 8` | `ID` (47 kΩ / 100 kΩ = **2.24 V**) | `ID` (100 kΩ / 100 kΩ = **1.65 V**) |
+| 5 | `GPIO 6` | `KEY3` | `MISO` |
+| 6 | `GND` | `GND` | `GND` |
+| 7 | `GPIO 2` | Sin uso | `SCLK` |
+| 8 | `GPIO 4` | Sin uso | `MOSI` |
+| 9 | `GND` | `GND` | `GND` |
+| 10 | `GPIO 10` | `KEY1` | `CS` |
+| 11 | `GPIO 7` | `KEY2` | Sin uso (o `ID` con cable invertido) |
+| 12 | `3V3` | `3V3` | `3V3` |
+| 13 | `5V` | Sin uso | `5V` |
+| 14 | `GND` | `GND` | `GND` |
+<!-- src: /hardware/pcb/V3/README.md, /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h, /firmware/main/input/module_id.h -->
 
-#### Reversible Cable Mapping
+Clases de tensión de ID de módulo (`module_id.h`):
+- **MX V1**: `0.30 V` (`100 kΩ / 10 kΩ`, umbral `< 680 mV`)
+- **HE V1**: `1.06 V` (`100 kΩ / 47 kΩ`, umbral `< 1350 mV`)
+- **HE V3**: `1.65 V` (`100 kΩ / 100 kΩ`, umbral `< 1950 mV`)
+- **MX V3**: `2.24 V` (`47 kΩ / 100 kΩ`, umbral `< 2600 mV`)
+<!-- src: /firmware/main/input/module_id.h, /firmware/main/input/module_id.c#module_id_classify -->
 
-La distribución del conector FFC de 14 vías es simétrica. Si el cable se inserta invertido, el contacto $k$ se conecta al contacto $15 - k$:
-- En un cable invertido, el ID del módulo llega por `GPIO 7` en lugar de `GPIO 8`.
-- El firmware detecta esta condición a través de `module_id.c`, establece `cable_reversed = true` y ajusta dinámicamente los mapeos de pines SPI (`BOARD_HE3_REV_*`).
-<!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h#BOARD_MODULE_ID_ALT_GPIO -->
+#### Mapeo de FFC reversible
 
-### 8-Way USB FFC (J_USB)
+Si el FFC de 14 vías se inserta al revés, el contacto `k` conecta con el contacto `15 - k`: alimentación y masa siguen alineadas, y el ID del módulo llega a `GPIO 7` (`ADC1_CH6`) en lugar de `GPIO 8` (`ADC1_CH7`). Para **HE V3**, el firmware remapea automáticamente los pines SPI3 (`BOARD_HE3_REV_*`: `MISO = GPIO 10`, `SCLK = GPIO 4`, `MOSI = GPIO 2`, `CS = GPIO 6`). Un módulo **MX V3** con el cable invertido no se lee.
+<!-- src: /hardware/pcb/V3/README.md, /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h#BOARD_MODULE_ID_ALT_GPIO -->
 
-La placa secundaria trasera USB-C se conecta a la placa carrier mediante un cable FFC de 8 vías con paso de 1.0 mm:
-<!-- src: /hardware/pcb/V3/Carrier/carrier_v3.kicad_sch -->
+### FFC USB de 8 vías (Tipo A, paso 1.0 mm)
 
 | Contactos | Red | Función | Destino |
 |---|---|---|---|
-| 1, 8 | `GND` | Referencia de Tierra | Plano de tierra del carrier |
-| 2, 7 | `5V` | USB 5 V VBUS | Cabecera P1 Pin 14 |
-| 3, 6 | `USB_DN` | Datos Negativos USB Full-Speed | Cabecera P1 Pin 12 (`GPIO 19`) |
-| 4, 5 | `USB_DP` | Datos Positivos USB Full-Speed | Cabecera P1 Pin 11 (`GPIO 20`) |
-<!-- src: /hardware/pcb/V3/Carrier/carrier_v3.kicad_sch -->
+| 1, 8 | `GND` | Referencia de masa | Masa del carrier |
+| 2, 7 | `5V` | USB 5 V VBUS (1 A combinado) | Cabezal P1 Pin 14 |
+| 3, 6 | `D-` | Datos USB Full-Speed negativo | Cabezal P1 Pin 12 (`GPIO 19`) |
+| 4, 5 | `D+` | Datos USB Full-Speed positivo | Cabezal P1 Pin 11 (`GPIO 20`) |
+<!-- src: /hardware/pcb/V3/README.md -->
 
-Dado que los contactos se reflejan simétricamente alrededor del centro (1 y 8, 2 y 7, 3 y 6, 4 y 5), el cable funciona idénticamente en cualquier orientación.
-<!-- src: /hardware/pcb/V3/Carrier/carrier_v3.kicad_sch -->
+El pinout del FFC USB de 8 vías es completamente simétrico en espejo, por lo que se lee igual desde cualquier extremo.
+<!-- src: /hardware/pcb/V3/README.md -->
