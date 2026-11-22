@@ -1,6 +1,8 @@
 ---
 title: What You Need
 description: Hardware prerequisites, board specifications, compatible switches, USB cables, and operating system requirements for building and using OPad.
+sidebar:
+  order: 1
 ---
 
 OPad is built around an off-the-shelf microcontroller development board paired with either hand-wired switches or custom OPad V3 modular PCBs. <!-- src: /README.md --> <!-- src: /hardware/pcb/V3/README.md -->
