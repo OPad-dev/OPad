@@ -108,12 +108,13 @@ if ((Get-LabFailures) -gt 0) { Complete-LabRun; exit 1 }
 # The files of one release that go into a VM
 function Get-VmFiles([string]$Vm, $Rel) {
     $f = $Rel.Files
-    $list = switch -Wildcard ($Vm) {
+    # @(): a one-item switch result would otherwise be a string, and += would concatenate
+    $list = @(switch -Wildcard ($Vm) {
         "ubuntu-*"  { @(Join-Path $Rel.Dir $f.deb) }
         "fedora-*"  { @(Join-Path $Rel.Dir $f.rpm) }
         "arch"      { @((Join-Path $Rel.Dir $f.aur), (Join-Path $Rel.Dir "opad-bin.install")) }
         "windows-*" { @(Join-Path $Rel.Dir $f.win) }
-    }
+    })
     $sums = Join-Path $Rel.Dir "FILES.sha256"
     if (Test-Path $sums) { $list += $sums }
     return $list
