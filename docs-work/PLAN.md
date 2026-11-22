@@ -161,3 +161,15 @@ Completed claim-by-claim verification of all **52 English pages** (51 user/refer
 - **Root `README.md` sync (outside `docs/` scope)**: Note F6 (`README.md` Windows uninstall prompt claim) was left untouched per Layer 2 scope rules and should be updated separately in a code/root-README commit.
 - **Spanish `docs/es/testing-checklist.md` heading language**: Keeps several original English section titles (e.g., `## 1. Physical Key Performance & Latency Invariants`) from Layer 1 alongside Spanish table content; Layer 3 can localize those headings consistently while keeping the exact heading count.
 
+## Layer 3 Progress
+
+| Section | Status | Notes |
+|---|---|---|
+| §0 Context & baseline | done | Branch `docs-wiki` verified rebased on `main` (`65960a1`), `check_docs.py` 0 errors |
+| §0.1 Post-Layer-2 code drift (`86f7bf0..65960a1`) | done | Updated `reference/opadctl.md`, `develop/desktop/opadctl.md`, `develop/firmware/{ui,overview,diag}.md`, `explanation/architecture.md`, `develop/{packaging,lab,releases}.md` (EN + ES). Confirmed silent app/auto-firmware update policy is not in code on this branch. |
+| §0.2 Layer 2 handoff items | todo | F3/F7 confirmation, `docs/guides/customize-screen-layout.md` (EN + ES), `docs/es/testing-checklist.md` headings |
+| §1 Critical pages end-to-end audit | todo | Recovery/updates, protocol/versions, touch & HE calibration, latency, code-cited § numbers |
+| §2 Whole set audit | todo | Structure, old deleted pages, consistency, Spanish quality, `docs/README.md`, external `docs/` links |
+| §3 Owner decisions | todo | Collect non-delegable items with recommendations |
+| §4 Finalize & report | todo | `check_docs.py`, `make check`, remove `docs-work/`, final Spanish report |
+
