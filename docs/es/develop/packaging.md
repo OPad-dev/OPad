@@ -1,6 +1,8 @@
 ---
 title: Mecánica de empaquetado y distribución
 description: Guía técnica para empaquetar OPad en Linux (.deb, .rpm, AppImage, Arch PKGBUILD) y Windows (Inno Setup), marcadores install-origin y scripts de compilación.
+sidebar:
+  order: 6
 ---
 
 Los paquetes de OPad distribuyen `opad-daemon`, `opad-gui` y `opadctl` junto con `tosu` (**v4.26.2**) y `espflash` (**4.6.0**) fijados.
