@@ -1,6 +1,8 @@
 ---
 title: App and Pad Versions Interoperability
 description: Protocol negotiation, backward and forward compatibility rules, framing auto-detection, and version mismatch handling between desktop software and pad firmware.
+sidebar:
+  order: 4
 ---
 
 OPad's desktop suite and pad firmware update independently (AGENTS.md §1.3). Users are never required to update both together. Wire framing, capability flags, and protobuf fields are designed to interoperate in both directions: a new desktop app works with older firmware, and new firmware works with older desktop builds. <!-- src: /desktop/crates/opad-protocol/src/lib.rs#DEVICE_PROTOCOL_VERSION -->
