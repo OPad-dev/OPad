@@ -29,6 +29,9 @@ optdepends=(
 )
 provides=('opad')
 conflicts=('opad' 'opad-git')
+# The binaries go in exactly as the release built them (FILES.sha256): no
+# strip, no split debug package
+options=('!strip' '!debug')
 install=opad-bin.install
 source=("opad_${_pkgver}_amd64.deb::${url}/releases/download/v${_pkgver}/opad_${_pkgver}_amd64.deb"
         "opad-bin.install")
