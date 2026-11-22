@@ -1,6 +1,8 @@
 ---
 title: Modelo de contadores y propiedad
 description: Cómo registra OPad contadores monotónicos de pulsaciones de 64 bits, vincula teclados a instalaciones de escritorio, resuelve conflictos de propiedad y preserva pulsaciones durante la sincronización.
+sidebar:
+  order: 5
 ---
 
 OPad registra conteos de pulsaciones de por vida tanto en el teclado (en flash NVS) como en el PC anfitrión (en SQLite `opad.db`). Para mantener los conteos precisos entre desconexiones, varios PCs y reemplazos de hardware, OPad combina contadores monotónicos de 64 bits, números de generación y un modelo explícito de propiedad por instalación.
