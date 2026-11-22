@@ -116,6 +116,12 @@ check)
   fi
   ;;
 remove)
+  # tosu's directories go only where OPad created them (its marker); one
+  # made by a release before the marker existed is kept, like a user's own
+  marked=""
+  for d in ~/.config/tosu ~/.local/share/tosu ~/.cache/tosu; do
+    [ -f "$d/.created-by-opad" ] && marked="$marked $d"
+  done
   case $KIND in
     deb) sudo apt-get -o DPkg::Lock::Timeout=600 remove -y opad >remove.log 2>&1 ;;
     rpm) sudo dnf remove -y opad >remove.log 2>&1 ;;
@@ -131,7 +137,10 @@ remove)
     [ -e "$f" ] && fail "left behind: $f"
   done
   for d in ~/.config/tosu ~/.local/share/tosu ~/.cache/tosu; do
-    [ -e "$d" ] && fail "left behind: $d (tosu's, created for OPad)"
+    case " $marked " in
+      *" $d "*) [ -e "$d" ] && fail "left behind: $d (tosu's, created by OPad)" ;;
+      *) [ -e "$d" ] && echo "info: kept $d: not marked as OPad's (a tosu of the user's, or made by a release before rc.4)" ;;
+    esac
   done
   for n in opad-gui opad-daemon; do
     pgrep -x $n >/dev/null && fail "$n still running after removal"

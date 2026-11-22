@@ -119,7 +119,7 @@ function Fail([string]$what, [string]$Detail = "") {
 function Skip([string]$what, [string]$Detail = "") { Write-Host "skip: $what"; Add-LabCheck skip $what $Detail }
 function Get-LabFailures { return $script:LabRun.summary.fail }
 
-# Turns a VM script's output ("ok:   ...", "FAIL: ...", other lines) into
+# Turns a VM script's output ("ok:   ...", "FAIL: ...", "info: ...", other lines) into
 # checks; the other lines after a FAIL become its detail. With -Previous
 # (the release upgraded from) a failure is recorded as "skip": a problem of
 # a release already out must not fail the one under test
@@ -136,6 +136,7 @@ function Add-LabOutput([string]$Text, [string]$Prefix = "", [switch]$Previous) {
     foreach ($line in ($Text -split "`r?`n")) {
         if ($line -match '^\s*ok:\s+(.*)$') { & $flush; $pending = @{ status = "pass"; name = $Matches[1].Trim(); detail = @() } }
         elseif ($line -match '^\s*FAIL:\s+(.*)$') { & $flush; $pending = @{ status = "fail"; name = $Matches[1].Trim(); detail = @() } }
+        elseif ($line -match '^\s*info:\s+(.*)$') { & $flush; $pending = @{ status = "info"; name = $Matches[1].Trim(); detail = @() } }
         elseif ($line.Trim() -and $pending -and $pending.status -eq "fail") { $pending.detail += $line }
     }
     & $flush
