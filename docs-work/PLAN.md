@@ -14,10 +14,10 @@ Status values:
 | # | Item | Status | Notes |
 |---|---|---|---|
 | 1 | Rewrite and verify `docs/recovery.md` and `docs/troubleshooting.md` against the code with `src` comments | done | Both `recovery.md` and `troubleshooting.md` rewritten and verified against code |
-| 2 | Verify every claim on every page (ignore absence of `TODO(verify)`) | in progress | Checking page by page |
+| 2 | Verify every claim on every page (ignore absence of `TODO(verify)`) | done | All 52 English pages checked claim-by-claim against code; all 51 Spanish mirrors synced and verified |
 | 3 | Remove `category`, `source_files`, and `type` frontmatter fields from every page (EN & ES) | done | Removed from 92 files; only `title`, `description`, `sidebar`, `draft` remain |
-| 4 | Fix known errors in `docs/guides/update-firmware.md` and check all pages for similar errors | done | Fixed GUI labels, rollback rules, `esp_restart()`, 30 s outage constant, removed marketing language; checking all other pages |
-| 5 | Copy GUI labels, button texts, and menu paths verbatim from `desktop/gui/src/` | in progress | Enforced on every page |
+| 4 | Fix known errors in `docs/guides/update-firmware.md` and check all pages for similar errors | done | Fixed GUI labels, rollback rules, `esp_restart()`, 30 s outage constant, removed marketing language; verified all pages |
+| 5 | Copy GUI labels, button texts, and menu paths verbatim from `desktop/gui/src/` | done | Enforced verbatim across all English pages and Spanish mirrors |
 
 ## Target Documentation Tree
 
@@ -98,3 +98,66 @@ Status values:
 | `docs/windows-portability.md` | `docs/start/install-the-app.md`, `docs/reference/files-and-paths.md`, `docs/develop/desktop/overview.md` | folded |
 | `docs/latency-testing.md` | `docs/develop/latency-testing.md`, `docs/explanation/latency.md` | folded |
 | `docs/roadmap.md` | Retired / folded into changelog and design records (see F1 in FINDINGS) | folded |
+
+## Layer 2 report
+
+Completed claim-by-claim verification of all **52 English pages** (51 user/reference/explanation/developer pages + `docs/README.md`) against the repository codebase and synchronized/verified all **51 Spanish mirrors** under `docs/es/` (including creating the missing `docs/es/index.md`). `python3 docs-work/check_docs.py` exits with **0 errors**, **0 open markers**, **0 missing Spanish mirrors**, and **0 EN/ES heading-count mismatches** (only 31 informational `mentions BOOT/RESET` warnings remain, all stating never to press them).
+
+### 1. Summary of Corrections Made per Page
+
+- **Frontmatter cleanup (all 92 EN & ES files)**: Removed disallowed `category`, `source_files`, and `type` frontmatter keys; only `title`, `description`, `sidebar`, and `draft` remain.
+- **`docs/index.md` & `docs/es/index.md`**: Created missing root overview pages in both English and Spanish.
+- **`docs/recovery.md`**: Rewrote against code with `src` comments while keeping §§1–7 structure; fixed 2 boot triggers (`BOOTLOADER\n` + 1200-baud touch, not 3), `ResolveReplacement` (not `InheritDeviceCounters`), replacement criteria (`gen <= 1 && k1 < 1000 && k2 < 1000 && pc_is_ahead`), exact replacement banner and buttons, Key 3 handling, `esp_restart()` rollback, and `opadctl recover` ROM-window behavior.
+- **`docs/troubleshooting.md`**: Added `src` comments; fixed Windows install/exclusion path (`%LOCALAPPDATA%\Programs\opad\tosu\tosu.exe`), Linux `ptrace_scope` / `setcap` rules for `.deb`/`.rpm` vs AppImage and Arch (`node`), Key 3 scancode (`0x06`), and exact GUI paths.
+- **`docs/start/what-you-need.md`**: Fixed Waveshare ESP32-S3 specs (**16 MB Flash, 8 MB Octal PSRAM**), V3 PCB names/cables (14-way type B FFC, 8-way type A FFC, ADS7028, LP5907), and glibc 2.28+ release targets.
+- **`docs/start/first-connection.md`**: Fixed USB strings (`GFerreiroS`, `OPad ESP32-S3`, `OPAD-XXXXXXXXXXXX`, Windows `OPad (COMx)` via MS OS 2.0), dual 1000 Hz HID interfaces, Key 3 (`0x06`/`c`), and uncalibrated Hall Effect lock note.
+- **`docs/start/install-the-app.md`**: Fixed Windows per-user install (`PrivilegesRequired=lowest`, `%LOCALAPPDATA%\Programs\opad`), Arch `PKGBUILD` (`TOSU_STANDALONE=0` / system `node`), AppImage `install-udev`/`daemon`/`ctl` modes, and IPC paths.
+- **`docs/start/wiring-the-keys.md`**: Verified Header P2 defaults (`GPIO 14` / `GPIO 9`), V3 carrier fixed routing (MX V3 `GPIO 10`/`7`/`6`, `ID = GPIO 8`; HE V3 SPI3 + auto-reversal), and `opadctl board-test [--fix-pins] [--magnet]`.
+- **`docs/guides/update-firmware.md`**: Fixed verbatim GUI labels (**Settings** -> **🔄 Updates & Firmware**, **Update firmware**, **Confirm & Flash Pad**, **✓ Firmware Update Complete**), 30 s outage constant (`TYPICAL_OUTAGE_SECONDS`), minisign + SHA-256 + `0xE9`/`0x0009` header checks, `opadctl firmware-update`, `ota_0` blocker note (F3), `esp_restart()` rollback and charger exception; removed marketing wording.
+- **`docs/guides/change-key-pins.md`**: Removed non-existent `opadctl config set` / `opadctl detect-pin`; documented GUI **Settings** -> **⌨ Keypad** + **Auto-Detect** (`DETECT_CONFIRM_US = 15000`), exact 14 `KEY_GPIO_ALLOWED` pins, reserved `GPIO 8` (F7), and `opadctl board-test --fix-pins`.
+- **`docs/guides/touchscreen-and-swipes.md`**: Fixed `GESTURE_SWIPE_PX = 30`, `PLAY_SWIPE_WINDOW_US = 250 ms`, `PLAY_RETRY_STILL_US = 60 ms`, exact GUI dropdown labels (`↑ SWIPE UP`, etc.), OS-specific free keys (`F14–F19` Linux, `F13–F23` Windows), and removed non-existent CLI swipe config commands.
+- **`docs/guides/calibrate-hall-effect.md`**: Rewrote against `he_cal_ui.c`, `he_cal_runner.c`, and `keys.rs`: 5 full presses per key (no 1 s hold or buzzer), 5 s wait + **Calibrate here** standalone flow, exact GUI **Keys** labels (`Set keys separately`, `Advanced`/`Hide advanced`, `BOTTOM DEAD ZONE` default `0`, `Allow below the noise floor`, `Revert`, `Save to pad`), and exact error strings.
+- **`docs/guides/use-with-tosu.md`**: Verified bundled `tosu` v4.26.2 binary search order, WebSocket v2 + `/precise`, `GAMEPLAY REFRESH RATE` (1–30 Hz), Linux `ptrace_scope` vs `.deb`/`.rpm` `setcap`, Windows `%LOCALAPPDATA%` path, and verbatim **Settings** -> **ℹ About & tosu** labels.
+- **`docs/guides/backup-and-restore.md`**: Replaced non-existent `opadctl backup export/import/preview` with real `opadctl export` / `opadctl import [--yes]`, exact GUI **Device** -> **Backup & Restore** flow, `JsonBackup` fields (`lifetime_key3`, `key3`, `game_keys`), and 20 s / `KEEP = 10` automatic backups.
+- **`docs/guides/uninstall.md`**: Fixed Windows unconditional deletion of `%APPDATA%\opad` (F6) and `%LOCALAPPDATA%\Programs\opad` removal, Linux `uninstall-cleanup.sh` paths and `.created-by-opad` marker check, and Arch `pacman -R opad`.
+- **`docs/reference/opadctl.md`**: Verified all 16 subcommands and copied `--help` outputs verbatim from `cargo run -q -p opadctl`; removed hallucinated subcommands.
+- **`docs/reference/gui.md`**: Verified all 10 pages, `--page` tokens, 5 **Settings** tabs, **Keys** controls, **Designer** (`SCALE = 2.0`, `MAX_WIDGETS = 32`), 5 **Diagnostics** tabs, and **Stats** period buckets (`7`/`30`/`90`/`All time`).
+- **`docs/reference/device-settings.md`**: Verified `"cfg"` v7, `"cfg_ext"` v1 (`key3_hid_usage`, `game_keys`), `"he_cfg"`/`"he_cfg3"` (`"HECF"`, `HE_PCT_FULL = 1000`, `bottom_dead_zone` default `0`, `allow_below_noise_floor`), 14 `KEY_GPIO_ALLOWED` pins, and `SwipeAction` wire values.
+- **`docs/reference/pinout.md`**: Fixed I2C pins (`SDA = GPIO 48`, `SCL = GPIO 47`), `KEY_GPIO_ALLOWED` vs reserved `GPIO 8` (F7), V3 14-way/8-way FFC pinouts, module ID dividers (`module_id.h`), and reversible FFC SPI3 remapping.
+- **`docs/reference/serial-protocol.md`**: Verified Legacy/Marked (`0xAA 0x55`)/Checked (`0xAA 0x5A` + CRC-16/CCITT-FALSE), negotiation sequence, complete `HostToDevice`/`DeviceToHost` oneof envelopes, and all `protocol/opad.options` static bounds.
+- **`docs/reference/ipc.md`**: Verified Unix socket resolution (`0700`/`0600`), Windows Named Pipe (`\\.\pipe\opad-ipc-<SID>`, SDDL `D:P(A;;GA;;;SY)(A;;GA;;;<USER_SID>)`), 1 MiB / 8 MiB frame limits, handshake, and complete `IpcRequest` catalog.
+- **`docs/reference/files-and-paths.md`**: Verified all XDG/Windows paths, `%LOCALAPPDATA%\Programs\opad`, `install-origin` values (`aur`, not `arch`), SQLite WAL schema v19 tables, write guard, and `install.id`.
+- **`docs/explanation/architecture.md`**: Verified Core 0 / Core 1 task pinning and priorities (`configMAX_PRIORITIES - 1` input, `MAX - 2` TinyUSB), IRAM `linker.lf`, 3 firmware runtime states (`COOLDOWN_DURATION_US = 5 s`, `GAMEPLAY_TIMEOUT_US = 3 s`), and `DeviceActor` (`QUEUE_DEPTH = 256`).
+- **`docs/explanation/latency.md`**: Fixed split HID endpoints (`EP 0x81` Key 1 + Quick Retry; Interface 3 `EP 0x84` Key 2 + media/wheel; dynamic Key 3 routing), lockless `hid_link_t` sequence counters, eager debounce (`500`–`20000` µs), V1 4 kHz vs V3 20 kHz HE pipelines, and `latency_stats.c` 500x10 µs histogram.
+- **`docs/explanation/touchscreen-third-button.md`**: Fixed CST816S `GPIO 48` SDA / `GPIO 47` SCL / `GPIO 46` INT, 3 context modes, `GESTURE_SWIPE_PX = 30`, `PLAY_RETRY_STILL_US = 60 ms`, `PLAY_SWIPE_WINDOW_US = 250 ms`, Alt+wheel F24 menu suppression, and D7 calibration lock.
+- **`docs/explanation/app-and-pad-versions.md`**: Verified framing auto-detection, `Hello`/`HelloAck` capability flags, proto3/nanopb bounds, and `IncompatibleDevice` fallback (logged F5).
+- **`docs/explanation/counters-and-ownership.md`**: Verified 64-bit counters (including Key 3), `install.id`/`owner_id`, `take_over_if_pad_is_ahead`, `reconcile_counters`, and `rebase_lifetime_presses` delta preservation.
+- **`docs/explanation/updates-and-rollback.md`**: Added `phy_init` partition, fixed `reboot_to_rom_download` order (`tud_disconnect` first, `dp_pu = 1` before override release, `esp_restart`), USB-gated rollback criteria, `origin.rs` policies, and exact restart banner.
+- **`docs/explanation/hall-effect.md`**: Documented both V1 ADC1 DMA (4 kHz, `opad_cal`) and V3 ADS7028 SPI3 40 MHz CRC (20 kHz, `SPI_DMA_DISABLED`, `opad_cal3`), 3-state `he_rt.c` machine, `HE_PCT_FULL = 1000`, noise floors, 5-press calibration, and `he_health` stall watchdog.
+- **`docs/develop/index.md`, `building.md`, `testing.md`**: Verified AGENTS.md rules, Rust 2021 / ESP-IDF v5.5.2 prerequisites, `sdkconfig` deletion rule, `make check`, and all 28 firmware host unit tests in `run_tests.sh`.
+- **`docs/develop/firmware/{overview,input,usb,touch,ui,config-and-nvs,counters,diag}.md`**: Fixed LVGL **v9.5.0** and `CONFIG_OPAD_LVGL_PSRAM=n` (draw buffers always internal DMA RAM), `EP 0x84` Key 2 routing, `GPIO 48`/`47` I2C, `nvs_ns.c` `osupad*`->`opad*` migration, `"OPCA"` A/B calibration records, `board_test.c` actual carrier/module tests (replacing incorrect I2C/ST7789 claims), and `hall_bench.c`.
+- **`docs/develop/desktop/{overview,daemon,gui,opadctl,crates}.md`**: Verified all 9 shared crates, `DeviceActor` constants, `theme.rs` (`CARD = #1B1B28`), `iced::daemon` + `single_instance.rs` + `tray.rs`, and all 16 `opadctl` subcommands.
+- **`docs/develop/protocol-changes.md`**: Verified `protox` + `prost-build` (no system `protoc`), vendored nanopb, `nanopb==0.4.9.1` CI pin, `HelloAck` tag 21, and `gen_proto.sh`.
+- **`docs/develop/hardware.md`, `packaging.md`, `releases.md`, `lab.md`, `latency-testing.md`, `testing-checklist.md`, `docs/README.md`**: Verified V1/V2/V3 hardware & `opadverify`, RPM via `cargo-generate-rpm` (no `opad.spec`), Arch `aur` marker, `release-please` 2-package config + `opad-feed`, VirtualBox `limpia` lab topology, `latency_stats.c` / Stages A–D / `latency_row.py` / `bench_latency.py`, historical `testing-checklist.md`, and `docs/README.md`.
+- **Spanish mirrors (`docs/es/` — all 51 files)**: Synced every Spanish page to its verified English source with matching heading counts/structure, identical `<!-- src: ... -->` comments and repo-root links, verbatim English commands/flags/code/GUI labels/error strings, `docs-work/GLOSSARY.md` terms, and `docs/es/`-local relative links.
+
+### 2. Remaining `VERIFY(L3)` Markers
+
+- **0 remaining** (`git grep -E "VERIFY\(L3\)|TODO\(verify\)" docs/` returns no matches). Every technical claim was resolved directly from source files.
+
+### 3. New `docs-work/FINDINGS.md` Entries Added in Layer 2
+
+- **F3**: `desktop/daemon/src/firmware_update.rs` checks `is_ota_0()` as a blocker (`NeedsFullReflash`), blocking subsequent host-driven updates after one A/B update moves a pad onto `ota_1`.
+- **F4**: Pre-rewrite `docs/recovery.md` drifted from code on boot triggers (2 vs 3), IPC command (`ResolveReplacement` vs `InheritDeviceCounters`), replacement criteria, and banner text (resolved in `docs/recovery.md`).
+- **F5**: `desktop/gui/src/main.rs` formats the incompatible device protocol warning banner with `opad_ipc::IPC_PROTOCOL_VERSION` instead of `opad_protocol::DEVICE_PROTOCOL_VERSION` (both currently `1`).
+- **F6**: Root `README.md` claims the Windows uninstaller prompts before touching `opad.db`, whereas `packaging/windows/installer.iss` deletes `%APPDATA%\opad` unconditionally without prompting (matching Linux `uninstall-cleanup.sh`).
+- **F7**: `desktop/crates/opad-model/src/lib.rs` (`KEY_PINS`) still lists `GPIO 8` (`P1 pin 8`), which firmware `firmware/main/config/config_validate.c` (`KEY_GPIO_ALLOWED`) rejects because `GPIO 8` is the carrier module-ID ADC divider line.
+
+### 4. Pages Weak or Missing Topics for Layer 3 Polish
+
+- **Screen Designer user guide**: `docs/reference/gui.md` and `docs/develop/desktop/gui.md` cover the Screen Designer (`Designer`), but there is no dedicated task-oriented how-to guide (`docs/guides/customize-screen-layout.md`) walking end users through creating, exporting, importing, and resetting custom `Idle`/`Playing` layouts or explaining each `ui_source` widget data source.
+- **Three-key V3 game-keys guide**: `key3_hid_usage` and `game_keys` are documented in `docs/reference/device-settings.md` and `docs/reference/gui.md`, but a short user-facing guide (or dedicated section in `docs/start/wiring-the-keys.md` / `docs/guides/`) explaining how to pick any 2 of 3 keys for KPS/totals on V3 modules would help V3 builders.
+- **`docs/develop/firmware/ui.md` & `docs/reference/gui.md` widget data source catalog**: Neither page lists the complete `ui_source_t` enum table (all available live telemetry/local data sources selectable in the Screen Designer); adding a compact reference table in Layer 3 would make the Designer reference self-contained.
+- **Root `README.md` sync (outside `docs/` scope)**: Note F6 (`README.md` Windows uninstall prompt claim) was left untouched per Layer 2 scope rules and should be updated separately in a code/root-README commit.
+- **Spanish `docs/es/testing-checklist.md` heading language**: Keeps several original English section titles (e.g., `## 1. Physical Key Performance & Latency Invariants`) from Layer 1 alongside Spanish table content; Layer 3 can localize those headings consistently while keeping the exact heading count.
+
