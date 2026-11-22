@@ -15,7 +15,8 @@ use crate::verify::{check_hash_bytes, signing_configured, verify_manifest_signat
 use crate::{Artifact, UpdateError};
 use std::time::SystemTime;
 
-/// Where the feeds are published: `<base><channel>.json` and its `.minisig`.
+/// Where the feeds are published: `<base><channel>.json` and its signature,
+/// `<channel>.json.release.minisig`.
 /// The official ones are on the project's own domain (GitHub Pages behind it,
 /// deployed by update-feed.yml), so hosting can move without an app update.
 /// A fork that publishes its own releases builds with `OPAD_FEED_BASE` set to
@@ -57,9 +58,15 @@ impl UpdateClient {
         &self.manifest_url
     }
 
-    /// The detached minisign signature lives beside the feed
+    /// The detached minisign signature lives beside the feed. Not `.minisig`:
+    /// that one stays signed with the test key for builds up to 1.0.0-rc.5
+    /// (`verify::TEST_KEY`).
     fn signature_url(&self) -> String {
-        format!("{}.minisig", self.manifest_url)
+        format!(
+            "{}{}",
+            self.manifest_url,
+            crate::verify::RELEASE_SIGNATURE_SUFFIX
+        )
     }
 
     /// Returns `None` when the server confirmed our cached copy is current.
@@ -206,7 +213,7 @@ mod tests {
         };
         assert_eq!(
             client.signature_url(),
-            "https://example.invalid/m.json.minisig"
+            "https://example.invalid/m.json.release.minisig"
         );
     }
 

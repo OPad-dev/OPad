@@ -145,7 +145,7 @@ try {
 if ($Feed) {
     $Feed = (Resolve-Path $Feed).Path
     $beta = Join-Path $Feed "beta.json"
-    if (-not (Test-Path $beta) -or -not (Test-Path "$beta.minisig")) { Fail "no signed beta.json in $Feed" }
+    if (-not (Test-Path $beta) -or -not (Test-Path "$beta.minisig") -or -not (Test-Path "$beta.release.minisig")) { Fail "no signed beta.json in $Feed" }
     else {
         $app = ([System.IO.File]::ReadAllText($beta) | ConvertFrom-Json).components.app
         if ($app.version -eq $new.Version) { Pass "the update feed under test offers $($new.Version) on the beta channel" }
@@ -266,7 +266,7 @@ foreach ($vm in $Vms) {
         if ($c.Code -eq 0 -and $old) { $c = Copy-ToVm $port (Get-VmFiles $vm $old) "old/" }
         if ($c.Code -eq 0) { $c = Copy-ToVm $port (Get-VmFiles $vm $new) "new/" }
         if ($c.Code -eq 0 -and $Feed) {
-            $feedFiles = @((Join-Path $Feed "beta.json"), (Join-Path $Feed "beta.json.minisig"))
+            $feedFiles = @((Join-Path $Feed "beta.json"), (Join-Path $Feed "beta.json.minisig"), (Join-Path $Feed "beta.json.release.minisig"))
             # A local build's feed names files the VM serves itself: the one
             # this kind of install downloads
             if ($LocalNew) {

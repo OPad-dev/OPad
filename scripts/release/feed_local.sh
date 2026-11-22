@@ -9,13 +9,14 @@ set -euo pipefail
 #   scripts/release/feed_local.sh [--port 8000] [--dir dist-local]
 #   make feed-local
 #
-# The feeds are signed with the committed test key, which every build trusts
-# until releases are signed for real (§5.4), and served over HTTP on
+# The feeds are signed with the committed test key, which builds trust only
+# where asked to (opad-update/src/verify.rs: OPAD_TRUST_TEST_KEY=1, and for
+# the root update helper /etc/opad/trust-test-key), and served over HTTP on
 # 127.0.0.1, which the updater accepts for loopback only. Then point OPad at
 # it, e.g. on Linux:
 #
 #   systemctl --user stop opad-daemon
-#   OPAD_MANIFEST_URL=http://127.0.0.1:8000/updates/beta.json opad-daemon
+#   OPAD_TRUST_TEST_KEY=1 OPAD_MANIFEST_URL=http://127.0.0.1:8000/updates/beta.json opad-daemon
 #
 # and in the GUI choose the beta channel and press Check now.
 # Needs: cargo, minisign, python3.
@@ -51,10 +52,13 @@ for channel in stable beta; do
     rm -f "${DIR}/updates/${channel}.json.minisig"
     minisign -S -s desktop/crates/opad-update/test-key/opad-test.key \
         -m "${DIR}/updates/${channel}.json" -t "OPad local ${channel} feed (TEST KEY)" < /dev/null
-    "${FEED}" verify --feed "${DIR}/updates/${channel}.json" --channel "${channel}"
+    cp "${DIR}/updates/${channel}.json.minisig" "${DIR}/updates/${channel}.json.release.minisig"
+    OPAD_TRUST_TEST_KEY=1 "${FEED}" verify --feed "${DIR}/updates/${channel}.json" --channel "${channel}"
 done
 
 echo ""
 echo "Serving ${DIR} on http://127.0.0.1:${PORT} (Ctrl+C to stop)"
-echo "  OPAD_MANIFEST_URL=http://127.0.0.1:${PORT}/updates/beta.json"
+echo "  OPAD_MANIFEST_URL=http://127.0.0.1:${PORT}/updates/beta.json OPAD_TRUST_TEST_KEY=1"
+echo "  (signed with the public test key: the update helper installs from it only"
+echo "  where root created /etc/opad/trust-test-key, so only on a test machine)"
 exec python3 -m http.server "${PORT}" --bind 127.0.0.1 --directory "${DIR}"

@@ -21,8 +21,9 @@
 //!     From files built locally (`make feed-local`): both channels name the
 //!     same files.
 //!
-//! opad-feed verify --feed FILE --channel stable|beta
-//!     FILE.minisig verifies against a trusted key, and the feed is current.
+//! opad-feed verify --feed FILE --channel stable|beta [--signature SIG]
+//!     SIG (default FILE.release.minisig) verifies against the feed key (or
+//!     the test key, with OPAD_TRUST_TEST_KEY=1), and the feed is current.
 //! ```
 
 use opad_update::firmware::{FIRMWARE_BOARD, FIRMWARE_TARGET};
@@ -506,7 +507,14 @@ fn verify(args: &[String]) -> Result<(), String> {
     let path = PathBuf::from(required(&f, "feed")?);
     let channel = required(&f, "channel")?;
     let bytes = std::fs::read(&path).map_err(|e| format!("reading {}: {e}", path.display()))?;
-    let sig_path = PathBuf::from(format!("{}.minisig", path.display()));
+    let sig_path = match f.get("signature") {
+        Some(sig) => PathBuf::from(sig),
+        None => PathBuf::from(format!(
+            "{}{}",
+            path.display(),
+            opad_update::verify::RELEASE_SIGNATURE_SUFFIX
+        )),
+    };
     let signature = std::fs::read_to_string(&sig_path)
         .map_err(|e| format!("reading {}: {e}", sig_path.display()))?;
     verify_manifest_signature(&bytes, &signature).map_err(|e| {

@@ -229,8 +229,8 @@ electron-updater's `latest.yml` work). No server runs code; any static host or
 CDN can serve it.
 
 ```
-https://updates.opad.dev/stable.json   (+ .minisig)
-https://updates.opad.dev/beta.json     (+ .minisig)
+https://updates.opad.dev/stable.json   (+ .release.minisig: feed key; .minisig: test key, for builds up to 1.0.0-rc.5)
+https://updates.opad.dev/beta.json     (+ the same two)
 https://opad-dev.github.io/OPad/apt/…   https://opad-dev.github.io/OPad/rpm/…
 ```
 
@@ -275,7 +275,7 @@ https://opad-dev.github.io/OPad/apt/…   https://opad-dev.github.io/OPad/rpm/�
 
 | Field | Protects against / enables |
 |---|---|
-| signature (`.minisig`) | a forged or modified feed (verified over the exact bytes before parsing, as `client.rs` does today) |
+| signature (`.release.minisig`, §5.4) | a forged or modified feed (verified over the exact bytes before parsing, as `client.rs` does today) |
 | `channel` | a beta feed served as stable |
 | `serial` | **replay and downgrade**: the client stores the highest serial it accepted and rejects lower ones |
 | `expires` | **freeze**: a feed stuck in the past shows "could not check", never "up to date"; the feed is republished at least monthly |
@@ -302,29 +302,34 @@ The full four-role TUF (root, targets, snapshot, timestamp) is the possible
 next step if OPad ever has several maintainers or a commercial fleet; schema 2
 leaves room for it (unknown fields are ignored, `schema` gates real changes).
 
-### 5.4 No real signing until the end (owner decision, 2026-10-12)
+### 5.4 No real signing until the end (owner decision, 2026-10-12), except the feed key (2026-11-22)
 
-Phases 1–5 sign nothing with a real key. Every signing step is built, but each
-one is switched off until you set it up following §19; nothing in phases 1–5
-asks you for a key, a passphrase or an account.
+Phases 1–5 sign nothing with a real key, with one exception: the feed key
+(§19.2), which the owner created on 2026-11-22 when the update helper made
+it necessary. Every other signing step is built but switched off until you
+set it up following §19.
 
 The updater still needs *some* signature, because it refuses unsigned feeds
 by design (§2, central rule), and that refusal is worth testing rather than
-switching off. So until §19:
+switching off. So a **test key** exists. Both its halves are committed to the
+repository (`desktop/crates/opad-update/test-key/`), so it protects nothing.
 
-- A **test key** is used. Both its halves are committed to the repository
-  (`desktop/crates/opad-update/test-key/`), so it protects nothing: it
-  only makes the feed well-formed so the real code path runs. It replaces the
-  current key in `opad-update/src/verify.rs:34` in phase 3.
-- Every release made this way is a **pre-release** on the **beta** feed only.
-  Nothing reaches the stable feed until §19 is done.
-
-When the real key exists (§19):
-
-1. A release that trusts **both** keys is published, with its feed signed by
-   the test key.
-2. After it has been out long enough, a release trusting only the real key
-   follows.
+- Builds up to 1.0.0-rc.5 trust only the test key and read
+  `<channel>.json.minisig`. update-feed.yml keeps signing that file with the
+  test key so those installs still see updates.
+- Builds from 1.0.0-rc.6 trust the feed key (`RELEASE_KEY` in
+  `opad-update/src/verify.rs`) and read `<channel>.json.release.minisig`.
+  They trust the test key only where asked to (`test_key_allowed`):
+  `OPAD_TRUST_TEST_KEY=1` for programs running as the user, and for the
+  update helper, which installs packages as root without a password, only
+  the root-owned file `/etc/opad/trust-test-key`. Trusting the public test
+  key there would let any program become root. The lab's VMs create both.
+- update-feed.yml signs `.release.minisig` with the feed key once the
+  repository variable `FEED_KEY_ENABLED` (or `SIGNING_ENABLED`) is `true`,
+  after your approval in the `release` environment; before that it copies
+  the test key's signature there, which new builds refuse outside the lab.
+- Releases stay **pre-releases** on the **beta** feed until the rest of §19
+  is done.
 
 Rotating through an update signed with the old key is the standard way to
 change an updater key without stranding installs. **Losing every trusted key
@@ -882,9 +887,12 @@ Signs `stable.json` and `beta.json`; the app trusts its public half.
 4. Save `opad-feed.key`, `opad-feed.pub` and the passphrase in the password
    manager; copy `opad-feed.key` to the offline USB. Then delete the local
    copies.
-5. Send the **public** key (the second line of `opad-feed.pub`) for the
-   rotation release (§5.4). It goes into `opad-update/src/verify.rs`; it is
-   not secret.
+5. Send the **public** key (the second line of `opad-feed.pub`). It goes into
+   `RELEASE_KEY` in `opad-update/src/verify.rs`; it is not secret.
+6. Turn on feed signing alone (the rest of §19 stays off):
+   ```
+   gh variable set FEED_KEY_ENABLED --body true
+   ```
 
 ### 19.3 Repository key (GPG, for apt and dnf)
 
@@ -960,8 +968,8 @@ is `true`; until then they are skipped. Then:
 ```
 # The feed verifies with the real key
 curl -fsSLO https://updates.opad.dev/stable.json
-curl -fsSLO https://updates.opad.dev/stable.json.minisig
-minisign -Vm stable.json -P '<public key>'
+curl -fsSLO https://updates.opad.dev/stable.json.release.minisig
+minisign -Vm stable.json -x stable.json.release.minisig -P '<public key>'
 
 # A release file was built by the workflow from this repository
 gh attestation verify opad-setup-1.0.0.exe -R OPad-dev/OPad

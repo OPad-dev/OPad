@@ -101,6 +101,7 @@ mod unix {
             env!("CARGO_PKG_VERSION"),
             current_target(),
             chrono::Utc::now(),
+            opad_update::verify::test_key_switch_on(),
         ) {
             Ok(a) => a,
             Err(e) => {

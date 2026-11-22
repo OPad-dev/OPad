@@ -184,6 +184,9 @@ while ($true) {
         # OPad again, reading it: a task takes the user's environment from the
         # registry. Both programs, so the GUI cannot start a daemon without it
         [Environment]::SetEnvironmentVariable("OPAD_MANIFEST_URL", "http://127.0.0.1:8000/beta.json", "User")
+        # The lab's feeds are signed with the public test key, which OPad
+        # trusts only where asked to (opad-update/src/verify.rs)
+        [Environment]::SetEnvironmentVariable("OPAD_TRUST_TEST_KEY", "1", "User")
         Stop-Process -Name opad-gui, opad-daemon -Force -ErrorAction SilentlyContinue
         Start-Sleep 2
         Start-InSession "opad-lab-daemon" (Join-Path $app "opad-daemon.exe")
@@ -243,6 +246,7 @@ while ($true) {
         Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -like "*lab-feed-server*" } |
             ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
         [Environment]::SetEnvironmentVariable("OPAD_MANIFEST_URL", $null, "User")
+        [Environment]::SetEnvironmentVariable("OPAD_TRUST_TEST_KEY", $null, "User")
     }
     "remove" {
         $unins = Join-Path $app "unins000.exe"

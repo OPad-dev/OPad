@@ -150,8 +150,12 @@ update)
   systemctl --user stop opad-lab-feed 2>/dev/null
   systemd-run --user --unit=opad-lab-feed --collect \
     python3 -m http.server 8000 --bind 127.0.0.1 --directory "$feed" >/dev/null 2>&1
+  # The lab's feeds are signed with the public test key, which OPad trusts
+  # only where asked to: the daemon through its environment, the root helper
+  # through a file only root can create (opad-update/src/verify.rs)
+  sudo mkdir -p /etc/opad && sudo touch /etc/opad/trust-test-key
   # The daemon's own service, pointed at it
-  systemctl --user set-environment OPAD_MANIFEST_URL=http://127.0.0.1:8000/beta.json
+  systemctl --user set-environment OPAD_MANIFEST_URL=http://127.0.0.1:8000/beta.json OPAD_TRUST_TEST_KEY=1
   systemctl --user restart opad-daemon
   sleep 3
   before_pid=$(pgrep -u "$USER" -x opad-daemon | head -1)
@@ -222,7 +226,8 @@ PY
   # Never restarted: the old OPad keeps running until the next start
   [ -n "$before_pid" ] && [ "$(pgrep -u "$USER" -x opad-daemon | head -1)" = "$before_pid" ] &&
     pass "the running daemon was left running" || fail "the daemon was restarted by the update"
-  systemctl --user unset-environment OPAD_MANIFEST_URL
+  systemctl --user unset-environment OPAD_MANIFEST_URL OPAD_TRUST_TEST_KEY
+  sudo rm -f /etc/opad/trust-test-key; sudo rmdir /etc/opad 2>/dev/null
   systemctl --user stop opad-lab-feed 2>/dev/null
   ;;
 remove)

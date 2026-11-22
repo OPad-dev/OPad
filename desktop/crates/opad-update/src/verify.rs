@@ -17,31 +17,69 @@ use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::path::Path;
 
+/// The feed key (docs/specs/release-and-updates.md §19.2). Its secret half is
+/// a GitHub secret in the `release` environment, behind the owner's approval,
+/// with an offline backup; update-feed.yml signs `<channel>.json` with it into
+/// `<channel>.json.release.minisig` ([`RELEASE_SIGNATURE_SUFFIX`]).
+pub const RELEASE_KEY: &str = "RWQ+1KtHVECc3Rk2/8Z0A6hlsJGNx87bPJl6v+N6fZn46RGNj2TgjTl5";
+
 /// The throwaway test key (docs/specs/release-and-updates.md §5.4).
 ///
 /// **Both halves are in the repository** (`test-key/` beside this crate), so
-/// this key protects nothing: anyone can sign a feed with it. It exists so the
-/// whole update path, signature check included, runs before releases are
-/// signed for real. Every release signed with it is a pre-release on the beta
-/// feed only. When the real feed key exists (§19), it is added here, a release
-/// trusting both is published, and a later release drops this one.
+/// this key protects nothing: anyone can sign a feed with it. The update
+/// helper installs packages as root without a password on the strength of a
+/// feed signature, so a build that trusted this key everywhere would let any
+/// program running as the user become root. It is trusted only on a machine
+/// that asks for it ([`test_key_allowed`]): the lab's VMs and local test
+/// feeds. Builds up to 1.0.0-rc.5 trusted it alone and read `.minisig`, which
+/// update-feed.yml keeps signing with it so those installs still see updates.
 pub const TEST_KEY: &str = "RWTxRYKioocnnW3mtI0eGzkUy0lW+sn6/L+7CJITSv8xWvjdNUnCT/Jv";
 
-/// Every minisign public key a feed may be signed with. More than one only
-/// while moving from one key to the next (§5.4).
+/// What follows the feed URL for the signature this build reads
+pub const RELEASE_SIGNATURE_SUFFIX: &str = ".release.minisig";
+
+/// A root-owned file that makes a Linux machine trust the test key. Only root
+/// can create it, so it cannot be used to reach root.
+pub const TEST_KEY_SWITCH: &str = "/etc/opad/trust-test-key";
+
+/// `OPAD_TRUST_TEST_KEY=1` does the same for the daemon, GUI and `opadctl`
+/// (never for the helper, which pkexec starts with a clean environment and
+/// which only looks at [`TEST_KEY_SWITCH`]). Those run as the user, who can
+/// already do anything they can.
+pub const TEST_KEY_ENV: &str = "OPAD_TRUST_TEST_KEY";
+
+/// Whether this machine trusts the test key, for programs running as the user
+pub fn test_key_allowed() -> bool {
+    std::env::var(TEST_KEY_ENV).is_ok_and(|v| v == "1") || test_key_switch_on()
+}
+
+/// Whether the root-owned [`TEST_KEY_SWITCH`] exists (always false on Windows)
+pub fn test_key_switch_on() -> bool {
+    cfg!(unix) && Path::new(TEST_KEY_SWITCH).is_file()
+}
+
+/// Every minisign public key a feed may be signed with: the feed key, and the
+/// test key where it is allowed. More than one real key only while moving
+/// from one key to the next (§5.4).
 ///
-/// An empty list is not a soft failure: with no key there is nothing to verify
+/// An empty key is not a soft failure: with no key there is nothing to verify
 /// against, so every update path fails closed rather than falling back to
 /// trusting the transport.
-pub const TRUSTED_KEYS: &[&str] = &[TEST_KEY];
+pub fn trusted_keys(allow_test: bool) -> Vec<&'static str> {
+    let mut keys = vec![RELEASE_KEY];
+    if allow_test {
+        keys.push(TEST_KEY);
+    }
+    keys
+}
 
 /// True when this build can verify anything at all
 pub fn signing_configured() -> bool {
-    TRUSTED_KEYS.iter().any(|k| !k.trim().is_empty())
+    !RELEASE_KEY.trim().is_empty()
 }
 
 /// Verifies a detached minisign signature over the raw feed bytes, against
-/// each trusted key in turn.
+/// each trusted key in turn, trusting the test key where [`test_key_allowed`].
 ///
 /// Takes the bytes rather than a parsed feed on purpose: the signature covers
 /// exactly what was served, so parsing must happen after this, never before,
@@ -50,8 +88,17 @@ pub fn verify_manifest_signature(
     manifest_bytes: &[u8],
     signature: &str,
 ) -> Result<(), UpdateError> {
+    verify_manifest_signature_with(manifest_bytes, signature, test_key_allowed())
+}
+
+/// [`verify_manifest_signature`], saying whether the test key is trusted
+pub fn verify_manifest_signature_with(
+    manifest_bytes: &[u8],
+    signature: &str,
+    allow_test: bool,
+) -> Result<(), UpdateError> {
     let mut last = UpdateError::NoPublicKey;
-    for key in TRUSTED_KEYS {
+    for key in trusted_keys(allow_test) {
         match verify_with_key(key, manifest_bytes, signature) {
             Ok(()) => return Ok(()),
             Err(e) => last = e,
@@ -231,8 +278,8 @@ mod tests {
     fn this_build_has_a_usable_signing_key() {
         // A release that ships with no key, or with a key that does not parse,
         // has silently disabled all three updaters.
-        assert!(signing_configured(), "TRUSTED_KEYS is empty");
-        for key in TRUSTED_KEYS {
+        assert!(signing_configured(), "RELEASE_KEY is empty");
+        for key in trusted_keys(true) {
             PublicKey::from_base64(key.trim())
                 .unwrap_or_else(|e| panic!("{key} is not a valid minisign public key: {e}"));
         }
@@ -254,8 +301,13 @@ mod tests {
     );
 
     #[test]
-    fn a_feed_signed_with_a_trusted_key_verifies() {
-        verify_manifest_signature(TEST_KEY_FEED, TEST_KEY_SIGNATURE).unwrap();
+    fn the_test_key_is_trusted_only_where_it_is_allowed() {
+        verify_manifest_signature_with(TEST_KEY_FEED, TEST_KEY_SIGNATURE, true).unwrap();
+        assert!(matches!(
+            verify_manifest_signature_with(TEST_KEY_FEED, TEST_KEY_SIGNATURE, false),
+            Err(UpdateError::BadSignature(_))
+        ));
+        assert_ne!(RELEASE_KEY, TEST_KEY);
     }
 
     #[test]
@@ -276,7 +328,7 @@ mod tests {
 
         // The actual assertion, through the production entry point that the
         // client uses, against the key compiled into this build.
-        match verify_manifest_signature(WRONG_KEY_MANIFEST, WRONG_KEY_SIGNATURE) {
+        match verify_manifest_signature_with(WRONG_KEY_MANIFEST, WRONG_KEY_SIGNATURE, true) {
             Err(UpdateError::BadSignature(_)) => {}
             other => panic!("a foreign signature must be rejected, got {other:?}"),
         }

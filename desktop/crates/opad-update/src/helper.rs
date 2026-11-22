@@ -5,7 +5,8 @@
 //! without a password, so the helper is a door into root. It opens for one
 //! thing only: a newer OPad release that the signed update feed names. It
 //! trusts nothing the caller says: the feed's signature is checked against
-//! the keys compiled into the helper, the package's SHA-256 against the one
+//! the feed key compiled into the helper (the public test key only on a
+//! machine whose root created `verify::TEST_KEY_SWITCH`), the package's SHA-256 against the one
 //! that feed gives for this kind of install, and the version against the one
 //! installed (the helper's own: the package installs both together), so a
 //! genuine but older feed cannot downgrade OPad either.
@@ -15,7 +16,7 @@
 
 use crate::manifest::{check_feed, Artifact, ReleaseManifest, APP, BETA, STABLE, SUPPORTED_SCHEMA};
 use crate::origin::{ApplyPolicy, InstallOrigin, PackageManager};
-use crate::verify::{sha256_bytes, verify_manifest_signature};
+use crate::verify::{sha256_bytes, verify_manifest_signature_with};
 use crate::version::is_newer;
 use crate::UpdateError;
 use chrono::{DateTime, Utc};
@@ -44,7 +45,9 @@ pub fn package_manager(origin: InstallOrigin) -> Option<PackageManager> {
 }
 
 /// Whether `package` may be installed over `installed`, given the feed bytes
-/// and signature the daemon passed along
+/// and signature the daemon passed along. `allow_test` trusts the test key
+/// too, which only root can ask for (`verify::test_key_switch_on`).
+#[allow(clippy::too_many_arguments)]
 pub fn approve(
     feed_bytes: &[u8],
     signature: &str,
@@ -53,8 +56,9 @@ pub fn approve(
     installed: &str,
     target: &str,
     now: DateTime<Utc>,
+    allow_test: bool,
 ) -> Result<Approved, UpdateError> {
-    verify_manifest_signature(feed_bytes, signature)?;
+    verify_manifest_signature_with(feed_bytes, signature, allow_test)?;
     let feed: ReleaseManifest = serde_json::from_slice(feed_bytes)?;
     if feed.schema != SUPPORTED_SCHEMA {
         return Err(UpdateError::UnsupportedSchema {
@@ -178,6 +182,7 @@ mod tests {
             installed,
             "linux-x86_64",
             now(),
+            true,
         )
     }
 
@@ -193,6 +198,7 @@ mod tests {
             "1.0.0-rc.6",
             "linux-x86_64",
             now(),
+            true,
         )
         .unwrap();
         assert_eq!(ok.artifact.target, PACMAN_TARGET);
@@ -220,6 +226,22 @@ mod tests {
     }
 
     #[test]
+    fn the_public_test_key_is_refused_unless_root_allowed_it() {
+        let err = approve(
+            FEED,
+            SIG,
+            DEB,
+            PackageManager::Apt,
+            "1.0.0-rc.6",
+            "linux-x86_64",
+            now(),
+            false,
+        )
+        .unwrap_err();
+        assert!(matches!(err, UpdateError::BadSignature(_)), "{err}");
+    }
+
+    #[test]
     fn the_same_or_an_older_release_is_refused() {
         for installed in ["1.0.0-rc.7", "1.0.0", "1.1.0"] {
             let err = approve_deb(FEED, SIG, DEB, installed).unwrap_err();
@@ -240,6 +262,7 @@ mod tests {
             "1.0.0-rc.6",
             "linux-x86_64",
             later,
+            true,
         )
         .unwrap_err();
         assert!(err.to_string().contains("expired"), "{err}");

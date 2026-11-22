@@ -76,7 +76,7 @@ jobs:
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force lab-feed | Out-Null
-          foreach ($f in "beta.json", "beta.json.minisig") {
+          foreach ($f in "beta.json", "beta.json.minisig", "beta.json.release.minisig") {
               Invoke-WebRequest -UseBasicParsing -OutFile "lab-feed\$f" "https://updates.opad.dev/$f"
           }
 

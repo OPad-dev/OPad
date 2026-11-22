@@ -12,9 +12,13 @@ name: Update feed
 # lab VMs update the previous release from this signed feed, served inside
 # each VM, and release-app.yml deploys the same feed only once they passed.
 #
-# Until SIGNING_ENABLED is "true" the feeds are signed with the committed
-# test key (§5.4), which protects nothing. After that, with the real key in
-# the "release" environment, which waits for approval (§19).
+# Each feed gets two signatures. <channel>.json.release.minisig is the one
+# builds from 1.0.0-rc.6 on read: signed with the feed key in the "release"
+# environment, which waits for approval (§19.2), once FEED_KEY_ENABLED (or
+# SIGNING_ENABLED) is "true". <channel>.json.minisig is signed with the
+# committed test key, which protects nothing, for builds up to 1.0.0-rc.5,
+# which trust nothing else (§5.4). Until the feed key is enabled both are
+# signed with the test key, which new builds only trust on lab machines.
 
 on:
   workflow_call:
@@ -85,7 +89,7 @@ jobs:
   sign-test:
     name: Sign (test key)
     needs: build
-    if: vars.SIGNING_ENABLED != 'true'
+    if: vars.SIGNING_ENABLED != 'true' && vars.FEED_KEY_ENABLED != 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -108,7 +112,8 @@ jobs:
           for channel in stable beta; do
             minisign -S -s desktop/crates/opad-update/test-key/opad-test.key \
               -m "site/${channel}.json" -t "OPad ${channel} feed (TEST KEY)" < /dev/null
-            site/.opad-feed verify --feed "site/${channel}.json" --channel "$channel"
+            cp "site/${channel}.json.minisig" "site/${channel}.json.release.minisig"
+            OPAD_TRUST_TEST_KEY=1 site/.opad-feed verify --feed "site/${channel}.json" --channel "$channel"
           done
           rm site/.opad-feed
 
@@ -120,10 +125,15 @@ jobs:
   sign-release:
     name: Sign (release key)
     needs: build
-    if: vars.SIGNING_ENABLED == 'true'
+    if: vars.SIGNING_ENABLED == 'true' || vars.FEED_KEY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: release
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: repo
+
       - uses: actions/download-artifact@v8
         with:
           name: feed-unsigned
@@ -147,18 +157,20 @@ jobs:
           for channel in stable beta; do
             # minisign reads the passphrase from stdin when it is not a terminal
             printf '%s\n' "$MINISIGN_PASSWORD" | minisign -S -s "$key" \
-              -m "site/${channel}.json" -t "OPad ${channel} feed"
+              -m "site/${channel}.json" -x "site/${channel}.json.release.minisig" \
+              -t "OPad ${channel} feed"
             site/.opad-feed verify --feed "site/${channel}.json" --channel "$channel"
+            # For builds up to 1.0.0-rc.5, which trust only the test key
+            minisign -S -s repo/desktop/crates/opad-update/test-key/opad-test.key \
+              -m "site/${channel}.json" -t "OPad ${channel} feed (TEST KEY)" < /dev/null
+            OPAD_TRUST_TEST_KEY=1 site/.opad-feed verify --feed "site/${channel}.json" \
+              --channel "$channel" --signature "site/${channel}.json.minisig"
           done
           rm site/.opad-feed
 
       # §10.1: apt and dnf repositories, only with the real key (§19.3)
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          path: repo
-
       - name: Packages of the last three app releases per channel
+        if: vars.SIGNING_ENABLED == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -174,11 +186,13 @@ jobs:
           done
 
       - name: Install repository tools
+        if: vars.SIGNING_ENABLED == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends apt-utils createrepo-c gnupg
 
       - name: Build the apt and dnf repositories
+        if: vars.SIGNING_ENABLED == 'true'
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
