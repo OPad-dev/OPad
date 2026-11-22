@@ -1,34 +1,32 @@
 ---
-title: Subsistema de Diagnósticos del Firmware
-description: Referencia de implementación para la telemetría del firmware, registro en búfer circular en memoria, autotests eléctricos de placa y análisis en banco para Hall Effect.
+title: Subsistema de diagnóstico del firmware
+description: Referencia de implementación del búfer circular de eventos de diagnóstico, autoprueba de placa del carrier/módulo y modo banco Hall Effect.
 ---
 
-El subsistema de diagnósticos proporciona rutinas de autotest, verificación de continuidad eléctrica, registro de eventos en búfer circular en memoria y herramientas de evaluación en banco para sensores magnéticos. <!-- src: /firmware/main/diag/diag.c -->
+El subsistema de diagnóstico proporciona registro de eventos en búfer circular sin asignaciones dinámicas, pruebas eléctricas de PCB del carrier/módulo y un modo banco en tiempo de compilación para sensores Hall Effect.
 
-## Diagnostic Ring Buffer Logging (diag.c)
+## Búfer circular de diagnóstico (`diag.c`)
 
-Los eventos del firmware (conexión/desconexión USB, pérdidas de trama, discrepancias CRC, volcados a NVS) se registran en un búfer circular en memoria: <!-- src: /firmware/main/diag/diag.c -->
+Implementado en [/firmware/main/diag/diag.c](/firmware/main/diag/diag.c):
 
-- **Estructura de Datos (`diag_entry_t`)**: Almacenada en un array circular de tamaño fijo `s_entries[DIAG_RING_SIZE]`. <!-- src: /firmware/main/diag/diag.c -->
-- **Secciones Críticas sin Asignación de Memoria**: Los eventos se añaden mediante `diag_record(event_id, severity, arg1, arg2)`. La función adquiere un spinlock de FreeRTOS (`taskENTER_CRITICAL`), escribe la entrada y sale inmediatamente. No hay asignación dinámica de memoria ni generación de cadenas con formato en el objetivo. <!-- src: /firmware/main/diag/diag.c#diag_init -->
-- **Interfaz de Drenaje**: El anfitrión drena las entradas registradas periódicamente por serie mediante envoltorios protobuf `LogEventBatch`.
+- Búfer circular fijo `s_entries[DIAG_RING_SIZE]` de `diag_entry_t` (`timestamp_ms`, `event_id`, `level`, `arg0`, `arg1`), protegido por un spinlock FreeRTOS (`taskENTER_CRITICAL(&s_mux)`).
+- `diag_record(uint16_t event_id, uint8_t level, uint32_t arg0, uint32_t arg1)` no realiza asignaciones en el heap ni formateo de cadenas; cuando está lleno, descarta la entrada más antigua e incrementa `s_dropped`.
+- `diag_drain(out_entries, max_entries, out_dropped)` vacía las entradas encoladas y reinicia `s_dropped` para que la tarea de protocolo las envíe al anfitrión en `LogEventBatch`.
 
-## Board Electrical Self-Test (board_test.c)
+## Autoprueba de PCB del carrier y módulo de entrada (`board_test.c`)
 
-Cuando se activa mediante `run_board_test` por serie o `opadctl board-test`, el firmware ejecuta comprobaciones de continuidad de hardware y periféricos: <!-- src: /firmware/main/diag/board_test.c -->
+Implementada en [/firmware/main/diag/board_test.c](/firmware/main/diag/board_test.c) e invocada mediante `BoardTestRequest` (`opadctl board-test` o `opad-gui` **Diagnostics** -> **🔧 PCB Test**, solo en `IDLE`):
 
-1. **Prueba de Pull en Pines GPIO Libres**: Ejercita las líneas libres de cabecera del módulo (`BOARD_MODULE_IO6_GPIO`, `IO4`, `IO2`). Alterna estados de pull-up y pull-down (`read_with_pull`), verificando que las líneas sigan los pulls internos sin cortocircuitos a tierra o a 3.3V. <!-- src: /firmware/main/diag/board_test.c#read_with_pull -->
-2. **Escaneo de Bus I2C**: Escanea la dirección `0x15` (controlador táctil CST816S) y comprueba su respuesta.
-3. **Comunicación con Pantalla**: Lee el registro de ID del controlador de pantalla ST7789.
-4. **Identificación del Módulo de Entrada**: Muestrea el divisor analógico en GPIO 8 (`module_id`) para verificar si está instalado un módulo mecánico MX, un módulo Hall Effect V1 o un carrier V3.
-5. **Generación de Informes**: Rellena `BoardTestResult` con indicadores de estado de aprobado/fallo por subsistema y mensajes de diagnóstico.
+1. **Prueba de pull de líneas de teclas (`keypad_line_test`)**: Conmuta temporalmente cada GPIO de tecla armado entre pull-up y pull-down interno (`LINE_TEST_SETTLE_US = 300` µs) para verificar si las resistencias pull-up externas de 10 kΩ de un módulo MX mantienen la línea en alto frente al pull-down, o si un interruptor está pulsado / en cortocircuito a `GND`.
+2. **Lectura de ID de módulo (`board_read_module_id`)**: Muestrea tensiones abiertas y bajo carga en el pin ADC de ID de módulo (`GPIO 8`) para clasificar `MX`, `HE`, `HE_V3`, `MX_V3` o `NONE` (se omite en HE V1 donde el DMA continuo de ADC1 ocupa ADC1, usando en su lugar el módulo detectado al arrancar).
+3. **Sondeo de cable invertido (`board_probe_reversed_cable`)**: Cuando ningún módulo responde en `GPIO 8` y `GPIO 2` (`BOARD_REVERSE_PROBE_GPIO`) no es pin de tecla, sondea la presencia de un cable invertido.
+4. **Prueba de continuidad y puentes de líneas libres V1 (`test_spares`)**: Para módulos V1 `MX` / `HE`, prueba `GPIO 6`, `GPIO 4` y `GPIO 2` con pull-up/pull-down y lleva pines vecinos a bajo de uno en uno para detectar cortocircuitos pin a pin (`bridged_gpios`).
+5. **Prueba ADS7028 de HE V3 (`he_adc_test_run`)**: Para `BOARD_MODULE_HE_V3`, pausa el muestreador SPI en flujo (`he_backend_run_paused`) si está activo, reinicia y lee registros de estado del ADS7028 y muestrea los sensores.
 
-## Hall Effect Bench Test Mode (hall_bench.c)
+## Modo banco Hall Effect (`hall_bench.c`)
 
-Para la caracterización de las curvas de recorrido de interruptores magnéticos durante la validación de hardware (`CONFIG_OPAD_HALL_BENCH`): <!-- src: /firmware/main/diag/hall_bench.c -->
+Compilado únicamente cuando `CONFIG_OPAD_HALL_BENCH=y` (no es una compilación de lanzamiento; detén `opad-daemon` porque transmite texto plano por CDC) ([/firmware/main/diag/hall_bench.c](/firmware/main/diag/hall_bench.c)):
 
-- **Transmisión Continua**: Transmite conversiones ADC en bruto de 12 bits directamente sobre USB CDC con resolución de milisegundos:
-  `H,<ms>,<key1_raw>,<key2_raw>`
-- **Agregación Estadística**: Cada segundo, calcula estadísticas de dispersión sobre miles de conversiones:
-  `S,<key>,<sample_count>,<min>,<max>,<mean>,<stddev_x100>,<overflows>`
-- **Harness en Python**: El script acompañante en el anfitrión `scripts/hall_bench.py` registra los flujos de datos para calcular la desviación típica, los niveles de ruido en reposo y los deltas de recorrido magnético.
+- Muestrea cuatro canales ADC1 a `BENCH_SAMPLE_HZ = 64000` Hz (`BENCH_FRAME_CONVS = 64`, tramas de 1 ms): Key 1 (`ADC_CHANNEL_9`), Key 2 (`ADC_CHANNEL_6`), ID de módulo (`ADC_CHANNEL_7`) y referencia (`ADC_CHANNEL_5`, `GPIO 6`).
+- Emite líneas promediadas de 1 ms `H,<ms>,<key1>,<key2>`, resúmenes de dispersión por canal cada 1 s `S,<key>,<n>,<min>,<max>,<mean>,<stddev_x100>,<overflows>` y líneas de fase de ciclo de pull `P,<phase>` para `scripts/hall_bench.py`.
+- También muestra una vista en vivo de tensión/barras para 2 teclas en la LCD (`hall_bench_show_ui`, temporizador de 33 ms, midiendo la posición de reposo durante los primeros `BENCH_REST_MS = 500` ms).
