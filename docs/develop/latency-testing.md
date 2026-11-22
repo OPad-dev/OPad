@@ -1,6 +1,8 @@
 ---
 title: Latency Measurement and Benchmark Methodology
 description: Hardware latency testing methodology, on-device 10 us histograms, benchmark stages A through D, host-side evdev jitter script, and release gate criteria.
+sidebar:
+  order: 9
 ---
 
 Low, jitter-free keypress latency is OPad's primary invariant ([/AGENTS.md](/AGENTS.md) §1.1). This page documents the on-device histogram, benchmark stages A–D, and measurement scripts.
