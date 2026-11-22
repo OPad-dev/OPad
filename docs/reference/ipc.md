@@ -1,6 +1,8 @@
 ---
 title: IPC Protocol Reference
 description: Specification of the local Inter-Process Communication (IPC) transport, JSON framing, Windows/Linux security model, and request/response protocol between opad-daemon, opad-gui, and opadctl.
+sidebar:
+  order: 6
 ---
 
 `opad-daemon` owns the USB CDC connection, SQLite database, `tosu` supervision, and update checks. `opad-gui` and `opadctl` communicate with `opad-daemon` over a local IPC channel (`IPC_PROTOCOL_VERSION = 1`). <!-- src: /desktop/crates/opad-ipc/src/lib.rs#IPC_PROTOCOL_VERSION -->
