@@ -99,6 +99,24 @@ enum Commands {
         )]
         yes: bool,
     },
+    /// Show, check for or install an update of the OPad app from the update
+    /// feed, as the app's Updates page does
+    Update {
+        #[arg(
+            long,
+            value_name = "CHANNEL",
+            help = "Follow this channel from now on: stable, or beta for release candidates"
+        )]
+        channel: Option<String>,
+        #[arg(long, help = "Check the feed now and wait for the answer")]
+        check: bool,
+        #[arg(
+            long,
+            help = "Download, verify and install the available update. The installer \
+                    restarts OPad, so this returns once it has started."
+        )]
+        install: bool,
+    },
     /// Show key-press-to-HID latency measured on the device
     Latency {
         #[arg(
@@ -924,6 +942,116 @@ async fn main() -> Result<()> {
                 }
                 IpcResponse::Error(e) => bail!("{}", e),
                 other => bail!("Unexpected response from daemon: {:?}", other),
+            }
+        }
+
+        Commands::Update {
+            channel,
+            check,
+            install,
+        } => {
+            let conn = daemon(&mut stream)?;
+            if let Some(channel) = channel {
+                match send_request(conn, &IpcRequest::SetUpdateChannel { channel }).await? {
+                    // Changing the channel starts a check of the new one
+                    IpcResponse::UpdateCheckStarted => {}
+                    IpcResponse::OperationRejected { reason }
+                    | IpcResponse::OperationDeferred { reason } => bail!("{}", reason),
+                    IpcResponse::Error(e) => bail!("{}", e),
+                    other => bail!("Unexpected response from daemon: {:?}", other),
+                }
+            }
+            if check {
+                let before = match send_request(conn, &IpcRequest::GetUpdateStatus).await? {
+                    IpcResponse::UpdateStatus { last_check, .. } => last_check,
+                    IpcResponse::Error(e) => bail!("{}", e),
+                    other => bail!("Unexpected response from daemon: {:?}", other),
+                };
+                match send_request(conn, &IpcRequest::CheckForUpdates).await? {
+                    IpcResponse::UpdateCheckStarted => {}
+                    IpcResponse::OperationDeferred { reason } => bail!("{}", reason),
+                    IpcResponse::Error(e) => bail!("{}", e),
+                    other => bail!("Unexpected response from daemon: {:?}", other),
+                }
+                // The check runs in the daemon's update worker: done once it
+                // is not running and has a newer answer or an error
+                let deadline = std::time::Instant::now() + Duration::from_secs(120);
+                loop {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                    if let IpcResponse::UpdateStatus {
+                        last_check,
+                        last_error,
+                        checking,
+                        ..
+                    } = send_request(conn, &IpcRequest::GetUpdateStatus).await?
+                    {
+                        if !checking && (last_check != before || last_error.is_some()) {
+                            break;
+                        }
+                    }
+                    if std::time::Instant::now() > deadline {
+                        bail!("The update check did not finish within 120 s");
+                    }
+                }
+            }
+            let status = send_request(conn, &IpcRequest::GetUpdateStatus).await?;
+            let IpcResponse::UpdateStatus {
+                app,
+                last_check,
+                last_error,
+                restart_required,
+                channel,
+                last_result,
+                ..
+            } = status
+            else {
+                bail!("Unexpected response from daemon: {:?}", status);
+            };
+            println!("=== OPad Updates ===");
+            println!("Channel:          {}", channel);
+            println!(
+                "Installed:        {}",
+                app.installed.as_deref().unwrap_or("unknown")
+            );
+            let offer = match (&app.available, app.notify_only) {
+                (None, _) => "none, up to date".to_string(),
+                (Some(v), true) => format!("{} (update it with your package manager)", v),
+                (Some(v), false) => format!("{} (ready to install)", v),
+            };
+            println!("Available:        {}", offer);
+            println!(
+                "Last check:       {}",
+                last_check.as_deref().unwrap_or("never")
+            );
+            if let Some(e) = &last_error {
+                println!("Last error:       {}", e);
+            }
+            if let Some(r) = &last_result {
+                println!("Last install:     {}", r);
+            }
+            if restart_required {
+                println!("Restart OPad to run the installed version.");
+            }
+            if install {
+                if !app.ready_to_install {
+                    bail!("There is no update ready to install (run opadctl update --check)");
+                }
+                match send_request(
+                    conn,
+                    &IpcRequest::InstallUpdate {
+                        component: opad_ipc::UpdateComponent::App,
+                    },
+                )
+                .await?
+                {
+                    IpcResponse::UpdateStarted { .. } => println!(
+                        "✓ Installing OPad {}; OPad restarts when it is done",
+                        app.available.as_deref().unwrap_or("?")
+                    ),
+                    IpcResponse::OperationDeferred { reason } => bail!("{}", reason),
+                    IpcResponse::Error(e) => bail!("{}", e),
+                    other => bail!("Unexpected response from daemon: {:?}", other),
+                }
             }
         }
 
