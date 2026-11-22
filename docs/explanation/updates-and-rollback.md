@@ -1,6 +1,8 @@
 ---
 title: Firmware Updates and Automatic Rollback
 description: Dual OTA partition layout, bootloader trial boot verification, USB-driven automatic rollback, and software update channels.
+sidebar:
+  order: 6
 ---
 
 OPad updates firmware over USB without touching the hardware BOOT or RESET buttons (AGENTS.md §1.5). Two mechanisms prevent a bad update from stranding a pad: a dual-slot OTA partition table with USB-gated automatic rollback, and a mask-ROM recovery path (`opadctl recover`) when an image does not enumerate at all. <!-- src: /firmware/main/app_main.c#confirm_image_once_usb_works, /desktop/crates/opad-device/src/flash.rs#recover -->
