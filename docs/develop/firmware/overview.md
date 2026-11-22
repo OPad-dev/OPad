@@ -25,14 +25,15 @@ In [/firmware/sdkconfig.defaults](/firmware/sdkconfig.defaults):
 - `CONFIG_FREERTOS_HZ=1000`: 1 kHz OS tick matching 1 ms USB polling.
 - `CONFIG_GPIO_CTRL_FUNC_IN_IRAM=y`: Places GPIO control helpers in IRAM for the key ISR and `keypad_task`.
 - `CONFIG_TINYUSB_HID_COUNT=2`, `CONFIG_TINYUSB_CDC_COUNT=1`, `CONFIG_TINYUSB_CDC_TX_BUFSIZE=2048`, `CONFIG_TINYUSB_SUSPEND_CALLBACK=y`.
-- `CONFIG_SPIRAM=y`, `CONFIG_SPIRAM_MODE_OCT=y`, `CONFIG_SPIRAM_SPEED_80M=y`: Enables the board's 8 MB Octal PSRAM.
-- `CONFIG_LV_MEM_SIZE_KILOBYTES=160`: Dedicated 160 KB LVGL memory pool so UI allocations never contend with the system heap.
+- `CONFIG_SPIRAM=y`, `CONFIG_SPIRAM_MODE_OCT=y`, `CONFIG_SPIRAM_SPEED_80M=y`, `CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y`: Enables the board's 8 MB Octal PSRAM and allows placing off-key-path static buffers in PSRAM via `EXT_RAM_BSS_ATTR`.
+- `CONFIG_LV_MEM_SIZE_KILOBYTES=160` and `CONFIG_LV_DEF_REFR_PERIOD=33`: Dedicated 160 KB LVGL pool (in PSRAM via `CONFIG_OPAD_LVGL_PSRAM=y` by default) and a 30 fps screen redraw cap (33 ms refresh period).
+- `CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y`, `CONFIG_ESP32S3_DATA_CACHE_64KB=y`, `CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y`: Largest ESP32-S3 caches so flash-executed code/fonts and PSRAM-backed LVGL buffers render quickly.
 - `CONFIG_PARTITION_TABLE_CUSTOM=y` (`partitions.csv`) and `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`: Two 2 MB OTA slots (`ota_0`, `ota_1`) with rollback until USB mounts.
 
 ## IRAM Placement & Memory Layout
 
 - **IRAM linker fragment ([/firmware/main/linker.lf](/firmware/main/linker.lf))**: Places `keypad:keypad_task`, `usb_hid`, `he_frame`, `he_rt`, `he_spi_source:sampler_task`, `he_spi_frame`, and TinyUSB's HID/USBD/`dcd_dwc2`/`tu_hwfifo_write` hot path in IRAM (`noflash`) so Core 1 cache activity never stalls key delivery.
-- **LVGL pool & draw buffers**: By default (`CONFIG_OPAD_LVGL_PSRAM=n`), LVGL's 160 KB pool lives in internal RAM; enabling `CONFIG_OPAD_LVGL_PSRAM` moves the LVGL pool into PSRAM while keeping LCD draw buffers in internal DMA-capable RAM ([/firmware/main/Kconfig.projbuild](/firmware/main/Kconfig.projbuild)).
+- **Internal RAM vs PSRAM split**: Only the keys, USB, and DMA buffers stay in internal RAM. By default (`CONFIG_OPAD_LVGL_PSRAM=y`), LVGL's 160 KB pool lives in PSRAM, and off-key-path static buffers (`s_layouts` in `ui_port.c`, `s_pending_layouts` in `ui_store.c`, `s_subjects`/`s_str_buf`/`s_str_prev` in `ui_data.c`, and `s_parser`/`msg`/`layout` in `protocol.c`) are placed in PSRAM via `EXT_RAM_BSS_ATTR`. The two 40-line LCD draw buffers (`UI_DRAW_BUF_LINES = 40`, `25.6 KB` each) stay in internal DMA-capable RAM ([/firmware/main/Kconfig.projbuild](/firmware/main/Kconfig.projbuild), [/firmware/main/ui/ui.h](/firmware/main/ui/ui.h), [/firmware/main/protocol/protocol.c](/firmware/main/protocol/protocol.c)). At boot, [/firmware/main/app_main.c](/firmware/main/app_main.c) logs `DIAG_EVENT_MEMORY` with free internal RAM and the largest free DMA-capable block.
 
 ## Compile-Time Kconfig Options (`Kconfig.projbuild`)
 
@@ -42,5 +43,5 @@ Defined in [/firmware/main/Kconfig.projbuild](/firmware/main/Kconfig.projbuild) 
 - `CONFIG_OPAD_BENCH_DEBUG_GPIO` / `CONFIG_OPAD_BENCH_DEBUG_GPIO_NUM` (default `4`): Toggles a GPIO right after HID submit for logic-analyzer correlation.
 - `CONFIG_OPAD_HE_BACKEND`: Enables V1 Hall Effect ADC1 DMA input (`select ADC_CONTINUOUS_ISR_IRAM_SAFE`).
 - `CONFIG_OPAD_HALL_BENCH` / `CONFIG_OPAD_HE_TRACE` / `CONFIG_OPAD_HE_DEBUG`: Raw CDC sensor streaming, ~150 KB/s trace capture, and `+hedebug` per-press diagnostic logging.
-- `CONFIG_OPAD_UI_PERF_TEST` / `CONFIG_OPAD_LVGL_PSRAM`: Synthetic UI perf loop with FPS/memory overlays and optional PSRAM LVGL pool.
+- `CONFIG_OPAD_UI_PERF_TEST` / `CONFIG_OPAD_LVGL_PSRAM` (default `y`): Synthetic UI perf loop with FPS/memory overlays and `DIAG_EVENT_UI_PERF` frame-time reporting; PSRAM allocation for LVGL's memory pool.
 - `CONFIG_OPAD_DEBUG_I2C_SCAN`: Probes all 126 touch-bus I2C addresses at boot (~1.3 s added boot time).
