@@ -31,7 +31,6 @@ concurrency:
 
 env:
   ESPFLASH_VERSION: "4.6.0"
-  ESPFLASH_WINDOWS_SHA256: "b2cb4656b067716fe2b3794cf0604b461b2476d06dee7f481704cb6c8495b11c"
   APPIMAGETOOL_VERSION: "1.9.1"
   APPIMAGETOOL_SHA256: "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
   # The Designer must draw with the firmware's real LVGL, never the stub
@@ -297,13 +296,28 @@ jobs:
           cargo fetch --locked --manifest-path desktop/Cargo.toml
           (cd desktop && cargo about generate --offline --fail about.hbs -o ../dist/THIRD_PARTY_NOTICES.html)
 
-      - name: Fetch espflash (pinned, checksummed)
+      # Upstream's Windows espflash needs vcruntime140.dll, which a clean
+      # Windows lacks; build the same pinned version with the static C
+      # runtime (.cargo/config.toml), as the Linux job builds its own
+      - name: Build espflash (pinned version, static C runtime)
         shell: bash
         run: |
-          curl -fsSL -o espflash.zip \
-            "https://github.com/esp-rs/espflash/releases/download/v${ESPFLASH_VERSION}/espflash-x86_64-pc-windows-msvc.zip"
-          echo "${ESPFLASH_WINDOWS_SHA256}  espflash.zip" | sha256sum -c -
-          unzip -o espflash.zip espflash.exe -d desktop/target/release
+          git clone --depth 1 --branch "v${ESPFLASH_VERSION}" https://github.com/esp-rs/espflash.git build/espflash-src
+          (cd build/espflash-src && cargo build --release --locked -p espflash)
+          cp build/espflash-src/target/release/espflash.exe desktop/target/release/
+
+      # Every program the installer ships must start on a clean Windows: none
+      # may import the Visual C++ runtime DLLs
+      - name: Assert no Visual C++ runtime DLL is needed
+        shell: bash
+        run: |
+          for exe in desktop/target/release/{opad-daemon,opad-gui,opadctl,espflash}.exe; do
+            if grep -aqiE 'vcruntime140|msvcp140' "$exe"; then
+              echo "ERROR: $exe imports the Visual C++ runtime" >&2
+              exit 1
+            fi
+            echo "ok: $exe"
+          done
 
       # §19.4. SignPath signs the programs before they go into the installer,
       # then the installer itself (below). Skipped until signing is enabled.

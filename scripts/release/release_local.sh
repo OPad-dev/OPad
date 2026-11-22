@@ -87,13 +87,16 @@ if [ "${WINDOWS}" = 1 ]; then
     give_back "${REPO_ROOT}/desktop/target-xwin"
     cp desktop/target-xwin/x86_64-pc-windows-msvc/release/{opad-daemon,opad-gui,opadctl}.exe "${WIN}/bin/"
 
-    # espflash, pinned and checksummed as in CI
+    # espflash: the pinned version, built with the static C runtime as in CI
+    # (upstream's .exe needs vcruntime140.dll, which a clean Windows lacks)
     ESPFLASH_VERSION="$(sed -n 's/^ESPFLASH_VERSION ?= //p' Makefile)"
-    ESPFLASH_WINDOWS_SHA256="b2cb4656b067716fe2b3794cf0604b461b2476d06dee7f481704cb6c8495b11c"
-    curl -fsSL -o "${WIN}/espflash.zip" \
-        "https://github.com/esp-rs/espflash/releases/download/v${ESPFLASH_VERSION}/espflash-x86_64-pc-windows-msvc.zip"
-    echo "${ESPFLASH_WINDOWS_SHA256}  ${WIN}/espflash.zip" | sha256sum -c -
-    unzip -o -q "${WIN}/espflash.zip" espflash.exe -d "${WIN}/bin"
+    [ -d build/espflash-src-win ] || git clone --depth 1 --branch "v${ESPFLASH_VERSION}" \
+        https://github.com/esp-rs/espflash.git build/espflash-src-win
+    docker run --rm -v "${REPO_ROOT}:${REPO_ROOT}" -w "${REPO_ROOT}/build/espflash-src-win" \
+        -e XWIN_ACCEPT_LICENSE=1 opad-build-windows \
+        cargo xwin build --release --locked -p espflash --target x86_64-pc-windows-msvc
+    give_back "${REPO_ROOT}/build/espflash-src-win"
+    cp build/espflash-src-win/target/x86_64-pc-windows-msvc/release/espflash.exe "${WIN}/bin/"
 
     # tosu.exe: the latest tosu release's (CI builds it on Windows; its
     # native addon does not cross-compile yet), or TOSU_EXE=path
