@@ -1,6 +1,8 @@
 ---
 title: Hall Effect and Rapid Trigger
 description: How OPad senses Hall Effect magnetic switches across V1 and V3 hardware, runs the 3-state Rapid Trigger engine, enforces noise floors, and stores calibration.
+sidebar:
+  order: 7
 ---
 
 Hall Effect (HE) magnetic switches replace physical metallic contact leaves with a magnet in the switch stem and a linear Hall sensor on the PCB. Instead of a fixed contact point, firmware reads continuous magnetic strength for each key, allowing configurable actuation depth and **Rapid Trigger (RT)**—releasing as soon as the stem moves upward and re-pressing as soon as downward motion resumes.
