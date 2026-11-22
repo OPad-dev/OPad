@@ -1,6 +1,8 @@
 ---
 title: Guía de solución de problemas
 description: Problemas frecuentes con OPad, distribuciones de teclado, Yama ptrace en Linux para tosu, permisos USB, Windows SmartScreen y recuperación de firmware.
+sidebar:
+  order: 3
 ---
 
 Esta guía cubre los problemas más comunes con las asignaciones de teclas de OPad, la telemetría de `tosu`, los permisos serie USB, los avisos de Windows SmartScreen/antivirus y la recuperación de firmware.
