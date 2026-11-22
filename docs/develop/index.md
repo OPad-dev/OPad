@@ -1,46 +1,42 @@
 ---
 title: Developer Guide
-description: Contributor workflow, git branch lifecycle, commit signing, AI attribution trailers, and repository architecture guidelines.
+description: Contributor workflow, product invariants, git branch lifecycle, commit conventions, and documentation rules for OPad.
 ---
 
-Welcome to the OPad developer documentation. This section covers development workflows, repository invariants, build instructions, test harnesses, and architecture references for contributing to the firmware, desktop suite, and hardware designs. <!-- src: /AGENTS.md -->
+Welcome to the OPad developer documentation. This section covers contributor rules, building from source, running automated tests, firmware and desktop internals, protocol evolution, hardware files, packaging, releases, lab testing, and latency benchmarking.
 
 ## Core Product Invariants
 
-All development in this repository must adhere to the immutable product rules defined in [AGENTS.md](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/AGENTS.md): <!-- src: /AGENTS.md -->
+Every change in this repository must uphold the six product rules in [/AGENTS.md](/AGENTS.md) §1:
 
-1. **Latency Always Wins**: If a feature measurably worsens key latency or latency jitter, it is reduced, deferred, frozen during gameplay, or removed. Nothing joins the keypress path: screen, storage, tray, and tosu remain completely off it.
-2. **The Pad is a Keyboard with No Software Installed**: It operates as a 1000 Hz USB HID composite keyboard requiring no driver or daemon on Linux or Windows.
-3. **App and Pad Update Independently**: Wire protocols must remain bidirectional (new app with old firmware, old app with new firmware). Never require updating both together.
-4. **The Touchscreen is the Third Button**: In-game resting finger is Quick Retry (`` ` ``) and swipes never trigger it. Out-of-game swipes execute media actions. Mid-map swipes never insert Alt into the keyboard report.
-5. **Never the BOOT or RESET Buttons**: Flashing, updating, and recovering happen strictly over USB or serial. An update flashes the alternate OTA slot and rolls back if USB enumeration fails.
-6. **Every Key Comes from a Finger**: No macros, auto-tap, scripted or timed inputs, or host-to-pad key injection commands.
+1. **Latency always wins**: If a feature measurably worsens key latency or latency jitter, reduce, defer, freeze during gameplay, or remove it. Nothing joins the keypress path: screen, storage, tray, and `tosu` stay off it.
+2. **The pad is a keyboard with no software installed**: 1000 Hz USB HID keyboard requiring no driver or desktop software on Linux or Windows 10/11.
+3. **The app and the pad update independently**: Protocol and wire changes must work both ways (new app with old firmware, old app with new firmware) via detection and negotiation.
+4. **The touchscreen is the third button**: Clean press/hold/release; Quick Retry (`` ` ``) during a map (never from swipes); configurable swipes outside a map; never inserts modifiers or extra keys into keyboard reports mid-map; exception: uncalibrated Hall Effect pads lock to their calibration screen (D7).
+5. **Never the BOOT or RESET buttons**: Flashing, updating, and recovering happen over USB/serial with A/B OTA rollback and `opadctl recover`.
+6. **Every key comes from a finger**: No macros, auto-tap, scripted/timed input, or host-to-pad key injection commands.
 
-## Git Workflow & Repository Rules
+## Git Workflow & Commit Rules
 
-Contributors must adhere to the following git workflow rules: <!-- src: /AGENTS.md -->
+Per [/AGENTS.md](/AGENTS.md) §2–§3:
 
-- **Linear History**: Rebase on `main`. No merge commits.
-- **Short-Lived Branches**: Branches exist only while active work is underway. Delete branches and worktrees immediately upon merging.
-- **Author Identity & AI Disclosure**:
-  - Sign commits with your own name and email. Never set an AI tool as commit author.
-  - Include an AI disclosure trailer at the end of the commit message:
-    - `AI: assisted`: A human directed or wrote the change with AI assistance.
-    - `AI: generated`: An AI wrote the change, reviewed and committed by a person.
-    - No trailer indicates no AI involvement.
-- **Conventional Commits**: Format commit subjects as `type(scope): subject (#issue)`.
+- **Linear history**: Rebase onto `main`; no merge commits.
+- **Short-lived branches**: Maintainers work in a worktree on a branch, fast-forward merge to `main`, then delete the branch and worktree. External contributors fork, branch, and open a PR against `main`.
+- **Commit authorship & AI disclosure**: Always sign commits with your own name and email (never an AI author). End AI-assisted commits with one trailer (`AI: assisted` or `AI: generated`); omit it when no AI was used. Replace tool-specific `Co-Authored-By` lines with this trailer.
+- **Conventional commits**: `type(scope): plain statement of behaviour (#issue)`. Add a `Compatibility:` trailer whenever protocol or IPC behavior changes.
+- **Licensing (REUSE)**: New files need license headers or an entry in [/REUSE.toml](/REUSE.toml).
 
-## Code as the Single Source of Truth
+## Code as Single Source of Truth
 
-Documentation in `docs/` is written against the codebase: <!-- src: /AGENTS.md -->
-- When code and documentation disagree, **the code is authoritative**. Fix or update the documentation to match the code.
-- Every factual claim in developer documentation includes source citations (invisible HTML source comments or direct file links). <!-- src: /AGENTS.md -->
-- Never invent parameters, CLI flags, or hardware pins not present in the codebase.
+Per [/AGENTS.md](/AGENTS.md) §7:
 
-## Documentation Structure (Diátaxis Framework)
+- When documentation and code disagree, the code wins—fix or remove the stale doc.
+- Developer pages (`docs/explanation/*`, `docs/develop/*`) link to source files using repo-root paths (for example, `[/firmware/main/app_main.c](/firmware/main/app_main.c)`).
+- Never invent CLI flags, config fields, or GPIO pins that do not exist in the codebase.
 
-OPad documentation follows the four Diátaxis quadrants:
-- **Tutorials (`docs/start/*`)**: Step-by-step onboarding for newcomers (What You Need, First Connection, Wiring the Keys).
-- **How-To Guides (`docs/guides/*`)**: Task-oriented instructions (Update Firmware, Calibrate Hall Effect, Backup & Restore).
-- **Explanation (`docs/explanation/*`)**: Conceptual background and architecture rationale (System Architecture, Latency Engineering, Touchscreen as Third Button).
-- **Reference (`docs/reference/*` and `docs/develop/*`)**: Verbatim catalogs of APIs, CLI commands, device settings, pinouts, and subsystem internals.
+## Documentation Structure (Diátaxis)
+
+- **Start (`docs/start/*`)**: Onboarding tutorials (hardware, wiring, first connection, installing the app).
+- **Guides (`docs/guides/*`, `docs/recovery.md`)**: Task-oriented how-to procedures.
+- **Reference (`docs/reference/*`, `docs/troubleshooting.md`, `docs/develop/*`)**: Authoritative catalogs of CLI, GUI, settings, pinout, serial/IPC protocols, paths, and internals.
+- **Explanation (`docs/explanation/*`)**: System architecture and design rationale.
