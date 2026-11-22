@@ -95,6 +95,20 @@ pub fn daemon_autostart_installed() -> bool {
     read_value(DAEMON_VALUE).is_some()
 }
 
+/// Restarts the daemon so the binary on disk (a newer version, after an
+/// update) is the one running. taskkill without admin rights can only end
+/// this user's own processes.
+pub fn restart_daemon(daemon_bin: &Path) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let _ = Command::new("taskkill")
+        .args(["/F", "/IM", "opad-daemon.exe"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status();
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    start_daemon(daemon_bin)
+}
+
 /// Launches the daemon detached, with its output in the state directory.
 ///
 /// Whether the daemon is *running* is never asked here: the GUI already knows

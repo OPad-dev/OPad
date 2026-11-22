@@ -59,6 +59,7 @@ pkgbase = opad-bin
 	depends = libxrandr
 	depends = dbus
 	depends = libcap
+	depends = polkit
 	optdepends = vulkan-driver: Hardware Vulkan acceleration for iced/wgpu GUI renderer
 	provides = opad
 	conflicts = opad

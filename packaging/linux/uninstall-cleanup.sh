@@ -8,6 +8,7 @@
 #    layouts and the PC's play statistics; the pad's own counters live on the
 #    pad and are not touched), the autostart entry the GUI may have written,
 #    and an enabled user service link;
+#  - deletes the update helper's package cache (/var/cache/opad-update);
 #  - deletes tosu's directories only where OPad created them
 #    (opad-tosu's OWNED_MARKER), never those of a tosu the user installed.
 #
@@ -18,6 +19,10 @@ for name in opad-gui opad-daemon opadctl; do
     pkill -x "$name" 2>/dev/null || true
 done
 pkill -f '^/usr/lib/opad/tosu/tosu' 2>/dev/null || true
+
+# Where the update helper copies a package before installing it (normally
+# already gone: it removes its copy afterwards)
+rm -rf /var/cache/opad-update
 
 # Every account with a home directory (users from 1000 up, and root)
 getent passwd | while IFS=: read -r user _ uid _ _ home _; do

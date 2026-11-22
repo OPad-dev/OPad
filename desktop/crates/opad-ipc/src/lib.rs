@@ -296,6 +296,10 @@ pub struct ComponentUpdate {
     /// The release page of the available version
     #[serde(default)]
     pub notes_url: Option<String>,
+    /// tosu on a package install: its files come with OPad's package, so it
+    /// is updated together with OPad, never on its own
+    #[serde(default)]
+    pub with_app: bool,
 }
 
 /// Daemon responses to clients
@@ -433,10 +437,14 @@ pub enum IpcResponse {
         last_check: Option<String>,
         #[serde(default)]
         last_error: Option<String>,
-        /// The app was replaced on disk; the running processes are the old
-        /// ones and must be restarted (§U-2)
+        /// The app was replaced on disk (or, on Windows, its installer waits
+        /// for the next start); the running processes are the old ones and
+        /// the new version runs from the next start (§U-2)
         #[serde(default)]
         restart_required: bool,
+        /// The version installed but not running yet
+        #[serde(default)]
+        pending_version: Option<String>,
         /// `stable` or `beta`; empty from a daemon predating channels
         #[serde(default)]
         channel: String,

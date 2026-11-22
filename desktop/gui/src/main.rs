@@ -196,6 +196,8 @@ pub struct UpdateView {
     pub last_check: Option<String>,
     pub last_error: Option<String>,
     pub restart_required: bool,
+    /// Installed, runs from the next start (with `restart_required`)
+    pub pending_version: Option<String>,
     /// `stable` or `beta`
     pub channel: String,
     /// A check is running in the daemon
@@ -220,6 +222,9 @@ pub struct App {
     // Daemon state
     pub daemon_online: bool,
     pub daemon_spawn_attempted: bool,
+    /// The GUI and the daemon were different versions after an update, and
+    /// this run already restarted one of them to match
+    version_fix_attempted: bool,
     pub device_connected: bool,
     pub tosu_connected: bool,
     pub mode: RuntimeMode,
@@ -422,6 +427,8 @@ pub enum Message {
     UpdateStatus(Result<IpcResponse, String>),
     ToggleUpdater(opad_ipc::UpdateComponent, bool),
     InstallUpdate(opad_ipc::UpdateComponent),
+    /// A release page from the verified update feed, in the browser
+    OpenUrl(String),
     CheckForUpdates,
     SetUpdateChannel(String),
     ResetLatency,
@@ -478,6 +485,7 @@ impl App {
             fallback_window: false,
             daemon_online: false,
             daemon_spawn_attempted: false,
+            version_fix_attempted: false,
             device_connected: false,
             tosu_connected: false,
             mode: RuntimeMode::Idle,
@@ -819,6 +827,21 @@ impl App {
                         if was_offline && self.designer.status.contains("Daemon unavailable") {
                             return self.designer.reload().map(Message::Designer);
                         }
+                    }
+                    Err(e) if !self.version_fix_attempted && version_mismatch(&e).is_some() => {
+                        // An update replaced OPad's files and only one of the
+                        // two programs has restarted since: the older one
+                        // restarts to become the new version too. Once per run.
+                        self.version_fix_attempted = true;
+                        let (gui, daemon) = version_mismatch(&e).unwrap_or_default();
+                        if opad_update_version_newer(&gui, &daemon) {
+                            tracing::info!("The daemon is still {daemon}; restarting it as {gui}");
+                            return Task::perform(restart_daemon_process(), Message::DaemonStarted);
+                        }
+                        tracing::info!(
+                            "This GUI is {gui} and the daemon {daemon}; restarting the GUI"
+                        );
+                        restart_gui();
                     }
                     _ => {
                         self.daemon_online = false;
@@ -1811,6 +1834,7 @@ impl App {
                     last_check,
                     last_error,
                     restart_required,
+                    pending_version,
                     channel,
                     checking,
                     last_result,
@@ -1824,6 +1848,7 @@ impl App {
                         last_check,
                         last_error,
                         restart_required,
+                        pending_version,
                         channel: if channel.is_empty() {
                             "stable".to_string()
                         } else {
@@ -1832,6 +1857,13 @@ impl App {
                         checking,
                         last_result,
                     });
+                }
+            }
+            Message::OpenUrl(url) => {
+                // Only web pages: the URL comes from the signed feed, but a
+                // browser is the only thing it may open
+                if url.starts_with("https://") {
+                    open_in_browser(&url);
                 }
             }
             Message::ToggleUpdater(component, enabled) => {
@@ -2336,17 +2368,22 @@ impl App {
                 .style(theme::banner),
             );
         }
-        if self.updates.as_ref().is_some_and(|u| u.restart_required) {
-            // §U-2: the files on disk are the new version but these processes
-            // are still the old ones. The daemon's handshake already refuses a
-            // mismatched client, so say plainly what is needed rather than
-            // letting the app look broken.
+        if let Some(v) = self
+            .updates
+            .as_ref()
+            .filter(|u| u.restart_required)
+            .and_then(|u| u.pending_version.clone())
+        {
+            // §U-2: the update is installed (or, on Windows, waiting for the
+            // next start) and these processes are still the old ones. Nothing
+            // is restarted for the user; say when the new version arrives.
             main = main.push(
                 container(
-                    row![text(
-                        "OPad was updated. Restart the app and the daemon to \
-                             finish — the pad keeps working as a keyboard meanwhile."
-                    )
+                    row![text(if cfg!(windows) {
+                        format!("OPad {v} is ready and installs the next time OPad starts.")
+                    } else {
+                        format!("OPad {v} is installed and runs the next time OPad starts.")
+                    })
                     .size(14),]
                     .align_y(Alignment::Center),
                 )
@@ -3311,6 +3348,58 @@ fn find_sibling_executable(stem: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(name)
 }
 
+/// `(this client's version, the daemon's)` from a handshake the daemon refused
+/// because they differ (opad-daemon ipc_handlers.rs)
+fn version_mismatch(error: &str) -> Option<(String, String)> {
+    let rest = error.split("Version mismatch: this client is ").nth(1)?;
+    let (client, rest) = rest.split_once(" but the running daemon is ")?;
+    let daemon = rest
+        .split_whitespace()
+        .next()?
+        .trim_end_matches('.')
+        .to_string();
+    Some((client.to_string(), daemon))
+}
+
+/// Whether version `a` is newer than `b` (release order, rc before final)
+fn opad_update_version_newer(a: &str, b: &str) -> bool {
+    opad_update::version::is_newer(a, b)
+}
+
+/// Starts this GUI again from its file on disk, which an update replaced,
+/// and ends this one. With the window hidden it comes back to the tray.
+fn restart_gui() {
+    let exe = std::env::var_os("APPIMAGE")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::current_exe().ok());
+    let Some(exe) = exe else {
+        return;
+    };
+    let mut args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    if !args.iter().any(|a| a == "--tray") {
+        args.push("--tray".into());
+    }
+    match std::process::Command::new(&exe).args(&args).spawn() {
+        Ok(_) => std::process::exit(0),
+        Err(e) => tracing::warn!("Could not restart the GUI ({}): {}", exe.display(), e),
+    }
+}
+
+async fn restart_daemon_process() -> Result<(), String> {
+    let exe = find_daemon_executable();
+    #[cfg(target_os = "linux")]
+    tokio::task::spawn_blocking(move || platform_linux::restart_daemon(&exe))
+        .await
+        .map_err(|e| format!("Failed to restart opad-daemon: {}", e))??;
+    #[cfg(windows)]
+    tokio::task::spawn_blocking(move || platform_windows::restart_daemon(&exe))
+        .await
+        .map_err(|e| format!("Failed to restart opad-daemon: {}", e))??;
+    #[cfg(not(any(target_os = "linux", windows)))]
+    let _ = exe;
+    Ok(())
+}
+
 fn find_daemon_executable() -> std::path::PathBuf {
     find_sibling_executable("opad-daemon")
 }
@@ -3512,5 +3601,41 @@ mod tests {
         assert_eq!(next_log_cursor(0, &[], 0), 0);
         // A restarted daemon numbers from 1 again
         assert_eq!(next_log_cursor(900, &[], 4), 4);
+    }
+}
+
+/// Opens `url` in the default browser, without waiting for it
+fn open_in_browser(url: &str) {
+    #[cfg(windows)]
+    let spawned = std::process::Command::new("explorer").arg(url).spawn();
+    #[cfg(not(windows))]
+    let spawned = std::process::Command::new("xdg-open").arg(url).spawn();
+    if let Err(e) = spawned {
+        tracing::warn!("Could not open {}: {}", url, e);
+    }
+}
+
+#[cfg(test)]
+mod version_fix_tests {
+    use super::{opad_update_version_newer, version_mismatch};
+
+    #[test]
+    fn the_daemons_refusal_names_both_versions() {
+        let e = "daemon unreachable: Protocol error: Handshake rejected (daemon protocol v1, \
+                 client v1): Version mismatch: this client is 1.0.0-rc.7 but the running \
+                 daemon is 1.0.0-rc.6. The app was updated; restart opad-daemon to finish.";
+        let (gui, daemon) = version_mismatch(e).unwrap();
+        assert_eq!(
+            (gui.as_str(), daemon.as_str()),
+            ("1.0.0-rc.7", "1.0.0-rc.6")
+        );
+        assert!(
+            opad_update_version_newer(&gui, &daemon),
+            "the GUI restarts the daemon"
+        );
+        assert_eq!(
+            version_mismatch("daemon unreachable: connection refused"),
+            None
+        );
     }
 }

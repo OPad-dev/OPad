@@ -1000,6 +1000,7 @@ async fn main() -> Result<()> {
                 last_check,
                 last_error,
                 restart_required,
+                pending_version,
                 channel,
                 last_result,
                 ..
@@ -1015,7 +1016,7 @@ async fn main() -> Result<()> {
             );
             let offer = match (&app.available, app.notify_only) {
                 (None, _) => "none, up to date".to_string(),
-                (Some(v), true) => format!("{} (update it with your package manager)", v),
+                (Some(v), true) => format!("{} (this install cannot update itself)", v),
                 (Some(v), false) => format!("{} (ready to install)", v),
             };
             println!("Available:        {}", offer);
@@ -1030,7 +1031,10 @@ async fn main() -> Result<()> {
                 println!("Last install:     {}", r);
             }
             if restart_required {
-                println!("Restart OPad to run the installed version.");
+                match &pending_version {
+                    Some(v) => println!("Installed:        {v}, runs the next time OPad starts"),
+                    None => println!("Restart OPad to run the installed version."),
+                }
             }
             if install {
                 if !app.ready_to_install {

@@ -23,6 +23,8 @@ depends=(
     'dbus'
     # setcap: lets tosu read osu! under Yama ptrace_scope 1-2 (opad-bin.install)
     'libcap'
+    # pkexec runs the update helper
+    'polkit'
 )
 optdepends=(
     'vulkan-driver: Hardware Vulkan acceleration for iced/wgpu GUI renderer'

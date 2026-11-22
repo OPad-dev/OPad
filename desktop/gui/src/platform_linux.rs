@@ -86,6 +86,24 @@ pub fn install_systemd_user_service(daemon_bin: &Path) -> Result<(), String> {
     systemctl_user(&["enable", "--now", SERVICE_NAME])
 }
 
+/// Restarts the daemon so the binary on disk (a newer version, after an
+/// update) is the one running
+pub fn restart_daemon(daemon_bin: &Path) -> Result<(), String> {
+    if service_installed() {
+        return systemctl_user(&["restart", SERVICE_NAME]);
+    }
+    let _ = Command::new("pkill")
+        .args(["-x", "-u", &user_name(), "opad-daemon"])
+        .status();
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    start_daemon(daemon_bin)
+}
+
+/// pkill -u's user: this user's own daemon only
+fn user_name() -> String {
+    std::env::var("USER").unwrap_or_default()
+}
+
 /// Starts the daemon through its user service when installed, so systemd supervises and logs it.
 /// Otherwise launches it detached from the GUI with output in opad_model::paths::state_dir()/daemon.log.
 pub fn start_daemon(daemon_bin: &Path) -> Result<(), String> {

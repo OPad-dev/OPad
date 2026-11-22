@@ -7,10 +7,15 @@
 //! those during PLAYING and COOLDOWN.
 //!
 //! It follows one channel's feed (stable or beta), sees it through this
-//! install's gradual-rollout bucket, updates tosu on its own when allowed, and
-//! applies an app update only when a person asks. How the last install went is
-//! kept in storage, so an install the daemon did not live to finish (the
-//! Windows installer stops it) is reported correctly after the restart.
+//! install's gradual-rollout bucket, and updates tosu and the app on its own
+//! when their automatic updates are on (the default), or when a person
+//! presses Install. An app update never restarts the running OPad: on Linux
+//! the new files are installed (deb, rpm and Arch through the update helper)
+//! and start next time; on Windows, where running programs cannot be
+//! replaced, the verified installer waits and runs the next time OPad starts
+//! (Install now runs it at once). How the last install went is kept in
+//! storage, so an install the daemon did not live to finish (the Windows
+//! installer stops it) is reported correctly after the restart.
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -50,6 +55,8 @@ pub const LAST_RESULT_KEY: &str = "update.last_result";
 /// Written just before an install is applied, removed once it has returned.
 /// Still there at startup means the daemon did not see the install finish.
 pub const IN_PROGRESS_KEY: &str = "update.in_progress";
+/// Windows: a verified installer waiting for the next start ([`Staged`])
+pub const STAGED_KEY: &str = "update.staged";
 
 /// What the GUI shows for each updater (§U-0.4)
 #[derive(Debug, Clone, Default)]
@@ -58,9 +65,12 @@ pub struct UpdateStatus {
     pub app: ComponentUpdate,
     pub last_check: Option<SystemTime>,
     pub last_error: Option<String>,
-    /// The app was replaced on disk, so the running daemon and GUI are the old
-    /// binaries and must be restarted (§U-2)
+    /// The app was replaced on disk (or, on Windows, its installer waits for
+    /// the next start), so the running daemon and GUI are the old binaries;
+    /// the new version runs from the next start (§U-2)
     pub restart_required: bool,
+    /// The version installed but not running yet (with `restart_required`)
+    pub pending_version: Option<String>,
     pub channel: String,
     /// A check is running right now
     pub checking: bool,
@@ -72,8 +82,8 @@ pub type SharedUpdateStatus = Arc<Mutex<UpdateStatus>>;
 
 #[derive(Debug, Clone, Copy)]
 pub enum UpdateCommand {
-    /// A person pressed Install. The daemon never applies an app update on
-    /// its own (§U-2), so this is the only way one is applied.
+    /// A person pressed Install: also with automatic updates off, and on
+    /// Windows the installer runs at once
     Install(UpdateComponent),
     /// *Check now*
     Check,
@@ -158,18 +168,31 @@ impl UpdateResult {
             "tosu" => "tosu",
             other => other,
         };
+        // In the user's time zone: "22 Nov, 17:27"
+        let at = chrono::DateTime::parse_from_rfc3339(&self.at)
+            .map(|t| {
+                t.with_timezone(&chrono::Local)
+                    .format("%-d %b, %H:%M")
+                    .to_string()
+            })
+            .unwrap_or_else(|_| self.at.clone());
         if self.ok {
-            format!(
-                "{name} updated from {} to {} ({})",
-                self.from, self.to, self.at
-            )
+            format!("{name} updated from {} to {} ({at})", self.from, self.to)
         } else {
             format!(
-                "{name} update from {} to {} failed: {} ({})",
-                self.from, self.to, self.message, self.at
+                "{name} update from {} to {} failed ({at}): {}",
+                self.from, self.to, self.message
             )
         }
     }
+}
+
+/// A Windows installer downloaded and verified, kept under [`STAGED_KEY`]
+/// until the next start runs it
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Staged {
+    pub version: String,
+    pub path: String,
 }
 
 /// The install the daemon was applying, kept under [`IN_PROGRESS_KEY`]
@@ -220,6 +243,7 @@ pub fn spawn_update_worker(
     };
 
     recover_interrupted(&storage, &status);
+    run_staged_installer(&storage, &status);
 
     tokio::spawn(async move {
         // Spread the first check out a little: a machine that just booted is
@@ -257,7 +281,7 @@ pub fn spawn_update_worker(
                     UpdateCommand::Install(component) => {
                         let result = match component {
                             UpdateComponent::App => {
-                                install_app(manifest.as_ref(), &daemon_state, &storage, &status).await
+                                install_app(manifest.as_ref(), &daemon_state, &storage, &status, false).await
                             }
                             UpdateComponent::Tosu => match &manifest {
                                 Some(m) => {
@@ -304,6 +328,18 @@ pub fn spawn_update_worker(
                 Ok(None) => {}
                 Err(e) => {
                     warn!("Update check failed: {}", e);
+                    status.lock().last_error = Some(e.to_string());
+                }
+            }
+            // Automatic updates: install what the check found, while no map
+            // is being played. A failure is reported and tried again at the
+            // next check, never in a loop.
+            let ready = status.lock().app.ready_to_install;
+            if ready && read_flag(&storage, APP_ENABLED_KEY) {
+                if let Err(e) =
+                    install_app(manifest.as_ref(), &daemon_state, &storage, &status, true).await
+                {
+                    warn!("Automatic update failed: {}", e);
                     status.lock().last_error = Some(e.to_string());
                 }
             }
@@ -400,9 +436,21 @@ async fn check(
     Ok(Some(feed))
 }
 
-/// Records whether an app update is available. Applies nothing: §U-2 is
-/// explicit that the app never auto-installs by default, so the daemon's job
-/// is to have the answer ready when the user asks.
+/// The version whose files are installed: the running one, or one installed
+/// since that is waiting for the next start. Planning from it keeps a daily
+/// check from installing the same update again while the old OPad runs.
+fn installed_version(status: &SharedUpdateStatus) -> String {
+    let s = status.lock();
+    match (&s.pending_version, s.restart_required) {
+        (Some(v), true) => v.clone(),
+        _ => env!("CARGO_PKG_VERSION").to_string(),
+    }
+}
+
+/// Records whether an app update is available and can be installed. The
+/// automatic-updates switch does not enter into it: with it off, the user
+/// can still press Install. Installing is the worker's job (after a check,
+/// with the switch on) or the Install command's.
 fn check_app(
     manifest: &ReleaseManifest,
     daemon_state: &Arc<Mutex<DaemonState>>,
@@ -410,16 +458,16 @@ fn check_app(
     status: &SharedUpdateStatus,
 ) -> Result<(), UpdateError> {
     let enabled = read_flag(storage, APP_ENABLED_KEY);
-    let installed = env!("CARGO_PKG_VERSION");
+    let installed = installed_version(status);
     let origin = InstallOrigin::detect();
     let mode = daemon_state.lock().mode;
 
     let action = app::plan(
         manifest,
-        installed,
+        &installed,
         origin,
         current_target(),
-        may_update_now(mode, enabled),
+        may_update_now(mode, true),
     )?;
     let notes_url = manifest
         .component(opad_update::APP)
@@ -427,7 +475,7 @@ fn check_app(
 
     {
         let mut s = status.lock();
-        s.app.installed = Some(installed.to_string());
+        s.app.installed = Some(env!("CARGO_PKG_VERSION").to_string());
         s.app.enabled = enabled;
         s.app.notes_url = None;
         match &action {
@@ -461,16 +509,21 @@ fn check_app(
     Ok(())
 }
 
-/// Applies the app update the user asked for.
+/// Installs the available app update: `automatic` after a check with
+/// automatic updates on, otherwise because a person pressed Install.
 ///
-/// Order matters (§U-2): apply first, and only then report that a restart is
-/// needed. The daemon is not stopped before the package manager has actually
-/// succeeded — a failed or cancelled update must leave a running app behind.
+/// The running OPad is never stopped (§U-2): its files are replaced and the
+/// new version runs from the next start. The one exception is a Windows
+/// Install pressed by hand, which runs the installer at once (it closes OPad
+/// and starts the new one); an automatic Windows update leaves the verified
+/// installer for the next start instead, as Windows cannot replace a running
+/// program.
 async fn install_app(
     manifest: Option<&ReleaseManifest>,
     daemon_state: &Arc<Mutex<DaemonState>>,
     storage: &Arc<Mutex<Option<Storage>>>,
     status: &SharedUpdateStatus,
+    automatic: bool,
 ) -> Result<(), UpdateError> {
     let manifest = manifest.ok_or_else(|| {
         UpdateError::Http("No verified update feed yet; check for updates first".to_string())
@@ -478,13 +531,14 @@ async fn install_app(
 
     let mode = daemon_state.lock().mode;
     let origin = InstallOrigin::detect();
-    let installed = env!("CARGO_PKG_VERSION");
+    let running = env!("CARGO_PKG_VERSION");
+    let installed = installed_version(status);
     let action = app::plan(
         manifest,
-        installed,
+        &installed,
         origin,
         current_target(),
-        may_update_now(mode, read_flag(storage, APP_ENABLED_KEY)),
+        may_update_now(mode, true),
     )?;
 
     let AppAction::Available {
@@ -499,20 +553,12 @@ async fn install_app(
         )));
     };
 
-    // From our apt/dnf repository: the package manager fetches and checks
-    // the package against the repository key; nothing is downloaded here
-    if let ApplyPolicy::PackageManager(pm) = policy {
-        if app::repo_configured(pm) {
-            return upgrade_from_repo(pm, installed, &available, storage, status).await;
-        }
-    }
-
     let client = UpdateClient::for_artifacts()?;
     let bytes = client.fetch_artifact(&artifact).await?;
 
-    // The verified bytes go to a file the apply step can hand to a package
-    // manager or run. It lives in the state directory, not /tmp, so a
-    // hardened /tmp mounted noexec cannot break the Windows installer path.
+    // The verified bytes go to a file the apply step can hand to the helper
+    // or run. It lives in the state directory, not /tmp, so a hardened /tmp
+    // mounted noexec cannot break the Windows installer path.
     let staging = opad_model::paths::state_dir()
         .map_err(|e| UpdateError::Io(std::io::Error::other(e.to_string())))?
         .join("updates");
@@ -526,6 +572,42 @@ async fn install_app(
     opad_update::download::stage_bytes(&target, &bytes, &artifact.sha256, &artifact.url)?
         .install_to(&target)?;
 
+    // Windows, automatically: the installer waits for the next start
+    if policy == ApplyPolicy::Installer && automatic {
+        write_json(
+            storage,
+            STAGED_KEY,
+            &Staged {
+                version: available.clone(),
+                path: target.display().to_string(),
+            },
+        );
+        let mut s = status.lock();
+        s.restart_required = true;
+        s.pending_version = Some(available.clone());
+        s.app.ready_to_install = false;
+        info!(
+            "OPad {} downloaded and verified; it is installed the next time OPad starts",
+            available
+        );
+        return Ok(());
+    }
+
+    // The helper checks the package against the signed feed itself, so it
+    // gets the exact bytes this daemon verified
+    let feed_files = if let ApplyPolicy::Helper(_) = policy {
+        let signed = manifest.signed.as_ref().ok_or_else(|| {
+            UpdateError::Http("the verified feed's bytes were not kept".to_string())
+        })?;
+        let feed = staging.join("feed.json");
+        let signature = staging.join("feed.json.minisig");
+        std::fs::write(&feed, &signed.bytes)?;
+        std::fs::write(&signature, &signed.signature)?;
+        Some((feed, signature))
+    } else {
+        None
+    };
+
     // Marked before applying: the Windows installer stops this daemon on
     // purpose, and the next one reads this to say how it went
     write_json(
@@ -533,16 +615,17 @@ async fn install_app(
         IN_PROGRESS_KEY,
         &InProgress {
             component: "app".to_string(),
-            from: installed.to_string(),
+            from: running.to_string(),
             to: available.clone(),
         },
     );
 
-    // Blocking, and a package manager can sit on a polkit prompt for minutes:
-    // off the runtime's worker threads
+    // Blocking, and a package manager can take minutes: off the runtime's
+    // worker threads
     let applied = {
         let target = target.clone();
-        tokio::task::spawn_blocking(move || apply_downloaded(policy, origin, &target))
+        let feed_files = feed_files.clone();
+        tokio::task::spawn_blocking(move || apply_downloaded(policy, origin, &target, feed_files))
             .await
             .map_err(|e| UpdateError::Io(std::io::Error::other(format!("apply step: {e}"))))
             .and_then(|r| r)
@@ -553,10 +636,14 @@ async fn install_app(
     // no reason. Direct replacement consumes the file itself, so a missing one
     // is not an error.
     let _ = std::fs::remove_file(&target);
+    if let Some((feed, signature)) = &feed_files {
+        let _ = std::fs::remove_file(feed);
+        let _ = std::fs::remove_file(signature);
+    }
 
     let result = match &applied {
-        Ok(()) => UpdateResult::new("app", installed, &available, true, ""),
-        Err(e) => UpdateResult::new("app", installed, &available, false, e.to_string()),
+        Ok(()) => UpdateResult::new("app", running, &available, true, ""),
+        Err(e) => UpdateResult::new("app", running, &available, false, e.to_string()),
     };
     write_json(storage, LAST_RESULT_KEY, &result);
     remove_key(storage, IN_PROGRESS_KEY);
@@ -566,96 +653,99 @@ async fn install_app(
     {
         let mut s = status.lock();
         s.restart_required = true;
+        s.pending_version = Some(available.clone());
         s.app.ready_to_install = false;
-        s.app.installed = Some(available.clone());
+        s.app.available = None;
     }
-    info!("OPad {} applied; a restart is needed to run it", available);
+    info!(
+        "OPad {} installed; it runs from the next time OPad starts",
+        available
+    );
     Ok(())
 }
 
-/// Upgrades OPad from our repository (docs/specs/release-and-updates.md §6.1)
-async fn upgrade_from_repo(
-    pm: opad_update::PackageManager,
-    installed: &str,
-    available: &str,
-    storage: &Arc<Mutex<Option<Storage>>>,
-    status: &SharedUpdateStatus,
-) -> Result<(), UpdateError> {
-    let commands = app::repo_upgrade_commands(pm, in_path("pkcon"));
-    info!("Upgrading OPad {} from the {:?} repository", available, pm);
+/// Windows: at startup, runs an installer an automatic update left for the
+/// next start. It closes OPad (this daemon included) and starts the new
+/// version. Run once: an install marked in progress at startup has already
+/// been tried, and [`recover_interrupted`] reports how it went.
+fn run_staged_installer(storage: &Arc<Mutex<Option<Storage>>>, status: &SharedUpdateStatus) {
+    let Some(staged) = read_json::<Staged>(storage, STAGED_KEY) else {
+        return;
+    };
+    remove_key(storage, STAGED_KEY);
+    let running = env!("CARGO_PKG_VERSION");
+    let path = std::path::PathBuf::from(&staged.path);
+    if !opad_update::version::is_newer(&staged.version, running) || !path.is_file() {
+        let _ = std::fs::remove_file(&path);
+        return;
+    }
+    info!("Installing OPad {} (downloaded earlier)", staged.version);
     write_json(
         storage,
         IN_PROGRESS_KEY,
         &InProgress {
             component: "app".to_string(),
-            from: installed.to_string(),
-            to: available.to_string(),
+            from: running.to_string(),
+            to: staged.version.clone(),
         },
     );
-    let applied = tokio::task::spawn_blocking(move || {
-        use std::process::Command;
-        for cmd in &commands {
-            let status = Command::new(&cmd[0])
-                .args(&cmd[1..])
-                .status()
-                .map_err(|e| UpdateError::Io(std::io::Error::other(format!("{}: {e}", cmd[0]))))?;
-            if !status.success() {
-                // A cancelled password prompt lands here; nothing changed
-                return Err(UpdateError::Http(format!(
-                    "{} exited with {:?}; the running version is unchanged",
-                    cmd.join(" "),
-                    status.code()
-                )));
-            }
-        }
-        Ok(())
-    })
-    .await
-    .map_err(|e| UpdateError::Io(std::io::Error::other(format!("apply step: {e}"))))
-    .and_then(|r| r);
-
-    let result = match &applied {
-        Ok(()) => UpdateResult::new("app", installed, available, true, ""),
-        Err(e) => UpdateResult::new("app", installed, available, false, e.to_string()),
-    };
-    write_json(storage, LAST_RESULT_KEY, &result);
-    remove_key(storage, IN_PROGRESS_KEY);
-    status.lock().last_result = Some(result.sentence());
-    applied?;
-    {
-        let mut s = status.lock();
-        s.restart_required = true;
-        s.app.ready_to_install = false;
-        s.app.installed = Some(available.to_string());
+    let cmd = app::installer_command(&path);
+    // Not waited for: the installer stops this process
+    if let Err(e) = std::process::Command::new(&cmd[0]).args(&cmd[1..]).spawn() {
+        warn!(
+            "Could not start the OPad {} installer: {}",
+            staged.version, e
+        );
+        let failed = UpdateResult::new("app", running, &staged.version, false, e.to_string());
+        write_json(storage, LAST_RESULT_KEY, &failed);
+        remove_key(storage, IN_PROGRESS_KEY);
+        status.lock().last_result = Some(failed.sentence());
+        let _ = std::fs::remove_file(&path);
     }
-    Ok(())
-}
-
-/// Whether `program` is on `$PATH`
-fn in_path(program: &str) -> bool {
-    std::env::var_os("PATH")
-        .is_some_and(|paths| std::env::split_paths(&paths).any(|dir| dir.join(program).is_file()))
 }
 
 fn apply_downloaded(
     policy: ApplyPolicy,
     origin: InstallOrigin,
     file: &std::path::Path,
+    feed_files: Option<(std::path::PathBuf, std::path::PathBuf)>,
 ) -> Result<(), UpdateError> {
     use std::process::Command;
 
-    if let Some(cmd) = app::apply_command(policy, file) {
-        let status = Command::new(&cmd[0])
+    let cmd = match (policy, &feed_files) {
+        (ApplyPolicy::Installer, _) => Some(app::installer_command(file)),
+        (ApplyPolicy::Helper(_), Some((feed, signature))) => {
+            Some(app::helper_command(file, feed, signature))
+        }
+        _ => None,
+    };
+    if let Some(cmd) = cmd {
+        let output = Command::new(&cmd[0])
             .args(&cmd[1..])
-            .status()
+            .output()
             .map_err(|e| UpdateError::Io(std::io::Error::other(format!("{}: {e}", cmd[0]))))?;
-        if !status.success() {
-            // A cancelled polkit prompt lands here. The running version is
-            // untouched and the update stays pending (§U-2 acceptance).
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        for line in stderr.lines().filter(|l| !l.trim().is_empty()) {
+            info!("{}", line);
+        }
+        if !output.status.success() {
+            // pkexec: 126 = not authorised, 127 = no such helper (a package
+            // from before the helper existed, or a missing polkit)
+            let why = match output.status.code() {
+                Some(126) => "polkit did not allow the update helper".to_string(),
+                Some(127) => format!("{} or pkexec is missing", app::HELPER_PATH),
+                _ => stderr
+                    .lines()
+                    .rev()
+                    .find(|l| !l.trim().is_empty())
+                    .unwrap_or("")
+                    .trim()
+                    .to_string(),
+            };
             return Err(UpdateError::Http(format!(
-                "{} exited with {:?}; the running version is unchanged",
+                "{} exited with {:?}: {why}; the running version is unchanged",
                 cmd[0],
-                status.code()
+                output.status.code()
             )));
         }
         return Ok(());
@@ -786,6 +876,7 @@ async fn update_tosu(
             .component(opad_update::TOSU)
             .and_then(|c| c.notes_url.clone());
         s.tosu.enabled = enabled;
+        s.tosu.with_app = !origin.owns_bundled_tosu();
         s.tosu.notify_only = matches!(action, TosuAction::NotifyOnly { .. });
         s.tosu.ready_to_install = matches!(
             action,

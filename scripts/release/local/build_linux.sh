@@ -17,7 +17,7 @@ export OPAD_LVGL_DIR="$PWD/build/lvgl"
 cargo zigbuild --release --locked --bins \
     --manifest-path desktop/Cargo.toml --target x86_64-unknown-linux-gnu.2.31
 mkdir -p desktop/target/release
-cp desktop/target/x86_64-unknown-linux-gnu/release/{opad-daemon,opad-gui,opadctl} desktop/target/release/
+cp desktop/target/x86_64-unknown-linux-gnu/release/{opad-daemon,opad-gui,opadctl,opad-update-helper} desktop/target/release/
 
 # Upstream's Linux espflash needs glibc 2.34; the packages carry one built
 # against 2.31, as in CI

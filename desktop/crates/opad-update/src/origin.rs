@@ -39,9 +39,12 @@ pub enum InstallOrigin {
 pub enum ApplyPolicy {
     /// Run the new signed installer `/SILENT /NORESTART`
     Installer,
-    /// Hand the downloaded package to the system package manager, which costs
-    /// one polkit prompt and keeps the package database honest
-    PackageManager(PackageManager),
+    /// Hand the downloaded package to the update helper
+    /// (`/usr/lib/opad/opad-update-helper`, through pkexec), which checks it
+    /// against the signed feed itself and installs it with the system's
+    /// package manager. The package's polkit rule lets the user at the
+    /// computer run it without a password; the package database stays honest.
+    Helper(PackageManager),
     /// Replace the files directly; the user already owns every one of them
     DirectReplace,
     /// Tell the user and change nothing on disk
@@ -52,6 +55,7 @@ pub enum ApplyPolicy {
 pub enum PackageManager {
     Apt,
     Dnf,
+    Pacman,
 }
 
 impl InstallOrigin {
@@ -86,10 +90,11 @@ impl InstallOrigin {
     pub fn apply_policy(self) -> ApplyPolicy {
         match self {
             Self::Windows => ApplyPolicy::Installer,
-            Self::Deb => ApplyPolicy::PackageManager(PackageManager::Apt),
-            Self::Rpm => ApplyPolicy::PackageManager(PackageManager::Dnf),
-            // pacman owns these files and yay/paru update them (§U-2)
-            Self::Aur => ApplyPolicy::NotifyOnly,
+            Self::Deb => ApplyPolicy::Helper(PackageManager::Apt),
+            Self::Rpm => ApplyPolicy::Helper(PackageManager::Dnf),
+            // The release's prebuilt opad-bin package, through pacman: the
+            // same package yay or paru would build from the AUR
+            Self::Aur => ApplyPolicy::Helper(PackageManager::Pacman),
             Self::AppImage | Self::User => ApplyPolicy::DirectReplace,
             // A system prefix nobody's package manager tracks: the daemon runs
             // as the user and has no business writing there.
@@ -185,13 +190,16 @@ mod tests {
         );
         assert_eq!(
             InstallOrigin::Deb.apply_policy(),
-            ApplyPolicy::PackageManager(PackageManager::Apt)
+            ApplyPolicy::Helper(PackageManager::Apt)
         );
         assert_eq!(
             InstallOrigin::Rpm.apply_policy(),
-            ApplyPolicy::PackageManager(PackageManager::Dnf)
+            ApplyPolicy::Helper(PackageManager::Dnf)
         );
-        assert_eq!(InstallOrigin::Aur.apply_policy(), ApplyPolicy::NotifyOnly);
+        assert_eq!(
+            InstallOrigin::Aur.apply_policy(),
+            ApplyPolicy::Helper(PackageManager::Pacman)
+        );
         assert_eq!(
             InstallOrigin::User.apply_policy(),
             ApplyPolicy::DirectReplace

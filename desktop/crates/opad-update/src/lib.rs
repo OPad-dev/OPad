@@ -26,6 +26,7 @@ pub mod client;
 pub mod download;
 pub mod firmware;
 pub mod gate;
+pub mod helper;
 #[cfg(feature = "net")]
 pub mod http;
 pub mod manifest;

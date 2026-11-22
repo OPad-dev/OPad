@@ -32,6 +32,13 @@ pub const FIRMWARE: &str = "firmware";
 pub const STABLE: &str = "stable";
 pub const BETA: &str = "beta";
 
+/// The `target` of the Arch Linux package (`opad-bin-*.pkg.tar.zst`, kind
+/// `archive`), which the update helper installs with pacman. A target of its
+/// own rather than a new kind: builds up to 1.0.0-rc.6 reject a feed with an
+/// artifact kind they do not know, and they look for `archive` only under
+/// `linux-x86_64`, so this entry is invisible to them.
+pub const PACMAN_TARGET: &str = "linux-x86_64-pacman";
+
 /// Schema 2 is the per-channel feed. Schema 1 was one manifest per release;
 /// no build that read it was ever published.
 pub const SUPPORTED_SCHEMA: u32 = 2;
@@ -54,6 +61,18 @@ pub struct ReleaseManifest {
     pub expires: Option<String>,
     #[serde(default)]
     pub components: BTreeMap<String, Component>,
+    /// The exact bytes this feed was parsed from and their signature, kept by
+    /// the client after verifying them, so the update helper can check the
+    /// same signature itself (it trusts nothing the daemon tells it)
+    #[serde(skip)]
+    pub signed: Option<std::sync::Arc<SignedBytes>>,
+}
+
+/// A feed as served, and its detached minisign signature
+#[derive(Debug, PartialEq, Eq)]
+pub struct SignedBytes {
+    pub bytes: Vec<u8>,
+    pub signature: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -162,6 +181,12 @@ pub enum ArtifactKind {
     Binary,
     /// An ESP32-S3 app image
     Firmware,
+    /// A kind this build does not know, from a newer feed: skipped, so the
+    /// rest of the feed still works. (Builds up to 1.0.0-rc.6 lack this and
+    /// refuse the whole feed instead, so a new kind must not be published
+    /// while those are in use.)
+    #[serde(other)]
+    Unknown,
 }
 
 /// What this build is, in the manifest's `target` vocabulary.

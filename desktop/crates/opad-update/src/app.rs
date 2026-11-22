@@ -1,27 +1,27 @@
 //! The OPad app updater (§U-2).
 //!
-//! Every install checks and, where it may, downloads. What differs between
-//! platforms is only **how the update is applied**, and that difference comes
-//! entirely from who owns the installed files (§U-2a):
+//! Every install checks and, where it may, downloads and installs. What
+//! differs between platforms is only **how the update is applied**, and that
+//! comes entirely from who owns the installed files (§U-2a):
 //!
 //! | origin | apply |
 //! |---|---|
-//! | Windows installer | run the new signed installer `/SILENT /NORESTART` |
-//! | `.deb` / `.rpm` from our apt/dnf repository | upgrade from the repository (PackageKit, or `pkexec` apt/dnf) |
-//! | `.deb` / `.rpm` downloaded by hand | hand the file to apt/dnf through one `pkexec` prompt |
-//! | AUR | notify only; pacman owns those files |
+//! | Windows installer | the new installer `/SILENT /NORESTART` (per user, no admin) |
+//! | `.deb`, `.rpm`, Arch `opad-bin` | the update helper, through pkexec: it checks the package against the signed feed and installs it with apt, dnf or pacman |
 //! | `make install-user`, AppImage | replace the files directly |
+//! | `make install` (source), no marker | notify only |
 //!
 //! **The thing that must not be done** is writing `/usr/bin/opad-daemon`
 //! directly, even where a way could be found. That desynchronises the package
 //! database: `dpkg -V` then reports modified files and the next `apt upgrade`
-//! silently reverts the update. The prompt is not a limitation to engineer
-//! around — it is the OS working correctly.
+//! silently reverts the update. The helper goes through the package manager
+//! for exactly that reason.
 //!
-//! Applying is never automatic by default (§U-2). The daemon decides only that
-//! an update *is available*; a person presses Install.
+//! With automatic updates on (the default) the daemon installs an update on
+//! its own while no map is being played. The running OPad keeps running; the
+//! new version is the one that starts next time.
 
-use crate::manifest::{Artifact, ArtifactKind, ReleaseManifest, APP};
+use crate::manifest::{Artifact, ArtifactKind, ReleaseManifest, APP, PACMAN_TARGET};
 use crate::origin::{ApplyPolicy, InstallOrigin, PackageManager};
 use crate::version::is_newer;
 use crate::{DeferReason, UpdateError};
@@ -39,7 +39,8 @@ pub enum AppAction {
     Defer {
         reason: DeferReason,
     },
-    /// Ready to offer. Nothing happens until the user says so.
+    /// Ready to install: on its own with automatic updates on, otherwise when
+    /// the user presses Install
     Available {
         installed: String,
         available: String,
@@ -49,23 +50,31 @@ pub enum AppAction {
     },
 }
 
-/// The artifact kind each origin needs, so the right one is picked out of a
-/// release that carries a `.deb`, an `.rpm` and an installer for one target.
+/// The artifact (target, kind) each origin installs, so the right one is
+/// picked out of a release that carries a `.deb`, an `.rpm`, the Arch package
+/// and an installer.
 ///
 /// The two direct-replacement origins differ: a `make install-user` tree is
 /// replaced from an archive, while an AppImage *is* one file and is replaced
-/// by the new one.
-pub fn wanted_kind(policy: ApplyPolicy, origin: InstallOrigin) -> Option<ArtifactKind> {
-    match policy {
-        ApplyPolicy::Installer => Some(ArtifactKind::Installer),
-        ApplyPolicy::PackageManager(PackageManager::Apt) => Some(ArtifactKind::Deb),
-        ApplyPolicy::PackageManager(PackageManager::Dnf) => Some(ArtifactKind::Rpm),
-        ApplyPolicy::DirectReplace if origin == InstallOrigin::AppImage => {
-            Some(ArtifactKind::Binary)
+/// by the new one. The Arch package has a target of its own
+/// ([`PACMAN_TARGET`]).
+pub fn wanted_artifact(
+    policy: ApplyPolicy,
+    origin: InstallOrigin,
+    target: &str,
+) -> Option<(String, ArtifactKind)> {
+    let kind = match policy {
+        ApplyPolicy::Installer => ArtifactKind::Installer,
+        ApplyPolicy::Helper(PackageManager::Apt) => ArtifactKind::Deb,
+        ApplyPolicy::Helper(PackageManager::Dnf) => ArtifactKind::Rpm,
+        ApplyPolicy::Helper(PackageManager::Pacman) => {
+            return Some((PACMAN_TARGET.to_string(), ArtifactKind::Archive))
         }
-        ApplyPolicy::DirectReplace => Some(ArtifactKind::Archive),
-        ApplyPolicy::NotifyOnly => None,
-    }
+        ApplyPolicy::DirectReplace if origin == InstallOrigin::AppImage => ArtifactKind::Binary,
+        ApplyPolicy::DirectReplace => ArtifactKind::Archive,
+        ApplyPolicy::NotifyOnly => return None,
+    };
+    Some((target.to_string(), kind))
 }
 
 /// The whole decision, with no IO and no network, so every row of the table
@@ -106,8 +115,8 @@ pub fn plan(
         return Ok(AppAction::Defer { reason });
     }
 
-    let artifact = manifest
-        .artifact_for(APP, target, wanted_kind(policy, origin))
+    let artifact = wanted_artifact(policy, origin, target)
+        .and_then(|(target, kind)| manifest.artifact_for(APP, &target, Some(kind)))
         .ok_or_else(|| UpdateError::NoArtifact {
             component: APP.to_string(),
             target: "this platform and packaging",
@@ -122,85 +131,43 @@ pub fn plan(
     })
 }
 
-/// The command that applies a downloaded artifact, as program plus arguments.
-///
-/// Returned rather than run so it can be asserted on in tests: these are the
-/// commands §U-2 specifies, and getting one wrong is how a package database
-/// ends up desynchronised.
-pub fn apply_command(policy: ApplyPolicy, file: &std::path::Path) -> Option<Vec<String>> {
-    let path = file.display().to_string();
-    match policy {
-        // Inno's CloseApplications stops the running processes for us, and
-        // /RELAUNCH=1 has it start the GUI again afterwards (installer.iss)
-        ApplyPolicy::Installer => Some(vec![
-            path,
-            "/SILENT".into(),
-            "/NORESTART".into(),
-            "/RELAUNCH=1".into(),
-        ]),
-        ApplyPolicy::PackageManager(PackageManager::Apt) => Some(vec![
-            "pkexec".into(),
-            "apt-get".into(),
-            "install".into(),
-            "-y".into(),
-            path,
-        ]),
-        ApplyPolicy::PackageManager(PackageManager::Dnf) => Some(vec![
-            "pkexec".into(),
-            "dnf".into(),
-            "install".into(),
-            "-y".into(),
-            path,
-        ]),
-        // Handled by extracting over the prefix, not by running anything
-        ApplyPolicy::DirectReplace => None,
-        ApplyPolicy::NotifyOnly => None,
-    }
+/// The Windows installer's command line, as program plus arguments.
+/// Returned rather than run so it can be asserted on in tests.
+pub fn installer_command(file: &std::path::Path) -> Vec<String> {
+    // Inno's CloseApplications stops the running processes for us, and
+    // /RELAUNCH=1 has it start the GUI again afterwards (installer.iss)
+    vec![
+        file.display().to_string(),
+        "/SILENT".into(),
+        "/SUPPRESSMSGBOXES".into(),
+        "/NORESTART".into(),
+        "/RELAUNCH=1".into(),
+    ]
 }
 
-/// The files the install instructions write to add our repository
-/// (docs/specs/release-and-updates.md §10.1)
-pub const APT_SOURCES: &[&str] = &[
-    "/etc/apt/sources.list.d/opad.sources",
-    "/etc/apt/sources.list.d/opad.list",
-];
-pub const DNF_REPOS: &[&str] = &["/etc/yum.repos.d/opad.repo"];
+/// Where the packages install the update helper, and the path their polkit
+/// action names (`packaging/linux/polkit/dev.opad.update.policy`)
+pub const HELPER_PATH: &str = "/usr/lib/opad/opad-update-helper";
 
-/// Whether this machine has our repository configured for `pm`. Then an
-/// update comes from the repository, signed by the repository key, and the
-/// system's own update tools see the same version the app installs.
-pub fn repo_configured(pm: PackageManager) -> bool {
-    let files = match pm {
-        PackageManager::Apt => APT_SOURCES,
-        PackageManager::Dnf => DNF_REPOS,
-    };
-    files.iter().any(|f| std::path::Path::new(f).exists())
-}
-
-/// The commands that upgrade OPad from our repository, run in order.
-///
-/// PackageKit is what the desktop's own update tools use: its polkit rules
-/// let the active user refresh the package lists without a password and ask
-/// once for the upgrade. Without it, one `pkexec` prompt runs the package
-/// manager directly. Fixed command lines only; nothing from a feed reaches
-/// them.
-pub fn repo_upgrade_commands(pm: PackageManager, packagekit: bool) -> Vec<Vec<String>> {
-    let v = |args: &[&str]| args.iter().map(|a| a.to_string()).collect::<Vec<_>>();
-    if packagekit {
-        return vec![
-            v(&["pkcon", "refresh"]),
-            v(&["pkcon", "-y", "update", "opad"]),
-        ];
-    }
-    match pm {
-        PackageManager::Apt => vec![v(&[
-            "pkexec",
-            "/bin/sh",
-            "-c",
-            "apt-get update && apt-get install --only-upgrade -y opad",
-        ])],
-        PackageManager::Dnf => vec![v(&["pkexec", "dnf", "upgrade", "-y", "--refresh", "opad"])],
-    }
+/// The helper's command line: the downloaded package, and the signed feed it
+/// is checked against. pkexec runs it as root without a password for the
+/// user at the computer (the polkit action allows it); the helper trusts
+/// none of these files until it has checked them itself.
+pub fn helper_command(
+    package: &std::path::Path,
+    feed: &std::path::Path,
+    signature: &std::path::Path,
+) -> Vec<String> {
+    vec![
+        "pkexec".into(),
+        HELPER_PATH.into(),
+        "--feed".into(),
+        feed.display().to_string(),
+        "--signature".into(),
+        signature.display().to_string(),
+        "--package".into(),
+        package.display().to_string(),
+    ]
 }
 
 #[cfg(test)]
@@ -230,6 +197,14 @@ mod tests {
                     artifact(ArtifactKind::Deb, "https://x/opad.deb"),
                     artifact(ArtifactKind::Rpm, "https://x/opad.rpm"),
                     artifact(ArtifactKind::Archive, "https://x/opad.tar.gz"),
+                    Artifact {
+                        target: PACMAN_TARGET.to_string(),
+                        kind: ArtifactKind::Archive,
+                        url: "https://x/opad-bin.pkg.tar.zst".to_string(),
+                        sha256: "00".to_string(),
+                        size: None,
+                        board: None,
+                    },
                     Artifact {
                         target: "windows-x86_64".to_string(),
                         kind: ArtifactKind::Installer,
@@ -300,7 +275,7 @@ mod tests {
                 artifact, policy, ..
             } => {
                 assert_eq!(artifact.kind, ArtifactKind::Deb);
-                assert_eq!(policy, ApplyPolicy::PackageManager(PackageManager::Apt));
+                assert_eq!(policy, ApplyPolicy::Helper(PackageManager::Apt));
             }
             other => panic!("{other:?}"),
         }
@@ -310,7 +285,17 @@ mod tests {
         }
         match available(InstallOrigin::User, "linux-x86_64") {
             AppAction::Available { artifact, .. } => {
-                assert_eq!(artifact.kind, ArtifactKind::Archive)
+                assert_eq!(artifact.kind, ArtifactKind::Archive);
+                assert!(artifact.url.ends_with(".tar.gz"), "{}", artifact.url);
+            }
+            other => panic!("{other:?}"),
+        }
+        match available(InstallOrigin::Aur, "linux-x86_64") {
+            AppAction::Available {
+                artifact, policy, ..
+            } => {
+                assert!(artifact.url.ends_with(".pkg.tar.zst"), "{}", artifact.url);
+                assert_eq!(policy, ApplyPolicy::Helper(PackageManager::Pacman));
             }
             other => panic!("{other:?}"),
         }
@@ -320,19 +305,6 @@ mod tests {
             }
             other => panic!("{other:?}"),
         }
-    }
-
-    #[test]
-    fn an_aur_install_is_never_offered_an_apply() {
-        // pacman owns these files; yay/paru update them.
-        let action = available(InstallOrigin::Aur, "linux-x86_64");
-        assert_eq!(
-            action,
-            AppAction::NotifyOnly {
-                available: "1.1.0".into(),
-                notes: Some("Fixed the thing".into())
-            }
-        );
     }
 
     #[test]
@@ -363,7 +335,7 @@ mod tests {
         let action = plan(
             &manifest("1.1.0"),
             "1.0.0",
-            InstallOrigin::Aur,
+            InstallOrigin::Source,
             "linux-x86_64",
             Err(DeferReason::Playing),
         )
@@ -372,51 +344,35 @@ mod tests {
     }
 
     #[test]
-    fn apply_commands_go_through_the_package_manager_never_around_it() {
+    fn packages_go_through_the_helper_never_around_it() {
         // Writing /usr/bin directly would make dpkg -V report modified files
         // and the next apt upgrade silently revert the update.
-        let deb = Path::new("/tmp/opad.deb");
-        assert_eq!(
-            apply_command(ApplyPolicy::PackageManager(PackageManager::Apt), deb).unwrap(),
-            vec!["pkexec", "apt-get", "install", "-y", "/tmp/opad.deb"]
-        );
-        let rpm = Path::new("/tmp/opad.rpm");
-        assert_eq!(
-            apply_command(ApplyPolicy::PackageManager(PackageManager::Dnf), rpm).unwrap(),
-            vec!["pkexec", "dnf", "install", "-y", "/tmp/opad.rpm"]
-        );
-    }
-
-    #[test]
-    fn a_repository_install_upgrades_from_the_repository_never_from_a_file() {
-        for pm in [PackageManager::Apt, PackageManager::Dnf] {
-            for packagekit in [true, false] {
-                let cmds = repo_upgrade_commands(pm, packagekit);
-                let last = cmds.last().unwrap();
-                assert!(last.iter().any(|a| a.contains("opad")), "{last:?}");
-                // Upgrade only: a repository update must never install
-                // something new or remove anything
-                assert!(cmds.iter().flatten().all(|a| !a.contains("remove")
-                    && !a.ends_with(".deb")
-                    && !a.ends_with(".rpm")));
-            }
-        }
-        assert_eq!(
-            repo_upgrade_commands(PackageManager::Apt, true)[0],
-            ["pkcon", "refresh"]
+        let cmd = helper_command(
+            Path::new("/s/opad.deb"),
+            Path::new("/s/beta.json"),
+            Path::new("/s/beta.json.minisig"),
         );
         assert_eq!(
-            repo_upgrade_commands(PackageManager::Dnf, false)[0][0],
-            "pkexec"
+            cmd,
+            [
+                "pkexec",
+                HELPER_PATH,
+                "--feed",
+                "/s/beta.json",
+                "--signature",
+                "/s/beta.json.minisig",
+                "--package",
+                "/s/opad.deb"
+            ]
         );
     }
 
     #[test]
     fn the_windows_installer_runs_silently_without_rebooting() {
-        let exe = Path::new("opad-setup.exe");
-        let cmd = apply_command(ApplyPolicy::Installer, exe).unwrap();
+        let cmd = installer_command(Path::new("opad-setup.exe"));
         assert_eq!(cmd[0], "opad-setup.exe");
         assert!(cmd.contains(&"/SILENT".to_string()));
+        assert!(cmd.contains(&"/SUPPRESSMSGBOXES".to_string()));
         assert!(
             cmd.contains(&"/NORESTART".to_string()),
             "an update must never reboot the machine out from under a player"
@@ -431,19 +387,31 @@ mod tests {
     fn an_appimage_is_replaced_by_a_file_not_an_archive() {
         // An AppImage is one file; there is no tree to extract over.
         assert_eq!(
-            wanted_kind(ApplyPolicy::DirectReplace, InstallOrigin::AppImage),
-            Some(ArtifactKind::Binary)
+            wanted_artifact(
+                ApplyPolicy::DirectReplace,
+                InstallOrigin::AppImage,
+                "linux-x86_64"
+            ),
+            Some(("linux-x86_64".to_string(), ArtifactKind::Binary))
         );
         assert_eq!(
-            wanted_kind(ApplyPolicy::DirectReplace, InstallOrigin::User),
-            Some(ArtifactKind::Archive)
+            wanted_artifact(
+                ApplyPolicy::DirectReplace,
+                InstallOrigin::User,
+                "linux-x86_64"
+            ),
+            Some(("linux-x86_64".to_string(), ArtifactKind::Archive))
         );
-    }
-
-    #[test]
-    fn nothing_that_only_notifies_has_a_command_to_run() {
-        assert!(apply_command(ApplyPolicy::NotifyOnly, Path::new("x")).is_none());
-        assert!(apply_command(ApplyPolicy::DirectReplace, Path::new("x")).is_none());
+        // The Arch package's own target, which builds up to 1.0.0-rc.6 never
+        // look at
+        assert_eq!(
+            wanted_artifact(
+                ApplyPolicy::Helper(PackageManager::Pacman),
+                InstallOrigin::Aur,
+                "linux-x86_64"
+            ),
+            Some((PACMAN_TARGET.to_string(), ArtifactKind::Archive))
+        );
     }
 
     #[test]

@@ -9,7 +9,7 @@
 //! something the server never sent.
 
 use crate::http::{Fetched, Http, MAX_ARTIFACT_BYTES, MAX_MANIFEST_BYTES};
-use crate::manifest::{check_feed, ReleaseManifest, SUPPORTED_SCHEMA};
+use crate::manifest::{check_feed, ReleaseManifest, SignedBytes, SUPPORTED_SCHEMA};
 use crate::schedule::CheckSchedule;
 use crate::verify::{check_hash_bytes, signing_configured, verify_manifest_signature};
 use crate::{Artifact, UpdateError};
@@ -140,13 +140,14 @@ impl UpdateClient {
         verify_manifest_signature(&bytes, &signature)?;
 
         // Only now are these bytes trustworthy enough to parse.
-        let manifest: ReleaseManifest = serde_json::from_slice(&bytes)?;
+        let mut manifest: ReleaseManifest = serde_json::from_slice(&bytes)?;
         if manifest.schema != SUPPORTED_SCHEMA {
             return Err(UpdateError::UnsupportedSchema {
                 found: manifest.schema,
                 supported: SUPPORTED_SCHEMA,
             });
         }
+        manifest.signed = Some(std::sync::Arc::new(SignedBytes { bytes, signature }));
         Ok(Some((manifest, etag)))
     }
 

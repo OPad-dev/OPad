@@ -322,6 +322,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 }),
                 last_error: status.last_error,
                 restart_required: status.restart_required,
+                pending_version: status.pending_version,
                 channel: status.channel,
                 checking: status.checking,
                 last_result: status.last_result,

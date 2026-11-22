@@ -26,6 +26,8 @@ opad-ipc = { path = "../crates/opad-ipc" }
 # DEVICE_PROTOCOL_VERSION: the pad protocol the daemon checks a pad against
 opad-protocol = { path = "../crates/opad-protocol" }
 opad-tosu = { path = "../crates/opad-tosu" }
+# Version ordering only; no network (default features off)
+opad-update = { path = "../crates/opad-update", default-features = false }
 dirs.workspace = true
 futures-util = { workspace = true, features = ["sink"] }
 
@@ -55,12 +57,15 @@ license-file = ["../../packaging/linux/deb/copyright", "0"]
 extended-description = "Low-latency ESP32-S3 keypad manager, telemetry HUD, and tray applet for osu!"
 section = "games"
 priority = "optional"
-depends = "$auto, libvulkan1, libwayland-client0, libx11-6, libxcursor1, libxkbcommon0, libxi6, libdbus-1-3, libcap2-bin"
+# pkexec runs the update helper (policykit-1 on Ubuntu 22.04, pkexec after)
+depends = "$auto, libvulkan1, libwayland-client0, libx11-6, libxcursor1, libxkbcommon0, libxi6, libdbus-1-3, libcap2-bin, pkexec | policykit-1"
 maintainer-scripts = "../../packaging/linux/deb"
 assets = [
     ["../target/release/opad-daemon", "usr/bin/opad-daemon", "755"],
     ["../target/release/opad-gui", "usr/bin/opad-gui", "755"],
     ["../target/release/opadctl", "usr/bin/opadctl", "755"],
+    ["../target/release/opad-update-helper", "usr/lib/opad/opad-update-helper", "755"],
+    ["../../packaging/linux/polkit/dev.opad.update.policy", "usr/share/polkit-1/actions/dev.opad.update.policy", "644"],
     ["../../build/espflash/espflash", "usr/lib/opad/bin/espflash", "755"],
     ["../../packaging/linux/deb/opad-daemon.service", "usr/lib/systemd/user/opad-daemon.service", "644"],
     ["../../packaging/linux/deb/opad.desktop", "usr/share/applications/opad.desktop", "644"],
@@ -88,6 +93,8 @@ assets = [
     { source = "../target/release/opad-daemon", dest = "/usr/bin/opad-daemon", mode = "755" },
     { source = "../target/release/opad-gui", dest = "/usr/bin/opad-gui", mode = "755" },
     { source = "../target/release/opadctl", dest = "/usr/bin/opadctl", mode = "755" },
+    { source = "../target/release/opad-update-helper", dest = "/usr/lib/opad/opad-update-helper", mode = "755" },
+    { source = "../../packaging/linux/polkit/dev.opad.update.policy", dest = "/usr/share/polkit-1/actions/dev.opad.update.policy", mode = "644" },
     { source = "../../build/espflash/espflash", dest = "/usr/lib/opad/bin/espflash", mode = "755" },
     { source = "../../packaging/linux/rpm/opad-daemon.service", dest = "/usr/lib/systemd/user/opad-daemon.service", mode = "644" },
     { source = "../../packaging/linux/rpm/opad.desktop", dest = "/usr/share/applications/opad.desktop", mode = "644" },
@@ -143,3 +150,5 @@ libXi = "*"
 dbus-libs = "*"
 # setcap in the post-install script (tosu's cap_sys_ptrace) and getcap at runtime
 libcap = "*"
+# pkexec runs the update helper
+polkit = "*"

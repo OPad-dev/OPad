@@ -28,7 +28,7 @@
 use opad_update::firmware::{FIRMWARE_BOARD, FIRMWARE_TARGET};
 use opad_update::manifest::{
     check_feed, Artifact, ArtifactKind, Component, ReleaseManifest, Rollout, APP, BETA, FIRMWARE,
-    STABLE, SUPPORTED_SCHEMA, TOSU,
+    PACMAN_TARGET, STABLE, SUPPORTED_SCHEMA, TOSU,
 };
 use opad_update::verify::{sha256_file, verify_manifest_signature};
 use opad_update::version::is_newer;
@@ -149,6 +149,14 @@ fn app_artifact(name: &str) -> Option<(String, ArtifactKind)> {
     }
     if lower.starts_with("opad") && lower.ends_with(".rpm") {
         return Some(("linux-x86_64".into(), ArtifactKind::Rpm));
+    }
+    // The Arch package the update helper installs with pacman: a target of
+    // its own, never the plain linux-x86_64 archive (manifest::PACMAN_TARGET)
+    if lower.starts_with("opad-bin-")
+        && !lower.starts_with("opad-bin-debug-")
+        && lower.ends_with("-x86_64.pkg.tar.zst")
+    {
+        return Some((PACMAN_TARGET.into(), ArtifactKind::Archive));
     }
     if lower.starts_with("opad-linux-x86_64-") && lower.ends_with(".tar.gz") {
         return Some(("linux-x86_64".into(), ArtifactKind::Archive));
@@ -541,6 +549,7 @@ fn feed(
         generated: rfc3339(now),
         expires: Some(rfc3339(now + chrono::Duration::days(expires_days))),
         components,
+        signed: None,
     }
 }
 
@@ -624,6 +633,15 @@ mod tests {
         assert_eq!(
             classify(APP, "opad-linux-x86_64-1.2.0.tar.gz"),
             Some(("linux-x86_64".into(), ArtifactKind::Archive))
+        );
+        assert_eq!(
+            classify(APP, "opad-bin-1.2.0-1-x86_64.pkg.tar.zst"),
+            Some((PACMAN_TARGET.into(), ArtifactKind::Archive))
+        );
+        // makepkg's debug package is not offered to anyone
+        assert_eq!(
+            classify(APP, "opad-bin-debug-1.2.0-1-x86_64.pkg.tar.zst"),
+            None
         );
         for other in [
             "SHA256SUMS",

@@ -88,6 +88,14 @@ pub fn plan(
     // Checked before the gate: "a newer version exists" is news the user
     // can act on even mid-map, and it changes nothing on disk.
     if !origin.owns_bundled_tosu() {
+        // The package's own tosu build comes and goes with the package, and
+        // records no revision: a rebuild of the same version (`-r1`) is not
+        // news for it, only a newer upstream version is
+        if !installed.is_empty() && !is_newer(&component.version, installed) {
+            return Ok(TosuAction::UpToDate {
+                version: installed.to_string(),
+            });
+        }
         return Ok(TosuAction::NotifyOnly {
             installed: installed.to_string(),
             available: component.version.clone(),
@@ -242,6 +250,35 @@ mod tests {
             components,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn a_package_install_is_not_told_about_a_rebuild_of_its_own_version() {
+        // The bug in the Updates page: "tosu 4.26.2 — 4.26.2 available". The
+        // package's tosu has no revision file, so the feed's r1 read as newer
+        let mut feed = manifest("4.26.2");
+        feed.components.get_mut(TOSU).unwrap().revision = 1;
+        for origin in [InstallOrigin::Deb, InstallOrigin::Rpm, InstallOrigin::Aur] {
+            let action = plan(&feed, Some("4.26.2"), 0, origin, "linux-x86_64", Ok(())).unwrap();
+            assert!(
+                matches!(action, TosuAction::UpToDate { .. }),
+                "{origin:?}: {action:?}"
+            );
+        }
+        // A newer upstream version is still news
+        let action = plan(
+            &manifest("4.27.0"),
+            Some("4.26.2"),
+            0,
+            InstallOrigin::Deb,
+            "linux-x86_64",
+            Ok(()),
+        )
+        .unwrap();
+        assert!(
+            matches!(action, TosuAction::NotifyOnly { .. }),
+            "{action:?}"
+        );
     }
 
     #[test]

@@ -3,8 +3,8 @@
 use crate::theme::{self, caption, heading, muted};
 use crate::{App, Message};
 use iced::widget::{
-    button, checkbox, column, container, pick_list, row, scrollable, slider, text, text_input,
-    Space,
+    button, checkbox, column, container, pick_list, row, rule, scrollable, slider, text,
+    text_input, Space,
 };
 use iced::{Alignment, Color, Element, Length};
 use opad_model::result_anim::{self, Trigger};
@@ -781,10 +781,10 @@ pub fn settings(app: &App) -> Element<'_, Message> {
     scrollable(content).into()
 }
 
-/// The update card (docs/specs/release-and-updates.md §15): the app and
-/// tosu, each with what is installed and what is available, the channel,
-/// *Check now*, and how the last install went. Every updater is switchable
-/// on its own (§U-0.4); the firmware has its own card beside this one.
+/// The update card (docs/specs/release-and-updates.md §15): what is installed
+/// and what is available for OPad and tosu, the automatic-update switches,
+/// the channel, *Check now*, and how the last install went. The firmware has
+/// its own card beside this one.
 fn updates(app: &App) -> Element<'_, Message> {
     use opad_ipc::UpdateComponent;
 
@@ -800,57 +800,66 @@ fn updates(app: &App) -> Element<'_, Message> {
         .into();
     };
 
-    let line = |name: &'static str,
-                c: &opad_ipc::ComponentUpdate,
-                component: UpdateComponent,
-                install_label: &'static str| {
+    // One row per component: name and version, its state underneath, and the
+    // action (if any) on the right, all rows the same shape
+    let component_row = |name: &'static str,
+                         c: &opad_ipc::ComponentUpdate,
+                         component: UpdateComponent,
+                         pending: Option<&String>|
+     -> Element<'_, Message> {
         let installed = c.installed.clone().unwrap_or_else(|| "unknown".into());
-        let state = match (&c.available, c.notify_only) {
-            // §U-2a: a package manager owns these files, so we report only
-            (Some(v), true) => format!("{} available — update through your package manager", v),
-            (Some(v), false) => format!("{} available", v),
-            (None, _) => "up to date".to_string(),
+        let state = match (pending, &c.available) {
+            (Some(v), _) if cfg!(windows) => {
+                format!("{v} downloaded · installs next time OPad starts")
+            }
+            (Some(v), _) => format!("{v} installed · runs next time OPad starts"),
+            (None, Some(v)) if c.with_app => format!("{v} comes with the next OPad update"),
+            (None, Some(v)) => format!("{v} available"),
+            (None, None) if c.with_app => "Up to date · updated together with OPad".to_string(),
+            (None, None) => "Up to date".to_string(),
         };
-        let mut info = column![
-            text(format!("{} {}", name, installed)).size(13),
-            muted(state).size(11),
-        ]
-        .spacing(2);
+        let mut status_line = row![muted(state).size(11)]
+            .spacing(8)
+            .align_y(Alignment::Center);
         if let (Some(_), Some(url)) = (&c.available, &c.notes_url) {
-            info = info.push(muted(format!("What's new: {}", url)).size(11));
+            status_line = status_line.push(
+                button(text("What's new").size(11))
+                    .style(theme::secondary)
+                    .padding([1, 8])
+                    .on_press(Message::OpenUrl(url.clone())),
+            );
         }
-        let mut r = row![info, Space::new().width(Length::Fill)].align_y(Alignment::Center);
-
-        // §U-2: never automatic for the app. A person presses this.
-        if c.ready_to_install {
+        let mut r = row![
+            column![text(format!("{name} {installed}")).size(13), status_line].spacing(3),
+            Space::new().width(Length::Fill),
+        ]
+        .align_y(Alignment::Center)
+        .height(Length::Fixed(44.0));
+        if c.ready_to_install && pending.is_none() {
             r = r.push(
-                button(text(install_label).size(12))
+                button(text("Install now").size(12))
                     .style(theme::primary)
+                    .padding([5, 14])
                     .on_press(Message::InstallUpdate(component)),
             );
-            r = r.push(Space::new().width(8));
         }
-        r.push(
-            checkbox(c.enabled)
-                .label(match component {
-                    UpdateComponent::App => "Check automatically",
-                    _ => "Update automatically",
-                })
-                .on_toggle(move |v| Message::ToggleUpdater(component, v)),
-        )
+        r.into()
     };
 
-    let checked = if u.checking {
-        "Checking for updates…".to_string()
-    } else {
-        u.last_check
-            .as_deref()
-            .map(|t| format!("Last checked {}", t))
-            .unwrap_or_else(|| "Not checked yet".to_string())
-    };
-    let mut check_btn = button(text("Check now").size(12)).style(theme::secondary);
-    if !u.checking {
-        check_btn = check_btn.on_press(Message::CheckForUpdates);
+    let pending = u.pending_version.as_ref().filter(|_| u.restart_required);
+    let mut switches = column![checkbox(u.app.enabled)
+        .label("Install OPad updates automatically")
+        .text_size(12)
+        .on_toggle(|v| Message::ToggleUpdater(UpdateComponent::App, v))]
+    .spacing(8);
+    // tosu inside a package is updated with OPad: there is nothing to switch
+    if !u.tosu.with_app {
+        switches = switches.push(
+            checkbox(u.tosu.enabled)
+                .label("Install tosu updates automatically")
+                .text_size(12)
+                .on_toggle(|v| Message::ToggleUpdater(UpdateComponent::Tosu, v)),
+        );
     }
 
     let channels = vec!["stable".to_string(), "beta".to_string()];
@@ -859,7 +868,6 @@ fn updates(app: &App) -> Element<'_, Message> {
         pick_list(channels, Some(u.channel.clone()), Message::SetUpdateChannel)
             .text_size(12)
             .padding([4, 8]),
-        Space::new().width(Length::Fill),
         muted(if u.channel == "beta" {
             "Release candidates as soon as they are out"
         } else {
@@ -867,14 +875,38 @@ fn updates(app: &App) -> Element<'_, Message> {
         })
         .size(11),
     ]
-    .spacing(8)
+    .spacing(10)
     .align_y(Alignment::Center);
+
+    let checked = if u.checking {
+        "Checking for updates…".to_string()
+    } else {
+        u.last_check
+            .as_deref()
+            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+            .map(|t| {
+                format!(
+                    "Last checked {}",
+                    t.with_timezone(&chrono::Local).format("%-d %b, %H:%M")
+                )
+            })
+            .unwrap_or_else(|| "Not checked yet".to_string())
+    };
+    let mut check_btn = button(text("Check now").size(12))
+        .style(theme::secondary)
+        .padding([5, 14]);
+    if !u.checking {
+        check_btn = check_btn.on_press(Message::CheckForUpdates);
+    }
 
     let mut content = column![
         caption("SOFTWARE UPDATES"),
-        line("OPad", &u.app, UpdateComponent::App, "Install now"),
-        line("tosu", &u.tosu, UpdateComponent::Tosu, "Update now"),
+        component_row("OPad", &u.app, UpdateComponent::App, pending),
+        component_row("tosu", &u.tosu, UpdateComponent::Tosu, None),
+        rule::horizontal(1),
+        switches,
         channel_row,
+        rule::horizontal(1),
         row![
             muted(checked).size(11),
             Space::new().width(Length::Fill),
@@ -882,20 +914,24 @@ fn updates(app: &App) -> Element<'_, Message> {
         ]
         .align_y(Alignment::Center),
     ]
-    .spacing(10);
+    .spacing(12);
 
-    if u.restart_required {
+    if let Some(v) = pending {
         content = content.push(
-            text("OPad was updated. Restart it to finish: quit from the tray and open it again.")
-                .size(12)
-                .color(theme::YELLOW),
+            text(if cfg!(windows) {
+                format!("OPad {v} is ready. It installs the next time OPad starts: quit OPad from the tray and open it again, or restart the PC.")
+            } else {
+                format!("OPad {v} is installed. It runs the next time OPad starts: quit OPad from the tray and open it again, or restart the PC.")
+            })
+            .size(12)
+            .color(theme::YELLOW),
         );
     }
     if let Some(r) = &u.last_result {
-        content = content.push(muted(format!("Last update: {}", r)).size(11));
+        content = content.push(muted(format!("Last update: {r}")).size(11));
     }
     if let Some(e) = &u.last_error {
-        content = content.push(muted(format!("Last check failed: {}", e)).size(11));
+        content = content.push(muted(format!("Last check failed: {e}")).size(11));
     }
 
     card(content).width(Length::Fill).into()

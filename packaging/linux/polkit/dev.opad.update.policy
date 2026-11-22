@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!--
+  OPad's update helper (/usr/lib/opad/opad-update-helper), which the daemon
+  runs through pkexec to install an OPad update for this package install.
+  The user at the computer may run it without a password: it installs only a
+  newer OPad release named by the signed update feed, and checks that itself
+  (desktop/crates/opad-update/src/helper.rs). Anyone else is asked for an
+  administrator password.
+-->
+<policyconfig>
+  <vendor>OPad</vendor>
+  <vendor_url>https://github.com/OPad-dev/OPad</vendor_url>
+  <action id="dev.opad.update">
+    <description>Install an OPad update</description>
+    <message>Authentication is required to install an OPad update</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/lib/opad/opad-update-helper</annotate>
+  </action>
+</policyconfig>
