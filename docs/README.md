@@ -31,9 +31,10 @@ flowchart TD
 
 ### User Guides (How-To)
 * [Updating Firmware](guides/update-firmware.md) — USB A/B OTA firmware updates via `opad-gui` or `opadctl`.
-* [Changing Key Pins](guides/change-key-pins.md) — Reassigning hand-wired GPIO pins and using Auto-Detect.
 * [Touchscreen and Swipes](guides/touchscreen-and-swipes.md) — Third-button Quick Retry in maps and swipe actions outside maps.
+* [Customizing the Screen Layout](guides/customize-screen-layout.md) — Building, exporting, and importing `Idle`/`Playing` layouts in Screen Designer, with every `ui_source_t` data source.
 * [Calibrating Hall Effect](guides/calibrate-hall-effect.md) — Guided 5-press calibration and Rapid Trigger tuning.
+* [Changing Key Pins](guides/change-key-pins.md) — Reassigning hand-wired GPIO pins and using Auto-Detect.
 * [Using with tosu](guides/use-with-tosu.md) — Live osu! telemetry, Linux `ptrace`, and custom `tosu` paths.
 * [Backup and Restore](guides/backup-and-restore.md) — Automatic and manual JSON backups via `opadctl` or `opad-gui`.
 * [Uninstallation Guide](guides/uninstall.md) — Clean removal on Linux and Windows.
@@ -81,8 +82,38 @@ flowchart TD
 Every contributor must uphold the product rules in [/AGENTS.md](/AGENTS.md):
 
 1. **The code is the single source of truth**: When code and documentation disagree, fix or remove the doc.
-2. **Cite source code**: Use invisible source comments (formatted as `<!--` `src:` `/path#symbol` `-->`) on user/reference pages and repo-root `/path` links on explanation/developer pages.
+2. **Cite source code**: Use invisible source comments (formatted as `<!--` `src:` `/path#symbol` `-->`) on user/reference pages and repo-root `/path` links on explanation/developer pages. Never use line numbers (`#L120`).
 3. **Never instruct anyone to press BOOT or RESET buttons**: Flashing, updating, and recovering happen over USB (`opadctl flash`, `opadctl recover`).
 4. **Independent updates**: App and pad update independently; never require updating both together.
 5. **Every key comes from a finger**: No macros, auto-tap, scripted input, or host-to-pad key injection.
 6. **No placeholder pages**: Never commit empty or speculative placeholder documents.
+
+---
+
+## 3. Fixed Paths, Special Directories, and Translations
+
+### Paths that must not move
+
+Code, CLI messages, workflows, and scripts print or reference these exact paths and numbered headings. Keep them at their current paths and preserve the meaning of each cited section:
+
+- [`docs/recovery.md`](recovery.md) (code cites §3, §5, §7, §7.6, §7.7)
+- [`docs/troubleshooting.md`](troubleshooting.md) (code cites §2)
+- [`docs/testing-checklist.md`](testing-checklist.md)
+- `docs/README.md`
+- [`docs/specs/release-and-updates.md`](specs/release-and-updates.md)
+- [`docs/specs/v2-hall-effect-decisions.md`](specs/v2-hall-effect-decisions.md)
+- [`docs/hardware/components/ads7028.md`](hardware/components/ads7028.md)
+
+### Archive, design records, and internal drafts
+
+- **`docs/history/`**: Historical archive of reviews, incident reports, and snapshots. Do not edit it, and do not publish it on the documentation site.
+- **`docs/specs/`** and **`docs/hardware/components/`**: English-only design records and component datasheet notes (published as reference records, not translated).
+- **`draft: true` pages** (`docs/launch-checklist.md`, `docs/pad-test-sheet.md`): Internal checklists kept hidden on the public documentation site.
+
+### Adding a new language
+
+The documentation site publishes English from the root of `docs/` and mirrors translations under `docs/<lang>/` (for example, Spanish in `docs/es/`):
+
+1. Mirror every published English page into `docs/<lang>/` using the exact same filenames, directory structure, heading count/order, and `<!--` `src:` `...` `-->` comments—excluding `README.md`, `history/`, `specs/`, `hardware/components/`, and `draft: true` pages.
+2. Keep commands, CLI flags, code identifiers, file paths, GUI labels, and error strings verbatim in English. Point relative links to the translated pages inside `docs/<lang>/`.
+3. Register the new locale in the separate Starlight website repository's locale configuration.
