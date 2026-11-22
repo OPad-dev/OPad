@@ -1,6 +1,8 @@
 ---
 title: Subsistema de configuración y NVS del firmware
 description: Referencia de implementación de espacios de nombres NVS del ESP32-S3, migración heredada osupad->opad, versionado de configuración y registros de calibración A/B con CRC32.
+sidebar:
+  order: 6
 ---
 
 El estado persistente del teclado se almacena en la partición NVS del ESP32-S3 (`0x9000` en [/firmware/partitions.csv](/firmware/partitions.csv)). Todas las escrituras NVS están prohibidas durante `PLAYING` y `COOLDOWN` y se difieren a `IDLE`.
