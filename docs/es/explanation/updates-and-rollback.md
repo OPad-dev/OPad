@@ -1,6 +1,8 @@
 ---
 title: Actualizaciones de firmware y reversión automática
 description: Disposición de particiones OTA duales, verificación de arranque de prueba del bootloader, reversión automática basada en USB y canales de actualización de software.
+sidebar:
+  order: 6
 ---
 
 OPad actualiza su firmware por USB sin tocar los botones físicos BOOT ni RESET (AGENTS.md §1.5). Dos mecanismos impiden que una actualización defectuosa deje inutilizado un teclado: una tabla de particiones OTA de doble ranura con reversión automática condicionada por USB, y una ruta de recuperación por ROM de máscara (`opadctl recover`) cuando una imagen ni siquiera enumera. <!-- src: /firmware/main/app_main.c#confirm_image_once_usb_works, /desktop/crates/opad-device/src/flash.rs#recover -->
