@@ -1,71 +1,45 @@
 ---
-title: Referencia de Crates Compartidas
-description: Catálogo técnico y límites arquitectónicos para las crates Rust internas compartidas que componen el espacio de trabajo de escritorio.
+title: Referencia de crates compartidos
+description: Catálogo técnico y responsabilidades de los nueve crates internos compartidos de Rust en desktop/crates/.
 ---
 
-La suite de escritorio está modularizada en nueve crates internas especializadas ubicadas bajo `desktop/crates/`: <!-- src: /desktop/crates/opad-model/src/lib.rs -->
+El espacio de trabajo Cargo de escritorio ([/desktop/Cargo.toml](/desktop/Cargo.toml)) divide la lógica compartida en nueve crates internos bajo `desktop/crates/`:
 
-## Crate Catalog
+## Catálogo de crates
 
-### 1. opad-model
-- **Propósito**: Modelos de dominio fundamentales y estructuras de datos compartidas entre todos los binarios y crates. <!-- src: /desktop/crates/opad-model/src/lib.rs -->
-- **Submódulos**:
-  - `paths`: Resolutores de rutas absolutas en el sistema de archivos para datos, registros, base de datos y binarios empaquetados (`paths.rs`). <!-- src: /desktop/crates/opad-model/src/paths.rs -->
-  - `board_test`: Estructuras de informes de autotest, enumeración de identificación de módulos y telemetría ADC.
-  - `tap_rate`: Modelos de estadísticas de intentos, histogramas de pulsación y analíticas KPM.
-  - `swipe`: Definiciones de acciones de deslizamiento táctil y enlaces de teclas.
-  - `result_anim`: Identificadores de animaciones de celebración de resultados.
+### 1. `opad-model` ([/desktop/crates/opad-model/src/lib.rs](/desktop/crates/opad-model/src/lib.rs))
+Modelos de dominio, validación y utilidades multiplataforma:
+- Estructuras principales: `DeviceInfo`, `DeviceConfig`, `CounterState`, `Key3Counters`, `LatencyStats`, `JsonBackup`, `HeKeyConfig`, `HeCalibrationStatus`, `HeLiveSample`.
+- Submódulos: `paths` ([/desktop/crates/opad-model/src/paths.rs](/desktop/crates/opad-model/src/paths.rs)), `board_test`, `diag`, `log`, `result_anim`, `swipe`, `tap_rate`, `ui_source`.
 
-### 2. opad-protocol
-- **Propósito**: Codificación, decodificación y análisis de tramas serie de Protocol Buffers sobre el cable en Rust puro. <!-- src: /desktop/crates/opad-protocol/src/lib.rs -->
-- **Características**:
-  - Compila `protocol/opad.proto` utilizando `protox`/`prost` en Rust puro sin requerir el compilador `protoc` del sistema.
-  - Implementa enmarcado marcado (`0xAA, 0x55`) y enmarcado verificado (`0xAA, 0x5A`).
-  - Implementación estándar de CRC-16/CCITT-FALSE (`crc16`). <!-- src: /desktop/crates/opad-protocol/src/lib.rs#crc16 -->
+### 2. `opad-protocol` ([/desktop/crates/opad-protocol/src/lib.rs](/desktop/crates/opad-protocol/src/lib.rs))
+Códec del protocolo serie en Rust puro:
+- Compila [/protocol/opad.proto](/protocol/opad.proto) mediante `protox` + `prost` en `build.rs` (sin requerir `protoc` externo).
+- Implementa entramado Legacy, Marked (`0xAA 0x55`) y Checked (`0xAA 0x5A` + CRC-16/CCITT-FALSE) (`crc16`).
 
-### 3. opad-ipc
-- **Propósito**: Comunicación entre procesos entre `opad-daemon`, `opad-gui` y `opadctl`. <!-- src: /desktop/crates/opad-ipc/src/lib.rs -->
-- **Características**:
-  - Sockets de flujo de dominio Unix con aislamiento de directorio por UID de usuario (`0700/0600`).
-  - Tuberías con nombre de Windows (`\\.\pipe\opad-ipc-<sid>`) blindadas con atributos de seguridad DACL SDDL exclusivos de usuario.
-  - Enmarcado JSON tipado de `IpcRequest` e `IpcResponse` con límites de 1 MiB para peticiones y 8 MiB para respuestas. <!-- src: /desktop/crates/opad-ipc/src/lib.rs#MAX_REQUEST_FRAME_SIZE -->
+### 3. `opad-ipc` ([/desktop/crates/opad-ipc/src/lib.rs](/desktop/crates/opad-ipc/src/lib.rs))
+IPC local entre `opad-daemon`, `opad-gui` y `opadctl`:
+- Sockets de dominio Unix de flujo (`0700`/`0600`) en [/desktop/crates/opad-ipc/src/transport/unix.rs](/desktop/crates/opad-ipc/src/transport/unix.rs) y Named Pipes de Windows (`\\.\pipe\opad-ipc-<SID>` con SDDL protegida `D:P(A;;GA;;;SY)(A;;GA;;;<SID>)`) en [/desktop/crates/opad-ipc/src/transport/windows.rs](/desktop/crates/opad-ipc/src/transport/windows.rs).
+- Entramado JSON UTF-8 delimitado por longitud (`MAX_REQUEST_FRAME_SIZE = 1 MiB`, `MAX_RESPONSE_FRAME_SIZE = 8 MiB`, `IPC_PROTOCOL_VERSION = 1`).
 
-### 4. opad-storage
-- **Propósito**: Capa de persistencia en base de datos SQLite para pulsaciones de por vida, configuraciones de dispositivo, diseños de pantalla e identidad de instalación. <!-- src: /desktop/crates/opad-storage/src/lib.rs -->
-- **Características**:
-  - Modo WAL y restricciones de claves foráneas habilitados al abrir la conexión.
-  - Migraciones de esquema integradas.
-  - Reconciliación de contadores monotónicos (`reconcile_counters`). <!-- src: /desktop/crates/opad-storage/src/lib.rs#reconcile_counters -->
-  - Aplicación de bloqueo de escritura durante las partidas activas (`StorageError::WritesBlocked`). <!-- src: /desktop/crates/opad-storage/src/lib.rs#StorageError::WritesBlocked -->
+### 4. `opad-storage` ([/desktop/crates/opad-storage/src/lib.rs](/desktop/crates/opad-storage/src/lib.rs))
+Persistencia SQLite (`opad.db`):
+- Modo WAL y claves foráneas activadas al abrir; migraciones integradas hasta el esquema v19 (`schema_migrations`, `device_state`, `config`, `layouts`, `app_state`, estadísticas de pulsación).
+- Guardia de escritura durante partida (`StorageError::WritesBlocked`) y `reconcile_counters`.
 
-### 5. opad-device
-- **Propósito**: Detección de hardware físico del pad, comunicación serie CDC-ACM y motor de flasheo. <!-- src: /desktop/crates/opad-device/src/lib.rs -->
-- **Características**:
-  - Bucle de enumeración de dispositivos que detecta la conexión del pad en menos de 2 segundos.
-  - Rutinas de flasheo de hardware directo (`flash::flash_firmware`, `recover`) interactuando con `espflash`.
-  - Reinicio por watchdog en bootloader ROM y análisis de la tabla de particiones.
+### 5. `opad-device` ([/desktop/crates/opad-device/src/lib.rs](/desktop/crates/opad-device/src/lib.rs))
+Gestor de dispositivo serie y flasheador de firmware:
+- Autodescubre `303a:4001`, negocia entramado Marked/Legacy (`HELLO_RETRY = 400 ms`) y expone el estado `Ownership`.
+- Implementa flasheo sin botones (`flash.rs`: `plan_app_update`, `flash_firmware`, `recover`, `reboot_to_bootloader`) envolviendo `espflash` **4.6.0** fijado más el reinicio por watchdog RTC para salir del modo descarga ROM.
 
-### 6. opad-layout
-- **Propósito**: Serialización, validación y motor de diseño para la pantalla LCD de 320x240 del teclado. <!-- src: /desktop/crates/opad-layout/src/lib.rs -->
-- **Características**:
-  - Reproduce fielmente las definiciones `ui_layout_t` y `ui_widget_t` de las cabeceras en C del firmware.
-  - Valida límites de coordenadas de widgets, límites de fuentes y número máximo de widgets (hasta 32 widgets).
+### 6. `opad-layout` ([/desktop/crates/opad-layout/src/lib.rs](/desktop/crates/opad-layout/src/lib.rs))
+Esquema de diseño, validación (`MAX_WIDGETS = 32`, límites `320x240`) y serialización de cable/NVS coincidente con `ui_layout_t` del firmware.
 
-### 7. opad-ui-preview
-- **Propósito**: Renderizado con precisión de píxel de los diseños de pantalla LCD dentro del diseñador de la GUI de escritorio. <!-- src: /desktop/crates/opad-ui-preview/src/lib.rs -->
-- **Características**:
-  - Recompila el núcleo gráfico en C de LVGL del firmware en la plataforma anfitriona.
-  - Renderiza los diseños de pantalla directamente en búferes de imagen RGBA sin divergencia con el hardware real.
+### 7. `opad-ui-preview` ([/desktop/crates/opad-ui-preview/src/lib.rs](/desktop/crates/opad-ui-preview/src/lib.rs))
+Compila el renderizador LVGL en C del firmware en el anfitrión para producir búferes RGBA con vistas previas exactas al píxel en Screen Designer.
 
-### 8. opad-tosu
-- **Propósito**: Supervisor y cliente WebSocket para el escáner de memoria empaquetado `tosu`. <!-- src: /desktop/crates/opad-tosu/src/lib.rs -->
-- **Características**:
-  - Inicia y gestiona el proceso hijo `tosu`.
-  - Se suscribe a `ws://127.0.0.1:24050/websocket/v2`, analizando metadatos de canciones en vivo, precisión, combo y UR.
+### 8. `opad-tosu` ([/desktop/crates/opad-tosu/src/lib.rs](/desktop/crates/opad-tosu/src/lib.rs))
+Supervisor del proceso `tosu` (`TosuSupervisor`, orden de búsqueda de binarios, anulaciones forzadas en `tosu.env`), analizador WebSocket v2 + `/precise` y diagnósticos Yama `ptrace_access()` en Linux.
 
-### 9. opad-update
-- **Propósito**: Marco de autoactualización para binarios de escritorio, tosu y firmware del pad. <!-- src: /desktop/crates/opad-update/src/lib.rs -->
-- **Características**:
-  - Inspecciona los canales de publicación de GitHub para `stable` y `beta`.
-  - Verificación criptográfica de sumas de comprobación frente a manifiestos de versión firmados.
-  - Sustitución atómica de ejecutables en disco.
+### 9. `opad-update` ([/desktop/crates/opad-update/src/lib.rs](/desktop/crates/opad-update/src/lib.rs))
+Verificación de actualizaciones firmadas (minisign Ed25519 + SHA-256), políticas `InstallOrigin` (`windows`, `deb`, `rpm`, `aur`, `appimage`, `user`, `source`), puerta de seguridad de partida (`may_update_now`), escrituras atómicas (`write_atomic`) y el generador de manifiestos `opad-feed`.
