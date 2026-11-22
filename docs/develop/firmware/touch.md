@@ -1,6 +1,8 @@
 ---
 title: Firmware Touchscreen Subsystem
 description: Implementation reference for the CST816S I2C touch driver, Core 1 touch_retry task, gesture classifier, and swipe feedback labels.
+sidebar:
+  order: 4
 ---
 
 The touchscreen subsystem drives the Hynitron CST816S capacitive touch controller over I2C to implement OPad's third button ([/AGENTS.md](/AGENTS.md) §1.4). All touch code runs on **Core 1** at priority `2` in `touch_retry_task` ([/firmware/main/input/touch_retry.c](/firmware/main/input/touch_retry.c)).
