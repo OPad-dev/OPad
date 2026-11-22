@@ -1,42 +1,37 @@
 ---
 title: Firmware Config and NVS Subsystem
-description: Implementation reference for Non-Volatile Storage (NVS) management, namespace migration, atomic A/B records, and CRC32 verification.
+description: Implementation reference for ESP32-S3 NVS namespaces, legacy osupad->opad migration, config versioning, and A/B CRC32 calibration records.
 ---
 
-The configuration and storage subsystem manages persistent pad state inside the ESP32-S3 Non-Volatile Storage (NVS) flash partition. It isolates flash erase and write operations from active gameplay, manages namespace migration, and ensures atomic record updates using checksummed A/B slots. <!-- src: /firmware/main/config/device_config.c -->
+Persistent pad state is stored in the ESP32-S3 NVS partition (`0x9000` in [/firmware/partitions.csv](/firmware/partitions.csv)). All NVS commits are forbidden during `PLAYING` and `COOLDOWN` and deferred to `IDLE`.
 
 ## NVS Namespaces & Migration (`nvs_ns.c`)
 
-Storage is divided into five distinct logical namespaces (`nvs_ns.c`): <!-- src: /firmware/main/config/nvs_ns.c -->
+Defined in [/firmware/main/config/nvs_ns.c](/firmware/main/config/nvs_ns.c):
 
-| Namespace Constant | Active Name | Legacy Name | Contents |
+| Enum (`nvs_ns_id_t`) | Active Name | Legacy Name | Stored Data |
 |---|---|---|---|
-| `NVS_NS_COUNTERS` | `"opad"` | `"osupad"` | Monotonic lifetime keypress counters, counter generation, owner identity. <!-- src: /firmware/main/config/nvs_ns.c --> |
-| `NVS_NS_CONFIG` | `"opad_cfg"` | `"osupad_cfg"` | Debounce window, key pin assignments, backlight brightness, swipe bindings. <!-- src: /firmware/main/config/nvs_ns.c --> |
-| `NVS_NS_CAL` | `"opad_cal"` | `"osupad_cal"` | Hall Effect calibration records for Key 1 and Key 2. <!-- src: /firmware/main/config/nvs_ns.c --> |
-| `NVS_NS_CAL3` | `"opad_cal3"` | `"osupad_cal3"` | Hall Effect calibration records for Key 3 (V3 module). <!-- src: /firmware/main/config/nvs_ns.c --> |
-| `NVS_NS_UI` | `"opad_ui"` | `"osupad_ui"` | Custom serialized widget screen layouts (`idle` and `playing`). <!-- src: /firmware/main/config/nvs_ns.c --> |
+| `NVS_NS_COUNTERS` | `"opad"` | `"osupad"` | `generation`, `key1_cnt`, `key2_cnt`, `key3_cnt` ([/firmware/main/counters/counters.c](/firmware/main/counters/counters.c)) |
+| `NVS_NS_CONFIG` | `"opad_cfg"` | `"osupad_cfg"` | `"cfg"` (`device_config_data_t` v7 including `owner_id[16]`), `"cfg_ext"` (`device_config_ext_t` v1), `"he_cfg"`, `"he_cfg3"` ([/firmware/main/config/device_config.c](/firmware/main/config/device_config.c)) |
+| `NVS_NS_CAL` | `"opad_cal"` | `"osupad_cal"` | V1 Hall Effect A/B calibration (`cal_a`, `cal_b`) ([/firmware/main/input/he_cal.c](/firmware/main/input/he_cal.c)) |
+| `NVS_NS_CAL3` | `"opad_cal3"` | `"osupad_cal3"` | V3 Hall Effect A/B calibration (`cal_a`/`cal_b` for Keys 1–2, `cal3_a`/`cal3_b` for Key 3) ([/firmware/main/input/he_cal.c](/firmware/main/input/he_cal.c)) |
+| `NVS_NS_UI` | `"opad_ui"` | `"osupad_ui"` | Custom screen layouts (`layout0`, `layout1`) ([/firmware/main/ui/ui_store.c](/firmware/main/ui/ui_store.c)) |
 
-To guarantee backward compatibility (Product Rule 3), the namespace resolver checks for the existence of legacy namespace names before opening active ones; existing pads smoothly read their legacy records without losing data. <!-- src: /firmware/main/config/nvs_ns.c -->
+At boot, `nvs_ns_migrate()` copies every entry from each legacy `osupad*` namespace into its `opad*` namespace, commits all entries, and writes the `NVS_NS_MIGRATED_KEY` (`1`) marker last. If any step fails or power drops mid-copy, the partial new namespace is erased and `nvs_ns_name()` continues opening the legacy namespace so existing data is never lost.
 
-## Atomic A/B Record Architecture (`he_cal_record.c`)
+## Config Blob Compatibility (`device_config.h`, `config_validate.c`)
 
-Flash writes risk corruption if power is interrupted mid-transaction. Critical records (such as Hall Effect calibration and configuration) employ an alternating A/B ping-pong storage scheme: <!-- src: /firmware/main/input/he_cal_record.c -->
+- `device_config_data_t` (version `7`) supports loading shorter legacy blobs v1–v6 (`device_config_blob_layout_ok` in [/firmware/main/config/config_validate.c](/firmware/main/config/config_validate.c)) and filling newer fields with defaults.
+- Settings added after v7 (`key3_usage`, `game_keys`) live in a separate `"cfg_ext"` key (`device_config_ext_t`) so rolling back to older firmware never invalidates `"cfg"`.
+- Hall Effect settings live in `"he_cfg"` (Keys 1–2) and `"he_cfg3"` (Key 3) as `he_config_record_t` (`HE_CONFIG_RECORD_MAGIC = 0x48454346` `"HECF"`, version `1`, `flags` for `no_floor`, IEEE 802.3 CRC-32) ([/firmware/main/config/he_config_record.h](/firmware/main/config/he_config_record.h)).
 
-- **Record Structure (`he_cal_record_t`)**:
-  - `magic`: 32-bit validation magic (`HE_CAL_MAGIC = 0x4845434C`). <!-- src: /firmware/main/input/he_cal_record.c -->
-  - `version`: Format revision (`HE_CAL_VERSION = 1`).
-  - `seq`: Monotonically incrementing 32-bit sequence number.
-  - `keys[2]`: Per-key calibration structures (rest, bottom, span).
-  - `crc32`: Standard IEEE 802.3 CRC32 checksum covering the entire record. <!-- src: /firmware/main/input/he_cal_record.c#he_cal_crc32 -->
-- **Two Slots (`cal_a` and `cal_b`)**:
-  - At boot, both slots are read and validated against their CRC32 checksums.
-  - If both are valid, the slot with the higher sequence number (`seq`) is loaded.
-  - When writing updates, the inactive slot is written and committed first before invalidating or superseding the previous slot. An interrupted write leaves the previous valid record intact.
+## Atomic A/B Calibration Records (`he_cal_record.h`, `he_cal.c`)
 
-## Runtime Staging & Flash Invariant
+Implemented in [/firmware/main/input/he_cal_record.h](/firmware/main/input/he_cal_record.h) and [/firmware/main/input/he_cal.c](/firmware/main/input/he_cal.c):
 
-Flash erase cycles take between 20 ms and 100 ms, stalling CPU cache execution across both Xtensa cores: <!-- src: /firmware/main/config/device_config.c -->
-- When the host sends `SetConfig` or `SetLayout`, settings are applied to active RAM variables immediately (`s_config`).
-- If the device state is `OPAD_STATE_PLAYING` or `OPAD_STATE_COOLDOWN`, flash commits are deferred (`s_dirty = true`).
-- The runtime supervisor flushes pending dirty configuration records to NVS only after the pad returns to `OPAD_STATE_IDLE`.
+- **Struct (`he_cal_record_t`)**: `magic = 0x4F504341` (`"OPCA"`), `version = 1`, `seq` (monotonic `uint32_t` with wrap-safe comparison), `keys[2]` (`rest`, `full`, `valid`), and IEEE 802.3 `crc32`.
+- **Ping-pong A/B writes**: Each store alternates between slot A and slot B (`cal_a`/`cal_b`, and `cal3_a`/`cal3_b` for Key 3 on V3). At boot, both slots are read and CRC-validated, selecting the valid slot with the newer `seq`. Missing or corrupt records fall back to provisional factory defaults (`valid = false`) without erasing NVS.
+
+## Deferred Flushing
+
+When `SetConfig`, `SetLayout`, or calibration updates arrive during `PLAYING` or `COOLDOWN`, firmware updates RAM immediately, sets dirty flags, and waits for `runtime_supervisor_task` ([/firmware/main/runtime/runtime.c](/firmware/main/runtime/runtime.c)) to flush them once `OPAD_STATE_IDLE` is reached.
