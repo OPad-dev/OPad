@@ -1,6 +1,8 @@
 ---
 title: Cambios de protocolo y evolución del esquema
 description: Cómo evolucionar opad.proto, regenerar los enlaces de nanopb y prost, y mantener la compatibilidad bidireccional en el cable entre la app y el teclado.
+sidebar:
+  order: 4
 ---
 
 El protocolo de comunicación de OPad entre la suite de escritorio y el firmware del teclado está definido por un único esquema: [`protocol/opad.proto`](/protocol/opad.proto). Tanto los crates de escritorio en Rust como el firmware C del ESP32-S3 generan sus tipos de cable a partir de este archivo.
