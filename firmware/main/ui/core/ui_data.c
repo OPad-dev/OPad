@@ -1,4 +1,10 @@
+#ifdef ESP_PLATFORM
 #include "esp_attr.h"
+#else  // the desktop's UI preview builds this file too
+#ifndef EXT_RAM_BSS_ATTR
+#define EXT_RAM_BSS_ATTR
+#endif
+#endif
 #include "ui_core.h"
 #include "ui_internal.h"
 #include <math.h>
