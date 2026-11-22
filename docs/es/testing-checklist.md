@@ -49,10 +49,10 @@ Leyenda: **PASS** / **FAIL** / **NOT RUN** / **n/r** = no requerido en esta plat
 
 | ID | Elemento de prueba | Procedimiento | Criterios de aceptación | Linux | Windows |
 |---|---|---|---|---|---|
-| COM-01 | Host CDC ausente | Arrancar el pad con el demonio detenido (host USB HID puro). | El teclado arranca limpiamente, funciona normalmente, sin reinicios por watchdog de FreeRTOS ni saturación de búfer. | **PASS** | **PASS** (2026-09-18) — PnP reporta Dispositivo de teclado HID OK y Presente con demonio detenido |
+| COM-01 | Host CDC ausente | Arrancar el pad con el daemon detenido (host USB HID puro). | El teclado arranca limpiamente, funciona normalmente, sin reinicios por watchdog de FreeRTOS ni saturación de búfer. | **PASS** | **PASS** (2026-09-18) — PnP reporta Dispositivo de teclado HID OK y Presente con daemon detenido |
 | COM-02 | Trama de protocolo malformada | Inyectar bytes de ruido aleatorio y cabeceras de trama no válidas en `/dev/ttyACM0`. | El firmware descarta el búfer malformado, registra `DIAG_EVENT_FRAME_TOO_LARGE` / `DIAG_EVENT_DECODE_FAILED` y se recupera en la siguiente trama válida sin bloquearse. | **PASS** | **PASS** (2026-09-18) — Inyectados 512B de ruido, trama excesiva de 0x7FFFFFFF y bytes corruptos; el teclado se recuperó con el siguiente Hello |
-| COM-03 | Reconexión USB rápida | Desconectar y reconectar el cable USB 20 veces seguidas (intervalo de 1s). | El demonio se reconecta limpiamente cada vez; el teclado se enumera como HID + CDC sin bloquearse. | **PASS** | n/r |
-| COM-04 | Cierre del demonio en partida | Terminar `opad-daemon` (`kill -9`) en mitad de una partida activa. | El teclado sigue funcionando como teclado HID a 1000 Hz sin ninguna interrupción en las pulsaciones. | **PASS** | n/r |
+| COM-03 | Reconexión USB rápida | Desconectar y reconectar el cable USB 20 veces seguidas (intervalo de 1s). | El daemon se reconecta limpiamente cada vez; el teclado se enumera como HID + CDC sin bloquearse. | **PASS** | n/r |
+| COM-04 | Cierre del daemon en partida | Terminar `opad-daemon` (`kill -9`) en mitad de una partida activa. | El teclado sigue funcionando como teclado HID a 1000 Hz sin ninguna interrupción en las pulsaciones. | **PASS** | n/r |
 | COM-05 | Cierre de tosu en partida | Terminar el servidor WebSocket de tosu durante una partida activa. | El teclado pasa de forma segura de PLAYING a COOLDOWN (5s) y luego a IDLE; sin bloqueos en la interfaz. | **PASS** | n/r |
 
 ---
@@ -64,7 +64,7 @@ Leyenda: **PASS** / **FAIL** / **NOT RUN** / **n/r** = no requerido en esta plat
 | FAIL-01 | Fallback ante fallo de LCD | Compilar con `CONFIG_OPAD_TEST_FAIL_LCD=y` y flashear. | Fallo no fatal de LCD registrado; el teclado pasa a operar sin pantalla; 0 impacto en latencia HID. | **PASS** | n/r |
 | FAIL-02 | Fallback ante fallo de NVS | Compilar con `CONFIG_OPAD_TEST_FAIL_NVS=y` y flashear. | Fallo no fatal de NVS registrado; el teclado pasa a contadores solo en RAM; el teclado y protocolo siguen funcionando. | **PASS** | n/r |
 | FAIL-03 | Persistencia tras corte de corriente | Jugar mapa con 500 pulsaciones, esperar 10s en IDLE para sincronización, desconectar alimentación. Reconectar. | Los contadores de vida útil coinciden exactamente con los previos a la desconexión; 0 pérdidas de pulsaciones. | **PASS** (2026-09-18) | **PASS** (2026-09-18) — Verificadas más de 500 pulsaciones, sincronización en IDLE y corte de alimentación; contadores idénticos con 0 pérdida |
-| FAIL-04 | Modo degradado de SQLite | Revocar permisos de escritura en la base de datos (`chmod 400 opad.db`), iniciar demonio. | El demonio arranca en modo degradado, muestra `storage_error` en GUI/IPC, bloquea escrituras destructivas y mantiene diseños en memoria. | **PASS** | **PASS** (2026-09-18) — Probado con opad.db de solo lectura; demonio arrancó y conectó al hardware |
+| FAIL-04 | Modo degradado de SQLite | Revocar permisos de escritura en la base de datos (`chmod 400 opad.db`), iniciar daemon. | El daemon arranca en modo degradado, muestra `storage_error` en GUI/IPC, bloquea escrituras destructivas y mantiene diseños en memoria. | **PASS** | **PASS** (2026-09-18) — Probado con opad.db de solo lectura; daemon arrancó y conectó al hardware |
 | FAIL-05 | La actualización va a la otra ranura | En pad funcional, ejecutar `opadctl flash firmware/build/opad-firmware.bin`. | Muestra la ranura que escribe y la de respaldo; regresa con "Flash succeeded" en la otra ranura (`Running Slot` en `opadctl status`). | **PASS** (2026-10-10, ota_0 → ota_1, entrada confirmada VALID) | n/r |
 | FAIL-06 | Actualización dañada revierte | Compilar con `CONFIG_TINYUSB_HID_COUNT=1` y assertions eliminadas en `usb_descriptors.c`, luego flashear con `opadctl flash`. | `dmesg` muestra `can't set config #1, error -32`; ~20 s después el pad reinicia en la ranura previa por sí solo; `opadctl flash` indica que volvió a la anterior; las teclas funcionan. | **PASS** (2026-10-10, de nuevo en ota_0 tras 22 s) | n/r |
 | FAIL-07 | Recuperación con reconexión | `opadctl recover firmware/build`, luego reconectar el pad. | "Caught the pad booting", cuatro imágenes escritas, "Recovered". Ningún botón pulsado. | **PASS** (2026-10-10, ventana de arranque desde reinicio por watchdog; también desde download mode) | n/r |
@@ -104,7 +104,7 @@ Estas pruebas carecen de contrapartida en Linux y representan trabajo nuevo, por
 | WIN-03 | Tubería IPC privada al usuario | Desde una segunda cuenta de Windows, intentar abrir `\\.\pipe\opad-ipc-{sid}` de la primera. | Acceso denegado. Es la mitad en Windows de la garantía de sockets `0700` de P2-6. | **PASS** (2026-09-17) — Desde `tester2`: `Access to the path is denied.` Desde `opad` (propietario): abre correctamente. |
 | WIN-04 | Valores de inicio automático | Instalar, cerrar sesión, iniciar sesión de nuevo. | `HKCU\...\Run` contiene exactamente `opad-daemon` → `"<dir>\opad-daemon.exe"` y `opad-gui` → `"<dir>\opad-gui.exe" --tray` (§W1-1), y ambos están en ejecución. | **PASS** (2026-09-18) — Verificado en `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` con rutas apuntando a `%LOCALAPPDATA%\Programs\opad`, ambos procesos activos en la sesión del usuario. |
 | WIN-05 | Hotplug en menos de 2 s | Con el daemon en ejecución, desconectar el pad, esperar 5 s y reconectarlo. | La bandeja y la GUI lo muestran conectado en menos de 2 s (escaneo de 400 ms + 300 ms de asentamiento). | **PASS** (2026-09-17) — Desconexión → `Disconnected`, reconexión → `Connected`; sondeo medido en **0.75 s**, dentro del margen de 2 s. |
-| WIN-06 | Flasheo con la GUI activa | `opadctl flash firmware\build\opad-firmware.bin` sin detener el demonio previamente. | Se completa con éxito. El demonio libera el puerto COM en `PrepareFlash` y el pad reaparece con la aplicación. **Criterio de aceptación del §W1-3.** | **PASS** (2026-09-18) — Verificado en Windows 11 real. `opadctl flash` activó bootloader ROM en COM4, escribió `opad-firmware.bin` en 0x20000 mediante `espflash`, reinició en la app y el pad volvió a estar en línea en COM3. |
+| WIN-06 | Flasheo con la GUI activa | `opadctl flash firmware\build\opad-firmware.bin` sin detener el daemon previamente. | Se completa con éxito. El daemon libera el puerto COM en `PrepareFlash` y el pad reaparece con la aplicación. **Criterio de aceptación del §W1-3.** | **PASS** (2026-09-18) — Verificado en Windows 11 real. `opadctl flash` activó bootloader ROM en COM4, escribió `opad-firmware.bin` en 0x20000 mediante `espflash`, reinició en la app y el pad volvió a estar en línea en COM3. |
 | WIN-07 | Flasheo de recuperación desde release | Seguir `docs/recovery.md` §7 de principio a fin en equipo limpio, desde release desempaquetado. | El teclado regresa sin reclamar, `opadctl status` muestra `Running Slot: ota_0` y nada en la guía resultó incorrecto. **Criterio de aceptación del §W3-4.** | **BLOCKED** — requiere release compilado y WIN-06 demuestra que no puede completarse bajo passthrough USB. |
 | WIN-08 | Puerto COM superior a COM9 | Forzar el pad a COM10 o superior (Administrador de dispositivos → Configuración de puerto → Avanzada). | `opadctl status`, `flash` y `bootloader` lo detectan y abren correctamente. | **PASS** (2026-09-17) — Forzado a **COM15**. Demonio registró conexión en COM15 y `opadctl status` devolvió el estado completo. |
 
@@ -121,7 +121,7 @@ En Windows (§W2-3), ejecutar en VM limpia con instantánea previa del sistema d
 | PKG-03 | La desinstalación elimina los datos | Usar la aplicación (para crear `opad.db` y logs) y luego desinstalar. | No queda nada de OPad en el perfil de ningún usuario (`%APPDATA%\opad` en Windows; `~/.local/share/opad`, etc. en Linux). Una actualización conserva todo. | | |
 | PKG-04 | Marcador install-origin | Tras instalar, leer `install-origin` en el directorio de instalación. | Contiene cadena literal exacta (`windows` en Windows, `deb` o `rpm` en Linux, sin salto de línea final). | **PASS** (exactos 3 bytes, sin salto) | **PASS** (2026-09-18) — Exactos 7 bytes `'windows'`, cero saltos de línea. |
 | PKG-05 | tosu integrado completo | Tras instalar, listar directorio de tosu integrado. | `tosu` (`tosu.exe`), `NOTICE`, `LICENSE` y `VERSION` presentes, con `VERSION` conteniendo `4.26.2` en una sola línea. | **PASS** (tosu v4.26.2 completo) | **PASS** (2026-09-18) — `tosu.exe`, `NOTICE`, `LICENSE` y `VERSION` (`4.26.2`). |
-| PKG-06 | Desinstalar durante ejecución | Desinstalar con GUI abierta y demonio activo. | `CloseApplications` de Inno los detiene; gestores de paquetes eliminan archivos limpiamente; sin avisos de "archivo en uso", sin reinicio necesario. | **PASS** (eliminación limpia en Linux) | **PASS** (2026-09-18) — `StopRunningProcesses` termina daemon/gui/tosu; desinstalación silenciosa completa en ~4s sin avisos ni reinicio. |
+| PKG-06 | Desinstalar durante ejecución | Desinstalar con GUI abierta y daemon activo. | `CloseApplications` de Inno los detiene; gestores de paquetes eliminan archivos limpiamente; sin avisos de "archivo en uso", sin reinicio necesario. | **PASS** (eliminación limpia en Linux) | **PASS** (2026-09-18) — `StopRunningProcesses` termina daemon/gui/tosu; desinstalación silenciosa completa en ~4s sin avisos ni reinicio. |
 
 ---
 
@@ -131,7 +131,7 @@ En Windows (§W2-3), ejecutar en VM limpia con instantánea previa del sistema d
 |---|---|---|---|---|
 | UPD-01 | Rechazo de manifiesto alterado | Servir manifiesto con un byte modificado o firmado con clave distinta. | Rechazado por firma incorrecta. Nada descargado ni aplicado, versión actual intacta (§U-0.3). | **PASS (Automatizado)** — Verificado mediante pruebas unitarias en `verify::tests` y en el daemon. |
 | UPD-02 | Rechazo de artefacto alterado | Firma válida pero artefacto con hash SHA-256 no coincidente. | `HashMismatch`. Archivo temporal eliminado, versión previa sobrevive. | **PASS (Automatizado)** — Verificado en `verify::tests` y `download::tests`. |
-| UPD-03 | Descarga interrumpida — tosu | Matar demonio a mitad de descarga. Repetir para app y firmware. | En los tres casos el estado funcional previo sobrevive y la comprobación recomienza. Nunca se instala un binario a medias (§U-0.5). | **PASS (Automatizado)** — Verificado en `download::tests` y `tosu::tests`. |
+| UPD-03 | Descarga interrumpida — tosu | Matar daemon a mitad de descarga. Repetir para app y firmware. | En los tres casos el estado funcional previo sobrevive y la comprobación recomienza. Nunca se instala un binario a medias (§U-0.5). | **PASS (Automatizado)** — Verificado en `download::tests` y `tosu::tests`. |
 | UPD-04 | Nada actualiza a mitad de mapa | Iniciar mapa con actualización pendiente. | Ningún actualizador se ejecuta durante PLAYING o COOLDOWN; se aplica tras alcanzar IDLE (§U-0.1). | **PASS (Automatizado)** — Verificado en pruebas unitarias del updater y daemon. |
 | UPD-05 | Aplicación cancelada no altera nada | Cancelar diálogo de polkit (Linux) o UAC (Windows) en actualización de app. | Versión en ejecución inalterada y actualización permanece pendiente. | **PASS (Automatizado)** — Verificado mediante retorno de error en `daemon::updater::apply_downloaded`. |
 | UPD-06 | Actualización de firmware conserva contadores | Anotar recuentos, ejecutar `opadctl firmware-update`, comprobar tras actualizar. | Idénticos. §U-3b escribe solo la partición de la app sin borrar flash; NVS intacta. | **PASS** (2026-09-17, §9.3) — 1.0.0 → 1.0.1 con manifiesto firmado, contadores idénticos en 3745 / 20594 |
@@ -160,7 +160,7 @@ Ejecutado en teclado `OSUPAD-3CDC75701678`, contadores **3745 / 20594**. Firmwar
 
 | ID | Prueba | Resultado | Evidencia |
 |---|---|---|---|
-| W32-01 | Reclamación silenciosa sobrevive a reconexión | **PASS** (completado 2026-09-17, §11.2) | Pad reportó propietario `f4fc8f69…` al reiniciar demonio tras re-enumeración USB. Sin avisos y contadores intactos. |
+| W32-01 | Reclamación silenciosa sobrevive a reconexión | **PASS** (completado 2026-09-17, §11.2) | Pad reportó propietario `f4fc8f69…` al reiniciar daemon tras re-enumeración USB. Sin avisos y contadores intactos. |
 | W32-02 | Re-reclamación no escribe nada | **PASS** | En cada reconexión posterior, el pad reportó el propietario ya asignado y no envió `ClaimOwnership`. |
 | W32-03 | Aviso de toma de posesión con `app_state` borrado | **PASS** | Eliminar `install.id` generó `pending_takeover` sobre IPC bloqueando la sincronización hasta resolver. |
 | W32-04 | Reclamación durante PLAYING denegada | **PASS** | Con pad en PLAYING, se envió reclamación para otro propietario: `owner_id` inalterado. En IDLE se aplicó correctamente. |
@@ -191,7 +191,7 @@ Ejecutado en teclado `OSUPAD-3CDC75701678`, contadores **3745 / 20594**. Firmwar
 | Copia escrita | 06:54:45Z — **exactamente 20 s tras IDLE** |
 | Archivo | `opad-backup-20260917T065445Z.json`, válido con `3745 / 20594` y generación 15 |
 | `opadctl status` | `Last Backup: 2026-09-17T06:54:45Z` |
-| Log del demonio | `Automatic counter backup written: …/opad-backup-20260917T065445Z.json (3745 / 20594)` |
+| Log del daemon | `Automatic counter backup written: …/opad-backup-20260917T065445Z.json (3745 / 20594)` |
 
 ---
 
@@ -250,7 +250,7 @@ Ejecutado en host físico `DESKTOP-U6AF6VD` (Windows 11 x86_64) con teclado ESP3
 Todos los 12 crates del espacio de trabajo compilan sin advertencias bajo `-D warnings` y superan el 100% de las pruebas unitarias.
 
 ### 12.2 Protocol & Fault Isolation on Live Hardware
-- **COM-01:** Enumeración correcta sin demonio.
+- **COM-01:** Enumeración correcta sin daemon.
 - **COM-02:** Recuperación inmediata tras inyección de ruido y tramas malformadas.
 - **FAIL-04:** Inicio y conexión en modo degradado con base de datos de solo lectura.
 
@@ -280,13 +280,13 @@ Descriptores Microsoft OS 2.0 implementados en firmware; Windows asigna automát
 | ID | Elemento de prueba | Procedimiento | Criterios de aceptación | Linux | Windows |
 |---|---|---|---|---|---|
 | SWP-01 | Direcciones coinciden con la pantalla | En reposo, deslizar arriba, abajo, izquierda, derecha. | La flecha y la acción coinciden con la orientación del teclado. | n/r | n/r |
-| SWP-02 | Sin ` fuera del mapa | En editor de texto, tocar y deslizar. | No se escribe nada. Log no muestra reintento rápido. | n/r | n/r |
+| SWP-02 | Sin ` fuera del mapa | En editor de texto, tocar y deslizar. | No se escribe nada. Log no muestra Quick Retry. | n/r | n/r |
 | SWP-03 | Volumen del sistema | Con osu! cerrado, deslizar arriba y abajo. | El volumen varía un paso por cada ~30 px de arrastre. | n/r | n/r |
 | SWP-04 | Volumen de osu! en menús | Con osu! en foco, deslizar arriba y abajo. | El volumen de osu! se modifica sin desplazar la lista de canciones. | n/r | n/r |
 | SWP-05 | Volumen de osu! durante partida | En partida, deslizar arriba/abajo. | Cambia el volumen sin reiniciar el mapa ni mostrar elementos en pantalla. | n/r | n/r |
-| SWP-06 | Un deslizamiento nunca envía ` | En partida, deslizar en todas direcciones rápido y lento. | El mapa continúa sin registrar reintento rápido. | n/r | n/r |
-| SWP-07 | Reintento rápido sigue operativo | En partida, mantener dedo inmóvil en pantalla. | El mapa se reinicia tras ~60 ms de inmovilidad. | n/r | n/r |
-| SWP-08 | Sin demonio ni tosu | Detener tosu y demonio. Tocar y deslizar. | Todo toque actúa como reintento rápido; deslizamientos no hacen nada. | n/r | n/r |
+| SWP-06 | Un deslizamiento nunca envía ` | En partida, deslizar en todas direcciones rápido y lento. | El mapa continúa sin registrar Quick Retry. | n/r | n/r |
+| SWP-07 | Quick Retry sigue operativo | En partida, mantener dedo inmóvil en pantalla. | El mapa se reinicia tras ~60 ms de inmovilidad. | n/r | n/r |
+| SWP-08 | Sin daemon ni tosu | Detener tosu y daemon. Tocar y deslizar. | Todo toque actúa como Quick Retry; deslizamientos no hacen nada. | n/r | n/r |
 | SWP-09 | Sin impacto en latencia | Medir latencia antes y después de deslizar en partida. | p50/p99.9/máx inalterados dentro del ruido. | n/r | n/r |
 | SWP-10 | Acciones configurables | Configurar accesos directos en Ajustes → Teclado. | Cada dirección ejecuta su acción asignada. | n/r | n/r |
 | SWP-11 | Re-enumeración tras actualizar | Flashear firmware con gestos sobre el anterior. | Teclado, puerto COM y controles multimedia funcionan sin reconectar. | n/r | n/r |
@@ -298,12 +298,12 @@ Descriptores Microsoft OS 2.0 implementados en firmware; Windows asigna automát
 
 | ID | Elemento de prueba | Procedimiento | Criterios de aceptación | Linux | Windows |
 |---|---|---|---|---|---|
-| HE-CAL-01 | Bloqueo en primer arranque | Arrancar pad HE sin calibración en NVS y sin demonio. | Pantalla roja de bloqueo con aviso `KEYS NOT CALIBRATED` y botón **Calibrate**. | **NOT RUN** | **NOT RUN** |
+| HE-CAL-01 | Bloqueo en primer arranque | Arrancar pad HE sin calibración en NVS y sin daemon. | Pantalla roja de bloqueo con aviso `KEYS NOT CALIBRATED` y botón **Calibrate**. | **NOT RUN** | **NOT RUN** |
 | HE-CAL-02 | Sin teclas ni deslizamientos bloqueado | Pulsar teclas y deslizar en pantalla de bloqueo. | Cero pulsaciones Z/X y cero reportes de reintento llegan al PC. | **NOT RUN** | **NOT RUN** |
 | HE-CAL-03 | Toque de botón vs deslizamiento | Tocar fuera, arrastrar por el botón y pulsar limpiamente dentro. | Solo el toque limpio dentro inicia la calibración. | **NOT RUN** | **NOT RUN** |
 | HE-CAL-04 | Flujo completo en teclado | Pulsar Calibrate, mantener reposo y pulsar Tecla 1 y Tecla 2 5 veces a fondo. | Se llenan las casillas, guarda calibración en NVS y levanta el bloqueo. | **NOT RUN** | **NOT RUN** |
-| HE-CAL-05 | Flujo guiado por la aplicación | Iniciar calibración desde GUI en pad sin calibrar. | El demonio abre la página de calibración en la GUI y muestra el progreso en vivo. | **NOT RUN** | **NOT RUN** |
-| HE-CAL-06 | Desconexión CDC o cancelación | Cancelar o detener el demonio a mitad de calibración. | Se detiene la calibración activa y se conserva la calibración previa. | **NOT RUN** | **NOT RUN** |
+| HE-CAL-05 | Flujo guiado por la aplicación | Iniciar calibración desde GUI en pad sin calibrar. | El daemon abre la página de calibración en la GUI y muestra el progreso en vivo. | **NOT RUN** | **NOT RUN** |
+| HE-CAL-06 | Desconexión CDC o cancelación | Cancelar o detener el daemon a mitad de calibración. | Se detiene la calibración activa y se conserva la calibración previa. | **NOT RUN** | **NOT RUN** |
 | HE-CAL-07 | Módulo MX no afectado | Arrancar firmware HE con módulo MX instalado. | `he_backend_running()` es falso; el pad no se bloquea y opera normalmente. | **NOT RUN** | **NOT RUN** |
 | HE-CAL-08 | Desbloqueo sin reinicio | Probar teclas y pantalla justo tras calibrar sin reiniciar. | Teclas y gestos funcionan de inmediato sin reconectar cable. | **NOT RUN** | **NOT RUN** |
 | HE-CAL-09 | Tecla pulsada al arrancar | Mantener tecla pulsada al arrancar pad HE calibrado. | El sistema no se arma hasta liberar la tecla; captura de reposo rechaza valores anómalos. | **NOT RUN** | **NOT RUN** |
