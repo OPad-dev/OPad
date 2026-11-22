@@ -1,7 +1,7 @@
 # Checks the test lab on the self-hosted runner (the Windows 11 mini PC):
 # the runner sits in the logged-on desktop session, osu! and the tosu replay
 # fixture are in place, and every VirtualBox VM boots from its "limpia"
-# snapshot to a logged-in desktop that answers SSH. Each VM is put back to
+# snapshot to a logged-in desktop that answers SSH (Linux and Windows). Each VM is put back to
 # "limpia" and powered off afterwards. Run by .github/workflows/lab-check.yml.
 #
 #   powershell -File scripts/lab/lab-check.ps1 [-Vms ubuntu-24.04,arch] [-OutDir out]
@@ -23,7 +23,14 @@ $AllVms = [ordered]@{
     "ubuntu-26.04" = 2226
     "fedora-43"    = 2243
     "arch"         = 2250
+    "windows-10"   = 2310
+    "windows-11"   = 2311
 }
+# The desktop is up when the user's session sits on seat0 (Linux) or on the
+# console (Windows), and the account can become root/administrator without a
+# prompt. The Windows VMs run PowerShell as their SSH shell
+$LinuxReady = "loginctl list-sessions --no-legend | grep -q 'opad *seat0' && . /etc/os-release && echo `$PRETTY_NAME && sudo -n true && echo sudo-ok"
+$WindowsReady = 'if ((quser 2>$null) -match ''opad\s+console\s+\d+\s+Active'') { (Get-CimInstance Win32_OperatingSystem).Caption; if (([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { ''sudo-ok'' } } else { exit 1 }'
 $SshOpts = @("-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=no",
              "-o", "UserKnownHostsFile=NUL", "-o", "LogLevel=ERROR")
 
@@ -91,8 +98,7 @@ foreach ($vm in $Vms) {
         $ok = $false
         $clock = [System.Diagnostics.Stopwatch]::StartNew()
         while ($clock.Elapsed.TotalSeconds -lt 300) {
-            # The desktop is up when the user's session sits on seat0
-            $r = Invoke-VmSsh $port "loginctl list-sessions --no-legend | grep -q 'opad *seat0' && . /etc/os-release && echo `$PRETTY_NAME && sudo -n true && echo sudo-ok"
+            $r = Invoke-VmSsh $port $(if ($vm -like "windows-*") { $WindowsReady } else { $LinuxReady })
             if ($r.Code -eq 0 -and $r.Out -match "sudo-ok") { $ok = $true; $out = @($r.Out -split "`n"); break }
             Start-Sleep 5
         }
