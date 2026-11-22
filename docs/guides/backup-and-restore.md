@@ -1,6 +1,8 @@
 ---
 title: Backup and Restore
 description: How automatic JSON backups work and how to export, preview, and restore OPad configuration and lifetime counters using opadctl or opad-gui.
+sidebar:
+  order: 7
 ---
 
 OPad exports device configuration and lifetime key press counters as portable JSON files (`JsonBackup`, `format_version: 1`). You can export and restore backups manually via `opadctl` or `opad-gui`, and `opad-daemon` also writes automatic backups after play sessions so counters survive hardware damage or replacement. <!-- src: /desktop/daemon/src/backup.rs --> <!-- src: /desktop/crates/opad-model/src/lib.rs#JsonBackup -->
