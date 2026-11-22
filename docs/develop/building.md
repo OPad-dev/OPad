@@ -1,79 +1,75 @@
 ---
 title: Building from Source
-description: Comprehensive build guide for OPad firmware using ESP-IDF v5.5.2 and desktop applications using Rust on Linux and Windows.
+description: How to build the OPad Rust desktop suite and ESP-IDF v5.5.2 ESP32-S3 firmware from source on Linux and Windows.
 ---
 
-This guide provides instructions for compiling the OPad ESP32-S3 firmware and the Rust desktop software suite (`opad-daemon`, `opad-gui`, and `opadctl`) from source. <!-- src: /Makefile -->
+This guide covers building the Rust desktop workspace ([/desktop/Cargo.toml](/desktop/Cargo.toml)) and the ESP32-S3 firmware ([/firmware/CMakeLists.txt](/firmware/CMakeLists.txt)) from source.
 
 ## Prerequisites
 
-### 1. General Toolchain
-- **Git** with submodules.
-- **Python 3.10+** with `venv` support.
-- **GNU Make** and standard build tools (`gcc`, `g++`, `pkg-config`).
+### Desktop Suite (Rust)
+- **Rust**: Stable Rust toolchain (edition 2021) via [rustup](https://rustup.rs) ([/desktop/Cargo.toml](/desktop/Cargo.toml)).
+- **Linux (Ubuntu / Debian)** ([/README.md](/README.md)):
+  ```bash
+  sudo apt update
+  sudo apt install -y build-essential pkg-config libasound2-dev libudev-dev \
+      libx11-dev libxkbcommon-dev libwayland-dev libfontconfig1-dev libdbus-1-dev
+  ```
+- **Windows**: Visual Studio MSVC C++ Build Tools; Inno Setup 6 is optional (only needed to build `opad-setup.exe` from [/packaging/windows/installer.iss](/packaging/windows/installer.iss)).
 
-### 2. Desktop Suite Requirements (Rust)
-- **Rust Toolchain**: Stable Rust (edition 2021) installed via [rustup](https://rustup.rs). <!-- src: /desktop/Cargo.toml -->
-- **Linux System Libraries**:
-  - `libudev-dev`
-  - `libfontconfig1-dev`
-  - `libgl1-mesa-dev`
-- **Windows Tools**:
-  - MSVC C++ Build Tools (Visual Studio 2022).
-  - Inno Setup 6 (optional, for compiling the Windows installer).
-
-### 3. Firmware Requirements (ESP-IDF)
-- **ESP-IDF v5.5.2**: OPad firmware is pinned strictly to ESP-IDF **v5.5.2** (AGENTS.md §4, §5). Building with earlier or later major releases is unsupported. <!-- src: /AGENTS.md -->
+### Firmware (ESP-IDF v5.5.2)
+- **ESP-IDF v5.5.2** (pinned version in [/AGENTS.md](/AGENTS.md) §4 and [/.github/workflows/ci.yml](/.github/workflows/ci.yml)).
 
 ## Building the Desktop Suite
-
-The desktop workspace is structured as a single Rust Cargo workspace (`desktop/Cargo.toml`): <!-- src: /desktop/Cargo.toml -->
 
 ```bash
 cd desktop
 cargo build --release
 ```
-
-Binaries are generated under `desktop/target/release/`:
-- `opad-daemon`: The background hardware and tosu coordinator.
-- `opad-gui`: The graphical configuration and screen designer interface.
-- `opadctl`: The command-line management and flashing utility.
-
-### Running Workspace Checks
-To run format checks, compiler warnings (`clippy -D warnings`), and unit tests: <!-- src: /AGENTS.md -->
+Or from the repository root using [/Makefile](/Makefile):
 ```bash
-make check
+make all
 ```
+Release binaries are placed in `desktop/target/release/`:
+- `opad-daemon`
+- `opad-gui`
+- `opadctl`
+
+Optional auxiliary targets in [/Makefile](/Makefile):
+- `make espflash` downloads the pinned, SHA-256-verified `espflash` **4.6.0**.
+- `make tosu` builds the pinned `tosu` **v4.26.2** (portable glibc 2.28 build by default; set `TOSU_PORTABLE=0` or `TOSU_STANDALONE=0` to customize).
+- `make check` runs `cargo fmt --check`, `cargo clippy --all-targets -D warnings`, `cargo test --workspace`, and `firmware/test/host/run_tests.sh`.
 
 ## Building the Firmware
 
-1. **Activate ESP-IDF v5.5.2**:
+1. Source ESP-IDF v5.5.2:
    ```bash
    . $HOME/esp/esp-idf/export.sh
    ```
-2. **Navigate to Firmware Directory**:
+2. Configure target and build:
    ```bash
    cd firmware
-   ```
-3. **Set Target & Build**:
-   ```bash
    idf.py set-target esp32s3
    idf.py build
    ```
 
-### sdkconfig Rules
 > [!IMPORTANT]
-> If you edit `firmware/sdkconfig.defaults`, always delete `firmware/sdkconfig` before rebuilding (AGENTS.md §5). `idf.py fullclean` preserves the existing `sdkconfig`, causing changes to be silently ignored.
+> After editing [/firmware/sdkconfig.defaults](/firmware/sdkconfig.defaults), delete `firmware/sdkconfig` before rebuilding ([/AGENTS.md](/AGENTS.md) §5). `idf.py fullclean` keeps the old `sdkconfig`, so edits silently have no effect.
 
-The compilation produces the following binaries in `firmware/build/`:
-- `bootloader/bootloader.bin`: ESP32-S3 second-stage bootloader.
-- `partition_table/partition-table.bin`: Dual OTA partition table.
-- `opad-firmware.bin`: The main application binary.
+Key outputs in `firmware/build/`:
+- `bootloader/bootloader.bin`
+- `partition_table/partition-table.bin`
+- `ota_data_initial.bin`
+- `opad-firmware.bin`
 
 ## Flashing Built Firmware
 
-To flash your freshly compiled firmware to a connected pad via `opadctl`: <!-- src: /AGENTS.md -->
+Update the inactive OTA slot with automatic rollback protection:
 ```bash
 opadctl flash firmware/build/opad-firmware.bin
 ```
-This safely writes the image to the inactive OTA partition and executes a trial boot.
+For a full flash (bootloader, partition table, OTA data, and app):
+```bash
+opadctl flash --full firmware/build
+```
+Never commit `build/`, `target/`, `dist/`, `firmware/sdkconfig`, `firmware/managed_components/`, or `.tools/` ([/AGENTS.md](/AGENTS.md) §5).
