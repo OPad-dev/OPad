@@ -1,6 +1,8 @@
 ---
 title: Pruebas y control de calidad
 description: Cómo ejecutar make check, las pruebas de Cargo del escritorio, las 28 pruebas unitarias del firmware en anfitrión, las comprobaciones de CI y la lista manual de verificación en hardware.
+sidebar:
+  order: 3
 ---
 
 OPad verifica los cambios en cuatro capas: `make check` local, 28 pruebas unitarias en C compiladas en anfitrión para la lógica del firmware, CI en GitHub Actions y verificación manual en hardware ([/AGENTS.md](/AGENTS.md) §4, [/Makefile](/Makefile)).
