@@ -1,6 +1,8 @@
 ---
 title: Subsistema de entrada del firmware
 description: Referencia de implementación de la tubería de entrada del firmware, antirrebote mecánico inmediato, muestreo Hall Effect V1/V3 y despacho unificado de eventos de tecla.
+sidebar:
+  order: 2
 ---
 
 El subsistema de entrada lee interruptores mecánicos físicos y sensores Hall Effect, ejecuta el antirrebote o Rapid Trigger, actualiza los contadores monotónicos de pulsaciones y envía reportes USB HID. Todas las tareas de la ruta de teclas se ejecutan en **Core 0** con prioridad `configMAX_PRIORITIES - 1`.
@@ -20,8 +22,8 @@ Implementada en [/firmware/main/input/keypad.c](/firmware/main/input/keypad.c) y
 
 Implementada en [/firmware/main/input/he_backend.c](/firmware/main/input/he_backend.c), [/firmware/main/input/he_spi_source.c](/firmware/main/input/he_spi_source.c) y [/firmware/main/input/he_rt.c](/firmware/main/input/he_rt.c):
 
-- **ADC interno V1 (`HE_SOURCE_INTERNAL_ADC`)**: DMA continuo de ADC1 alternando `ADC_CHANNEL_9` (Key 1) y `ADC_CHANNEL_6` (Key 2) a `HE_SAMPLE_HZ = 64000` Hz (`HE_FRAME_CONVS = 16`, tramas de 250 µs / 4 kHz). La ISR en IRAM `on_frame` calcula la mediana de cada canal, ejecuta `he_rt_step` y notifica a `he_task` solo en flancos de estado de tecla.
-- **ADS7028 externo V3 (`HE_SOURCE_SPI_ADC`)**: Un `gptimer` hardware despierta la tarea `he_spi` de Core 0 cada `HE_SPI_FRAME_US = 50` µs (20 kHz). `he_spi` lee 4 palabras de 32 bits protegidas con CRC por SPI3 a 40 MHz (`SPI_DMA_DISABLED`, bucle directo sobre registros `GPSPI3` `ads7028_read16_again` en [/firmware/main/input/ads7028.c](/firmware/main/input/ads7028.c)) para `AIN3`/`AIN4`/`AIN5` (Keys 3/2/1), ejecuta `he_rt_step` y llama directamente a `key_event_report`. La captura de calibración se diezma 5:1 (`SPI_CAL_DECIMATE = 5`) para igualar el corredor a 4 kHz.
+- **ADC interno V1 (`HE_SOURCE_ESP_ADC`)**: DMA continuo de ADC1 alternando `ADC_CHANNEL_9` (Key 1) y `ADC_CHANNEL_6` (Key 2) a `HE_SAMPLE_HZ = 64000` Hz (`HE_FRAME_CONVS = 16`, tramas de 250 µs / 4 kHz). La ISR en IRAM `on_frame` calcula la mediana de cada canal, ejecuta `he_rt_step` y notifica a `he_task` solo en flancos de estado de tecla.
+- **ADS7028 externo V3 (`HE_SOURCE_ADS7028`)**: Un `gptimer` hardware despierta la tarea `he_spi` de Core 0 cada `HE_SPI_FRAME_US = 50` µs (20 kHz). `he_spi` lee 4 palabras de 32 bits protegidas con CRC por SPI3 a 40 MHz (`SPI_DMA_DISABLED`, bucle directo sobre registros `GPSPI3` `ads7028_read16_again` en [/firmware/main/input/ads7028.c](/firmware/main/input/ads7028.c)) para `AIN3`/`AIN4`/`AIN5` (Keys 3/2/1), ejecuta `he_rt_step` y llama directamente a `key_event_report`. La captura de calibración se diezma 5:1 (`HE_CAL_EVERY_V3 = 5`) para igualar el corredor a 4 kHz.
 - **Rapid Trigger de 3 estados (`he_rt_step`)**: Transiciona entre `HE_RT_ARMED`, `HE_RT_PRESSED` y `HE_RT_RT_RELEASED`, exigiendo `need_release` tras el arranque, cambios de parámetros o paradas del ADC (`he_rt_fault`).
 
 ## Despacho unificado de eventos de tecla (`key_event.c`)
