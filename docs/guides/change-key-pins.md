@@ -1,68 +1,64 @@
 ---
 title: Changing Key Pins
-description: How to reconfigure mechanical switch GPIO pin assignments using opadctl or the graphical interface, pin restrictions, and validation rules.
+description: How to reassign hand-wired mechanical switch GPIO pins in opad-gui, allowed and reserved pins, and V3 carrier pin notes.
 ---
 
-By default, OPad assigns Key 1 to GPIO 14 (Header P2 Pin 11) and Key 2 to GPIO 9 (Header P2 Pin 12). If you need to avoid specific pins or adapt to custom enclosures, you can reconfigure switch GPIO assignments via `opadctl` or `opad-gui`. <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
+By default, standalone hand-wired builds assign Key 1 to `GPIO 14` (Header P2, pin 11) and Key 2 to `GPIO 9` (Header P2, pin 12). If your switches are wired to different supported header pins, you can reassign them in `opad-gui` without recompiling firmware. <!-- src: /firmware/main/input/keypad.c --> <!-- src: /desktop/gui/src/pages.rs#settings -->
 
 > [!NOTE]
-> Key pin reassignments apply only to hand-wired mechanical switches. Modular V3 input carriers fix their pin assignments in PCB traces; on those pads, pin configuration options are hidden automatically. <!-- src: /desktop/crates/opad-model/src/lib.rs#key_pins_configurable -->
+> Pin reassignment applies only to hand-wired mechanical switches. On OPad V3 modular PCBs, switch routing is fixed by the carrier board (MX V3: `GPIO 10` / `GPIO 7` / `GPIO 6`; HE V3: ADS7028 over SPI3), and `opad-gui` hides the pin pickers automatically when a module reports fixed pins. <!-- src: /desktop/gui/src/pages.rs#settings --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
+
+## What you need
+
+- Your OPad connected over USB with `opad-daemon` and `opad-gui` running.
+- Each mechanical switch wired between a supported P1/P2 GPIO pin and `GND`.
 
 ## Allowed GPIO Pins
 
-Only pins that support internal pull-up resistors and do not conflict with onboard peripherals (ST7789 display SPI, CST816S touch I2C, USB D+/D-, or debug UART) may be used: <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED -->
+Firmware accepts only the 14 header GPIOs in `KEY_GPIO_ALLOWED` that support internal pull-ups to 3.3 V without conflicting with onboard peripherals: <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED -->
 
-| Header Position | GPIO Number | Default Function | Usable for Switch? |
-|---|---|---|---|
-| P2 Pin 11 | **GPIO 14** | Key 1 Default | Yes <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED --> |
-| P2 Pin 12 | **GPIO 9** | Key 2 Default | Yes <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED --> |
-| P2 Pin 7 | **GPIO 15** | Key 3 (HE V3) / Spare | Yes <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED --> |
-| P2 Pin 8 | **GPIO 13** | Spare | Yes <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED --> |
-| P2 Pin 9 | **GPIO 11** | Spare | Yes <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED --> |
-| P2 Pin 10 | **GPIO 12** | Spare | Yes <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED --> |
-| P1 Pin 1 | **GPIO 2** | Spare | Yes <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED --> |
-| P1 Pin 2 | **GPIO 4** | Spare | Yes <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED --> |
-| P1 Pin 3 | **GPIO 6** | Spare | Yes <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED --> |
-| P1 Pin 9 | **GPIO 7** | Spare | Yes <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED --> |
-| P1 Pin 10 | **GPIO 10** | Spare | Yes <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED --> |
-| P1 Pin 4 | **GPIO 16** | Spare | Yes <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED --> |
-| P1 Pin 6 | **GPIO 18** | Spare | Yes <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED --> |
-| P1 Pin 7 | **GPIO 21** | Spare | Yes <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED --> |
+| Header Position | GPIO | Notes |
+|---|---|---|
+| P2 pin 11 | `GPIO 14` | Key 1 default |
+| P2 pin 12 | `GPIO 9` | Key 2 default |
+| P2 pin 7 | `GPIO 15` | Allowed |
+| P2 pin 8 | `GPIO 13` | Allowed |
+| P2 pin 9 | `GPIO 11` | Allowed |
+| P2 pin 10 | `GPIO 12` | Allowed |
+| P1 pin 1 | `GPIO 2` | Allowed |
+| P1 pin 2 | `GPIO 4` | Allowed |
+| P1 pin 3 | `GPIO 6` | Allowed |
+| P1 pin 4 | `GPIO 16` | Allowed |
+| P1 pin 6 | `GPIO 18` | Allowed |
+| P1 pin 7 | `GPIO 21` | Allowed |
+| P1 pin 9 | `GPIO 7` | Allowed |
+| P1 pin 10 | `GPIO 10` | Allowed |
 
-### Disallowed Pins
-- **GPIO 19 & 20**: Native USB full-speed data lines (`D-` and `D+`).
-- **GPIO 43 & 44**: UART0 ROM bootloader and serial console (`TX0` and `RX0`).
-- **GPIO 47 & 48**: I2C bus for touch controller and IMU.
-- **GPIO 17**: Hardware camera power-down line (`CAM_PWDN`), tied to a 10 kΩ pull-down resistor to GND.
-- **GPIO 8**: Module detection ADC divider line.
+Key 1 and Key 2 cannot share the same GPIO. These pins are reserved and rejected by validation: <!-- src: /firmware/main/config/config_validate.c#device_config_validate -->
+- `GPIO 19` / `GPIO 20`: Native USB `D-` / `D+`.
+- `GPIO 43` / `GPIO 44`: UART0 console.
+- `GPIO 47` / `GPIO 48`: Touch and IMU I2C bus (`SCL` / `SDA`).
+- `GPIO 17`: Onboard 10 kΩ pull-down (`CAM_PWDN`).
+- `GPIO 8`: Module-ID ADC resistor divider.
 
-## Changing Pins via opadctl
+## Reassigning Pins in `opad-gui`
 
-To reassign pins from the terminal, use `opadctl config set`: <!-- src: /desktop/cli/src/main.rs -->
-```bash
-# Set Key 1 to GPIO 15 and Key 2 to GPIO 13
-opadctl config set key1-gpio 15
-opadctl config set key2-gpio 13
-```
+1. Open `opad-gui` and click **Settings** in the sidebar.
+2. Stay on the **⌨ Keypad** tab. <!-- src: /desktop/gui/src/pages.rs#settings -->
+3. Under **Keys**, locate **KEY 1 PIN** and **KEY 2 PIN**. You have two ways to set each pin: <!-- src: /desktop/gui/src/pages.rs#settings -->
+   - **Pick manually**: Choose the pin from the dropdown (for example, `GPIO15 (P2 pin 7)`).
+   - **Auto-Detect**: Click **Auto-Detect** next to **KEY 1 PIN** or **KEY 2 PIN** (the button changes to **Detecting... (click to cancel)**), then press the physical switch wired for that key. The pad scans all allowed unused GPIOs and fills in whichever pin is pulled LOW for at least 15 ms (`DETECT_CONFIRM_US = 15000`). <!-- src: /firmware/main/input/keypad.c#detect_scan_step -->
+4. Click **Save settings**. The pad stages the new pins and applies them as soon as both keys are released, then saves them to NVS once `IDLE`. <!-- src: /desktop/gui/src/pages.rs#settings --> <!-- src: /firmware/main/input/keypad.c#keypad_task -->
 
-Validate the new assignments by querying the device:
-```bash
-opadctl status
-```
-Output will reflect the active GPIO pin assignments.
+For a V3 carrier MX module whose saved pins are still set to the standalone defaults (`GPIO 14` / `GPIO 9`), you can also switch them to the carrier pins (`GPIO 10` / `GPIO 7`) from a terminal with `opadctl board-test --fix-pins`. <!-- src: /desktop/cli/src/main.rs#Commands::BoardTest -->
 
-## Changing Pins via the Graphical Interface
+## How to check
 
-1. Open `opad-gui`.
-2. Navigate to the **Device** page.
-3. Locate the **Key 1 Pin** and **Key 2 Pin** dropdown selectors.
-4. Select the target schematic header position (e.g., `GPIO15 (P2 pin 7)`).
-5. Click **Apply Changes**. The daemon transmits `SetConfig` (`opad.proto`) and immediately stages the new configuration in RAM without requiring a pad reboot. <!-- src: /protocol/opad.proto#SetConfig -->
+1. Run `opadctl status` and verify **Key Pins** matches your new GPIOs. <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
+2. Press Key 1 and Key 2 in a text editor (or on the **Diagnostics** -> **⌨ Switch Chatter & Input** tab in `opad-gui`) and confirm both keys register cleanly. <!-- src: /desktop/gui/src/diagnostics.rs -->
 
-## Testing Actuation with detect-pin
+## What to do if it did not work
 
-To ensure the physical switch is wired to the correct pin before playing:
-```bash
-opadctl detect-pin 15
-```
-Press the physical switch wired to GPIO 15. The pad will report the detected contact closure to the terminal.
+- **A key does nothing after changing its pin**: Check the physical GPIO silkscreen label the wire is attached to and compare it with **Key Pins** in `opadctl status`. Schematic header positions (such as `P2 pin 11`) are easy to miscount on the board. <!-- src: /AGENTS.md -->
+- **Pin pickers are missing**: Your pad reports a fixed-pin input module (such as a V3 carrier + MX/HE module), where pins are wired in PCB traces. <!-- src: /desktop/gui/src/pages.rs#settings -->
+- **Auto-Detect times out**: Make sure the switch's other leg is connected to `GND` and the pin is in the allowed list above.
