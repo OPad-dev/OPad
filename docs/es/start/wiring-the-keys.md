@@ -1,6 +1,8 @@
 ---
 title: Cableado de las teclas
 description: Cómo cablear interruptores mecánicos a mano al cabezal P2 de la Waveshare ESP32-S3-Touch-LCD-2 o ensamblar el carrier y los módulos de entrada OPad V3.
+sidebar:
+  order: 2
 ---
 
 Los interruptores mecánicos en OPad se leen en lógica activa-baja utilizando las resistencias pull-up internas del ESP32-S3 (`GPIO_PULLUP_ONLY`): pulsar un interruptor conecta su pin GPIO a `GND`. No se requieren resistencias ni diodos externos en montajes cableados a mano. <!-- src: /firmware/main/input/keypad.c --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
