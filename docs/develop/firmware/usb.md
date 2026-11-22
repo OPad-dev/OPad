@@ -1,45 +1,40 @@
 ---
 title: Firmware USB Subsystem
-description: Implementation reference for TinyUSB composite descriptors, split 1000 Hz HID endpoints, CDC-ACM serial framing, and ROM download reboot handling.
+description: Implementation reference for TinyUSB composite descriptors, split 1000 Hz HID endpoints, CDC-ACM framing, and ROM download reboot handling.
 ---
 
-The USB subsystem implements a composite USB 2.0 Full-Speed device on the ESP32-S3 using TinyUSB. It exposes two independent USB HID endpoints and one USB CDC-ACM virtual serial port. <!-- src: /firmware/main/usb/usb_descriptors.c -->
+The USB subsystem implements a USB 2.1 Full-Speed composite device (`VID 0x303A`, `PID 0x4001`, `bcdDevice 0x0102`) using TinyUSB (`espressif/esp_tinyusb` 2.3.0 / `tinyusb` 0.21.0~2) pinned to Core 0 at priority `configMAX_PRIORITIES - 2` ([/firmware/main/app_main.c](/firmware/main/app_main.c), [/firmware/main/usb/usb_descriptors.c](/firmware/main/usb/usb_descriptors.c)).
 
 ## Composite Descriptors & Interface Topology
 
-The USB configuration descriptor defines three distinct interfaces: <!-- src: /firmware/main/usb/usb_descriptors.c -->
+Declared in [/firmware/main/usb/usb_descriptors.c](/firmware/main/usb/usb_descriptors.c):
 
-| Interface Index | Subclass / Protocol | Endpoint | Direction | Polling Interval | Purpose |
-|---|---|---|---|---|---|
-| **Interface 0 (HID Boot)** | Boot Keyboard | Endpoint 1 | IN | 1 ms (1000 Hz) | Key 1 and touchscreen Quick Retry reports. <!-- src: /firmware/main/usb/usb_hid.c#LINK_KEY1_TOUCH --> |
-| **Interface 1 (HID Media)** | Custom Keyboard & Consumer | Endpoint 2 | IN | 1 ms (1000 Hz) | Key 2 reports and media playback gesture keys. <!-- src: /firmware/main/usb/usb_hid.c#LINK_KEY2 --> |
-| **Interface 2 & 3 (CDC)** | CDC-ACM Serial Control | Endpoint 3 & 4 | IN / OUT | Bulk | Bidirectional Protobuf wire communication. <!-- src: /firmware/main/usb/usb_cdc.c --> |
+| Interface | Class / Protocol | Endpoints | Polling | Purpose |
+|---|---|---|---|---|
+| **Interface 0 (`ITF_NUM_HID`)** | HID Keyboard (`HID_ITF_PROTOCOL_KEYBOARD`) | `EP 0x81` (IN, 8 B) | `1 ms` (1000 Hz) | Key 1 and touchscreen Quick Retry (`LINK_KEY1_TOUCH`, report ID `0`) |
+| **Interfaces 1 & 2 (`ITF_NUM_CDC`)** | CDC-ACM | `EP 0x82` (Notif IN, 8 B), `EP 0x03` (OUT, 64 B), `EP 0x83` (IN, 64 B) | Bulk / Interrupt | Framed nanopb serial protocol (`usb_cdc.c`) |
+| **Interface 3 (`ITF_NUM_MEDIA`)** | HID Media & Key 2 (`HID_ITF_PROTOCOL_NONE`) | `EP 0x84` (IN, 16 B) | `1 ms` (1000 Hz) | Key 2 keyboard report (`MEDIA_REPORT_ID_KEYBOARD`), consumer media keys (`MEDIA_REPORT_ID_CONSUMER`), and mouse wheel (`MEDIA_REPORT_ID_MOUSE`) |
 
-A compile-time assertion enforces that TinyUSB is built with sufficient HID instances matching `usb_descriptors.c`: <!-- src: /firmware/main/usb/usb_descriptors.c -->
-```c
-_Static_assert(CFG_TUD_HID >= HID_INSTANCE_MEDIA + 1,
-               "CONFIG_TINYUSB_HID_COUNT must match the descriptors");
-```
+Also exposed:
+- **BOS + MS OS 2.0 descriptors** (`opad_usb_bos_desc`, `opad_usb_ms_os_20_desc`): Assigns `FriendlyName = "OPad"` to Interface 1 so Windows Device Manager shows `OPad (COMx)` without a custom INF.
+- **Build-time `_Static_assert` guards**: Fail the build if `CFG_TUD_HID < HID_INSTANCE_MEDIA + 1` or `CFG_TUD_CDC < 1` (catches stale `firmware/sdkconfig`).
 
-## Split Endpoint Architecture (`usb_hid.c`)
+## Split Endpoint HID Submission (`usb_hid.c`)
 
-Standard 1000 Hz USB HID keyboards share a single endpoint. If alternating keys actuate within 1 ms, the second key must wait for the host to complete the prior transfer. OPad completely removes this serialization jitter: <!-- src: /firmware/main/usb/usb_hid.c -->
+Implemented in [/firmware/main/usb/usb_hid.c](/firmware/main/usb/usb_hid.c):
 
-- **Endpoint 1 (Keyboard Interface)**: Transmits 8-byte boot keyboard reports carrying Key 1 and touch Quick Retry (`0x35`).
-- **Endpoint 2 (Media Interface)**: Transmits independent keyboard reports carrying Key 2.
-- **Dynamic Key 3 Pairing (`usb_hid_set_key3_link`)**: On 3-key modules, Key 3 dynamically routes to whichever endpoint the secondary game key is not occupying. Key 1 and Key 2 never contend for the same USB endpoint buffer. <!-- src: /firmware/main/usb/usb_hid.c -->
-- **Atomic Link Structures (`hid_link_t`)**: Core 0 (keypad) and Core 1 (touch) update atomic `change_seq` and `sent_seq` counters without taking mutex locks on the input path. <!-- src: /firmware/main/usb/usb_hid.c#hid_link_t -->
+- **Two independent keyboard links (`hid_link_t`)**: `LINK_KEY1_TOUCH` (`HID_INSTANCE_KEYBOARD`, `EP 0x81`) and `LINK_KEY2` (`HID_INSTANCE_MEDIA`, `EP 0x84`). Because ESP32-S3 has at most 5 IN endpoints including `EP0`, Key 2 shares Interface 3's endpoint rather than adding a third HID interface.
+- **Dynamic Key 3 routing (`usb_hid_set_key3`)**: Routes Key 3 onto whichever link is not carrying the other active game key so two active game keys never contend for the same 1 ms USB poll.
+- **Lockless sequence tracking**: Writers bump `change_seq` before `try_submit`; successful `tud_hid_n_keyboard_report` advances `sent_seq`. If an endpoint is busy, `pending_edge_us` stores the oldest undelivered edge timestamp and `tud_hid_report_complete_cb` immediately resends and records deferred latency.
 
-## CDC-ACM Communication & ROM Reboot (`usb_cdc.c`)
+## CDC-ACM Framing & ROM Download Reboot (`usb_cdc.c`)
 
-The CDC virtual serial port handles configuration updates, firmware flashing, and telemetry streaming: <!-- src: /firmware/main/usb/usb_cdc.c -->
+Implemented in [/firmware/main/usb/usb_cdc.c](/firmware/main/usb/usb_cdc.c):
 
-- **Frame Feeding**: Received bytes are fed directly into the frame parser (`protocol_feed_cdc_bytes`).
-- **DTR Drop Reset**: If the host drops DTR (e.g., closing `opadctl` or disconnecting the daemon), the receiver resets its framing buffer to prevent byte misalignment. <!-- src: /firmware/main/usb/usb_cdc.c -->
-- **ROM Download Mode Reboot (`reboot_to_rom_download`)**:
-  When commanded to enter bootloader flashing mode:
-  1. Pulls USB D+ down (`SE0` bus state) for ~300 ms so the host operating system registers a real physical detachment.
-  2. Sets `dp_pullup` back to 1 before dropping the GPIO pull override.
-  3. Calls `tud_disconnect()` (never `tinyusb_driver_uninstall()`, which frees active mutexes).
-  4. Triggers a hardware RTC watchdog reset (`WRITE_PERI_REG(RTC_CNTL_RESET_STATE_REG, ...)`).
-  5. The ESP32-S3 boots directly into its internal ROM download mode (`303a:1001`), ready for `espflash` or `opadctl flash`. <!-- src: /firmware/main/usb/usb_cdc.c#reboot_to_rom_download -->
+- **Receive task (`cdc_proto`)**: Runs on Core 1 (`tskIDLE_PRIORITY + 3`, 6144 B stack) feeding received bytes into `protocol_feed_cdc_bytes` and handling `tud_cdc_line_state_cb` DTR drops (which reset framing and cancel app-initiated HE calibration).
+- **1200-baud touch fallback**: Setting line coding to 1200 baud with DTR low arms a fallback reboot into ROM download mode.
+- **Hands-free ROM download reboot (`reboot_to_rom_download`)**:
+  1. Calls `tud_disconnect()` first (never `tinyusb_driver_uninstall()`, which frees mutexes other tasks use).
+  2. Forces USB `D+` pull-up low (`SE0`) for ~300 ms so the host registers a real physical disconnect (avoiding Linux `error -71`).
+  3. Restores `dp_pullup = 1` *before* clearing `pad_pull_override` so the chip does not vanish from the bus.
+  4. Sets `RTC_CNTL_FORCE_DOWNLOAD_BOOT` in `RTC_CNTL_OPTION1_REG` and calls `esp_restart()` to enter the ESP32-S3 ROM bootloader (`303a:1001`). (Exiting ROM download mode afterward is performed by the host flasher via an RTC watchdog `WRITE_REG`.)
