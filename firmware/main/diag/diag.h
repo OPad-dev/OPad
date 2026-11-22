@@ -35,6 +35,20 @@ enum {
     // Right after DIAG_EVENT_DECODE_FAILED: the message's first 8 bytes,
     // arg0 = bytes 0-3, arg1 = bytes 4-7 (byte 0 in the low byte; 0 past the end)
     DIAG_EVENT_DECODE_BYTES = 22,
+    // Once, when the pad is up: arg0 = internal RAM free (bytes), arg1 = its
+    // largest free DMA-capable block (bytes)
+    DIAG_EVENT_MEMORY = 23,
+    // UI perf test builds (CONFIG_OPAD_UI_PERF_TEST) only, at the end of each
+    // phase: arg0 = DIAG_UI_PERF_* << 16 | frames drawn,
+    // arg1 = longest frame << 16 | average frame, both in 0.1 ms
+    DIAG_EVENT_UI_PERF = 24,
+};
+
+// DIAG_EVENT_UI_PERF phases
+enum {
+    DIAG_UI_PERF_IDLE = 0,
+    DIAG_UI_PERF_SONG = 1,
+    DIAG_UI_PERF_RESULT = 2,
 };
 
 // DIAG_EVENT_DECODE_FAILED reason: nanopb's error message, as a code

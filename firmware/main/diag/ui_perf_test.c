@@ -10,6 +10,9 @@
  *   IDLE_MS on the idle screen, a SONG_MS map on the playing screen, then the
  *   SS result animation over the idle screen, cycling pop / drop / burst.
  * LVGL's monitors (sdkconfig.uitest) show FPS/CPU and memory in the corners.
+ * At the end of each phase the pad also sends DIAG_EVENT_UI_PERF (opadctl
+ * monitor): the frames drawn, and the average and longest time a frame took
+ * from the start of LVGL's refresh to its end.
  * Keys and touch keep working; the keycards show real presses.
  */
 #include "ui_perf_test.h"
@@ -22,7 +25,9 @@
 #include "runtime/runtime.h"
 #include "board_pins.h"
 #include "lvgl.h"
+#include "diag/diag.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 
 static const char *TAG = "ui_perf";
 
@@ -36,6 +41,59 @@ static const char *TAG = "ui_perf";
 #define SONG_FINAL_PP  712.0    // not ending in 67: that would start the easter egg
 
 static uint32_t s_t_ms;         // position in the cycle
+
+// Frame times of the current phase, from LVGL's display events (LVGL task)
+static int64_t s_refr_start_us;
+static bool s_rendered;         // this refresh drew something
+static uint32_t s_frames;
+static uint64_t s_frame_sum_us;
+static uint32_t s_frame_max_us;
+
+static void on_display_event(lv_event_t *e)
+{
+    switch (lv_event_get_code(e)) {
+    case LV_EVENT_REFR_START:
+        s_refr_start_us = esp_timer_get_time();
+        s_rendered = false;
+        break;
+    case LV_EVENT_RENDER_START:
+        s_rendered = true;
+        break;
+    case LV_EVENT_REFR_READY:
+        if (s_rendered) {
+            uint32_t us = (uint32_t)(esp_timer_get_time() - s_refr_start_us);
+            s_frames++;
+            s_frame_sum_us += us;
+            if (us > s_frame_max_us) s_frame_max_us = us;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+// One DIAG_EVENT_UI_PERF for the phase that ended, then a fresh count
+static void report_phase(uint8_t phase)
+{
+    static bool s_counting;  // the first call only starts the count
+    if (!s_counting) {
+        s_counting = true;
+        s_frames = 0;
+        s_frame_sum_us = 0;
+        s_frame_max_us = 0;
+        return;
+    }
+    uint32_t avg_us = s_frames ? (uint32_t)(s_frame_sum_us / s_frames) : 0;
+    uint32_t frames = s_frames > 0xFFFF ? 0xFFFF : s_frames;
+    uint32_t avg_100us = avg_us / 100 > 0xFFFF ? 0xFFFF : avg_us / 100;
+    uint32_t max_100us = s_frame_max_us / 100 > 0xFFFF ? 0xFFFF : s_frame_max_us / 100;
+    diag_record(DIAG_EVENT_UI_PERF, 1 /* INFO */, ((uint32_t)phase << 16) | frames, (max_100us << 16) | avg_100us);
+    ESP_LOGI(TAG, "phase %u: %lu frames, avg %lu us, max %lu us", phase, (unsigned long)s_frames,
+             (unsigned long)avg_us, (unsigned long)s_frame_max_us);
+    s_frames = 0;
+    s_frame_sum_us = 0;
+    s_frame_max_us = 0;
+}
 static uint8_t s_anim = UI_ANIM_POP;
 
 static void set_idle_data(void)
@@ -89,7 +147,12 @@ static void tick(lv_timer_t *timer)
     (void)timer;
     uint32_t t = s_t_ms;
     if (t == 0) {
+        report_phase(DIAG_UI_PERF_RESULT);
         set_idle_data();
+    } else if (t == IDLE_MS) {
+        report_phase(DIAG_UI_PERF_IDLE);
+    } else if (t == IDLE_MS + SONG_MS) {
+        report_phase(DIAG_UI_PERF_SONG);
     }
     if (t < IDLE_MS) {
         // idle screen: nothing but the clock and the real key counters
@@ -122,15 +185,19 @@ void ui_perf_test_start(void)
     lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
     lv_obj_set_style_bg_color(label, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(label, LV_OPA_60, 0);
-    lv_label_set_text_fmt(label, "LVGL %s %d KB | LCD %d MHz | %d ms",
+    lv_label_set_text_fmt(label, "LVGL %s %d KB | %d lines | LCD %d MHz | %d ms",
 #ifdef CONFIG_OPAD_LVGL_PSRAM
                           "PSRAM",
 #else
                           "internal",
 #endif
-                          CONFIG_LV_MEM_SIZE_KILOBYTES, BOARD_LCD_PIXEL_CLOCK_HZ / 1000000,
+                          CONFIG_LV_MEM_SIZE_KILOBYTES, UI_DRAW_BUF_LINES, BOARD_LCD_PIXEL_CLOCK_HZ / 1000000,
                           CONFIG_LV_DEF_REFR_PERIOD);
     lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 0);
+    lv_display_t *disp = lv_display_get_default();
+    lv_display_add_event_cb(disp, on_display_event, LV_EVENT_REFR_START, NULL);
+    lv_display_add_event_cb(disp, on_display_event, LV_EVENT_RENDER_START, NULL);
+    lv_display_add_event_cb(disp, on_display_event, LV_EVENT_REFR_READY, NULL);
     lv_timer_create(tick, DATA_PERIOD_MS, NULL);
     ui_unlock();
 }

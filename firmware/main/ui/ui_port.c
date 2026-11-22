@@ -251,7 +251,7 @@ esp_err_t ui_init(void)
     const lvgl_port_display_cfg_t disp_cfg = {
         .io_handle = io,
         .panel_handle = panel,
-        .buffer_size = UI_SCREEN_W * 40,
+        .buffer_size = UI_SCREEN_W * UI_DRAW_BUF_LINES,
         .double_buffer = true,
         .hres = UI_SCREEN_W,
         .vres = UI_SCREEN_H,

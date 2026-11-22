@@ -23,6 +23,8 @@ pub const DIAG_EVENT_CDC_WRITE_DROPPED: u32 = 19;
 pub const DIAG_EVENT_BUFFER_OVERFLOW: u32 = 20;
 pub const DIAG_EVENT_UNKNOWN_HOST_MSG: u32 = 21;
 pub const DIAG_EVENT_DECODE_BYTES: u32 = 22;
+pub const DIAG_EVENT_MEMORY: u32 = 23;
+pub const DIAG_EVENT_UI_PERF: u32 = 24;
 
 /// nanopb's error message for a DIAG_EVENT_DECODE_FAILED reason code
 /// (`DIAG_DECODE_*` in `firmware/main/diag/diag.h`)
@@ -177,6 +179,23 @@ pub fn format_diag_event(event_id: u32, arg0: u32, arg1: u32) -> String {
             format!("Diagnostic buffer overflow: {} events dropped", arg0)
         }
         DIAG_EVENT_UNKNOWN_HOST_MSG => format!("Unhandled host message payload tag: {}", arg0),
+        DIAG_EVENT_MEMORY => format!(
+            "Internal RAM free: {:.1} KB, largest DMA block {:.1} KB",
+            arg0 as f64 / 1024.0,
+            arg1 as f64 / 1024.0
+        ),
+        DIAG_EVENT_UI_PERF => format!(
+            "UI perf ({}): {} frames, average {:.1} ms, longest {:.1} ms",
+            match arg0 >> 16 {
+                0 => "idle",
+                1 => "song",
+                2 => "result animation",
+                _ => "?",
+            },
+            arg0 & 0xFFFF,
+            (arg1 & 0xFFFF) as f64 / 10.0,
+            (arg1 >> 16) as f64 / 10.0
+        ),
         _ => format!(
             "Unknown diagnostic event (id: {}, arg0: {}, arg1: {})",
             event_id, arg0, arg1
@@ -203,6 +222,18 @@ mod tests {
         );
         let bytes = format_diag_event(DIAG_EVENT_DECODE_BYTES, 0x5201_2a08, 0x0000_0a08);
         assert_eq!(bytes, "Undecodable frame starts 08 2a 01 52 08 0a 00 00");
+    }
+
+    #[test]
+    fn memory_and_ui_perf_events_read_as_numbers() {
+        assert_eq!(
+            format_diag_event(DIAG_EVENT_MEMORY, 200 * 1024, 150 * 1024 + 512),
+            "Internal RAM free: 200.0 KB, largest DMA block 150.5 KB"
+        );
+        assert_eq!(
+            format_diag_event(DIAG_EVENT_UI_PERF, (1 << 16) | 250, (183 << 16) | 72),
+            "UI perf (song): 250 frames, average 7.2 ms, longest 18.3 ms"
+        );
     }
 
     #[test]

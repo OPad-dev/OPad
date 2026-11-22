@@ -21,6 +21,7 @@
 #include "esp_ota_ops.h"
 #include "esp_system.h"
 #include "esp_timer.h"
+#include "esp_heap_caps.h"
 #include "tusb.h"
 #include "diag/diag.h"
 #include "diag/hall_bench.h"
@@ -350,7 +351,13 @@ void app_main(void)
     }
 #endif
 
-    ESP_LOGI(TAG, "OPad initialized and ready");
+    // What every task and buffer above left of the internal RAM, the memory the
+    // keys and USB run from; opadctl monitor shows it
+    size_t internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    size_t dma_block = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    diag_record(DIAG_EVENT_MEMORY, 1 /* INFO */, (uint32_t)internal_free, (uint32_t)dma_block);
+    ESP_LOGI(TAG, "OPad initialized and ready (internal RAM free %u, largest DMA block %u)",
+             (unsigned)internal_free, (unsigned)dma_block);
 #endif
     confirm_image_once_usb_works();
 }

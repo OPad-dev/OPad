@@ -8,6 +8,10 @@
 #include "esp_err.h"
 #include "ui/core/ui_core.h"
 
+// Screen lines per draw buffer (two of them, in internal DMA RAM: the LCD's
+// SPI DMA reads from there): 25.6 KB each
+#define UI_DRAW_BUF_LINES 40
+
 #ifdef __cplusplus
 extern "C" {
 #endif
