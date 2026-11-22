@@ -1,4 +1,8 @@
-# OPad pad test sheet
+---
+title: "Pad Test Sheet"
+description: "Printable single-pad quality assurance test sheet for hands-on pad and module verification."
+draft: true
+---
 
 The hands-on part of `docs/launch-checklist.md` §3, short enough to print and
 tick by hand. One sheet per pad and module. The full criteria and the reasons

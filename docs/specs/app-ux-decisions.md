@@ -1,4 +1,7 @@
-# Desktop app UX: decision record
+---
+title: "Desktop App UX: Decision Record"
+description: "Design decisions and UX review findings for the OPad desktop application."
+---
 
 **Decided:** 2026-10-22, from the UX review of 2026-10-21 (branch
 `feat/he-night`). Item numbers match that review. Status: not implemented yet.

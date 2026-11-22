@@ -1,4 +1,7 @@
-# OPad Troubleshooting Guide
+---
+title: "Troubleshooting Guide"
+description: "Common issues with OPad, desktop integration, port access, tosu permissions, and display telemetry."
+---
 
 This guide covers common questions and troubleshooting steps for the OPad keypad, desktop integration, key mappings, and overlay telemetry on Linux and Windows.
 

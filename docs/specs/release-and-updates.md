@@ -1,4 +1,7 @@
-# OPad — Releases, Update Feed and Updaters
+---
+title: "Releases, Update Feed and Updaters"
+description: "Design specification for release pipelines, the updates.opad.dev feed, and client auto-updaters."
+---
 
 **Status:** accepted (2026-10-12). Phases 1–5 are implemented, with the parts
 that need Linux still to be run (§18.3); phase 6, signing, is the owner's (§19).

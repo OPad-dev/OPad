@@ -1,4 +1,7 @@
-# OPad — Remaining Work to v1.0 (Linux)
+---
+title: "Remaining Work to v1.0 (Linux)"
+description: "Implementation tracking and gap analysis leading up to the Linux v1.0 milestone."
+---
 
 **Companion to:** `opad_technical_spec_v1.md` (the contract)
 **Audience:** Antigravity and other coding agents

@@ -1,4 +1,7 @@
-# OPad — Packaging, Distribution and Device Pairing
+---
+title: "Packaging, Distribution and Device Pairing"
+description: "Specification for Linux and Windows packaging, distribution artifacts, and device pairing architecture."
+---
 
 **Companion to:** `opad_technical_spec_v1.md`, `opad_remaining_work_v1.md`, `docs/windows-portability.md`
 **Audience:** the project owner, Antigravity and other coding agents

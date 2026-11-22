@@ -1,4 +1,7 @@
-# Hall Effect module: how it works (DRAFT for discussion)
+---
+title: "Hall Effect Module: Design Draft"
+description: "Early architecture draft for the Hall Effect magnetic switch module and rapid trigger engine."
+---
 
 **Status:** draft, 2026-10-10, updated after the first discussion. Nothing here is decided until we have
 talked it through. It turns `docs/specs/v2-rapid-trigger.md` (the plan

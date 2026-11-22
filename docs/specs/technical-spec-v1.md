@@ -1,4 +1,7 @@
-# OPad - ESP32-S3 Low-Latency osu! Keypad and Telemetry Display
+---
+title: "Technical Specification v1.0"
+description: "Normative implementation contract for OPad V1 hardware, firmware, and desktop integration."
+---
 
 **Technical Specification / Implementation Contract - v1.0**  
 **Primary target:** Waveshare ESP32-S3-Touch-LCD-2 + Linux + osu!lazer AppImage  

@@ -1,4 +1,7 @@
-# OPad Counter Reconciliation, Recovery & Unbinding
+---
+title: "Counter Reconciliation, Recovery & Unbinding"
+description: "Counter reconciliation rules, flashing procedures, bootloader entry, and recovering an un-enumerated pad."
+---
 
 ## 1. Dual-Storage Model (§12, §13)
 

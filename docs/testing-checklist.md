@@ -1,4 +1,7 @@
-# OPad Hardware & Release Verification Checklist
+---
+title: "Hardware & Release Verification Checklist"
+description: "Manual quality assurance checklist for firmware, desktop software, and hardware before release."
+---
 
 This checklist documents the manual hardware release verification procedure
 (§34, §35) required prior to tagged releases. Every row is run by a person with
@@ -528,4 +531,3 @@ frames). App: `canonical_device_id` in `opad-model`, storage v19,
   - Section 5: WIN-01, WIN-02, WIN-03, WIN-04, WIN-05, WIN-06, and WIN-08 **PASS** (zero driver hunt, autostart, and hands-free bare-metal firmware flashing verified).
   - Section 6: PKG-01 through PKG-06 **PASS** end-to-end (clean install, uninstall, bundled tosu, running process termination).
 - **V1.0 Sign-Off Status:** **100% COMPLETE — ALL TESTS PASSING, READY FOR TAGGING v1.0.0.**
-

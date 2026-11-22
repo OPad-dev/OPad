@@ -1,4 +1,7 @@
-# OPad v2 — Rapid Trigger (Hall-Effect Keys) Plan
+---
+title: "Rapid Trigger (Hall-Effect Keys) Plan"
+description: "Initial blueprint and design proposal for Hall Effect sensing and Rapid Trigger on OPad."
+---
 
 **Companion to:** `opad_technical_spec_v1.md` and `opad_remaining_work_v1.md`
 **Audience:** the project owner, Antigravity and other coding agents

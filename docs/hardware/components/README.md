@@ -1,4 +1,7 @@
-# Component notes
+---
+title: "Component Notes"
+description: "Technical notes, register maps, timings, and wiring details for hardware components used in OPad."
+---
 
 These notes cover the parts the firmware talks to or depends on: registers,
 timings, pin tables and how each part is wired on OPad's boards. Each

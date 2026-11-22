@@ -1,4 +1,7 @@
-# Hall Effect firmware: decision record
+---
+title: "Hall Effect Firmware: Decision Record"
+description: "Normative decision record for Hall Effect rapid trigger firmware implementation and calibration."
+---
 
 **Started:** 2026-10-19. Supersedes the conflicting parts of
 `docs/specs/v2-rapid-trigger.md` (written before the board existed) and the

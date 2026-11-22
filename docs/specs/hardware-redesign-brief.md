@@ -1,4 +1,7 @@
-# Hardware redesign brief: every board, with what V1 taught us
+---
+title: "Hardware Redesign Brief: V3 Boards"
+description: "Design brief and lessons learned from V1/V2 leading to the V3 carrier and module architecture."
+---
 
 **Written:** 2026-10-23, at the end of the HE phantom-press investigation
 and the HE V2 design. **Purpose:** the starting point for a full redesign of

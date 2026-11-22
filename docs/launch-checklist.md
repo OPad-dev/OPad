@@ -1,4 +1,8 @@
-# OPad launch checklist (written 2026-11-20)
+---
+title: "Launch Checklist"
+description: "Pre-sale verification covering repository, pipelines, hardware, desktop app, compliance, and manufacturing."
+draft: true
+---
 
 Everything that has to be true before OPad is sold. It covers the repository,
 the GitHub pipeline, the pad, the desktop app on every supported platform, the
