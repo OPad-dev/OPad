@@ -1,6 +1,8 @@
 ---
 title: Subsistema USB del firmware
 description: Referencia de implementación de los descriptores compuestos TinyUSB, endpoints HID divididos a 1000 Hz, entramado CDC-ACM y reinicio en modo descarga ROM.
+sidebar:
+  order: 3
 ---
 
 El subsistema USB implementa un dispositivo compuesto USB 2.1 Full-Speed (`VID 0x303A`, `PID 0x4001`, `bcdDevice 0x0102`) mediante TinyUSB (`espressif/esp_tinyusb` 2.3.0 / `tinyusb` 0.21.0~2) fijado en Core 0 con prioridad `configMAX_PRIORITIES - 2` ([/firmware/main/app_main.c](/firmware/main/app_main.c), [/firmware/main/usb/usb_descriptors.c](/firmware/main/usb/usb_descriptors.c)).
