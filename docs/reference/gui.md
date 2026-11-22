@@ -1,6 +1,8 @@
 ---
 title: GUI Reference
 description: Reference guide to opad-gui pages, sidebar navigation, Settings tabs, Hall Effect Keys page, Screen Designer, Diagnostics suite, and Stats page.
+sidebar:
+  order: 2
 ---
 
 `opad-gui` is an `iced`-based desktop application with a system tray icon (`--tray` starts hidden in the tray, and `--page <name>` opens a specific page). It communicates with `opad-daemon` over local IPC. <!-- src: /desktop/gui/src/main.rs#parse_page_arg -->
