@@ -41,6 +41,13 @@ pub fn parse_page_arg() -> Option<Page> {
     None
 }
 
+/// `--page updates`: Settings opens on its Updates tab
+fn wants_updates_tab() -> bool {
+    let args: Vec<String> = std::env::args().collect();
+    args.windows(2)
+        .any(|w| (w[0] == "--page" || w[0] == "-p") && w[1].eq_ignore_ascii_case("updates"))
+}
+
 pub fn main() -> iced::Result {
     let target_page = parse_page_arg();
     let page_str = target_page.map(Page::token);
@@ -89,7 +96,7 @@ impl Page {
     /// `--page` names and their aliases. The first name for each page is the
     /// token a second launch sends to the running instance, so both ends of
     /// the single-instance handoff read this one table.
-    const TOKENS: [(&'static str, Page); 19] = [
+    const TOKENS: [(&'static str, Page); 20] = [
         ("dashboard", Page::Dashboard),
         ("stats", Page::Stats),
         ("kpm", Page::Stats),
@@ -97,6 +104,8 @@ impl Page {
         ("ppm", Page::Stats),
         ("designer", Page::Designer),
         ("settings", Page::Settings),
+        // Settings, on its Updates tab (wants_updates_tab)
+        ("updates", Page::Settings),
         ("device", Page::Device),
         ("logs", Page::Logs),
         ("monitor", Page::Logs),
@@ -547,7 +556,11 @@ impl App {
             designer,
             diagnostics_enabled,
             diagnostics: diagnostics::DiagnosticsState::default(),
-            settings_tab: pages::SettingsTab::default(),
+            settings_tab: if wants_updates_tab() {
+                pages::SettingsTab::Updates
+            } else {
+                pages::SettingsTab::default()
+            },
             stats: stats::StatsState::default(),
             he_calibration: None,
             key3: None,
