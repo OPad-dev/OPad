@@ -43,8 +43,12 @@ switch ($Phase) {
     "install" {
         $setup = Get-ChildItem (Join-Path $HOME "$Arg\opad-setup-*.exe") | Select-Object -First 1
         if (-not $setup) { Fail "no opad-setup-*.exe in $HOME\$Arg"; break }
-        $p = Start-Process $setup.FullName -PassThru -Wait `
+        # Not -Wait: in PowerShell 5.1 it also waits for the setup's children,
+        # and the daemon the setup starts never exits
+        $p = Start-Process $setup.FullName -PassThru `
             -ArgumentList "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=$HOME\install-$Arg.log"
+        $null = $p.Handle
+        if (-not $p.WaitForExit(600 * 1000)) { $p.Kill(); Fail "installer still running after 600 s"; Get-Content "$HOME\install-$Arg.log" -Tail 15; break }
         if ($p.ExitCode -eq 0) { Pass "installed $(Get-InstalledVersion) ($($setup.Name))" }
         else { Fail "installer exited $($p.ExitCode)"; Get-Content "$HOME\install-$Arg.log" -Tail 15 }
         foreach ($f in "opad-gui.exe", "opad-daemon.exe", "opadctl.exe", "espflash.exe", "tosu\tosu.exe", "unins000.exe") {
