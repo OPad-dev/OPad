@@ -1,6 +1,8 @@
 ---
 title: Firmware Counters Subsystem
 description: Implementation reference for monotonic keypress counters, sync validation rules, atomic delta rebasing, and lazy NVS checkpointing.
+sidebar:
+  order: 7
 ---
 
 The counters subsystem persists 64-bit lifetime press counts for Key 1, Key 2, and Key 3 in NVS (`NVS_NS_COUNTERS` / `"opad"`) while keeping all live increments lockless in RAM on Core 0 ([/firmware/main/counters/counters.c](/firmware/main/counters/counters.c), [/firmware/main/counters/counter_sync_rules.c](/firmware/main/counters/counter_sync_rules.c)).
