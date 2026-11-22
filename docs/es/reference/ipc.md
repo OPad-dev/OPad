@@ -1,6 +1,8 @@
 ---
 title: Referencia del protocolo IPC
 description: Especificación del transporte local de comunicación entre procesos (IPC), entramado JSON, modelo de seguridad Windows/Linux y protocolo de peticiones/respuestas entre opad-daemon, opad-gui y opadctl.
+sidebar:
+  order: 6
 ---
 
 `opad-daemon` es propietario de la conexión serie USB CDC, la base de datos SQLite, la supervisión de `tosu` y las comprobaciones de actualización. `opad-gui` y `opadctl` se comunican con `opad-daemon` por un canal IPC local (`IPC_PROTOCOL_VERSION = 1`). <!-- src: /desktop/crates/opad-ipc/src/lib.rs#IPC_PROTOCOL_VERSION -->
