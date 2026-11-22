@@ -1,79 +1,69 @@
 ---
-title: Arquitectura del Sistema
-description: Arquitectura integral de OPad, detallando el aislamiento de hardware de doble núcleo en ESP32-S3, tareas de firmware, máquinas de estado del daemon de escritorio y comunicación secuenciada con el dispositivo.
+title: Arquitectura del sistema
+description: Arquitectura general de OPad, incluyendo el aislamiento de tareas en doble núcleo del ESP32-S3, los estados de ejecución del firmware y el modelo de actor del daemon de escritorio.
 ---
 
-OPad está diseñado con un principio rector fundamental: **la latencia siempre gana** (Regla de Producto 1). Cada capa de hardware, firmware y arquitectura de escritorio está diseñada para garantizar que los contactos de interruptores mecánicos y las actuaciones de Hall Effect lleguen al anfitrión USB en intervalos sub-milisegundo y sin fluctuaciones (jitter). Nada se interpone en la ruta de pulsación de teclas: la pantalla LCD, el almacenamiento flash (NVS), los gestos de la pantalla táctil y la integración de juego de tosu permanecen estrictamente aislados. <!-- src: /README.md -->
+OPad está organizado alrededor de **la latencia siempre gana** ([/AGENTS.md](/AGENTS.md) §1.1): el escaneo de teclas y los reportes USB HID a 1000 Hz se ejecutan en Core 0 sin asignaciones en el heap, sin bloqueos compartidos con Core 1 y sin escrituras en flash durante la partida. La pantalla LCD, la persistencia NVS, los gestos táctiles y la telemetría de `tosu` permanecen fuera de la ruta de pulsación.
 
-## Dual-Core Hardware Isolation (ESP32-S3)
+## Aislamiento de hardware en doble núcleo (ESP32-S3)
 
-El ESP32-S3 contiene dos núcleos Xtensa LX7 que funcionan a 240 MHz. OPad utiliza la asignación asimétrica de tareas (task pinning) en FreeRTOS para evitar que las operaciones en segundo plano se apropien de la CPU e interrumpan el escaneo de teclas o los informes USB HID. <!-- src: /firmware/main/app_main.c -->
+El ESP32-S3 ejecuta dos núcleos Xtensa LX7 a 240 MHz (`CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y` en [/firmware/sdkconfig.defaults](/firmware/sdkconfig.defaults)). Las tareas de FreeRTOS se fijan de forma asimétrica en [/firmware/main/app_main.c](/firmware/main/app_main.c):
 
-```
+```text
 +-------------------------------------------------+-------------------------------------------------+
-| CORE 0 (Entrada y USB HID)                      | CORE 1 (UI, Serie CDC, Runtime y Almacenamiento)|
+| CORE 0 (Input & USB HID)                        | CORE 1 (UI, CDC Serial, Runtime & Storage)      |
 +-------------------------------------------------+-------------------------------------------------+
-| • Tarea Keypad / HE (Prioridad MAX - 1)         | • Tarea TinyUSB CDC (Prioridad IDLE + 3)        |
-| • Tarea TinyUSB Core (Prioridad MAX - 1)        | • Tarea Táctil CST816S (Prioridad 2)            |
-| • ISRs de GPIO Directas / Sampler DMA ADS7028   | • Motor de Pantalla LVGL y PWM de Luz           |
-| • Cero escrituras flash, cero logs, cero malloc | • Supervisor de Runtime (Prioridad IDLE + 1)    |
-|                                                 | • Volcados NVS Diferidos y Diagnósticos         |
+| • keypad_task / he_task / he_spi (MAX - 1)      | • cdc_proto / usb_cdc_task (IDLE + 3)           |
+| • TinyUSB device task (MAX - 2)                 | • touch_retry_task (Priority 2)                 |
+| • GPIO key ISRs / V1 ADC1 DMA / V3 SPI3 polling | • LVGL display task & ST7789 SPI2 flushes       |
+| • IRAM key path, zero flash writes, zero malloc | • runtime_supervisor_task (IDLE + 1)            |
+|                                                 | • Deferred NVS checkpoints & diagnostics        |
 +-------------------------------------------------+-------------------------------------------------+
 ```
 
-### Core 0: The Keypress Path
-Core 0 controla el cauce de entrada crítico en el tiempo: <!-- src: /firmware/main/app_main.c -->
-- **`keypad_task` / `he_task`**: Asignadas a Core 0 con prioridad `configMAX_PRIORITIES - 1`. Para interruptores mecánicos, responde directamente a las interrupciones GPIO disparadas por flanco y ejecuta un antirrebote anticipado (eager debounce) instantáneo. Para módulos Hall Effect, muestrea conversiones ADC a alta velocidad y calcula las transiciones de estado de Rapid Trigger. <!-- src: /firmware/main/input/keypad.c#keypad_task -->
-- **`tinyusb_task`**: Asignada a Core 0 con alta prioridad (`tusb_cfg.task.xCoreID = 0`). Gestiona el sondeo del endpoint USB HID a 1000 Hz, enviando inmediatamente informes de teclado estándar de 8 bytes cada vez que cambia el estado de un interruptor. <!-- src: /firmware/main/app_main.c -->
-- **Invariantes de Ejecución**: El código que corre en Core 0 nunca realiza asignaciones dinámicas en el heap (`malloc`), nunca toma mutexes bloqueantes en poder de Core 1 y nunca interactúa con la memoria flash SPI (NVS).
+### Core 0: La ruta de pulsación
+- **Tareas de entrada** (`keypad_task` en [/firmware/main/input/keypad.c](/firmware/main/input/keypad.c), `he_task` en [/firmware/main/input/he_backend.c](/firmware/main/input/he_backend.c), `he_spi` en [/firmware/main/input/he_spi_source.c](/firmware/main/input/he_spi_source.c)): Fijadas en Core 0 con prioridad `configMAX_PRIORITIES - 1`. Los interruptores mecánicos usan una ISR GPIO en IRAM con antirrebote inmediato; Hall Effect V1 usa DMA continuo del ADC1 interno (tramas de `4 kHz`), y Hall Effect V3 usa un `gptimer` hardware de 50 µs que sondea el ADS7028 externo por SPI3 a 40 MHz (`SPI_DMA_DISABLED`, lecturas directas de registros).
+- **Tarea TinyUSB**: Fijada en Core 0 con prioridad `configMAX_PRIORITIES - 2` ([/firmware/main/app_main.c](/firmware/main/app_main.c)) para que solo las tareas de entrada tengan mayor prioridad. Controla los dos endpoints HID de 1000 Hz (`EP 0x81` y `EP 0x84`) y CDC-ACM.
+- **Fijación en IRAM por el enlazador**: [/firmware/main/linker.lf](/firmware/main/linker.lf) fija `keypad_task`, `usb_hid`, `he_frame`, `he_rt`, `he_spi_source:sampler_task`, `he_spi_frame` y la ruta crítica HID/DWC2 de TinyUSB en IRAM (`noflash`) para que el tráfico de pantalla/flash en Core 1 no cause paradas de caché de instrucciones.
 
-### Core 1: System Services & UI
-Core 1 gestiona todas las funciones auxiliares no críticas: <!-- src: /firmware/main/runtime/runtime.c -->
-- **`cdc_proto` (`usb_cdc_task`)**: Asignada a Core 1 (`tskIDLE_PRIORITY + 3`). Codifica y decodifica mensajes de Protocol Buffers sobre la interfaz serie CDC-ACM. <!-- src: /firmware/main/usb/usb_cdc.c#usb_cdc_task -->
-- **`touch_retry` (`touch_retry_task`)**: Asignada a Core 1 (`Prioridad 2`). Sondea el controlador táctil I2C CST816S durante los contactos activos y detecta gestos de deslizamiento. <!-- src: /firmware/main/input/touch_retry.c#touch_retry_task -->
-- **Motor de Pantalla**: Controla la pantalla LCD ST7789 de 320x240 utilizando LVGL. Los refrescos de pantalla y las transferencias SPI DMA se ejecutan en Core 1, completamente fuera de la ruta de entrada.
-- **`runtime_task` (`runtime_supervisor_task`)**: Asignada a Core 1 (`tskIDLE_PRIORITY + 1`). Supervisa los estados del dispositivo, comprueba tiempos de inactividad de mapas y ejecuta escrituras diferidas en NVS al regresar a `IDLE`. <!-- src: /firmware/main/runtime/runtime.c#runtime_supervisor_task -->
+### Core 1: Servicios del sistema e interfaz
+- **`cdc_proto` (`usb_cdc_task`)**: Fijada en Core 1 (`tskIDLE_PRIORITY + 3`) en [/firmware/main/usb/usb_cdc.c](/firmware/main/usb/usb_cdc.c); decodifica mensajes del protocolo nanopb entramados y despacha las respuestas.
+- **`touch_retry` (`touch_retry_task`)**: Fijada en Core 1 (prioridad 2) en [/firmware/main/input/touch_retry.c](/firmware/main/input/touch_retry.c); duerme sobre la interrupción del CST816S y sondea I2C únicamente mientras hay un dedo apoyado.
+- **Pantalla y LVGL**: Renderiza diseños `320x240` hacia la ST7789 por SPI2 a 80 MHz ([/firmware/main/ui/ui_port.c](/firmware/main/ui/ui_port.c)).
+- **`runtime_task` (`runtime_supervisor_task`)**: Fijada en Core 1 (`tskIDLE_PRIORITY + 1`) en [/firmware/main/runtime/runtime.c](/firmware/main/runtime/runtime.c); gestiona las transiciones de estado de juego, temporizadores y volcados diferidos a NVS.
 
-## Firmware Runtime State Machine
+## Máquina de estados de ejecución del firmware
 
-El supervisor de ejecución del firmware (`firmware/main/runtime/runtime.c`) rastrea el estado activo del jugador para aplicar reglas estrictas de protección de la memoria flash: <!-- src: /firmware/main/runtime/runtime.c#s_state -->
+[/firmware/main/runtime/runtime.c](/firmware/main/runtime/runtime.c) garantiza el aislamiento de escrituras en flash mediante tres estados de ejecución:
 
-```
-        El host envía GameplayDisplayState (>= 1 Hz)
-     +---------------------------------------------+
-     |                                             |
-     v                                             |
-+----------+      Primer Paquete del Mapa  +---------------+      Fin del Mapa / Parada
-|   IDLE   | ----------------------------> |    PLAYING    | -------------------------+
-+----------+                               +---------------+                          |
-     ^                                                                                |
-     |                       Ventana de Enfriamiento de 5 segundos                    |
-     +--------------------------------------------------------------------------------+
-                                         COOLDOWN
+```text
+         Host sends HostStatus / gameplay heartbeat
+      +---------------------------------------------+
+      |                                             |
+      v                                             |
++----------+      Map Starts               +---------------+     Map Ends / 3 s Timeout
+|   IDLE   | ----------------------------> |    PLAYING    | ----------------------------+
++----------+                               +---------------+                             |
+      ^                                                                                  |
+      |                          5 s Cooldown (COOLDOWN_DURATION_US)                     |
+      +----------------------------------------------------------------------------------+
+                                            COOLDOWN
 ```
 
-### State Definitions
-1. **`OPAD_STATE_IDLE`**: Estado de reposo por defecto. El pad muestra el diseño de pantalla inactivo. Las actualizaciones de configuración recibidas por serie se guardan inmediatamente en flash NVS. <!-- src: /firmware/main/runtime/runtime.c#OPAD_STATE_IDLE -->
-2. **`OPAD_STATE_PLAYING`**: Sesión activa de beatmap de osu! en curso. El pad pasa a `PLAYING` al recibir el primer paquete `GameplayDisplayState` del daemon del anfitrión. Todas las escrituras en flash (NVS) se bloquean estrictamente para evitar paradas por invalidación de caché de CPU. Las actualizaciones de configuración se aplican solo en RAM y se marcan como pendientes (dirty). <!-- src: /firmware/main/runtime/runtime.c#OPAD_STATE_PLAYING -->
-3. **`OPAD_STATE_COOLDOWN`**: Periodo de gracia de 5 segundos tras finalizar el mapa (`COOLDOWN_DURATION_US = 5,000,000`). Evita que los reintentos inmediatos o reinicios de canciones causen picos de latencia por escritura. Una vez transcurridos los 5 segundos sin nuevos paquetes de juego, el pad regresa a `IDLE` y vuelca los ajustes pendientes a NVS. <!-- src: /firmware/main/runtime/runtime.c#COOLDOWN_DURATION_US -->
+1. **`OPAD_STATE_IDLE`**: Estado predeterminado. Muestra el diseño en reposo; la configuración, la calibración y los guardados de contadores pueden escribir en NVS.
+2. **`OPAD_STATE_PLAYING`**: Se entra cuando el anfitrión informa partida activa. Todas las escrituras en NVS están bloqueadas; los cambios de configuración y contadores permanecen en RAM y se marcan como pendientes.
+3. **`OPAD_STATE_COOLDOWN`**: Periodo de gracia de 5 segundos (`COOLDOWN_DURATION_US = 5,000,000` µs) tras terminar un mapa para que los reintentos rápidos no disparen escrituras en NVS. Volver a `IDLE` vuelca los cambios diferidos.
+4. **Watchdog del anfitrión**: Si los latidos de partida se detienen durante 3 segundos (`GAMEPLAY_TIMEOUT_US = 3,000,000` µs), el firmware sale de `PLAYING` hacia `COOLDOWN` e `IDLE`.
 
-### Host Watchdog
-Si el daemon del anfitrión se bloquea o `tosu` se cierra inesperadamente durante un mapa, el watchdog del firmware (`GAMEPLAY_TIMEOUT_US = 3,000,000`) detecta la pérdida del latido de juego a 1 Hz tras 3 segundos y regresa automáticamente el pad a `COOLDOWN` e `IDLE`. <!-- src: /firmware/main/runtime/runtime.c#GAMEPLAY_TIMEOUT_US -->
+## Arquitectura del daemon de escritorio
 
-## Desktop Daemon Architecture
+`opad-daemon` ([/desktop/daemon/src/runtime.rs](/desktop/daemon/src/runtime.rs)) coordina la comunicación serie USB CDC, la persistencia en SQLite (`opad.db`), la supervisión de `tosu`, las actualizaciones y el IPC local para `opad-gui` y `opadctl`.
 
-El daemon de escritorio (`opad-daemon`) actúa como coordinador central entre el hardware físico, el proceso de osu! (vía `tosu`) y las interfaces de usuario (`opad-gui` y `opadctl`). <!-- src: /desktop/daemon/src/runtime.rs -->
+### Actor de dispositivo de escritor único
+Todos los comandos anfitrión-a-teclado del bucle de ejecución pasan por una única tarea ordenada en [/desktop/daemon/src/device_actor.rs](/desktop/daemon/src/device_actor.rs):
+- Canal acotado de profundidad `QUEUE_DEPTH = 256` que transporta `DeviceCommand` (`TimeSync`, `ClaimOwnership`, `Config`, `HostStatus`, `DataUpdate`, `Layout`, `RequestStatus`, `PlayAnimation`).
+- Cada comando se envía y espera secuencialmente para que los mensajes de configuración, diseño y telemetría nunca se adelanten entre sí.
+- Los errores transitorios `DeviceError::Busy` se reintentan hasta `BUSY_RETRIES = 5` veces con `BUSY_BACKOFF = 20 ms`, salvo las diferencias obsoletas de `DataUpdate`, que en su lugar activan `resend_data` para que el siguiente volcado envíe una instantánea nueva.
 
-### The Device Actor Pattern
-En implementaciones iniciales, múltiples tareas asíncronas escribían de forma concurrente en el puerto serie, causando condiciones de carrera y entrega de tramas fuera de orden. En la arquitectura actual, toda la comunicación del anfitrión hacia el dispositivo se serializa a través de un actor dedicado (`desktop/daemon/src/device_actor.rs`): <!-- src: /desktop/daemon/src/device_actor.rs -->
-
-- **Cola de Comandos Ordenada**: Los comandos (`DeviceCommand`) se colocan en un canal acotado de 256 elementos (`QUEUE_DEPTH = 256`). <!-- src: /desktop/daemon/src/device_actor.rs#QUEUE_DEPTH -->
-- **Despacho Monohilo**: La tarea del actor extrae comandos secuencialmente, espera la transmisión serie y el acuse de recibo, y gestiona los estados de ocupado transitorios con retroceso exponencial (`BUSY_RETRIES = 5`, `BUSY_BACKOFF = 20ms`). <!-- src: /desktop/daemon/src/device_actor.rs#BUSY_RETRIES -->
-- **Eliminación de Carreras**: Las diferencias de telemetría, los cambios de diseño y las escrituras de configuración siempre llegan al pad en un orden predecible.
-
-### Supervision of tosu
-`opad-daemon` supervisa `tosu` como un proceso hijo: <!-- src: /desktop/daemon/src/runtime.rs -->
-- Inicia `tosu` desde el directorio privado de bibliotecas (`bundled_tosu_binary`).
-- Sondea la interfaz WebSocket de `tosu` para obtener métricas de juego en vivo (metadatos de canciones, precisión, combo, UR, KPM).
-- Traduce los eventos del juego en envoltorios protobuf `GameplayDisplayState` y `DataUpdate`, reenviándolos a través del actor del dispositivo hacia el motor de pantalla del pad.
-- Cuando los beatmaps comienzan o terminan, el daemon reproduce la máquina de estados del firmware, respetando `COOLDOWN_DURATION` antes de confirmar registros en la base de datos SQLite. <!-- src: /desktop/daemon/src/runtime.rs#COOLDOWN_DURATION -->
+### Supervisión de `tosu` y guardia de almacenamiento
+`opad-daemon` supervisa `tosu` mediante [/desktop/crates/opad-tosu/src/lib.rs](/desktop/crates/opad-tosu/src/lib.rs), convierte las diferencias de telemetría WebSocket v2 en mensajes `DataUpdate` y `HostStatus` con límite de frecuencia ([/desktop/daemon/src/telemetry.rs](/desktop/daemon/src/telemetry.rs)), y refleja la ventana `Playing` / `Cooldown` del teclado desactivando las escrituras en SQLite (`Storage::set_writes_allowed(false)`) hasta que termina el enfriamiento post-partida.
