@@ -43,7 +43,7 @@ Missing or unknown markers always degrade safely to `NotifyOnly`.
 ## 3. Linux Targets
 
 - **`.deb` / `.rpm`**: Install binaries in `/usr/bin/`, private files in `/usr/lib/opad/`, systemd user unit in `/usr/lib/systemd/user/opad-daemon.service`, and `70-opad.rules` ([/packaging/linux/udev/70-opad.rules](/packaging/linux/udev/70-opad.rules)). Post-install ([/packaging/linux/deb/postinst](/packaging/linux/deb/postinst)) reloads `udevadm` and applies `setcap cap_sys_ptrace=eip /usr/lib/opad/tosu/tosu`. Uninstall runs `/usr/lib/opad/uninstall-cleanup` ([/packaging/linux/uninstall-cleanup.sh](/packaging/linux/uninstall-cleanup.sh)) on remove/purge (never on upgrade).
-- **Arch Linux**: [/packaging/linux/arch/PKGBUILD](/packaging/linux/arch/PKGBUILD) builds from source with `TOSU_STANDALONE=0` (system `nodejs`) and `INSTALL_ORIGIN=aur`.
+- **Arch Linux**: [/packaging/linux/arch/PKGBUILD](/packaging/linux/arch/PKGBUILD) builds from source with `TOSU_STANDALONE=0` (system `nodejs`) and `INSTALL_ORIGIN=aur`. The prebuilt AUR package template [/packaging/linux/arch/PKGBUILD-bin.in](/packaging/linux/arch/PKGBUILD-bin.in) (rendered by [/scripts/release/aur_bin.sh](/scripts/release/aur_bin.sh)) sets `options=('!strip' '!debug')` so the release binaries are installed unstripped and match `FILES.sha256`.
 - **AppImage**: [/packaging/linux/appimage/AppRun](/packaging/linux/appimage/AppRun) sets `PATH`/`LD_LIBRARY_PATH` and supports `install-udev` (via `pkexec`), `daemon`, `ctl`, or launching `opad-gui`.
 
 ## 4. Windows Inno Setup (`installer.iss`)
