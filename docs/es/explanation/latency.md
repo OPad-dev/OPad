@@ -1,65 +1,69 @@
 ---
-title: Ingeniería de Latencia
-description: Explicación detallada del cauce de entrada sub-milisegundo de OPad, endpoints duales USB HID, algoritmos de antirrebote anticipado y telemetría de latencia.
+title: Ingeniería de latencia
+description: Cómo minimiza OPad la latencia y fluctuación de pulsación mediante dos endpoints USB HID, antirrebote inmediato, aislamiento en Core 0 y telemetría de latencia en el dispositivo.
 ---
 
-En los juegos de ritmo como *osu!*, la precisión temporal se evalúa en márgenes de milisegundos de un solo dígito. Cualquier fluctuación (jitter) en la latencia o retraso en la transmisión de entrada se traduce directamente en una menor estabilidad en los impactos (Unstable Rate / UR). OPad trata la latencia como su invariante primordial: **la latencia siempre gana** (Regla de Producto 1). Cada componente de la ruta crítica de teclas está optimizado para entregar los cambios de estado de los interruptores al anfitrión USB en menos de 1 milisegundo. <!-- src: /firmware/main/usb/usb_hid.c -->
+En juegos de ritmo como *osu!*, la consistencia temporal se mide en milisegundos de un solo dígito, y la fluctuación (jitter) aumenta directamente el Unstable Rate (UR). La regla principal de ingeniería de OPad es **la latencia siempre gana** ([/AGENTS.md](/AGENTS.md) §1.1): la pantalla, el almacenamiento, la telemetría serie, la bandeja del sistema y `tosu` nunca entran en la ruta de pulsación.
 
-## Dual USB HID Endpoints
+## Doble endpoint USB HID
 
-Un endpoint de teclado USB HID estándar a 1000 Hz es sondeado por el sistema operativo anfitrión una vez cada 1.0 ms. Bajo una arquitectura convencional de un solo endpoint:
-- Si se activa Key 1, se pone en cola un informe de teclado HID en el endpoint.
-- Si Key 2 se activa 200 µs después (algo común durante ráfagas rápidas de dedos que superan los 200–300 BPM), el endpoint no puede aceptar el segundo informe hasta que el anfitrión haya sondeado y confirmado el primer informe (hasta 1 ms más tarde).
-- Esto introduce hasta 1 ms de fluctuación artificial de latencia entre pulsaciones alternas de dedos.
+El anfitrión sondea los endpoints USB HID Full-Speed a intervalos de `1 ms` (`1000 Hz`, `bInterval = 1`). En un teclado convencional de un solo endpoint:
 
-### OPad's Split Endpoint Architecture
-OPad resuelve este cuello de botella dividiendo las dos teclas principales de juego entre dos endpoints físicos independientes de USB HID: <!-- src: /firmware/main/usb/usb_hid.c#hid_link_t -->
+- Cuando Key 1 cambia de estado, se encola un reporte HID en el endpoint.
+- Si Key 2 cambia de estado `200 µs` después (habitual en secuencias alternas rápidas), su reporte no puede enviarse hasta que el anfitrión recoja el primero, añadiendo hasta `1 ms` de fluctuación variable.
 
-| Tecla | Endpoint / Interfaz | ID de Informe HID | Notas |
+OPad evita la contención de endpoint entre las dos teclas principales de juego dividiendo los reportes de teclado entre dos endpoints IN independientes de 1000 Hz ([/firmware/main/usb/usb_descriptors.c](/firmware/main/usb/usb_descriptors.c), [/firmware/main/usb/usb_hid.c](/firmware/main/usb/usb_hid.c)):
+
+| Tecla | Interfaz USB y endpoint | Reporte HID | Notas |
 |---|---|---|---|
-| **Key 1** | Endpoint IN 1 (Interfaz Teclado) | Informe de Teclado de Arranque Estándar | Comparte endpoint con Quick Retry táctil (`~`). <!-- src: /firmware/main/usb/usb_hid.c#LINK_KEY1_TOUCH --> |
-| **Key 2** | Endpoint IN 2 (Interfaz Consumidor / Media) | Informe de Teclado Personalizado | Comparte endpoint con gestos multimedia fuera de partida. <!-- src: /firmware/main/usb/usb_hid.c#LINK_KEY2 --> |
-| **Key 3** | Emparejamiento Dinámico (`usb_hid_set_key3_link`) | Emparejado con Key 1 o Key 2 | Se enruta al endpoint que no esté siendo utilizado por la segunda tecla de juego activa. <!-- src: /firmware/main/usb/usb_hid.c --> |
+| **Key 1** | Interfaz 0 — `EP 0x81` (`HID_INSTANCE_KEYBOARD`, 1 ms) | Reporte de teclado boot (report ID `0`) | Comparte endpoint con Quick Retry de pantalla táctil (`` ` ``, uso `0x35`) durante un mapa (`LINK_KEY1_TOUCH`). |
+| **Key 2** | Interfaz 3 — `EP 0x84` (`HID_INSTANCE_MEDIA`, 1 ms) | Reporte de teclado (`MEDIA_REPORT_ID_KEYBOARD`) | Comparte endpoint con reportes multimedia/rueda de deslizamientos fuera de partida (`LINK_KEY2`). |
+| **Key 3** (V3) | Enrutada dinámicamente (`usb_hid_set_key3`) | Emparejada en `LINK_KEY1_TOUCH` o `LINK_KEY2` | Usa el endpoint que la otra tecla de juego activa no esté usando, de modo que dos teclas de juego nunca comparten endpoint. |
 
-Dado que Key 1 y Key 2 residen en endpoints USB separados, Key 2 nunca espera a que se complete la transferencia USB de Key 1. Ambas teclas pueden enviar informes al anfitrión dentro del mismo intervalo de sondeo USB de 1 ms sin bloquearse mutuamente. <!-- src: /firmware/main/usb/usb_hid.c -->
+(Las interfaces 1 y 2 son CDC-ACM usando `EP 0x82`, `0x03` y `0x83`; dado que el ESP32-S3 admite como máximo cinco endpoints IN incluido `EP0`, Key 2 comparte el endpoint IN `0x84` de la Interfaz 3.)
 
-### Lockless Sequence Tracking (hid_link_t)
-Para evitar condiciones de carrera entre Core 0 (tarea de teclado) y Core 1 (tarea táctil) sin utilizar mutexes bloqueantes en la ruta de entrada, cada enlace de endpoint HID utiliza números de secuencia atómicos: <!-- src: /firmware/main/usb/usb_hid.c#hid_link_t -->
-- `change_seq`: Incrementado atómicamente por cualquier tarea que registre un cambio de tecla.
-- `sent_seq`: Actualizado cuando un informe USB se pone en cola exitosamente en el búfer de TinyUSB.
-- `pending_edge_us`: Marca de tiempo en microsegundos de alta resolución de la transición física del interruptor, utilizada para calcular la latencia de hardware de extremo a extremo.
+### Seguimiento de secuencia sin bloqueos (`hid_link_t`)
 
-## Eager Debouncing Algorithm
+Los eventos de teclas provienen de Core 0 (`keypad_task` o el backend Hall Effect), mientras que los eventos táctiles provienen de Core 1 (`touch_retry`). Para coordinar envíos sin mutex bloqueantes en la ruta de pulsación, cada enlace de endpoint (`hid_link_t` en [/firmware/main/usb/usb_hid.c](/firmware/main/usb/usb_hid.c)) mantiene contadores atómicos:
 
-Los interruptores mecánicos sufren de rebote de contacto, donde las láminas metálicas oscilan entre abierto y cerrado durante 1 a 5 ms tras la actuación física. <!-- src: /firmware/main/input/debounce.c -->
+- `change_seq`: se incrementa atómicamente tras actualizar el estado de teclas para que cualquier emisor que lo leyó antes de leer las teclas entregue al menos ese cambio.
+- `sent_seq`: avanza con compare-and-swap cada vez que `tud_hid_n_keyboard_report` tiene éxito. Si un endpoint está ocupado (`!tud_hid_n_ready`), el cambio queda pendiente (`sent_seq < change_seq`) y `tud_hid_report_complete_cb` lo reenvía en cuanto termina la transferencia en curso, evitando flancos perdidos o teclas atascadas.
+- `pending_edge_us`: almacena la marca temporal en microsegundos del flanco de tecla más antiguo sin entregar en ese enlace para medir con exactitud la latencia diferida cuando el callback de finalización lo envía.
 
-Los teclados convencionales emplean **antirrebote por aplazamiento (deferral debouncing)**: cuando se detecta un flanco de contacto, el controlador espera 5 ms para asegurarse de que la señal se estabilice antes de transmitir la pulsación a USB. Esto añade 5 ms inevitables de latencia de entrada a cada pulsación.
+## Entrada mecánica: antirrebote inmediato
 
-OPad implementa **antirrebote anticipado (eager debouncing)** (`debounce_step` en `firmware/main/input/debounce.c`): <!-- src: /firmware/main/input/debounce.c#debounce_step -->
+Los contactos de los interruptores mecánicos rebotan durante unos milisegundos tras cerrarse o abrirse. El antirrebote diferido espera a que la señal se estabilice antes de informar una pulsación, añadiendo varios milisegundos de retraso a cada toque.
 
+OPad emplea **antirrebote inmediato (eager)** en [/firmware/main/input/debounce.c](/firmware/main/input/debounce.c) (`debounce_step`) y [/firmware/main/input/keypad.c](/firmware/main/input/keypad.c):
+
+```text
+Physical Switch:  [Close] ~~~bounce~~~ [Held] ~~~bounce~~~ [Open]
+Eager State:      [PRESS immediately] -- lockout (default 5000 us) --> [resample] ... [RELEASE immediately]
+Debounce Delay:   0 us added to first edge
 ```
-Interruptor Físico:  [Contacto Inicial] ~~~rebote~~~ [Contacto Sólido] ~~~rebote~~~ [Liberación]
-Nivel de Señal:      0 -> 1 -> 0 -> 1 -> 1 -> 1 -> 1 -> 1 -> 0 -> 1 -> 0 -> 0
-Estado Anticipado:   [EMITE PULSACIÓN INMEDIATA] ---- Periodo de Bloqueo ----> [EMITE LIBERACIÓN]
-Latencia Añadida:    0.0 ms
-```
 
-### Eager Debounce Operation
-1. **Actuación Inmediata**: Cuando una interrupción por flanco pasa de liberado a presionado fuera de una ventana de bloqueo, el evento de pulsación se emite inmediatamente a Core 0 y TinyUSB (`DEBOUNCE_ACTION_PRESS`). La latencia física desde el cierre de contacto hasta la inserción en la cola USB es inferior a 20 microsegundos. <!-- src: /firmware/main/input/debounce.c#debounce_step -->
-2. **Periodo de Bloqueo**: Se inicia un temporizador interno (`lockout_end_us = now_us + lockout_us`, por defecto 5,000 µs). Los rebotes eléctricos posteriores que ocurren durante esta ventana de bloqueo se ignoran. <!-- src: /firmware/main/input/debounce.c#debounce_step -->
-3. **Remuestreo**: Al finalizar el periodo de bloqueo, se vuelve a muestrear el pin del interruptor. Si el interruptor permanece físicamente presionado, el estado se mantiene presionado. Cuando se libera, se emite un evento de liberación inmediato y se aplica una ventana de bloqueo de liberación.
+1. **Aceptación inmediata del flanco**: La interrupción GPIO (`gpio_isr_handler`, en `IRAM_ATTR`) marca el flanco con `esp_timer_get_time()` y ejecuta `debounce_step(..., DEBOUNCE_SOURCE_EDGE, s_config.debounce_us)`. Fuera de una ventana de bloqueo activa, la pulsación o liberación se acepta al instante y se despierta `keypad_task` (Core 0, prioridad `configMAX_PRIORITIES - 1`) mediante `vTaskNotifyGiveFromISR`.
+2. **Ventana de bloqueo**: Aceptar una transición fija `lockout_end_us = now_us + lockout_us` (`DEBOUNCE_DEFAULT_US = 5000`, configurable de `500` a `20000` µs en [/firmware/main/input/debounce.h](/firmware/main/input/debounce.h)). Los flancos adicionales durante el bloqueo se suprimen.
+3. **Remuestreo al fin del bloqueo**: Al expirar `lockout_end_us`, `keypad_task` lee una vez el GPIO físico (`DEBOUNCE_SOURCE_RESAMPLE`). Si el pin acabó en el estado opuesto durante el bloqueo (por ejemplo, un pico o una liberación ocurrida dentro del bloqueo), corrige el estado e inicia una nueva ventana de bloqueo.
 
-## Microsecond Latency Telemetry
+## Latencia de entrada Hall Effect
 
-OPad rastrea la latencia de entrega de físico a USB en tiempo real directamente dentro del firmware: <!-- src: /firmware/main/input/latency_stats.c -->
+Los interruptores Hall Effect carecen de rebote metálico de contactos y evitan por completo el antirrebote mecánico ([/firmware/main/input/he_backend.c](/firmware/main/input/he_backend.c), [/firmware/main/input/he_spi_source.c](/firmware/main/input/he_spi_source.c)):
 
-- **Temporizador de Hardware**: Las transiciones se marcan utilizando el temporizador de alta resolución del ESP32-S3 (`esp_timer_get_time()`, precisión de microsegundos). <!-- src: /firmware/main/input/latency_stats.c#latency_stats_record -->
-- **Cubetas de Histograma**: El firmware agrupa las mediciones de latencia en 500 cubetas atómicas de 10 µs cada una (`BUCKET_US = 10`, abarcando de 0 a 5,000 µs). <!-- src: /firmware/main/input/latency_stats.c#BUCKET_COUNT -->
-- **Detección de Valores Atípicos**: Cualquier informe que tarde más de 1,000 µs (1.0 ms) incrementa `s_outlier_count` y registra `s_outlier_max_us`, proporcionando visibilidad instantánea sobre retrasos de planificación del host USB o congestión en el bus. <!-- src: /firmware/main/input/latency_stats.c#latency_stats_record -->
+- **V1 (ADC1 interno por DMA)**: Tramas de 250 µs (`4 kHz`), filtradas por mediana y evaluadas dentro de la ISR de trama en IRAM en Core 0, despertando `he_task` únicamente en las transiciones de tecla.
+- **V3 (ADS7028 externo por SPI3 a 40 MHz)**: Tramas de 50 µs (`20 kHz`) impulsadas por un `gptimer` hardware que despierta la tarea `he_spi` en Core 0 (`configMAX_PRIORITIES - 1`), la cual lee las 3 teclas directamente desde los registros `GPSPI3` y envía los reportes HID directamente al cambiar de estado.
 
-## Memory & Execution Invariants
+## Telemetría de latencia en el dispositivo
 
-Para eliminar picos de latencia causados por recolección de basura, asignación de memoria o contención en el bus:
-- **Cero Asignaciones en el Heap en Core 0**: No existen llamadas a `malloc()` ni `free()` en la ruta de ejecución de teclado o USB. Todas las estructuras, estados de antirrebote y búferes se asignan estáticamente.
-- **Ubicación en IRAM**: Las funciones críticas en el tiempo (`debounce_step`, `latency_stats_record`, rutinas de servicio de interrupción de GPIO) están decoradas con `IRAM_ATTR`, fijando las instrucciones máquina en la RAM rápida interna para evitar paradas por fallos de caché de instrucciones. <!-- src: /firmware/main/input/debounce.c#debounce_step --> <!-- src: /firmware/main/input/latency_stats.c#latency_stats_record -->
-- **Cero Acceso a Flash Durante la Partida**: El acceso a la caché flash detiene la CPU durante decenas de milisegundos en operaciones de borrado y escritura. El firmware desactiva estrictamente las confirmaciones a NVS mientras se juegan mapas (`PLAYING` / `COOLDOWN`).
+El firmware mide el tiempo transcurrido desde la marca temporal del flanco físico (`edge_us`) hasta que TinyUSB acepta el reporte HID en [/firmware/main/input/latency_stats.c](/firmware/main/input/latency_stats.c):
+
+- **Histograma**: 500 cubetas atómicas de `10 µs` (`BUCKET_US = 10`, `BUCKET_COUNT = 500`, cubriendo de `0` a `5000 µs`; las muestras más lentas caen en la última cubeta mientras `s_max_us` registra el máximo exacto).
+- **Percentiles**: `latency_stats_get` calcula `p50`, `p99`, `p99.9`, `max_us`, el número de muestras y `deferred_reports` (flancos que tuvieron que esperar a una transferencia USB en curso). Consúltalos en cualquier momento con `opadctl latency` o reinícialos antes de un mapa con `opadctl latency --reset`.
+- **Seguimiento de valores atípicos**: Cualquier muestra superior a `1000 µs` incrementa `s_outlier_count` y actualiza `s_outlier_max_us`.
+
+## Invariantes de núcleos, memoria y flash
+
+- **Aislamiento de núcleos**: El manejo de entradas (`keypad_task`, `he_task`, `he_spi`) y TinyUSB se ejecutan en Core 0 a máxima prioridad (`configMAX_PRIORITIES - 1`); el renderizado de interfaz LVGL, el sondeo táctil y el entramado serie se ejecutan en Core 1 ([/firmware/main/app_main.c](/firmware/main/app_main.c)).
+- **Sin asignación dinámica en la ruta de pulsación**: Los estados de antirrebote, los enlaces HID y los histogramas de latencia se asignan estáticamente.
+- **Ubicación en IRAM**: Las rutinas críticas (`gpio_isr_handler`, `debounce_step`, `usb_hid_handle_key_event`, `latency_stats_record` y la ISR `on_frame` del ADC V1) llevan `IRAM_ATTR` para que los fallos de caché de flash no las detengan.
+- **Sin escrituras en flash durante el juego**: Los volcados NVS (contadores, configuración, calibración) se difieren mientras el estado de ejecución es `PLAYING` o `COOLDOWN` y solo se escriben en `IDLE` ([/firmware/main/runtime/runtime.c](/firmware/main/runtime/runtime.c)).
