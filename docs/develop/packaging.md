@@ -21,7 +21,7 @@ Every packaging path writes a single-word `install-origin` marker file read by [
 
 | Target | Marker Path | Marker Value | App Update Policy | Bundled `tosu` Self-Update? |
 |---|---|---|---|---|
-| **Windows (`.exe`)** | `{localappdata}\Programs\opad\install-origin` | `windows` | `Installer` (`/SILENT /RELAUNCH=1`) | Yes |
+| **Windows (`.exe`)** | `{localappdata}\Programs\opad\install-origin` | `windows` | `Installer` (`/SILENT /NORESTART /RELAUNCH=1`) | Yes |
 | **Debian / Ubuntu (`.deb`)** | `/usr/lib/opad/install-origin` | `deb` | `PackageManager(Apt)` (polkit prompt) | No (owned by `dpkg`) |
 | **Fedora / RHEL (`.rpm`)** | `/usr/lib/opad/install-origin` | `rpm` | `PackageManager(Dnf)` (polkit prompt) | No (owned by `rpm`) |
 | **AppImage** | AppDir `/usr/lib/opad/install-origin` | `appimage` | `DirectReplace` | Yes |
