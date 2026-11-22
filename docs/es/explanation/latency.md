@@ -1,6 +1,8 @@
 ---
 title: Ingeniería de latencia
 description: Cómo minimiza OPad la latencia y fluctuación de pulsación mediante dos endpoints USB HID, antirrebote inmediato, aislamiento en Core 0 y telemetría de latencia en el dispositivo.
+sidebar:
+  order: 2
 ---
 
 En juegos de ritmo como *osu!*, la consistencia temporal se mide en milisegundos de un solo dígito, y la fluctuación (jitter) aumenta directamente el Unstable Rate (UR). La regla principal de ingeniería de OPad es **la latencia siempre gana** ([/AGENTS.md](/AGENTS.md) §1.1): la pantalla, el almacenamiento, la telemetría serie, la bandeja del sistema y `tosu` nunca entran en la ruta de pulsación.
