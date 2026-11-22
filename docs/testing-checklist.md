@@ -1,6 +1,8 @@
 ---
 title: "Hardware & Release Verification Checklist"
 description: "Manual quality assurance checklist for firmware, desktop software, and hardware before release."
+sidebar:
+  order: 4
 ---
 
 This checklist documents the manual hardware release verification procedure
