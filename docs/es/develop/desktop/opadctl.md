@@ -1,6 +1,8 @@
 ---
 title: Arquitectura de la herramienta CLI opadctl
 description: Referencia de implementación de la utilidad de línea de comandos opadctl, análisis con clap, despacho de cliente IPC y flasheo/recuperación serie autónomo.
+sidebar:
+  order: 4
 ---
 
 `opadctl` ([/desktop/cli/src/main.rs](/desktop/cli/src/main.rs)) es la CLI de OPad basada en Clap para consultas de estado, sincronización/reinicio de contadores, copias de seguridad JSON, monitorización de registros, inspección de latencia/ritmo de pulsación, pruebas de placa, configuración del entorno y flasheo/recuperación USB sin botones.
