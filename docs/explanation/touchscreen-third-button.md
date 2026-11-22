@@ -1,6 +1,8 @@
 ---
 title: Touchscreen as the Third Button
 description: Explanation of the CST816S capacitive touch controller integration, resting finger Quick Retry, gesture classification, and gameplay isolation.
+sidebar:
+  order: 3
 ---
 
 On the Waveshare ESP32-S3-Touch-LCD-2, the capacitive touchscreen operates as **the third button** (AGENTS.md §1.4). It delivers a clean press, a sustained held state while the finger stays down, and a clean release, while keeping CPU and I2C overhead off the keypress path ([`touch_retry.c`](/firmware/main/input/touch_retry.c)).
