@@ -1,6 +1,8 @@
 ---
 title: Documentación de OPad
 description: Resumen de OPad, el teclado de baja latencia para osu! basado en ESP32-S3 y su suite de escritorio, con puntos de entrada para usuarios y desarrolladores.
+sidebar:
+  order: 1
 ---
 
 OPad es un teclado USB HID de baja latencia a 1000 Hz para osu! construido sobre la placa Waveshare ESP32-S3-Touch-LCD-2, acompañado de una suite de escritorio opcional en Rust (`opad-daemon`, `opad-gui`, `opadctl`) para Linux y Windows 10/11. <!-- src: /README.md --> <!-- src: /AGENTS.md -->
@@ -18,6 +20,7 @@ El teclado funciona de inmediato como un teclado USB sin controladores y sin ins
 
 - [Actualización de firmware](guides/update-firmware.md) — actualización por USB desde `opad-gui` u `opadctl` con protección automática de reversión A/B.
 - [Pantalla táctil y deslizamientos](guides/touchscreen-and-swipes.md) — Quick Retry dentro de los mapas y acciones de deslizamiento configurables fuera de los mapas.
+- [Personalizar el diseño de pantalla](guides/customize-screen-layout.md) — crear, previsualizar, exportar e importar diseños personalizados `Idle` y `Playing` en el diseñador de pantalla.
 - [Calibración de interruptores Hall Effect](guides/calibrate-hall-effect.md) — calibración guiada de 5 pulsaciones y ajuste de actuación / Rapid Trigger.
 - [Cambio de pines de teclas](guides/change-key-pins.md) — reasignación de GPIOs para interruptores cableados a mano y uso de **Auto-Detect**.
 - [Uso de OPad con tosu](guides/use-with-tosu.md) — configuración de telemetría en vivo de osu! y ajuste de `ptrace` en Linux.
