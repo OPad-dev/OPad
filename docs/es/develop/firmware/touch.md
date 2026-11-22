@@ -1,6 +1,8 @@
 ---
 title: Subsistema táctil del firmware
 description: Referencia de implementación del controlador táctil I2C CST816S, tarea touch_retry en Core 1, clasificador de gestos y etiquetas de retroalimentación de deslizamientos.
+sidebar:
+  order: 4
 ---
 
 El subsistema táctil controla el controlador táctil capacitivo Hynitron CST816S por I2C para implementar el tercer botón de OPad ([/AGENTS.md](/AGENTS.md) §1.4). Todo el código táctil se ejecuta en **Core 1** con prioridad `2` dentro de `touch_retry_task` ([/firmware/main/input/touch_retry.c](/firmware/main/input/touch_retry.c)).
