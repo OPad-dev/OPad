@@ -1,62 +1,80 @@
 ---
 title: Hall Effect y Rapid Trigger
-description: Explicación de la detección magnética por efecto Hall, muestreo continuo por ADC, filtrado de mediana, máquinas de estado de Rapid Trigger y almacenamiento de calibración.
+description: Cómo lee OPad los interruptores magnéticos Hall Effect en hardware V1 y V3, ejecuta el motor Rapid Trigger de 3 estados, aplica pisos de ruido y almacena la calibración.
 ---
 
-Los interruptores magnéticos de efecto Hall (HE) sustituyen las láminas de contacto metálicas físicas por un imán permanente incrustado en el vástago del interruptor y un sensor Hall lineal en la PCB del teclado. A diferencia de los interruptores mecánicos que actúan en un punto físico fijo de contacto entre láminas, los interruptores Hall Effect permiten puntos de actuación dinámicos y **Rapid Trigger (RT)**: restablecer la tecla en el instante en que comienza el movimiento ascendente del dedo, y reactivarla en el momento en que se reanuda el movimiento descendente. <!-- src: /firmware/main/input/he_backend.c -->
+Los interruptores magnéticos Hall Effect (HE) sustituyen las láminas de contacto metálicas físicas por un imán en el vástago del interruptor y un sensor Hall lineal en la PCB. En lugar de un punto de contacto fijo, el firmware lee la intensidad magnética continua de cada tecla, permitiendo ajustar la profundidad de actuación y **Rapid Trigger (RT)**—soltando en cuanto el vástago empieza a subir y volviendo a pulsar en cuanto reanuda el movimiento descendente.
 
-## Continuous ADC Sampling & Median Filtering
+## Tuberías de sensado: ADC interno V1 frente a ADC SPI externo V3
 
-En el ESP32-S3, la detección por efecto Hall se implementa con extremo cuidado para mantener las garantías de latencia: <!-- src: /firmware/main/input/he_backend.c -->
+OPad admite dos generaciones de hardware Hall Effect en [/firmware/main/input/he_backend.c](/firmware/main/input/he_backend.c):
 
-- **Muestreo Continuo por DMA**: El ADC1 opera en modo DMA por hardware continuo, alternando entre Key 1 (CH9) y Key 2 (CH6) a alta frecuencia de muestreo (`HE_SAMPLE_HZ`). Cada trama DMA se completa en 250 µs (`HE_FRAME_CONVS`). <!-- src: /firmware/main/input/he_backend.c -->
-- **Interrupción de Trama Fijada en IRAM**: La interrupción por finalización de trama (`on_frame`) se ejecuta en Core 0 enteramente en la RAM rápida interna (`IRAM_ATTR`). Permanece activa y determinista incluso durante operaciones de escritura en flash (`ADC_CONTINUOUS_ISR_IRAM_SAFE`). <!-- src: /firmware/main/input/he_backend.c -->
-- **Filtrado de Mediana**: Para eliminar picos de ruido eléctrico sin introducir retraso de fase, la interrupción de trama calcula la mediana de las conversiones válidas dentro de cada trama DMA de 250 µs. <!-- src: /firmware/main/input/he_backend.c -->
-- **Cero Sobrecarga de Sondeo**: El motor de decisión da pasos dentro de la interrupción. La tarea de FreeRTOS (`he_task`) solo se despierta cuando ocurre una transición real de estado de tecla, eliminando cambios de contexto innecesarios. <!-- src: /firmware/main/input/he_backend.c -->
+| Aspecto | Hall Effect V1 (2 teclas) | Hall Effect V3 (3 teclas) |
+|---|---|---|
+| Lectura de sensores | ADC1 interno del ESP32-S3 con DMA continuo (`HE_SOURCE_INTERNAL_ADC`) | ADC externo TI ADS7028 de 12 bits por SPI3 (`HE_SOURCE_SPI_ADC`) |
+| Canales | Key 1 en `ADC_CHANNEL_9`, Key 2 en `ADC_CHANNEL_6` | Key 1 en `AIN5`, Key 2 en `AIN4`, Key 3 en `AIN3` (autosecuencia) |
+| Cadencia de muestreo | `HE_SAMPLE_HZ = 64000` Hz, `HE_FRAME_CONVS = 16` -> tramas de **250 µs** (**4 kHz**) | `gptimer` hardware cada `HE_SPI_FRAME_US = 50` µs -> tramas de **20 kHz** |
+| Bus / filtrado | Mediana de conversiones válidas por trama DMA de 250 µs dentro de la ISR en IRAM `on_frame` | SPI3 a 40 MHz con CRC por trama (bucle directo a registros `ads7028_read16_again`); 4 lecturas por trama (1 obsoleta + 3 teclas), descartando palabras con CRC erróneo |
+| Decisión y despertar | La ISR `on_frame` ejecuta `he_rt_step` en IRAM en Core 0 y notifica a `he_task` solo en flancos de tecla | La tarea `he_spi` en Core 0 (`configMAX_PRIORITIES - 1`) ejecuta `he_rt_step` y publica eventos de tecla directamente vía `key_event_report` |
+| Captura de calibración | Cada trama de 250 µs (4 kHz) | Diezmado 5:1 (`SPI_CAL_DECIMATE = 5`) para igualar la captura de calibración a 4 kHz |
+| Almacenamiento NVS | `NVS_NS_CAL` (`opad_cal`), claves `cal_a`/`cal_b` | `NVS_NS_CAL3` (`opad_cal3`), claves `cal_a`/`cal_b` (Keys 1–2) + `cal3_a`/`cal3_b` (Key 3) |
 
-## Rapid Trigger Decision Engine (he_rt.c)
+Los detalles están en [/firmware/main/input/he_backend.c](/firmware/main/input/he_backend.c), [/firmware/main/input/he_spi_source.c](/firmware/main/input/he_spi_source.c), [/firmware/main/input/ads7028.c](/firmware/main/input/ads7028.c) y [/firmware/main/input/he_cal.c](/firmware/main/input/he_cal.c).
 
-La máquina de estados de Rapid Trigger rastrea el movimiento del vástago a través de cuatro estados operativos diferenciados: <!-- src: /firmware/main/input/he_rt.c#he_rt_step -->
+En V1, el controlador ADC continuo se configura con `ADC_CONTINUOUS_ISR_IRAM_SAFE` para que `on_frame` siga ejecutándose en RAM interna sin paradas de caché. En V3, `he_spi_source.c` adquiere SPI3 en exclusiva, realiza la primera transferencia mediante el driver y ejecuta las lecturas posteriores de 32 bits protegidas con CRC directamente sobre los registros hardware `GPSPI3` (`ads7028_read16_again`), evitando ~10 µs de sobrecarga del driver por palabra. Si un cable FFC se inserta al revés, `ads7028_carrier_pins(cable_reversed, ...)` intercambia automáticamente el mapeo de pines SPI.
 
+## Motor de decisión Rapid Trigger (`he_rt.c`)
+
+La máquina de estados de cada tecla en [/firmware/main/input/he_rt.c](/firmware/main/input/he_rt.c) (`he_rt_step`) tiene **tres** estados operativos (`he_rt_state_t`):
+
+```text
+                        raw >= actuation
+            +----------------------------------------+
+            |                                        v
+   +---------------+   raw <= extreme - rt_release   +---------------+
+   |  HE_RT_ARMED  | <-----------------------------  | HE_RT_PRESSED |
+   +---------------+    (plain mode: raw <= release) +---------------+
+            ^                                          |           ^
+            |                                          | RT on:    | RT on:
+            | raw <= region_exit                       | raw <=    | raw >=
+            |                                          | extreme - | extreme +
+            |                                          | rt_release| rt_press
+            |                                          v           |
+            +----------------------------------- +--------------------+
+                                                 | HE_RT_RT_RELEASED  |
+                                                 +--------------------+
 ```
-                raw >= actuation
-       +--------------------------------+
-       |                                |
-       v                                |
-+-------------+   raw <= extreme - rt_release    +------------------+
-|   PRESSED   | -------------------------------> |  RT_RELEASED     |
-+-------------+                                  +------------------+
-       |                                                |
-       | raw <= region_exit                             | raw >= extreme + rt_press
-       v                                                v
-+-------------+ <--------------------------------+------+
-|    ARMED    |       raw <= region_exit         |
-+-------------+                                  v
-                                           (Re-pulsar Abajo)
-```
 
-### State Transitions
-1. **`HE_RT_ARMED`**: La tecla está liberada en su zona de reposo. Cuando el movimiento hacia abajo cruza el umbral de actuación configurado (`raw >= p->actuation`), la tecla pasa a `PRESSED` y emite `HE_RT_DOWN`. La profundidad de recorrido instantánea se registra en `k->extreme`. <!-- src: /firmware/main/input/he_rt.c#he_rt_step -->
-2. **`HE_RT_PRESSED`**: La tecla se mantiene activamente presionada.
-   - Si el dedo empuja más profundamente, `k->extreme` rastrea la profundidad máxima (`cap_peak`).
-   - Si el dedo sube una distancia equivalente a la sensibilidad de reinicio (`raw <= k->extreme - p->rt_release`), la tecla pasa inmediatamente a `HE_RT_RT_RELEASED` y emite `HE_RT_UP`—sin necesidad de que la tecla vuelva al punto superior de reposo. <!-- src: /firmware/main/input/he_rt.c#he_rt_step -->
-   - Si el recorrido regresa completamente más allá del límite superior (`region_exit`), vuelve a `ARMED`.
-3. **`HE_RT_RT_RELEASED`**: La tecla se liberó a mitad de recorrido mediante Rapid Trigger.
-   - Si se reanuda el movimiento hacia abajo superando la sensibilidad de pulsación (`raw >= k->extreme + p->rt_press`), la tecla se activa inmediatamente (`HE_RT_DOWN`) y regresa a `PRESSED`.
-   - Si el recorrido ascendente continúa más allá de `region_exit`, la tecla regresa a `ARMED`.
+### Transiciones de estado
 
-## Travel Units & Calibration (Decision Record D3)
+1. **`HE_RT_ARMED`**: La tecla está suelta y esperando una pulsación inicial.
+   - Si `k->need_release` está activo (tras arrancar, cambiar parámetros o sufrir un fallo de sensor), la tecla ignora pulsaciones hasta que `raw <= p->release` (o `raw <= p->region_exit` con Rapid Trigger activado).
+   - Una vez armada y con `raw >= p->actuation`, la tecla pasa a `HE_RT_PRESSED`, emite `HE_RT_DOWN` e inicializa `k->extreme` con `cap_peak(raw, p->peak_cap)`.
+2. **`HE_RT_PRESSED`**: La tecla está mantenida pulsada.
+   - Sin Rapid Trigger (`!p->rapid_trigger`): la tecla sigue pulsada hasta que `raw <= p->release`, volviendo entonces a `HE_RT_ARMED` y emitiendo `HE_RT_UP`.
+   - Con Rapid Trigger:
+     - `k->extreme` sigue la lectura cruda más profunda alcanzada, limitada a `p->peak_cap` (lo que implementa la **BOTTOM DEAD ZONE** opcional para que apretar con más fuerza contra el tope de la carcasa no desplace el punto de liberación).
+     - Si `raw <= p->region_exit`, la tecla sale de la zona Rapid Trigger, vuelve a `HE_RT_ARMED` y emite `HE_RT_UP`.
+     - En caso contrario, si `raw <= k->extreme - p->rt_release`, la tecla pasa a `HE_RT_RT_RELEASED`, emite `HE_RT_UP` y fija `k->extreme = raw` para seguir el punto más superficial alcanzado.
+3. **`HE_RT_RT_RELEASED`**: La tecla se soltó a mitad de recorrido por Rapid Trigger y está lista para volver a pulsar de inmediato.
+   - `k->extreme` sigue la lectura más baja (más suelta) observada al subir.
+   - Si `raw <= p->region_exit`, termina Rapid Trigger y la tecla regresa a `HE_RT_ARMED` (requiriendo cruzar de nuevo `p->actuation` la próxima vez).
+   - Si `raw >= k->extreme + p->rt_press`, la tecla vuelve a actuar inmediatamente (`HE_RT_DOWN`), retorna a `HE_RT_PRESSED` y restablece `k->extreme = cap_peak(raw, p->peak_cap)`.
 
-Conforme al registro de decisiones normativo D3 (`docs/specs/v2-hall-effect-decisions.md`): <!-- src: /docs/specs/v2-hall-effect-decisions.md -->
-- **Porcentaje del Rango Magnético**: El recorrido de un interruptor Hall nunca se mide en milímetros. Las tolerancias de fabricación, la potencia de los imanes y las dimensiones de la carcasa hacen que las curvas de campo magnético varíen entre interruptores. Todos los puntos de actuación y distancias de Rapid Trigger se configuran estrictamente como un porcentaje del rango magnético calibrado (en unidades de 0.1%).
-- **Calibración Guiada de Dos Puntos**:
-  1. **Nivel de Reposo**: Mide el flujo magnético cuando el vástago del interruptor está en reposo sin presionar.
-  2. **Nivel de Fondo (Bottom-Out)**: Mide el flujo magnético cuando el interruptor hace tope contra la carcasa.
-- **Almacenes de Calibración Independientes**: Debido a que los módulos de hardware V1 (ADC interno) y V3 (ADC SPI) operan con diferentes ganancias de señal y líneas base de voltaje, cada tipo de módulo mantiene un espacio de nombres de calibración independiente en NVS (`s_store12`). Una calibración V1 nunca se aplica a un módulo V3. <!-- src: /firmware/main/input/he_cal.c -->
+La diferencia entre Rapid Trigger **Normal** y **Continuous** es simplemente `p->region_exit`: en modo Normal se sitúa en el umbral de actuación (Rapid Trigger termina cuando la tecla sube de nuevo por encima de la actuación), mientras que en modo Continuo se sitúa cerca de arriba en `top_reset` para que Rapid Trigger permanezca activo casi hasta la posición de reposo.
 
-## Safety & Stall Recovery
+## Unidades de recorrido, pisos de ruido y calibración
 
-Para garantizar la fiabilidad del interruptor y evitar entradas atascadas: <!-- src: /firmware/main/input/he_backend.c -->
-- **Watchdog de Salud del ADC**: Si una tecla no recibe una conversión ADC válida dentro de `HE_STALL_US`, la tecla se libera de inmediato para evitar que quede atascada presionada.
-- **Recuperación tras Fallo (`he_rt_fault`)**: Al recuperarse de un bloqueo del ADC, se debe observar que la tecla vuelva al estado superior de reposo (`need_release = true`) antes de que se pueda registrar una nueva pulsación. La recuperación del sensor nunca emitirá una pulsación accidental. <!-- src: /firmware/main/input/he_rt.c#he_rt_init -->
-- **Bloqueo sin Calibración (Decisión D7)**: Un pad Hall Effect sin calibrar queda bloqueado en su asistente de calibración en pantalla. Rapid Trigger y los informes de teclado permanecen desactivados hasta que los umbrales de reposo y fondo se registren con éxito. <!-- src: /docs/specs/v2-hall-effect-decisions.md -->
+Según [/docs/specs/v2-hall-effect-decisions.md](/docs/specs/v2-hall-effect-decisions.md) (D3 y D7) y [/firmware/main/input/he_params.h](/firmware/main/input/he_params.h):
+
+- **Porcentaje del rango magnético (`HE_PCT_FULL = 1000`)**: Los ajustes se guardan en incrementos de `0.1 %` de `full - rest` (conteos magnéticos, no milímetros), porque la fuerza del imán y la respuesta del sensor varían de forma no lineal entre interruptores.
+- **Pisos de ruido (`he_params_build`)**: Los umbrales de movimiento (`rt_press`, `rt_release`, `release_hyst`) y el margen de reinicio superior se limitan por encima de los pisos de ruido en conteos crudos configurados (`he_limits_t`), y `he_params_build` devuelve banderas explícitas `HE_PARAMS_*_RAISED` siempre que sube un ajuste—nunca en silencio. El usuario puede desactivarlo por tecla mediante **Allow below the noise floor** (`no_floor`, bajando los pisos a 1 conteo).
+- **Calibración de cinco pulsaciones (`he_cal_capture.h`)**: La posición de reposo se promedia sobre 64 tramas (16 ms a 4 kHz tras un asentamiento de 64 tramas) y se comprueba su dispersión y límites absolutos. El fondo de recorrido registra 5 pulsaciones completas por tecla y toma el pico **mediano** para que una pulsación aislada demasiado fuerte no distorsione el rango; también comprueba si la tecla soltó por debajo de la posición de reposo medida (`HE_CAL_ERR_REST_PRESSED`).
+- **Persistencia NVS A/B (`he_cal.c`)**: La calibración alterna entre `cal_a`/`cal_b` (y `cal3_a`/`cal3_b` para Key 3 en V3) con números de secuencia y validación CRC32. V1 (`opad_cal`) y V3 (`opad_cal3`) usan espacios de nombres NVS separados para que la calibración de una generación de hardware nunca impulse a la otra. Las escrituras NVS se difieren al jugar (`PLAYING` / `COOLDOWN`) y se vuelcan en `IDLE`.
+
+## Seguridad, bloqueo sin calibración y recuperación ante bloqueo de ADC
+
+- **Bloqueo sin calibración (D7)**: Hasta que cada tecla activa cuente con una calibración válida (`he_cal_is_locked_decision`), `he_cal_suppress_input` suprime toda salida de teclas, los deslizamientos táctiles quedan desactivados y la pantalla se bloquea en la vista de calibración ([/firmware/main/ui/he_cal_ui.c](/firmware/main/ui/he_cal_ui.c), [/firmware/main/input/he_cal_runner.c](/firmware/main/input/he_cal_runner.c)).
+- **Watchdog de parada de ADC (`he_health`)**: Si una tecla deja de producir conversiones válidas durante `HE_STALL_US`, `he_backend.c` fuerza la liberación de la tecla (`he_rt_fault`) para que un fallo de sensor o cable nunca deje una tecla atascada.
+- **Recuperación segura tras fallo**: `he_rt_fault` activa `need_release = true`, de modo que cuando vuelven las lecturas válidas debe observarse la tecla en posición de reposo antes de emitir cualquier nueva pulsación.
+- **Pausa para sondeo de módulo**: Cuando el monitor de módulos V3 mide la tensión de ID del módulo, `he_backend_run_paused` pausa limpiamente la fuente ADC, lee la tensión de ID, libera la unidad oneshot y reanuda el flujo sin dejar teclas atascadas.
