@@ -1,6 +1,8 @@
 ---
 title: Release Automation and Update Feeds
 description: OPad release engineering using release-please, multi-platform artifact workflows, signed GitHub Pages update feeds, and opad-update security guardrails.
+sidebar:
+  order: 7
 ---
 
 Because the desktop app, firmware, and bundled `tosu` update independently ([/AGENTS.md](/AGENTS.md) §1.3), OPad runs decoupled release pipelines feeding a cryptographically signed update manifest.
