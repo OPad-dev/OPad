@@ -1,6 +1,8 @@
 ---
 title: Hardware Architecture and PCB Ecosystem
 description: Hardware generations (V1, V2, V3), carrier boards, modular MX and Hall Effect input modules, 3D enclosure design, and opadverify verification suite.
+sidebar:
+  order: 5
 ---
 
 OPad separates the Waveshare ESP32-S3-Touch-LCD-2 controller from the physical switches through modular carrier and input-module PCBs.
