@@ -1,6 +1,8 @@
 ---
 title: Changing Key Pins
 description: How to reassign hand-wired mechanical switch GPIO pins in opad-gui, allowed and reserved pins, and V3 carrier pin notes.
+sidebar:
+  order: 5
 ---
 
 By default, standalone hand-wired builds assign Key 1 to `GPIO 14` (Header P2, pin 11) and Key 2 to `GPIO 9` (Header P2, pin 12). If your switches are wired to different supported header pins, you can reassign them in `opad-gui` without recompiling firmware. <!-- src: /firmware/main/input/keypad.c --> <!-- src: /desktop/gui/src/pages.rs#settings -->
