@@ -1,6 +1,8 @@
 ---
 title: Hall Effect y Rapid Trigger
 description: Cómo lee OPad los interruptores magnéticos Hall Effect en hardware V1 y V3, ejecuta el motor Rapid Trigger de 3 estados, aplica pisos de ruido y almacena la calibración.
+sidebar:
+  order: 7
 ---
 
 Los interruptores magnéticos Hall Effect (HE) sustituyen las láminas de contacto metálicas físicas por un imán en el vástago del interruptor y un sensor Hall lineal en la PCB. En lugar de un punto de contacto fijo, el firmware lee la intensidad magnética continua de cada tecla, permitiendo ajustar la profundidad de actuación y **Rapid Trigger (RT)**—soltando en cuanto el vástago empieza a subir y volviendo a pulsar en cuanto reanuda el movimiento descendente.
