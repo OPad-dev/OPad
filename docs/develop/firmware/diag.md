@@ -1,6 +1,8 @@
 ---
 title: Firmware Diagnostics Subsystem
 description: Implementation reference for the diagnostic event ring buffer, carrier/module board self-test, and Hall Effect bench streaming mode.
+sidebar:
+  order: 8
 ---
 
 The diagnostics subsystem provides zero-allocation ring-buffer event logging, carrier/module PCB electrical testing, and a compile-time Hall Effect sensor bench mode.
