@@ -12,6 +12,9 @@ Implemented in [/firmware/main/diag/diag.c](/firmware/main/diag/diag.c):
 - Fixed circular buffer `s_entries[DIAG_RING_SIZE]` of `diag_entry_t` (`timestamp_ms`, `event_id`, `level`, `arg0`, `arg1`), guarded by a FreeRTOS spinlock (`taskENTER_CRITICAL(&s_mux)`).
 - `diag_record(uint16_t event_id, uint8_t level, uint32_t arg0, uint32_t arg1)` performs no heap allocation and no string formatting; when full, it drops the oldest entry and increments `s_dropped`.
 - `diag_drain(out_entries, max_entries, out_dropped)` drains queued entries and resets `s_dropped` so the protocol task can ship them to the host in `LogEventBatch`.
+- Notable telemetry events in [/firmware/main/diag/diag.h](/firmware/main/diag/diag.h) and formatted in [/desktop/crates/opad-model/src/diag.rs](/desktop/crates/opad-model/src/diag.rs):
+  - `DIAG_EVENT_MEMORY = 23`: Recorded once after boot in [/firmware/main/app_main.c](/firmware/main/app_main.c) with `arg0 =` free internal RAM (bytes) and `arg1 =` largest free internal DMA-capable block (bytes), visible in `opadctl monitor`.
+  - `DIAG_EVENT_UI_PERF = 24`: Recorded in `CONFIG_OPAD_UI_PERF_TEST` builds by [/firmware/main/diag/ui_perf_test.c](/firmware/main/diag/ui_perf_test.c) at the end of each phase (`DIAG_UI_PERF_IDLE = 0`, `DIAG_UI_PERF_SONG = 1`, `DIAG_UI_PERF_RESULT = 2`) with frame count, average frame time, and longest frame time (in 0.1 ms units).
 
 ## Carrier & Input Module PCB Self-Test (`board_test.c`)
 
