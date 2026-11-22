@@ -1,6 +1,8 @@
 ---
 title: Installing the Desktop Suite
 description: How to install the OPad desktop suite (opad-daemon, opad-gui, opadctl, and bundled tosu) on Linux and Windows.
+sidebar:
+  order: 4
 ---
 
 The optional OPad desktop suite adds live osu! gameplay telemetry, a screen layout designer, lifetime key counter sync, interactive diagnostics, firmware updates, and Hall Effect tuning. It consists of: <!-- src: /README.md --> <!-- src: /desktop/crates/opad-model/src/paths.rs -->
