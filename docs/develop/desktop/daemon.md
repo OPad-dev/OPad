@@ -1,6 +1,8 @@
 ---
 title: Daemon Subsystem Architecture
 description: Implementation reference for opad-daemon, the device actor queue, runtime state supervisor, telemetry diffing, automatic backups, and IPC handlers.
+sidebar:
+  order: 2
 ---
 
 `opad-daemon` is the background Tokio service coordinating USB CDC traffic, `tosu` telemetry, SQLite persistence, automatic backups, software/firmware updates, and local IPC ([/desktop/daemon/src/main.rs](/desktop/daemon/src/main.rs), [/desktop/daemon/src/runtime.rs](/desktop/daemon/src/runtime.rs)).
