@@ -1,6 +1,8 @@
 ---
 title: Using with tosu
 description: How OPad integrates with tosu for live osu! beatmap telemetry, Linux ptrace setup, custom tosu binaries, and status verification.
+sidebar:
+  order: 6
 ---
 
 OPad bundles `tosu` (v4.26.2, LGPL-3.0) to read live game state from `osu!` / `osu!lazer` and stream beatmap metadata, accuracy, PP, combo, unstable rate (UR), and tap rate to the pad's LCD display. <!-- src: /desktop/crates/opad-tosu/src/lib.rs --> <!-- src: /Makefile -->
