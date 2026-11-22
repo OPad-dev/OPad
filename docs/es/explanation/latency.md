@@ -63,7 +63,7 @@ El firmware mide el tiempo transcurrido desde la marca temporal del flanco físi
 
 ## Invariantes de núcleos, memoria y flash
 
-- **Aislamiento de núcleos**: El manejo de entradas (`keypad_task`, `he_task`, `he_spi`) y TinyUSB se ejecutan en Core 0 a máxima prioridad (`configMAX_PRIORITIES - 1`); el renderizado de interfaz LVGL, el sondeo táctil y el entramado serie se ejecutan en Core 1 ([/firmware/main/app_main.c](/firmware/main/app_main.c)).
+- **Aislamiento de núcleos**: El manejo de entradas (`keypad_task`, `he_task`, `he_spi`) se ejecuta en Core 0 a máxima prioridad (`configMAX_PRIORITIES - 1`) y TinyUSB se ejecuta en Core 0 un nivel por debajo (`configMAX_PRIORITIES - 2`); el renderizado de interfaz LVGL, el sondeo táctil y el entramado serie se ejecutan en Core 1 ([/firmware/main/app_main.c](/firmware/main/app_main.c)).
 - **Sin asignación dinámica en la ruta de pulsación**: Los estados de antirrebote, los enlaces HID y los histogramas de latencia se asignan estáticamente.
 - **Ubicación en IRAM**: Las rutinas críticas (`gpio_isr_handler`, `debounce_step`, `usb_hid_handle_key_event`, `latency_stats_record` y la ISR `on_frame` del ADC V1) llevan `IRAM_ATTR` para que los fallos de caché de flash no las detengan.
 - **Sin escrituras en flash durante el juego**: Los volcados NVS (contadores, configuración, calibración) se difieren mientras el estado de ejecución es `PLAYING` o `COOLDOWN` y solo se escriben en `IDLE` ([/firmware/main/runtime/runtime.c](/firmware/main/runtime/runtime.c)).
