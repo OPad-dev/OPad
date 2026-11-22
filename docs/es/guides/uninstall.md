@@ -1,57 +1,70 @@
 ---
 title: Desinstalación del software
-description: Procedimiento completo de desinstalación de la suite de escritorio de OPad en Linux y Windows, limpieza de registros de base de datos, servicios y reglas udev.
+description: Cómo desinstalar la suite de escritorio de OPad en Linux y Windows, qué datos se eliminan y qué permanece en el teclado.
 ---
 
-Si decides desinstalar la suite de escritorio de OPad, puedes eliminar todos los binarios de la aplicación, servicios en segundo plano, entradas de inicio automático y el estado de la base de datos local limpiamente de tu sistema. <!-- src: /packaging/linux/uninstall-cleanup.sh -->
+Desinstalar la suite de escritorio elimina el daemon en segundo plano, la GUI, `opadctl`, el `tosu` incluido, las entradas de inicio automático y los datos de escritorio.
 
 > [!NOTE]
-> Desinstalar la suite de escritorio tiene **cero impacto en el hardware del teclado**. El teclado continúa funcionando como un teclado USB HID independiente a 1000 Hz de inmediato (Regla de producto 2). Los contadores internos de vida útil del teclado, la calibración de los interruptores y los ajustes guardados en NVS permanecen intactos en el dispositivo. <!-- src: /packaging/linux/uninstall-cleanup.sh -->
+> Desinstalar el software de escritorio **no tiene ningún efecto sobre el hardware del teclado**. OPad sigue funcionando como un teclado USB HID autónomo a 1000 Hz, y sus contadores de por vida, ajustes de teclas, registro de propiedad y calibración Hall Effect permanecen intactos en la flash NVS del teclado. Para borrar o desvincular el propio teclado, consulta [Recuperación, reflasheo y desvinculación](../recovery.md). <!-- src: /AGENTS.md --> <!-- src: /packaging/linux/uninstall-cleanup.sh --> <!-- src: /packaging/windows/installer.iss -->
+
+> [!WARNING]
+> Tanto los desinstaladores de paquetes de Linux (`.deb`, `.rpm`, Arch) como el desinstalador de Windows eliminan el directorio de datos de escritorio de OPad (incluidos `opad.db`, las copias de seguridad automáticas, los ajustes, los diseños y `install.id`) sin preguntar. Exporta antes una copia con `opadctl export backup.json` o **Device** -> **Export backup** si deseas conservar una copia en disco. <!-- src: /packaging/linux/uninstall-cleanup.sh --> <!-- src: /packaging/windows/installer.iss -->
 
 ## Desinstalación en Linux
 
 ### Debian / Ubuntu (`.deb`)
-Para eliminar los paquetes de la aplicación:
 ```bash
 sudo apt remove opad
-```
-Para purgar por completo los archivos de configuración y las reglas udev:
-```bash
+# Or to also remove system conffiles:
 sudo apt purge opad
 ```
-Los scripts de empaquetado ejecutan `packaging/linux/uninstall-cleanup.sh` y `postrm`: <!-- src: /packaging/linux/deb/postrm -->
-- Detienen las instancias en ejecución de `opad-daemon`, `opad-gui` y el binario integrado `tosu`.
-- Eliminan `/usr/lib/opad` y `/etc/xdg/autostart/opad-gui.desktop`. <!-- src: /packaging/linux/deb/postrm -->
-- Recargan las reglas udev para liberar los permisos del dispositivo.
+Durante la desinstalación del paquete (nunca en una actualización), `prerm` ejecuta `/usr/lib/opad/uninstall-cleanup` (`packaging/linux/uninstall-cleanup.sh`) y `postrm` limpia los archivos del sistema: <!-- src: /packaging/linux/uninstall-cleanup.sh --> <!-- src: /packaging/linux/deb/postrm -->
+- Detiene los procesos en ejecución `opad-gui`, `opad-daemon`, `opadctl` y `/usr/lib/opad/tosu/tosu`.
+- Elimina `/usr/lib/opad`, `/etc/opad` y `/etc/xdg/autostart/opad-gui.desktop`, y recarga `udevadm`.
+- Borra `$HOME/.local/share/opad`, `$HOME/.local/state/opad`, `~/.config/autostart/opad-gui.desktop`, el enlace simbólico habilitado `~/.config/systemd/user/default.target.wants/opad-daemon.service` y cualquier directorio `~/.config/tosu`, `~/.local/share/tosu` o `~/.cache/tosu` que contenga el marcador `.created-by-opad` de OPad (dejando intactos los directorios de `tosu` instalados por el usuario).
 
 ### Fedora / RHEL (`.rpm`)
 ```bash
 sudo dnf remove opad
 ```
+Ejecuta el mismo script `uninstall-cleanup` al desinstalar (no al actualizar). <!-- src: /packaging/linux/uninstall-cleanup.sh -->
 
-### Arch Linux (AUR)
+### Arch Linux (`PKGBUILD`)
 ```bash
-sudo pacman -R opad-bin
+sudo pacman -R opad
 ```
+(Usa `opad-bin` si lo instalaste desde un paquete binario de AUR.) <!-- src: /packaging/linux/arch/PKGBUILD --> <!-- src: /packaging/linux/uninstall-cleanup.sh -->
 
-### Limpieza manual de datos en Linux
-Si deseas purgar todas las bases de datos locales, los archivos de identidad de instalación y los registros creados por el demonio: <!-- src: /desktop/crates/opad-model/src/paths.rs -->
+### AppImage, instalaciones desde código fuente o directorios XDG personalizados
+Si usaste el AppImage, instalaste desde el código fuente (`make install-user`) o definiste rutas `$XDG_DATA_HOME` / `$XDG_STATE_HOME` personalizadas, elimínalos manualmente: <!-- src: /packaging/linux/uninstall-cleanup.sh --> <!-- src: /desktop/crates/opad-model/src/paths.rs -->
 ```bash
-# Eliminar la base de datos persistente y las copias de seguridad
-rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/opad"
+# Stop running processes
+pkill -x opad-gui opad-daemon || true
 
-# Eliminar los registros
+# Remove AppImage or user-local binaries, and desktop data/logs
+rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/opad"
 rm -rf "${XDG_STATE_HOME:-$HOME/.local/state}/opad"
+rm -f ~/.config/autostart/opad-gui.desktop
+
+# Optional: remove udev rule installed via AppImage or source
+sudo rm -f /etc/udev/rules.d/70-opad.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
 ## Desinstalación en Windows
 
-En Windows 10 y 11, OPad proporciona un desinstalador limpio de Inno Setup: <!-- src: /packaging/windows/installer.iss -->
+1. Abre **Configuración de Windows** (**Windows Settings**) -> **Aplicaciones** (**Apps**) -> **Aplicaciones instaladas** (**Installed apps**) (o **Panel de control** -> **Programas y características**).
+2. Selecciona **OPad** y haz clic en **Desinstalar** (**Uninstall**).
+3. El desinstalador de Inno Setup realiza automáticamente: <!-- src: /packaging/windows/installer.iss -->
+   - Detiene los procesos en ejecución `opad-daemon.exe`, `opad-gui.exe`, `opadctl.exe` y `tosu.exe` (`taskkill /F /T`).
+   - Elimina el directorio de instalación (`%LOCALAPPDATA%\Programs\opad`).
+   - Elimina las entradas de inicio automático `opad-daemon` y `opad-gui` en `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+   - Elimina `%APPDATA%\opad` (que contiene `opad.db`, las copias automáticas, `daemon.log`, `tosu.log` y la carpeta temporal de actualizaciones).
 
-1. Abre **Configuración de Windows > Aplicaciones > Aplicaciones instaladas** (o **Panel de control > Programas y características**).
-2. Localiza **OPad** en la lista y haz clic en **Desinstalar**.
-3. **Aviso de retención de datos**:
-   - El desinstalador preguntará si deseas **"¿Eliminar todos los ajustes de usuario, el historial de la base de datos y los registros?"**.
-   - Si haces clic en **Sí**, el desinstalador eliminará `%APPDATA%\opad` (incluyendo `opad.db` y el UUID de instalación). Una reinstalación posterior generará una nueva identidad de instalación. <!-- src: /desktop/crates/opad-model/src/paths.rs#data_dir -->
-   - Si haces clic en **No**, tus contadores locales de pulsaciones y las copias de seguridad de los diseños de pantalla se conservarán en `%APPDATA%\opad` para futuras reinstalaciones.
-4. El desinstalador elimina los binarios de `C:\Program Files\OPad`, detiene los procesos en segundo plano del demonio que estén en ejecución y elimina la entrada de inicio de sesión del usuario en el registro. <!-- src: /packaging/windows/installer.iss -->
+(Las Named Pipes y los controladores COM/HID integrados de Windows no requieren limpieza manual.) <!-- src: /packaging/windows/installer.iss -->
+
+## Cómo comprobarlo
+
+- Confirma que no haya ningún proceso `opad-daemon` ni `opad-gui` en ejecución.
+- Conecta tu OPad y escribe en un editor de texto: Key 1 y Key 2 siguen escribiendo con normalidad como un teclado USB HID autónomo.
