@@ -1,89 +1,77 @@
 ---
 title: GUI Reference
-description: Reference guide to the OPad graphical desktop application (opad-gui), its pages, interactive designer, diagnostics, and Hall Effect tuning interface.
+description: Reference guide to opad-gui pages, sidebar navigation, Settings tabs, Hall Effect Keys page, Screen Designer, Diagnostics suite, and Stats page.
 ---
 
-The OPad graphical user interface (`opad-gui`) is an iced-based desktop application providing complete device status monitoring, settings configuration, pixel-exact LCD screen designing, interactive switch diagnostics, and Hall Effect magnetic actuation tuning. It connects to the local `opad-daemon` over IPC. <!-- src: /desktop/gui/src/main.rs#parse_page_arg -->
+`opad-gui` is an `iced`-based desktop application with a system tray icon (`--tray` starts hidden in the tray, and `--page <name>` opens a specific page). It communicates with `opad-daemon` over local IPC. <!-- src: /desktop/gui/src/main.rs#parse_page_arg -->
 
 ## Navigation Pages
 
-The GUI organizes functionality into dedicated primary pages selectable via the sidebar: <!-- src: /desktop/gui/src/main.rs#Page -->
+The left sidebar shows `Dashboard`, `Stats`, `Designer`, `Settings`, `Device`, `Logs`, and `About`, plus `Keys` (shown automatically when a Hall Effect pad is connected) and `Diagnostics` (when enabled under **Settings** -> **🛠 Diagnostics**). `Calibration` is opened from **Keys** -> **Recalibrate**, **Settings** -> **⌨ Keypad** -> **Recalibrate Keys**, or `--page calibrate`. <!-- src: /desktop/gui/src/main.rs#Page -->
 
-- **Dashboard**: Live device overview, connection state, active gameplay status, lifetime keypress counters, and current firmware details. <!-- src: /desktop/gui/src/main.rs#Page::Dashboard -->
-- **Keys**: Hall Effect actuation, reset sensitivity, deadzone configuration, and rapid trigger tuning with real-time switch cut-away visualization. Displayed dynamically when an HE-capable pad is connected. <!-- src: /desktop/gui/src/keys.rs --> <!-- src: /desktop/gui/src/main.rs#Page::Keys -->
-- **Stats**: Tap rate analytics and KPM (keys per minute) histograms across playing attempts and historical periods. <!-- src: /desktop/gui/src/stats.rs --> <!-- src: /desktop/gui/src/main.rs#Page::Stats -->
-- **Designer**: WYSIWYG visual layout editor for the pad's 320x240 LCD display. <!-- src: /desktop/gui/src/designer/mod.rs --> <!-- src: /desktop/gui/src/main.rs#Page::Designer -->
-- **Settings**: Configuration panels for Keypad, Display, Updates, About tosu, and general daemon parameters. <!-- src: /desktop/gui/src/pages.rs#SettingsTab --> <!-- src: /desktop/gui/src/main.rs#Page::Settings -->
-- **Device**: Physical pad hardware settings, GPIO pin assignments, touchscreen gesture bindings, and ownership controls. <!-- src: /desktop/gui/src/main.rs#Page::Device -->
-- **Diagnostics**: Suite of hardware and communication tests (switch chatter tester, COM protocol latency benchmark, display test patterns, carrier PCB self-tests, and one-click diagnostic bundle export). <!-- src: /desktop/gui/src/diagnostics.rs --> <!-- src: /desktop/gui/src/main.rs#Page::Diagnostics -->
-- **Logs**: Real-time log event viewer streaming diagnostic events from both `opad-daemon` and the pad ring buffer. <!-- src: /desktop/gui/src/main.rs#Page::Logs -->
-- **Calibration**: Guided interactive calibration wizard for Hall Effect magnetic travel range extremes. <!-- src: /desktop/gui/src/main.rs#Page::Calibration -->
-- **About**: Desktop application version, license notices, and third-party attribution details. <!-- src: /desktop/gui/src/main.rs#Page::About -->
+| Page | `--page` tokens | Purpose |
+|---|---|---|
+| **Dashboard** | `dashboard` | Connection and mode status, lifetime key counts, osu! profile / live map summary, and on-device key latency (`p50`, `p99`, `p99.9`, `max`, `deferred`, `presses`, **Reset**). <!-- src: /desktop/gui/src/pages.rs#dashboard --> |
+| **Keys** (HE only) | `keys`, `rapid-trigger` | Hall Effect actuation, rapid trigger, advanced thresholds, and live cut-away switch visualizer. <!-- src: /desktop/gui/src/keys.rs#view --> |
+| **Stats** | `stats`, `kpm`, `ppm` | Current/last attempt and historical tap rate in KPM (keys per minute). <!-- src: /desktop/gui/src/stats.rs --> |
+| **Designer** | `designer` | WYSIWYG 320x240 LCD layout editor for `Idle` and `Playing` screens. <!-- src: /desktop/gui/src/designer/mod.rs --> |
+| **Settings** | `settings` | Five sub-tabs covering keypad, display, updates/firmware, `tosu`/about, and diagnostics toggle. <!-- src: /desktop/gui/src/pages.rs#settings --> |
+| **Device** | `device` | Hardware info (`Device ID`, `Board`, `Firmware`, `Running slot`, `Counter generation`, `Last sync`), **Counter Reconciliation State** table, **Sync now**, **Update firmware**, **Reset lifetime counters**, and **Backup & Restore** (**Export backup** / **Import backup**). <!-- src: /desktop/gui/src/pages.rs#device --> |
+| **Logs** | `logs`, `monitor` | Live diagnostic log stream from daemon, pad, program, and `tosu`. <!-- src: /desktop/gui/src/main.rs#Page --> |
+| **Diagnostics** | `diagnostics`, `test`, `testing` | Five-tab hardware and protocol test suite (opt-in from Settings). <!-- src: /desktop/gui/src/diagnostics.rs#DiagnosticsTab --> |
+| **Calibration** | `calibrate`, `calibration` | Guided 5-press-per-key Hall Effect calibration wizard. <!-- src: /desktop/gui/src/pages.rs#calibration --> |
+| **About** | `about`, `license`, `licenses` | Application version, open-source licenses, and third-party notices. <!-- src: /desktop/gui/src/main.rs#Page --> |
 
-## Settings Tabs
+## Settings Tabs (`Settings`)
 
-The Settings page organizes device and desktop behavior into five sub-tabs: <!-- src: /desktop/gui/src/pages.rs#SettingsTab -->
+The **Settings** page has five tabs: <!-- src: /desktop/gui/src/pages.rs#settings -->
 
-### Keypad Tab
-- **Debounce Algorithm**: Switch between eager debounce (low-latency transmission with lockout period) and defer debounce (filtering noisy contact closures). <!-- src: /desktop/gui/src/pages.rs#SettingsTab::Keypad -->
-- **Debounce Window**: Sliders to tune debounce duration from 1 ms to 20 ms.
-- **Key Mappings**: Select HID keycodes sent to the host for Key 1, Key 2, and Touch actions.
+### `⌨ Keypad`
+- **Keys**: **KEY 1** and **KEY 2** (plus **KEY 3** and **GAME KEYS** checkboxes on 3-key V3 pads), **KEY 1 PIN** / **KEY 2 PIN** dropdowns with **Auto-Detect** (shown only for hand-wired builds), **DEBOUNCE LOCKOUT** slider (`0.5 ms`–`20.0 ms`, step `0.5 ms`), and **HALL EFFECT CALIBRATION** (**Recalibrate Keys** button on HE pads). <!-- src: /desktop/gui/src/pages.rs#settings -->
+- **Touchscreen swipes**: Directional pickers (`↑ SWIPE UP`, `↓ SWIPE DOWN`, `← SWIPE LEFT`, `SWIPE RIGHT →`) with `Nothing`, `Volume up`, `Volume down`, `Previous track`, `Next track`, `Play / pause`, `Mute`, osu! shortcuts, or `Other key (F13-F24)…`. <!-- src: /desktop/gui/src/pages.rs#settings --> <!-- src: /desktop/crates/opad-model/src/swipe.rs -->
+- **Save settings** commits changes to the pad.
 
-### Display Tab
-- **Screen Timeout**: Configure display sleep interval (seconds) before entering standby during inactivity. <!-- src: /desktop/gui/src/pages.rs#SettingsTab::Display -->
-- **Backlight Brightness**: Active screen brightness level (0% to 100%).
-- **Result Animations**: Dropdown selection of celebration splash animations (`AnimChoice`) triggered at the end of beatmaps based on grade. <!-- src: /desktop/gui/src/pages.rs#AnimChoice -->
+### `🖥 Display & Game`
+- **Display**: **BRIGHTNESS** slider (`10%`–`100%`) and **SLEEP AFTER** slider (`1 min`–`60 min`, `60..=3600` s in 60 s steps). <!-- src: /desktop/gui/src/pages.rs#settings -->
+- **Result animations**: Per-grade (`SS`, `S`, `A`, `B`, `C`, `D`) animation dropdowns and **Play** preview buttons. <!-- src: /desktop/gui/src/pages.rs#settings -->
+- **Advanced**: **GAMEPLAY REFRESH RATE** slider (`1–30 Hz`, default `10 Hz`) and **Start in tray at login** checkbox. <!-- src: /desktop/gui/src/pages.rs#settings -->
 
-### Updates Tab
-- **Update Channel**: Toggle between `stable` and `beta` release streams. <!-- src: /desktop/gui/src/pages.rs#SettingsTab::Updates -->
-- **Automatic Checking**: Enable or disable periodic background update checks.
-- **Component Status**: Live version numbers and upgrade buttons for desktop suite, tosu, and firmware binaries.
+### `🔄 Updates & Firmware`
+- **SOFTWARE UPDATES**: Installed vs available versions for **OPad** (**Install now**, **Check automatically**) and **tosu** (**Update now**, **Update automatically**), **Channel** picker (`stable` / `beta`), and **Check now** button. <!-- src: /desktop/gui/src/pages.rs#updates -->
+- **FIRMWARE UPDATE**: Installed firmware, running OTA slot (`ota_0` / `ota_1`), release notes, active blockers, and **Update firmware** button (opens an explicit consent dialog with **Confirm & Flash Pad**). <!-- src: /desktop/gui/src/pages.rs#firmware_updates -->
 
-### About tosu Tab
-- **Integration Status**: Connection indicator to the supervised `tosu` instance. <!-- src: /desktop/gui/src/pages.rs#SettingsTab::AboutTosu -->
-- **tosu Process State**: Supervisor state, memory scanning health, and song metadata retrieval telemetry.
+### `ℹ About & tosu`
+- **TOSU INTEGRATION**: Shows **Binary source:**, **Status:** (`Connected (streaming telemetry)` / `Not running / Disconnected`), **Custom path:**, **Browse external tosu...**, and **Use bundled** (when overridden). <!-- src: /desktop/gui/src/pages.rs#tosu_settings -->
+- **ABOUT & THIRD-PARTY SOFTWARE**: Version, GPL-3.0-or-later license, and bundled `tosu` LGPL-3.0 attribution. <!-- src: /desktop/gui/src/pages.rs#about_section -->
 
-### Diagnostics Tab
-- Direct shortcut into hardware self-test routines and diagnostic bundle generation. <!-- src: /desktop/gui/src/pages.rs#SettingsTab::Diagnostics -->
+### `🛠 Diagnostics`
+- **Enable Diagnostics Menu in Navigation** checkbox and **Open Diagnostics Menu →** button. <!-- src: /desktop/gui/src/pages.rs#settings -->
 
-## Keys Tab (Hall Effect Tuning)
+## Keys Page (Hall Effect Tuning)
 
-For pads with Hall Effect input modules, the Keys tab provides deep switch travel customization: <!-- src: /desktop/gui/src/keys.rs -->
+Shown only when a Hall Effect pad is connected. All travel settings are percentages of each key's calibrated magnetic span (`0.5 %` slider steps, never millimeters per D3): <!-- src: /desktop/gui/src/keys.rs#view -->
+- Top bar: **Set keys separately** toggle, **Advanced** / **Hide advanced** button, **Recalibrate** button.
+- Basic mode: **ACTUATION POINT**, **Rapid trigger** toggle, **SENSITIVITY** (`1.0 %`–`50.0 %`), **Continuous** toggle.
+- Advanced mode adds: **PRESS SENSITIVITY**, **RELEASE SENSITIVITY**, **RELEASE POINT**, **TOP RESET** (with Continuous on), **BOTTOM DEAD ZONE** (`0.0 %`–`30.0 %`, `0 = off`), and **Allow below the noise floor**.
+- Live cut-away switch canvas: polls `GetHeLive` at ~50 Hz with One Euro display smoothing and edge snapping (pad decides on raw readings); pauses during maps.
+- Bottom bar: **Revert** and **Save to pad**.
 
-- **Unit of Measurement**: In accordance with hardware decision record D3, all travel distances are expressed as a percentage of the calibrated magnetic span (in 0.1% increments), never fixed millimetres. <!-- src: /desktop/gui/src/keys.rs -->
-- **Actuation Point**: The downward travel percentage required to register a keypress. <!-- src: /desktop/gui/src/keys.rs -->
-- **Rapid Trigger (RT)**:
-  - **Press Sensitivity**: Distance key must travel downward to trigger an immediate repress while already held down.
-  - **Release Sensitivity**: Distance key must travel upward to register an immediate release.
-  - **Deadzone**: Filtering band at resting point and bottom-out travel to eliminate noise and phantom presses.
-- **Live Switch Cut-Away Canvas**: Real-time graphical rendering of the physical stem position, active actuation thresholds, and instantaneous magnetic flux readings polled from `HeLiveSample`. <!-- src: /desktop/gui/src/keys.rs#HeLiveSample -->
+## Screen Designer (`Designer`)
 
-## Screen Designer
+Visual editor for the `320x240` LCD (`Idle` and `Playing` layouts), rendered at `2.0x` scale (`SCALE = 2.0`) using the firmware's own LVGL UI compiled into `opad-ui-preview`: <!-- src: /desktop/gui/src/designer/mod.rs -->
+- Up to `32` widgets (`MAX_WIDGETS`), drag/resize handles (`HANDLE = 5` pad pixels), arrow-key nudging, Z-order (**Raise** / **Lower**), and duplicate/delete.
+- Widget properties: kind, data source, font, alignment, geometry (`X`, `Y`, `W`, `H`, radius), decimal places, tap rate unit, label/suffix, colors (foreground, background, accent, screen background), and flags (`FLAG_BG_FILL`, `FLAG_BORDER`, `FLAG_HIDE_WHEN_EMPTY`, `FLAG_KEY_RATE`).
+- Live data preview toggle, simulated key press toggle, layout JSON export/import, **Apply**, **Revert**, and reset to built-in default.
 
-The Screen Designer (`desktop/gui/src/designer/mod.rs`) allows users to visually arrange widgets on the pad's 320x240 LCD display: <!-- src: /desktop/gui/src/designer/mod.rs -->
+## Diagnostics Suite (`Diagnostics`)
 
-- **WYSIWYG Pixel Preview**: The canvas renders widgets using the firmware's actual display engine (`opad-ui-preview`), scaled by 2.0x for desktop editing. <!-- src: /desktop/gui/src/designer/mod.rs#SCALE -->
-- **Screens Supported**: Independent layout profiles for `Idle` (menu/desktop) and `Playing` (mid-beatmap). <!-- src: /desktop/gui/src/designer/mod.rs -->
-- **Widget Placement**: Up to 32 widgets per screen (`MAX_WIDGETS`). Handles allow dragging and resizing (`HANDLE = 5` pad pixels). <!-- src: /desktop/gui/src/designer/mod.rs#HANDLE -->
-- **Widget Properties**:
-  - **Source Binding**: Data sources from tosu (UR, combo, accuracy, PPM, song progress, artist/title). <!-- src: /desktop/gui/src/designer/mod.rs -->
-  - **Typography**: Font family, size, decimal precision, label prefixes, and units.
-  - **Styling**: Alignment (left, center, right), borders, background fill, and conditional hiding when data is absent (`FLAG_HIDE_WHEN_EMPTY`). <!-- src: /desktop/gui/src/designer/mod.rs -->
+Five tabs (`DiagnosticsTab` in `desktop/gui/src/diagnostics.rs`): <!-- src: /desktop/gui/src/diagnostics.rs#DiagnosticsTab -->
+1. **`⌨ Switch Chatter & Input`**: Live key press cards, `< 15 ms` definite chatter detection with optional audio beep, `15–35 ms` flutter tracking, simultaneous press count (`<= 10 ms`), and HE/MX debug log monitor.
+2. **`🔌 Hardware COM & Protocol`**: Daemon ping latency, serial connection and protocol health, and pad restart control.
+3. **`🖥 Screen & Backlight`**: Display test patterns and backlight brightness test controls.
+4. **`🔧 PCB Test`**: Runs `RunBoardTest` on the carrier and input module PCBs (module ID, FFC orientation, key lines, shorts, ADS7028), **Use carrier key pins** helper, and live Hall Effect V3 magnet test.
+5. **`📦 Export Diagnostic Bundle`**: Exports system info, USB/latency stats, counters, and recent logs for troubleshooting.
 
-## Diagnostics Suite
+## Stats Page (`Stats`)
 
-The Diagnostics page provides hardware verification tools: <!-- src: /desktop/gui/src/diagnostics.rs -->
-
-1. **Switch Chatter & Input Tester**: High-resolution latency and debounce tester detecting switch bounce closures under 15 ms, audio feedback beeps, and rollover tests. <!-- src: /desktop/gui/src/diagnostics.rs -->
-2. **Hardware COM & Protocol Test**: Measures round-trip ping latency percentiles and validates packet parser resilience against dropped bytes. <!-- src: /desktop/gui/src/diagnostics.rs -->
-3. **Display Self-Test**: Tests LCD brightness ramps, RGB color gradients, and screen test patterns. <!-- src: /desktop/gui/src/diagnostics.rs -->
-4. **Board Self-Test**: Executes on-device electrical tests verifying I2C buses, CST816S touch controller communication, ST7789 display communication, and Hall Effect ADC sampling. <!-- src: /desktop/gui/src/diagnostics.rs -->
-5. **Diagnostic Bundle Export**: Generates a zipped report containing system hardware details, daemon logs, pad ring buffer logs, USB statistics, and calibration status for troubleshooting. <!-- src: /desktop/gui/src/diagnostics.rs -->
-
-## Tap Stats & KPM Analytics
-
-The Stats page displays player tap performance metrics collected during gameplay attempts: <!-- src: /desktop/gui/src/stats.rs -->
-
-- **Keys Per Minute (KPM)**: Measures player tapping frequency, distinct from beatmap musical BPM. <!-- src: /desktop/gui/src/stats.rs -->
-- **Attempt Stats**: Real-time tap frequency graphs, peak bursts, and stamina curves for the current or most recent song attempt (`AttemptStats`). <!-- src: /desktop/gui/src/stats.rs#AttemptStats -->
-- **History Aggregation**: Historical tap rate histograms aggregated over configurable retention windows (7, 14, 30, or 90 days). <!-- src: /desktop/gui/src/stats.rs#TapHistory -->
+Displays live and historical tap rate in **KPM** (keys per minute, distinct from map BPM) for Key 1, Key 2, and Combined channels, including current/last attempt average, peak burst (7 consecutive presses), song rate, and history period buttons (`7` days, `30` days, `90` days, and `All time` (`0`)). <!-- src: /desktop/gui/src/stats.rs --> <!-- src: /desktop/crates/opad-model/src/tap_rate.rs#HISTORY_PERIOD_CHOICES -->
