@@ -1,48 +1,56 @@
 ---
-title: La Pantalla Táctil como Tercer Botón
-description: Explicación de la integración del controlador táctil capacitivo CST816S, Quick Retry con dedo en reposo, clasificación de gestos y aislamiento de juego.
+title: La pantalla táctil como tercer botón
+description: Explicación de la integración del controlador táctil capacitivo CST816S, Quick Retry con dedo apoyado, clasificación de gestos y aislamiento durante la partida.
 ---
 
-En la Waveshare ESP32-S3-Touch-LCD-2, la pantalla táctil capacitiva no está diseñada simplemente como una interfaz gráfica, sino como **el tercer botón** (Regla de Producto 4). Ofrece pulsaciones digitales limpias, estados sostenidos fiables y liberaciones precisas sin sobrecargar la CPU ni degradar la latencia del teclado. <!-- src: /firmware/main/input/touch_retry.c -->
+En la Waveshare ESP32-S3-Touch-LCD-2, la pantalla táctil capacitiva funciona como **el tercer botón** (AGENTS.md §1.4). Ofrece una pulsación limpia, un estado sostenido mientras el dedo permanece apoyado y una liberación limpia, manteniendo la sobrecarga de CPU e I2C fuera de la ruta de pulsación ([`touch_retry.c`](/firmware/main/input/touch_retry.c)).
 
-## Hardware & Interrupt Architecture
+## Arquitectura de hardware e interrupciones
 
-El subsistema táctil está controlado por un chip capacitivo Hynitron CST816S que se comunica a través de I2C (`CST816_I2C_ADDR = 0x15` a 100 kHz) en GPIO 47 (SDA) y GPIO 48 (SCL), con una línea de interrupción activa en bajo en GPIO 46. <!-- src: /firmware/main/input/touch_retry.c#CST816_I2C_ADDR -->
+El subsistema táctil utiliza un controlador táctil capacitivo CST816 por I2C (`CST816_I2C_ADDR = 0x15` a 100 kHz en `I2C_NUM_0`) cableado a **GPIO 48 (SDA)** y **GPIO 47 (SCL)**, con una línea de interrupción activa-baja en **GPIO 46** ([`board_pins.h`](/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h), [`touch_retry.c`](/firmware/main/input/touch_retry.c)). La tarea corre en Core 1 para no competir nunca con la entrada de teclas ni TinyUSB en Core 0.
 
-### Low-CPU Execution Model
-- **Cero Sondeo en Reposo**: Cuando no hay ningún dedo tocando la pantalla, la tarea `touch_retry` permanece totalmente inactiva, suspendida en un semáforo de FreeRTOS activado por la interrupción de hardware de GPIO (`TOUCH_IDLE_CHECK_MS = 1000` de reserva). No hay tráfico en el bus I2C mientras el pad no se toque. <!-- src: /firmware/main/input/touch_retry.c#TOUCH_IDLE_CHECK_MS -->
-- **Sondeo Dinámico Durante el Contacto**: Una vez que un dedo toca la superficie, el CST816 baja INT a nivel bajo, despertando la tarea. La tarea entra en un bucle de sondeo cada 10 ms (`TOUCH_POLL_MS = 10`) para rastrear el movimiento y la duración del contacto. <!-- src: /firmware/main/input/touch_retry.c#TOUCH_POLL_MS -->
-- **Antirrebote Limpio en la Liberación**: Para tolerar lecturas ruidosas de I2C, la detección de liberación requiere dos lecturas vacías consecutivas (~20 ms) antes de soltar el estado de pulsación (`TOUCH_RELEASE_READS = 2`). Un único fallo de lectura transitorio no interrumpirá un toque sostenido. <!-- src: /firmware/main/input/touch_retry.c#TOUCH_RELEASE_READS -->
+Las coordenadas del panel (vertical `240x320`) se transforman con `TOUCH_SWAP_XY = 1` y `TOUCH_MIRROR_Y = 1` a coordenadas horizontales `320x240` para que las direcciones coincidan con la orientación del teclado ([`touch_retry.c`](/firmware/main/input/touch_retry.c)).
 
-## Context-Aware Touch Modes
+### Modelo de ejecución de bajo consumo de CPU
 
-El supervisor táctil clasifica el funcionamiento en tres modos distintos: <!-- src: /firmware/main/input/touch_retry.c#touch_mode_t -->
+- **Reposo en interrupción**: Cuando no hay ningún dedo apoyado, `touch_retry_task` bloquea en `ulTaskNotifyTake()` esperando la ISR de flanco descendente de GPIO 46 (`touch_int_isr`), con un respaldo de seguridad `TOUCH_IDLE_CHECK_MS = 1000` ms (recurriendo a sondeo a 100 Hz solo si falla la configuración de la ISR). No se realizan lecturas I2C en reposo ([`touch_retry.c`](/firmware/main/input/touch_retry.c)).
+- **Sondeo a 100 Hz mientras el dedo está apoyado**: Al iniciarse un toque, la tarea sondea cada `TOUCH_POLL_MS = 10` ms (100 Hz) para seguir el desplazamiento del dedo y detectar la liberación, ya que el pin INT del CST816 puede emitir pulsos por reporte en vez de permanecer en bajo.
+- **Antirrebote de liberación**: Soltar requiere `TOUCH_RELEASE_READS = 2` lecturas vacías consecutivas (~20 ms) antes de soltar el estado mantenido, evitando que una lectura ruidosa corte una pulsación sostenida.
 
-| Modo | Condición de Activación | Acción Táctil | Acción de Deslizamiento |
+## Modos táctiles sensibles al contexto
+
+Al tocar la pantalla, [`touch_mode_now()`](/firmware/main/input/touch_retry.c) elige uno de tres modos:
+
+| Modo | Condición | Acción de toque | Acción de deslizamiento |
 |---|---|---|---|
-| **`TOUCH_MODE_PLAY`** | El anfitrión transmite activamente un beatmap (`PLAYING`). | El dedo en reposo envía Quick Retry (`` ` `` / `~`). | Los gestos multimedia funcionan sin alterar los informes de teclado. <!-- src: /firmware/main/input/touch_retry.c#TOUCH_MODE_PLAY --> |
-| **`TOUCH_MODE_MENU`** | Fuera de un beatmap o en la selección de canciones de osu!. | Los toques no activan Quick Retry. | Los deslizamientos controlan volumen, salto de pistas o teclas personalizadas. <!-- src: /firmware/main/input/touch_retry.c#TOUCH_MODE_MENU --> |
-| **`TOUCH_MODE_RETRY`** | Sin anfitrión conectado o con tosu inactivo. | Cada toque actúa como Quick Retry. | Deslizamientos desactivados. <!-- src: /firmware/main/input/touch_retry.c#TOUCH_MODE_RETRY --> |
+| **`TOUCH_MODE_PLAY`** | El anfitrión envió `HostStatus` con `tosu_connected = true` dentro de `HOST_STATUS_TIMEOUT_US` (3 s) y el estado del dispositivo es `PLAYING`. | Un dedo apoyado (o un toque corto sin deslizar) envía Quick Retry (`` ` ``). | Los deslizamientos multimedia/volumen se ejecutan sin añadir Alt ni otras teclas; los deslizamientos de teclado se suprimen. |
+| **`TOUCH_MODE_MENU`** | El anfitrión envió `HostStatus` con `tosu_connected = true` dentro de 3 s y el estado no es `PLAYING`. | Los toques y pulsaciones mantenidas no envían nada. | Los deslizamientos ejecutan las acciones configuradas de volumen, multimedia, atajos de osu! o teclas libres. |
+| **`TOUCH_MODE_RETRY`** | Sin anfitrión conectado, `tosu` desconectado o sin `HostStatus` durante > 3 s. | Todo toque pulsa y mantiene inmediatamente Quick Retry (`` ` ``). | Deslizamientos desactivados. |
 
-### The In-Game Resting Finger (Quick Retry)
-En los juegos de ritmo, reiniciar accidentalmente un mapa por un deslizamiento inadvertido o un roce es desastroso. OPad implementa una ventana de inmovilidad: <!-- src: /firmware/main/input/touch_retry.c#PLAY_RETRY_STILL_US -->
-- Cuando comienza un toque durante un mapa, Quick Retry no se envía inmediatamente. El pad observa el recorrido del dedo durante 60 ms (`PLAY_RETRY_STILL_US = 60,000`).
-- Si el dedo se desplaza menos de 12 píxeles (`PLAY_RETRY_STILL_PX = 12`) durante este intervalo, se clasifica como una pulsación de reposo intencionada y se activa el código de tecla HID `0x35` (`` ` ``).
-- Dado que la acción nativa de Quick Retry en osu! requiere mantener pulsado en lugar de un toque instantáneo, este filtro de inmovilidad de 60 ms no introduce ningún retraso perceptible para el jugador mientras elimina completamente los reinicios accidentales durante movimientos de deslizamiento.
+### El dedo apoyado en partida (Quick Retry)
 
-## Swipe Classification & Media Gestures
+En `TOUCH_MODE_PLAY`, Quick Retry no se activa al instante del primer contacto para que un deslizamiento nunca reinicie un mapa por accidente ([`touch_retry_task()`](/firmware/main/input/touch_retry.c)):
 
-El rastreo de movimiento está gestionado por la máquina de estados de gestos (`firmware/main/input/gesture.c`): <!-- src: /firmware/main/input/gesture.c#gesture_feed -->
+- Si el dedo se mueve menos de `PLAY_RETRY_STILL_PX = 12` píxeles (distancia de Chebyshev, [`gesture_distance()`](/firmware/main/input/gesture.c)) durante `PLAY_RETRY_STILL_US = 60,000` µs (60 ms), se clasifica como dedo apoyado y `usb_hid_set_touch_retry(true)` activa Quick Retry (`` ` ``).
+- Si el dedo permanece apoyado durante `PLAY_SWIPE_WINDOW_US = 250,000` µs (250 ms) sin convertirse en deslizamiento, también activa Quick Retry.
+- Si el dedo se levanta antes de 60 ms sin deslizar, [`tap_retry()`](/firmware/main/input/touch_retry.c) envía una pulsación y liberación de Quick Retry.
+- En cuanto se dispara un deslizamiento, `retry_pending` se borra para que ese toque nunca envíe Quick Retry.
 
-- **Desambiguación de Ejes**: Un gesto comienza en `(origin_x, origin_y)`. El movimiento debe superar `GESTURE_SWIPE_PX` (24 píxeles) con un eje dominando claramente sobre el otro ($2 \cdot |dy| \ge 3 \cdot |dx|$ para vertical, o $2 \cdot |dx| \ge 3 \cdot |dy|$ para horizontal). Los deslizamientos diagonales esperan a un movimiento más claro. <!-- src: /firmware/main/input/gesture.c#gesture_feed -->
-- **Asignaciones por Defecto**:
-  - **Deslizar Arriba / Abajo**: Ajuste de volumen principal. Cuando osu! está enfocado en el anfitrión de escritorio, `opad-daemon` cambia el volumen interno de osu!; de lo contrario, cambia el volumen del sistema.
-  - **Deslizar Izquierda / Derecha**: Navegación de pistas multimedia (Pista Anterior / Pista Siguiente).
-- **Protección de Alt en Windows**: Al enviar combinaciones de teclas multimedia o de volumen que involucran teclas modificadoras, Windows interpretará una pulsación y liberación de Alt sin una tecla intermedia como una orden para abrir el menú de la ventana de la aplicación (`SC_KEYMENU`), robándole el foco al juego. Para evitar la pérdida de foco, el pad pulsa `HID_KEY_F24` antes de soltar Alt (`TOUCH_KEY_TAP_MS = 15`). <!-- src: /firmware/main/input/touch_retry.c#HID_KEY_F24 -->
+## Clasificación de deslizamientos y gestos multimedia
 
-## Gameplay Isolation Invariant
+El seguimiento de movimiento reside en [`firmware/main/input/gesture.c`](/firmware/main/input/gesture.c) y [`gesture.h`](/firmware/main/input/gesture.h):
 
-Conforme a la Regla de Producto 4:
-1. **Nunca Alt a mitad de mapa**: Los deslizamientos ejecutados en plena partida nunca insertan Alt ni modificadores en el informe del teclado.
-2. **Pantalla Limpia**: No se renderiza nada adicional en la pantalla LCD durante el juego activo. Las insignias de confirmación de gestos y las superposiciones de volumen se suprimen hasta que finalice el beatmap.
-3. **Pads Hall Effect sin Calibrar**: Si un pad HE no está calibrado, queda bloqueado en su pantalla de calibración (`docs/specs/v2-hall-effect-decisions.md` D7). En este estado, los deslizamientos están desactivados, no se transmiten teclas de teclado y los eventos táctiles se restringen estrictamente a los botones de la interfaz de calibración. <!-- src: /docs/specs/v2-hall-effect-decisions.md -->
+- **Umbral y bloqueo de eje**: Partiendo de `(origin_x, origin_y)`, el dedo debe desplazarse al menos `GESTURE_SWIPE_PX = 30` píxeles en un eje con relación mínima 1.5:1 (`2 * |dy| >= 3 * |dx|` para vertical, `2 * |dx| >= 3 * |dy|` para horizontal) antes de fijarse en ese eje. El movimiento diagonal espera un desplazamiento más claro.
+- **Repetición vertical frente a disparo único horizontal**: Los arrastres verticales avanzan un paso cada `30` píxeles (`origin_y` avanza `±30`), permitiendo ajustar el volumen de forma continua en arrastres largos (e invertir la dirección); los deslizamientos horizontales se disparan una sola vez por toque (`horizontal_fired`). Las acciones que no son de volumen solo se disparan en el primer paso (`!repeat`).
+- **Asignaciones predeterminadas** ([`touch_retry.c`](/firmware/main/input/touch_retry.c), [`opad-model/src/lib.rs`](/desktop/crates/opad-model/src/lib.rs)):
+  - **Arriba / Abajo**: `Volume up` / `Volume down`. Cuando el anfitrión activa `HostStatus.osu_active` (osu! está en primer plano en Windows u osu!lazer está ejecutándose en Linux), el propio teclado ajusta el volumen de osu! mediante rueda de ratón HID (`usb_media_wheel`): rueda sola durante un mapa (`playing == true`) y Left Alt + rueda en menús (`playing == false`). Cuando `osu_active` es falso, envía USB HID Consumer Control Volume Up / Down (`usb_media_consumer_tap`).
+  - **Izquierda / Derecha**: `Previous track` / `Next track` mediante USB HID Consumer Control.
+- **Protección del menú Alt en Windows**: En los menús, [`step_volume()`](/firmware/main/input/touch_retry.c) mantiene Left Alt (`HID_MOD_LEFT_ALT = 0x04`) durante todos los pasos de rueda de un arrastre. Antes de soltar Alt al levantar el dedo, [`release_alt()`](/firmware/main/input/touch_retry.c) pulsa `HID_KEY_F24` (`0x73`) y espera la entrega HID (`TOUCH_KEY_WAIT_MS = 30` ms) para que Windows no interprete una pulsación aislada de Alt como apertura del menú de ventana (`SC_KEYMENU`).
+
+## Invariante de aislamiento durante la partida
+
+De acuerdo con AGENTS.md §1.4:
+
+1. **Nunca Alt ni teclas extra en mitad de un mapa**: Durante `TOUCH_MODE_PLAY`, [`step_volume()`](/firmware/main/input/touch_retry.c) usa la rueda de ratón sin Left Alt, y [`run_swipe_action()`](/firmware/main/input/touch_retry.c) ignora `SWIPE_ACTION_KEY` para que el reporte de teclado solo transporte las teclas físicas y Quick Retry.
+2. **Pantalla limpia durante el juego**: [`handle_swipe()`](/firmware/main/input/touch_retry.c) solo llama a `ui_show_swipe()` cuando `!playing`; no se dibuja nada adicional en la LCD durante un mapa.
+3. **Teclados Hall Effect sin calibrar**: Cuando `he_cal_suppress_input(he_backend_is_locked(), he_backend_is_calibrating())` es verdadero (registro de decisiones D7 en [`v2-hall-effect-decisions.md`](../../specs/v2-hall-effect-decisions.md)), [`touch_retry_task()`](/firmware/main/input/touch_retry.c) dirige los toques exclusivamente a la interfaz de calibración (`he_cal_ui_touch_sample`), desactiva los deslizamientos y no envía reportes de teclado ni multimedia.
