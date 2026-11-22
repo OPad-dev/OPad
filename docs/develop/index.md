@@ -1,6 +1,8 @@
 ---
 title: Developer Guide
 description: Contributor workflow, product invariants, git branch lifecycle, commit conventions, and documentation rules for OPad.
+sidebar:
+  order: 1
 ---
 
 Welcome to the OPad developer documentation. This section covers contributor rules, building from source, running automated tests, firmware and desktop internals, protocol evolution, hardware files, packaging, releases, lab testing, and latency benchmarking.
