@@ -1,6 +1,8 @@
 ---
 title: Reconciliación de contadores, recuperación y desvinculación
 description: Reglas de reconciliación de contadores, procedimientos de flasheo, entrada en el bootloader y recuperación de un teclado que no enumera.
+sidebar:
+  order: 2
 ---
 
 ## 1. Modelo de almacenamiento dual
