@@ -1,6 +1,8 @@
 ---
 title: First Connection
 description: Connecting OPad to a host computer, verifying 1000 Hz USB HID keyboard enumeration without software, and testing default key mappings.
+sidebar:
+  order: 3
 ---
 
 OPad works out of the box as a standalone 1000 Hz USB HID keyboard with no desktop software or drivers installed. No background daemon, companion app, or third-party driver is required for basic typing and rhythm gaming. <!-- src: /AGENTS.md --> <!-- src: /README.md -->
