@@ -56,7 +56,8 @@ if ($Vms.Count -eq 0) { $Vms = @($AllVms.Keys) }
 foreach ($vm in $Vms) {
     Use-LabGroup $vm $vm
     if (-not $AllVms.Contains($vm)) { Fail "unknown VM $vm"; Complete-LabGroup; continue }
-    if (Test-VmRunning $vm) { Fail "$vm is already running; left alone"; Complete-LabGroup; continue }
+    # Left on by a cancelled run: the lab's VMs are only ever used from "limpia"
+    if (Test-VmRunning $vm) { Stop-LabVm $vm; Add-LabCheck info "was left running (a cancelled run?): powered off and restored to limpia" }
     try {
         Start-LabVm $vm
         $clock = [System.Diagnostics.Stopwatch]::StartNew()
