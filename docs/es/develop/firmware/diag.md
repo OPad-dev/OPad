@@ -1,6 +1,8 @@
 ---
 title: Subsistema de diagnóstico del firmware
 description: Referencia de implementación del búfer circular de eventos de diagnóstico, autoprueba de placa del carrier/módulo y modo banco Hall Effect.
+sidebar:
+  order: 8
 ---
 
 El subsistema de diagnóstico proporciona registro de eventos en búfer circular sin asignaciones dinámicas, pruebas eléctricas de PCB del carrier/módulo y un modo banco en tiempo de compilación para sensores Hall Effect.
