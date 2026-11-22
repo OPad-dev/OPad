@@ -3,6 +3,16 @@ You are LAYER 2 of 3 on the OPad documentation. Layer 1 wrote every page in
 against the code and fix what is wrong**. You are not here to restyle,
 restructure or add topics. Layer 3 handles structure and the hard cases.
 
+**Do not stop until the whole task is done.** Done means every page in
+`PLAN.md` is `verified` (English) or `verified-es` (Spanish), the known
+problems in §0.1 are fixed, and §6 is complete. Do not stop after one page,
+one section or one batch to report progress, ask for confirmation or wait
+for an OK: commit and go straight to the next page. The only reasons to stop
+early are the branch check in §0 failing, or a decision that §1 forbids you
+to make. In that case write it in `PLAN.md`, skip that item and keep going
+with the rest. If your session runs out first, the next session resumes from
+`PLAN.md` and `git log`.
+
 # 0. Read these first, every session
 
 1. `AGENTS.md`, all of it. §1 and §7 matter most.
@@ -13,6 +23,33 @@ restructure or add topics. Layer 3 handles structure and the hard cases.
    the user. Never commit to `main`, never merge, rebase, push or delete
    branches.
 5. Go on from the first page in `PLAN.md` whose status is not `verified`.
+
+## 0.1 Known problems left by layer 1. Fix these first.
+
+1. `docs/recovery.md` and `docs/troubleshooting.md` were not rewritten
+   against the code: they only got frontmatter and have no `src` comments.
+   Rewrite and verify them fully against the code, keeping their numbered
+   sections (`1-draft.md` §3), with `src` comments on every claim.
+2. Layer 1 left zero `TODO(verify)` markers. Do not take that to mean any
+   page is clean. Check every claim.
+3. Remove the `category` and `source_files` frontmatter fields from every
+   page, English and Spanish. The only fields allowed are `title`,
+   `description`, `sidebar` and `draft`. Sources go in `src` comments.
+4. Known errors in `docs/guides/update-firmware.md`. Fix them, and look for
+   the same kind of error on every page:
+   - the GUI button is "Update firmware" (`desktop/gui/src/pages.rs`), and the
+     "Settings > Updates" path must be checked against the GUI;
+   - rollback happens only when a host does not configure USB within
+     `IMAGE_CONFIRM_TIMEOUT_US`, or on a crash loop; with no host the image
+     stays pending (`confirm_image_once_usb_works` in
+     `firmware/main/app_main.c`), not "hangs in a task loop";
+   - it restarts with `esp_restart()`, not a "hardware reset";
+   - "10–15 seconds" has no source;
+   - marketing words ("completely safe", "uncompromising") go.
+5. GUI labels, button texts and menu paths are copied character for
+   character from `desktop/gui/src/`.
+
+Record each of these as done in `PLAN.md` once it is fixed.
 
 # 1. What you may change
 
