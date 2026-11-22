@@ -41,12 +41,14 @@ Each VM auto-logs into an `opad` desktop session (`seat0` on Linux, active conso
 
 ## 3. Automated Install, Upgrade, and Uninstall Lifecycle
 
-Driven by [/scripts/lab/lab-install.ps1](/scripts/lab/lab-install.ps1) and [/scripts/lab/vm-install-linux.sh](/scripts/lab/vm-install-linux.sh):
+Driven by [/scripts/lab/lab-install.ps1](/scripts/lab/lab-install.ps1), [/scripts/lab/vm-install-linux.sh](/scripts/lab/vm-install-linux.sh) (normalized to LF line endings before upload), and [/scripts/lab/vm-install-windows.ps1](/scripts/lab/vm-install-windows.ps1):
 
 1. **Clean Baseline**: Restores the `limpia` snapshot, boots headless until the desktop session is ready, installs the baseline release, and reboots to verify autostart.
-2. **In-Place Upgrade**: Transfers and installs the candidate release, reboots, and verifies binary version, running `opad-daemon` and tray GUI, `opadctl status`, `cap_sys_ptrace=eip` on `.deb`/`.rpm` `tosu`, and persistence of `opad.db` (`~/.local/share/opad/opad.db` on Linux, `%APPDATA%\opad\opad.db` on Windows).
-3. **Clean Uninstallation**: Uninstalls the package/installer and verifies removal of binaries (`/usr/bin/` on Linux, `%LOCALAPPDATA%\Programs\opad` on Windows), autostart/systemd files, `udev` rules, and background processes, then powers off and restores `limpia`.
+2. **In-Place Upgrade (`-Feed` or direct)**:
+   - When invoked with `feed: true` (from `release-app.yml`, unpacking the not-yet-deployed `github-pages` artifact) or `deployed_feed: true` (manual dispatch), `lab-install.ps1` copies `beta.json` and `beta.json.minisig` into the VM and runs the `update` phase: serves the feed on loopback (`127.0.0.1:8000`), restarts `opad-daemon` with `OPAD_MANIFEST_URL=http://127.0.0.1:8000/beta.json`, and asks it over IPC to switch to `beta`, check, and install. On Ubuntu/Fedora/Windows OPad's own updater downloads, verifies, and installs the candidate release (through `pkexec` or `/SILENT`); on Arch the updater must report `notify_only` and `makepkg` installs the package directly. If the updater fails, the run is marked failed and the package is installed directly so the remaining checks still execute.
+   - Without `-Feed`, installs the candidate package directly. Reboots and verifies binary version (`FILES.sha256`), running `opad-daemon` and tray GUI, `opadctl status` (decoding missing-DLL NTSTATUS codes on Windows), `cap_sys_ptrace=eip` on `.deb`/`.rpm` `tosu`, and persistence of `opad.db` (`~/.local/share/opad/opad.db` on Linux, `%APPDATA%\opad\opad.db` on Windows).
+3. **Clean Uninstallation**: Uninstalls the package/installer and verifies removal of binaries (`/usr/bin/` on Linux, `%LOCALAPPDATA%\Programs\opad` on Windows), autostart/systemd files, `udev` rules, background processes, and any `tosu` directories carrying OPad's `.created-by-opad` marker (unmarked directories are kept and noted with `info:`), then powers off and restores `limpia`.
 
 ## 4. On-Demand Health Checks
 
-[/.github/workflows/lab-check.yml](/.github/workflows/lab-check.yml) boots VMs from `limpia`, verifies SSH/session readiness, captures desktop screenshots via `VBoxManage controlvm screenshotpng`, and publishes summaries with [/scripts/lab/lab-results.ps1](/scripts/lab/lab-results.ps1).
+[/.github/workflows/lab-check.yml](/.github/workflows/lab-check.yml) boots VMs from `limpia`, verifies SSH/session readiness, captures desktop screenshots via `VBoxManage controlvm screenshotpng`, and publishes summaries with [/scripts/lab/lab-results.ps1](/scripts/lab/lab-results.ps1) (which also marks any prior orphaned `"running"` run as failed with an `Interrupted` group and records `info:` lines).
