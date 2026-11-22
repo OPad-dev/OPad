@@ -1,6 +1,8 @@
 ---
 title: Arquitectura del subsistema daemon
 description: Referencia de implementación de opad-daemon, cola del actor de dispositivo, supervisor de estado de ejecución, envío diferencial de telemetría, copias automáticas y manejadores IPC.
+sidebar:
+  order: 2
 ---
 
 `opad-daemon` es el servicio Tokio en segundo plano que coordina el tráfico USB CDC, la telemetría de `tosu`, la persistencia en SQLite, las copias automáticas, las actualizaciones de software/firmware y el IPC local ([/desktop/daemon/src/main.rs](/desktop/daemon/src/main.rs), [/desktop/daemon/src/runtime.rs](/desktop/daemon/src/runtime.rs)).
