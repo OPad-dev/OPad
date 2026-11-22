@@ -8,7 +8,10 @@
 #                    with apt, .rpm with dnf, the AUR opad-bin PKGBUILD with
 #                    makepkg. The VM then reboots, so the desktop's autostart
 #                    runs
-#   check VERSION    after that reboot: VERSION is the installed one, the tray
+#   check VERSION [DIR]
+#                    after that reboot: VERSION is the installed one, every
+#                    installed file matches ~/DIR/FILES.sha256 (if the release
+#                    has one), the tray
 #                    GUI and the daemon run in the desktop session, opadctl
 #                    reaches the daemon, tosu has its capability, the GUI's
 #                    window opens on the desktop, and the app's database exists
@@ -30,7 +33,7 @@ fi
 
 installed_version() {
   case $KIND in
-    deb) dpkg-query -W -f '${Version}' opad 2>/dev/null | sed 's/~/-/' ;;
+    deb) dpkg-query -W -f '${Version}' opad 2>/dev/null | sed 's/~/-/; s/-[0-9]*$//' ;;
     rpm) rpm -q --qf '%{VERSION}' opad 2>/dev/null | sed 's/~/-/' ;;
     aur) pacman -Q opad-bin 2>/dev/null | awk '{print $2}' | sed 's/_/-/; s/-[0-9]*$//' ;;
   esac
@@ -59,8 +62,28 @@ install)
   done
   ;;
 check)
-  want="${2:?usage: check VERSION}"
+  want="${2:?usage: check VERSION [DIR]}"
   [ "$(installed_version)" = "$want" ] && pass "version $want installed" || fail "installed version is $(installed_version), not $want"
+  # Integrity: the installed files are the ones the release built. opad-bin
+  # repackages the .deb, rewriting only install-origin; /usr/share/doc is
+  # left out, as minimal systems tell dpkg not to install it
+  sums=~/"${3:-none}"/FILES.sha256
+  if [ -f "$sums" ]; then
+    pkg=$KIND; [ $KIND = aur ] && pkg=deb
+    n=0; bad=""
+    while read -r sum entry; do
+      case "$entry" in "$pkg:"*) ;; *) continue ;; esac
+      path="${entry#"$pkg":}"
+      case "$path" in /usr/share/doc/*) continue ;; esac
+      [ $KIND = aur ] && case "$path" in */install-origin) continue ;; esac
+      n=$((n + 1))
+      [ "$(sha256sum "$path" 2>/dev/null | cut -d' ' -f1)" = "$sum" ] || bad="$bad
+  $path"
+    done < "$sums"
+    if [ $n -gt 0 ] && [ -z "$bad" ]; then pass "all $n installed files match the release's FILES.sha256"
+    else fail "installed files differ from the release's FILES.sha256 ($n listed)"; [ -n "$bad" ] && echo "  differ or missing:$bad"
+    fi
+  fi
   # The desktop's autostart entries start a while after the login
   for _ in $(seq 30); do
     pgrep -u "$USER" -x opad-gui >/dev/null && pgrep -u "$USER" -x opad-daemon >/dev/null && break
@@ -116,6 +139,6 @@ remove)
   pgrep -f '^/usr/lib/opad/tosu/tosu' >/dev/null && fail "tosu still running after removal"
   [ $FAILED -eq 0 ] && pass "nothing of OPad left"
   ;;
-*) echo "usage: $0 install DIR | check VERSION | remove"; exit 2 ;;
+*) echo "usage: $0 install DIR | check VERSION [DIR] | remove"; exit 2 ;;
 esac
 [ $FAILED -eq 0 ]

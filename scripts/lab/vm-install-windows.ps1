@@ -7,7 +7,10 @@
 #                    (/SILENT, here with /SUPPRESSMSGBOXES), with its default
 #                    tasks (autostart on); also an upgrade over an older one.
 #                    The VM then reboots, so the Run keys start OPad at login
-#   check VERSION    after that reboot: VERSION is the installed one, the tray
+#   check VERSION [DIR]
+#                    after that reboot: VERSION is the installed one, the
+#                    programs match DIR\FILES.sha256 (if the release has one),
+#                    the tray
 #                    GUI and the daemon run in the desktop session, opadctl
 #                    reaches the daemon, the GUI's window opens on the
 #                    desktop, and the app's database exists (the same one as
@@ -16,7 +19,8 @@
 #                    %APPDATA%\opad, Run keys, shortcuts, the Apps entry
 param(
     [Parameter(Mandatory)][ValidateSet("install", "check", "remove")][string]$Phase,
-    [string]$Arg = ""
+    [string]$Arg = "",
+    [string]$Dir = ""
 )
 
 $ErrorActionPreference = "Continue"
@@ -52,6 +56,20 @@ switch ($Phase) {
     "check" {
         $v = Get-InstalledVersion
         if ($v -eq $Arg) { Pass "version $Arg installed" } else { Fail "installed version is '$v', not $Arg" }
+        # Integrity: the installed programs are the ones the release built
+        $sums = Join-Path $HOME "$Dir\FILES.sha256"
+        if ($Dir -and (Test-Path $sums)) {
+            $n = 0; $bad = @()
+            foreach ($line in Get-Content $sums) {
+                if ($line -notmatch '^([0-9a-f]{64})\s+windows:(.+)$') { continue }
+                $n++
+                $path = Join-Path $app ($Matches[2] -replace '/', '\')
+                $h = if (Test-Path $path) { (Get-FileHash $path -Algorithm SHA256).Hash.ToLower() } else { "" }
+                if ($h -ne $Matches[1]) { $bad += $Matches[2] }
+            }
+            if ($n -gt 0 -and $bad.Count -eq 0) { Pass "all $n installed programs match the release's FILES.sha256" }
+            else { Fail "installed programs differ from the release's FILES.sha256 ($n listed)"; $bad | ForEach-Object { Write-Output "  differs or missing: $_" } }
+        }
         # The Run keys start both a while after the login (over 20 s on
         # Windows 11). A process that is merely there proves little: one that
         # cannot load a DLL sits behind Windows' error dialog, so the daemon

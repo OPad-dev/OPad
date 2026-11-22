@@ -356,6 +356,22 @@ jobs:
         shell: bash
         run: cp signed-programs/*.exe desktop/target/release/
 
+      # The programs exactly as the installer packs them (after signing): the
+      # lab checks what got installed against these (FILES.sha256). tosu.env
+      # is left out, the app rewrites it
+      - name: Hash the installed programs
+        shell: bash
+        run: |
+          mkdir -p out
+          {
+            for exe in opad-daemon opad-gui opadctl espflash; do
+              echo "$(sha256sum "desktop/target/release/${exe}.exe" | cut -d' ' -f1)  windows:${exe}.exe"
+            done
+            echo "$(sha256sum build/tosu/tosu.exe | cut -d' ' -f1)  windows:tosu/tosu.exe"
+            echo "$(sha256sum packaging/windows/install-origin | cut -d' ' -f1)  windows:install-origin"
+          } > out/windows-files.sha256
+          cat out/windows-files.sha256
+
       - name: Build installer
         shell: bash
         run: |
@@ -387,7 +403,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: windows
-          path: out/opad-setup-*.exe
+          path: |
+            out/opad-setup-*.exe
+            out/windows-files.sha256
 
   # §19.3: dnf's gpgcheck=1 needs the package itself signed, so this happens
   # before the checksums are taken. Skipped until signing is enabled.
@@ -466,6 +484,23 @@ jobs:
           scripts/release/aur_bin.sh "$VERSION" "staging/opad_${VERSION}_amd64.deb" aur
           cp aur/PKGBUILD staging/opad-bin.PKGBUILD
           cp aur/.SRCINFO staging/opad-bin.SRCINFO
+
+      # Every file each package installs, by hash: the lab checks the
+      # installed copies against it (scripts/lab/vm-install-*.sh/.ps1)
+      - name: Installed files (FILES.sha256)
+        run: |
+          sudo apt-get install -y -qq libarchive-tools >/dev/null
+          for pkg in deb rpm; do
+            dir="$(mktemp -d)"
+            if [ $pkg = deb ]; then bsdtar -xOf staging/opad_*_amd64.deb 'data.tar.*' | bsdtar -xf - -C "$dir"
+            else bsdtar -xf staging/opad-*.x86_64.rpm -C "$dir"; fi
+            (cd "$dir" && find . -type f | sort | while read -r f; do
+              echo "$(sha256sum "$f" | cut -d' ' -f1)  ${pkg}:${f#.}"
+            done)
+          done > staging/FILES.sha256
+          cat staging/windows-files.sha256 >> staging/FILES.sha256
+          rm staging/windows-files.sha256
+          cat staging/FILES.sha256
 
       - name: Checksums
         run: |

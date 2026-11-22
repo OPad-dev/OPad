@@ -17,11 +17,10 @@ $ErrorActionPreference = "Continue"
 . (Join-Path $PSScriptRoot "lab-common.ps1")
 
 New-Item -ItemType Directory -Force $OutDir | Out-Null
-$failures = New-Object System.Collections.Generic.List[string]
-function Fail([string]$what) { Write-Host "FAIL: $what"; $failures.Add($what) }
-function Pass([string]$what) { Write-Host "ok:   $what" }
+New-LabRun "lab-check" "Lab check"
 
 # --- The desktop session: osu! and the screenshots need one, session 0 has none
+Use-LabGroup "host" "Mini PC"
 $session = (Get-Process -Id $PID).SessionId
 if ($session -gt 0) { Pass "runner runs in desktop session $session" } else { Fail "runner runs in session 0 (a service), not on the desktop" }
 try {
@@ -31,9 +30,12 @@ try {
     [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
     $bmp.Save((Join-Path $OutDir "host-desktop.png"))
     Pass "desktop screenshot ($($b.Width)x$($b.Height))"
+    Add-LabFile (Join-Path $OutDir "host-desktop.png") screenshot "The runner's desktop"
 } catch { Fail "desktop screenshot: $_" }
 
 # --- osu! and the tosu acceptance fixture
+Complete-LabGroup
+Use-LabGroup "osu" "osu! and the tosu fixture"
 foreach ($p in @("$env:LOCALAPPDATA\osu!\osu!.exe", "$env:LOCALAPPDATA\osulazer\current\osu!.exe")) {
     if (Test-Path -LiteralPath $p) { Pass "installed: $p" } else { Fail "missing: $p" }
 }
@@ -49,26 +51,33 @@ if (Test-Path $expected) {
 } else { Fail "missing $expected" }
 
 # --- The VMs
+Complete-LabGroup
 if ($Vms.Count -eq 0) { $Vms = @($AllVms.Keys) }
 foreach ($vm in $Vms) {
-    if (-not $AllVms.Contains($vm)) { Fail "unknown VM $vm"; continue }
-    if (Test-VmRunning $vm) { Fail "$vm is already running; left alone"; continue }
+    Use-LabGroup $vm $vm
+    if (-not $AllVms.Contains($vm)) { Fail "unknown VM $vm"; Complete-LabGroup; continue }
+    if (Test-VmRunning $vm) { Fail "$vm is already running; left alone"; Complete-LabGroup; continue }
     try {
         Start-LabVm $vm
         $clock = [System.Diagnostics.Stopwatch]::StartNew()
         $os = Wait-VmReady $vm
         if ($os) {
+            Set-LabGroupOs $os
             Start-Sleep 10
             Save-VmScreenshot $vm (Join-Path (Resolve-Path $OutDir) "$vm.png")
-            Pass "$vm boots to a logged-in desktop in $([int]$clock.Elapsed.TotalSeconds) s: $os"
-        } else { Fail "${vm}: no logged-in desktop over SSH within 300 s" }
-    } catch { Fail "${vm}: $_" }
-    finally { Stop-LabVm $vm }
+            Pass "boots to a logged-in desktop in $([int]$clock.Elapsed.TotalSeconds) s"
+            Add-LabFile (Join-Path (Resolve-Path $OutDir) "$vm.png") screenshot "Desktop after boot"
+        } else { Fail "no logged-in desktop over SSH within 300 s" }
+    } catch { Fail "$_" }
+    finally { Stop-LabVm $vm; Complete-LabGroup }
 }
 
+Use-LabGroup "host" "Mini PC"
 $free = [math]::Round((Get-PSDrive C).Free / 1GB)
 if ($free -ge 30) { Pass "C: has $free GB free" } else { Fail "C: has only $free GB free" }
+Complete-LabGroup
+Complete-LabRun
 
 Write-Host ""
-if ($failures.Count -gt 0) { Write-Host "$($failures.Count) check(s) failed"; exit 1 }
+if ((Get-LabFailures) -gt 0) { Write-Host "$(Get-LabFailures) check(s) failed"; exit 1 }
 Write-Host "Lab OK"

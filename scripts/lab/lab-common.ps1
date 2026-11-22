@@ -1,6 +1,9 @@
 # Shared by the lab scripts on the self-hosted runner (the Windows 11 mini PC):
 # the VirtualBox VMs, SSH/SCP into them with a time limit, and booting one
-# from its "limpia" snapshot until its desktop is logged in. Dot-source it.
+# from its "limpia" snapshot until its desktop is logged in, and recording
+# the run's results for the lab dashboard (lab-results.ps1). Dot-source it.
+
+. (Join-Path $PSScriptRoot "lab-results.ps1")
 
 $VBox = "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"
 $Lab = "C:\opad-lab"
