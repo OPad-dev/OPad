@@ -1,44 +1,32 @@
 ---
-title: Subsistema de Interfaz (UI) del Firmware
-description: Referencia de implementación para el controlador de pantalla ST7789, integración con LVGL, búferes de pantalla en PSRAM y arquitectura del almacén de diseños.
+title: Subsistema de interfaz (UI) del firmware
+description: Referencia de implementación del controlador de pantalla ST7789 SPI2, integración LVGL v9.5, asignación de memoria, almacén de diseños y superposición de calibración Hall Effect.
 ---
 
-El subsistema de interfaz de usuario renderiza widgets de telemetría HUD dinámicos, metadatos de canciones, animaciones de calificación de celebración y asistentes guiados de calibración en la pantalla LCD Waveshare ST7789 de 2.0 pulgadas (resolución de 320x240). Todo el renderizado de la pantalla se ejecuta en Core 1 bajo LVGL v8, utilizando grupos de memoria en PSRAM para proteger la SRAM interna y la latencia de las teclas. <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c -->
+El subsistema de UI renderiza diseños personalizables `320x240`, telemetría en vivo, animaciones de resultados y la superposición de calibración Hall Effect en la LCD IPS ST7789 de 2.0 pulgadas de Waveshare. Todo el renderizado se ejecuta en **Core 1** bajo **LVGL v9.5.0** y `esp_lvgl_port` 2.9.0 ([/firmware/dependencies.lock](/firmware/dependencies.lock), [/firmware/main/ui/ui_port.c](/firmware/main/ui/ui_port.c)).
 
-## Display Hardware & SPI Driver (board_display.c)
+## Hardware de pantalla y controlador SPI2 (`board_display.c`)
 
-- **Controlador**: Controlador LCD IPS Sitronix ST7789. <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c -->
-- **Interfaz**: Host SPI2 (`BOARD_LCD_SPI_HOST`) funcionando a alta frecuencia de reloj con transferencias DMA por hardware.
-- **Asignaciones de Pines**:
-  - `SCLK`: GPIO 39
-  - `MOSI`: GPIO 38
-  - `DC`: GPIO 42
-  - `CS`: GPIO 45
-  - `Retroiluminación (BL)`: GPIO 1 (controlada por temporizador PWM LEDC para un ajuste granular de brillo del 0 al 100%). <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c#board_display_set_brightness -->
+Implementado en [/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c](/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c) y [/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h](/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h):
 
-## LVGL Integration & PSRAM Memory Pool
+- **Controlador**: LCD IPS ST7789 (`320x240`, RGB565, `LCD_RGB_ENDIAN_RGB`, inversión de color activada, `swap_xy = true`, `mirror_x = true` para orientación horizontal).
+- **Bus**: `SPI2_HOST` con `SPI_DMA_CH_AUTO` a `BOARD_LCD_PIXEL_CLOCK_HZ = 80 MHz` (~15 ms de transferencia de fotograma completo). Las interrupciones DMA de SPI están fijadas en Core 1 (`ESP_INTR_CPU_AFFINITY_1`) para que las transferencias LCD nunca interrumpan la entrada en Core 0.
+- **Pines**: `SCLK = GPIO 39`, `MOSI = GPIO 38`, `DC = GPIO 42`, `CS = GPIO 45`, retroiluminación `BL = GPIO 1` (LEDC PWM, `board_display_set_brightness`).
+- **Inyección de fallos**: `CONFIG_OPAD_TEST_FAIL_LCD` fuerza a `board_display_init` a devolver `ESP_FAIL` para verificar el funcionamiento como teclado sin pantalla.
 
-- **Asignación en PSRAM (`CONFIG_OPAD_LVGL_PSRAM`)**: El grupo de memoria interno de LVGL (`lv_mem_init`) y los búferes de dibujo RGB565 de doble búfer se asignan desde la PSRAM externa de 2 MB mediante `opad_lvgl_pool_alloc` (`ui/lvgl_psram_pool.h`). Esto mantiene los 512 KB de SRAM interna completamente libres para las tareas de FreeRTOS y las pilas ISR de alta prioridad. <!-- src: /firmware/CMakeLists.txt -->
-- **Rotación de Pantalla**: El panel de hardware ST7789 está montado verticalmente (240x320); `ui_port.c` rota el contexto de visualización mediante `swap_xy` y `mirror_x` para presentar una interfaz apaisada de 320x240 sin penalización de rotación por software.
+## Memoria de LVGL y bucle de renderizado (`ui_port.c`)
 
-## Layout Engine & UI Store (ui_store.c & ui_screen.c)
+- **Pool de memoria (`CONFIG_LV_MEM_SIZE_KILOBYTES = 160`)**: Pool dedicado de 160 KB para que LVGL nunca compita con el heap del sistema ([/firmware/sdkconfig.defaults](/firmware/sdkconfig.defaults)). Por defecto (`CONFIG_OPAD_LVGL_PSRAM=n`) este pool vive en RAM interna; activar `CONFIG_OPAD_LVGL_PSRAM=y` mueve el pool de LVGL a los 8 MB de Octal PSRAM mientras **los búferes de dibujo LCD permanecen siempre en RAM interna compatible con DMA** ([/firmware/main/Kconfig.projbuild](/firmware/main/Kconfig.projbuild)).
+- **Temporizador de UI de 20 ms (`pad_timer_cb`)**: Corre dentro de la tarea LVGL en Core 1 (`PAD_TIMER_PERIOD_MS = 20`), actualizando fuentes locales del teclado (contadores de por vida/mapa, destello de tecla de 80 ms, KPS rodante de 1 s, reloj/fecha, estado PC/`tosu`) y el reposo/despertar de pantalla (`update_sleep`).
 
-Los diseños de pantalla están estructurados como colecciones de hasta 32 widgets dinámicos (`ui_widget_t`): <!-- src: /firmware/main/ui/ui_store.c -->
+## Motor de diseños y persistencia diferida (`ui_store.c`, `ui_screen.c`)
 
-- **Perfiles Admitidos**:
-  - `UI_SCREEN_IDLE`: Renderizado durante la navegación en menús o el uso en escritorio.
-  - `UI_SCREEN_PLAYING`: Renderizado durante las partidas activas de osu!.
-- **Propiedades de los Widgets (`ui_screen.c`)**:
-  - Fuentes de datos vinculadas (combo, precisión, UR, PPM, artista/título de la canción).
-  - Tipografía configurable (tabla `s_fonts`: Montserrat 12, 14, 16, 20, 24, 32, 48 pt). <!-- src: /firmware/main/ui/core/ui_screen.c#s_fonts -->
-  - Alineaciones de texto (`LV_TEXT_ALIGN_LEFT`, `CENTER`, `RIGHT`). <!-- src: /firmware/main/ui/core/ui_screen.c#s_text_align -->
-  - Banderas visuales (`FLAG_BORDER`, `FLAG_BG_FILL`, `FLAG_HIDE_WHEN_EMPTY`).
-- **Persistencia Diferida en NVS**: Cuando el anfitrión envía `SetLayout` durante un mapa, el diseño se almacena temporalmente en RAM (`s_pending_layout`). Los diseños solo se escriben en NVS cuando el dispositivo regresa a `IDLE` (`ui_store_flush_dirty`), asegurando que los ciclos de borrado en flash nunca coincidan con el juego activo. <!-- src: /firmware/main/ui/ui_store.c -->
+- **Dos pantallas**: `UI_SCREEN_IDLE` y `UI_SCREEN_PLAYING`, cada una con hasta 32 widgets y fuentes Montserrat de 12/14/16/20/24/32/48 pt ([/firmware/main/ui/core/ui_screen.c](/firmware/main/ui/core/ui_screen.c), [/firmware/sdkconfig.defaults](/firmware/sdkconfig.defaults)).
+- **Almacén NVS ([/firmware/main/ui/ui_store.c](/firmware/main/ui/ui_store.c))**: Guarda diseños en `NVS_NS_UI` (`opad_ui`) bajo las claves `"layout0"` / `"layout1"` envueltos en `layout_blob_t` (`LAYOUT_BLOB_VERSION = 1`).
+- **Invariante de flash en partida**: `ui_store_save` y `ui_store_erase` difieren las escrituras en `s_pending_layouts` / `s_dirty_save_mask` / `s_dirty_erase_mask` siempre que `runtime_get_state() != OPAD_STATE_IDLE`, y `ui_store_flush_dirty` las guarda en `IDLE` (reintentando escrituras fallidas tras `FLUSH_RETRY_US = 10 s`).
 
-## Guided Calibration UI (he_cal_ui.c)
+## Superposición de calibración Hall Effect (`he_cal_ui.c`)
 
-Cuando la calibración de Hall Effect está activa: <!-- src: /firmware/main/ui/he_cal_ui.c -->
-- Las pantallas normales de HUD se suprimen y se crea la pantalla del asistente de calibración (`he_cal_ui`).
-- Renderiza instrucciones paso a paso (asentamiento de posición de reposo, captura de fondo para Key 1 y Key 2).
-- Muestra barras de progreso en vivo que reflejan lecturas ADC en bruto y errores (`HE_CAL_ERR_REST_NOT_STILL`, `HE_CAL_ERR_SPAN_TOO_SMALL`).
-- La entrada táctil en esta pantalla está restringida estrictamente a los botones de calibración, suprimiendo por completo el Quick Retry táctil y los gestos de deslizamiento habituales. <!-- src: /firmware/main/ui/he_cal_ui.c -->
+Implementada en [/firmware/main/ui/he_cal_ui.c](/firmware/main/ui/he_cal_ui.c) sobre `lv_layer_top()` (temporizador LVGL de 20 ms, solo inicializada cuando `he_backend_running()`):
+- Muestra la pantalla roja de bloqueo **Keys not calibrated** (`HE_LOCK_SCREEN_WAIT_FOR_APP` durante 5 s, luego `HE_LOCK_SCREEN_NO_APP_BUTTON` con **Calibrate here** si no se conecta ninguna app compatible, o `HE_LOCK_SCREEN_USE_APP` cuando está conectada).
+- Muestra la captura de posición de reposo, 5 casillas numeradas (`1`–`5`) que pasan a verde a lo largo de 5 pulsaciones completas por tecla (Keys 1–2 en V1, Keys 1–3 en V3), confirmación verde **Done!** de 1 s o motivo rojo **Calibration failed** de 2 s.
