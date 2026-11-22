@@ -15,9 +15,11 @@ flowchart TD
     Tag --> AppBuild["release-app.yml (Linux zigbuild, Windows MSVC, Inno Setup)"]
     Tag --> FWBuild["release-firmware.yml (ESP-IDF v5.5.2)"]
     AppBuild --> Upload["publish_release.sh (Assets & SHA256SUMS)"]
-    FWBuild --> Upload
-    Upload --> Feed["update-feed.yml (opad-feed signs stable.json / beta.json)"]
-    Feed --> Pages["GitHub Pages (updates.opad.dev)"]
+    FWBuild --> FWUpload["publish_release.sh (Assets & SHA256SUMS)"]
+    Upload --> StageFeed["update-feed.yml (deploy: false, signed artifact)"]
+    StageFeed --> Lab["lab-install.yml (feed: true, VMs update from feed)"]
+    Lab --> DeployFeed["feed-deploy (GitHub Pages: updates.opad.dev)"]
+    FWUpload --> FWFeed["update-feed.yml (sign & deploy to updates.opad.dev)"]
 ```
 
 ## 2. Gestión de lanzamientos (`release-please`)
@@ -38,7 +40,7 @@ Configurada en [/release-please-config.json](/release-please-config.json) y [/.g
 
 ## 4. Feeds de actualización firmados (`opad-feed`)
 
-[/.github/workflows/update-feed.yml](/.github/workflows/update-feed.yml) ejecuta `opad-feed` en cada lanzamiento, mediante cron semanal o disparo manual para publicar y firmar `stable.json` y `beta.json` en `https://updates.opad.dev/` (GitHub Pages), renovando las firmas antes de la ventana de caducidad de 30 días del feed.
+[/.github/workflows/update-feed.yml](/.github/workflows/update-feed.yml) ejecuta `opad-feed` en cada lanzamiento, mediante cron semanal o disparo manual para generar y firmar `stable.json` y `beta.json` para `https://updates.opad.dev/` (GitHub Pages), renovando las firmas antes de la ventana de caducidad de 30 días del feed. En los lanzamientos de la aplicación, [/.github/workflows/release-app.yml](/.github/workflows/release-app.yml) llama primero a `update-feed.yml` con `deploy: false` (dejando los feeds firmados como artefacto `github-pages`), ejecuta [/.github/workflows/lab-install.yml](/.github/workflows/lab-install.yml) con `feed: true` para que las VMs actualicen desde ese feed firmado, y despliega el feed en `feed-deploy` (`actions/deploy-pages@v5`) únicamente tras superar el laboratorio.
 
 ## 5. Barreras de seguridad (`opad-update`)
 
