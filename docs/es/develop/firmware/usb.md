@@ -1,45 +1,40 @@
 ---
-title: Subsistema USB del Firmware
-description: Referencia de implementación para los descriptores compuestos de TinyUSB, endpoints HID divididos a 1000 Hz, enmarcado serie CDC-ACM y gestión de reinicio para descarga en ROM.
+title: Subsistema USB del firmware
+description: Referencia de implementación de los descriptores compuestos TinyUSB, endpoints HID divididos a 1000 Hz, entramado CDC-ACM y reinicio en modo descarga ROM.
 ---
 
-El subsistema USB implementa un dispositivo compuesto USB 2.0 Full-Speed en el ESP32-S3 utilizando TinyUSB. Expone dos endpoints USB HID independientes y un puerto serie virtual USB CDC-ACM. <!-- src: /firmware/main/usb/usb_descriptors.c -->
+El subsistema USB implementa un dispositivo compuesto USB 2.1 Full-Speed (`VID 0x303A`, `PID 0x4001`, `bcdDevice 0x0102`) mediante TinyUSB (`espressif/esp_tinyusb` 2.3.0 / `tinyusb` 0.21.0~2) fijado en Core 0 con prioridad `configMAX_PRIORITIES - 2` ([/firmware/main/app_main.c](/firmware/main/app_main.c), [/firmware/main/usb/usb_descriptors.c](/firmware/main/usb/usb_descriptors.c)).
 
-## Composite Descriptors & Interface Topology
+## Descriptores compuestos y topología de interfaces
 
-El descriptor de configuración USB define tres interfaces diferenciadas: <!-- src: /firmware/main/usb/usb_descriptors.c -->
+Declarados en [/firmware/main/usb/usb_descriptors.c](/firmware/main/usb/usb_descriptors.c):
 
-| Índice de Interfaz | Subclase / Protocolo | Endpoint | Dirección | Intervalo de Sondeo | Propósito |
-|---|---|---|---|---|---|
-| **Interfaz 0 (HID Boot)** | Boot Keyboard | Endpoint 1 | IN | 1 ms (1000 Hz) | Informes de Key 1 y Quick Retry táctil. <!-- src: /firmware/main/usb/usb_hid.c#LINK_KEY1_TOUCH --> |
-| **Interfaz 1 (HID Media)** | Teclado Personalizado y Consumidor | Endpoint 2 | IN | 1 ms (1000 Hz) | Informes de Key 2 y teclas de gestos multimedia. <!-- src: /firmware/main/usb/usb_hid.c#LINK_KEY2 --> |
-| **Interfaz 2 y 3 (CDC)** | Control Serie CDC-ACM | Endpoint 3 y 4 | IN / OUT | Bulk | Comunicación bidireccional sobre wire de Protobuf. <!-- src: /firmware/main/usb/usb_cdc.c --> |
+| Interfaz | Clase / Protocolo | Endpoints | Sondeo | Propósito |
+|---|---|---|---|---|
+| **Interfaz 0 (`ITF_NUM_HID`)** | Teclado HID (`HID_ITF_PROTOCOL_KEYBOARD`) | `EP 0x81` (IN, 8 B) | `1 ms` (1000 Hz) | Key 1 y Quick Retry táctil (`LINK_KEY1_TOUCH`, report ID `0`) |
+| **Interfaces 1 y 2 (`ITF_NUM_CDC`)** | CDC-ACM | `EP 0x82` (Notif IN, 8 B), `EP 0x03` (OUT, 64 B), `EP 0x83` (IN, 64 B) | Bulk / Interrupt | Protocolo serie nanopb entramado (`usb_cdc.c`) |
+| **Interfaz 3 (`ITF_NUM_MEDIA`)** | HID Media y Key 2 (`HID_ITF_PROTOCOL_NONE`) | `EP 0x84` (IN, 16 B) | `1 ms` (1000 Hz) | Reporte de teclado de Key 2 (`MEDIA_REPORT_ID_KEYBOARD`), teclas multimedia de consumo (`MEDIA_REPORT_ID_CONSUMER`) y rueda de ratón (`MEDIA_REPORT_ID_MOUSE`) |
 
-Una aserción en tiempo de compilación comprueba que TinyUSB se compile con suficientes instancias HID para que coincida con `usb_descriptors.c`: <!-- src: /firmware/main/usb/usb_descriptors.c -->
-```c
-_Static_assert(CFG_TUD_HID >= HID_INSTANCE_MEDIA + 1,
-               "CONFIG_TINYUSB_HID_COUNT must match the descriptors");
-```
+También expuestos:
+- **Descriptores BOS + MS OS 2.0** (`opad_usb_bos_desc`, `opad_usb_ms_os_20_desc`): Asignan `FriendlyName = "OPad"` a la Interfaz 1 para que el Administrador de dispositivos de Windows muestre `OPad (COMx)` sin archivo INF personalizado.
+- **Guardias `_Static_assert` en compilación**: Detienen la compilación si `CFG_TUD_HID < HID_INSTANCE_MEDIA + 1` o `CFG_TUD_CDC < 1` (detectan un `firmware/sdkconfig` desactualizado).
 
-## Split Endpoint Architecture (usb_hid.c)
+## Envío HID en endpoints divididos (`usb_hid.c`)
 
-Los teclados USB HID estándar a 1000 Hz comparten un único endpoint. Si se activan teclas alternas en menos de 1 ms, la segunda tecla debe esperar a que el anfitrión complete la transferencia anterior. OPad elimina por completo esta fluctuación (jitter) por serialización: <!-- src: /firmware/main/usb/usb_hid.c -->
+Implementado en [/firmware/main/usb/usb_hid.c](/firmware/main/usb/usb_hid.c):
 
-- **Endpoint 1 (Interfaz Teclado)**: Transmite informes de teclado de arranque de 8 bytes con Key 1 y Quick Retry táctil (`0x35`).
-- **Endpoint 2 (Interfaz Media)**: Transmite informes de teclado independientes con Key 2.
-- **Emparejamiento Dinámico de Key 3 (`usb_hid_set_key3_link`)**: En módulos de 3 teclas, Key 3 se enruta dinámicamente al endpoint que no esté ocupando la tecla de juego secundaria. Key 1 y Key 2 nunca compiten por el mismo búfer de endpoint USB. <!-- src: /firmware/main/usb/usb_hid.c -->
-- **Estructuras de Enlace Atómicas (`hid_link_t`)**: Core 0 (teclado) y Core 1 (táctil) actualizan contadores atómicos `change_seq` y `sent_seq` sin bloquear mutexes en la ruta de entrada. <!-- src: /firmware/main/usb/usb_hid.c#hid_link_t -->
+- **Dos enlaces de teclado independientes (`hid_link_t`)**: `LINK_KEY1_TOUCH` (`HID_INSTANCE_KEYBOARD`, `EP 0x81`) y `LINK_KEY2` (`HID_INSTANCE_MEDIA`, `EP 0x84`). Como el ESP32-S3 tiene como máximo 5 endpoints IN incluido `EP0`, Key 2 comparte el endpoint de la Interfaz 3 en lugar de añadir una tercera interfaz HID.
+- **Enrutado dinámico de Key 3 (`usb_hid_set_key3`)**: Enruta Key 3 al enlace que no lleve la otra tecla de juego activa para que dos teclas de juego activas nunca compitan por el mismo sondeo USB de 1 ms.
+- **Seguimiento de secuencia sin bloqueos**: Los escritores incrementan `change_seq` antes de `try_submit`; un `tud_hid_n_keyboard_report` exitoso hace avanzar `sent_seq`. Si un endpoint está ocupado, `pending_edge_us` guarda la marca temporal del flanco sin entregar más antiguo y `tud_hid_report_complete_cb` reenvía de inmediato y registra la latencia diferida.
 
-## CDC-ACM Communication & ROM Reboot (usb_cdc.c)
+## Entramado CDC-ACM y reinicio a descarga ROM (`usb_cdc.c`)
 
-El puerto serie virtual CDC gestiona actualizaciones de configuración, flasheo de firmware y transmisión de telemetría: <!-- src: /firmware/main/usb/usb_cdc.c -->
+Implementado en [/firmware/main/usb/usb_cdc.c](/firmware/main/usb/usb_cdc.c):
 
-- **Alimentación de Tramas**: Los bytes recibidos se introducen directamente en el analizador de tramas (`protocol_feed_cdc_bytes`).
-- **Reinicio por Pérdida de DTR**: Si el anfitrión baja DTR (por ejemplo, cerrando `opadctl` o desconectando el daemon), el receptor reinicia su búfer de tramas para evitar la desalineación de bytes. <!-- src: /firmware/main/usb/usb_cdc.c -->
-- **Reinicio en Modo de Descarga ROM (`reboot_to_rom_download`)**:
-  Al recibir la orden de entrar en modo de flasheo por bootloader:
-  1. Tira de USB D+ a nivel bajo (estado de bus `SE0`) durante ~300 ms para que el sistema operativo anfitrión registre una desconexión física real.
-  2. Vuelve a establecer `dp_pullup` a 1 antes de desactivar la anulación de pull por GPIO.
-  3. Llama a `tud_disconnect()` (nunca a `tinyusb_driver_uninstall()`, que libera mutexes activos).
-  4. Dispara un reinicio por hardware mediante watchdog RTC (`WRITE_PERI_REG(RTC_CNTL_RESET_STATE_REG, ...)`).
-  5. El ESP32-S3 arranca directamente en su modo de descarga ROM interno (`303a:1001`), listo para `espflash` o `opadctl flash`. <!-- src: /firmware/main/usb/usb_cdc.c#reboot_to_rom_download -->
+- **Tarea de recepción (`cdc_proto`)**: Corre en Core 1 (`tskIDLE_PRIORITY + 3`, pila de 6144 B) alimentando los bytes recibidos a `protocol_feed_cdc_bytes` y manejando las bajadas de DTR en `tud_cdc_line_state_cb` (que reinician el entramado y cancelan calibraciones HE iniciadas desde la app).
+- **Respaldo de toque a 1200 baudios**: Fijar la codificación de línea a 1200 baudios con DTR en bajo arma un reinicio de respaldo hacia el modo de descarga ROM.
+- **Reinicio sin botones a descarga ROM (`reboot_to_rom_download`)**:
+  1. Llama primero a `tud_disconnect()` (nunca a `tinyusb_driver_uninstall()`, que libera mutex que otras tareas siguen usando).
+  2. Fuerza a bajo el pull-up USB `D+` (`SE0`) durante ~300 ms para que el anfitrión registre una desconexión física real (evitando `error -71` en Linux).
+  3. Restaura `dp_pullup = 1` *antes* de limpiar `pad_pull_override` para que el chip no desaparezca del bus.
+  4. Establece `RTC_CNTL_FORCE_DOWNLOAD_BOOT` en `RTC_CNTL_OPTION1_REG` y llama a `esp_restart()` para entrar en el bootloader ROM del ESP32-S3 (`303a:1001`). (La salida del modo de descarga ROM después la realiza el flasheador del anfitrión mediante un `WRITE_REG` del watchdog RTC.)
