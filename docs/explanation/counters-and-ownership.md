@@ -1,66 +1,52 @@
 ---
 title: Counters and Ownership Model
-description: Deep explanation of monotonic lifetime keypress counters, pad ownership pairing, generation sequences, and flash wear mitigation.
+description: How OPad tracks monotonic 64-bit keypress counters, pairs pads to desktop installations, resolves ownership conflicts, and preserves taps during sync.
 ---
 
-OPad tracks the player's lifetime keypress counts across physical switches and gaming sessions. These counters serve as verifiable milestones for rhythm game players. To protect counter integrity across different computers, reinstallations, and hardware replacements, OPad couples monotonic counter tracking with an explicit ownership pairing model. <!-- src: /desktop/daemon/src/identity.rs -->
+OPad records lifetime keypress counts on both the pad (in NVS flash) and the host PC (in SQLite `opad.db`). To keep counts accurate across disconnects, multiple PCs, and hardware replacements, OPad combines monotonic 64-bit counters, generation numbers, and an explicit installation-ownership model.
 
 ## Monotonic Keypress Counters
 
-Lifetime counts are tracked independently for Key 1, Key 2, and optional Key 3. <!-- src: /firmware/main/counters/counters.c -->
+Lifetime counts are maintained independently for Key 1, Key 2, and (on 3-key V3 modules) Key 3 in [/firmware/main/counters/counters.c](/firmware/main/counters/counters.c):
 
-- **64-Bit Monotonic Integers**: Keypress totals (`lifetime_key1`, `lifetime_key2`, `lifetime_key3`) are unsigned 64-bit integers. Counters only advance forward; they can never roll back within the same counter generation. <!-- src: /firmware/main/counters/counter_sync_rules.c#counters_validate_sync_acceptance -->
-- **RAM Fast Path**: In the firmware key interrupt service routines (Core 0), presses increment atomic RAM variables with zero lock contention. Counters in RAM advance continuously even during active gameplay. <!-- src: /firmware/main/counters/counters.c -->
-- **Flash Checkpointing**: Committing counters to non-volatile SPI flash (NVS) wears flash memory and stalls CPU execution. The firmware mitigates flash wear using lazy checkpointing (`counters_checkpoint_due` in `firmware/main/counters/counter_sync_rules.c`): <!-- src: /firmware/main/counters/counter_sync_rules.c#counters_checkpoint_due -->
-  - Checkpoints are strictly forbidden during active gameplay (`PLAYING` / `COOLDOWN`).
-  - While idle, checkpoints occur only after keys have remained untouched for a quiescence period, minimizing write cycles.
+- **64-bit counters**: `lifetime_key1`, `lifetime_key2`, and `lifetime_key3` are `uint64_t`. Within the same `counter_generation`, counts only move forward ([/firmware/main/counters/counter_sync_rules.c](/firmware/main/counters/counter_sync_rules.c)).
+- **Lockless RAM increment**: Accepted key presses on Core 0 increment RAM counters immediately without touching flash.
+- **Lazy NVS checkpointing**: To protect latency and limit flash wear, `counters_checkpoint_due` in [/firmware/main/counters/counter_sync_rules.c](/firmware/main/counters/counter_sync_rules.c) blocks NVS writes during `PLAYING` and `COOLDOWN`, and only checkpoints in `IDLE` after a quiescence period (or on USB suspend / explicit sync / pre-restart).
 
-## Pad Ownership & Identity Model
+## Pad Ownership & Installation Identity
 
-A pad is frequently plugged into multiple computers (e.g., home PC, tournament laptop, LAN setup). To avoid silently overwriting counter records between different systems, OPad implements a pairing model: <!-- src: /desktop/daemon/src/identity.rs -->
+Because a pad may be moved between computers (home PC, laptop, LAN setup), OPad pairs pads to desktop installations rather than silently overwriting counts ([/desktop/daemon/src/identity.rs](/desktop/daemon/src/identity.rs)):
 
-### Installation Identity (`install.id`)
-- Every desktop installation generates a persistent UUIDv4 on its initial run, stored in SQLite under `install.id`. <!-- src: /desktop/daemon/src/identity.rs#INSTALL_ID_KEY -->
-- The identity is **per-installation, not per-machine**. If a user uninstalls the software with the "delete everything" option, the identity and its SQLite database are deleted. Reinstalling generates a fresh identity. <!-- src: /desktop/daemon/src/identity.rs -->
-- The 16-byte binary owner identifier is sent to the pad via `ClaimOwnership`. The pad records this 16-byte owner ID in NVS. <!-- src: /desktop/daemon/src/identity.rs#OWNER_ID_LEN -->
+- **Installation ID (`install.id`)**: Generated as a UUIDv4 on first daemon startup and stored in SQLite `app_state`. It identifies the desktop installation, not the machine: uninstalling OPad removes `opad.db` and `install.id`, so reinstalling creates a fresh identity.
+- **On-pad `owner_id`**: The 16-byte binary UUID (`OWNER_ID_LEN = 16`) is written to the pad via `ClaimOwnership` and persisted in NVS `device_config_data_t`.
 
-### Ownership States & Conflict Resolution
-When a pad is connected to `opad-daemon`, it reports its stored `owner_id` in `HelloAck`: <!-- src: /desktop/crates/opad-device/src/lib.rs#Ownership -->
-1. **Unclaimed Pad (`owner_id` is empty)**: The daemon automatically claims the pad, writing its 16-byte install identity to NVS.
-2. **Matching Owner (`owner_id == this install`)**: The pad belongs to this PC. Normal bidirectional counter synchronization proceeds automatically.
-3. **Mismatched Owner (`owner_id != this install`)**: The pad was previously paired with another PC.
-   - If the pad's lifetime counters are greater than or equal to this PC's database records on both keys, the pad is adopted automatically (`take_over_if_pad_is_ahead`), ensuring no progress is lost when moving to a new computer. <!-- src: /desktop/daemon/src/ipc_handlers.rs#take_over_if_pad_is_ahead -->
-   - If this PC has higher counts than the pad, an ownership conflict is flagged, prompting the user (`TakeoverPrompt`) in the GUI or `opadctl status`:
-     - **Take over and adopt pad counters**: Updates local database with the pad's numbers.
-     - **Take over and restore PC counters**: Pushes this PC's higher counter database onto the pad.
-     - **Leave alone**: The pad continues operating as an unmanaged 1000 Hz HID keyboard; no sync occurs.
+### Ownership Resolution at Connect
 
-## Generation Sequences & Counter Reconciliation
+When a pad connects, it reports its 16-byte `owner_id` in `HelloAck` ([/desktop/crates/opad-device/src/lib.rs](/desktop/crates/opad-device/src/lib.rs), [/desktop/daemon/src/ipc_handlers.rs](/desktop/daemon/src/ipc_handlers.rs)):
 
-To handle intentional counter resets or backup restorations without violating monotonicity, counters are governed by a **generation sequence number** (`counter_generation`): <!-- src: /desktop/crates/opad-storage/src/lib.rs#reconcile_counters -->
+1. **Unclaimed pad** (`owner_id` all-zero/empty): The daemon automatically claims the pad and saves its 16-byte `install.id` to the pad's NVS (in `IDLE`).
+2. **Matching owner** (`owner_id == this install`): Normal bidirectional counter reconciliation proceeds automatically.
+3. **Foreign owner** (`owner_id != this install`):
+   - **Pad is ahead or equal on both keys**: `take_over_if_pad_is_ahead` in [/desktop/daemon/src/ipc_handlers.rs](/desktop/daemon/src/ipc_handlers.rs) automatically claims the pad keeping the pad's counters, so moving your pad to a new PC or reinstalling keeps every press with zero prompts.
+   - **PC is ahead on at least one key**: The daemon sets `pending_takeover` (`TakeoverPrompt`) and `foreign_pad = true`, pausing counter sync and prompting the user in `opad-gui` (via `ResolveTakeover`):
+     - Take over keeping the pad's counters (`take_over: true, keep_device_counters: true`).
+     - Take over pushing this PC's counters (`take_over: true, keep_device_counters: false`).
+     - Leave the pad alone (`take_over: false`): the pad remains an unmanaged 1000 Hz USB keyboard while `foreign_pad` stays set.
+
+## Generation Sequences & Reconciliation
+
+Counter reconciliation in [/desktop/crates/opad-storage/src/lib.rs](/desktop/crates/opad-storage/src/lib.rs) (`reconcile_counters`) uses `counter_generation` to distinguish normal play from intentional resets or backup imports:
 
 ```rust
-pub fn reconcile_counters(pc: &CounterState, esp: &CounterState) -> CounterState {
-    if pc.counter_generation > esp.counter_generation {
-        pc.clone()
-    } else if esp.counter_generation > pc.counter_generation {
-        esp.clone()
-    } else {
-        CounterState {
-            lifetime_key1: pc.lifetime_key1.max(esp.lifetime_key1),
-            lifetime_key2: pc.lifetime_key2.max(esp.lifetime_key2),
-            ...
-        }
-    }
+if pc.counter_generation > esp.counter_generation {
+    pc.clone()
+} else if esp.counter_generation > pc.counter_generation {
+    esp.clone()
+} else {
+    // Same generation: component-wise max(pc, esp) for Key 1 and Key 2
 }
 ```
 
-### Reconciliation Rules
-1. **Newer Generation Wins**: If a user performs an authorized reset (`opadctl reset --confirm`) or restores a backup, `counter_generation` is incremented. Any counter state with a higher generation number unconditionally supersedes older generations, allowing counters to reset cleanly to zero. <!-- src: /desktop/crates/opad-storage/src/lib.rs#reconcile_counters -->
-2. **Identical Generation (Superset Rule)**: If both PC and pad share the same generation, the reconciliation algorithm calculates the component-wise maximum:
-   $$\text{lifetime\_key1} = \max(\text{pc.k1}, \text{esp.k1})$$
-   $$\text{lifetime\_key2} = \max(\text{pc.k2}, \text{esp.k2})$$
-   Any keystrokes executed on the pad while disconnected from the PC are seamlessly merged into the desktop database.
-3. **Delta Preservation in Firmware**: When the pad receives a counter synchronization command (`CounterSyncRequest`), it does not overwrite its RAM counters with the absolute incoming number. Instead, it computes the delta and applies it:
-   $$\text{RAM\_counter} \mathrel{+}= (\text{target\_count} - \text{snapshot\_count})$$
-   Any physical keystrokes tapped by the player while the sync frame was traversing the USB serial bus survive intact. <!-- src: /firmware/main/counters/counters.c -->
+1. **Higher generation wins**: Resetting counters (`opadctl reset --yes` or **Device** -> **Reset lifetime counters**) or importing a backup increments `counter_generation`, allowing lower or zero counts to legitimately supersede the older generation.
+2. **Same generation (superset max)**: `lifetime_key1 = max(pc.k1, esp.k1)` and `lifetime_key2 = max(pc.k2, esp.k2)`, automatically merging offline keystrokes made while disconnected from the PC.
+3. **Delta preservation on the pad**: In [/firmware/main/counters/counters.c](/firmware/main/counters/counters.c) (`counters_sync_from_host`), applying a host sync does not blindly clobber RAM counters with an absolute value. `rebase_lifetime_presses` (and `key_event_add_lifetime_key3(*k3 - current.lifetime_key3)`) applies the difference relative to the snapshot taken before validation so any key tapped while the sync was in flight is preserved.
