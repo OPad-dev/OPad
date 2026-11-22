@@ -1,6 +1,8 @@
 ---
 title: Latency Engineering
 description: How OPad minimizes keypress latency and jitter using dual USB HID endpoints, eager debouncing, Core 0 isolation, and on-device latency telemetry.
+sidebar:
+  order: 2
 ---
 
 In rhythm games like *osu!*, timing consistency is measured in single-digit milliseconds, and jitter directly increases Unstable Rate (UR). OPad's primary engineering rule is **latency always wins** ([/AGENTS.md](/AGENTS.md) §1.1): the screen, storage, serial telemetry, tray, and `tosu` never join the keypress path.
