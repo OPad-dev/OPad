@@ -23,7 +23,7 @@ Status values:
 
 | path | type | status | sources read | notes |
 |---|---|---|---|---|
-| `docs/index.md` | overview | todo | `/README.md`, `/AGENTS.md`, `/firmware/main/app_main.c`, `/desktop/daemon/src/main.rs`, `/desktop/gui/src/main.rs`, `/desktop/cli/src/main.rs` | What OPad is; navigation to "use it" vs "develop it". |
+| `docs/index.md` | overview | verified | `/README.md`, `/AGENTS.md`, `/firmware/main/app_main.c`, `/desktop/daemon/src/main.rs`, `/desktop/gui/src/main.rs`, `/desktop/cli/src/main.rs` | What OPad is; navigation to "use it" vs "develop it". |
 | `docs/start/what-you-need.md` | tutorial | verified | `/README.md`, `/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h`, `/hardware/pcb/V3/README.md`, `/desktop/gui/Cargo.toml` | Hardware requirements (board, switches, USB cable) and host OS requirements. |
 | `docs/start/first-connection.md` | tutorial | verified | `/AGENTS.md`, `/README.md`, `/firmware/main/usb/usb_descriptors.c`, `/firmware/main/usb/usb_hid.c`, `/firmware/main/input/keypad.c` | Out-of-the-box 1000 Hz USB HID operation without any host software or drivers. |
 | `docs/start/install-the-app.md` | tutorial | verified | `/packaging/linux/deb/`, `/packaging/linux/rpm/`, `/packaging/linux/appimage/AppRun`, `/packaging/linux/arch/PKGBUILD`, `/packaging/windows/installer.iss`, `/desktop/crates/opad-model/src/paths.rs` | Installing desktop suite on Linux (.deb, .rpm, AppImage, Arch) and Windows (installer). |
