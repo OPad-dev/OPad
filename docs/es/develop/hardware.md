@@ -1,140 +1,89 @@
 ---
-title: Arquitectura de Hardware y Ecosistema de PCBs
-description: Historia de generaciones de hardware (V1, V2, V3), placas carrier, módulos de entrada intercambiables MX y Hall Effect, carcasas impresas en 3D personalizadas y suite de verificación de hardware opadverify.
+title: Arquitectura de hardware y ecosistema PCB
+description: Generaciones de hardware (V1, V2, V3), placas carrier, módulos de entrada MX y Hall Effect, diseño de carcasa 3D y suite de verificación opadverify.
 ---
 
-# Arquitectura de Hardware y Ecosistema de PCBs
+OPad separa la controladora Waveshare ESP32-S3-Touch-LCD-2 de los interruptores físicos mediante PCBs modulares de carrier y módulo de entrada.
 
-OPad separa el controlador anfitrión —una placa Waveshare ESP32-S3-Touch-LCD-2— de los interruptores físicos de teclas utilizando una arquitectura de módulos de entrada intercambiables.
+## 1. Resumen de generaciones de hardware
 
-Este documento detalla las iteraciones de PCB (de V1 a V3), la distribución de pines de los conectores, la mecánica de los cables, los parámetros de las carcasas personalizadas y la suite de verificación automatizada (`opadverify`).
-
-<!-- src: /hardware/pcb/V3/README.md#OPad V3 PCBs -->
-<!-- src: /hardware/pcb/V3/README.md#ADS7028 -->
-<!-- src: /hardware/pcb/V3/README.md#LP5907 -->
-<!-- src: /hardware/pcb/V1/README.md#OPad V1 PCBs -->
-<!-- src: /hardware/pcb/V1/README.md#DRV5055A3 -->
-<!-- src: /hardware/pcb/V2/README.md#OPad V2 PCBs -->
-<!-- src: /hardware/pcb/V2/README.md#ADS7038 -->
-<!-- src: /hardware/3d/README.md#Waveshare ESP32-S3-Touch-LCD-2 -->
-<!-- src: /hardware/3d/README.md#opad_enclosure.scad -->
-<!-- src: /hardware/verify/README.md#opadverify -->
-<!-- src: /hardware/verify/README.md#test_system.py -->
-
----
-
-## 1. Hardware Generations Overview
-
-| Generación | Placa Carrier | Tipo de Cable | Módulos de Teclas | Arquitectura de ADC y Sensores | Estado |
+| Generación | Placa carrier | Tipo de cable | Módulos de teclas | Arquitectura de ADC y sensores | Estado |
 |---|---|---|---|---|---|
-| **V1** | Carrier de controlador V1 (en forma de C, cabeceras P1/P2) | JST SH de 8 pines (1.0 mm) | MX V1 (2 teclas)<br>HE V1.1 (2 teclas) | HE V1.1 enrutaba voltajes analógicos desde sensores TI DRV5055A3 por cable al ADC1 interno del ESP32-S3. | Reemplazado |
-| **V2** | Carrier de controlador V1 | JST SH de 8 pines (1.0 mm) | Prototipo HE V2 (3 teclas) | Digitalización en el módulo mediante ADC SPI de 12 bits TI ADS7038. Promediado interno. | Prototipo |
-| **V3** | Carrier de controlador V3 + Placa USB V3 | FFC de 14 vías y 1.0 mm (Módulo)<br>FFC de 8 vías y 1.0 mm (USB) | MX V3 (3 teclas)<br>HE V3 (3 teclas) | ADC SPI de 12 bits TI ADS7028 en el módulo, LDO de ultra bajo ruido LP5907 alimentado por 5 V VBUS, zonas de exclusión de masa para sensores. | **Producción Actual** |
+| **V1** | Controller carrier V1 (cabezales P1/P2) | JST SH de 8 pines (1.0 mm) | MX V1 (2 teclas), HE V1.1 (2 teclas) | Tensiones analógicas DRV5055A3 enrutadas por cable al ADC1 interno del ESP32-S3. | Reemplazada ([/hardware/pcb/V1/README.md](/hardware/pcb/V1/README.md)) |
+| **V2** | Controller carrier V1 | JST SH de 8 pines (1.0 mm) | Prototipo HE V2 | ADC SPI de 12 bits TI ADS7038 en el módulo. | Prototipo ([/hardware/pcb/V2/README.md](/hardware/pcb/V2/README.md)) |
+| **V3** | Controller carrier V3 + USB Board V3 | FFC tipo B de 14 vías y 1.0 mm (módulo), FFC tipo A de 8 vías y 1.0 mm (USB) | MX V3 (3 teclas), HE V3 (3 teclas) | ADC SPI de 12 bits TI **ADS7028** en el módulo, LDO **LP5907** de 3.3 V desde 5 V VBUS, zonas sin plano de masa de 3x3 mm bajo los sensores. | Actual ([/hardware/pcb/V3/README.md](/hardware/pcb/V3/README.md)) |
 
----
+## 2. Ecosistema PCB V3
 
-## 2. V3 Production PCB Ecosystem
-
-La generación V3 ([hardware/pcb/V3/README.md](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/hardware/pcb/V3/README.md)) resuelve el ruido analógico y la tensión mecánica introduciendo una placa USB dedicada y cables planos flexibles (FFC) de alta densidad:
+Definido en [/hardware/pcb/V3/README.md](/hardware/pcb/V3/README.md):
 
 ```mermaid
 flowchart LR
-    USB_C["Puerto USB-C\n(Pared Trasera)"] -->|FFC de 8 vías\n(Alimentación + USB D+/D-)| USB_PCB["Placa USB V3"]
-    USB_PCB --> Carrier["Carrier de Controlador V3"]
-    Carrier -->|Zócalos de Cabecera| ESP["Waveshare ESP32-S3-Touch-LCD-2\n(Controlador y Pantalla)"]
-    Carrier -->|FFC de 14 vías\n(SPI / Teclas / ID / Alim)| Module["Módulo de Entrada V3\n(MX V3 o HE V3, 3 Teclas)"]
+    USB_C["USB-C Port (Rear Wall)"] -->|"8-way FFC (Power + D+/D-)"| USB_PCB["USB Board V3"]
+    USB_PCB --> Carrier["Controller Carrier V3"]
+    Carrier -->|"Header Sockets (P1/P2)"| ESP["Waveshare ESP32-S3-Touch-LCD-2"]
+    Carrier -->|"14-way FFC (SPI / Keys / ID / Power)"| Module["Input Module V3 (MX V3 or HE V3, 3 Keys)"]
 ```
 
-### Key Differences in V3
+- **USB Board V3** (`20.0 x 22.0 mm`): Puerto USB-C trasero pasivo con protección ESD ProTek SRV05-4, ferrita Murata, condensadores y diodo Schottky B5817W que impide el retorno de alimentación desde el puerto de la Waveshare.
+- **Controller Carrier V3** (`35.0 x 48.2 mm`): Dos conectores hembra 1x14 que encajan sobre P1/P2 de la Waveshare más los conectores FFC de 14 vías para el módulo y de 8 vías para USB.
+- **MX Input Module V3** (`71.05 x 24.0 mm`): PCB de interruptores mecánicos hot-swap Kailh (`CPG151101S11`) de 3 teclas.
+- **HE Input Module V3** (`71.05 x 24.0 mm`): PCB Hall Effect de 3 teclas con tres sensores TI DRV5055A3, ADC SPI de 12 bits TI ADS7028 y LDO TI LP5907 de 3.3 V.
+- **Ensamblaje a una cara**: Cara superior en el carrier y la placa USB; cara inferior en los módulos MX/HE.
 
-1. **Placa USB-C Dedicada**: Alivia la tensión mecánica por inserción del conector integrado en la placa de Waveshare. Contiene diodos de protección ESD, perlas de ferrita en VBUS, condensadores de filtrado y un diodo Schottky que evita la alimentación inversa.
-2. **Cable de Módulo FFC de 14 Vías Reversible**: Sustituye el frágil conector JST SH por un FFC de paso de 1.0 mm tipo B.
-3. **Digitalización en el Propio Módulo (HE V3)**: Incorpora un ADC SAR de 12 bits TI **ADS7028** conectado por SPI. Las señales analógicas de los sensores permanecen estrictamente en la placa del módulo.
-4. **Alimentación Aislada para Sensores**: Los sensores Hall Effect y el voltaje de referencia del ADS7028 se alimentan mediante un regulador de baja caída (LDO) **LP5907** integrado conectado a los 5 V de VBUS, evitando completamente el ruido del convertidor reductor conmutado de Waveshare.
-5. **Ensamblaje a Una Sola Cara**: Todos los componentes de montaje superficial residen en la cara inferior de los módulos y en la superior del carrier, reduciendo los costes de fabricación en JLCPCB.
+## 3. Pinout de cables y detección de ID de módulo
 
----
+### Cable de módulo (14 vías, 1.0 mm, Tipo B, 80 mm)
 
-## 3. Cable Pinouts and Wiring
-
-### Module Cable (14-Way FFC, 1.0 mm Pitch, Type B)
-
-El FFC de 14 vías conecta el Carrier V3 con el módulo MX V3 o HE V3:
-
-| Contacto | Red Carrier | Red HE V3 | Red MX V3 | Notas |
-|---|---|---|---|---|
-| **1** | GND | GND | GND | Masa |
-| **2** | 5V | 5V | – | Alimentación VBUS para el LDO LP5907 |
-| **3** | 3V3 | 3V3 | 3V3 | Suministro de nivel lógico |
-| **4** | GPIO8 | Divisor ID | Divisor ID | Voltaje de ID de módulo (ADC1_CH7) |
-| **5** | GPIO6 | SPI MISO | KEY3 | Entrada digital / SPI |
-| **6** | GND | GND | GND | Blindaje de masa |
-| **7** | GPIO2 | SPI SCLK | – | Reloj SPI (ADC1_CH1) |
-| **8** | GPIO4 | SPI MOSI | – | SPI MOSI (ADC1_CH3) |
-| **9** | GND | GND | GND | Blindaje de masa |
-| **10** | GPIO10 | SPI CS | KEY1 | Selección de chip / Key 1 (ADC1_CH9) |
-| **11** | GPIO7 | – | KEY2 | Key 2 (ADC1_CH6) |
-| **12** | 3V3 | 3V3 | 3V3 | Suministro de nivel lógico |
-| **13** | 5V | 5V | – | Alimentación VBUS |
-| **14** | GND | GND | GND | Masa |
-
-> [!NOTE]
-> **Reversibilidad del Cable**: Si el cable de 14 vías se inserta invertido (conectando el contacto $k$ al $15 - k$), la alimentación y la masa permanecen asignadas a alimentación y masa. La línea de ID del módulo se intercambia entre GPIO8 y GPIO7. El firmware muestrea ambos canales ADC en el arranque y reasigna automáticamente la matriz de GPIO.
-
-#### Module ID Voltage Detection
-
-Cada módulo de entrada contiene un divisor de resistencias en la línea de ID muestreado por el ADC del controlador en el arranque:
-
-| Tipo de Módulo | Divisor de Resistencias ($R_{sup} / R_{inf}$) | Voltaje Nominal ID | Rango de Umbral en Firmware |
+| Contacto | Pin del carrier | HE V3 | MX V3 |
 |---|---|---|---|
-| **MX V1** | 100 kΩ / 10 kΩ | 0.30 V | $0.00\,\text{V} - 0.68\,\text{V}$ |
-| **HE V1.1** | 100 kΩ / 47 kΩ | 1.06 V | $0.68\,\text{V} - 1.35\,\text{V}$ |
-| **HE V3 (y V2)**| 100 kΩ / 100 kΩ | 1.65 V | $1.35\,\text{V} - 1.95\,\text{V}$ |
-| **MX V3** | 47 kΩ / 100 kΩ | 2.24 V | $1.95\,\text{V} - 2.60\,\text{V}$ |
-| **Sin Conectar / Ninguno** | Flotante (pull-down interno) | ~0.00 V | Pasa por defecto a cabeceras cableadas a mano |
+| 1 | `GND` | `GND` | `GND` |
+| 2 | `5V` | `5V` (hacia LDO LP5907) | – |
+| 3 | `3V3` | `3V3` | `3V3` |
+| 4 | `GPIO 8` | `ID` (1.65 V) | `ID` (2.24 V) |
+| 5 | `GPIO 6` | `MISO` | `KEY3` |
+| 6 | `GND` | `GND` | `GND` |
+| 7 | `GPIO 2` | `SCLK` | – |
+| 8 | `GPIO 4` | `MOSI` | – |
+| 9 | `GND` | `GND` | `GND` |
+| 10 | `GPIO 10` | `CS` | `KEY1` |
+| 11 | `GPIO 7` | – (`ID` alt si se invierte) | `KEY2` |
+| 12 | `3V3` | `3V3` | `3V3` |
+| 13 | `5V` | `5V` | – |
+| 14 | `GND` | `GND` | `GND` |
 
-### USB Cable (8-Way FFC, 1.0 mm Pitch, Type A)
+Si el FFC de 14 vías se inserta al revés (`k` -> `15 - k`), alimentación y masa siguen coincidiendo y `ID` pasa de `GPIO 8` a `GPIO 7`; el firmware remapea automáticamente los pines SPI3 para **HE V3**. Un módulo **MX V3** con el cable invertido no se lee ([/hardware/pcb/V3/README.md](/hardware/pcb/V3/README.md)).
 
-Conecta la placa USB trasera con la placa carrier:
+### Umbrales de tensión de ID de módulo ([/firmware/main/input/module_id.h](/firmware/main/input/module_id.h))
+
+| Módulo | Divisor (`R_top / R_bottom`) | ID nominal | Rango de corte |
+|---|---|---|---|
+| **MX V1** | `100 kΩ / 10 kΩ` | `0.30 V` | `60 mV` – `680 mV` (cargado >= `60 mV`) |
+| **HE V1.1** | `100 kΩ / 47 kΩ` | `1.06 V` | `680 mV` – `1350 mV` |
+| **HE V3 (y V2)** | `100 kΩ / 100 kΩ` | `1.65 V` | `1350 mV` – `1950 mV` |
+| **MX V3** | `47 kΩ / 100 kΩ` | `2.24 V` | `1950 mV` – `2600 mV` |
+| **Ninguno** | Flotante o en corto a 3V3 | `~0 V` o `>= 2.6 V` | Valores predeterminados cableados a mano |
+
+### Cable USB (8 vías, 1.0 mm, Tipo A, 80 mm)
 
 | Contacto | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
 |---|---|---|---|---|---|---|---|---|
-| **Red** | GND | 5V | D− | D+ | D+ | D− | 5V | GND |
+| **Red** | `GND` | `5V` | `D-` | `D+` | `D+` | `D-` | `5V` | `GND` |
 
-La distribución de pines es completamente simétrica: el contacto $k$ coincide idénticamente con el $9 - k$. Las líneas USB D+ y D− utilizan conductores emparejados para garantizar la integridad de señal, y los dos pines de 5V transportan de forma segura hasta 1.0 A combinado.
+Simétrico en espejo (`k` -> `9 - k`), transportando hasta 1.0 A entre los contactos emparejados de 5 V.
 
----
+## 4. Diseño de carcasa 3D
 
-## 4. 3D Enclosure Design
+Los archivos paramétricos de OpenSCAD para la carcasa residen en [/hardware/3d/README.md](/hardware/3d/README.md) (`hardware/3d/custom_case/V3/`), usando una placa de interruptores de 1.5 mm con huecos de `14.0 x 14.0 mm`, paso de tecla de `19.05 mm` y cuatro pasadores de centrado en las esquinas.
 
-La carcasa personalizada está modelada paramétricamente en OpenSCAD ([hardware/3d/README.md](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/hardware/3d/README.md)):
+## 5. Verificación automatizada de hardware (`opadverify`)
 
-- **Carcasa Superior y Base**: `hardware/3d/custom_case/V3/opad_enclosure.scad`.
-- **Dimensiones de la Pantalla**: Se adapta al cristal de la lente de Waveshare (envolvente de $37.52 \times 59.22\,\text{mm}$) y al área activa visible de la pantalla ($30.99 \times 41.20\,\text{mm}$).
-- **Placa de Interruptores (Switch Plate)**: Grosor de placa estándar de 1.5 mm con aberturas de $14.0 \times 14.0\,\text{mm}$ y separación estándar entre centros de teclas de $19.05\,\text{mm}$.
-- **Ensamblaje**: Se mantiene unida mediante cuatro pasadores de esquina y postes de presión, sin requerir tornillos a través de la PCB de interruptores.
-
----
-
-## 5. Automated Hardware Verification (opadverify)
-
-Para evitar errores de fabricación (como la huella reflejada de SOT-23 en HE V1.0), OPad utiliza una suite de verificación personalizada ([hardware/verify/README.md](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/hardware/verify/README.md)):
+[/hardware/verify/README.md](/hardware/verify/README.md) verifica los Gerbers generados, archivos de taladro, BOMs y modelos CPL de JLCPCB contra netlists de referencia y ejecuta trazado de redes con inversión de cables (`test_system.py`):
 
 ```bash
-# Configuración del entorno de verificación
 python3 -m venv .tools/venv && .tools/venv/bin/pip install -r hardware/verify/requirements.txt
 cd hardware/verify
-
-# Verificar netlist dorada contra los archivos Gerber de fabricación
 ../../.tools/venv/bin/python -m opadverify golden/carrier_v3.toml
 ../../.tools/venv/bin/python -m opadverify golden/he_v3.toml
-
-# Ejecutar comprobación de continuidad y orientación del cable
 ../../.tools/venv/bin/python tests/test_system.py
 ```
-
-### Verification Checks
-
-1. **Lateralidad de Huellas (Footprint Handedness)**: Reconstruye la conectividad directamente a partir de las geometrías de cobre en Gerber y los taladros metalizados, verificando la lateralidad de pines con las hojas de datos de los fabricantes.
-2. **Alineación de CPL en JLCPCB**: Obtiene los modelos exactos de huella EasyEDA de JLCPCB para todos los componentes de la lista de materiales (BOM) y valida que los componentes colocados encajen exactamente en los pads objetivo sin rotación manual.
-3. **Simulación de Inversión del Cable**: `test_system.py` ejecuta el trazado de redes de extremo a extremo desde los pads del módulo hasta los GPIO del ESP32 tanto en orientación normal como invertida del cable.
