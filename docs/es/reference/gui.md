@@ -1,6 +1,8 @@
 ---
 title: Referencia de la GUI
 description: Guía de referencia de las páginas de opad-gui, navegación lateral, pestañas de Settings, página Keys de Hall Effect, Screen Designer, suite Diagnostics y página Stats.
+sidebar:
+  order: 2
 ---
 
 `opad-gui` es una aplicación de escritorio basada en `iced` con icono en la bandeja del sistema (`--tray` inicia oculta en la bandeja, y `--page <name>` abre una página concreta). Se comunica con `opad-daemon` mediante IPC local. <!-- src: /desktop/gui/src/main.rs#parse_page_arg -->
