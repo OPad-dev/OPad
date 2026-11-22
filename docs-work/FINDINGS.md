@@ -26,3 +26,8 @@ Discrepancies, code bugs, documentation conflicts, and notable architectural obs
 - **Page**: `docs/explanation/app-and-pad-versions.md`
 - **Problem**: In `desktop/gui/src/main.rs`, the incompatible device protocol warning banner formats the required version using `opad_ipc::IPC_PROTOCOL_VERSION` rather than `opad_protocol::DEVICE_PROTOCOL_VERSION` (both are currently `1`, so the displayed number matches today, but they are separate constants).
 - **Files involved**: `desktop/gui/src/main.rs`, `desktop/crates/opad-ipc/src/lib.rs`, `desktop/crates/opad-protocol/src/lib.rs`.
+
+## F6: `README.md` disagrees with `packaging/windows/installer.iss` on uninstall data deletion
+- **Page**: `docs/guides/uninstall.md`
+- **Problem**: `README.md` states that the Windows uninstaller "asks before it touches your `opad.db`", whereas `packaging/windows/installer.iss` (`CurUninstallStepChanged`) unconditionally deletes `%APPDATA%\opad` (including `opad.db`, logs, and update staging) with no prompt, matching the Linux strong-uninstall cleanup in `packaging/linux/uninstall-cleanup.sh`.
+- **Files involved**: `README.md`, `packaging/windows/installer.iss`, `packaging/linux/uninstall-cleanup.sh`.
