@@ -1,0 +1,73 @@
+name: Lab install
+
+# Tests an app release's installers in the self-hosted lab's VMs (the
+# Windows 11 mini PC, runner label opad-lab): in each VM, from a clean
+# snapshot, install the previous release, upgrade to this one, check OPad
+# starts at login, opens and keeps its data, then uninstall and check nothing
+# is left. See scripts/lab/lab-install.ps1. Called by release-app.yml for
+# every app release, or started by hand; never from a pull request (a
+# self-hosted runner must not run code from one).
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "App release tag, e.g. v1.0.0-rc.3 (empty: the newest)"
+        required: false
+        default: ""
+        type: string
+      from:
+        description: "Release to upgrade from (empty: the one before; none: skip)"
+        required: false
+        default: ""
+        type: string
+      vms:
+        description: "VMs, comma-separated (empty: all)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: Installers in the lab VMs
+    runs-on: [self-hosted, opad-lab]
+    # One lab job at a time on the mini PC (job level: also when called)
+    concurrency:
+      group: opad-lab
+      cancel-in-progress: false
+    # Seven VMs, each with two installs and three reboots
+    timeout-minutes: 240
+    steps:
+      # The lab scripts from main, the packages from the release
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Install, start and uninstall in each VM
+        shell: powershell
+        env:
+          TAG: ${{ inputs.tag }}
+          FROM: ${{ inputs.from }}
+          VMS: ${{ inputs.vms }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $vms = @($env:VMS -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+          & scripts\lab\lab-install.ps1 -Tag $env:TAG -From $env:FROM -Vms $vms -OutDir lab-install
+          exit $LASTEXITCODE
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: lab-install
+          path: |
+            lab-install/*.png
+            lab-install/*.log
+          retention-days: 14

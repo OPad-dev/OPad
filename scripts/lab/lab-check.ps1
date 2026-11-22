@@ -14,42 +14,7 @@ param(
 # Continue: VBoxManage and ssh print progress on stderr, which Windows
 # PowerShell 5.1 would turn into a terminating error; exit codes are checked
 $ErrorActionPreference = "Continue"
-$VBox = "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"
-$Lab = "C:\opad-lab"
-# VM name -> the host port VirtualBox forwards to its SSH
-$AllVms = [ordered]@{
-    "ubuntu-22.04" = 2222
-    "ubuntu-24.04" = 2224
-    "ubuntu-26.04" = 2226
-    "fedora-43"    = 2243
-    "arch"         = 2250
-    "windows-10"   = 2310
-    "windows-11"   = 2311
-}
-# The desktop is up when the user's session sits on seat0 (Linux) or on the
-# console (Windows), and the account can become root/administrator without a
-# prompt. The Windows VMs run PowerShell as their SSH shell
-$LinuxReady = "loginctl list-sessions --no-legend | grep -q 'opad *seat0' && . /etc/os-release && echo `$PRETTY_NAME && sudo -n true && echo sudo-ok"
-$WindowsReady = 'if ((quser 2>$null) -match ''opad\s+console\s+\d+\s+Active'') { (Get-CimInstance Win32_OperatingSystem).Caption; if (([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { ''sudo-ok'' } } else { exit 1 }'
-$SshOpts = @("-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=no",
-             "-o", "UserKnownHostsFile=NUL", "-o", "LogLevel=ERROR")
-
-# One ssh command with a hard time limit: while a VM boots, VirtualBox's port
-# forward accepts the connection before the guest's sshd answers, and ssh
-# then waits forever
-function Invoke-VmSsh([int]$Port, [string]$Command, [int]$TimeoutSec = 20) {
-    # Through files: ssh.exe hangs when PowerShell pipes its output
-    $out = [System.IO.Path]::GetTempFileName()
-    $err = [System.IO.Path]::GetTempFileName()
-    $argLine = (($SshOpts + @("-n", "-p", "$Port", "opad@127.0.0.1")) -join " ") + " `"$Command`""
-    $proc = Start-Process ssh.exe -ArgumentList $argLine -NoNewWindow -PassThru `
-        -RedirectStandardOutput $out -RedirectStandardError $err
-    $null = $proc.Handle  # without it ExitCode stays empty
-    if (-not $proc.WaitForExit($TimeoutSec * 1000)) { $proc.Kill(); $code = -1 } else { $code = $proc.ExitCode }
-    $text = (Get-Content $out -Raw -ErrorAction SilentlyContinue)
-    Remove-Item $out, $err -ErrorAction SilentlyContinue
-    return @{ Code = $code; Out = "$text".Trim() }
-}
+. (Join-Path $PSScriptRoot "lab-common.ps1")
 
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 $failures = New-Object System.Collections.Generic.List[string]
@@ -85,34 +50,20 @@ if (Test-Path $expected) {
 
 # --- The VMs
 if ($Vms.Count -eq 0) { $Vms = @($AllVms.Keys) }
-$running = (& $VBox list runningvms) -join "`n"
 foreach ($vm in $Vms) {
     if (-not $AllVms.Contains($vm)) { Fail "unknown VM $vm"; continue }
-    if ($running -match "`"$vm`"") { Fail "$vm is already running; left alone"; continue }
-    $port = $AllVms[$vm]
+    if (Test-VmRunning $vm) { Fail "$vm is already running; left alone"; continue }
     try {
-        & $VBox snapshot $vm restore limpia 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "cannot restore snapshot limpia" }
-        & $VBox startvm $vm --type headless 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "cannot start" }
-        $ok = $false
+        Start-LabVm $vm
         $clock = [System.Diagnostics.Stopwatch]::StartNew()
-        while ($clock.Elapsed.TotalSeconds -lt 300) {
-            $r = Invoke-VmSsh $port $(if ($vm -like "windows-*") { $WindowsReady } else { $LinuxReady })
-            if ($r.Code -eq 0 -and $r.Out -match "sudo-ok") { $ok = $true; $out = @($r.Out -split "`n"); break }
-            Start-Sleep 5
-        }
-        if ($ok) {
+        $os = Wait-VmReady $vm
+        if ($os) {
             Start-Sleep 10
-            & $VBox controlvm $vm screenshotpng (Join-Path (Resolve-Path $OutDir) "$vm.png") 2>&1 | Out-Null
-            Pass "$vm boots to a logged-in desktop in $([int]$clock.Elapsed.TotalSeconds) s: $($out[0])"
+            Save-VmScreenshot $vm (Join-Path (Resolve-Path $OutDir) "$vm.png")
+            Pass "$vm boots to a logged-in desktop in $([int]$clock.Elapsed.TotalSeconds) s: $os"
         } else { Fail "${vm}: no logged-in desktop over SSH within 300 s" }
     } catch { Fail "${vm}: $_" }
-    finally {
-        & $VBox controlvm $vm poweroff 2>&1 | Out-Null
-        Start-Sleep 3
-        & $VBox snapshot $vm restore limpia 2>&1 | Out-Null
-    }
+    finally { Stop-LabVm $vm }
 }
 
 $free = [math]::Round((Get-PSDrive C).Free / 1GB)

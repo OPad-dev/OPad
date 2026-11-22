@@ -310,7 +310,7 @@ feed) runs in CI; the pad-specific rows run on the hardware runner.
 ### 5.2 Per platform
 
 - [ ] Install from the release; the installer or package manager raises no warning other than expected ones (Windows: none once signed).
-- [ ] PKG-01 … PKG-06 (install diff, uninstall diff, user data kept, install-origin, bundled tosu, uninstall while running).
+- [ ] PKG-01 … PKG-06 (install diff, uninstall diff, uninstall deletes the user data, install-origin, bundled tosu, uninstall while running). The lab VMs run install, start at login and uninstall for every release (`lab-install.yml`).
 - [ ] Autostart after login; tray icon appears and its menu works (WIN-04; GNOME needs the AppIndicator extension: say so in the docs).
 - [ ] Hotplug within 2 s (WIN-05); flash with the GUI running (WIN-06); COM port above COM9 (WIN-08); second daemon refused (WIN-02); IPC private to the user (WIN-03).
 - [ ] tosu finds osu! stable (Windows) and lazer (Linux and Windows); stats, PPM/KPM (PPM-01 … PPM-06), results screen.
@@ -318,7 +318,7 @@ feed) runs in CI; the pad-specific rows run on the hardware runner.
 - [ ] High-DPI and a second monitor; window restore after a restart.
 - [ ] SQLite read-only: degraded mode (FAIL-04).
 - [ ] App update from the feed: *Check now*, *Install now*, cancelled UAC/polkit changes nothing (UPD-05).
-- [ ] Uninstall and reinstall keeps the counters.
+- [ ] An update keeps the counters; an uninstall deletes the PC's data (the pad keeps its own counters).
 
 ### 5.3 Old and new, both ways (rule 3)
 

@@ -7,7 +7,9 @@ name: Release app
 # See docs/specs/release-and-updates.md §4.
 #
 # Signing steps run only when the repository variable SIGNING_ENABLED is
-# "true" (§19); until then every release is a pre-release.
+# "true" (§19); until then every release is a pre-release. The published
+# installers are then tested in the lab VMs (lab-install.yml), and the update
+# feed moves only if they pass.
 
 on:
   workflow_call:
@@ -483,12 +485,26 @@ jobs:
         run: scripts/release/publish_release.sh "$TAG" staging "$PRERELEASE" latest-if-final
 
 
+  # The published installers in the lab VMs (the self-hosted mini PC):
+  # upgrade from the previous release, start, keep data, uninstall cleanly
+  lab:
+    name: Installers in the lab VMs
+    needs: publish
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
+    uses: ./.github/workflows/lab-install.yml
+    with:
+      tag: ${{ inputs.tag }}
+    permissions:
+      contents: read
+
+  # Installed apps are offered the release only once its installers passed
+  # the lab: with the mini PC off, the release waits here (re-run the lab job)
   feed:
     name: Update feed
-    needs: publish
+    needs: [publish, lab]
     # Without this, sign-rpm being skipped (signing off) skips the feed too,
     # because a skipped job anywhere upstream fails the default success()
-    if: ${{ !cancelled() && needs.publish.result == 'success' }}
+    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.lab.result == 'success' }}
     uses: ./.github/workflows/update-feed.yml
     secrets: inherit
     permissions:

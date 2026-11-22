@@ -17,14 +17,14 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: opad-lab
-  cancel-in-progress: false
-
 jobs:
   lab:
     name: Lab on the mini PC
     runs-on: [self-hosted, opad-lab]
+    # One lab job at a time on the mini PC (job level: also when called)
+    concurrency:
+      group: opad-lab
+      cancel-in-progress: false
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
