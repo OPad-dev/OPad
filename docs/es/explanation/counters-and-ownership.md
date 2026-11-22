@@ -1,13 +1,6 @@
 ---
 title: Modelo de Contadores y Propiedad
 description: Explicación profunda de los contadores de pulsaciones monotónicos de por vida, emparejamiento de propiedad del pad, secuencias de generación y mitigación del desgaste de memoria flash.
-category: explanation
-source_files:
-  - /firmware/main/counters/counters.c
-  - /firmware/main/counters/counter_sync_rules.c
-  - /desktop/daemon/src/sync.rs
-  - /desktop/daemon/src/identity.rs
-  - /desktop/crates/opad-storage/src/lib.rs
 ---
 
 OPad rastrea los conteos de pulsaciones de por vida del jugador a través de interruptores físicos y sesiones de juego. Estos contadores sirven como hitos verificables para los jugadores de juegos de ritmo. Para proteger la integridad de los contadores entre diferentes ordenadores, reinstalaciones y sustituciones de hardware, OPad acopla el seguimiento de contadores monotónicos con un modelo explícito de emparejamiento de propiedad. <!-- src: /desktop/daemon/src/identity.rs -->

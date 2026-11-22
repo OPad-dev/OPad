@@ -1,8 +1,6 @@
 ---
 title: Protocol Changes and Schema Evolution
 description: How to evolve opad.proto, regenerate nanopb and prost bindings, and maintain bidirectional wire compatibility between app and pad.
-category: develop
-type: how-to
 ---
 
 # Protocol Changes and Schema Evolution

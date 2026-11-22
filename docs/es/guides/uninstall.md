@@ -1,12 +1,6 @@
 ---
 title: Desinstalación del software
 description: Procedimiento completo de desinstalación de la suite de escritorio de OPad en Linux y Windows, limpieza de registros de base de datos, servicios y reglas udev.
-category: how-to
-source_files:
-  - /packaging/windows/installer.iss
-  - /packaging/linux/uninstall-cleanup.sh
-  - /packaging/linux/deb/postrm
-  - /desktop/crates/opad-model/src/paths.rs
 ---
 
 Si decides desinstalar la suite de escritorio de OPad, puedes eliminar todos los binarios de la aplicación, servicios en segundo plano, entradas de inicio automático y el estado de la base de datos local limpiamente de tu sistema. <!-- src: /packaging/linux/uninstall-cleanup.sh -->

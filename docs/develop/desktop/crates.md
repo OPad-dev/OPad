@@ -1,17 +1,6 @@
 ---
 title: Shared Crates Reference
 description: Technical catalog and architectural boundaries for the internal shared Rust crates comprising the desktop workspace.
-category: reference
-source_files:
-  - /desktop/crates/opad-device/src/lib.rs
-  - /desktop/crates/opad-ipc/src/lib.rs
-  - /desktop/crates/opad-layout/src/lib.rs
-  - /desktop/crates/opad-model/src/lib.rs
-  - /desktop/crates/opad-protocol/src/lib.rs
-  - /desktop/crates/opad-storage/src/lib.rs
-  - /desktop/crates/opad-tosu/src/lib.rs
-  - /desktop/crates/opad-ui-preview/src/lib.rs
-  - /desktop/crates/opad-update/src/lib.rs
 ---
 
 The desktop suite is modularized into nine focused internal crates located under `desktop/crates/`: <!-- src: /desktop/crates/opad-model/src/lib.rs -->

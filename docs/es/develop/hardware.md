@@ -1,8 +1,6 @@
 ---
 title: Arquitectura de Hardware y Ecosistema de PCBs
 description: Historia de generaciones de hardware (V1, V2, V3), placas carrier, módulos de entrada intercambiables MX y Hall Effect, carcasas impresas en 3D personalizadas y suite de verificación de hardware opadverify.
-category: develop
-type: reference
 ---
 
 # Arquitectura de Hardware y Ecosistema de PCBs

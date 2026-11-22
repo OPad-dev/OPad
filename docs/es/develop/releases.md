@@ -1,8 +1,6 @@
 ---
 title: Automatización de Releases y Feeds de Actualización
 description: Análisis en profundidad de la ingeniería de releases de OPad, flujos de release-please, constructores de artefactos multiplataforma, feeds de actualización firmados e invariantes de seguridad.
-category: develop
-type: explanation
 ---
 
 # Automatización de Releases y Feeds de Actualización

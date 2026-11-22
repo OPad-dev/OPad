@@ -1,13 +1,6 @@
 ---
 title: Primera conexión
 description: Conectar OPad al ordenador host, verificar la enumeración del teclado USB HID a 1000 Hz sin software y realizar pruebas de asignación de teclas por defecto.
-category: tutorial
-source_files:
-  - /AGENTS.md
-  - /README.md
-  - /firmware/main/usb/usb_descriptors.c
-  - /firmware/main/usb/usb_hid.c
-  - /firmware/main/input/keypad.c
 ---
 
 El teclado está diseñado para funcionar como un teclado USB independiente y sin necesidad de controladores nada más conectarlo a un ordenador (Regla de producto 2). No se requiere ningún demonio en segundo plano, aplicación complementaria ni controladores de dispositivos especializados para escribir o jugar a juegos de ritmo. <!-- src: /AGENTS.md -->

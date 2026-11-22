@@ -1,12 +1,6 @@
 ---
 title: Subsistema de Configuración y NVS del Firmware
 description: Referencia de implementación para la gestión de Non-Volatile Storage (NVS), migración de espacios de nombres, registros atómicos A/B y verificación CRC32.
-category: reference
-source_files:
-  - /firmware/main/config/device_config.c
-  - /firmware/main/config/nvs_ns.c
-  - /firmware/main/config/he_config_record.c
-  - /firmware/main/input/he_cal_record.c
 ---
 
 El subsistema de configuración y almacenamiento gestiona el estado persistente del pad dentro de la partición flash de Non-Volatile Storage (NVS) del ESP32-S3. Aísla las operaciones de borrado y escritura en flash del juego activo, gestiona la migración de espacios de nombres y garantiza actualizaciones atómicas de registros mediante ranuras A/B protegidas por suma de verificación. <!-- src: /firmware/main/config/device_config.c -->

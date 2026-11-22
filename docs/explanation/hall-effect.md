@@ -1,12 +1,6 @@
 ---
 title: Hall Effect and Rapid Trigger
 description: Explanation of Hall Effect magnetic sensing, continuous ADC sampling, median filtering, rapid trigger state machines, and calibration storage.
-category: explanation
-source_files:
-  - /firmware/main/input/he_backend.c
-  - /firmware/main/input/he_rt.c
-  - /firmware/main/input/he_cal.c
-  - /docs/specs/v2-hall-effect-decisions.md
 ---
 
 Hall Effect (HE) magnetic switches replace physical metallic contact leaves with a permanent magnet embedded in the switch stem and a linear Hall sensor on the keypad PCB. Unlike mechanical switches that actuate at a fixed physical leaf contact point, Hall Effect switches permit dynamic actuation points and **Rapid Trigger (RT)**: resetting the key the instant upward finger travel begins, and reactivating the moment downward motion resumes. <!-- src: /firmware/main/input/he_backend.c -->

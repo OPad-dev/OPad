@@ -1,12 +1,6 @@
 ---
 title: Firmware UI Subsystem
 description: Implementation reference for the ST7789 display driver, LVGL integration, PSRAM framebuffers, and layout store architecture.
-category: reference
-source_files:
-  - /firmware/main/ui/ui_store.c
-  - /firmware/main/ui/core/ui_screen.c
-  - /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c
-  - /firmware/main/ui/he_cal_ui.c
 ---
 
 The UI subsystem renders dynamic telemetry HUD widgets, song metadata, celebration grade animations, and guided calibration wizards on the Waveshare 2.0-inch ST7789 LCD display (320x240 resolution). All display rendering runs on Core 1 under LVGL v8, using PSRAM memory pools to protect internal SRAM and keypress latency. <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c -->

@@ -1,11 +1,6 @@
 ---
 title: Referencia de Archivos y Rutas
 description: Especificación de todas las ubicaciones en el sistema de archivos, rutas de base de datos, archivos de registro, rutas de socket y estructuras de directorios por SO utilizadas por la suite de escritorio de OPad.
-category: reference
-source_files:
-  - /desktop/crates/opad-model/src/paths.rs
-  - /desktop/daemon/src/identity.rs
-  - /desktop/crates/opad-storage/src/lib.rs
 ---
 
 La suite de escritorio de OPad resuelve estrictamente todas las rutas persistentes, archivos de base de datos, estados de procesos y binarios empaquetados mediante funciones auxiliares centrales para garantizar un comportamiento predecible en entornos Linux y Windows 10/11. Los daemons iniciados en el arranque de sesión suelen heredar directorios de trabajo impredecibles (como `C:\Windows\System32` en Windows), por lo que nunca se utilizan rutas relativas. <!-- src: /desktop/crates/opad-model/src/paths.rs#PathError -->

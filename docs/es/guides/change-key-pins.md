@@ -1,13 +1,6 @@
 ---
 title: Cambio de pines de las teclas
 description: Cómo reconfigurar las asignaciones de pines GPIO para interruptores mecánicos mediante opadctl o la interfaz gráfica, restricciones de pines y reglas de validación.
-category: how-to
-source_files:
-  - /README.md
-  - /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h
-  - /firmware/main/config/config_validate.c
-  - /firmware/main/config/device_config.c
-  - /protocol/opad.proto
 ---
 
 Por defecto, OPad asigna la Tecla 1 al GPIO 14 (Cabecera P2 Pin 11) y la Tecla 2 al GPIO 9 (Cabecera P2 Pin 12). Si necesitas evitar pines específicos o adaptarte a cajas personalizadas, puedes reconfigurar las asignaciones GPIO de los interruptores mediante `opadctl` o `opad-gui`. <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->

@@ -1,11 +1,6 @@
 ---
 title: Files and Paths Reference
 description: Specification of all filesystem locations, database paths, log files, socket paths, and OS-specific directory structures used by the OPad desktop suite.
-category: reference
-source_files:
-  - /desktop/crates/opad-model/src/paths.rs
-  - /desktop/daemon/src/identity.rs
-  - /desktop/crates/opad-storage/src/lib.rs
 ---
 
 The OPad desktop suite strictly resolves all persistent paths, database files, process state, and bundled binaries through central path helpers to guarantee predictable behavior across Linux and Windows 10/11 environments. Login-launched daemons frequently inherit unpredictable working directories (such as `C:\Windows\System32` on Windows), so relative paths are never used. <!-- src: /desktop/crates/opad-model/src/paths.rs#PathError -->

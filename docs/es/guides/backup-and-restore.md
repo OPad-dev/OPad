@@ -1,11 +1,6 @@
 ---
 title: Copias de seguridad y restauración
 description: Exportación y restauración de copias de seguridad JSON de configuraciones de dispositivo, diseños de pantalla y contadores de pulsaciones mediante opadctl o la GUI de escritorio.
-category: how-to
-source_files:
-  - /desktop/daemon/src/backup.rs
-  - /desktop/cli/src/main.rs
-  - /desktop/crates/opad-storage/src/lib.rs
 ---
 
 OPad permite realizar copias de seguridad completas de su configuración, diseños de pantalla y estado de contadores serializados en un formato JSON portátil (`JsonBackup`). Las copias pueden exportarse manualmente o restaurarse en un nuevo teclado, y `opad-daemon` genera copias automáticas en segundo plano para garantizar que nunca se pierda el progreso si el hardware se daña o se sustituye. <!-- src: /desktop/daemon/src/backup.rs -->

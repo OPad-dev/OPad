@@ -1,12 +1,6 @@
 ---
 title: Pruebas y Garantía de Calidad
 description: Ejecución de suites de prueba, make check, clippy y formateo de Rust, pruebas unitarias del firmware en el anfitrión y la lista de comprobación manual de hardware.
-category: how-to
-source_files:
-  - /Makefile
-  - /firmware/test/host/run_tests.sh
-  - /docs/testing-checklist.md
-  - /AGENTS.md
 ---
 
 OPad emplea una estrategia de pruebas multinivel que abarca pruebas automatizadas de escritorio, pruebas unitarias simuladas del firmware en el anfitrión, canales de validación de CI y listas de comprobación de verificación manual de hardware. <!-- src: /AGENTS.md -->

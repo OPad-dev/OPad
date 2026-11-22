@@ -1,11 +1,6 @@
 ---
 title: Firmware Diagnostics Subsystem
 description: Implementation reference for firmware telemetry, circular ring buffer logging, board electrical self-tests, and Hall Effect bench analysis.
-category: reference
-source_files:
-  - /firmware/main/diag/diag.c
-  - /firmware/main/diag/board_test.c
-  - /firmware/main/diag/hall_bench.c
 ---
 
 The diagnostics subsystem provides self-test routines, electrical continuity verification, circular ring buffer event recording, and magnetic sensor benchmarking tools. <!-- src: /firmware/main/diag/diag.c -->

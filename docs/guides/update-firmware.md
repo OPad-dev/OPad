@@ -1,17 +1,6 @@
 ---
 title: Updating Firmware
 description: Step-by-step instructions for flashing and updating OPad firmware via opadctl or the desktop GUI with dual OTA slot protection and rollback.
-category: how-to
-source_files:
-  - /desktop/cli/src/main.rs
-  - /desktop/crates/opad-device/src/flash.rs
-  - /desktop/daemon/src/firmware_update.rs
-  - /desktop/daemon/src/updater.rs
-  - /desktop/crates/opad-update/src/firmware.rs
-  - /firmware/main/usb/usb_cdc.c
-  - /firmware/main/app_main.c
-  - /firmware/main/protocol/protocol.c
-  - /firmware/main/runtime/runtime.c
 ---
 
 Updating OPad firmware is completely safe and software-driven: it writes to the inactive OTA partition, syncs lifetime counters to the host before flashing, and automatically rolls back if the newly flashed image fails to enumerate on USB. Updating never requires pressing BOOT or RESET buttons (AGENTS.md §1.5). <!-- src: /desktop/crates/opad-update/src/firmware.rs -->

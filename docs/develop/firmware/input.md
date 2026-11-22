@@ -1,13 +1,6 @@
 ---
 title: Firmware Input Subsystem
 description: Implementation reference for the firmware input pipeline, mechanical switch debouncing, Hall Effect ADC sampling, and unified key event dispatching.
-category: reference
-source_files:
-  - /firmware/main/input/keypad.c
-  - /firmware/main/input/debounce.c
-  - /firmware/main/input/he_backend.c
-  - /firmware/main/input/he_rt.c
-  - /firmware/main/input/key_event.c
 ---
 
 The input subsystem captures physical switch contacts and magnetic flux transitions, applies debouncing or rapid trigger algorithms, updates monotonic keypress counters, and submits HID reports to USB endpoints. All input code runs strictly on Core 0 with `configMAX_PRIORITIES - 1`. <!-- src: /firmware/main/input/keypad.c -->

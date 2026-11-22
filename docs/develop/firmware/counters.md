@@ -1,10 +1,6 @@
 ---
 title: Firmware Counters Subsystem
 description: Implementation reference for monotonic keypress tracking, atomic delta application, generation validation, and lazy flash checkpointing.
-category: reference
-source_files:
-  - /firmware/main/counters/counters.c
-  - /firmware/main/counters/counter_sync_rules.c
 ---
 
 The counters subsystem tracks cumulative lifetime switch actuations across Key 1, Key 2, and Key 3. It enforces strict monotonic progression, prevents flash wear through lazy quiescence checkpointing, and ensures that keypresses tapped during USB synchronization are never dropped. <!-- src: /firmware/main/counters/counters.c -->

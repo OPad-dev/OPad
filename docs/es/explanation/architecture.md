@@ -1,13 +1,6 @@
 ---
 title: Arquitectura del Sistema
 description: Arquitectura integral de OPad, detallando el aislamiento de hardware de doble núcleo en ESP32-S3, tareas de firmware, máquinas de estado del daemon de escritorio y comunicación secuenciada con el dispositivo.
-category: explanation
-source_files:
-  - /firmware/main/app_main.c
-  - /firmware/main/runtime/runtime.c
-  - /desktop/daemon/src/runtime.rs
-  - /desktop/daemon/src/device_actor.rs
-  - /README.md
 ---
 
 OPad está diseñado con un principio rector fundamental: **la latencia siempre gana** (Regla de Producto 1). Cada capa de hardware, firmware y arquitectura de escritorio está diseñada para garantizar que los contactos de interruptores mecánicos y las actuaciones de Hall Effect lleguen al anfitrión USB en intervalos sub-milisegundo y sin fluctuaciones (jitter). Nada se interpone en la ruta de pulsación de teclas: la pantalla LCD, el almacenamiento flash (NVS), los gestos de la pantalla táctil y la integración de juego de tosu permanecen estrictamente aislados. <!-- src: /README.md -->

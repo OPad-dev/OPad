@@ -1,13 +1,6 @@
 ---
 title: Referencia del Protocolo Serie
 description: Especificación del enmarcado serie CDC, negociación y formato wire de Protocol Buffers entre anfitrión y pad.
-category: reference
-source_files:
-  - /protocol/opad.proto
-  - /protocol/opad.options
-  - /firmware/main/protocol/protocol.c
-  - /firmware/main/protocol/frame_parser.c
-  - /desktop/crates/opad-protocol/src/lib.rs
 ---
 
 La suite de escritorio de OPad se comunica con el pad a través de serie USB CDC-ACM a 115200 baudios (8N1). Todos los mensajes bidireccionales de control se codifican utilizando Google Protocol Buffers (proto3) encapsulados en tramas delimitadas por longitud. <!-- src: /desktop/crates/opad-protocol/src/lib.rs#Framing -->

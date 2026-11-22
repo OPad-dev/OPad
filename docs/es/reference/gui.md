@@ -1,14 +1,6 @@
 ---
 title: Referencia de la Interfaz Gráfica (GUI)
 description: Guía de referencia de la aplicación gráfica de escritorio de OPad (opad-gui), sus páginas, diseñador interactivo, diagnósticos e interfaz de calibración de Hall Effect.
-category: reference
-source_files:
-  - /desktop/gui/src/main.rs
-  - /desktop/gui/src/pages.rs
-  - /desktop/gui/src/keys.rs
-  - /desktop/gui/src/diagnostics.rs
-  - /desktop/gui/src/designer/mod.rs
-  - /desktop/gui/src/stats.rs
 ---
 
 La interfaz gráfica de usuario de OPad (`opad-gui`) es una aplicación de escritorio basada en iced que proporciona monitorización completa del estado del dispositivo, configuración de ajustes, diseño visual de pantallas LCD con precisión de píxel, diagnósticos interactivos de interruptores y ajuste magnético de actuación para Hall Effect. Se conecta al `opad-daemon` local a través de IPC. <!-- src: /desktop/gui/src/main.rs#parse_page_arg -->

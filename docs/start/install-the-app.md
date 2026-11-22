@@ -1,14 +1,6 @@
 ---
 title: Installing the Desktop Suite
 description: Installation guide for the OPad desktop application suite (daemon, GUI, opadctl, tosu) on Linux (.deb, .rpm, Arch AUR, AppImage) and Windows.
-category: tutorial
-source_files:
-  - /packaging/linux/deb/postinst
-  - /packaging/linux/udev/70-opad.rules
-  - /packaging/linux/appimage/AppRun
-  - /packaging/linux/arch/PKGBUILD
-  - /packaging/windows/installer.iss
-  - /desktop/crates/opad-model/src/paths.rs
 ---
 
 The OPad desktop software suite provides real-time gameplay HUD telemetry, visual screen layout designing, interactive hardware diagnostics, and Hall Effect magnetic switch tuning. The suite comprises four core components: <!-- src: /desktop/crates/opad-model/src/paths.rs -->

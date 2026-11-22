@@ -1,14 +1,6 @@
 ---
 title: Calibrating Hall Effect Switches
 description: Guided calibration walkthrough for magnetic switches on OPad, recording resting and bottom-out levels, and tuning rapid trigger in opad-gui.
-category: how-to
-source_files:
-  - /firmware/main/input/he_cal.c
-  - /firmware/main/ui/he_cal_ui.c
-  - /firmware/main/input/he_cal_runner.c
-  - /desktop/gui/src/keys.rs
-  - /desktop/gui/src/he_monitor.rs
-  - /protocol/opad.proto
 ---
 
 Hall Effect magnetic switches require calibration to establish the magnetic flux boundaries between the stem's resting position (top) and fully depressed bottom-out state. In accordance with normative decision record D7, an uncalibrated Hall Effect pad is locked to its on-screen calibration wizard until calibration is completed. <!-- src: /firmware/main/ui/he_cal_ui.c -->

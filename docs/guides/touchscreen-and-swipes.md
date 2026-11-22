@@ -1,13 +1,6 @@
 ---
 title: Using the Touchscreen and Swipes
 description: How to use the touchscreen third button for in-game Quick Retry and configure directional swipe actions for volume control and track skipping.
-category: how-to
-source_files:
-  - /AGENTS.md
-  - /firmware/main/input/touch_retry.c
-  - /firmware/main/input/gesture.c
-  - /desktop/crates/opad-model/src/swipe.rs
-  - /desktop/daemon/src/telemetry.rs
 ---
 
 The 2.0-inch capacitive touchscreen on OPad functions as **the third button** (Product Rule 4). It is context-aware: during active osu! gameplay, a resting finger triggers Quick Retry (`` ` ``) and swipes never trigger an unwanted retry; outside of beatmaps, directional swipes execute media or keyboard actions. <!-- src: /AGENTS.md -->

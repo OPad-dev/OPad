@@ -1,11 +1,6 @@
 ---
 title: Subsistema de Pantalla Táctil del Firmware
 description: Referencia de implementación para el controlador táctil I2C CST816S, ejecución de la tarea táctil, seguimiento de ejes de gestos y renderizado de etiquetas de deslizamiento.
-category: reference
-source_files:
-  - /firmware/main/input/touch_retry.c
-  - /firmware/main/input/gesture.c
-  - /firmware/main/input/swipe_labels.c
 ---
 
 El subsistema de pantalla táctil gestiona el controlador táctil capacitivo Hynitron CST816S a través de I2C, implementando el concepto del "tercer botón" del pad (Regla de Producto 4). Se ejecuta en Core 1 a baja prioridad (`touch_retry_task`), manteniendo todo el procesamiento táctil fuera de la ruta crítica de pulsación de teclas. <!-- src: /firmware/main/input/touch_retry.c -->

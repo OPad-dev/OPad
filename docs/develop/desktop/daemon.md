@@ -1,13 +1,6 @@
 ---
 title: Daemon Subsystem Architecture
 description: Implementation reference for opad-daemon, the device actor queue, telemetry poller, IPC dispatching, and SQLite storage synchronization.
-category: reference
-source_files:
-  - /desktop/daemon/src/device_actor.rs
-  - /desktop/daemon/src/runtime.rs
-  - /desktop/daemon/src/telemetry.rs
-  - /desktop/daemon/src/sync.rs
-  - /desktop/daemon/src/ipc_handlers.rs
 ---
 
 The `opad-daemon` binary is the central background supervisor of the OPad desktop suite. It manages serial CDC communication, enforces ordered message delivery through a device actor, polls live beatmap statistics from tosu, reconciles keypress counters in SQLite, and serves IPC requests from `opad-gui` and `opadctl`. <!-- src: /desktop/daemon/src/runtime.rs -->

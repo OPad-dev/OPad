@@ -1,12 +1,6 @@
 ---
 title: Cableado de las teclas
 description: Guía de cableado paso a paso para interruptores mecánicos en la cabecera P2, asignación de pines GPIO, lógica pull-up y montaje de la placa portadora OPad V3.
-category: tutorial
-source_files:
-  - /README.md
-  - /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h
-  - /firmware/main/input/keypad.c
-  - /docs/reference/pinout.md
 ---
 
 OPad lee los interruptores en lógica activa baja: cada pin de interruptor está configurado con resistencias pull-up internas del ESP32-S3 (`GPIO_PULLUP_ONLY`). Al pulsar un interruptor, el pin GPIO se conecta directamente a masa (`GND`). No se requieren resistencias, diodos ni condensadores externos. <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->

@@ -1,9 +1,6 @@
 ---
 title: Arquitectura de la Herramienta CLI opadctl
 description: Referencia de implementación para la utilidad de línea de comandos opadctl, análisis de argumentos con clap, despacho de cliente IPC y lógica de flasheo serie autónomo.
-category: reference
-source_files:
-  - /desktop/cli/src/main.rs
 ---
 
 El binario `opadctl` es la herramienta de diagnóstico y gestión por línea de comandos para OPad. Proporciona gestión del dispositivo automatizable mediante scripts, reconciliación de contadores, operaciones de copia de seguridad, monitorización de registros y rutinas de flasheo directo de firmware. <!-- src: /desktop/cli/src/main.rs -->

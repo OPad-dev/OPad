@@ -1,8 +1,6 @@
 ---
 title: Packaging and Distribution Mechanics
 description: Technical guide to packaging OPad for Linux (.deb, .rpm, AppImage, Arch PKGBUILD) and Windows (Inno Setup), install-origin markers, permissions, and build scripts.
-category: develop
-type: reference
 ---
 
 # Packaging and Distribution Mechanics

@@ -1,12 +1,6 @@
 ---
 title: Hall Effect y Rapid Trigger
 description: Explicación de la detección magnética por efecto Hall, muestreo continuo por ADC, filtrado de mediana, máquinas de estado de Rapid Trigger y almacenamiento de calibración.
-category: explanation
-source_files:
-  - /firmware/main/input/he_backend.c
-  - /firmware/main/input/he_rt.c
-  - /firmware/main/input/he_cal.c
-  - /docs/specs/v2-hall-effect-decisions.md
 ---
 
 Los interruptores magnéticos de efecto Hall (HE) sustituyen las láminas de contacto metálicas físicas por un imán permanente incrustado en el vástago del interruptor y un sensor Hall lineal en la PCB del teclado. A diferencia de los interruptores mecánicos que actúan en un punto físico fijo de contacto entre láminas, los interruptores Hall Effect permiten puntos de actuación dinámicos y **Rapid Trigger (RT)**: restablecer la tecla en el instante en que comienza el movimiento ascendente del dedo, y reactivarla en el momento en que se reanuda el movimiento descendente. <!-- src: /firmware/main/input/he_backend.c -->

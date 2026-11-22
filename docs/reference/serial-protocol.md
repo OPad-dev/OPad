@@ -1,13 +1,6 @@
 ---
 title: Serial Protocol Reference
 description: Specification of the CDC serial framing, negotiation, and Protocol Buffers wire format between host and pad.
-category: reference
-source_files:
-  - /protocol/opad.proto
-  - /protocol/opad.options
-  - /firmware/main/protocol/protocol.c
-  - /firmware/main/protocol/frame_parser.c
-  - /desktop/crates/opad-protocol/src/lib.rs
 ---
 
 The OPad desktop suite communicates with the pad over USB CDC-ACM serial at 115200 baud (8N1). All bidirectional control messages are encoded using Google Protocol Buffers (proto3) encapsulated in length-delimited wire frames. <!-- src: /desktop/crates/opad-protocol/src/lib.rs#Framing -->

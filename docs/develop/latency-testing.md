@@ -1,8 +1,6 @@
 ---
 title: Latency Measurement and Benchmark Methodology
 description: Hardware latency testing methodology, on-device histograms, benchmark stages A through D, host-side evdev analysis, and release gate criteria.
-category: develop
-type: reference
 ---
 
 # Latency Measurement and Benchmark Methodology

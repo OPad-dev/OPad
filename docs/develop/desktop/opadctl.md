@@ -1,9 +1,6 @@
 ---
 title: opadctl CLI Tool Architecture
 description: Implementation reference for the opadctl command-line utility, clap argument parsing, IPC client dispatch, and standalone serial flashing logic.
-category: reference
-source_files:
-  - /desktop/cli/src/main.rs
 ---
 
 The `opadctl` binary is the command-line management and diagnostic tool for OPad. It provides scriptable device management, counter reconciliation, backup operations, log monitoring, and direct firmware flashing routines. <!-- src: /desktop/cli/src/main.rs -->

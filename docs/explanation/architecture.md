@@ -1,13 +1,6 @@
 ---
 title: System Architecture
 description: Comprehensive architecture of OPad, detailing dual-core ESP32-S3 hardware isolation, firmware tasks, desktop daemon state machines, and ordered device communication.
-category: explanation
-source_files:
-  - /firmware/main/app_main.c
-  - /firmware/main/runtime/runtime.c
-  - /desktop/daemon/src/runtime.rs
-  - /desktop/daemon/src/device_actor.rs
-  - /README.md
 ---
 
 OPad is designed with a fundamental guiding principle: **latency always wins** (Product Rule 1). Every layer of hardware, firmware, and desktop architecture is engineered to guarantee that mechanical switch closures and Hall Effect actuations reach the USB host within sub-millisecond intervals without jitter. Nothing joins the keypress path: the LCD screen, flash storage (NVS), touchscreen gestures, and tosu gameplay integration remain strictly isolated. <!-- src: /README.md -->

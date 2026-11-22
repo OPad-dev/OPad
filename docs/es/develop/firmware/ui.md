@@ -1,12 +1,6 @@
 ---
 title: Subsistema de Interfaz (UI) del Firmware
 description: Referencia de implementación para el controlador de pantalla ST7789, integración con LVGL, búferes de pantalla en PSRAM y arquitectura del almacén de diseños.
-category: reference
-source_files:
-  - /firmware/main/ui/ui_store.c
-  - /firmware/main/ui/core/ui_screen.c
-  - /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c
-  - /firmware/main/ui/he_cal_ui.c
 ---
 
 El subsistema de interfaz de usuario renderiza widgets de telemetría HUD dinámicos, metadatos de canciones, animaciones de calificación de celebración y asistentes guiados de calibración en la pantalla LCD Waveshare ST7789 de 2.0 pulgadas (resolución de 320x240). Todo el renderizado de la pantalla se ejecuta en Core 1 bajo LVGL v8, utilizando grupos de memoria en PSRAM para proteger la SRAM interna y la latencia de las teclas. <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c -->

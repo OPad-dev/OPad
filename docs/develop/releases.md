@@ -1,8 +1,6 @@
 ---
 title: Release Automation and Update Feeds
 description: Deep dive into OPad's release engineering, release-please workflows, multi-platform artifact builders, signed update feeds, and security invariants.
-category: develop
-type: explanation
 ---
 
 # Release Automation and Update Feeds

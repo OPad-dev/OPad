@@ -1,13 +1,6 @@
 ---
 title: Using with tosu
 description: How to configure and run the bundled tosu memory scanner for live osu! beatmap telemetry, UR streaming, and permission requirements.
-category: how-to
-source_files:
-  - /desktop/crates/opad-tosu/src/lib.rs
-  - /desktop/daemon/src/telemetry.rs
-  - /desktop/gui/src/diagnostics.rs
-  - /packaging/linux/deb/postinst
-  - /docs/troubleshooting.md
 ---
 
 OPad bundles `tosu` (v4.26.2), a high-performance open-source memory reader that inspects the running `osu!.exe` process to stream live gameplay statistics to the keypad's LCD display. <!-- src: /desktop/crates/opad-tosu/src/lib.rs -->

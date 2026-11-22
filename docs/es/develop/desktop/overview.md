@@ -1,12 +1,6 @@
 ---
 title: Visión General de la Suite de Escritorio
 description: Visión arquitectónica general del espacio de trabajo Rust de escritorio, modelo de procesos, transporte IPC multiplataforma y límites internos entre crates.
-category: explanation
-source_files:
-  - /desktop/Cargo.toml
-  - /desktop/daemon/src/main.rs
-  - /desktop/gui/src/main.rs
-  - /desktop/cli/src/main.rs
 ---
 
 La suite de escritorio de OPad está implementada en Rust (edición 2021) como un espacio de trabajo de Cargo que contiene tres binarios de aplicación de nivel superior y nueve crates de biblioteca modulares internas. Proporciona soporte multiplataforma en Linux (X11 / Wayland) y Windows 10/11. <!-- src: /desktop/Cargo.toml -->

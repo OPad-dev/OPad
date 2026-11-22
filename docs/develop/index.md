@@ -1,12 +1,6 @@
 ---
 title: Developer Guide
 description: Contributor workflow, git branch lifecycle, commit signing, AI attribution trailers, and repository architecture guidelines.
-category: overview
-source_files:
-  - /AGENTS.md
-  - /README.md
-  - /.github/workflows/ci.yml
-  - /Makefile
 ---
 
 Welcome to the OPad developer documentation. This section covers development workflows, repository invariants, build instructions, test harnesses, and architecture references for contributing to the firmware, desktop suite, and hardware designs. <!-- src: /AGENTS.md -->

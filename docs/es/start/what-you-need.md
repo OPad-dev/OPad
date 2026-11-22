@@ -1,12 +1,6 @@
 ---
 title: Qué necesitas
 description: Requisitos de hardware, especificaciones de la placa, interruptores compatibles, cables USB y requisitos del sistema operativo para montar y utilizar OPad.
-category: tutorial
-source_files:
-  - /README.md
-  - /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h
-  - /hardware/pcb/V3/README.md
-  - /desktop/gui/Cargo.toml
 ---
 
 OPad está construido alrededor de una placa de desarrollo con microcontrolador estándar combinada con interruptores cableados a mano o PCBs modulares personalizadas. <!-- src: /README.md -->

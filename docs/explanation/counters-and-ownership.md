@@ -1,13 +1,6 @@
 ---
 title: Counters and Ownership Model
 description: Deep explanation of monotonic lifetime keypress counters, pad ownership pairing, generation sequences, and flash wear mitigation.
-category: explanation
-source_files:
-  - /firmware/main/counters/counters.c
-  - /firmware/main/counters/counter_sync_rules.c
-  - /desktop/daemon/src/sync.rs
-  - /desktop/daemon/src/identity.rs
-  - /desktop/crates/opad-storage/src/lib.rs
 ---
 
 OPad tracks the player's lifetime keypress counts across physical switches and gaming sessions. These counters serve as verifiable milestones for rhythm game players. To protect counter integrity across different computers, reinstallations, and hardware replacements, OPad couples monotonic counter tracking with an explicit ownership pairing model. <!-- src: /desktop/daemon/src/identity.rs -->

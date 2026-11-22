@@ -1,12 +1,6 @@
 ---
 title: IPC Protocol Reference
 description: Specification of the local Inter-Process Communication (IPC) transport, JSON framing, security model, and request/response protocol between opad-daemon, GUI, and opadctl.
-category: reference
-source_files:
-  - /desktop/crates/opad-ipc/src/lib.rs
-  - /desktop/crates/opad-ipc/src/transport/unix.rs
-  - /desktop/crates/opad-ipc/src/transport/windows.rs
-  - /desktop/daemon/src/ipc_handlers.rs
 ---
 
 The OPad desktop architecture delegates hardware interaction, tosu integration, keypress counter tracking, and background synchronization to a persistent background service (`opad-daemon`). Desktop user interfaces—including `opad-gui` and the command-line utility `opadctl`—communicate with `opad-daemon` over a local Inter-Process Communication (IPC) channel. <!-- src: /desktop/crates/opad-ipc/src/lib.rs#IPC_PROTOCOL_VERSION -->

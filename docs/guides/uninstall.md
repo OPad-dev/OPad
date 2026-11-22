@@ -1,12 +1,6 @@
 ---
 title: Uninstalling the Software
 description: Complete uninstallation procedure for the OPad desktop suite on Linux and Windows, cleanup of database records, services, and udev rules.
-category: how-to
-source_files:
-  - /packaging/windows/installer.iss
-  - /packaging/linux/uninstall-cleanup.sh
-  - /packaging/linux/deb/postrm
-  - /desktop/crates/opad-model/src/paths.rs
 ---
 
 If you choose to uninstall the OPad desktop suite, you can remove all application binaries, background services, autostart entries, and local database state cleanly from your system. <!-- src: /packaging/linux/uninstall-cleanup.sh -->

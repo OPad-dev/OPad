@@ -1,14 +1,6 @@
 ---
 title: Instalar la suite de escritorio
 description: Guía de instalación para la suite de aplicaciones de escritorio de OPad (daemon, GUI, opadctl, tosu) en Linux (.deb, .rpm, Arch AUR, AppImage) y Windows.
-category: tutorial
-source_files:
-  - /packaging/linux/deb/postinst
-  - /packaging/linux/udev/70-opad.rules
-  - /packaging/linux/appimage/AppRun
-  - /packaging/linux/arch/PKGBUILD
-  - /packaging/windows/installer.iss
-  - /desktop/crates/opad-model/src/paths.rs
 ---
 
 La suite de software de escritorio de OPad proporciona telemetría HUD en tiempo real durante la partida, diseño visual de pantallas, diagnósticos interactivos de hardware y calibración de interruptores magnéticos Hall Effect. La suite consta de cuatro componentes principales: <!-- src: /desktop/crates/opad-model/src/paths.rs -->

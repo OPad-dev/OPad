@@ -1,15 +1,6 @@
 ---
 title: Actualizaciones de Firmware y Reversión Automática (Rollback)
 description: Esquema de particiones OTA dual, verificación de arranque de prueba en el bootloader, reversión automática guiada por USB y canales de actualización de software.
-category: explanation
-source_files:
-  - /firmware/main/app_main.c
-  - /firmware/main/runtime/runtime.c
-  - /firmware/main/protocol/protocol.c
-  - /firmware/main/usb/usb_cdc.c
-  - /desktop/crates/opad-device/src/flash.rs
-  - /desktop/crates/opad-update/src/lib.rs
-  - /desktop/daemon/src/firmware_update.rs
 ---
 
 OPad garantiza que una actualización de firmware nunca pueda dejar un teclado inservible o bloqueado (Regla de Producto 5). La actualización del firmware está totalmente automatizada, no requiere interactuar con los botones físicos de hardware BOOT o RESET y cuenta con un mecanismo de reversión automática (rollback): si una imagen recién flasheada falla, se bloquea o no logra enumerar en USB, la ROM del ESP32-S3 y los bootloaders de segunda etapa revierten automáticamente a la ranura de firmware que funcionaba previamente. <!-- src: /firmware/main/app_main.c -->

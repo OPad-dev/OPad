@@ -1,13 +1,6 @@
 ---
 title: Subsistema de Entrada del Firmware
 description: Referencia de implementación para el cauce de entrada del firmware, antirrebote de interruptores mecánicos, muestreo ADC de Hall Effect y despacho unificado de eventos de teclas.
-category: reference
-source_files:
-  - /firmware/main/input/keypad.c
-  - /firmware/main/input/debounce.c
-  - /firmware/main/input/he_backend.c
-  - /firmware/main/input/he_rt.c
-  - /firmware/main/input/key_event.c
 ---
 
 El subsistema de entrada captura los contactos físicos de los interruptores y las transiciones de flujo magnético, aplica algoritmos de antirrebote o Rapid Trigger, actualiza los contadores de pulsaciones monotónicos y envía informes HID a los endpoints USB. Todo el código de entrada se ejecuta estrictamente en Core 0 con `configMAX_PRIORITIES - 1`. <!-- src: /firmware/main/input/keypad.c -->

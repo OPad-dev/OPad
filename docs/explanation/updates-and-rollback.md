@@ -1,15 +1,6 @@
 ---
 title: Firmware Updates and Automatic Rollback
 description: Dual OTA partition layout, bootloader trial boot verification, USB-driven automatic rollback, and software update channels.
-category: explanation
-source_files:
-  - /firmware/main/app_main.c
-  - /firmware/main/runtime/runtime.c
-  - /firmware/main/protocol/protocol.c
-  - /firmware/main/usb/usb_cdc.c
-  - /desktop/crates/opad-device/src/flash.rs
-  - /desktop/crates/opad-update/src/lib.rs
-  - /desktop/daemon/src/firmware_update.rs
 ---
 
 OPad guarantees that a firmware update can never strand or brick a keypad (Product Rule 5). Updating firmware is fully automated, requires no interaction with hardware BOOT or RESET buttons, and includes an automatic rollback mechanism: if a freshly flashed image crashes, hangs, or fails to enumerate on USB, the ESP32-S3 ROM and second-stage bootloaders automatically roll back to the previously functioning firmware slot. <!-- src: /firmware/main/app_main.c -->

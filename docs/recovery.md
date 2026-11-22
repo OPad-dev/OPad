@@ -1,17 +1,6 @@
 ---
 title: Counter Reconciliation, Recovery & Unbinding
 description: Counter reconciliation rules, flashing procedures, bootloader entry, and recovering an un-enumerated pad.
-category: how-to
-source_files:
-  - /desktop/cli/src/main.rs
-  - /desktop/crates/opad-device/src/flash.rs
-  - /desktop/daemon/src/sync.rs
-  - /desktop/daemon/src/identity.rs
-  - /firmware/main/usb/usb_cdc.c
-  - /firmware/main/config/device_config.c
-  - /firmware/main/app_main.c
-  - /firmware/main/protocol/protocol.c
-  - /firmware/main/runtime/runtime.c
 ---
 
 ## 1. Dual-Storage Model (§12, §13)

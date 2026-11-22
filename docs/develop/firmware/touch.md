@@ -1,11 +1,6 @@
 ---
 title: Firmware Touchscreen Subsystem
 description: Implementation reference for the CST816S I2C touch driver, touch task execution, gesture axis tracking, and swipe label rendering.
-category: reference
-source_files:
-  - /firmware/main/input/touch_retry.c
-  - /firmware/main/input/gesture.c
-  - /firmware/main/input/swipe_labels.c
 ---
 
 The touchscreen subsystem manages the Hynitron CST816S capacitive touch controller over I2C, implementing the pad's "third button" concept (Product Rule 4). It executes on Core 1 at low priority (`touch_retry_task`), keeping all touch processing off the keypress critical path. <!-- src: /firmware/main/input/touch_retry.c -->

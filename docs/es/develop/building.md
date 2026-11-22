@@ -1,13 +1,6 @@
 ---
 title: Compilación desde el Código Fuente
 description: Guía completa de compilación para el firmware de OPad utilizando ESP-IDF v5.5.2 y las aplicaciones de escritorio en Rust para Linux y Windows.
-category: how-to
-source_files:
-  - /README.md
-  - /Makefile
-  - /firmware/CMakeLists.txt
-  - /desktop/Cargo.toml
-  - /AGENTS.md
 ---
 
 Esta guía proporciona instrucciones para compilar desde el código fuente el firmware del ESP32-S3 de OPad y la suite de software de escritorio en Rust (`opad-daemon`, `opad-gui` y `opadctl`). <!-- src: /Makefile -->

@@ -1,14 +1,6 @@
 ---
 title: Calibración de interruptores Hall Effect
 description: Guía paso a paso de calibración para interruptores magnéticos en OPad, registro de niveles de reposo y fondo, y ajuste de rapid trigger en opad-gui.
-category: how-to
-source_files:
-  - /firmware/main/input/he_cal.c
-  - /firmware/main/ui/he_cal_ui.c
-  - /firmware/main/input/he_cal_runner.c
-  - /desktop/gui/src/keys.rs
-  - /desktop/gui/src/he_monitor.rs
-  - /protocol/opad.proto
 ---
 
 Los interruptores magnéticos Hall Effect requieren calibración para establecer los límites del flujo magnético entre la posición de reposo del vástago (arriba) y el estado de pulsación a fondo (abajo). De acuerdo con el registro normativo de decisiones D7, un teclado Hall Effect sin calibrar queda bloqueado en su asistente de calibración en pantalla hasta que se complete el proceso. <!-- src: /firmware/main/ui/he_cal_ui.c -->

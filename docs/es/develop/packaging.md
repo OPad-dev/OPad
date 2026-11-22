@@ -1,8 +1,6 @@
 ---
 title: Mecánica de Empaquetado y Distribución
 description: Guía técnica de empaquetado de OPad para Linux (.deb, .rpm, AppImage, Arch PKGBUILD) y Windows (Inno Setup), marcadores de origen de instalación, permisos y scripts de compilación.
-category: develop
-type: reference
 ---
 
 # Mecánica de Empaquetado y Distribución

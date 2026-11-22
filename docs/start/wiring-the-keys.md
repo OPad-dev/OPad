@@ -1,12 +1,6 @@
 ---
 title: Wiring the Keys
 description: Step-by-step wiring guide for mechanical switches on Header P2, GPIO assignments, pull-up logic, and OPad V3 carrier assembly.
-category: tutorial
-source_files:
-  - /README.md
-  - /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h
-  - /firmware/main/input/keypad.c
-  - /docs/reference/pinout.md
 ---
 
 OPad reads switches active-low: each switch pin is configured with internal ESP32-S3 pull-up resistors (`GPIO_PULLUP_ONLY`). Pressing a switch connects the GPIO pin directly to ground (`GND`). No external resistors, diodes, or capacitors are required. <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->

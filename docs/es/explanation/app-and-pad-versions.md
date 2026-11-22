@@ -1,12 +1,6 @@
 ---
 title: Interoperabilidad de Versiones de la Aplicación y del Pad
 description: Negociación de protocolo, reglas de compatibilidad hacia atrás y hacia adelante, autodetección de enmarcado y gestión de desajuste de versiones entre el software de escritorio y el firmware del pad.
-category: explanation
-source_files:
-  - /desktop/crates/opad-protocol/src/lib.rs
-  - /firmware/main/protocol/protocol.c
-  - /desktop/daemon/src/sync.rs
-  - /desktop/crates/opad-device/src/lib.rs
 ---
 
 Una piedra angular de la arquitectura de OPad son las **actualizaciones independientes**: la aplicación de escritorio y el firmware del pad se actualizan de forma independiente (Regla de Producto 3). Nunca se le debe decir a un usuario que "actualice ambos a la vez". Cada revisión del protocolo, del formato wire o del enmarcado está diseñada para funcionar bidireccionalmente: una suite de escritorio completamente nueva funciona sin problemas con un firmware más antiguo, y un firmware actualizado sigue siendo totalmente funcional con compilaciones anteriores de escritorio. <!-- src: /desktop/crates/opad-protocol/src/lib.rs#DEVICE_PROTOCOL_VERSION -->

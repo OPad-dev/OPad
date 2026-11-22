@@ -6,6 +6,18 @@ Status values:
 - `todo`: not started.
 - `draft`: drafted in English with frontmatter and citations verified.
 - `translated`: mirrored to `docs/es/`.
+- `verified`: English page checked claim-by-claim against the code (Layer 2).
+- `verified-es`: Spanish mirror checked against the verified English page (Layer 2).
+
+## §0.1 Known Problems from Layer 1
+
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | Rewrite and verify `docs/recovery.md` and `docs/troubleshooting.md` against the code with `src` comments | in progress | Rewriting `recovery.md` first, then `troubleshooting.md` |
+| 2 | Verify every claim on every page (ignore absence of `TODO(verify)`) | in progress | Checking page by page |
+| 3 | Remove `category`, `source_files`, and `type` frontmatter fields from every page (EN & ES) | done | Removed from 92 files; only `title`, `description`, `sidebar`, `draft` remain |
+| 4 | Fix known errors in `docs/guides/update-firmware.md` and check all pages for similar errors | todo | Next after `recovery.md` |
+| 5 | Copy GUI labels, button texts, and menu paths verbatim from `desktop/gui/src/` | in progress | Enforced on every page |
 
 ## Target Documentation Tree
 

@@ -1,12 +1,6 @@
 ---
 title: What You Need
 description: Hardware prerequisites, board specifications, compatible switches, USB cables, and operating system requirements for building and using OPad.
-category: tutorial
-source_files:
-  - /README.md
-  - /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h
-  - /hardware/pcb/V3/README.md
-  - /desktop/gui/Cargo.toml
 ---
 
 OPad is built around an off-the-shelf microcontroller development board paired with either hand-wired switches or custom modular PCBs. <!-- src: /README.md -->

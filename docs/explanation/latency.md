@@ -1,12 +1,6 @@
 ---
 title: Latency Engineering
 description: In-depth explanation of OPad's sub-millisecond input pipeline, dual USB HID endpoints, eager debounce algorithms, and latency telemetry.
-category: explanation
-source_files:
-  - /firmware/main/input/debounce.c
-  - /firmware/main/input/keypad.c
-  - /firmware/main/usb/usb_hid.c
-  - /firmware/main/input/latency_stats.c
 ---
 
 In rhythm games such as *osu!*, timing precision is evaluated in single-digit milliseconds. Any latency jitter or input transmission delay directly translates into unstable hit timing (Unstable Rate / UR). OPad treats latency as its primary invariant: **latency always wins** (Product Rule 1). Every component of the keypress path is optimized to deliver switch state changes to the host within 1 millisecond. <!-- src: /firmware/main/usb/usb_hid.c -->

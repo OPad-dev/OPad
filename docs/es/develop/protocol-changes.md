@@ -1,8 +1,6 @@
 ---
 title: Cambios de Protocolo y Evolución del Esquema
 description: Cómo evolucionar opad.proto, regenerar los enlaces de nanopb y prost, y mantener la compatibilidad wire bidireccional entre la aplicación y el pad.
-category: develop
-type: how-to
 ---
 
 # Cambios de Protocolo y Evolución del Esquema

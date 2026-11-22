@@ -1,13 +1,6 @@
 ---
 title: Uso de la pantalla táctil y deslizamientos
 description: Cómo utilizar el tercer botón táctil para el reintento rápido durante la partida y configurar acciones de deslizamiento direccionales para el control de volumen y pistas.
-category: how-to
-source_files:
-  - /AGENTS.md
-  - /firmware/main/input/touch_retry.c
-  - /firmware/main/input/gesture.c
-  - /desktop/crates/opad-model/src/swipe.rs
-  - /desktop/daemon/src/telemetry.rs
 ---
 
 La pantalla táctil capacitiva de 2,0 pulgadas de OPad funciona como **el tercer botón** (Regla de producto 4). Reconoce el contexto: durante una partida activa de osu!, un dedo apoyado activa el reintento rápido (`` ` ``) y los deslizamientos nunca generan un reintento no deseado; fuera de los beatmaps, los deslizamientos direccionales ejecutan acciones multimedia o de teclado. <!-- src: /AGENTS.md -->

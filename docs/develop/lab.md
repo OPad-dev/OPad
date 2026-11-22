@@ -1,8 +1,6 @@
 ---
 title: Automated Testing Lab
 description: Overview of the self-hosted multi-OS virtual machine lab, runner isolation, automated installation testing, upgrade validation, and cleanup verification.
-category: develop
-type: reference
 ---
 
 # Automated Testing Lab

@@ -1,13 +1,6 @@
 ---
 title: Building from Source
 description: Comprehensive build guide for OPad firmware using ESP-IDF v5.5.2 and desktop applications using Rust on Linux and Windows.
-category: how-to
-source_files:
-  - /README.md
-  - /Makefile
-  - /firmware/CMakeLists.txt
-  - /desktop/Cargo.toml
-  - /AGENTS.md
 ---
 
 This guide provides instructions for compiling the OPad ESP32-S3 firmware and the Rust desktop software suite (`opad-daemon`, `opad-gui`, and `opadctl`) from source. <!-- src: /Makefile -->

@@ -1,12 +1,6 @@
 ---
 title: Guía de Desarrollo
 description: Flujo de trabajo de colaboradores, ciclo de vida de ramas git, firma de commits, trailers de atribución de IA y pautas de arquitectura del repositorio.
-category: overview
-source_files:
-  - /AGENTS.md
-  - /README.md
-  - /.github/workflows/ci.yml
-  - /Makefile
 ---
 
 Te damos la bienvenida a la documentación de desarrollo de OPad. Esta sección cubre los flujos de trabajo de desarrollo, las invariantes del repositorio, las instrucciones de compilación, los entornos de prueba y las referencias de arquitectura para contribuir al firmware, a la suite de escritorio y a los diseños de hardware. <!-- src: /AGENTS.md -->

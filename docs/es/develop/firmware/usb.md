@@ -1,12 +1,6 @@
 ---
 title: Subsistema USB del Firmware
 description: Referencia de implementación para los descriptores compuestos de TinyUSB, endpoints HID divididos a 1000 Hz, enmarcado serie CDC-ACM y gestión de reinicio para descarga en ROM.
-category: reference
-source_files:
-  - /firmware/main/usb/usb_descriptors.c
-  - /firmware/main/usb/usb_hid.c
-  - /firmware/main/usb/usb_cdc.c
-  - /firmware/main/usb/usb_media.c
 ---
 
 El subsistema USB implementa un dispositivo compuesto USB 2.0 Full-Speed en el ESP32-S3 utilizando TinyUSB. Expone dos endpoints USB HID independientes y un puerto serie virtual USB CDC-ACM. <!-- src: /firmware/main/usb/usb_descriptors.c -->

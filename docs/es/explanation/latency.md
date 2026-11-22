@@ -1,12 +1,6 @@
 ---
 title: Ingeniería de Latencia
 description: Explicación detallada del cauce de entrada sub-milisegundo de OPad, endpoints duales USB HID, algoritmos de antirrebote anticipado y telemetría de latencia.
-category: explanation
-source_files:
-  - /firmware/main/input/debounce.c
-  - /firmware/main/input/keypad.c
-  - /firmware/main/usb/usb_hid.c
-  - /firmware/main/input/latency_stats.c
 ---
 
 En los juegos de ritmo como *osu!*, la precisión temporal se evalúa en márgenes de milisegundos de un solo dígito. Cualquier fluctuación (jitter) en la latencia o retraso en la transmisión de entrada se traduce directamente en una menor estabilidad en los impactos (Unstable Rate / UR). OPad trata la latencia como su invariante primordial: **la latencia siempre gana** (Regla de Producto 1). Cada componente de la ruta crítica de teclas está optimizado para entregar los cambios de estado de los interruptores al anfitrión USB en menos de 1 milisegundo. <!-- src: /firmware/main/usb/usb_hid.c -->

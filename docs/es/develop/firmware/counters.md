@@ -1,10 +1,6 @@
 ---
 title: Subsistema de Contadores del Firmware
 description: Referencia de implementación para el seguimiento monotónico de pulsaciones, aplicación atómica de deltas, validación de generación y puntos de control perezosos en flash.
-category: reference
-source_files:
-  - /firmware/main/counters/counters.c
-  - /firmware/main/counters/counter_sync_rules.c
 ---
 
 El subsistema de contadores rastrea las actuaciones acumuladas de por vida en Key 1, Key 2 y Key 3. Aplica una progresión monotónica estricta, evita el desgaste de la memoria flash mediante puntos de control perezosos por inactividad y asegura que las pulsaciones efectuadas durante la sincronización USB nunca se pierdan. <!-- src: /firmware/main/counters/counters.c -->

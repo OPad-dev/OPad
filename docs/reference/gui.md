@@ -1,14 +1,6 @@
 ---
 title: GUI Reference
 description: Reference guide to the OPad graphical desktop application (opad-gui), its pages, interactive designer, diagnostics, and Hall Effect tuning interface.
-category: reference
-source_files:
-  - /desktop/gui/src/main.rs
-  - /desktop/gui/src/pages.rs
-  - /desktop/gui/src/keys.rs
-  - /desktop/gui/src/diagnostics.rs
-  - /desktop/gui/src/designer/mod.rs
-  - /desktop/gui/src/stats.rs
 ---
 
 The OPad graphical user interface (`opad-gui`) is an iced-based desktop application providing complete device status monitoring, settings configuration, pixel-exact LCD screen designing, interactive switch diagnostics, and Hall Effect magnetic actuation tuning. It connects to the local `opad-daemon` over IPC. <!-- src: /desktop/gui/src/main.rs#parse_page_arg -->

@@ -1,8 +1,6 @@
 ---
 title: Laboratorio de Pruebas Automatizadas
 description: Descripción general del laboratorio con máquinas virtuales multi-OS autoalojado, aislamiento del ejecutor, pruebas automatizadas de instalación, validación de actualizaciones y verificación de desinstalación.
-category: develop
-type: reference
 ---
 
 # Laboratorio de Pruebas Automatizadas

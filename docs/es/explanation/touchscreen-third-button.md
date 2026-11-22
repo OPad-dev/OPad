@@ -1,12 +1,6 @@
 ---
 title: La Pantalla Táctil como Tercer Botón
 description: Explicación de la integración del controlador táctil capacitivo CST816S, Quick Retry con dedo en reposo, clasificación de gestos y aislamiento de juego.
-category: explanation
-source_files:
-  - /firmware/main/input/touch_retry.c
-  - /firmware/main/input/gesture.c
-  - /firmware/main/usb/usb_hid.c
-  - /docs/specs/v2-hall-effect-decisions.md
 ---
 
 En la Waveshare ESP32-S3-Touch-LCD-2, la pantalla táctil capacitiva no está diseñada simplemente como una interfaz gráfica, sino como **el tercer botón** (Regla de Producto 4). Ofrece pulsaciones digitales limpias, estados sostenidos fiables y liberaciones precisas sin sobrecargar la CPU ni degradar la latencia del teclado. <!-- src: /firmware/main/input/touch_retry.c -->

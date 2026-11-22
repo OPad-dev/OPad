@@ -1,13 +1,6 @@
 ---
 title: Guía de solución de problemas
 description: Problemas habituales con OPad, integración de escritorio, acceso a puertos, permisos de tosu y telemetría en pantalla.
-category: reference
-source_files:
-  - /desktop/daemon/src/device_actor.rs
-  - /desktop/gui/src/diagnostics.rs
-  - /desktop/crates/opad-tosu/src/lib.rs
-  - /firmware/main/diag/diag.c
-  - /packaging/linux/udev/70-opad.rules
 ---
 
 Esta guía cubre preguntas frecuentes y pasos para la resolución de problemas con el teclado OPad, la integración de escritorio, las asignaciones de teclas y la telemetría en pantalla en Linux y Windows.

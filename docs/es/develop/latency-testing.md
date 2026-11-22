@@ -1,8 +1,6 @@
 ---
 title: Medición de Latencia y Metodología de Benchmarks
 description: Metodología de pruebas de latencia de hardware, histogramas en el dispositivo, etapas de benchmark de la A a la D, análisis evdev en el host y criterios de control de calidad para releases.
-category: develop
-type: reference
 ---
 
 # Medición de Latencia y Metodología de Benchmarks

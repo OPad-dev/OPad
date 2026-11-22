@@ -1,12 +1,6 @@
 ---
 title: Visión General y Arquitectura del Firmware
 description: Arquitectura interna del firmware para ESP32-S3, topologías de tareas FreeRTOS, particionado de memoria, ajustes de sdkconfig y banderas de prueba en tiempo de compilación.
-category: explanation
-source_files:
-  - /firmware/main/app_main.c
-  - /firmware/main/runtime/runtime.c
-  - /firmware/sdkconfig.defaults
-  - /firmware/main/Kconfig.projbuild
 ---
 
 El firmware de OPad está escrito en C99 utilizando ESP-IDF **v5.5.2** sobre el microcontrolador de doble núcleo ESP32-S3 (Xtensa LX7 a 240 MHz). Está estructurado en torno a un aislamiento estricto de hardware: el escaneo de entrada crítico en el tiempo y el envío de informes USB HID se ejecutan en Core 0, mientras que el renderizado de pantalla, el enmarcado del protocolo serie CDC, los gestos táctiles y la gestión de almacenamiento NVS se ejecutan en Core 1. <!-- src: /firmware/main/app_main.c -->

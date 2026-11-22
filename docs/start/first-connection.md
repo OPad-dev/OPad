@@ -1,13 +1,6 @@
 ---
 title: First Connection
 description: Connecting OPad to a host computer, verifying 1000 Hz USB HID keyboard enumeration without software, and default key mapping tests.
-category: tutorial
-source_files:
-  - /AGENTS.md
-  - /README.md
-  - /firmware/main/usb/usb_descriptors.c
-  - /firmware/main/usb/usb_hid.c
-  - /firmware/main/input/keypad.c
 ---
 
 The keypad is designed to function as an independent, driverless USB keyboard immediately upon being plugged into a computer (Product Rule 2). No background daemon, companion app, or specialized device drivers are required for basic typing and rhythm gaming. <!-- src: /AGENTS.md -->

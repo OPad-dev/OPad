@@ -1,11 +1,6 @@
 ---
 title: Backup and Restore
 description: Exporting and restoring JSON backups of device configurations, screen layouts, and keypress counters via opadctl or the desktop GUI.
-category: how-to
-source_files:
-  - /desktop/daemon/src/backup.rs
-  - /desktop/cli/src/main.rs
-  - /desktop/crates/opad-storage/src/lib.rs
 ---
 
 OPad provides complete configuration, layout, and counter state backups serialized in a portable JSON format (`JsonBackup`). Backups can be exported manually or restored onto a new keypad, and `opad-daemon` generates automatic backups in the background to ensure progress is never lost if hardware is damaged or replaced. <!-- src: /desktop/daemon/src/backup.rs -->

@@ -1,8 +1,6 @@
 ---
 title: Hardware Architecture and PCB Ecosystem
 description: Hardware generation history (V1, V2, V3), carrier boards, modular MX and Hall Effect input modules, custom 3D printed cases, and opadverify hardware verification suite.
-category: develop
-type: reference
 ---
 
 # Hardware Architecture and PCB Ecosystem

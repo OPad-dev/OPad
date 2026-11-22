@@ -1,12 +1,6 @@
 ---
 title: Testing and Quality Assurance
 description: Running test suites, make check, Rust clippy and formatting, firmware host unit tests, and the manual hardware testing checklist.
-category: how-to
-source_files:
-  - /Makefile
-  - /firmware/test/host/run_tests.sh
-  - /docs/testing-checklist.md
-  - /AGENTS.md
 ---
 
 OPad employs a multi-tiered testing strategy encompassing automated desktop tests, firmware host mock unit tests, CI validation pipelines, and manual hardware verification checklists. <!-- src: /AGENTS.md -->

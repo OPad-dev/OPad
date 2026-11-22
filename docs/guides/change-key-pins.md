@@ -1,13 +1,6 @@
 ---
 title: Changing Key Pins
 description: How to reconfigure mechanical switch GPIO pin assignments using opadctl or the graphical interface, pin restrictions, and validation rules.
-category: how-to
-source_files:
-  - /README.md
-  - /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h
-  - /firmware/main/config/config_validate.c
-  - /firmware/main/config/device_config.c
-  - /protocol/opad.proto
 ---
 
 By default, OPad assigns Key 1 to GPIO 14 (Header P2 Pin 11) and Key 2 to GPIO 9 (Header P2 Pin 12). If you need to avoid specific pins or adapt to custom enclosures, you can reconfigure switch GPIO assignments via `opadctl` or `opad-gui`. <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->

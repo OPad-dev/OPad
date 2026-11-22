@@ -1,11 +1,6 @@
 ---
 title: Subsistema de Diagnósticos del Firmware
 description: Referencia de implementación para la telemetría del firmware, registro en búfer circular en memoria, autotests eléctricos de placa y análisis en banco para Hall Effect.
-category: reference
-source_files:
-  - /firmware/main/diag/diag.c
-  - /firmware/main/diag/board_test.c
-  - /firmware/main/diag/hall_bench.c
 ---
 
 El subsistema de diagnósticos proporciona rutinas de autotest, verificación de continuidad eléctrica, registro de eventos en búfer circular en memoria y herramientas de evaluación en banco para sensores magnéticos. <!-- src: /firmware/main/diag/diag.c -->

@@ -1,12 +1,6 @@
 ---
 title: App and Pad Versions Interoperability
 description: Protocol negotiation, backward and forward compatibility rules, framing auto-detection, and version mismatch handling between desktop software and pad firmware.
-category: explanation
-source_files:
-  - /desktop/crates/opad-protocol/src/lib.rs
-  - /firmware/main/protocol/protocol.c
-  - /desktop/daemon/src/sync.rs
-  - /desktop/crates/opad-device/src/lib.rs
 ---
 
 A cornerstone of the OPad architecture is **independent updates**: the desktop application and pad firmware update independently (Product Rule 3). Users must never be told to "update both together". Every protocol, wire-format, or framing revision is designed to function bidirectionally: a brand new desktop suite works seamlessly with an older firmware release, and updated firmware remains fully functional with legacy desktop builds. <!-- src: /desktop/crates/opad-protocol/src/lib.rs#DEVICE_PROTOCOL_VERSION -->

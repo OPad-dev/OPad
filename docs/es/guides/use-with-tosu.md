@@ -1,13 +1,6 @@
 ---
 title: Uso con tosu
 description: Cómo configurar y ejecutar el escáner de memoria integrado tosu para telemetría de beatmaps de osu! en tiempo real, transmisión de UR y requisitos de permisos.
-category: how-to
-source_files:
-  - /desktop/crates/opad-tosu/src/lib.rs
-  - /desktop/daemon/src/telemetry.rs
-  - /desktop/gui/src/diagnostics.rs
-  - /packaging/linux/deb/postinst
-  - /docs/troubleshooting.md
 ---
 
 OPad integra `tosu` (v4.26.2), un lector de memoria de alto rendimiento y código abierto que examina el proceso en ejecución `osu!.exe` para transmitir estadísticas de juego en vivo a la pantalla LCD del teclado. <!-- src: /desktop/crates/opad-tosu/src/lib.rs -->

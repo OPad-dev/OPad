@@ -1,13 +1,6 @@
 ---
 title: Troubleshooting Guide
 description: Common issues with OPad, desktop integration, port access, tosu permissions, and display telemetry.
-category: reference
-source_files:
-  - /desktop/daemon/src/device_actor.rs
-  - /desktop/gui/src/diagnostics.rs
-  - /desktop/crates/opad-tosu/src/lib.rs
-  - /firmware/main/diag/diag.c
-  - /packaging/linux/udev/70-opad.rules
 ---
 
 This guide covers common questions and troubleshooting steps for the OPad keypad, desktop integration, key mappings, and overlay telemetry on Linux and Windows.

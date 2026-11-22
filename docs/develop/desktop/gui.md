@@ -1,13 +1,6 @@
 ---
 title: GUI Subsystem Architecture
 description: Implementation reference for opad-gui, iced state architecture, asynchronous IPC event loops, system tray integration, and screen designer preview.
-category: reference
-source_files:
-  - /desktop/gui/src/main.rs
-  - /desktop/gui/src/pages.rs
-  - /desktop/gui/src/theme.rs
-  - /desktop/gui/src/tray.rs
-  - /desktop/gui/src/designer/mod.rs
 ---
 
 The `opad-gui` application is built with the [iced](https://github.com/iced-rs/iced) GUI library, following The Elm Architecture (Model-View-Update). It runs cross-platform on Linux and Windows, featuring an asynchronous Tokio runtime backend to communicate with `opad-daemon` over IPC. <!-- src: /desktop/gui/src/main.rs -->
