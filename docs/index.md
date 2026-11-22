@@ -1,6 +1,8 @@
 ---
 title: OPad Documentation
 description: Overview of OPad, the low-latency ESP32-S3 osu! keypad and desktop suite, with starting points for users and developers.
+sidebar:
+  order: 1
 ---
 
 OPad is a low-latency 1000 Hz USB HID osu! keypad built on the Waveshare ESP32-S3-Touch-LCD-2, paired with an optional Rust desktop suite (`opad-daemon`, `opad-gui`, `opadctl`) for Linux and Windows 10/11. <!-- src: /README.md --> <!-- src: /AGENTS.md -->
@@ -18,6 +20,7 @@ The keypad works out of the box as a driverless USB keyboard with no software in
 
 - [Updating Firmware](guides/update-firmware.md) — updating over USB from `opad-gui` or `opadctl` with automatic A/B rollback protection.
 - [Touchscreen & Swipes](guides/touchscreen-and-swipes.md) — Quick Retry in maps and configurable swipe actions outside maps.
+- [Customizing the Screen Layout](guides/customize-screen-layout.md) — designing, previewing, exporting, and importing custom `Idle` and `Playing` layouts in Screen Designer.
 - [Calibrating Hall Effect Switches](guides/calibrate-hall-effect.md) — guided 5-press calibration and actuation / rapid trigger tuning.
 - [Changing Key Pins](guides/change-key-pins.md) — rebinding hand-wired switch GPIOs and using **Auto-Detect**.
 - [Using OPad with tosu](guides/use-with-tosu.md) — live osu! telemetry setup and Linux `ptrace` configuration.
