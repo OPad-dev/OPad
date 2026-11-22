@@ -162,6 +162,13 @@ function Test-Release([string]$Vm, [string]$Sub, $Rel, [switch]$Previous) {
     Add-LabFile $shot screenshot "$($Rel.Tag): the window after login"
 }
 
+# The Linux VMs' script with LF line endings whatever the checkout has: bash
+# cannot run CRLF, and a Windows checkout may have it (.gitattributes only
+# applies once git rewrites the file)
+$linuxScript = Join-Path $OutDir "vm-install-linux.sh"
+$text = [System.IO.File]::ReadAllText((Join-Path $PSScriptRoot "vm-install-linux.sh")) -replace "`r`n", "`n"
+[System.IO.File]::WriteAllText($linuxScript, $text, (New-Object System.Text.UTF8Encoding $false))
+
 # --- Each VM
 if ($Vms.Count -eq 0) { $Vms = @($AllVms.Keys) }
 foreach ($vm in $Vms) {
@@ -178,10 +185,10 @@ foreach ($vm in $Vms) {
         if (-not $os) { throw "no logged-in desktop within 300 s" }
         Write-Host "    $os"
         Set-LabGroupOs $os
-        $script = if (Test-WindowsVm $vm) { "vm-install-windows.ps1" } else { "vm-install-linux.sh" }
+        $script = if (Test-WindowsVm $vm) { Join-Path $PSScriptRoot "vm-install-windows.ps1" } else { $linuxScript }
         $mk = if (Test-WindowsVm $vm) { "New-Item -ItemType Directory -Force old,new | Out-Null" } else { "mkdir -p old new" }
         $null = Invoke-VmSsh $port $mk
-        $c = Copy-ToVm $port @(Join-Path $PSScriptRoot $script)
+        $c = Copy-ToVm $port @($script)
         if ($c.Code -eq 0 -and $old) { $c = Copy-ToVm $port (Get-VmFiles $vm $old) "old/" }
         if ($c.Code -eq 0) { $c = Copy-ToVm $port (Get-VmFiles $vm $new) "new/" }
         if ($c.Code -ne 0) { throw "copy into the VM: $($c.Out)" }
