@@ -1,6 +1,8 @@
 ---
 title: Firmware UI Subsystem
 description: Implementation reference for the ST7789 SPI2 display driver, LVGL v9.5 integration, memory allocation, layout store, and Hall Effect calibration overlay.
+sidebar:
+  order: 5
 ---
 
 The UI subsystem renders customizable `320x240` layouts, live telemetry, result animations, and the Hall Effect calibration overlay on the Waveshare 2.0-inch ST7789 IPS LCD. All rendering runs on **Core 1** under **LVGL v9.5.0** and `esp_lvgl_port` 2.9.0 ([/firmware/dependencies.lock](/firmware/dependencies.lock), [/firmware/main/ui/ui_port.c](/firmware/main/ui/ui_port.c)).
