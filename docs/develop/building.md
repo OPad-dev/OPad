@@ -1,6 +1,8 @@
 ---
 title: Building from Source
 description: How to build the OPad Rust desktop suite and ESP-IDF v5.5.2 ESP32-S3 firmware from source on Linux and Windows.
+sidebar:
+  order: 2
 ---
 
 This guide covers building the Rust desktop workspace ([/desktop/Cargo.toml](/desktop/Cargo.toml)) and the ESP32-S3 firmware ([/firmware/CMakeLists.txt](/firmware/CMakeLists.txt)) from source.
