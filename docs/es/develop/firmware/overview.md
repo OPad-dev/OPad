@@ -25,14 +25,15 @@ En [/firmware/sdkconfig.defaults](/firmware/sdkconfig.defaults):
 - `CONFIG_FREERTOS_HZ=1000`: Tick del sistema operativo a 1 kHz alineado con el sondeo USB de 1 ms.
 - `CONFIG_GPIO_CTRL_FUNC_IN_IRAM=y`: Coloca los ayudantes de control GPIO en IRAM para la ISR de teclas y `keypad_task`.
 - `CONFIG_TINYUSB_HID_COUNT=2`, `CONFIG_TINYUSB_CDC_COUNT=1`, `CONFIG_TINYUSB_CDC_TX_BUFSIZE=2048`, `CONFIG_TINYUSB_SUSPEND_CALLBACK=y`.
-- `CONFIG_SPIRAM=y`, `CONFIG_SPIRAM_MODE_OCT=y`, `CONFIG_SPIRAM_SPEED_80M=y`: Habilita los 8 MB de Octal PSRAM de la placa.
-- `CONFIG_LV_MEM_SIZE_KILOBYTES=160`: Pool dedicado de 160 KB para LVGL para que las asignaciones de UI nunca compitan con el heap del sistema.
+- `CONFIG_SPIRAM=y`, `CONFIG_SPIRAM_MODE_OCT=y`, `CONFIG_SPIRAM_SPEED_80M=y`, `CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y`: Habilita los 8 MB de Octal PSRAM de la placa y permite colocar búferes estáticos fuera de la ruta de teclas en PSRAM con `EXT_RAM_BSS_ATTR`.
+- `CONFIG_LV_MEM_SIZE_KILOBYTES=160` y `CONFIG_LV_DEF_REFR_PERIOD=33`: Pool dedicado de 160 KB para LVGL (en PSRAM por defecto mediante `CONFIG_OPAD_LVGL_PSRAM=y`) y límite de refresco de pantalla de 30 fps (periodo de 33 ms).
+- `CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y`, `CONFIG_ESP32S3_DATA_CACHE_64KB=y`, `CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y`: Cachés máximas del ESP32-S3 para acelerar el código/fuentes en flash y los búferes de LVGL en PSRAM.
 - `CONFIG_PARTITION_TABLE_CUSTOM=y` (`partitions.csv`) y `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`: Dos ranuras OTA de 2 MB (`ota_0`, `ota_1`) con reversión hasta que USB se monte.
 
 ## Colocación en IRAM y distribución de memoria
 
 - **Fragmento del enlazador IRAM ([/firmware/main/linker.lf](/firmware/main/linker.lf))**: Coloca `keypad:keypad_task`, `usb_hid`, `he_frame`, `he_rt`, `he_spi_source:sampler_task`, `he_spi_frame` y la ruta caliente HID/USBD/`dcd_dwc2`/`tu_hwfifo_write` de TinyUSB en IRAM (`noflash`) para que la actividad de caché en Core 1 nunca retrase la entrega de teclas.
-- **Pool de LVGL y búferes de dibujo**: Por defecto (`CONFIG_OPAD_LVGL_PSRAM=n`), el pool de 160 KB de LVGL reside en RAM interna; activar `CONFIG_OPAD_LVGL_PSRAM` mueve el pool de LVGL a PSRAM manteniendo siempre los búferes de dibujo LCD en RAM interna compatible con DMA ([/firmware/main/Kconfig.projbuild](/firmware/main/Kconfig.projbuild)).
+- **División entre RAM interna y PSRAM**: Solo las teclas, el USB y los búferes DMA permanecen en RAM interna. Por defecto (`CONFIG_OPAD_LVGL_PSRAM=y`), el pool de 160 KB de LVGL reside en PSRAM, y los búferes estáticos fuera de la ruta de teclas (`s_layouts` en `ui_port.c`, `s_pending_layouts` en `ui_store.c`, `s_subjects`/`s_str_buf`/`s_str_prev` en `ui_data.c` y `s_parser`/`msg`/`layout` en `protocol.c`) se colocan en PSRAM mediante `EXT_RAM_BSS_ATTR`. Los dos búferes de dibujo LCD de 40 líneas (`UI_DRAW_BUF_LINES = 40`, `25.6 KB` cada uno) permanecen en RAM interna compatible con DMA ([/firmware/main/Kconfig.projbuild](/firmware/main/Kconfig.projbuild), [/firmware/main/ui/ui.h](/firmware/main/ui/ui.h), [/firmware/main/protocol/protocol.c](/firmware/main/protocol/protocol.c)). Al arrancar, [/firmware/main/app_main.c](/firmware/main/app_main.c) registra `DIAG_EVENT_MEMORY` con la RAM interna libre y el mayor bloque DMA libre.
 
 ## Opciones Kconfig en tiempo de compilación (`Kconfig.projbuild`)
 
@@ -42,5 +43,5 @@ Definidas en [/firmware/main/Kconfig.projbuild](/firmware/main/Kconfig.projbuild
 - `CONFIG_OPAD_BENCH_DEBUG_GPIO` / `CONFIG_OPAD_BENCH_DEBUG_GPIO_NUM` (por defecto `4`): Conmuta un GPIO justo tras enviar HID para correlación con analizador lógico.
 - `CONFIG_OPAD_HE_BACKEND`: Habilita la entrada Hall Effect V1 por ADC1 DMA (`select ADC_CONTINUOUS_ISR_IRAM_SAFE`).
 - `CONFIG_OPAD_HALL_BENCH` / `CONFIG_OPAD_HE_TRACE` / `CONFIG_OPAD_HE_DEBUG`: Flujo crudo de sensores por CDC, captura de trazas de ~150 KB/s y registro diagnóstico `+hedebug` por pulsación.
-- `CONFIG_OPAD_UI_PERF_TEST` / `CONFIG_OPAD_LVGL_PSRAM`: Bucle sintético de rendimiento de UI con superposiciones de FPS/memoria y pool LVGL opcional en PSRAM.
+- `CONFIG_OPAD_UI_PERF_TEST` / `CONFIG_OPAD_LVGL_PSRAM` (por defecto `y`): Bucle sintético de rendimiento de UI con superposiciones de FPS/memoria y reporte de tiempos de fotograma `DIAG_EVENT_UI_PERF`; asignación en PSRAM para el pool de memoria de LVGL.
 - `CONFIG_OPAD_DEBUG_I2C_SCAN`: Sondea las 126 direcciones I2C del bus táctil al arrancar (~1.3 s adicionales de arranque).
