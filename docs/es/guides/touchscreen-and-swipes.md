@@ -1,6 +1,8 @@
 ---
 title: Uso de la pantalla táctil y deslizamientos
 description: Cómo usar la pantalla táctil como tercer botón para Quick Retry en partida y configurar acciones por deslizamiento direccional para volumen, multimedia y atajos.
+sidebar:
+  order: 2
 ---
 
 La pantalla táctil capacitiva de 2.0 pulgadas de OPad actúa como **el tercer botón** (AGENTS.md §1.4). Durante un mapa de osu!, un dedo apoyado envía Quick Retry (`` ` ``) mientras que los deslizamientos nunca disparan Quick Retry; fuera de un mapa, los toques no hacen nada y los deslizamientos direccionales ejecutan acciones configurables. Sin anfitrión o sin `tosu`, cualquier toque es Quick Retry. <!-- src: /firmware/main/input/touch_retry.c#touch_mode_now -->
