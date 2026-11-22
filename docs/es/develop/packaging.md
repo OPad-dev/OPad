@@ -43,7 +43,7 @@ Los marcadores ausentes o desconocidos degradan siempre de forma segura a `Notif
 ## 3. Objetivos Linux
 
 - **`.deb` / `.rpm`**: Instalan binarios en `/usr/bin/`, archivos privados en `/usr/lib/opad/`, unidad de usuario de systemd en `/usr/lib/systemd/user/opad-daemon.service` y `70-opad.rules` ([/packaging/linux/udev/70-opad.rules](/packaging/linux/udev/70-opad.rules)). Postinstalación ([/packaging/linux/deb/postinst](/packaging/linux/deb/postinst)) recarga `udevadm` y aplica `setcap cap_sys_ptrace=eip /usr/lib/opad/tosu/tosu`. La desinstalación ejecuta `/usr/lib/opad/uninstall-cleanup` ([/packaging/linux/uninstall-cleanup.sh](/packaging/linux/uninstall-cleanup.sh)) al eliminar/purgar (nunca al actualizar).
-- **Arch Linux**: [/packaging/linux/arch/PKGBUILD](/packaging/linux/arch/PKGBUILD) compila desde el código fuente con `TOSU_STANDALONE=0` (`nodejs` del sistema) e `INSTALL_ORIGIN=aur`.
+- **Arch Linux**: [/packaging/linux/arch/PKGBUILD](/packaging/linux/arch/PKGBUILD) compila desde el código fuente con `TOSU_STANDALONE=0` (`nodejs` del sistema) e `INSTALL_ORIGIN=aur`. La plantilla del paquete binario de AUR [/packaging/linux/arch/PKGBUILD-bin.in](/packaging/linux/arch/PKGBUILD-bin.in) (generada por [/scripts/release/aur_bin.sh](/scripts/release/aur_bin.sh)) establece `options=('!strip' '!debug')` para que los binarios del lanzamiento se instalen sin recortar símbolos y coincidan con `FILES.sha256`.
 - **AppImage**: [/packaging/linux/appimage/AppRun](/packaging/linux/appimage/AppRun) define `PATH`/`LD_LIBRARY_PATH` y admite `install-udev` (mediante `pkexec`), `daemon`, `ctl` o lanzar `opad-gui`.
 
 ## 4. Inno Setup de Windows (`installer.iss`)
