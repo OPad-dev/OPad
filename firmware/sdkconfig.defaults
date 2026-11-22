@@ -51,6 +51,16 @@ CONFIG_LV_MEM_SIZE_KILOBYTES=160
 # Only the keys, USB and DMA stay in internal RAM: buffers nothing on the key
 # path touches are placed in PSRAM with EXT_RAM_BSS_ATTR
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+# The screen redraws at most every 33 ms (30 fps). It shows numbers that change
+# at most 10 times a second, and 60 fps looked no different; a full frame
+# also takes 15.4 ms just to send over the 80 MHz SPI
+CONFIG_LV_DEF_REFR_PERIOD=33
+# The largest caches: the code and fonts run from flash, and LVGL's memory is
+# in PSRAM, both through them. Half the time per frame (gameplay screen 29 ms
+# -> 14.5 ms, slowest 69 -> 29 ms) for 48 KB of internal RAM
+CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y
+CONFIG_ESP32S3_DATA_CACHE_64KB=y
+CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
 
 # Only the LVGL widgets the layouts use (label, bar, image, observer)
 # CONFIG_LV_USE_ANIMIMG is not set
