@@ -64,7 +64,7 @@ Status values:
 | `docs/testing-checklist.md` | reference | fixed | `/docs/testing-checklist.md`, `/Makefile` | Fixed path (§3). Comprehensive quality assurance checklist covering firmware, daemon, GUI, and hardware. |
 | `docs/launch-checklist.md` | internal | fixed | `/docs/launch-checklist.md` | Internal release preparation checklist (`draft: true`). |
 | `docs/pad-test-sheet.md` | internal | fixed | `/docs/pad-test-sheet.md` | Internal single-pad testing sheet (`draft: true`). |
-| `docs/README.md` | meta | todo | `/docs/README.md`, `/AGENTS.md` | Documentation hub map, guidelines for contributors, Diátaxis rules. Rewritten in Phase 7. |
+| `docs/README.md` | meta | draft | `/docs/README.md`, `/AGENTS.md` | Documentation hub map, guidelines for contributors, Diátaxis rules. Rewritten in Phase 7. |
 | `docs/specs/technical-spec-v1.md` | record | fixed | `/docs/specs/technical-spec-v1.md` | Design record (frontmatter only, do not rewrite or translate). |
 | `docs/specs/v2-rapid-trigger.md` | record | fixed | `/docs/specs/v2-rapid-trigger.md` | Design record (frontmatter only, do not rewrite or translate). |
 | `docs/specs/v2-hall-effect-decisions.md` | record | fixed | `/docs/specs/v2-hall-effect-decisions.md` | Design record (frontmatter only, do not rewrite or translate). Fixed path (§3). |

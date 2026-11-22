@@ -1,92 +1,89 @@
-# OPad Documentation Hub & Wiki
+---
+title: OPad Documentation Map
+description: Contributor map of the OPad documentation tree, Diátaxis layout, documentation standards, and architectural rules.
+---
 
-Welcome to the official documentation and technical wiki for the **OPad** project.
+# OPad Documentation Map
 
-This directory serves as the single source of truth for hardware specifications, firmware implementation, desktop daemon architecture, testing protocols, and future milestones.
+Welcome to the OPad documentation suite. This directory is organized according to the [Diátaxis framework](https://diataxis.fr/) into Tutorials, How-To Guides, Technical Reference, and In-Depth Explanations.
+
+<!-- src: /AGENTS.md#Product rules -->
+<!-- src: /AGENTS.md#Workflow -->
 
 ---
 
-## ⚠️ Planned: full documentation reorganization and wiki (noted 2026-09-24)
+## 1. Documentation Structure
 
-This folder has grown by accretion: design docs, four readiness/audit reviews,
-an evening TODO, a code-review folder and a fix plan sit side by side, several
-of them describing the code as it was before the 2026-09-24 review fixes
-(commits `0e3286b`…`d56211d`, 93 findings closed). It will be rebuilt as a
-coherent wiki. The plan:
+```mermaid
+flowchart TD
+    Docs["docs/"] --> Start["start/ (Tutorials)\nFirst-time setup step-by-step"]
+    Docs --> Guides["guides/ (How-To)\nTask-oriented instructions"]
+    Docs --> Ref["reference/ (Reference)\nCommands, schemas, pins, paths"]
+    Docs --> Expl["explanation/ (Explanations)\nDesign rationale, architecture"]
+    Docs --> Dev["develop/ (Contributor)\nBuilding, testing, internals"]
+    Docs --> Specs["specs/ (Design Records)\nNormative specifications"]
+```
 
-1. **Wiki lives here, not in the GitHub Wiki tab.** `docs/` becomes an
-   [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) site
-   published with GitHub Pages: same repo, same commits, reviewed in PRs, links
-   to source files stay valid, `mkdocs serve` to preview.
-2. **Structure first, then pages.** One session designs the navigation and
-   writes the cross-cutting pages (Overview, System architecture, Serial
-   protocol incl. framing negotiation, Counter sync & pad ownership, Update &
-   release pipeline). It ends with a checklist of remaining pages, each naming
-   the source files to read — same format as
-   [history/2026-09-23-claude-code-review/FIX-PLAN.md](history/2026-09-23-claude-code-review/FIX-PLAN.md).
-3. **Per-component pages** from that checklist: firmware modules (keypad &
-   debounce, USB HID/CDC, UI & LVGL layouts, `ui_store`, diag & counters,
-   touch as the third key), one page per desktop crate, the daemon state
-   machine, GUI pages, `opadctl` reference (generated from `--help`), packaging
-   per distro and Windows, hardware & wiring (Waveshare ESP32-S3 Touch LCD 2
-   pinout), troubleshooting, FAQ.
-4. **Rules for whoever writes it:** every factual claim comes from a source
-   file read in that session and cites its path; when code and an existing doc
-   disagree, the code wins and the doc is fixed or deleted; no placeholder
-   pages.
-5. **Historical material** is kept but moved under `docs/history/` and marked
-   as such: the readiness/audit reviews of 2026-09-22, `history/2026-09-21-todo-evening.md`,
-   and the `history/2026-09-23-claude-code-review/` findings (a record of what was found and fixed,
-   not current guidance). `specs/remaining-work-v1.md` is folded into a changelog.
+### 🏁 Getting Started (Tutorials)
+* [What You Need](start/what-you-need.md) — Hardware prerequisites and supported host systems.
+* [First Connection](start/first-connection.md) — Direct USB HID plug-and-play verification without software.
+* [Install the Desktop Suite](start/install-the-app.md) — Installing daemon, GUI, and opadctl on Linux and Windows.
+* [Wiring the Keys](start/wiring-the-keys.md) — Header P2 pinout, switch wiring, and carrier board connections.
 
-Until that lands, treat the documents below as **possibly stale**; the code and
-`git log` are authoritative.
+### 🛠️ User Guides (How-To)
+* [Updating Firmware](guides/update-firmware.md) — OTA firmware updates via opadctl or GUI updater.
+* [Changing Key Pins](guides/change-key-pins.md) — Reassigning GPIO pins and hardware validation.
+* [Touchscreen and Swipes](guides/touchscreen-and-swipes.md) — Third button tap, resting finger Quick Retry, and swipe gestures.
+* [Calibrating Hall Effect](guides/calibrate-hall-effect.md) — Magnet calibration, Rapid Trigger tuning, and bench diagnostics.
+* [Using with tosu](guides/use-with-tosu.md) — Real-time gameplay telemetry, PP counters, and memory permissions.
+* [Backup and Restore](guides/backup-and-restore.md) — Exporting and importing configuration JSON files.
+* [Uninstallation Guide](guides/uninstall.md) — Clean removal procedures for Linux and Windows installations.
 
----
+### 📖 Technical Reference
+* [opadctl CLI Reference](reference/opadctl.md) — Complete command line reference and help output.
+* [Device Settings Catalog](reference/device-settings.md) — Configuration fields, data types, bounds, and defaults.
+* [Pinout Reference](reference/pinout.md) — Header P1/P2 mappings, carrier board signals, and ADC channels.
+* [Serial Wire Protocol](reference/serial-protocol.md) — COBS/CRC packet framing and protobuf catalog.
+* [Desktop IPC Protocol](reference/ipc.md) — Local socket IPC transport, JSON framing, and API methods.
+* [Files and Storage Paths](reference/files-and-paths.md) — Directory layout, database schemas, and state locations.
+* [Graphical Interface (GUI)](reference/gui.md) — Iced desktop pages, layout designer, and system tray.
 
-## 📚 Documentation Index
+### 💡 System Architecture (Explanation)
+* [System Architecture](explanation/architecture.md) — Dual-core isolation, IPC design, and runtime state machine.
+* [Latency Optimization](explanation/latency.md) — 1000 Hz USB polling, eager debouncing, and jitter minimization.
+* [Touchscreen as Third Button](explanation/touchscreen-third-button.md) — CST816S interrupt polling and gesture engine.
+* [Version Compatibility](explanation/app-and-pad-versions.md) — Independent app and pad upgrades and protocol negotiation.
+* [Counters and Ownership](explanation/counters-and-ownership.md) — Monotonic keystroke counters and pad pairing.
+* [Updates and Automatic Rollback](explanation/updates-and-rollback.md) — Dual OTA partitions, trial boot, and recovery.
+* [Hall Effect Sensing](explanation/hall-effect.md) — Continuous ADC sampling and Rapid Trigger state machine.
 
-### 🏗️ Architecture & Core System
-* **[System Architecture](architecture.md)** — Hardware layout, ESP32-S3 dual-core isolation, IPC design, desktop daemon, and state machine.
-* **[USB Framing & Serial Protocol](protocol.md)** — Binary CDC packet framing, command opcodes, sequence numbers, and telemetry streams.
-* **[OPad on Windows](windows-portability.md)** — Windows-specific design: Named Pipes IPC, Windows Service daemon, auto-start, and driverless HID operation.
-* **[Recovery, Reconciliation & Unbinding](recovery.md)** — Safe counter synchronization, flashing procedures, bootloader entry, and pairing models.
+### 🔧 Developer & Contributor Guide
+* [Developer Overview](develop/index.md) — Contributor invariants and coding standards.
+* [Building from Source](develop/building.md) — Firmware (ESP-IDF v5.5.2) and Desktop (Rust) compilation.
+* [Testing Strategy](develop/testing.md) — Host unit tests, `make check`, and hardware checklists.
+* [Firmware Subsystems](develop/firmware/overview.md) — Architecture, [input](develop/firmware/input.md), [USB](develop/firmware/usb.md), [touch](develop/firmware/touch.md), [UI](develop/firmware/ui.md), [NVS](develop/firmware/config-and-nvs.md), [counters](develop/firmware/counters.md), and [diagnostics](develop/firmware/diag.md).
+* [Desktop Architecture](develop/desktop/overview.md) — Workspace crates, [daemon](develop/desktop/daemon.md), [GUI](develop/desktop/gui.md), [opadctl](develop/desktop/opadctl.md), and [shared crates](develop/desktop/crates.md).
+* [Protocol Changes](develop/protocol-changes.md) — Protobuf schema workflow and code generation.
+* [Hardware Ecosystem](develop/hardware.md) — V1/V2/V3 PCB designs, FFC cables, and `opadverify`.
+* [Packaging Mechanics](develop/packaging.md) — Linux (.deb, .rpm, AppImage, AUR) and Windows installer.
+* [Release Pipelines](develop/releases.md) — GitHub Actions automation, release-please, and signed feeds.
+* [Testing Laboratory](develop/lab.md) — Multi-OS VirtualBox VM test harness and CI runner.
+* [Latency Measurement](develop/latency-testing.md) — Benchmarking methodology, stages A–D, and evdev analysis.
 
-* **[Troubleshooting](troubleshooting.md)** — Common failures (no live data, port busy, tosu memory access) and their fixes.
-
-### ⏱️ Latency & Hardware Testing
-* **[Latency Testing Methodology](latency-testing.md)** — Hardware test methodology, Stages A–D, electronic key-to-HID gate requirements, and latency benchmarks.
-* **[Component notes](hardware/components/README.md)** — Datasheet facts for the parts the firmware talks to (registers, timings, how they are wired), as searchable text with section references. The PDFs are fetched by `scripts/fetch_datasheets.sh`, not committed.
-* **[Testing & Verification Checklist](testing-checklist.md)** — Comprehensive quality assurance checklist covering firmware, daemon, GUI, and hardware reliability.
-* **[Launch Checklist](launch-checklist.md)** — everything to fix, test and settle before OPad is sold: CI, releases, signing, pad, app, compliance, manufacturing.
-* **[Pad test sheet](pad-test-sheet.md)** — the hands-on pad tests of the launch checklist, one printable page per pad.
-
-### 🔍 Code review record (2026-09-23/24)
-* **[Code review findings & fix plan](history/2026-09-23-claude-code-review/README.md)** — 93 findings across firmware, desktop and packaging, all closed (92 fixed, 1 invalid); [FIX-PLAN.md](history/2026-09-23-claude-code-review/FIX-PLAN.md) holds the per-cluster progress log and the hardware validation record.
-
-### 🗂️ Historical readiness reviews (pre-fix snapshots)
-* [Software readiness review (2026-09-22)](history/2026-09-22-software-readiness-review.md), [Software audit & readiness review](history/2026-09-22-software-audit-and-readiness-review.md), [Release readiness guide (2026-09-22)](history/2026-09-22-release-readiness-guide.md), [Full-repo architecture & readiness guide](history/2026-09-22-full-repo-architecture-and-readiness-guide.md), [TODO 2026-09-21 evening](history/2026-09-21-todo-evening.md) — written before the review fixes; many items they list are now done.
-
-### 🚀 Future Milestones & Catalog Roadmap
-* **[Future Roadmap & Hardware Variants](roadmap.md)**:
-  * **Modular Swappable Switch PCBs** (On-board ADC chip architecture, universal 8-wire SPI bus).
-  * **Hardware Auto-Detection** (Analog ID voltage net & digital SPI handshake).
-
-### 📋 Specifications & Development Plans
-* **[Technical Specification v1](specs/technical-spec-v1.md)** — Complete normative specification for OPad V1 hardware, firmware, and desktop integration.
-* **[Remaining Work & Gap Analysis](specs/remaining-work-v1.md)** — As-built gap analysis and audit tracking for V1 release.
-* **[Packaging & Distribution Plan](specs/packaging-distribution.md)** — Build system, CI/CD, Windows/Linux packaging, and release delivery.
-* **[Rapid Trigger (Hall-Effect Keys) v2 Plan](specs/v2-rapid-trigger.md)** — Implementation blueprint for Hall-effect magnetic switches, ADC sampling pipeline, and continuous Rapid Trigger engine.
-* **[Hall Effect firmware decision record](specs/v2-hall-effect-decisions.md)** — Confirmed, provisional and open HE decisions, implementation status, and which earlier v2 text they replace.
+### 🛡️ Recovery & Operations
+* [Recovery and Unbricking](recovery.md) — Pad unbricking, USB detachment, and bootloader recovery.
+* [Troubleshooting Guide](troubleshooting.md) — Diagnosing serial contention, missing telemetry, and USB errors.
+* [Testing Checklist](testing-checklist.md) — End-to-end hardware and software QA checklist.
 
 ---
 
-## 🌐 Community & Repository
+## 2. Contributor Guidelines and Invariants
 
-* **Primary Repository**: [https://github.com/OPad-dev/OPad](https://github.com/OPad-dev/OPad)
-* **Organization**: [OPad-dev](https://github.com/OPad-dev)
+Every contributor and automated documentation assistant must adhere to these product rules (AGENTS.md):
 
----
-
-## ⚖️ Trademark Disclaimer
-OPad is an independent open-source hardware and software project. OPad is not affiliated with, endorsed by, or sponsored by ppy Pty Ltd or osu!. "osu!" is a registered trademark of ppy Pty Ltd.
+1. **The Code is the Single Source of Truth**: Documentation reflects what the codebase currently implements.
+2. **Every Claim Must Cite Source Code**: Cite exact source locations using invisible comments (formatted as `<!--` `src:` `/path#symbol` `-->`) or visible file links.
+3. **Never Instruct Anyone to Press Physical BOOT or RESET Buttons**: Firmware updates, downloads, and device recoveries are driven entirely over USB via software (`opadctl flash` and `opadctl recover`).
+4. **Independent Evolution**: The desktop application and keypad firmware update independently; documentation must never instruct users to update both together.
+5. **No Synthetic Keystrokes**: OPad strictly emits keystrokes triggered by physical fingers. Macros, auto-tap scripts, or host-to-device tap injections are forbidden.
+6. **No Placeholder Pages**: Never commit empty or speculative placeholder documents.
