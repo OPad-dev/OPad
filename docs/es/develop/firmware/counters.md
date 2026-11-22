@@ -1,43 +1,45 @@
 ---
-title: Subsistema de Contadores del Firmware
-description: Referencia de implementación para el seguimiento monotónico de pulsaciones, aplicación atómica de deltas, validación de generación y puntos de control perezosos en flash.
+title: Subsistema de contadores del firmware
+description: Referencia de implementación de los contadores monotónicos de pulsaciones, reglas de validación de sincronización, reajuste atómico por diferencias y guardado diferido en NVS.
 ---
 
-El subsistema de contadores rastrea las actuaciones acumuladas de por vida en Key 1, Key 2 y Key 3. Aplica una progresión monotónica estricta, evita el desgaste de la memoria flash mediante puntos de control perezosos por inactividad y asegura que las pulsaciones efectuadas durante la sincronización USB nunca se pierdan. <!-- src: /firmware/main/counters/counters.c -->
+El subsistema de contadores persiste conteos de pulsaciones de por vida de 64 bits para Key 1, Key 2 y Key 3 en NVS (`NVS_NS_COUNTERS` / `"opad"`) manteniendo todos los incrementos en vivo sin bloqueos en RAM en Core 0 ([/firmware/main/counters/counters.c](/firmware/main/counters/counters.c), [/firmware/main/counters/counter_sync_rules.c](/firmware/main/counters/counter_sync_rules.c)).
 
-## Storage & RAM State (counters.c)
+## Almacenamiento y estado en RAM (`counters.c`)
 
-- **Variables en RAM**: Los contadores en vivo se mantienen en enteros sin signo atómicos y rápidos de 64 bits en Core 0: <!-- src: /firmware/main/counters/counters.c -->
-  - `s_generation`: Número de generación de contadores (comienza en 1).
-  - `s_last_saved_key1`, `s_last_saved_key2`, `s_last_saved_key3`: Valores base guardados en puntos de control.
-- **Bloqueo de Serialización (`s_lock`)**: Un semáforo binario de FreeRTOS serializa las operaciones de punto de control, sincronización y restablecimiento entre el supervisor de runtime de Core 1 y la tarea de protocolo. Las ISR de teclas de Core 0 nunca toman este bloqueo. <!-- src: /firmware/main/counters/counters.c -->
+- Los totales de pulsaciones en vivo residen en contadores atómicos `uint64_t` dentro de [/firmware/main/input/key_event.c](/firmware/main/input/key_event.c) (`s_lifetime_presses[KEY_ID_COUNT]`).
+- `counters.c` lleva el registro de `s_generation`, `s_last_saved_key1`, `s_last_saved_key2`, `s_last_saved_key3` y `s_nvs_writes`, persistidos bajo las claves NVS `"generation"`, `"key1_cnt"`, `"key2_cnt"` y `"key3_cnt"` (escrita solo cuando Key 3 no es cero o ya se guardó antes).
+- Un mutex/semáforo FreeRTOS `s_lock` serializa los guardados en NVS y las sincronizaciones del anfitrión en Core 1; las ISR y tareas de teclas de Core 0 nunca adquieren `s_lock`.
 
-## Monotonic Sync Validation (counter_sync_rules.c)
+## Validación de sincronización (`counter_sync_rules.c`)
 
-Cuando `opad-daemon` transmite un `CounterSyncRequest`, el firmware evalúa los valores entrantes mediante `counters_validate_sync_acceptance`: <!-- src: /firmware/main/counters/counter_sync_rules.c#counters_validate_sync_acceptance -->
+Los valores entrantes de `CounterSyncRequest` son comprobados por `counters_validate_sync_acceptance` en [/firmware/main/counters/counter_sync_rules.c](/firmware/main/counters/counter_sync_rules.c):
 
 ```c
 bool counters_validate_sync_acceptance(
     uint32_t current_gen, uint64_t current_k1, uint64_t current_k2,
     uint32_t host_gen, uint64_t host_k1, uint64_t host_k2,
-    bool force, char *err_msg, size_t err_msg_len)
+    bool force, char *err_msg, size_t err_msg_len);
 ```
 
-1. **Rechazo de Generación Obsoleta**: Si `host_gen < current_gen`, la sincronización se rechaza (`"stale generation"`). Una base de datos obsoleta del PC nunca puede degradar la generación activa del pad. <!-- src: /firmware/main/counters/counter_sync_rules.c#counters_validate_sync_acceptance -->
-2. **Rechazo de Retroceso No Monotónico**: Si `host_gen == current_gen` y `host_k1 < current_k1` o `host_k2 < current_k2`, la sincronización se rechaza (`"non-monotonic"`). Los contadores no pueden retroceder dentro de la misma generación. <!-- src: /firmware/main/counters/counter_sync_rules.c#counters_validate_sync_acceptance -->
-3. **Incrementos Generacionales**: Si `host_gen > current_gen` (por ejemplo, tras un restablecimiento intencionado o la importación de una copia de seguridad), la generación más alta reemplaza incondicionalmente a la anterior.
+Salvo que `force` sea verdadero:
+1. `host_gen < current_gen` -> rechazado (`"stale generation"`).
+2. `host_gen == current_gen` y (`host_k1 < current_k1` o `host_k2 < current_k2`) -> rechazado (`"non-monotonic"`).
+3. `host_gen > current_gen` -> aceptado incondicionalmente (admite reinicios autorizados y restauraciones de copias de seguridad).
 
-## Atomic Delta Application
+`counters_sync_from_host` también rechaza sincronizaciones cuando `runtime_get_state() != OPAD_STATE_IDLE` (`"not idle"`) o cuando NVS falló al inicializarse (`"nvs unavailable"`).
 
-Para evitar perder pulsaciones efectuadas por el jugador mientras un paquete de sincronización viaja por el cable USB: <!-- src: /firmware/main/counters/counters.c -->
-- El pad no sobrescribe su contador en RAM con el valor del anfitrión.
-- En su lugar, aplica la diferencia:
-  $$\Delta = \text{host\_target} - \text{snapshot\_at\_read}$$
-  $$\text{RAM\_counter} \mathrel{+}= \Delta$$
-- Cualquier pulsación registrada por la ISR de hardware entre la recepción del paquete y la adquisición del bloqueo permanece intacta.
+## Reajuste atómico por diferencias
 
-## Lazy Quiescence Checkpointing
+Para preservar pulsaciones realizadas mientras un mensaje de sincronización está en tránsito, `counters_sync_from_host` en [/firmware/main/counters/counters.c](/firmware/main/counters/counters.c) toma una instantánea antes de validar y aplica únicamente la diferencia mediante `rebase_lifetime_presses` (y `key_event_add_lifetime_key3(*k3 - current.lifetime_key3)` módulo `2^64`):
 
-Las escrituras en flash se minimizan para proteger la vida útil de la flash SPI: <!-- src: /firmware/main/counters/counter_sync_rules.c#counters_checkpoint_due -->
-- Los puntos de control están estrictamente bloqueados mientras el dispositivo está en `OPAD_STATE_PLAYING` o `OPAD_STATE_COOLDOWN`.
-- Durante el reposo, `counters_checkpoint_due` comprueba si las teclas han permanecido sin tocar durante un periodo de inactividad antes de guardar los contadores modificados en NVS (`NVS_NS_COUNTERS`).
+```text
+delta = target - snapshot
+RAM_counter += delta
+```
+
+Cualquier pulsación aceptada entre `counters_get(&current)` y `rebase_lifetime_presses` sigue quedando contabilizada.
+
+## Guardado diferido tras inactividad
+
+`checkpoint_locked` rechaza escrituras siempre que `runtime_get_state() != OPAD_STATE_IDLE` y omite escribir cuando la RAM coincide con `s_last_saved_key*` (salvo con `force`). `runtime_supervisor_task` llama a `counters_checkpoint_due` ([/firmware/main/counters/counter_sync_rules.c](/firmware/main/counters/counter_sync_rules.c)) en `IDLE` para guardar solo tras una ventana de inactividad, al suspender USB (`counters_request_checkpoint` desde `usb_event_handler`) o antes de un reinicio limpio.
