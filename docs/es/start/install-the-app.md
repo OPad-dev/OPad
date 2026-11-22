@@ -1,6 +1,8 @@
 ---
 title: Instalación de la suite de escritorio
 description: Cómo instalar la suite de escritorio de OPad (opad-daemon, opad-gui, opadctl y tosu incluido) en Linux y Windows.
+sidebar:
+  order: 4
 ---
 
 La suite de escritorio opcional de OPad añade telemetría en vivo de osu!, un diseñador de diseño de pantalla, sincronización de contadores de por vida, diagnósticos interactivos, actualizaciones de firmware y ajuste Hall Effect. Se compone de: <!-- src: /README.md --> <!-- src: /desktop/crates/opad-model/src/paths.rs -->
