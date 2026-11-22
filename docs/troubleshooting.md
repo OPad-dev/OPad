@@ -1,6 +1,8 @@
 ---
 title: Troubleshooting Guide
 description: Common issues with OPad, keyboard layouts, Linux Yama ptrace for tosu, USB permissions, Windows SmartScreen, and firmware recovery.
+sidebar:
+  order: 3
 ---
 
 This guide covers common issues with OPad key mappings, `tosu` telemetry, USB serial permissions, Windows SmartScreen/antivirus prompts, and firmware recovery.
