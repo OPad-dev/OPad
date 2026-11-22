@@ -1,6 +1,8 @@
 ---
 title: Actualización de firmware
 description: Instrucciones paso a paso para flashear y actualizar el firmware de OPad mediante opadctl o la GUI de escritorio con protección de doble ranura OTA y reversión.
+sidebar:
+  order: 1
 ---
 
 OPad actualiza su firmware por USB sin requerir nunca los botones físicos BOOT ni RESET. Las actualizaciones escriben en la partición OTA inactiva cuando se conoce la ranura activa, sincronizan los contadores de por vida con el anfitrión antes de flashear (mediante el actualizador del daemon) y revierten automáticamente si la nueva imagen se bloquea o falla la configuración USB. <!-- src: /desktop/crates/opad-device/src/flash.rs#plan_app_update, /firmware/main/app_main.c#confirm_image_once_usb_works -->
