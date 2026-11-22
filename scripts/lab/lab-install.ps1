@@ -70,18 +70,20 @@ function Invoke-WithRetry([scriptblock]$Do) {
 
 # --- The releases: the newest app release (pre-releases too) unless -Tag,
 # upgraded to from the one before it unless -From
-$releases = Invoke-WithRetry { Invoke-RestMethod -Headers $headers "https://api.github.com/repos/$Repo/releases?per_page=50" }
-$appTags = @($releases | Where-Object { $_.tag_name -match '^v\d' -and -not $_.draft } | ForEach-Object { $_.tag_name })
-if (-not $Tag) { $Tag = $appTags | Select-Object -First 1 }
-if (-not $Tag) { Fail "no app release found"; Complete-LabRun; exit 1 }
-if (-not $From) {
-    $i = [array]::IndexOf($appTags, $Tag)
-    $From = if ($i -ge 0 -and $i + 1 -lt $appTags.Count) { $appTags[$i + 1] } else { "none" }
+if (-not $LocalNew) {
+    $releases = Invoke-WithRetry { Invoke-RestMethod -Headers $headers "https://api.github.com/repos/$Repo/releases?per_page=50" }
+    $appTags = @($releases | Where-Object { $_.tag_name -match '^v\d' -and -not $_.draft } | ForEach-Object { $_.tag_name })
+    if (-not $Tag) { $Tag = $appTags | Select-Object -First 1 }
+    if (-not $Tag) { Fail "no app release found"; Complete-LabRun; exit 1 }
+    if (-not $From) {
+        $i = [array]::IndexOf($appTags, $Tag)
+        $From = if ($i -ge 0 -and $i + 1 -lt $appTags.Count) { $appTags[$i + 1] } else { "none" }
+    }
+    if ($From -eq $Tag) { $From = "none" }
+    Write-Host "Release $Tag$(if ($From -ne 'none') { ", upgraded to from $From" })"
+    Set-LabRelease $Tag $From
+    Set-LabTitle "Installers $(if ($From -ne 'none') { "$From -> " })$Tag"
 }
-if ($From -eq $Tag) { $From = "none" }
-Write-Host "Release $Tag$(if ($From -ne 'none') { ", upgraded to from $From" })"
-Set-LabRelease $Tag $From
-Set-LabTitle "Installers $(if ($From -ne 'none') { "$From -> " })$Tag"
 
 # Each release's files in packages\<tag>, checked against its SHA256SUMS
 function Get-Release([string]$T) {
