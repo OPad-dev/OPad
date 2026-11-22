@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0-rc.4](https://github.com/OPad-dev/OPad/compare/v1.0.0-rc.3...v1.0.0-rc.4) (2026-11-22)
+
+
+### Bug Fixes
+
+* **aur:** opad-bin installs: the Vulkan loader is vulkan-icd-loader on Arch ([895da4f](https://github.com/OPad-dev/OPad/commit/895da4f9da8d91a77834ce44949857435b5cce29))
+* **deps:** url 2.5.9 (RUSTSEC-2026-0592) ([ca0dd5d](https://github.com/OPad-dev/OPad/commit/ca0dd5dca9f7d064c3546fa890ed233c8496e360))
+* **lab:** shell scripts reach the Linux VMs with LF line endings ([86f7bf0](https://github.com/OPad-dev/OPad/commit/86f7bf0dbb5e9aa8b681f75230f3e38bc3f8312c))
+* **packaging:** uninstalling OPad leaves nothing of it behind ([3773c5a](https://github.com/OPad-dev/OPad/commit/3773c5a00bdf9c5f8ae2ecf3e753075de25cde36))
+* **windows:** the programs start on a clean Windows without the VC++ runtime ([5eb8c03](https://github.com/OPad-dev/OPad/commit/5eb8c03251d16f552ae72ed3889ce1f954c8d2a5))
+
 ## [1.0.0-rc.3](https://github.com/OPad-dev/OPad/compare/v1.0.0-rc.2...v1.0.0-rc.3) (2026-11-21)
 
 
