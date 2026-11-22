@@ -60,22 +60,22 @@ Status values:
 | `docs/develop/packaging.md` | reference | draft | `/packaging/linux/`, `/packaging/windows/`, `/scripts/release/build_packages.sh` | Packaging mechanics: Debian .deb, Fedora .rpm, AppImage, Arch PKGBUILD, Windows InnoSetup installer. |
 | `docs/develop/releases.md` | explanation | draft | `/.github/workflows/`, `/scripts/release/publish_release.sh`, `/release-please-config.json`, `/desktop/crates/opad-update/src/` | Release automation: release-please, artifact builders, release signing, update feed manifest generation. |
 | `docs/develop/lab.md` | reference | draft | `/scripts/lab/`, `/.github/workflows/lab-check.yml`, `/.github/workflows/lab-install.yml` | Self-hosted automated testing lab: VM environment, script execution, smoke testing installers and recovery. |
-| `docs/develop/latency-testing.md` | reference | todo | `/scripts/bench_latency.py`, `/scripts/bench_latency.sh`, `/scripts/latency_row.py`, `/docs/latency-testing.md` | Hardware latency measurement methodology, oscilloscope/electronic gate harness, latency test stages A-D. |
-| `docs/testing-checklist.md` | reference | todo | `/docs/testing-checklist.md`, `/Makefile` | Fixed path (§3). Comprehensive quality assurance checklist covering firmware, daemon, GUI, and hardware. |
-| `docs/launch-checklist.md` | internal | todo | `/docs/launch-checklist.md` | Internal release preparation checklist (`draft: true`). |
-| `docs/pad-test-sheet.md` | internal | todo | `/docs/pad-test-sheet.md` | Internal single-pad testing sheet (`draft: true`). |
+| `docs/develop/latency-testing.md` | reference | draft | `/scripts/bench_latency.py`, `/scripts/bench_latency.sh`, `/scripts/latency_row.py`, `/docs/latency-testing.md` | Hardware latency measurement methodology, oscilloscope/electronic gate harness, latency test stages A-D. |
+| `docs/testing-checklist.md` | reference | fixed | `/docs/testing-checklist.md`, `/Makefile` | Fixed path (§3). Comprehensive quality assurance checklist covering firmware, daemon, GUI, and hardware. |
+| `docs/launch-checklist.md` | internal | fixed | `/docs/launch-checklist.md` | Internal release preparation checklist (`draft: true`). |
+| `docs/pad-test-sheet.md` | internal | fixed | `/docs/pad-test-sheet.md` | Internal single-pad testing sheet (`draft: true`). |
 | `docs/README.md` | meta | todo | `/docs/README.md`, `/AGENTS.md` | Documentation hub map, guidelines for contributors, Diátaxis rules. Rewritten in Phase 7. |
-| `docs/specs/technical-spec-v1.md` | record | todo | `/docs/specs/technical-spec-v1.md` | Design record (frontmatter only, do not rewrite or translate). |
-| `docs/specs/v2-rapid-trigger.md` | record | todo | `/docs/specs/v2-rapid-trigger.md` | Design record (frontmatter only, do not rewrite or translate). |
-| `docs/specs/v2-hall-effect-decisions.md` | record | todo | `/docs/specs/v2-hall-effect-decisions.md` | Design record (frontmatter only, do not rewrite or translate). Fixed path (§3). |
-| `docs/specs/v2-hall-effect-design.md` | record | todo | `/docs/specs/v2-hall-effect-design.md` | Design record (frontmatter only, do not rewrite or translate). |
-| `docs/specs/release-and-updates.md` | record | todo | `/docs/specs/release-and-updates.md` | Design record (frontmatter only, do not rewrite or translate). Fixed path (§3). |
-| `docs/specs/packaging-distribution.md` | record | todo | `/docs/specs/packaging-distribution.md` | Design record (frontmatter only, do not rewrite or translate). |
-| `docs/specs/remaining-work-v1.md` | record | todo | `/docs/specs/remaining-work-v1.md` | Design record (frontmatter only, do not rewrite or translate). |
-| `docs/specs/hardware-redesign-brief.md` | record | todo | `/docs/specs/hardware-redesign-brief.md` | Design record (frontmatter only, do not rewrite or translate). |
-| `docs/specs/app-ux-decisions.md` | record | todo | `/docs/specs/app-ux-decisions.md` | Design record (frontmatter only, do not rewrite or translate). |
-| `docs/hardware/components/README.md` | reference | todo | `/docs/hardware/components/README.md` | Component datasheet notes index (frontmatter only, do not rewrite or translate). |
-| `docs/hardware/components/ads7028.md` | reference | todo | `/docs/hardware/components/ads7028.md`, `/firmware/main/input/ads7028.c`, `/firmware/main/input/ads7028_regs.h` | Fixed path (§3). ADS7028 12-bit ADC component reference (frontmatter only, do not translate). |
+| `docs/specs/technical-spec-v1.md` | record | fixed | `/docs/specs/technical-spec-v1.md` | Design record (frontmatter only, do not rewrite or translate). |
+| `docs/specs/v2-rapid-trigger.md` | record | fixed | `/docs/specs/v2-rapid-trigger.md` | Design record (frontmatter only, do not rewrite or translate). |
+| `docs/specs/v2-hall-effect-decisions.md` | record | fixed | `/docs/specs/v2-hall-effect-decisions.md` | Design record (frontmatter only, do not rewrite or translate). Fixed path (§3). |
+| `docs/specs/v2-hall-effect-design.md` | record | fixed | `/docs/specs/v2-hall-effect-design.md` | Design record (frontmatter only, do not rewrite or translate). |
+| `docs/specs/release-and-updates.md` | record | fixed | `/docs/specs/release-and-updates.md` | Design record (frontmatter only, do not rewrite or translate). Fixed path (§3). |
+| `docs/specs/packaging-distribution.md` | record | fixed | `/docs/specs/packaging-distribution.md` | Design record (frontmatter only, do not rewrite or translate). |
+| `docs/specs/remaining-work-v1.md` | record | fixed | `/docs/specs/remaining-work-v1.md` | Design record (frontmatter only, do not rewrite or translate). |
+| `docs/specs/hardware-redesign-brief.md` | record | fixed | `/docs/specs/hardware-redesign-brief.md` | Design record (frontmatter only, do not rewrite or translate). |
+| `docs/specs/app-ux-decisions.md` | record | fixed | `/docs/specs/app-ux-decisions.md` | Design record (frontmatter only, do not rewrite or translate). |
+| `docs/hardware/components/README.md` | reference | fixed | `/docs/hardware/components/README.md` | Component datasheet notes index (frontmatter only, do not rewrite or translate). |
+| `docs/hardware/components/ads7028.md` | reference | fixed | `/docs/hardware/components/ads7028.md`, `/firmware/main/input/ads7028.c`, `/firmware/main/input/ads7028_regs.h` | Fixed path (§3). ADS7028 12-bit ADC component reference (frontmatter only, do not translate). |
 
 ## Old Pages to Fold and Delete (Phase 7)
 
