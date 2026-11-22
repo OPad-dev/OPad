@@ -1,37 +1,32 @@
 ---
-title: Arquitectura del Subsistema Daemon
-description: Referencia de implementación para opad-daemon, la cola del device actor, el sondeador de telemetría, el despacho de IPC y la sincronización con almacenamiento SQLite.
+title: Arquitectura del subsistema daemon
+description: Referencia de implementación de opad-daemon, cola del actor de dispositivo, supervisor de estado de ejecución, envío diferencial de telemetría, copias automáticas y manejadores IPC.
 ---
 
-El binario `opad-daemon` es el supervisor central en segundo plano de la suite de escritorio de OPad. Gestiona la comunicación serie CDC, aplica una entrega ordenada de mensajes mediante un device actor, sondea estadísticas de canciones en vivo desde tosu, reconcilia los contadores de pulsaciones en SQLite y atiende solicitudes IPC de `opad-gui` y `opadctl`. <!-- src: /desktop/daemon/src/runtime.rs -->
+`opad-daemon` es el servicio Tokio en segundo plano que coordina el tráfico USB CDC, la telemetría de `tosu`, la persistencia en SQLite, las copias automáticas, las actualizaciones de software/firmware y el IPC local ([/desktop/daemon/src/main.rs](/desktop/daemon/src/main.rs), [/desktop/daemon/src/runtime.rs](/desktop/daemon/src/runtime.rs)).
 
-## Device Actor Pattern (device_actor.rs)
+## Actor de dispositivo (`device_actor.rs`)
 
-Para eliminar condiciones de carrera entre tareas asíncronas concurrentes que envían paquetes serie al pad, todas las solicitudes del anfitrión al dispositivo se enrutan a través del device actor: <!-- src: /desktop/daemon/src/device_actor.rs -->
+Todos los comandos anfitrión-a-teclado en ejecución se serializan a través de una sola tarea de actor en [/desktop/daemon/src/device_actor.rs](/desktop/daemon/src/device_actor.rs):
 
-- **Canal de Comandos Acotado**: Los comandos (`DeviceCommand`) se colocan en un canal asíncrono de Tokio con capacidad de 256 (`QUEUE_DEPTH = 256`). <!-- src: /desktop/daemon/src/device_actor.rs#QUEUE_DEPTH -->
-- **Despachador Único**: El bucle del actor extrae un comando a la vez, escribe la trama en el puerto serie, espera la confirmación del dispositivo y gestiona estados de puerto ocupado transitorios (`BUSY_RETRIES = 5`, `BUSY_BACKOFF = 20ms`). <!-- src: /desktop/daemon/src/device_actor.rs#BUSY_RETRIES -->
-- **Orden Estricto**: Los diseños de pantalla, los cambios de configuración y las diferencias de telemetría del juego llegan al teclado en orden FIFO determinista.
+- **Canal FIFO acotado**: Capacidad `QUEUE_DEPTH = 256` que transporta `DeviceCommand` (`TimeSync`, `ClaimOwnership`, `Config`, `HostStatus`, `DataUpdate`, `Layout`, `RequestStatus`, `PlayAnimation`).
+- **Despacho secuencial y reintentos**: Espera cada comando en orden. Ante `DeviceError::Busy`, reintenta hasta `BUSY_RETRIES = 5` veces con `BUSY_BACKOFF = 20 ms`, salvo las diferencias obsoletas de `DataUpdate`, que en su lugar marcan `resend_data` para que el siguiente volcado transmita una instantánea completa nueva.
 
-## Runtime State Supervisor (runtime.rs)
+## Supervisor de estado de ejecución (`runtime.rs`)
 
-El runtime del daemon rastrea la conexión del teclado físico, la salud de tosu y el estado de juego activo: <!-- src: /desktop/daemon/src/runtime.rs -->
+Definido en [/desktop/daemon/src/runtime.rs](/desktop/daemon/src/runtime.rs):
 
-- **Sondeo del Ciclo de Vida del Dispositivo**: Escanea los dispositivos del sistema periódicamente (`STATUS_POLL_INTERVAL = 1s`). Cuando se conecta un pad, inicia el handshake `Hello`, comprueba la compatibilidad de versión del protocolo e inspecciona la propiedad. <!-- src: /desktop/daemon/src/runtime.rs#STATUS_POLL_INTERVAL -->
-- **Transmisión de Latido (Heartbeat)**: Emite paquetes `HostStatus` cada 1 segundo (`HOST_STATUS_INTERVAL = 1s`), informando al pad si osu! está en ejecución y tiene el foco. <!-- src: /desktop/daemon/src/runtime.rs#HOST_STATUS_INTERVAL -->
-- **Aplicación del Periodo de Enfriamiento (Cooldown)**: Reproduce el periodo de enfriamiento de 5 segundos tras partida del firmware (`COOLDOWN_DURATION = 5s`). Las confirmaciones en la base de datos SQLite y las exportaciones de copias de seguridad se bloquean hasta que concluye el enfriamiento y el sistema entra en `IDLE`. <!-- src: /desktop/daemon/src/runtime.rs#COOLDOWN_DURATION -->
+- **Sondeo y latidos**: `STATUS_POLL_INTERVAL = 1 s`, `HOST_STATUS_INTERVAL = 1 s` (informa `tosu_connected`, `is_playing`, `play_id`, `osu_active`).
+- **Enfriamiento y guardia de escritura**: Refleja los 5 s de enfriamiento del firmware (`COOLDOWN_DURATION = 5 s`), bloqueando las escrituras en SQLite (`Storage::set_writes_allowed(false)`) durante `Playing` y `Cooldown`.
+- **Copias de seguridad automáticas**: Programa `AUTO_BACKUP_DELAY = 20 s` tras asentarse la sincronización post-partida en `Idle` y escribe `opad-backup-<timestamp>.json` en `<data_dir>/backups/` (conservando los 10 archivos más recientes mediante [/desktop/daemon/src/backup.rs](/desktop/daemon/src/backup.rs)).
+- **Seguimiento de ritmo de pulsación**: Sigue los intentos en vivo (prefiriendo las marcas exactas de pulsación del teclado frente a las marcas gruesas de `tosu`), ignora repeticiones u otros teclados (`TOSU_ONLY_PRESSES = 8`) y almacena en búfer hasta `MAX_UNSAVED_ATTEMPTS = 500` mientras las escrituras están pausadas.
 
-## Telemetry Differential Synchronization (telemetry.rs)
+## Sincronización diferencial de telemetría (`telemetry.rs`)
 
-Durante las partidas activas, `tosu` genera paquetes JSON por WebSocket a altas frecuencias. El sincronizador de telemetría filtra las actualizaciones para evitar saturar el bus serie USB: <!-- src: /desktop/daemon/src/telemetry.rs -->
+[/desktop/daemon/src/telemetry.rs](/desktop/daemon/src/telemetry.rs) (`DataSync`) ingiere valores de `tosu` v2 y emite solo las entradas `(source_id, SourceValue)` modificadas, limitadas a `flush_interval_playing(hz)` (`1`–`30 Hz`, por defecto `10 Hz` / `100 ms`) en partida y `FLUSH_INTERVAL_IDLE = 500 ms` en reposo.
 
-- **Limitación de Frecuencia**: Los volcados de telemetría se limitan a una frecuencia configurable por el usuario entre 1 Hz y 30 Hz (`flush_interval_playing`). <!-- src: /desktop/daemon/src/telemetry.rs#flush_interval_playing -->
-- **Caché de Valores (`DataSync`)**: Almacena en caché los valores transmitidos previamente para cada índice de fuente de datos (combo, precisión, UR, PPM, progreso de la canción). Si una propiedad no ha cambiado, se omite de la siguiente trama `DataUpdate`, minimizando el tamaño de la carga útil en el cable. <!-- src: /desktop/daemon/src/telemetry.rs -->
+## Despachador de peticiones IPC (`ipc_handlers.rs`)
 
-## IPC Request Dispatcher (ipc_handlers.rs)
-
-Los clientes (`opad-gui` y `opadctl`) se conectan al daemon a través de IPC local: <!-- src: /desktop/daemon/src/ipc_handlers.rs -->
-- Autentica versiones de protocolo (`IPC_PROTOCOL_VERSION = 1`).
-- Gestiona actualizaciones de configuración (`UpdateConfig`), sincronizaciones de contadores (`ForceSync`), preparación de diseños de pantalla (`SetLayout`) y autotests de diagnóstico (`RunBoardTest`).
-- Ejecuta la heurística de propiedad `take_over_if_pad_is_ahead` cuando se conecta un pad con contadores iguales o mayores. <!-- src: /desktop/daemon/src/ipc_handlers.rs#take_over_if_pad_is_ahead -->
-- Gestiona la liberación del puerto durante el flasheo de firmware (`PrepareFlash` y `FinishFlash`).
+[/desktop/daemon/src/ipc_handlers.rs](/desktop/daemon/src/ipc_handlers.rs) atiende peticiones autenticadas de `IPC_PROTOCOL_VERSION = 1`:
+- Ejecuta `take_over_if_pad_is_ahead` en teclados de otro propietario cuando el teclado está igual o por delante del PC en ambas teclas; en caso contrario aplica `pad_guard()` hasta que el usuario resuelva `TakeoverPrompt`.
+- Coordina las cesiones de puerto `PrepareFlash` / `FinishFlash` / `ResumeDevice` para `opadctl` y gestiona las actualizaciones de firmware impulsadas por el anfitrión ([/desktop/daemon/src/firmware_update.rs](/desktop/daemon/src/firmware_update.rs)).
