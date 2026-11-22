@@ -1,35 +1,32 @@
 ---
 title: Firmware Input Subsystem
-description: Implementation reference for the firmware input pipeline, mechanical switch debouncing, Hall Effect ADC sampling, and unified key event dispatching.
+description: Implementation reference for the firmware input pipeline, eager mechanical debouncing, Hall Effect V1/V3 sampling, and unified key event dispatching.
 ---
 
-The input subsystem captures physical switch contacts and magnetic flux transitions, applies debouncing or rapid trigger algorithms, updates monotonic keypress counters, and submits HID reports to USB endpoints. All input code runs strictly on Core 0 with `configMAX_PRIORITIES - 1`. <!-- src: /firmware/main/input/keypad.c -->
+The input subsystem reads physical mechanical switches and Hall Effect sensors, runs debouncing or Rapid Trigger, updates monotonic press counters, and submits USB HID reports. All key-path tasks run on **Core 0** at `configMAX_PRIORITIES - 1`.
 
 ## Mechanical Keypad Pipeline (`keypad.c` & `debounce.c`)
 
-For mechanical switches, the pipeline consists of edge-triggered GPIO interrupts coupled with eager debouncing: <!-- src: /firmware/main/input/debounce.c -->
+Implemented in [/firmware/main/input/keypad.c](/firmware/main/input/keypad.c) and [/firmware/main/input/debounce.c](/firmware/main/input/debounce.c):
 
-- **Interrupt Handling**: Pin state changes on Key 1 (GPIO 14) and Key 2 (GPIO 9) trigger an edge-sensitive GPIO interrupt (`gpio_isr_handler`). The ISR stamps transition time with `esp_timer_get_time()` and pushes the event to `s_input_task_handle` via direct task notifications (`vTaskNotifyGiveFromISR`). <!-- src: /firmware/main/input/keypad.c -->
-- **Eager Debounce State Machine (`debounce_step`)**:
-  - `DEBOUNCE_SOURCE_EDGE`: When an edge arrives, if the level differs from `accepted_pressed` and the current timestamp exceeds `lockout_end_us`, the new state is accepted immediately (`DEBOUNCE_ACTION_PRESS` or `RELEASE`). Lockout end is advanced: `lockout_end_us = now_us + lockout_us`. <!-- src: /firmware/main/input/debounce.c#debounce_step -->
-  - `DEBOUNCE_SOURCE_SAMPLE`: At lockout expiration, the pin is resampled. If the physical level matches the accepted state, debouncing stabilizes; if contact bounced back, release is scheduled.
+- **GPIO ISR (`gpio_isr_handler`, `IRAM_ATTR`)**: Triggered on configured switch edges (defaults `GPIO 14` for Key 1, `GPIO 9` for Key 2; V3 MX carrier uses `GPIO 10`, `GPIO 7`, `GPIO 6`). Timestamps the edge with `esp_timer_get_time()`, calls `debounce_step(..., DEBOUNCE_SOURCE_EDGE, s_config.debounce_us)`, increments accepted press counters via `key_event_press_accepted`, and wakes `keypad_task` with `vTaskNotifyGiveFromISR`.
+- **Eager Debounce (`debounce_step`)**:
+  - `DEBOUNCE_SOURCE_EDGE`: If `level != state->accepted_pressed` and `now_us >= state->lockout_end_us`, accepts the transition immediately (`DEBOUNCE_ACTION_PRESS` or `DEBOUNCE_ACTION_RELEASE`) and sets `lockout_end_us = now_us + lockout_us` (`DEBOUNCE_DEFAULT_US = 5000`, range `500`–`20000` µs in [/firmware/main/input/debounce.h](/firmware/main/input/debounce.h)).
+  - `DEBOUNCE_SOURCE_RESAMPLE`: Run by `keypad_task` when `lockout_end_us` expires; reads the GPIO once and corrects `accepted_pressed` (starting a fresh lockout) if the pin settled in the opposite state.
+- **Deferred config staging**: `keypad_set_config` stages pin/keycode changes and applies them in `keypad_task` only after keys are released so keycodes never change mid-hold and only `keypad_task` touches key GPIOs.
+- **Pin detection & line test**: `keypad_task` also serves interactive pin detection (`detect_scan_step`, `DETECT_CONFIRM_US = 15000` µs) and `keypad_line_test` (pull-up/pull-down check for `board_test.c`).
 
-## Hall Effect Pipeline (`he_backend.c` & `he_rt.c`)
+## Hall Effect Pipeline (`he_backend.c`, `he_spi_source.c`, `he_rt.c`)
 
-For magnetic switches, input is driven by continuous ADC sampling rather than GPIO edges: <!-- src: /firmware/main/input/he_backend.c -->
+Implemented across [/firmware/main/input/he_backend.c](/firmware/main/input/he_backend.c), [/firmware/main/input/he_spi_source.c](/firmware/main/input/he_spi_source.c), and [/firmware/main/input/he_rt.c](/firmware/main/input/he_rt.c):
 
-- **Continuous DMA Sampling**: Hardware ADC1 samples Key 1 (CH9) and Key 2 (CH6) in continuous DMA ping-pong buffers at `HE_SAMPLE_HZ` (250 µs per conversion frame). <!-- src: /firmware/main/input/he_backend.c -->
-- **Median Filtering (`he_frame.h`)**: The IRAM frame interrupt calculates the median of all valid conversions in the 250 µs window to filter electromagnetic noise without adding group delay.
-- **Rapid Trigger Step (`he_rt_step`)**:
-  - Compares median flux against `p->actuation` and dynamic `p->rt_release` / `p->rt_press` thresholds. <!-- src: /firmware/main/input/he_rt.c#he_rt_step -->
-  - Emits `HE_RT_DOWN` or `HE_RT_UP` directly within the interrupt.
-  - If and only if a key state transition occurs, the interrupt notifies `he_task` to queue the USB HID report.
+- **V1 Internal ADC (`HE_SOURCE_INTERNAL_ADC`)**: Continuous ADC1 DMA alternating `ADC_CHANNEL_9` (Key 1) and `ADC_CHANNEL_6` (Key 2) at `HE_SAMPLE_HZ = 64000` Hz (`HE_FRAME_CONVS = 16`, 250 µs / 4 kHz frames). The IRAM ISR `on_frame` computes each channel's median, steps `he_rt_step`, and notifies `he_task` only on key state edges.
+- **V3 External ADS7028 (`HE_SOURCE_SPI_ADC`)**: A hardware `gptimer` wakes Core 0 task `he_spi` every `HE_SPI_FRAME_US = 50` µs (20 kHz). `he_spi` reads 4 CRC-protected 32-bit words over 40 MHz SPI3 (`SPI_DMA_DISABLED`, direct `GPSPI3` register loop `ads7028_read16_again` in [/firmware/main/input/ads7028.c](/firmware/main/input/ads7028.c)) for `AIN3`/`AIN4`/`AIN5` (Keys 3/2/1), runs `he_rt_step`, and calls `key_event_report` directly. Calibration capture is decimated 5:1 (`SPI_CAL_DECIMATE = 5`) to match the 4 kHz runner.
+- **3-State Rapid Trigger (`he_rt_step`)**: Transitions between `HE_RT_ARMED`, `HE_RT_PRESSED`, and `HE_RT_RT_RELEASED`, enforcing `need_release` after boot, parameter changes, or ADC stalls (`he_rt_fault`).
 
 ## Unified Key Event Dispatch (`key_event.c`)
 
-Both mechanical and Hall Effect pipelines converge on the unified key event dispatcher (`firmware/main/input/key_event.c`): <!-- src: /firmware/main/input/key_event.c -->
+Both mechanical and Hall Effect backends converge on [/firmware/main/input/key_event.c](/firmware/main/input/key_event.c):
 
-- **Atomic Press Counters**: Increments `s_lifetime_presses[key_id]` and map-specific counter `s_map_presses[key_id]`.
-- **Latency Telemetry**: Calls `latency_stats_record()` with the microsecond elapsed delta between physical contact detection and HID buffer enqueue. <!-- src: /firmware/main/input/key_event.c -->
-- **USB Report Trigger**: Dispatches the state to `usb_hid_set_key1_pressed()` or `usb_hid_set_key2_pressed()`, signaling TinyUSB to transmit on Endpoint IN 1 or Endpoint IN 2. <!-- src: /firmware/main/usb/usb_hid.c -->
-- **Diagnostic Logging**: Appends timestamped transitions to the circular debug log (`press_log_record`).
+- **`key_event_press_accepted` (`IRAM_ATTR`)**: Atomically increments `s_lifetime_presses[key_index]` and `s_map_presses[key_index]`, records `s_last_press_us`, and pushes game-key presses (filtered by `s_game_keys`) to `press_log_push`.
+- **`key_event_report` (`IRAM_ATTR`)**: Calls `usb_hid_handle_key_event(key_index, pressed, edge_us)` in [/firmware/main/usb/usb_hid.c](/firmware/main/usb/usb_hid.c) first; records delivery latency via `latency_stats_record` (or `latency_stats_record_deferred` when the endpoint is busy), toggles `CONFIG_OPAD_BENCH_DEBUG_GPIO_NUM` if enabled, and notifies UI activity (`ui_notify_activity`) on press.
