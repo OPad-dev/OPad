@@ -1,6 +1,8 @@
 ---
 title: Primera conexión
 description: Cómo conectar OPad a un ordenador anfitrión, verificar la enumeración como teclado USB HID a 1000 Hz sin software y probar las asignaciones predeterminadas.
+sidebar:
+  order: 3
 ---
 
 OPad funciona de fábrica como un teclado USB HID autónomo a 1000 Hz sin software de escritorio ni controladores instalados. No hace falta ningún daemon en segundo plano, aplicación complementaria ni controlador de terceros para escribir o jugar juegos de ritmo. <!-- src: /AGENTS.md --> <!-- src: /README.md -->
