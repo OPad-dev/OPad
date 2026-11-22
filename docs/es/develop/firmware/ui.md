@@ -1,6 +1,8 @@
 ---
 title: Subsistema de interfaz (UI) del firmware
 description: Referencia de implementación del controlador de pantalla ST7789 SPI2, integración LVGL v9.5, asignación de memoria, almacén de diseños y superposición de calibración Hall Effect.
+sidebar:
+  order: 5
 ---
 
 El subsistema de UI renderiza diseños personalizables `320x240`, telemetría en vivo, animaciones de resultados y la superposición de calibración Hall Effect en la LCD IPS ST7789 de 2.0 pulgadas de Waveshare. Todo el renderizado se ejecuta en **Core 1** bajo **LVGL v9.5.0** y `esp_lvgl_port` 2.9.0 ([/firmware/dependencies.lock](/firmware/dependencies.lock), [/firmware/main/ui/ui_port.c](/firmware/main/ui/ui_port.c)).
