@@ -81,8 +81,8 @@ Status values:
 
 | old path | target new location(s) | status |
 |---|---|---|
-| `docs/architecture.md` | `docs/explanation/architecture.md`, `docs/develop/firmware/overview.md`, `docs/develop/desktop/overview.md` | pending fold |
-| `docs/protocol.md` | `docs/reference/serial-protocol.md`, `docs/explanation/app-and-pad-versions.md` | pending fold |
-| `docs/windows-portability.md` | `docs/start/install-the-app.md`, `docs/reference/files-and-paths.md`, `docs/develop/desktop/overview.md` | pending fold |
-| `docs/latency-testing.md` | `docs/develop/latency-testing.md`, `docs/explanation/latency.md` | pending fold |
-| `docs/roadmap.md` | Retired / folded into changelog and design records (see F1 in FINDINGS) | pending fold |
+| `docs/architecture.md` | `docs/explanation/architecture.md`, `docs/develop/firmware/overview.md`, `docs/develop/desktop/overview.md` | folded |
+| `docs/protocol.md` | `docs/reference/serial-protocol.md`, `docs/explanation/app-and-pad-versions.md` | folded |
+| `docs/windows-portability.md` | `docs/start/install-the-app.md`, `docs/reference/files-and-paths.md`, `docs/develop/desktop/overview.md` | folded |
+| `docs/latency-testing.md` | `docs/develop/latency-testing.md`, `docs/explanation/latency.md` | folded |
+| `docs/roadmap.md` | Retired / folded into changelog and design records (see F1 in FINDINGS) | folded |
