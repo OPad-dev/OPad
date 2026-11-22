@@ -1,6 +1,8 @@
 ---
 title: GUI Subsystem Architecture
 description: Implementation reference for opad-gui, iced Elm architecture, single-instance handoff, theme tokens, Screen Designer preview, and system tray.
+sidebar:
+  order: 3
 ---
 
 `opad-gui` is built with `iced` using `iced::daemon` (so closing the window minimizes to the system tray) and communicates asynchronously with `opad-daemon` over local IPC ([/desktop/gui/src/main.rs](/desktop/gui/src/main.rs)).
