@@ -114,6 +114,30 @@ pub struct DaemonState {
     pub latest_he_progress: Option<opad_model::HeCalibrationProgress>,
     /// Key 3's counters, while a pad with three keys is connected
     pub key3: Option<opad_model::Key3Counters>,
+    /// When the pad was last used, for the automatic firmware update
+    pub pad_activity: PadActivity,
+}
+
+/// When the pad was last used: a key press (its counters go up), or its screen
+/// waking (a key or a touch). The daemon sees no other touches, so a screen
+/// that has gone to sleep is the evidence that nobody has touched it since.
+#[derive(Clone, Debug, Default)]
+pub struct PadActivity {
+    /// The last key press or screen wake, or when the pad connected
+    pub last: Option<std::time::Instant>,
+    /// The pad said its screen went to sleep, and not that it woke since
+    pub display_asleep: bool,
+}
+
+impl PadActivity {
+    pub fn used_now(&mut self) {
+        self.last = Some(std::time::Instant::now());
+    }
+
+    /// How long the pad has gone unused, if it is known
+    pub fn idle_for(&self) -> Option<std::time::Duration> {
+        self.last.map(|t| t.elapsed())
+    }
 }
 
 impl DaemonState {
@@ -428,6 +452,7 @@ impl RuntimeController {
             he_calibration: None,
             latest_he_progress: None,
             key3: None,
+            pad_activity: PadActivity::default(),
         };
 
         Self {
@@ -743,6 +768,9 @@ impl RuntimeController {
                 self.state.incompatible = None;
                 self.state.device_connected = true;
                 self.state.counters_source = CounterSource::Device;
+                // Plugged in just now: in use, screen on
+                self.state.pad_activity = PadActivity::default();
+                self.state.pad_activity.used_now();
 
                 // A pad we have counters for, reporting a factory-fresh NVS:
                 // its flash was erased. Its config is the firmware default, not
@@ -921,6 +949,15 @@ impl RuntimeController {
             }
 
             RuntimeEvent::DeviceCounters(c) => {
+                let total = |a: u64, b: u64| a.saturating_add(b);
+                if total(c.lifetime_key1, c.lifetime_key2)
+                    > total(
+                        self.state.counters.lifetime_key1,
+                        self.state.counters.lifetime_key2,
+                    )
+                {
+                    self.state.pad_activity.used_now();
+                }
                 self.state.counters.lifetime_key1 = c.lifetime_key1;
                 self.state.counters.lifetime_key2 = c.lifetime_key2;
                 if !c.device_id.is_empty() {
@@ -992,6 +1029,16 @@ impl RuntimeController {
 
             RuntimeEvent::DeviceLogBatch(batch) => {
                 for ev in batch.events {
+                    match ev.event_id {
+                        opad_model::diag::DIAG_EVENT_DISPLAY_SLEEP => {
+                            self.state.pad_activity.display_asleep = true
+                        }
+                        opad_model::diag::DIAG_EVENT_DISPLAY_WAKE => {
+                            self.state.pad_activity.display_asleep = false;
+                            self.state.pad_activity.used_now();
+                        }
+                        _ => {}
+                    }
                     if ev.event_id == DIAG_EVENT_NVS_ERASED
                         && self.state.device_connected
                         && !self.state.foreign_pad

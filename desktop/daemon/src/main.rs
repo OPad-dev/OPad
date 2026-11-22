@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
@@ -249,6 +249,81 @@ async fn main() -> Result<()> {
     // until a signing key is compiled in (§U-0.3).
     let update_service =
         updater::spawn_update_worker(daemon_state.clone(), storage.clone(), tosu_supervisor);
+
+    // Automatic firmware updates (§U-3): with the setting on, once the pad has
+    // gone unused for firmware_update::AUTO_IDLE. The same install a person's
+    // Update now runs, consent given by the setting. A failed version is not
+    // tried again for a day.
+    {
+        let daemon_state = daemon_state.clone();
+        let storage = storage.clone();
+        let device_manager = device_manager.clone();
+        let pending_ops = pending_ops.clone();
+        let update_service = update_service.clone();
+        tokio::spawn(async move {
+            let mut failed: Option<(String, Instant)> = None;
+            let mut ticker = tokio::time::interval(Duration::from_secs(60));
+            loop {
+                ticker.tick().await;
+                if !updater::read_flag(&storage, updater::FIRMWARE_AUTO_KEY) {
+                    continue;
+                }
+                let Some(manifest) = update_service.manifest() else {
+                    continue;
+                };
+                let offer = firmware_update::offer(Some(&manifest), &daemon_state, true, true);
+                let (Some(available), true) = (offer.available.clone(), offer.blockers.is_empty())
+                else {
+                    continue;
+                };
+                if failed.as_ref().is_some_and(|(v, at)| {
+                    *v == available && at.elapsed() < Duration::from_secs(24 * 3600)
+                }) {
+                    continue;
+                }
+                if let Some(reason) = firmware_update::auto_wait(&daemon_state.lock()) {
+                    debug!("Firmware {} waits: {}", available, reason);
+                    continue;
+                }
+                let from = offer.installed.clone().unwrap_or_default();
+                info!(
+                    "The pad has gone unused: updating its firmware from {} to {}",
+                    from, available
+                );
+                let outcome = firmware_update::install(
+                    Some(&manifest),
+                    true,
+                    &daemon_state,
+                    &storage,
+                    &*device_manager,
+                    &pending_ops,
+                )
+                .await;
+                let error = match outcome {
+                    Ok(firmware_update::FirmwareUpdateOutcome::Installed { .. }) => None,
+                    Ok(firmware_update::FirmwareUpdateOutcome::Refused { reasons }) => {
+                        Some(reasons.join(" "))
+                    }
+                    Err(e) => Some(e.to_string()),
+                };
+                match &error {
+                    None => info!("Firmware {} installed", available),
+                    Some(e) => {
+                        warn!("Automatic firmware update to {} failed: {}", available, e);
+                        failed = Some((available.clone(), Instant::now()));
+                    }
+                }
+                updater::record_result(
+                    &storage,
+                    &update_service,
+                    "firmware",
+                    &from,
+                    &available,
+                    error,
+                );
+            }
+        });
+    }
 
     // Spawn IPC request handling task
     {
@@ -856,6 +931,7 @@ mod tests {
             he_calibration: None,
             latest_he_progress: None,
             key3: None,
+            pad_activity: Default::default(),
         }));
 
         // 1. GetStatus surfaces storage_error

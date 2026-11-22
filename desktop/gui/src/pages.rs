@@ -937,15 +937,14 @@ fn updates(app: &App) -> Element<'_, Message> {
     card(content).width(Length::Fill).into()
 }
 
-/// §U-3b: Host-driven firmware updates.
-///
-/// Visually separate from app and tosu updaters because it is not the same kind of
-/// thing: it flashes hardware over USB and temporarily stops the pad being a keyboard.
-/// Non-negotiable rules:
-/// - Explicit consent every time. Never automatic, never silent, not even opt-in.
-///   There is NO "always update firmware" switch.
-/// - Blockers are rendered verbatim as whole sentences when non-empty, and disable the button.
+/// §U-3b: firmware updates, flashed over USB. Visually separate from the app
+/// and tosu: the pad stops being a keyboard for ~30 s while it happens, so
+/// with automatic updates on it waits until the pad has gone unused
+/// (`FirmwareOffer::auto_after_minutes`), and Update now asks first.
+/// Blockers are shown verbatim, as whole sentences, and disable the button.
 fn firmware_updates(app: &App) -> Element<'_, Message> {
+    use opad_ipc::UpdateComponent;
+
     let Some(offer) = &app.firmware_offer else {
         return card(
             column![
@@ -963,40 +962,13 @@ fn firmware_updates(app: &App) -> Element<'_, Message> {
         .running_partition
         .as_deref()
         .unwrap_or("unknown (predates OTA layout)");
-
     let state_str = match &offer.available {
-        Some(v) => format!("{} available", v),
-        None => "up to date".to_string(),
+        Some(v) => format!("{v} available"),
+        None => "Up to date".to_string(),
     };
 
-    let mut content = column![
-        caption("FIRMWARE UPDATE"),
-        row![
-            column![
-                text(format!("Firmware {}", installed_str)).size(13),
-                muted(format!("Running slot: {}", slot_str)).size(11),
-                muted(state_str).size(11),
-            ]
-            .spacing(2),
-            Space::new().width(Length::Fill),
-        ]
-        .align_y(Alignment::Center),
-    ]
-    .spacing(10);
-
-    if let Some(notes) = &offer.notes {
-        content = content.push(muted(format!("Release notes: {}", notes)).size(11));
-    }
-
-    if !offer.blockers.is_empty() {
-        for blocker in &offer.blockers {
-            content = content.push(text(format!("⚠ {}", blocker)).size(12).color(theme::YELLOW));
-        }
-    }
-
     let can_update = offer.available.is_some() && offer.blockers.is_empty();
-    let mut update_btn = button(text("Update firmware").size(12)).padding([6, 14]);
-
+    let mut update_btn = button(text("Update now").size(12)).padding([5, 14]);
     if can_update {
         update_btn = update_btn
             .style(theme::primary)
@@ -1005,20 +977,65 @@ fn firmware_updates(app: &App) -> Element<'_, Message> {
         update_btn = update_btn.style(theme::secondary);
     }
 
-    content = content.push(
+    let mut content = column![
+        caption("FIRMWARE UPDATE"),
         row![
+            column![
+                text(format!("Firmware {installed_str}")).size(13),
+                muted(format!("{state_str} · running slot {slot_str}")).size(11),
+            ]
+            .spacing(3),
+            Space::new().width(Length::Fill),
             update_btn,
-            Space::new().width(8),
-            muted("Takes explicit consent every time").size(11),
         ]
-        .align_y(Alignment::Center),
-    );
+        .align_y(Alignment::Center)
+        .height(Length::Fixed(44.0)),
+    ]
+    .spacing(12);
 
+    for blocker in &offer.blockers {
+        content = content.push(text(format!("⚠ {blocker}")).size(12).color(theme::YELLOW));
+    }
+
+    // When it installs by itself, and how close that is
+    if let (Some(v), true) = (&offer.available, offer.auto) {
+        let wait = offer.auto_after_minutes.max(1);
+        let when = match offer.idle_minutes {
+            Some(idle) if idle >= wait => {
+                format!("{v} installs by itself now that the pad has gone {wait} minutes unused.")
+            }
+            Some(idle) => format!(
+                "{v} installs by itself once the pad has gone {wait} minutes unused \
+                 (unused for {idle} min so far), or press Update now."
+            ),
+            None => format!(
+                "{v} installs by itself once the pad has gone {wait} minutes unused, \
+                 or press Update now."
+            ),
+        };
+        content = content.push(text(when).size(12).color(theme::YELLOW));
+    }
+    if let Some(notes) = &offer.notes {
+        content = content.push(muted(format!("Release notes: {notes}")).size(11));
+    }
+
+    content = content.push(rule::horizontal(1));
     content = content.push(
-        muted(
-            "Firmware updates flash the app partition over USB. \
-             The pad stops being a keyboard for ~30 seconds during the update.",
-        )
+        checkbox(offer.auto)
+            .label(format!(
+                "Install firmware updates automatically, after {} minutes without using the pad",
+                offer.auto_after_minutes.max(1)
+            ))
+            .text_size(12)
+            .on_toggle(|v| Message::ToggleUpdater(UpdateComponent::Firmware, v)),
+    );
+    content = content.push(
+        muted(format!(
+            "A firmware update stops the pad being a keyboard for about {} seconds. \
+             It never runs during a map, and a pad that does not start the new \
+             firmware goes back to the old one by itself.",
+            offer.outage_seconds.max(1)
+        ))
         .size(11),
     );
 

@@ -19,6 +19,11 @@
 //!    the lifetime counters and the owner record live.
 //! 6. The pad is rebooted into the app and has to come back reporting the
 //!    version we just wrote. If it does not, that is said loudly.
+//!
+//! A person starts it (Update now), or, with automatic firmware updates on
+//! (the default), the daemon does once the pad has gone [`AUTO_IDLE`] unused
+//! ([`auto_wait`]): the pad stops being a keyboard for ~30 s, so it waits
+//! until nobody is using it.
 
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -45,6 +50,43 @@ use crate::sync::DeviceLink;
 /// covers that as well as a plain reboot.
 const RECONNECT_TIMEOUT: Duration = Duration::from_secs(45);
 
+/// How long the pad must go unused before an automatic firmware update
+pub const AUTO_IDLE: Duration = Duration::from_secs(30 * 60);
+
+/// Why an automatic firmware update must wait, or `None` when the pad has
+/// gone unused long enough: no key press for [`AUTO_IDLE`] and, unless the
+/// pad's screen never sleeps, its screen asleep, which means no touch either
+/// for the sleep timeout (the daemon sees touches only through the screen
+/// waking). The map and connection checks are `install`'s.
+pub fn auto_wait(state: &DaemonState) -> Option<String> {
+    unused_long_enough(
+        state.pad_activity.idle_for(),
+        state.config.display_sleep_seconds,
+        state.pad_activity.display_asleep,
+    )
+}
+
+fn unused_long_enough(
+    idle: Option<Duration>,
+    display_sleep_seconds: u32,
+    display_asleep: bool,
+) -> Option<String> {
+    let Some(idle) = idle else {
+        return Some("the pad has not been seen yet".to_string());
+    };
+    if idle < AUTO_IDLE {
+        let left = (AUTO_IDLE - idle).as_secs().div_ceil(60);
+        return Some(format!(
+            "the pad was used {} min ago; {left} min to go",
+            idle.as_secs() / 60
+        ));
+    }
+    if display_sleep_seconds != 0 && !display_asleep {
+        return Some("the pad's screen is on: it may be in use".to_string());
+    }
+    None
+}
+
 /// What a firmware update would do right now, and everything in its way.
 ///
 /// Reads state and writes nothing, so the GUI may poll it.
@@ -52,14 +94,16 @@ pub fn offer(
     manifest: Option<&ReleaseManifest>,
     state: &Arc<Mutex<DaemonState>>,
     storage_available: bool,
+    auto: bool,
 ) -> FirmwareOffer {
-    let (mode, device_info, connected, guard) = {
+    let (mode, device_info, connected, guard, idle) = {
         let st = state.lock();
         (
             st.mode,
             st.device_info.clone(),
             st.device_connected,
             st.pad_guard(),
+            st.pad_activity.idle_for(),
         )
     };
     let installed = device_info.as_ref().map(|i| i.firmware_version.clone());
@@ -71,6 +115,9 @@ pub fn offer(
             .as_ref()
             .and_then(|i| i.running_partition.clone()),
         outage_seconds: TYPICAL_OUTAGE_SECONDS,
+        auto,
+        auto_after_minutes: (AUTO_IDLE.as_secs() / 60) as u32,
+        idle_minutes: idle.map(|d| (d.as_secs() / 60) as u32),
         ..Default::default()
     };
 
@@ -476,7 +523,7 @@ mod tests {
     #[test]
     fn an_offer_carries_the_consent_wording_and_the_running_slot() {
         let st = state_with(RuntimeMode::Idle, true, "1.0.0");
-        let offer = offer(Some(&manifest("1.1.0")), &st, true);
+        let offer = offer(Some(&manifest("1.1.0")), &st, true, true);
         assert_eq!(offer.installed.as_deref(), Some("1.0.0"));
         assert_eq!(offer.available.as_deref(), Some("1.1.0"));
         assert_eq!(offer.running_partition.as_deref(), Some("ota_0"));
@@ -492,7 +539,7 @@ mod tests {
         if let Some(info) = st.lock().device_info.as_mut() {
             info.running_partition = Some("ota_1".to_string());
         }
-        let offer = offer(Some(&manifest("1.1.0")), &st, true);
+        let offer = offer(Some(&manifest("1.1.0")), &st, true, true);
         assert_eq!(offer.running_partition.as_deref(), Some("ota_1"));
         assert!(offer.blockers.is_empty(), "{:?}", offer.blockers);
         assert_eq!(offer.available.as_deref(), Some("1.1.0"));
@@ -510,7 +557,7 @@ mod tests {
     #[test]
     fn an_offer_made_mid_map_lists_that_as_the_blocker_and_offers_nothing() {
         let st = state_with(RuntimeMode::Playing, true, "1.0.0");
-        let offer = offer(Some(&manifest("1.1.0")), &st, true);
+        let offer = offer(Some(&manifest("1.1.0")), &st, true, true);
         assert!(offer.available.is_none(), "nothing is offered mid-map");
         assert!(offer.consent_text.is_none());
         assert_eq!(offer.blockers.len(), 1);
@@ -524,7 +571,7 @@ mod tests {
     #[test]
     fn an_offer_without_a_manifest_still_explains_itself() {
         let st = state_with(RuntimeMode::Idle, false, "1.0.0");
-        let offer = offer(None, &st, true);
+        let offer = offer(None, &st, true, true);
         assert!(offer.available.is_none());
         assert!(
             offer.blockers.iter().any(|b| b.contains("not connected")),
@@ -536,7 +583,7 @@ mod tests {
     #[test]
     fn an_up_to_date_pad_is_offered_nothing_but_is_not_an_error() {
         let st = state_with(RuntimeMode::Idle, true, "1.1.0");
-        let offer = offer(Some(&manifest("1.1.0")), &st, true);
+        let offer = offer(Some(&manifest("1.1.0")), &st, true, true);
         assert!(offer.available.is_none());
         assert!(offer.consent_text.is_none());
         assert!(offer.blockers.is_empty());
@@ -565,7 +612,7 @@ mod tests {
         assert!(still_safe_to_flash(&st)
             .unwrap_err()
             .contains("another install"));
-        let offer = offer(Some(&manifest("1.1.0")), &st, true);
+        let offer = offer(Some(&manifest("1.1.0")), &st, true, true);
         assert!(
             offer.blockers.iter().any(|b| b.contains("another install")),
             "{:?}",
@@ -576,11 +623,34 @@ mod tests {
     #[test]
     fn blockers_are_shown_as_sentences_starting_with_a_capital() {
         let st = state_with(RuntimeMode::Cooldown, false, "1.0.0");
-        let offer = offer(Some(&manifest("1.1.0")), &st, false);
+        let offer = offer(Some(&manifest("1.1.0")), &st, false, true);
         assert!(!offer.blockers.is_empty());
         for b in &offer.blockers {
             let first = b.chars().next().unwrap();
             assert!(first.is_uppercase(), "{b}");
         }
+    }
+}
+
+#[cfg(test)]
+mod auto_tests {
+    use super::{unused_long_enough, AUTO_IDLE};
+    use std::time::Duration;
+
+    #[test]
+    fn it_waits_for_thirty_minutes_without_a_press_and_a_sleeping_screen() {
+        let min = |m: u64| Some(Duration::from_secs(m * 60));
+        // Used recently: wait, whatever the screen does
+        assert!(unused_long_enough(min(29), 600, true).is_some());
+        assert!(unused_long_enough(Some(Duration::ZERO), 600, true).is_some());
+        // 30 min without a press, screen asleep (no touch either): now
+        assert_eq!(unused_long_enough(Some(AUTO_IDLE), 600, true), None);
+        assert_eq!(unused_long_enough(min(90), 600, true), None);
+        // ...but a screen that is on may mean someone is touching it
+        assert!(unused_long_enough(min(90), 600, false).is_some());
+        // A screen that never sleeps says nothing about touches
+        assert_eq!(unused_long_enough(min(31), 0, false), None);
+        // Never seen: never
+        assert!(unused_long_enough(None, 600, true).is_some());
     }
 }

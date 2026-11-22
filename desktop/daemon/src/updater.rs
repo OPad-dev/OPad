@@ -48,6 +48,8 @@ const MANUAL_CHECK_MIN: Duration = Duration::from_secs(60);
 pub const SCHEDULE_KEY: &str = "update.schedule";
 pub const TOSU_ENABLED_KEY: &str = "update.tosu.enabled";
 pub const APP_ENABLED_KEY: &str = "update.app.enabled";
+/// Automatic firmware updates, once the pad has gone unused for a while
+pub const FIRMWARE_AUTO_KEY: &str = "update.firmware.auto";
 /// `stable` (default) or `beta`
 pub const CHANNEL_KEY: &str = "update.channel";
 /// How the last install went ([`UpdateResult`])
@@ -165,6 +167,7 @@ impl UpdateResult {
     pub fn sentence(&self) -> String {
         let name = match self.component.as_str() {
             "app" => "OPad",
+            "firmware" => "The pad's firmware",
             "tosu" => "tosu",
             other => other,
         };
@@ -987,10 +990,31 @@ fn remove_key(storage: &Arc<Mutex<Option<Storage>>>, key: &str) {
     }
 }
 
+/// Records how an update the updater did not run went (the automatic
+/// firmware update), where the GUI's "Last update" reads it
+pub fn record_result(
+    storage: &Arc<Mutex<Option<Storage>>>,
+    service: &UpdateService,
+    component: &str,
+    from: &str,
+    to: &str,
+    error: Option<String>,
+) {
+    let result = UpdateResult::new(
+        component,
+        from,
+        to,
+        error.is_none(),
+        error.unwrap_or_default(),
+    );
+    write_json(storage, LAST_RESULT_KEY, &result);
+    service.status.lock().last_result = Some(result.sentence());
+}
+
 /// Reads a boolean setting, defaulting to enabled. A storage failure must not
 /// silently switch an updater off — or on — so the default is the documented
 /// one and the error is visible in the log.
-fn read_flag(storage: &Arc<Mutex<Option<Storage>>>, key: &str) -> bool {
+pub fn read_flag(storage: &Arc<Mutex<Option<Storage>>>, key: &str) -> bool {
     let guard = storage.lock();
     match guard.as_ref().map(|s| s.get_app_state(key)) {
         Some(Ok(Some(v))) => v != "0" && !v.eq_ignore_ascii_case("false"),

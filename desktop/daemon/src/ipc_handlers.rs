@@ -376,14 +376,8 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             let key = match component {
                 UpdateComponent::App => updater::APP_ENABLED_KEY,
                 UpdateComponent::Tosu => updater::TOSU_ENABLED_KEY,
-                // §U-3: firmware updates take explicit consent each time, so
-                // there is no "leave it on" setting to write.
-                UpdateComponent::Firmware => {
-                    return IpcResponse::OperationRejected {
-                        reason: "Firmware updates are consented to individually, not enabled"
-                            .to_string(),
-                    }
-                }
+                // Automatic firmware updates, while the pad is unused (§U-3)
+                UpdateComponent::Firmware => updater::FIRMWARE_AUTO_KEY,
             };
             let guard = storage.lock();
             match guard.as_ref() {
@@ -1189,6 +1183,7 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 updates.and_then(|u| u.manifest()).as_ref(),
                 state,
                 storage_available,
+                crate::updater::read_flag(storage, crate::updater::FIRMWARE_AUTO_KEY),
             ))
         }
 

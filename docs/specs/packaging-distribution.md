@@ -574,13 +574,12 @@ Three separate updaters with three different risk profiles. **None of them exist
 
 | Install origin | Check | Download | Apply |
 |---|---|---|---|
-| **Windows installer** | auto | auto | Run the new signed installer `/SILENT /NORESTART`; Inno's `CloseApplications` stops the running processes. No prompt if the user opted in. |
-| **`.deb` / `.rpm`** (GitHub) | auto | auto | `pkexec apt-get install -y <file>` / `pkexec dnf install -y <file>` → **one polkit password prompt**, then the real package manager applies it. |
-| **AUR** | auto | **no** | **Notify only.** `pacman` owns these files and `yay`/`paru` update them. OPad must not touch them. |
+| **Windows installer** | auto | auto | The new installer `/SILENT /NORESTART`, run the next time OPad starts (*Install now*: at once); Inno's `CloseApplications` stops the running processes. No prompt. |
+| **`.deb` / `.rpm`** (GitHub), **Arch `opad-bin`** | auto | auto | The update helper through `pkexec`, which checks the package against the signed feed itself and installs it with apt, dnf or pacman. **No password** for the user at the computer (polkit action `dev.opad.update`, `allow_active=yes`; decided 2026-11-22). Arch installs the prebuilt `opad-bin` package each release publishes. |
 | **`make install-user`** (`~/.local`) | auto | auto | Direct file replacement. No prompt — the user already owns every file. |
 | **AppImage** (if L-4) | auto | auto | Direct replacement. |
 
-**Why `.deb`/`.rpm` needs that one prompt.** The binaries live in `/usr/bin`, owned by root and recorded in the dpkg/rpm database. The daemon runs as the user and cannot write there. Requiring authentication is not a limitation to engineer around — it is the OS working correctly, and every native Linux updater behaves this way.
+**Why `.deb`/`.rpm` go through a helper.** The binaries live in `/usr/bin`, owned by root and recorded in the dpkg/rpm database, and the daemon runs as the user. Until 2026-11-22 that cost one password prompt per update; the owner chose silent updates instead, the way fwupd installs trusted firmware: a polkit action lets the active user run one root helper that installs nothing but a newer OPad release named by the signed feed (`desktop/crates/opad-update/src/helper.rs`).
 
 **The thing that must not be done:** overwriting `/usr/bin/opad-daemon` directly, even if a way is found to get write access. That desynchronises the package database — `dpkg -V` / `rpm -V` then report modified files, and the next reinstall or `apt upgrade` silently reverts the update. **Always apply through the package manager**, never around it. Because these packages come from GitHub rather than a repository, `apt install ./new.deb` records the new version cleanly and nothing will later contradict it.
 
@@ -605,8 +604,7 @@ Probing the system instead (`dpkg -S`, `rpm -qf`, `pacman -Qo`, path prefix chec
 **Out of scope for v1.0.** Recorded so the option is not rediscovered from scratch.
 
 **Do:**
-- Daemon checks the signed manifest daily; GUI shows "update available" with release notes and an explicit "Install now".
-- **Prompt; never auto-install by default.** The user may opt in to automatic install on Windows.
+- Daemon checks the signed manifest daily and, with *Install OPad updates automatically* on (the default), installs the update by itself; with it off the GUI shows "available" with release notes and *Install now*. The running OPad is never restarted: the new version runs from the next start (decided 2026-11-22).
 - Defer while PLAYING or COOLDOWN.
 - Coordinate daemon and GUI restart; do not leave a stale daemon talking to a new GUI. The IPC handshake (P1-7) must reject a version mismatch loudly rather than misbehave.
 - An app update **must not** trigger a firmware update. They are separate decisions (U-3).
@@ -652,7 +650,7 @@ Use the path that already exists rather than adding firmware attack surface for 
 **Do:**
 - Daemon downloads the firmware image, verifies it against the signed manifest (U-0.3), and checks the target chip and `firmware_version` before doing anything.
 - Reboot the pad into the ROM bootloader, flash the app partition **only** (never `erase-flash` — that wipes NVS and the lifetime counters), and return to the app using the existing `reset_to_app` in `desktop/cli/src/esp_rom.rs`, which already handles the ESP32-S3 USB-Serial-JTAG reboot quirk.
-- **Explicit consent every time. Never automatic, never silent, not even opt-in.** Show exactly what will happen: *"Your pad will be unusable as a keyboard for about N seconds. Do not unplug it."*
+- *Update now* asks first and shows exactly what will happen: *"Your pad will be unusable as a keyboard for about N seconds. Do not unplug it."* With *Install firmware updates automatically* on (the default), the daemon starts it by itself once the pad has gone 30 minutes unused: no key press, and its screen asleep (decided 2026-11-22, replacing "explicit consent every time").
 - Refuse to start unless the daemon is IDLE, the pad is connected directly (not through a hub the user is about to disturb), and counters have been synced to the host first.
 - On Windows, release the COM port before flashing (W1-3) — Windows serial handles are exclusive.
 - Post-flash validation already exists as part of P1-7; reuse it. If the pad does not come back with the expected version, say so loudly and link to `docs/recovery.md`.

@@ -268,11 +268,19 @@ pub struct FirmwareOffer {
     /// is updated first (docs/specs/release-and-updates.md §3.2)
     #[serde(default)]
     pub needs_app: Option<String>,
+    /// Automatic firmware updates are on: the update installs by itself once
+    /// the pad has gone `auto_after_minutes` unused
+    #[serde(default)]
+    pub auto: bool,
+    #[serde(default)]
+    pub auto_after_minutes: u32,
+    /// How long the pad has gone unused, as far as the daemon knows
+    #[serde(default)]
+    pub idle_minutes: Option<u32>,
 }
 
-/// The three independently-updatable things (§U). The firmware is listed here
-/// because the GUI shows all three together, but §U-3 firmware updates take
-/// explicit consent every time and are never started by an updater setting.
+/// The three independently-updatable things (§U). The firmware updates by
+/// itself only while the pad is unused (§U-3, `FirmwareOffer::auto`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UpdateComponent {

@@ -560,6 +560,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             he_calibration: None,
             latest_he_progress: None,
             key3: None,
+            pad_activity: Default::default(),
         }));
 
         // Set storage writes blocked guard
@@ -794,6 +795,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             he_calibration: None,
             latest_he_progress: None,
             key3: None,
+            pad_activity: Default::default(),
         }));
 
         let res = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
@@ -857,6 +859,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             he_calibration: None,
             latest_he_progress: None,
             key3: None,
+            pad_activity: Default::default(),
         }));
 
         let res = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
@@ -975,6 +978,7 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
         he_calibration: None,
         latest_he_progress: None,
         key3: None,
+        pad_activity: Default::default(),
     }));
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
@@ -1056,6 +1060,7 @@ async fn a_non_monotonic_rejection_is_retried_with_the_pads_current_counters() {
         he_calibration: None,
         latest_he_progress: None,
         key3: None,
+        pad_activity: Default::default(),
     }));
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
@@ -1126,6 +1131,7 @@ async fn test_json_validation_preview_and_confirm() {
         he_calibration: None,
         latest_he_progress: None,
         key3: None,
+        pad_activity: Default::default(),
     }));
 
     // 1. Preview with counter rollback & generation bump warnings
@@ -1261,6 +1267,7 @@ async fn test_json_import_restores_key3_and_game_keys() {
             lifetime: 80,
             map: 0,
         }),
+        pad_activity: Default::default(),
     }));
 
     let backup_config = DeviceConfig {
@@ -1377,6 +1384,7 @@ async fn test_ipc_handshake_mismatch_and_protocol_version() {
         he_calibration: None,
         latest_he_progress: None,
         key3: None,
+        pad_activity: Default::default(),
     }));
 
     // Protocol mismatch rejected
@@ -1494,6 +1502,7 @@ async fn test_install_update_is_refused_outside_idle() {
             he_calibration: None,
             latest_he_progress: None,
             key3: None,
+            pad_activity: Default::default(),
         }));
 
         let resp = handle_ipc_request(
@@ -1516,10 +1525,11 @@ async fn test_install_update_is_refused_outside_idle() {
     }
 }
 
-/// §U-3: the updater never applies firmware. That path takes explicit consent
-/// every time, so there is not even a setting to leave switched on.
+/// §U-3: automatic firmware updates are a setting like the others (on by
+/// default); the firmware then installs itself only while the pad is unused
+/// (firmware_update::auto_wait).
 #[tokio::test]
-async fn test_firmware_is_not_an_enableable_updater() {
+async fn test_every_updater_is_a_setting() {
     let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
     let device = MockDeviceLink::new(false);
     let log_hub = LogHub::new();
@@ -1553,30 +1563,13 @@ async fn test_firmware_is_not_an_enableable_updater() {
         he_calibration: None,
         latest_he_progress: None,
         key3: None,
+        pad_activity: Default::default(),
     }));
 
-    let resp = handle_ipc_request(
-        IpcRequest::SetUpdateEnabled {
-            component: opad_ipc::UpdateComponent::Firmware,
-            enabled: true,
-        },
-        &daemon_state,
-        &storage,
-        &device,
-        &log_hub,
-        &pending_ops,
-        None,
-    )
-    .await;
-    assert!(
-        matches!(resp, IpcResponse::OperationRejected { .. }),
-        "{resp:?}"
-    );
-
-    // The other two are ordinary settings and persist
     for component in [
         opad_ipc::UpdateComponent::App,
         opad_ipc::UpdateComponent::Tosu,
+        opad_ipc::UpdateComponent::Firmware,
     ] {
         let resp = handle_ipc_request(
             IpcRequest::SetUpdateEnabled {
@@ -2520,6 +2513,7 @@ fn firmware_update_fixture(mode: RuntimeMode, connected: bool) -> IpcFixture {
         he_calibration: None,
         latest_he_progress: None,
         key3: None,
+        pad_activity: Default::default(),
     }));
 
     (
@@ -3903,6 +3897,7 @@ fn idle_state(
         he_calibration: None,
         latest_he_progress: None,
         key3: None,
+        pad_activity: Default::default(),
     }
 }
 

@@ -342,16 +342,20 @@ written by `scripts/release/build_packages.sh`, the `Makefile`, the
 PKGBUILDs and `packaging/windows/installer.iss`). The engine never guesses:
 an unknown marker means notify only.
 
-| Origin | *Install* does | Prompt |
+With *Install OPad updates automatically* on (the default) the daemon installs
+an update by itself while no map is being played; with it off, *Install now*
+does. Either way **the running OPad keeps running** and the new version is the
+one that starts next time (decided 2026-11-22). After an update the GUI
+restarts whichever of itself and the daemon is still the old version
+(`gui/src/main.rs`, `version_mismatch`).
+
+| Origin | Install does | Password |
 |---|---|---|
-| **Windows** | runs the new `opad-setup.exe /SILENT /NORESTART`; Inno closes GUI, daemon and tosu (`CloseApplications`, `installer.iss:72`) and starts the daemon (`[Run]`). The GUI entry is `skipifsilent`, so the installer gets a flag the updater passes to relaunch it. **The only update path on Windows.** | none (per-user install, `PrivilegesRequired=lowest`) |
-| **deb, our apt repo configured** | upgrades from the repo through PackageKit (`pkcon update opad`), falling back to `pkexec apt-get install --only-upgrade opad` | one password prompt |
-| **rpm, our dnf repo configured** (Fedora, Nobara, RHEL) | same through PackageKit, fallback `pkexec dnf upgrade opad` | one password prompt |
-| **downloaded `.deb` / `.rpm`** | `pkexec apt-get install ./file.deb` / `pkexec dnf install ./file.rpm` (today) | one password prompt |
-| **AppImage** | replaces the AppImage file (today) | none |
-| **`make install-user` / tarball** | extracts over the prefix (today) | none |
-| **AUR** | shows the version, notes and `yay -Syu` / `paru`; pacman owns the files | — |
-| **unknown** | shows the version only | — |
+| **Windows** | automatic: downloads and verifies `opad-setup.exe` and runs it `/SILENT /SUPPRESSMSGBOXES /NORESTART /RELAUNCH=1` the next time OPad starts (`run_staged_installer`, `daemon/src/updater.rs`), because Windows cannot replace a running program. *Install now* runs it at once. Inno closes GUI, daemon and tosu (`CloseApplications`) and starts them again. | none (per-user install, `PrivilegesRequired=lowest`) |
+| **`.deb`, `.rpm`, Arch `opad-bin`** | the update helper `/usr/lib/opad/opad-update-helper`, through `pkexec`: it re-checks the feed's signature, the package's SHA-256 and that the version is newer (`opad-update/src/helper.rs`), copies the package where only root can write, and installs it with `apt-get install`, `dnf install` or `pacman -U`. Arch uses the prebuilt `opad-bin-*.pkg.tar.zst` each release publishes (feed target `linux-x86_64-pacman`). | none for the user at the computer: the packages' polkit action `dev.opad.update` (`packaging/linux/polkit/`) allows it (`allow_active=yes`); anyone else is asked for an administrator password |
+| **AppImage** | replaces the AppImage file | none |
+| **`make install-user` / tarball** | extracts over the prefix | none |
+| **`make install` (source), unknown** | shows the version only | — |
 
 **Never** write files a package manager owns (`/usr/bin/…`) directly: `dpkg -V`
 would report them modified and the next upgrade would revert them
@@ -433,9 +437,13 @@ NVS (lifetime counters, owner) is never erased.
 3. **Download and verify:** SHA-256 from the signed feed, then the ESP32-S3
    chip ID in the image header, then "newer than installed"
    (`firmware_update.rs`).
-4. **Prepare:** explicit consent every time (`consent_text`, about
-   `TYPICAL_OUTAGE_SECONDS` without a keyboard), daemon IDLE, counters synced
-   to the PC, serial port released.
+4. **Prepare:** a person's *Update now* (with `consent_text`: about
+   `TYPICAL_OUTAGE_SECONDS` without a keyboard), or, with *Install firmware
+   updates automatically* on (the default), the pad having gone unused for
+   `AUTO_IDLE` (30 min): no key press for that long and, unless its screen
+   never sleeps, its screen asleep, which means no touch either
+   (`firmware_update::auto_wait`; decided 2026-11-22). Then daemon IDLE,
+   counters synced to the PC, serial port released.
 5. **Write:** reboot into the ROM bootloader over USB, write the inactive slot,
    then `otadata`. Never the bootloader, never the partition table, never
    `erase-flash`.

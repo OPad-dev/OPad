@@ -1875,6 +1875,11 @@ impl App {
                         opad_ipc::UpdateComponent::Firmware => {}
                     }
                 }
+                if component == opad_ipc::UpdateComponent::Firmware {
+                    if let Some(o) = &mut self.firmware_offer {
+                        o.auto = enabled;
+                    }
+                }
                 return Task::perform(
                     ipc::request(IpcRequest::SetUpdateEnabled { component, enabled }),
                     Message::ActionDone,
