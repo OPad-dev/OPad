@@ -1,6 +1,8 @@
 ---
 title: opadctl CLI Tool Architecture
 description: Implementation reference for the opadctl command-line utility, clap parsing, IPC client dispatch, and standalone serial flashing/recovery.
+sidebar:
+  order: 4
 ---
 
 `opadctl` ([/desktop/cli/src/main.rs](/desktop/cli/src/main.rs)) is OPad's Clap-based CLI for status queries, counter sync/reset, JSON backups, log monitoring, latency/tap-rate inspection, board tests, environment setup, and hands-free USB flashing/recovery.
