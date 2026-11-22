@@ -1,6 +1,8 @@
 ---
 title: Protocol Changes and Schema Evolution
 description: How to evolve opad.proto, regenerate nanopb and prost bindings, and maintain bidirectional wire compatibility between app and pad.
+sidebar:
+  order: 4
 ---
 
 The OPad communication protocol between the desktop suite and the keypad firmware is defined by a single schema: [`protocol/opad.proto`](/protocol/opad.proto). Both the Rust desktop crates and the ESP32-S3 C firmware generate their wire types from this file.
