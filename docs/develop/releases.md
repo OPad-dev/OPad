@@ -15,9 +15,11 @@ flowchart TD
     Tag --> AppBuild["release-app.yml (Linux zigbuild, Windows MSVC, Inno Setup)"]
     Tag --> FWBuild["release-firmware.yml (ESP-IDF v5.5.2)"]
     AppBuild --> Upload["publish_release.sh (Assets & SHA256SUMS)"]
-    FWBuild --> Upload
-    Upload --> Feed["update-feed.yml (opad-feed signs stable.json / beta.json)"]
-    Feed --> Pages["GitHub Pages (updates.opad.dev)"]
+    FWBuild --> FWUpload["publish_release.sh (Assets & SHA256SUMS)"]
+    Upload --> StageFeed["update-feed.yml (deploy: false, signed artifact)"]
+    StageFeed --> Lab["lab-install.yml (feed: true, VMs update from feed)"]
+    Lab --> DeployFeed["feed-deploy (GitHub Pages: updates.opad.dev)"]
+    FWUpload --> FWFeed["update-feed.yml (sign & deploy to updates.opad.dev)"]
 ```
 
 ## 2. Release Management (`release-please`)
@@ -38,7 +40,7 @@ Configured in [/release-please-config.json](/release-please-config.json) and [/.
 
 ## 4. Signed Update Feeds (`opad-feed`)
 
-[/.github/workflows/update-feed.yml](/.github/workflows/update-feed.yml) runs `opad-feed` on every release, weekly cron, or manual dispatch to publish and sign `stable.json` and `beta.json` to `https://updates.opad.dev/` (GitHub Pages), refreshing signatures before the 30-day feed expiry window.
+[/.github/workflows/update-feed.yml](/.github/workflows/update-feed.yml) runs `opad-feed` on every release, weekly cron, or manual dispatch to build and sign `stable.json` and `beta.json` for `https://updates.opad.dev/` (GitHub Pages), refreshing signatures before the 30-day feed expiry window. For app releases, [/.github/workflows/release-app.yml](/.github/workflows/release-app.yml) first calls `update-feed.yml` with `deploy: false` (keeping the signed feeds as a `github-pages` artifact), runs [/.github/workflows/lab-install.yml](/.github/workflows/lab-install.yml) with `feed: true` so the VMs upgrade from that signed feed, and only deploys the feed in `feed-deploy` (`actions/deploy-pages@v5`) once the lab passes.
 
 ## 5. Security Guardrails (`opad-update`)
 
