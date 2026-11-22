@@ -8,12 +8,12 @@
 #      login, its window opens and it wrote its data;
 #   2. upgrades to the release under test, reboots, checks the same, the new
 #      version, and that the data was kept. With -Feed (the release's signed
-#      update feed, built but not deployed yet) the upgrade is OPad's own
-#      updater taking the release from that feed, served inside the VM; on
-#      Arch the updater must only report it, and makepkg installs it. If the
-#      updater fails, that fails the run, and the package is installed
-#      directly so the rest is still checked. Without -Feed, the package
-#      manager's command the updater runs (and the installer, on Windows);
+#      update feed, built but not deployed yet) the upgrade is OPad updating
+#      itself, automatically, from that feed served inside the VM (the update
+#      helper on deb, rpm and Arch; on Windows the installer it leaves for
+#      the reboot). If that fails, the run fails, and the package is
+#      installed directly so the rest is still checked. Without -Feed, the
+#      package manager installs it (the installer, on Windows);
 #   3. uninstalls it and checks nothing of OPad is left.
 #
 # Each installed program is checked against the release's FILES.sha256 (the
@@ -26,12 +26,21 @@
 #
 #   powershell -File scripts/lab/lab-install.ps1 [-Tag v1.0.0] [-From v1.0.0-rc.3|none] [-Vms arch,windows-11]
 #       [-Feed dir-with-beta.json] [-OutDir out]
+#   powershell -File scripts/lab/lab-install.ps1 -LocalNew dir -LocalOld dir -Feed dir [-Vms ...]
+#
+# -LocalNew/-LocalOld test builds that were never published
+# (scripts/release/release_local.sh output, plus the opad-bin package):
+# their packages are taken from those directories, and the feed (signed with
+# the test key, made by opad-feed local with base URL http://127.0.0.1:8000/)
+# names files the VM serves itself.
 
 param(
     [string]$Tag = "",
     [string]$From = "",
     [string[]]$Vms = @(),
     [string]$Feed = "",
+    [string]$LocalNew = "",
+    [string]$LocalOld = "",
     [string]$OutDir = "lab-install"
 )
 
@@ -103,9 +112,31 @@ function Get-Release([string]$T) {
     }
     return @{ Tag = $T; Version = $v; Dir = $dir; Files = $files }
 }
+# A local build's files (no SHA256SUMS or FILES.sha256: nothing published)
+function Get-LocalRelease([string]$Dir) {
+    $Dir = (Resolve-Path $Dir).Path
+    $deb = Get-ChildItem $Dir -Filter "opad_*_amd64.deb" | Select-Object -First 1
+    if (-not $deb) { throw "no opad_*_amd64.deb in $Dir" }
+    $v = $deb.Name -replace '^opad_(.+)_amd64\.deb$', '$1'
+    $pick = { param($f) $x = Get-ChildItem $Dir -Filter $f | Select-Object -First 1; if (-not $x) { throw "no $f in $Dir" }; $x.Name }
+    $files = @{
+        deb = $deb.Name; rpm = (& $pick "opad-*.x86_64.rpm"); aur = "opad-bin.PKGBUILD"
+        win = (& $pick "opad-setup-*.exe"); pkg = (& $pick "opad-bin-*-x86_64.pkg.tar.zst")
+    }
+    foreach ($f in $files.Values) { Pass "local build file: $f" }
+    return @{ Tag = "v$v"; Version = $v; Dir = $Dir; Files = $files }
+}
 try {
-    $new = Get-Release $Tag
-    $old = if ($From -ne "none") { Get-Release $From } else { $null }
+    if ($LocalNew) {
+        $new = Get-LocalRelease $LocalNew
+        $old = if ($LocalOld) { Get-LocalRelease $LocalOld } else { $null }
+        $Tag = $new.Tag; $From = if ($old) { $old.Tag } else { "none" }
+        Set-LabRelease $Tag $From
+        Set-LabTitle "Local builds $(if ($old) { "$($old.Tag) -> " })$Tag"
+    } else {
+        $new = Get-Release $Tag
+        $old = if ($From -ne "none") { Get-Release $From } else { $null }
+    }
 } catch { Fail "download" "$_"; Complete-LabRun; exit 1 }
 # The feed the VMs update from: it must offer this release, and only files
 # of this release
@@ -117,7 +148,8 @@ if ($Feed) {
         $app = ([System.IO.File]::ReadAllText($beta) | ConvertFrom-Json).components.app
         if ($app.version -eq $new.Version) { Pass "the update feed under test offers $($new.Version) on the beta channel" }
         else { Fail "the update feed under test offers $($app.version), not $($new.Version)" }
-        $other = @($app.artifacts | Where-Object { $_.url -notlike "https://github.com/$Repo/releases/download/$Tag/*" })
+        $base = if ($LocalNew) { "http://127.0.0.1:8000/" } else { "https://github.com/$Repo/releases/download/$Tag/" }
+        $other = @($app.artifacts | Where-Object { $_.url -notlike "$base*" })
         if ($other.Count -eq 0) { Pass "its $(@($app.artifacts).Count) app downloads are this release's files" }
         else { Fail "the feed's app downloads include files from elsewhere: $(($other | ForEach-Object { $_.url }) -join ', ')" }
     }
@@ -135,7 +167,9 @@ function Get-VmFiles([string]$Vm, $Rel) {
     $list = @(switch -Wildcard ($Vm) {
         "ubuntu-*"  { @(Join-Path $Rel.Dir $f.deb) }
         "fedora-*"  { @(Join-Path $Rel.Dir $f.rpm) }
-        "arch"      { @((Join-Path $Rel.Dir $f.aur), (Join-Path $Rel.Dir "opad-bin.install")) }
+        # The .deb too: makepkg takes the PKGBUILD's source from beside it
+        # rather than downloading it (a local build was never published)
+        "arch"      { @((Join-Path $Rel.Dir $f.aur), (Join-Path $Rel.Dir "opad-bin.install"), (Join-Path $Rel.Dir $f.deb)) }
         "windows-*" { @(Join-Path $Rel.Dir $f.win) }
     })
     $sums = Join-Path $Rel.Dir "FILES.sha256"
@@ -192,6 +226,14 @@ function Test-Installed([string]$Vm, [string]$Sub, $Rel, [switch]$Previous) {
     Add-LabFile $shot screenshot "$($Rel.Tag): the window after login"
 }
 
+# Whether the previous release updates itself silently: it has the update
+# helper (releases from 1.0.0-rc.6 on; a local test build always does)
+$oldSelfUpdates = $false
+if ($old) {
+    $oldSums = Join-Path $old.Dir "FILES.sha256"
+    $oldSelfUpdates = [bool]$LocalNew -or ((Test-Path $oldSums) -and (Select-String -Quiet -SimpleMatch "opad-update-helper" $oldSums))
+}
+
 # The Linux VMs' script with LF line endings whatever the checkout has: bash
 # cannot run CRLF, and a Windows checkout may have it (.gitattributes only
 # applies once git rewrites the file)
@@ -221,14 +263,29 @@ foreach ($vm in $Vms) {
         $c = Copy-ToVm $port @($script)
         if ($c.Code -eq 0 -and $old) { $c = Copy-ToVm $port (Get-VmFiles $vm $old) "old/" }
         if ($c.Code -eq 0) { $c = Copy-ToVm $port (Get-VmFiles $vm $new) "new/" }
-        if ($c.Code -eq 0 -and $Feed) { $c = Copy-ToVm $port @((Join-Path $Feed "beta.json"), (Join-Path $Feed "beta.json.minisig")) "feed/" }
+        if ($c.Code -eq 0 -and $Feed) {
+            $feedFiles = @((Join-Path $Feed "beta.json"), (Join-Path $Feed "beta.json.minisig"))
+            # A local build's feed names files the VM serves itself: the one
+            # this kind of install downloads
+            if ($LocalNew) {
+                $feedFiles += Join-Path $new.Dir $(switch -Wildcard ($vm) {
+                    "ubuntu-*" { $new.Files.deb } "fedora-*" { $new.Files.rpm }
+                    "arch" { $new.Files.pkg } "windows-*" { $new.Files.win }
+                })
+            }
+            $c = Copy-ToVm $port $feedFiles "feed/"
+        }
         if ($c.Code -ne 0) { throw "copy into the VM: $($c.Out)" }
 
         $oldIn = if ($old) { Test-Release $vm "old" $old -Previous } else { $false }
-        if ($Feed -and $oldIn) {
-            # OPad's own updater, from the feed; Arch only reports it
+        if ($Feed -and $oldIn -and -not $oldSelfUpdates) {
+            Add-LabCheck info "$($old.Tag) cannot update itself silently (it predates the update helper): the package is installed directly"
+            $null = Test-Release $vm "new" $new
+        } elseif ($Feed -and $oldIn) {
+            # OPad updates itself from the feed; the reboot then starts the
+            # new version (on Windows, installs it first)
             $updated = Invoke-Phase $vm "update" $new.Version "feed" 1200 "$($new.Tag): "
-            if ($updated -and $vm -ne "arch") { Test-Installed $vm "new" $new }
+            if ($updated) { Test-Installed $vm "new" $new }
             else {
                 if (-not $updated) { Add-LabCheck info "the package is installed directly instead, to check the rest" }
                 $null = Test-Release $vm "new" $new

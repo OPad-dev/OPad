@@ -16,15 +16,17 @@
 #                    desktop, and the app's database exists (the same one as
 #                    before, after an upgrade)
 #   update VERSION DIR
-#                    after check, with the previous release installed: OPad's
-#                    own updater takes VERSION from the signed feed in DIR
-#                    (beta.json and its .minisig, the release's update feed
-#                    before it is deployed), served on this VM's loopback:
-#                    the daemon is restarted in the desktop session with
-#                    OPAD_MANIFEST_URL pointing at it, then asked over its
-#                    named pipe, as the app's Updates page does, to follow
-#                    beta, check, and install. It downloads the installer from
-#                    the release, verifies it against the feed and runs it.
+#                    after check, with the previous release installed: OPad
+#                    updates itself to VERSION, automatically, from the signed
+#                    feed in DIR (beta.json, its .minisig, and for local test
+#                    builds the installer it names), served on this VM's
+#                    loopback. OPad is restarted in the desktop session with
+#                    OPAD_MANIFEST_URL pointing at it and its daemon asked
+#                    over the named pipe, as the app's Updates page does, to
+#                    follow beta. With automatic updates on (the default) it
+#                    downloads and verifies the installer and leaves it for
+#                    the next start: nothing is installed yet. The reboot
+#                    lab-install.ps1 does next is what installs it.
 #   remove           the uninstaller, silent; nothing of OPad is left: files,
 #                    %APPDATA%\opad, Run keys, shortcuts, the Apps entry
 param(
@@ -68,6 +70,10 @@ switch ($Phase) {
         if ($keys.'opad-daemon' -and $keys.'opad-gui') { Pass "autostart Run keys set" } else { Fail "autostart Run keys missing" }
     }
     "check" {
+        # After an automatic update the installer runs at login: give it time
+        $deadline = (Get-Date).AddSeconds(180)
+        while ((Get-InstalledVersion) -ne $Arg -and (Get-Date) -lt $deadline) { Start-Sleep 5 }
+        while ((Get-Process opad-update-* , opad-setup* -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep 2 }
         $v = Get-InstalledVersion
         if ($v -eq $Arg) { Pass "version $Arg installed" } else { Fail "installed version is '$v', not $Arg" }
         # Integrity: the installed programs are the ones the release built
@@ -139,8 +145,9 @@ switch ($Phase) {
         if (-not (Test-Path (Join-Path $feed "beta.json")) -or -not (Test-Path (Join-Path $feed "beta.json.minisig"))) {
             Fail "no signed feed in $feed"; break
         }
+        $old = Get-InstalledVersion
         # Programs started from here would end with the SSH session: the feed
-        # server and the daemon run as tasks in the desktop session instead
+        # server and OPad run as tasks in the desktop session instead
         function Start-InSession([string]$Name, [string]$Exe, [string]$Arguments = "") {
             $action = if ($Arguments) { New-ScheduledTaskAction -Execute $Exe -Argument $Arguments } else { New-ScheduledTaskAction -Execute $Exe }
             Register-ScheduledTask -TaskName $Name -Force -Action $action `
@@ -174,14 +181,17 @@ while ($true) {
 }
 '@
         Start-InSession "opad-lab-feed" "powershell.exe" "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$server`" -Dir `"$feed`""
-        # The daemon reading it: a task gets the user's environment from the registry
+        # OPad again, reading it: a task takes the user's environment from the
+        # registry. Both programs, so the GUI cannot start a daemon without it
         [Environment]::SetEnvironmentVariable("OPAD_MANIFEST_URL", "http://127.0.0.1:8000/beta.json", "User")
-        Stop-Process -Name opad-daemon -Force -ErrorAction SilentlyContinue
+        Stop-Process -Name opad-gui, opad-daemon -Force -ErrorAction SilentlyContinue
         Start-Sleep 2
         Start-InSession "opad-lab-daemon" (Join-Path $app "opad-daemon.exe")
+        Start-Sleep 3
+        Start-InSession "opad-lab-gui" (Join-Path $app "opad-gui.exe") "--tray"
 
         # The daemon's IPC (opad-ipc: a little-endian u32 length, then JSON), as
-        # the GUI's Updates page uses it: follow beta, check, then install
+        # the GUI's Updates page uses it: follow beta, then watch it update itself
         $pipe = "opad-ipc-" + [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
         function Connect-Daemon {
             $p = New-Object System.IO.Pipes.NamedPipeClientStream ".", $pipe, ([System.IO.Pipes.PipeDirection]::InOut)
@@ -207,40 +217,27 @@ while ($true) {
             $p = Connect-Daemon
             $r = Invoke-Ipc $p ('{"Handshake":{"client_version":"' + $running + '","client_protocol":1}}')
             if ($r -notmatch 'HandshakeAck') { throw "the daemon refused the handshake: $r" }
-            $before = ((Invoke-Ipc $p '"GetUpdateStatus"') | ConvertFrom-Json).UpdateStatus.last_check
             $r = Invoke-Ipc $p '{"SetUpdateChannel":{"channel":"beta"}}'
             if ($r -ne '"UpdateCheckStarted"') { throw "following the beta channel: $r" }
-            $deadline = (Get-Date).AddSeconds(180)
-            do {
-                Start-Sleep 1
+            $deadline = (Get-Date).AddSeconds(900); $seen = $false
+            while ($true) {
+                Start-Sleep 2
                 $st = ((Invoke-Ipc $p '"GetUpdateStatus"') | ConvertFrom-Json).UpdateStatus
-                if ((Get-Date) -gt $deadline) { throw "the update check did not finish within 180 s" }
-            } while ($st.checking -or ($st.last_check -eq $before -and -not $st.last_error))
-            if ($st.last_error) { throw "the update check failed: $($st.last_error)" }
-            if ($st.app.available -ne $want) { throw "the feed offers $($st.app.available), not $want" }
-            if (-not $st.app.ready_to_install) { throw "$want is offered but not ready to install (notify only: $($st.app.notify_only))" }
-            Pass "the updater found $want in the signed feed"
-            $r = Invoke-Ipc $p '{"InstallUpdate":{"component":"App"}}'
-            if ($r -notmatch 'UpdateStarted') { throw "Install was refused: $r" }
+                if ($st.app.available -eq $want -and -not $seen) { $seen = $true; Pass "the updater found $want in the signed feed" }
+                if ($st.restart_required -and $st.pending_version -eq $want) { break }
+                if ((Get-Date) -gt $deadline) { throw "$want was not ready within 900 s of following beta (last error: $($st.last_error))" }
+            }
+            Pass "it downloaded and verified $want by itself, to install at the next start"
+            if (-not $st.app.enabled) { Fail "automatic updates were off" }
             $p.Dispose()
         } catch {
-            Fail "updating through the app's updater: $_"
+            Fail "updating itself: $_"
+            $log = Join-Path $env:APPDATA "opad\daemon.log"
+            if (Test-Path $log) { Write-Output "  daemon log:"; Get-Content $log -Tail 40 | ForEach-Object { "  $_" } }
         }
-        if (-not $script:failed) {
-            # The updater downloads, verifies and runs the installer in the background
-            $deadline = (Get-Date).AddSeconds(600)
-            while ((Get-InstalledVersion) -ne $want -and (Get-Date) -lt $deadline) { Start-Sleep 5 }
-            # Its files are replaced only once the installer has finished
-            while ((Get-Process opad-setup* -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep 2 }
-            if ((Get-InstalledVersion) -eq $want) { Pass "OPad updated itself to $want from the feed (its installer, /SILENT)" }
-            else {
-                Fail "still $(Get-InstalledVersion) 600 s after Install, not $want"
-                $log = Join-Path $env:APPDATA "opad\daemon.log"
-                if (Test-Path $log) { Write-Output "  daemon log:"; Get-Content $log -Tail 40 | ForEach-Object { "  $_" } }
-            }
-        }
-        foreach ($t in "opad-lab-feed", "opad-lab-daemon") {
-            Stop-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue
+        if ((Get-InstalledVersion) -eq $old) { Pass "nothing installed yet: OPad $old keeps running until the next start" }
+        else { Fail "OPad was installed while running ($(Get-InstalledVersion))" }
+        foreach ($t in "opad-lab-feed", "opad-lab-daemon", "opad-lab-gui") {
             Unregister-ScheduledTask -TaskName $t -Confirm:$false -ErrorAction SilentlyContinue
         }
         Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -like "*lab-feed-server*" } |
