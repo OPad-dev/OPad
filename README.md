@@ -69,14 +69,14 @@ Standard MX mechanical switches have no polarity. Connect each switch between it
 
 *Note: Pins 11, 12, and 13 are directly adjacent on Header P2 for simple breadboard/Dupont jumper wiring.*
 
-These are the defaults. Each key's pin can be changed in the app under **Settings → Keys**. The list only offers header pins that work with a switch to GND:
+These are the defaults. Each key's pin can be changed in the app under **Settings → ⌨ Keypad**. The list only offers header pins that work with a switch to GND:
 
 | Header | Pins (GPIO) |
 |---|---|
-| **P1** | 1 (`GPIO 2`), 2 (`GPIO 4`), 3 (`GPIO 6`), 4 (`GPIO 16`), 6 (`GPIO 18`), 7 (`GPIO 21`), 8 (`GPIO 8`), 9 (`GPIO 7`), 10 (`GPIO 10`) |
+| **P1** | 1 (`GPIO 2`), 2 (`GPIO 4`), 3 (`GPIO 6`), 4 (`GPIO 16`), 6 (`GPIO 18`), 7 (`GPIO 21`), 9 (`GPIO 7`), 10 (`GPIO 10`) |
 | **P2** | 7 (`GPIO 15`), 8 (`GPIO 13`), 9 (`GPIO 11`), 10 (`GPIO 12`), 11 (`GPIO 14`), 12 (`GPIO 9`) |
 
-Left out: `GPIO 19/20` (USB), `GPIO 43/44` (UART0 console), `GPIO 47/48` (touch and IMU I2C) and `GPIO 17` (pulled down on the board). Most listed pins are also wired to the camera connector, so don't use them with a camera fitted.
+Left out: `GPIO 19/20` (USB), `GPIO 43/44` (UART0 console), `GPIO 47/48` (touch and IMU I2C), `GPIO 17` (pulled down on the board) and `GPIO 8` (the carrier's module-ID line). Most listed pins are also wired to the camera connector, so don't use them with a camera fitted.
 
 ---
 
@@ -158,8 +158,10 @@ telemetry HUD and the lifetime counters.
 > it than trust the dialog.
 
 Uninstall from Settings → Apps. It removes everything it installed, including
-the two `Run` registry values, and asks before it touches your `opad.db` —
-so a reinstall keeps your lifetime counters unless you say otherwise.
+the two `Run` registry values and `%APPDATA%\opad` (the database with your
+settings, layouts and play statistics, logs and update files), without
+asking. Export a backup first if you want to keep them. The pad's own lifetime
+counters stay on the pad, and an update never runs the uninstaller.
 
 **To reset a pad completely, or hand it to someone else**, see
 [Recovery, Reflashing & Unbinding](docs/recovery.md). There is no unpair button
@@ -269,12 +271,11 @@ opadctl monitor
 
 ## 📄 Documentation
 - [Documentation Hub & Wiki](docs/README.md)
-- [System Architecture](docs/architecture.md)
-- [Project Roadmap & Hardware Variants](docs/roadmap.md)
-- [OPad on Windows — as built](docs/windows-portability.md)
-- [USB Framing & Protocol](docs/protocol.md)
+- [System Architecture](docs/explanation/architecture.md)
+- [Installing the app on Linux and Windows](docs/start/install-the-app.md)
+- [USB Framing & Serial Protocol](docs/reference/serial-protocol.md)
 - [Counter Reconciliation, Recovery & Unbinding](docs/recovery.md) — including the reflash / unbind path
-- [Latency Testing Methodology](docs/latency-testing.md)
+- [Latency Testing Methodology](docs/develop/latency-testing.md)
 - [Testing & Hardware Checklist](docs/testing-checklist.md)
 - [Technical Specification v1](docs/specs/technical-spec-v1.md)
 - [Rapid Trigger v2 Specification](docs/specs/v2-rapid-trigger.md)

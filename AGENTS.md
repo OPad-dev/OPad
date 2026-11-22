@@ -188,8 +188,8 @@ to follow.
 
 ## 7. Documentation
 
-- `docs/` grew by accretion and is **possibly stale**. The code and `git log`
-  are authoritative.
+- `docs/` was checked against the code, but the code and `git log` are
+  always authoritative: when they disagree, the doc is wrong.
 - Every factual claim in a doc comes from a source file read while writing it,
   and cites that path.
 - When code and docs disagree, the code wins: fix or delete the doc.

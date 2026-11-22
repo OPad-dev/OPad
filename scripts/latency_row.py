@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Turn an `opadctl latency` run into the finished markdown row for
-docs/latency-testing.md (P3-1, §W4-3).
+docs/develop/latency-testing.md (P3-1, §W4-3).
 
 The measurement itself is hardware work and cannot be automated: flash the
 build for the stage, reset the statistics, tap both keys fast for two minutes,
@@ -107,7 +107,7 @@ def firmware_commit():
 
 
 def format_row(stats, stage, commit, date, stuck, notes):
-    """One markdown row, in docs/latency-testing.md's column order."""
+    """One markdown row, in docs/develop/latency-testing.md's column order."""
     cells = [
         date,
         f"`{commit}`",
@@ -159,7 +159,7 @@ Deferred reports: 17 (waited for the next USB poll, then sent)
     }, stats
 
     row = format_row(stats, "C (10 Hz)", "abc1234", "2026-09-17", 0, "")
-    # Eleven columns, in the order docs/latency-testing.md declares them
+    # Eleven columns, in the order docs/develop/latency-testing.md declares them
     assert row.count("|") == 12, row
     assert row.startswith("| 2026-09-17 | `abc1234` | C (10 Hz) | 148213 | 30 | 50 | 60 | 412 | 17 | 0 |"), row
 
@@ -184,7 +184,7 @@ Deferred reports: 17 (waited for the next USB poll, then sent)
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Print the docs/latency-testing.md row for one benchmark stage.",
+        description="Print the docs/develop/latency-testing.md row for one benchmark stage.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
