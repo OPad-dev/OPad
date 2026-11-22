@@ -1,38 +1,26 @@
 ---
 title: GUI Subsystem Architecture
-description: Implementation reference for opad-gui, iced state architecture, asynchronous IPC event loops, system tray integration, and screen designer preview.
+description: Implementation reference for opad-gui, iced Elm architecture, single-instance handoff, theme tokens, Screen Designer preview, and system tray.
 ---
 
-The `opad-gui` application is built with the [iced](https://github.com/iced-rs/iced) GUI library, following The Elm Architecture (Model-View-Update). It runs cross-platform on Linux and Windows, featuring an asynchronous Tokio runtime backend to communicate with `opad-daemon` over IPC. <!-- src: /desktop/gui/src/main.rs -->
+`opad-gui` is built with `iced` using `iced::daemon` (so closing the window minimizes to the system tray) and communicates asynchronously with `opad-daemon` over local IPC ([/desktop/gui/src/main.rs](/desktop/gui/src/main.rs)).
 
-## Application Architecture & Event Loops (`main.rs`)
+## Application Architecture (`main.rs`)
 
-The application state is encapsulated in `App`: <!-- src: /desktop/gui/src/main.rs -->
+- **Model-View-Update**: `App::new`, `App::update` (returning `Task<Message>`), `App::view`, and `App::subscription` (background status polling, ~50 Hz `GetHeLive` polling on the **Keys** page, animation frames, and close-to-tray handling).
+- **CLI flags**: `--tray` starts hidden in the system tray; `--page <token>` / `-p <token>` opens a specific page (e.g., `dashboard`, `stats`, `designer`, `settings`, `device`, `logs`, `diagnostics`, `about`, `calibrate`, `keys`).
+- **Single-instance handoff** ([/desktop/gui/src/single_instance.rs](/desktop/gui/src/single_instance.rs)): A second launch forwards its `--page` token over a private local socket/pipe to focus and navigate the running instance, then exits.
 
-- **`App::update`**: Pure event handler responding to user interactions (`Message`), navigation changes, settings toggles, and async IPC task completions (`Task<Message>`).
-- **`App::view`**: Pure UI layout generator producing reactive element trees for the active page.
-- **`App::subscription`**: Event subscriptions managing periodic polling ticks (50 Hz during Hall Effect live view, 1 Hz for background daemon heartbeats, and window close/minimize interceptions). <!-- src: /desktop/gui/src/main.rs -->
-- **Single-Instance Mutex (`single_instance.rs`)**:
-  Ensures only one instance of `opad-gui` runs per logged-in desktop session. If launched again, the second process signals the active instance over a private local pipe/socket to unminimize and focus the existing window, then exits cleanly.
+## Theme & Typography (`theme.rs`)
 
-## Design Language & Theme (`theme.rs`)
+[/desktop/gui/src/theme.rs](/desktop/gui/src/theme.rs) mirrors the pad display palette (`firmware/main/ui/core/ui_defaults.c`):
+- `BG = #0E0E16`, `SURFACE = #13131E`, `CARD = #1B1B28`, `CARD_HOVER = #24243A`, `BORDER = #2A2A3C`, `PINK = #FF66AA`, `WHITE = #FFFFFF`, `MUTED = #8C8CA6`, `GREEN = #44DD88`, `RED = #FF5566`, `CYAN = #66CCFF`, `YELLOW = #FFCC33`.
+- Embeds `Montserrat-Medium.ttf` and `Montserrat-Bold.ttf` (`SIL OFL 1.1`).
 
-The GUI visual appearance matches the physical keypad's 2.0-inch LCD display (`ui_defaults.c`): <!-- src: /desktop/gui/src/theme.rs -->
-- **Palette**: Near-black void background (`BG = #0E0E16`), dark elevation surfaces (`SURFACE = #13131E`), subtle card borders (`CARD = #181826`), and osu! pink primary accents (`#FF66AA`). <!-- src: /desktop/gui/src/theme.rs#BG -->
-- **Typography**: Clean Montserrat font weights across all headers, stats displays, and LCD widgets.
+## Screen Designer (`designer/mod.rs`)
 
-## Screen Designer Integration (`designer/mod.rs`)
+[/desktop/gui/src/designer/mod.rs](/desktop/gui/src/designer/mod.rs) edits `Idle` and `Playing` layouts (`MAX_WIDGETS = 32`) on a `2.0x` preview canvas (`SCALE = 2.0`, `HANDLE = 5` pad pixels) rendered by [/desktop/crates/opad-ui-preview/src/lib.rs](/desktop/crates/opad-ui-preview/src/lib.rs), which compiles the firmware's actual C LVGL rendering code for pixel-exact desktop previews.
 
-The Screen Designer allows users to visually edit 320x240 LCD layouts with pixel precision: <!-- src: /desktop/gui/src/designer/mod.rs -->
+## System Tray (`tray.rs`)
 
-- **Firmware Engine Recompilation (`opad-ui-preview`)**:
-  Rather than writing a secondary mock renderer that diverges from the ESP32 firmware, the desktop suite compiles the firmware's actual C LVGL drawing routines into `opad-ui-preview`. The designer preview renders an exact pixel copy of what the ST7789 display will show. <!-- src: /desktop/gui/src/designer/mod.rs -->
-- **Interactive Canvas Overlay**:
-  Renders drag handles (`HANDLE = 5` pad pixels), selection bounding boxes, alignment snap lines, and coordinate labels scaled at 2.0x (`SCALE = 2.0`). <!-- src: /desktop/gui/src/designer/mod.rs#SCALE -->
-
-## System Tray Integration (`tray.rs`)
-
-`opad-gui` minimizes to the system tray rather than terminating when the window close button is pressed: <!-- src: /desktop/gui/src/tray.rs -->
-- **Linux**: Uses `ksni` (KDE StatusNotifierItem protocol), integrating into GNOME (via AppIndicator extension), KDE Plasma, and Wayland desktop environments. <!-- src: /desktop/gui/src/tray.rs#TrayHandle -->
-- **Windows**: Uses Windows Shell NotifyIcon APIs with custom Win32 message loops.
-- **Menu Actions (`TrayAction`)**: Provides quick actions: Show Window, Open Live Monitor, Sync Now, Start Daemon, and Quit. <!-- src: /desktop/gui/src/tray.rs#TrayAction -->
+[/desktop/gui/src/tray.rs](/desktop/gui/src/tray.rs) implements a backend-agnostic tray view model (`IconState`: `Warning` / `Connected` / `Disconnected`) backed by `ksni` (StatusNotifierItem) on Linux and `tray-icon` on Windows, exposing `TrayAction` items: `ShowWindow`, `OpenMonitor`, `SyncNow`, `StartDaemon`, and `Quit`.
