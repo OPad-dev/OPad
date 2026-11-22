@@ -1,124 +1,102 @@
 ---
-title: Cambios de Protocolo y Evolución del Esquema
-description: Cómo evolucionar opad.proto, regenerar los enlaces de nanopb y prost, y mantener la compatibilidad wire bidireccional entre la aplicación y el pad.
+title: Cambios de protocolo y evolución del esquema
+description: Cómo evolucionar opad.proto, regenerar los enlaces de nanopb y prost, y mantener la compatibilidad bidireccional en el cable entre la app y el teclado.
 ---
 
-# Cambios de Protocolo y Evolución del Esquema
+El protocolo de comunicación de OPad entre la suite de escritorio y el firmware del teclado está definido por un único esquema: [`protocol/opad.proto`](/protocol/opad.proto). Tanto los crates de escritorio en Rust como el firmware C del ESP32-S3 generan sus tipos de cable a partir de este archivo.
 
-El protocolo de comunicación de OPad entre la suite de escritorio y el firmware del teclado está definido por un único esquema: `protocol/opad.proto`. Tanto las crates Rust de escritorio como el firmware en C para ESP32-S3 derivan sus tipos de serialización wire desde esta única fuente de verdad.
+Dado que el firmware del teclado y el software de escritorio se actualizan de forma independiente (AGENTS.md §1.3), todo cambio en el esquema debe preservar la compatibilidad bidireccional en el cable.
 
-Dado que el firmware del pad y el software de escritorio se actualizan de forma independiente (AGENTS.md §1.3), cualquier cambio a este esquema debe adherirse estrictamente a las reglas de compatibilidad bidireccional.
+## 1. Arquitectura del esquema y generación de código
 
-<!-- src: /protocol/opad.proto#Hello -->
-<!-- src: /protocol/opad.proto#HelloAck -->
-<!-- src: /protocol/opad.options#max_size -->
-<!-- src: /scripts/gen_proto.sh#nanopb_generator -->
-<!-- src: /firmware/main/protocol/nanopb/pb.h#pb_byte_t -->
-<!-- src: /desktop/crates/opad-protocol/build.rs#protox::compile -->
-
----
-
-## 1. Schema Architecture and Codegen
-
-El flujo de trabajo del protocolo conecta dos generadores de código independientes:
+La tubería del protocolo alimenta dos generadores de código:
 
 ```mermaid
 flowchart TD
-    Schema["protocol/opad.proto\n& opad.options"] -->|nanopb_generator.py| NanoPB["firmware/main/protocol/opad.pb.c / .h\n(estructuras estáticas C)"]
-    Schema -->|protox + prost_build| Prost["desktop/crates/opad-protocol\n(estructuras y enums Rust)"]
-    NanoPB --> ESP["Compilación Firmware ESP32-S3\n(tarea de protocolo en Core 1)"]
-    Prost --> Desktop["Suite de Escritorio\n(opad-device, daemon, cli)"]
+    Schema["protocol/opad.proto & opad.options"] -->|nanopb_generator.py| NanoPB["firmware/main/protocol/opad.pb.c / .h (C static structs)"]
+    Schema -->|protox + prost_build| Prost["desktop/crates/opad-protocol (Rust structs & enums)"]
+    NanoPB --> ESP["ESP32-S3 Firmware Build (Core 1 protocol task)"]
+    Prost --> Desktop["Desktop Suite (opad-device, daemon, cli)"]
 ```
 
-- **Firmware (C)**: Utiliza [nanopb](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/firmware/main/protocol/nanopb/pb.h) integrado para decodificar y codificar mensajes protobuf mediante asignación estática de memoria (`pb_byte_t`).
-- **Escritorio (Rust)**: Utiliza `protox` para analizar archivos `.proto` en el propio proceso sin requerir la instalación de `protoc` en el sistema, compilándolos en estructuras Rust a través de `prost-build` ([build.rs](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/desktop/crates/opad-protocol/build.rs#L16-L19)).
+- **Firmware (C)**: Usa nanopb incluido en el repositorio ([`firmware/main/protocol/nanopb/pb.h`](/firmware/main/protocol/nanopb/pb.h)) para codificar y decodificar mensajes con asignación estática de memoria (`pb_byte_t`). Nunca modifiques los archivos incluidos de nanopb (AGENTS.md §5).
+- **Escritorio (Rust)**: Usa `protox` para compilar [`protocol/opad.proto`](/protocol/opad.proto) dentro del propio proceso sin necesitar un binario `protoc` del sistema, y después genera las estructuras Rust con `prost-build` en [`desktop/crates/opad-protocol/build.rs`](/desktop/crates/opad-protocol/build.rs).
 
----
+## 2. Invariantes para la evolución del esquema
 
-## 2. Invariants for Schema Evolution
+Siempre que modifiques [`protocol/opad.proto`](/protocol/opad.proto):
 
-Siempre que modifiques `protocol/opad.proto`, debes seguir estas reglas:
+1. **Nunca renumeres etiquetas de campos existentes**: Las etiquetas de cable de Protobuf identifican cada campo; cambiar un número rompe la decodificación con pares antiguos o nuevos.
+2. **Nunca cambies tipos de campos existentes**: Cambiar `uint32` a `uint64` o `string` a `bytes` altera el tipo en el cable.
+3. **Mantén los campos nuevos compatibles hacia atrás**: En proto3, los campos escalares omitidos se decodifican a su valor cero (`0`, `false`, cadena vacía), y los campos `optional` distinguen ausencia de cero cuando `0` es un valor válido (como en `ConfigPayload.key3_hid_usage`). Marca los números retirados como `reserved` en vez de reutilizarlos (véase `reserved 14;` en `ConfigPayload`).
+4. **Negocia cambios de comportamiento en el apretón de manos**: Si una función cambia el comportamiento en el cable o exige que el anfitrión sepa si el teclado la soporta, anúnciala en [`Hello`](/protocol/opad.proto) y [`HelloAck`](/protocol/opad.proto).
+5. **Define límites estáticos en `protocol/opad.options`**: Cada campo `string` y `bytes` necesita `max_size`, y cada campo `repeated` necesita `max_count` en [`protocol/opad.options`](/protocol/opad.options) para que nanopb genere arreglos fijos en lugar de punteros de callback.
 
-1. **Nunca renumeres las etiquetas de campos existentes**: Las etiquetas de protobuf identifican los campos sobre el cable. Cambiar una etiqueta rompe la decodificación para cualquier dispositivo que ejecute una versión diferente.
-2. **Nunca cambies los tipos de campos existentes**: Por ejemplo, cambiar `uint32` a `uint64` o `string` a `bytes` altera el formato wire.
-3. **Todos los campos nuevos deben ser opcionales**: En Proto3, todos los campos escalares son opcionales por defecto. Un campo ausente se decodifica con su valor por defecto (0, false, cadena vacía).
-4. **Banderas de características para cambios de comportamiento**: Si una nueva función requiere una negociación activa (como frecuencias más altas de telemetría o nuevos tipos de lotes), negociala durante el handshake mediante [Hello](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/protocol/opad.proto#L32) y [HelloAck](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/protocol/opad.proto#L43).
-5. **Límites estáticos en `opad.options`**: Nanopb requiere tamaños máximos explícitos para cadenas y matrices de bytes (`max_size`), y conteos máximos para campos repetidos (`max_count`). Sin ellos, Nanopb recurre a la asignación de punteros de devolución de llamada, lo que aumenta la sobrecarga de memoria y la complejidad del código.
+## 3. Procedimiento paso a paso
 
----
+### Paso 1: Actualiza `protocol/opad.proto`
 
-## 3. Step-by-Step Procedure
-
-### Step 1: Update protocol/opad.proto
-
-Añade tu nuevo mensaje o nuevos campos a los mensajes existentes. Mantén los números de campo en estricto orden creciente:
+Añade mensajes o campos nuevos con números estrictamente crecientes y sin usar (por ejemplo, `HelloAck` termina actualmente en la etiqueta `21` para `frame_crc`):
 
 ```protobuf
 message HelloAck {
-    // ... campos existentes ...
-    bool tap_rate_per_second = 18;
+    // ... existing fields ...
     uint32 key_count = 19;
     InputModule input_module = 20;
+    bool frame_crc = 21;
 
-    // Ejemplo de nueva bandera de característica
-    bool experimental_feature = 21;
+    // Example new feature flag
+    bool experimental_feature = 22;
 }
 ```
 
-### Step 2: Configure Bounds in protocol/opad.options
+### Paso 2: Configura los límites en `protocol/opad.options`
 
-Si tu nuevo campo contiene cadenas, vectores de bytes o elementos repetidos, define sus límites en [protocol/opad.options](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/protocol/opad.options):
+Si tus campos nuevos incluyen miembros `string`, `bytes` o `repeated`, añade sus límites en [`protocol/opad.options`](/protocol/opad.options):
 
 ```text
 opad.MyNewMessage.name max_size:32
 opad.MyNewMessage.items max_count:16
 ```
 
-### Step 3: Regenerate Nanopb Bindings
+### Paso 3: Regenera los enlaces de Nanopb
 
-Ejecuta el script generador desde la raíz del repositorio:
+Ejecuta [`scripts/gen_proto.sh`](/scripts/gen_proto.sh) desde la raíz del repositorio:
 
-```bash
+```sh
 ./scripts/gen_proto.sh
 ```
 
-Esto invoca [scripts/gen_proto.sh](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/scripts/gen_proto.sh#L30-L31) para regenerar `firmware/main/protocol/opad.pb.c` y `firmware/main/protocol/opad.pb.h`.
+El script invoca `nanopb_generator` (CI fija `nanopb==0.4.9.1` en [`.github/workflows/ci.yml`](/.github/workflows/ci.yml) porque los archivos generados incrustan el comentario con la versión del generador) para sobrescribir `firmware/main/protocol/opad.pb.c` y `firmware/main/protocol/opad.pb.h`.
 
 > [!WARNING]
-> Nunca edites manualmente `opad.pb.c` ni `opad.pb.h`. Cualquier edición manual se sobrescribirá al regenerar y la CI fallará en la comprobación de diferencias de compilación.
+> Nunca edites a mano `firmware/main/protocol/opad.pb.c` ni `firmware/main/protocol/opad.pb.h`. CI los regenera y falla ante cualquier diferencia.
 
-### Step 4: Rebuild Desktop Crates
+### Paso 4: Recompila los crates de escritorio
 
-Dado que [desktop/crates/opad-protocol/build.rs](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/desktop/crates/opad-protocol/build.rs#L14) vigila `protocol/opad.proto`, ejecutar `cargo build` en `desktop/` recompilará automáticamente las estructuras Rust:
+[`desktop/crates/opad-protocol/build.rs`](/desktop/crates/opad-protocol/build.rs) emite `cargo:rerun-if-changed` para `protocol/opad.proto`, por lo que Cargo regenera automáticamente los enlaces Rust en la siguiente compilación:
 
-```bash
+```sh
 cd desktop && cargo check
 ```
 
----
+## 4. Verificación y comprobaciones de CI
 
-## 4. Verification and CI Checks
-
-La Integración Continua aplica una estricta disciplina sobre protobuf:
-
-1. **Comprobación de Diferencias en Protobuf**: La CI regenera los enlaces C usando `scripts/gen_proto.sh` y ejecuta:
-   ```bash
+1. **Comprobación de deriva de Protobuf**: El trabajo `proto-check` en [`.github/workflows/ci.yml`](/.github/workflows/ci.yml) instala `nanopb==0.4.9.1`, ejecuta `./scripts/gen_proto.sh` y comprueba:
+   ```sh
    git diff --exit-code firmware/main/protocol/
    ```
-   Si existe alguna discrepancia entre `opad.proto` y los archivos C confirmados, la CI falla inmediatamente.
-2. **Pruebas Unitarias en el Anfitrión**: Las pruebas de ida y vuelta del protocolo en el anfitrión se ejecutan mediante `make check` (`cargo test -p opad-protocol`).
+2. **Pruebas unitarias de anfitrión y firmware**: Ejecuta `make check` ([`Makefile`](/Makefile)), que corre `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test` (incluyendo pruebas de ida y vuelta y entramado de `opad-protocol`), `./firmware/test/host/run_tests.sh` y `python3 scripts/release/check_versions.py`.
 
----
+## 5. Estándares de commits
 
-## 5. Commit Standards
-
-Al confirmar cambios en el protocolo, incluye el trailer de compatibilidad requerido por AGENTS.md §3:
+Al hacer commit de cambios de protocolo, incluye una línea `Compatibility:` que describa cómo interoperan las combinaciones antiguas y nuevas de app y firmware (AGENTS.md §3):
 
 ```text
 feat(protocol): add experimental feature flag to HelloAck
 
 Negotiate experimental capabilities during initial handshake.
 
-Compatibility: bidirectional; older firmware ignores field 21.
+Compatibility: bidirectional; older firmware ignores field 22.
 AI: assisted
 ```
