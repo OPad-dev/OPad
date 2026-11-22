@@ -1,50 +1,56 @@
 ---
 title: Using the Touchscreen and Swipes
-description: How to use the touchscreen third button for in-game Quick Retry and configure directional swipe actions for volume control and track skipping.
+description: How to use the touchscreen third button for in-game Quick Retry and configure directional swipe actions for volume control, media, and shortcuts.
 ---
 
-The 2.0-inch capacitive touchscreen on OPad functions as **the third button** (Product Rule 4). It is context-aware: during active osu! gameplay, a resting finger triggers Quick Retry (`` ` ``) and swipes never trigger an unwanted retry; outside of beatmaps, directional swipes execute media or keyboard actions. <!-- src: /AGENTS.md -->
+OPad's 2.0-inch capacitive touchscreen acts as **the third button** (AGENTS.md §1.4). During an osu! map, a resting finger sends Quick Retry (`` ` ``) while swipes never trigger Quick Retry; outside a map, taps do nothing and directional swipes run configurable actions. Without a host or without `tosu`, every touch is Quick Retry. <!-- src: /firmware/main/input/touch_retry.c#touch_mode_now -->
+
+## What you need
+
+- Your OPad connected to your PC. For context-aware swipes (in-map vs. menu detection and osu! volume targeting), `opad-daemon` and `tosu` must be running; without them, every touch sends Quick Retry and swipes are off. <!-- src: /firmware/main/input/touch_retry.c#touch_mode_now -->
+- `opad-gui` installed if you want to customize swipe actions. <!-- src: /desktop/gui/src/pages.rs#settings -->
 
 ## In-Game Behavior: Quick Retry
 
-When playing an osu! beatmap: <!-- src: /firmware/main/input/touch_retry.c -->
-- **Resting Finger**: Place and hold your finger anywhere on the glass surface. The firmware observes finger movement for 60 ms (`PLAY_RETRY_STILL_US`). If movement remains within a 12-pixel stillness radius (`PLAY_RETRY_STILL_PX`), it asserts the Quick Retry keycode (`` ` `` / `~`). <!-- src: /firmware/main/input/touch_retry.c#PLAY_RETRY_STILL_US -->
-- **Hold to Retry**: Like holding `` ` `` on a conventional keyboard, holding your finger down restarts the current beatmap instantly.
-- **Swipe Protection**: Quick Retry is never asserted during a swipe. An accidental grazing touch or finger flick will not restart your map.
-- **Display Cleanliness**: During active gameplay, no swipe feedback badges or overlays are drawn on the LCD, keeping the display free of visual distractions.
+While playing an osu! map (`TOUCH_MODE_PLAY`): <!-- src: /firmware/main/input/touch_retry.c#TOUCH_MODE_PLAY -->
+
+- **Resting Finger**: Place and hold your finger on the touchscreen. The pad watches movement for 60 ms (`PLAY_RETRY_STILL_US`); if the finger stays within 12 pixels (`PLAY_RETRY_STILL_PX`), or stays down for 250 ms (`PLAY_SWIPE_WINDOW_US`) without becoming a swipe, the pad holds Quick Retry (`` ` ``) until you lift your finger. A brief tap that lifts without swiping also sends a Quick Retry press-and-release. <!-- src: /firmware/main/input/touch_retry.c#PLAY_RETRY_STILL_US, /firmware/main/input/touch_retry.c#tap_retry -->
+- **Swipe Protection**: Starting a swipe cancels Quick Retry for that touch so swiping to adjust volume or skip a track never restarts your map. <!-- src: /firmware/main/input/touch_retry.c#touch_retry_task -->
+- **No Mid-Map Keyboard Modifiers or Overlays**: During a map, keyboard-key swipes (`osu!` shortcuts and `Other key`) are not sent, volume swipes never press Alt, and no swipe overlay is drawn on the pad's LCD. <!-- src: /firmware/main/input/touch_retry.c#run_swipe_action, /firmware/main/input/touch_retry.c#handle_swipe -->
 
 ## Out-of-Game Behavior: Directional Swipes
 
-When browsing beatmap selection screens or using desktop applications, touching the screen will not send Quick Retry. Instead, directional swipes run configurable actions: <!-- src: /firmware/main/input/gesture.c -->
+Outside a map (`TOUCH_MODE_MENU`), taps send nothing and directional swipes trigger the configured actions: <!-- src: /firmware/main/input/touch_retry.c#TOUCH_MODE_MENU, /desktop/crates/opad-model/src/lib.rs#DEFAULT_SWIPE_UP -->
 
-| Swipe Direction | Default Action | Behavior Details |
+| Swipe Direction | Default Action | Behavior |
 |---|---|---|
-| **Swipe Up** | Volume Up | Increases osu! in-game volume when osu! is focused; steps system master volume otherwise. <!-- src: /desktop/crates/opad-model/src/swipe.rs --> |
-| **Swipe Down** | Volume Down | Decreases osu! in-game volume when osu! is focused; steps system master volume otherwise. <!-- src: /desktop/crates/opad-model/src/swipe.rs --> |
-| **Swipe Left** | Previous Track | Sends standard USB HID consumer Media Previous Track report. <!-- src: /desktop/crates/opad-model/src/swipe.rs --> |
-| **Swipe Right** | Next Track | Sends standard USB HID consumer Media Next Track report. <!-- src: /desktop/crates/opad-model/src/swipe.rs --> |
+| **Swipe Up** (`↑ SWIPE UP`) | `Volume up` | Steps osu! volume when osu! is active (foreground window on Windows, or osu!lazer running on Linux); steps system volume otherwise. Repeats every 30 pixels along a long drag. <!-- src: /firmware/main/input/touch_retry.c#step_volume, /firmware/main/input/gesture.h#GESTURE_SWIPE_PX --> |
+| **Swipe Down** (`↓ SWIPE DOWN`) | `Volume down` | Steps osu! volume when osu! is active; steps system volume otherwise. Repeats every 30 pixels along a long drag. <!-- src: /firmware/main/input/touch_retry.c#step_volume, /firmware/main/input/gesture.h#GESTURE_SWIPE_PX --> |
+| **Swipe Left** (`← SWIPE LEFT`) | `Previous track` | Sends USB HID Consumer Control Previous Track once per swipe. <!-- src: /firmware/main/input/touch_retry.c#run_swipe_action --> |
+| **Swipe Right** (`SWIPE RIGHT →`) | `Next track` | Sends USB HID Consumer Control Next Track once per swipe. <!-- src: /firmware/main/input/touch_retry.c#run_swipe_action --> |
 
-### Swipe Mechanics
-- **Minimum Distance**: Swipes must travel at least 24 pixels (`GESTURE_SWIPE_PX = 24`) from the contact point. <!-- src: /firmware/main/input/gesture.c -->
-- **Axis Locking**: To avoid false triggers from diagonal finger rolls, vertical movement requires $2 \cdot |dy| \ge 3 \cdot |dx|$, and horizontal movement requires $2 \cdot |dx| \ge 3 \cdot |dy|$. Ambiguous movements wait for further displacement. <!-- src: /firmware/main/input/gesture.c#gesture_feed -->
+A swipe requires moving at least **30 pixels** (`GESTURE_SWIPE_PX = 30`) with one axis leading by at least a 1.5:1 ratio (`2 * |dy| >= 3 * |dx|` for vertical, `2 * |dx| >= 3 * |dy|` for horizontal). <!-- src: /firmware/main/input/gesture.h#GESTURE_SWIPE_PX, /firmware/main/input/gesture.c#gesture_feed -->
+
+> [!NOTE]
+> On an uncalibrated Hall Effect pad, the touchscreen is locked to the on-screen calibration button, swipes are off, and no keys are sent until calibration finishes. <!-- src: /firmware/main/input/touch_retry.c#touch_retry_task -->
 
 ## Configuring Custom Swipe Actions
 
-You can customize each swipe direction in `opad-gui`: <!-- src: /desktop/crates/opad-model/src/swipe.rs -->
-1. Open `opad-gui` and navigate to **Settings > Keypad**.
-2. Locate the **Swipe Actions** configuration section.
-3. Select an action from the dropdown for each direction:
-   - **System Volume / osu! Volume**: Default dynamic volume control.
-   - **Media Playback**: Next Track, Previous Track, Play/Pause.
-   - **osu! Shortcuts**: Open Chat (`F9`), Toggle Leaderboard (`Tab`), Toggle Overlay (`Ctrl+O`).
-   - **Custom Key**: Any standard alphanumeric key or function key (`F1`–`F12`) with optional modifier flags (`Ctrl`, `Shift`, `Alt`).
-4. Click **Apply Changes**. The daemon transmits the updated configuration (`SetConfig`) to the pad. <!-- src: /protocol/opad.proto#SetConfig -->
+Swipe actions are configured in `opad-gui`: <!-- src: /desktop/gui/src/pages.rs#settings -->
 
-### Configuring via opadctl
-```bash
-# Configure swipe up to step volume
-opadctl config set swipe-up volume-up
+1. Connect your OPad, open `opad-gui`, select **Settings** in the sidebar, and make sure the **⌨ Keypad** tab is selected. <!-- src: /desktop/gui/src/pages.rs#settings -->
+2. Scroll to the **Touchscreen swipes** card. Each direction has its own dropdown: **↑ SWIPE UP**, **↓ SWIPE DOWN**, **← SWIPE LEFT**, and **SWIPE RIGHT →**. <!-- src: /desktop/gui/src/pages.rs#settings -->
+3. Choose an action from the dropdown: <!-- src: /desktop/crates/opad-model/src/swipe.rs#swipe_choices, /desktop/crates/opad-model/src/lib.rs#SwipeAction -->
+   - **Media / Volume / Off**: `Nothing`, `Volume up`, `Volume down`, `Previous track`, `Next track`, `Play / pause`, `Mute`.
+   - **Named osu! shortcuts**: Built-in osu! and osu!lazer shortcuts (such as `osu!: Random beatmap (F2)`, `osu!: Mod select (F1)`, `osu!: Chat (F8)`, `osu!: Social / extended chat (F9)`, `osu!: Settings (Ctrl+O)`, `osu!: Screenshot (F12)`, and on Windows also `osu! stable: Boss key (hide osu!) (Insert)` and `osu! stable: Reload skin (Ctrl+Alt+Shift+S)`).
+   - **`Other key (F13-F24)…`**: Reveals a second dropdown (`Choose a key`) listing free function keys that do not clash with osu! or system shortcuts — **F14–F19 on Linux** (skipping F13, F20–F23, and F24) and **F13–F23 on Windows** (skipping F24, which the pad reserves for Windows Alt-menu suppression). <!-- src: /desktop/crates/opad-model/src/swipe.rs#free_keys -->
+4. Click **Save settings**. The daemon saves the configuration and sends `SetConfig` to the pad. <!-- src: /desktop/gui/src/pages.rs#settings, /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
 
-# Configure swipe left to trigger custom key binding
-opadctl config set swipe-left media-prev
-```
+## How to check it worked
+
+Run `opadctl status` and check the `Swipes:` line, which prints the configured action for all four directions (`up`, `down`, `left`, `right`). Then swipe on the pad outside a map and verify the feedback badge on the LCD and the action on your PC. <!-- src: /desktop/cli/src/main.rs#Commands, /firmware/main/input/touch_retry.c#handle_swipe -->
+
+## What to do if it did not work
+
+- If every touch acts as Quick Retry and swipes do not run, check that `opad-daemon` and `tosu` are connected (`opadctl status` shows `tosu (osu!): Active`). See [Using with tosu](use-with-tosu.md) and [Troubleshooting](../troubleshooting.md).
+- If volume swipes change system volume instead of osu! volume, verify osu! is the foreground window (Windows) or osu!lazer is running (Linux). <!-- src: /desktop/gui/src/pages.rs#settings -->
