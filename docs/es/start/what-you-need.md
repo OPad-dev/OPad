@@ -1,6 +1,8 @@
 ---
 title: Qué necesitas
 description: Requisitos previos de hardware, especificaciones de la placa, interruptores compatibles, cables USB y requisitos del sistema operativo para montar y usar OPad.
+sidebar:
+  order: 1
 ---
 
 OPad se construye en torno a una placa de desarrollo microcontroladora comercial combinada con interruptores cableados a mano o con las PCBs modulares OPad V3. <!-- src: /README.md --> <!-- src: /hardware/pcb/V3/README.md -->
