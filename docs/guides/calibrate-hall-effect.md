@@ -1,6 +1,8 @@
 ---
 title: Calibrating Hall Effect Switches
 description: How to calibrate magnetic switches on OPad (on the pad or in opad-gui) and tune actuation and rapid trigger settings.
+sidebar:
+  order: 4
 ---
 
 Hall Effect magnetic switches measure the magnetic field of a magnet inside each switch stem instead of a metal contact leaf. Calibration records each key's resting reading and normal full-press reading so the pad knows its magnetic travel span. Under decision record D7, an uncalibrated Hall Effect pad is locked to its calibration screen: no keys are sent, touchscreen swipes are disabled, and touch only operates the calibration button until calibration completes. <!-- src: /firmware/main/ui/he_cal_ui.c --> <!-- src: /docs/specs/v2-hall-effect-decisions.md -->
