@@ -805,6 +805,14 @@ const FORCED_SETTINGS: &[(&str, &str)] = &[
 /// Writes FORCED_SETTINGS into tosu.env, keeping every other line. tosu.env
 /// wins over environment variables, so the file is what has to say it.
 fn pin_tosu_settings(bin: &Path) {
+    if cfg!(target_os = "linux") {
+        for dir in [dirs::config_dir(), dirs::data_dir(), dirs::cache_dir()]
+            .into_iter()
+            .flatten()
+        {
+            claim_if_new(&dir.join("tosu"));
+        }
+    }
     let Some(dir) = tosu_config_dir(bin) else {
         return;
     };
@@ -814,6 +822,25 @@ fn pin_tosu_settings(bin: &Path) {
     let updated = with_forced_settings(&content);
     if updated != content {
         let _ = std::fs::write(&env_file, updated);
+    }
+}
+
+/// Marks a tosu directory as OPad's when OPad is the one creating it, before
+/// tosu first runs. On Linux tosu keeps its settings, overlays and cache in
+/// ~/.config/tosu, ~/.local/share/tosu and ~/.cache/tosu, which a tosu the
+/// user installed themselves shares: uninstalling OPad deletes only the
+/// directories that carry this marker (packaging/linux/uninstall-cleanup.sh).
+pub const OWNED_MARKER: &str = ".created-by-opad";
+
+fn claim_if_new(dir: &Path) {
+    if dir.exists() {
+        return;
+    }
+    if std::fs::create_dir_all(dir).is_ok() {
+        let _ = std::fs::write(
+            dir.join(OWNED_MARKER),
+            "Created by OPad for its bundled tosu; uninstalling OPad deletes this directory.\n",
+        );
     }
 }
 
@@ -917,6 +944,22 @@ fn endpoint_socket_addr(endpoint: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn only_a_directory_opad_creates_is_marked_as_its_own() {
+        let root = std::env::temp_dir().join(format!("opad-claim-{}", std::process::id()));
+        let fresh = root.join("fresh/tosu");
+        let theirs = root.join("theirs/tosu");
+        std::fs::create_dir_all(&theirs).unwrap();
+        claim_if_new(&fresh);
+        claim_if_new(&theirs);
+        assert!(fresh.join(OWNED_MARKER).is_file());
+        assert!(
+            !theirs.join(OWNED_MARKER).exists(),
+            "a tosu install of the user's own"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     #[test]
     fn forced_settings_override_tosu_env_and_keep_the_rest() {

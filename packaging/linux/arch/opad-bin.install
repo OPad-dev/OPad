@@ -19,3 +19,11 @@ post_install() {
 post_upgrade() {
     _opad_configure
 }
+
+# An uninstall, not an upgrade: stop OPad and delete what it wrote
+# (packaging/linux/uninstall-cleanup.sh)
+pre_remove() {
+    if [ -x /usr/lib/opad/uninstall-cleanup ]; then
+        /usr/lib/opad/uninstall-cleanup || true
+    fi
+}

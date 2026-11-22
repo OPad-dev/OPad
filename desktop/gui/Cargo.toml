@@ -65,6 +65,7 @@ assets = [
     ["../../packaging/linux/xdg-autostart/opad-gui.desktop", "etc/xdg/autostart/opad-gui.desktop", "644"],
     ["../../packaging/linux/udev/70-opad.rules", "usr/lib/udev/rules.d/70-opad.rules", "644"],
     ["../../packaging/linux/deb/install-origin", "usr/lib/opad/install-origin", "644"],
+    ["../../packaging/linux/uninstall-cleanup.sh", "usr/lib/opad/uninstall-cleanup", "755"],
     ["../../packaging/linux/deb/install-origin", "etc/opad/install-origin", "644"],
     ["assets/fonts/Montserrat-OFL.txt", "usr/share/doc/opad/Montserrat-OFL.txt", "644"],
     ["../../build/tosu/tosu", "usr/lib/opad/tosu/tosu", "755"],
@@ -91,6 +92,7 @@ assets = [
     { source = "../../packaging/linux/xdg-autostart/opad-gui.desktop", dest = "/etc/xdg/autostart/opad-gui.desktop", mode = "644" },
     { source = "../../packaging/linux/udev/70-opad.rules", dest = "/usr/lib/udev/rules.d/70-opad.rules", mode = "644" },
     { source = "../../packaging/linux/rpm/install-origin", dest = "/usr/lib/opad/install-origin", mode = "644" },
+    { source = "../../packaging/linux/uninstall-cleanup.sh", dest = "/usr/lib/opad/uninstall-cleanup", mode = "755" },
     { source = "../../packaging/linux/rpm/install-origin", dest = "/etc/opad/install-origin", mode = "644" },
     { source = "assets/fonts/Montserrat-OFL.txt", dest = "/usr/share/licenses/opad/Montserrat-OFL.txt", mode = "644" },
     { source = "../../LICENSE", dest = "/usr/share/licenses/opad/LICENSE", mode = "644" },
@@ -110,6 +112,12 @@ if [ $1 -ge 1 ]; then
     if [ -f /usr/lib/opad/tosu/tosu ] && command -v setcap >/dev/null 2>&1; then
         setcap cap_sys_ptrace=eip /usr/lib/opad/tosu/tosu || true
     fi
+fi
+"""
+# $1 is 0 on an uninstall, 1 on an upgrade: only an uninstall cleans up
+pre_uninstall_script = """
+if [ $1 -eq 0 ] && [ -x /usr/lib/opad/uninstall-cleanup ]; then
+    /usr/lib/opad/uninstall-cleanup || true
 fi
 """
 post_uninstall_script = """

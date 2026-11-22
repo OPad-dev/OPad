@@ -2,6 +2,7 @@
 Type=Application
 Name=OPad Tray
 Comment=OPad configuration and system tray applet
+TryExec=@BINDIR@/opad-gui
 Exec=@BINDIR@/opad-gui --tray
 Icon=input-keyboard
 Terminal=false

@@ -2,7 +2,8 @@
 # Installs dist/*.deb and dist/*.rpm in clean distro containers and checks each
 # works there: dependencies resolve, the post-install scripts run (tosu gets
 # cap_sys_ptrace), no shared library is missing, espflash runs, the daemon
-# starts and answers opadctl, tosu starts, and the package removes cleanly.
+# starts and answers opadctl, tosu starts, and removing the package leaves
+# nothing of OPad (files, processes, users' data), but a tosu of the user's own.
 #
 #   scripts/release/test_packages.sh [image ...]      (needs docker)
 #
@@ -56,8 +57,23 @@ opad-daemon >/tmp/daemon.log 2>&1 &
 sleep 3
 opadctl status 2>&1 | grep -q "Daemon Mode" || fail "daemon did not answer opadctl status"
 grep -qi panic /tmp/daemon.log && fail "daemon panicked"
-kill %1 2>/dev/null; sleep 1
+# What an uninstall must delete, and the one thing it must not: a user with
+# OPad data, an autostart entry, tosu directories OPad created (marked) and
+# a cache of a tosu of their own (unmarked)
+useradd -m -u 1001 player 2>/dev/null || adduser --disabled-password --gecos "" --uid 1001 player >/dev/null
+H=/home/player
+mkdir -p $H/.local/share/opad $H/.local/state/opad $H/.config/autostart $H/.config/tosu $H/.local/share/tosu $H/.cache/tosu
+touch $H/.local/share/opad/opad.db $H/.local/state/opad/daemon.log $H/.config/autostart/opad-gui.desktop
+touch $H/.config/tosu/.created-by-opad $H/.local/share/tosu/.created-by-opad $H/.cache/tosu/own-cache
 $REMOVE >/dev/null 2>&1 || fail "remove"
+sleep 1
+for f in /usr/bin/opad-gui /usr/lib/opad /etc/opad /etc/xdg/autostart/opad-gui.desktop \
+         $H/.local/share/opad $H/.local/state/opad $H/.config/autostart/opad-gui.desktop \
+         $H/.config/tosu $H/.local/share/tosu /root/.local/share/opad; do
+  [ -e "$f" ] && fail "left behind after removal: $f"
+done
+[ -f $H/.cache/tosu/own-cache ] || fail "removal deleted a tosu directory OPad did not create"
+pgrep -x opad-daemon >/dev/null && fail "opad-daemon still running after removal"
 [ $FAILED -eq 0 ] && echo "PASS" || exit 1
 '
 status=0

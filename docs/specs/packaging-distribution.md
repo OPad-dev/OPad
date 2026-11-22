@@ -254,19 +254,17 @@ This is an explicit owner requirement. The uninstaller must be *provably* comple
 - Start Menu and (if created) desktop shortcuts
 - Any `%TEMP%` scratch files the app created
 
-**Must prompt (a clear, explicit dialog, default = keep):**
-- `%APPDATA%\opad\` — the SQLite DB with **lifetime counters**, config, layouts, logs
+**Also removed, without a prompt (decided 2026-11-22: uninstalling leaves nothing behind):**
+- `%APPDATA%\opad\` — the SQLite DB with the PC's play statistics, config, layouts, logs and update staging. The pad's own counters live on the pad and survive. Users who want to keep their data export a backup first (Backup & Restore). An update never runs the uninstaller, so updates keep everything.
 
-  > "Also delete your OPad settings and lifetime key counters? This cannot be undone."
-
-  Offer a "Export backup first" button that invokes the existing JSON export (P1-5/P2-3) before deleting. Counters are the emotionally valuable data in this product; deleting them silently would be the single worst thing the uninstaller could do.
+The same holds on Linux: the .deb's prerm, the .rpm's `%preun` and opad-bin's `pre_remove` run `packaging/linux/uninstall-cleanup.sh` on an uninstall (never an upgrade). It stops OPad and the bundled tosu, and deletes every user's `~/.local/share/opad`, `~/.local/state/opad`, the GUI's `~/.config/autostart/opad-gui.desktop` and an enabled user-service link. tosu's `~/.config/tosu`, `~/.local/share/tosu` and `~/.cache/tosu` go too, but only where OPad created them (they carry opad-tosu's `OWNED_MARKER`); a tosu the user installed keeps its own.
 
 **Needs no cleanup (document why, so nobody adds bogus cleanup code later):**
 - The named pipe — kernel object, disappears with the process
 - The COM port assignment — owned by Windows' `usbser.sys` enumeration, not by us
 - The pad's own NVS — deliberately untouched; see W3-4
 
-**Acceptance.** Install → use → uninstall (choosing "delete everything") leaves **zero** OPad files and **zero** registry values. Verify with a filesystem+registry diff across the whole cycle, and record the procedure in `docs/testing-checklist.md` as a new section. Run the same check for the "keep my data" path and confirm that `%APPDATA%\opad\` is the *only* thing left.
+**Acceptance.** Install → use → uninstall leaves **zero** OPad files and **zero** registry values. `scripts/lab/lab-install.ps1` checks it in every lab VM.
 
 ---
 

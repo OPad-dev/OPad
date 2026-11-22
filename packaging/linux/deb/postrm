@@ -8,6 +8,8 @@ case "$1" in
             udevadm trigger --subsystem-match=tty --subsystem-match=usb || true
         fi
         rm -rf /usr/lib/opad /etc/opad
+        # A conffile, which apt remove would otherwise keep until a purge
+        rm -f /etc/xdg/autostart/opad-gui.desktop
         ;;
     upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
         ;;

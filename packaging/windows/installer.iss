@@ -142,7 +142,7 @@ end;
 
 // Strong uninstall contract (§W2-3)
 // 1. Unconditionally remove Run autostart keys even if toggled inside the GUI.
-// 2. Prompt user before deleting lifetime counters and config in %APPDATA%\opad (default = keep).
+// 2. Delete %APPDATA%\opad: config, counters, logs (nothing is left behind).
 // 3. Document why no cleanup is needed for:
 //    - Named pipe: Windows kernel object, cleaned up when processes exit.
 //    - COM port: managed dynamically by usbser.sys.
@@ -186,25 +186,12 @@ begin
     RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'opad-daemon');
     RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'opad-gui');
 
+    // Uninstalling leaves nothing of OPad behind: its data (the database with
+    // settings, layouts and the PC's play statistics), logs and update
+    // staging all live here. The pad's own counters stay on the pad.
+    // An update never runs the uninstaller, so it keeps all of this.
     AppDataDir := ExpandConstant('{userappdata}\opad');
-    if not DirExists(AppDataDir) then
-      AppDataDir := ExpandConstant('{userappdata}\opad');
-
     if DirExists(AppDataDir) then
-    begin
-      // Prompt user whether to delete database and lifetime counters. Default is NO (keep).
-      // In silent mode (UninstallSilent), preserve user data as per default (§W2-3).
-      if (not UninstallSilent) and (MsgBox('Also delete your OPad settings and lifetime key counters? This cannot be undone.',
-                mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES) then
-      begin
-        DelTree(AppDataDir, True, True, True);
-      end
-      else
-      begin
-        // Keep opad.db/opad.db, but purge disposable log files
-        DeleteFile(AppDataDir + '\daemon.log');
-        DeleteFile(AppDataDir + '\tosu.log');
-      end;
-    end;
+      DelTree(AppDataDir, True, True, True);
   end;
 end;

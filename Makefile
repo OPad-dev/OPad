@@ -211,6 +211,7 @@ install: all
 	fi
 	printf '%s\n' "$(INSTALL_ORIGIN)" > "$(DESTDIR)$(LIBDIR)/opad/install-origin"
 	chmod 644 "$(DESTDIR)$(LIBDIR)/opad/install-origin"
+	install -m 755 packaging/linux/uninstall-cleanup.sh "$(DESTDIR)$(LIBDIR)/opad/uninstall-cleanup"
 	@if [ -d "packaging/linux/icons" ]; then \
 		install -d "$(DESTDIR)$(DATADIR)/icons"; \
 		cp -r packaging/linux/icons/* "$(DESTDIR)$(DATADIR)/icons/"; \

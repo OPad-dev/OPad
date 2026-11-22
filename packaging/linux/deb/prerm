@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    remove)
+        # Uninstall, not an upgrade: stop OPad and delete what it wrote
+        # (packaging/linux/uninstall-cleanup.sh)
+        if [ -x /usr/lib/opad/uninstall-cleanup ]; then
+            /usr/lib/opad/uninstall-cleanup || true
+        fi
+        ;;
+    *)
+        ;;
+esac
+
+exit 0

@@ -159,8 +159,11 @@ fn set_autostart_in(
     exe: &Path,
 ) -> Result<(), String> {
     let content = if enabled {
+        // TryExec: once OPad is uninstalled the desktop skips the entry
+        // instead of failing to start it at every login
         format!(
-            "[Desktop Entry]\nType=Application\nName=OPad Tray\nComment=OPad configuration and system tray applet\nExec=\"{}\" --tray\nIcon=input-keyboard\nTerminal=false\nCategories=Utility;HardwareSettings;\nX-GNOME-Autostart-enabled=true\n",
+            "[Desktop Entry]\nType=Application\nName=OPad Tray\nComment=OPad configuration and system tray applet\nTryExec={}\nExec=\"{}\" --tray\nIcon=input-keyboard\nTerminal=false\nCategories=Utility;HardwareSettings;\nX-GNOME-Autostart-enabled=true\n",
+            exe.display(),
             exe.display()
         )
     } else if system_file.exists() {
@@ -276,6 +279,7 @@ mod autostart_tests {
         set_autostart_in(&user, &system, true, exe).unwrap();
         let content = std::fs::read_to_string(&user).unwrap();
         assert!(content.contains("Exec=\"/opt/My Apps/OPad.AppImage\" --tray"));
+        assert!(content.contains("TryExec=/opt/My Apps/OPad.AppImage\n"));
         assert!(autostart_enabled_in(&user, &system));
 
         set_autostart_in(&user, &system, false, exe).unwrap();
