@@ -1,6 +1,8 @@
 ---
 title: Referencia de pinout de hardware
 description: Pinout de cabezales, asignaciones GPIO, mapas de periféricos y conexiones FFC del carrier V3 para OPad.
+sidebar:
+  order: 4
 ---
 
 Esta página documenta el pinout de hardware de la placa Waveshare ESP32-S3-Touch-LCD-2, el cableado autónomo de interruptores mecánicos y las interconexiones FFC del carrier y los módulos OPad V3.
