@@ -1,6 +1,8 @@
 ---
 title: Copia de seguridad y restauración
 description: Cómo funcionan las copias de seguridad JSON automáticas y cómo exportar, previsualizar y restaurar la configuración y los contadores de por vida de OPad con opadctl u opad-gui.
+sidebar:
+  order: 7
 ---
 
 OPad exporta la configuración del dispositivo y los contadores de pulsaciones de por vida como archivos JSON portables (`JsonBackup`, `format_version: 1`). Puedes exportar y restaurar copias de seguridad manualmente mediante `opadctl` u `opad-gui`, y `opad-daemon` también escribe copias automáticas tras las sesiones de juego para que los contadores sobrevivan a daños o reemplazos de hardware. <!-- src: /desktop/daemon/src/backup.rs --> <!-- src: /desktop/crates/opad-model/src/lib.rs#JsonBackup -->
