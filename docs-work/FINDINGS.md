@@ -21,3 +21,8 @@ Discrepancies, code bugs, documentation conflicts, and notable architectural obs
 - **Page**: `docs/recovery.md`
 - **Problem**: The pre-rewrite `docs/recovery.md` stated that `opadctl bootloader` tries three triggers (code has two: `BootTrigger::Command` and `BootTrigger::BaudTouch`; the esptool RTS/DTR trigger was removed in `firmware/main/usb/usb_cdc.c` because ModemManager/serial probes triggered accidental reboots), named a non-existent IPC command `InheritDeviceCounters` (code uses `ResolveReplacement`), quoted an outdated replacement banner text, and stated replacement triggers only when `gen == 0, k1 == 0, k2 == 0` with exactly one previous pad (code triggers when `counter_generation <= 1 && lifetime_key1 < 1000 && lifetime_key2 < 1000 && pc_is_ahead_of_pad()`).
 - **Files involved**: `docs/recovery.md`, `desktop/crates/opad-device/src/flash.rs`, `firmware/main/usb/usb_cdc.c`, `desktop/daemon/src/runtime.rs`, `desktop/daemon/src/ipc_handlers.rs`, `desktop/gui/src/main.rs`.
+
+## F5: Incompatible device protocol banner prints `IPC_PROTOCOL_VERSION` instead of `DEVICE_PROTOCOL_VERSION`
+- **Page**: `docs/explanation/app-and-pad-versions.md`
+- **Problem**: In `desktop/gui/src/main.rs`, the incompatible device protocol warning banner formats the required version using `opad_ipc::IPC_PROTOCOL_VERSION` rather than `opad_protocol::DEVICE_PROTOCOL_VERSION` (both are currently `1`, so the displayed number matches today, but they are separate constants).
+- **Files involved**: `desktop/gui/src/main.rs`, `desktop/crates/opad-ipc/src/lib.rs`, `desktop/crates/opad-protocol/src/lib.rs`.
