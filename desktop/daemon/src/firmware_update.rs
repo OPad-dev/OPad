@@ -30,7 +30,7 @@ use opad_ipc::FirmwareOffer;
 use opad_model::DeviceInfo;
 use opad_storage::Storage;
 use opad_update::firmware::{
-    blockers, consent_text, is_ota_0, Blocker, FirmwareAction, Preconditions,
+    blockers, consent_text, is_ota_slot, Blocker, FirmwareAction, Preconditions,
     TYPICAL_OUTAGE_SECONDS,
 };
 use opad_update::{may_update_now, DeferReason, ReleaseManifest, UpdateError};
@@ -84,7 +84,7 @@ pub fn offer(
         // Consent is given with the request, not held as state, so it is never
         // one of the things this answer is waiting on.
         consented: true,
-        running_from_ota_0: is_ota_0(out.running_partition.as_deref()),
+        running_from_ota_slot: is_ota_slot(out.running_partition.as_deref()),
     })
     .iter()
     .map(|b| capitalise(&b.to_string()))
@@ -211,7 +211,7 @@ pub async fn install<D: DeviceLink>(
         counters_synced: false,
         storage_available,
         consented,
-        running_from_ota_0: is_ota_0(running_partition.as_deref()),
+        running_from_ota_slot: is_ota_slot(running_partition.as_deref()),
     });
     if stopping.iter().any(|b| *b != Blocker::CountersNotSynced) {
         return Ok(FirmwareUpdateOutcome::Refused {
@@ -484,6 +484,27 @@ mod tests {
         let text = offer.consent_text.expect("an offer must say what it costs");
         assert!(text.contains("Do not unplug"));
         assert!(offer.outage_seconds > 0);
+    }
+
+    #[test]
+    fn a_pad_on_ota_1_after_an_update_is_offered_the_next_one_into_ota_0() {
+        let st = state_with(RuntimeMode::Idle, true, "1.0.0");
+        if let Some(info) = st.lock().device_info.as_mut() {
+            info.running_partition = Some("ota_1".to_string());
+        }
+        let offer = offer(Some(&manifest("1.1.0")), &st, true);
+        assert_eq!(offer.running_partition.as_deref(), Some("ota_1"));
+        assert!(offer.blockers.is_empty(), "{:?}", offer.blockers);
+        assert_eq!(offer.available.as_deref(), Some("1.1.0"));
+
+        // What install() then writes: the slot the pad is not running
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("opad-firmware.bin");
+        let plan =
+            flash::plan_app_update(&image, offer.running_partition.as_deref(), dir.path()).unwrap();
+        assert_eq!(plan.target_slot, Some("ota_0"));
+        assert_eq!(plan.images[0], (flash::APP_PARTITION_OFFSET, image));
+        assert_eq!(plan.images[1].0, flash::OTADATA_OFFSET);
     }
 
     #[test]

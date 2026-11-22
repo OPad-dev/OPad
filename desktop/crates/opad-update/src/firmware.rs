@@ -86,9 +86,11 @@ pub enum Blocker {
     NoConsent,
     /// The daemon has no database, so there is nowhere to sync counters to
     NoStorage,
-    /// The pad is not running from `ota_0`: a legacy single-app layout (app at
-    /// 0x10000, no OTA slots) or a pad booted from `ota_1`. Writing the app at
-    /// 0x20000 would either brick the first or be ignored by the second.
+    /// The pad is not running from an OTA slot: a legacy single-app layout
+    /// (app at 0x10000, no OTA slots), firmware too old to report its slot, or
+    /// a `factory` or unknown partition. An update writes the slot the pad is
+    /// not running and `otadata` (`opad_device::flash::plan_app_update`),
+    /// which only means something on the two-slot layout.
     NeedsFullReflash,
 }
 
@@ -109,8 +111,8 @@ impl std::fmt::Display for Blocker {
             ),
             Blocker::NeedsFullReflash => f.write_str(
                 "the pad's partition layout does not match this update (it is not running \
-                 from ota_0); it needs a one-time full reflash with `opadctl flash --full`, \
-                 see docs/recovery.md",
+                 from ota_0 or ota_1); it needs a one-time full reflash with \
+                 `opadctl flash --full`, see docs/recovery.md",
             ),
         }
     }
@@ -125,14 +127,16 @@ pub struct Preconditions {
     pub storage_available: bool,
     pub consented: bool,
     /// What the pad's HelloAck reported as its running partition
-    pub running_from_ota_0: bool,
+    pub running_from_ota_slot: bool,
 }
 
-/// The only layout a host-driven update may write to: the app at 0x20000 in
-/// `ota_0` (§U-3a). `None` is firmware too old to report, i.e. the legacy
-/// single-app layout.
-pub fn is_ota_0(running_partition: Option<&str>) -> bool {
-    running_partition == Some("ota_0")
+/// The only layout a host-driven update may write to: the two OTA slots of
+/// `firmware/partitions.csv` (§U-3a). The update goes to the slot the pad is
+/// not running, either way round (`opad_device::flash::plan_app_update`), so
+/// a pad on `ota_1` after one update takes the next one into `ota_0`. `None`
+/// is firmware too old to report, i.e. the legacy single-app layout.
+pub fn is_ota_slot(running_partition: Option<&str>) -> bool {
+    matches!(running_partition, Some("ota_0") | Some("ota_1"))
 }
 
 /// Every reason a flash may not start, in the order a user should hear them.
@@ -140,7 +144,7 @@ pub fn blockers(p: Preconditions) -> Vec<Blocker> {
     let mut out = Vec::new();
     if !p.connected {
         out.push(Blocker::NotConnected);
-    } else if !p.running_from_ota_0 {
+    } else if !p.running_from_ota_slot {
         out.push(Blocker::NeedsFullReflash);
     }
     if let Err(reason) = p.gate {
@@ -432,20 +436,32 @@ mod tests {
             counters_synced: true,
             storage_available: true,
             consented: true,
-            running_from_ota_0: true,
+            running_from_ota_slot: true,
         }
     }
 
     #[test]
-    fn a_pad_not_on_ota_0_needs_a_full_reflash_not_an_update() {
-        for slot in [None, Some("factory"), Some("ota_1")] {
+    fn a_pad_not_on_an_ota_slot_needs_a_full_reflash_not_an_update() {
+        for slot in [None, Some("factory"), Some("ota_2"), Some("")] {
             let p = Preconditions {
-                running_from_ota_0: is_ota_0(slot),
+                running_from_ota_slot: is_ota_slot(slot),
                 ..ok_preconditions()
             };
             assert_eq!(blockers(p), vec![Blocker::NeedsFullReflash], "{slot:?}");
         }
-        assert!(is_ota_0(Some("ota_0")));
+    }
+
+    #[test]
+    fn a_pad_on_either_ota_slot_can_be_updated() {
+        // After one update the pad runs from ota_1; the next goes to ota_0
+        for slot in [Some("ota_0"), Some("ota_1")] {
+            assert!(is_ota_slot(slot), "{slot:?}");
+            let p = Preconditions {
+                running_from_ota_slot: is_ota_slot(slot),
+                ..ok_preconditions()
+            };
+            assert!(blockers(p).is_empty(), "{slot:?}");
+        }
     }
 
     #[test]
