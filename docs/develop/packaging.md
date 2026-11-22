@@ -1,6 +1,8 @@
 ---
 title: Packaging and Distribution Mechanics
 description: Technical guide to packaging OPad for Linux (.deb, .rpm, AppImage, Arch PKGBUILD) and Windows (Inno Setup), install-origin markers, and build scripts.
+sidebar:
+  order: 6
 ---
 
 OPad packages distribute `opad-daemon`, `opad-gui`, and `opadctl` together with pinned `tosu` (**v4.26.2**) and `espflash` (**4.6.0**).
