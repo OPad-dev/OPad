@@ -52,4 +52,4 @@ The major wire protocol version is [`DEVICE_PROTOCOL_VERSION`](/desktop/crates/o
   }
   ```
 - **Safe Fallback**:
-  An incompatible pad keeps working as a 1000 Hz USB HID keyboard. The daemon does not sync counters, overwrite configuration, or stream telemetry to it. `opadctl status` prints an `Incompatible:` warning line ([`desktop/cli/src/main.rs`](/desktop/cli/src/main.rs)), and `opad-gui` displays a warning banner ([`desktop/gui/src/main.rs`](/desktop/gui/src/main.rs)).
+  An incompatible pad keeps working as a 1000 Hz USB HID keyboard. The daemon does not sync counters, overwrite configuration, or stream telemetry to it. `opadctl status` prints an `Incompatible:` warning line ([`desktop/cli/src/main.rs`](/desktop/cli/src/main.rs)), and `opad-gui` displays a warning banner ([`desktop/gui/src/main.rs`](/desktop/gui/src/main.rs)). Both name the pad's protocol and the one required, `DEVICE_PROTOCOL_VERSION`; the GUI-daemon IPC version (`IPC_PROTOCOL_VERSION`) plays no part. <!-- src: /desktop/gui/src/main.rs#incompatible_banner, /desktop/cli/src/main.rs#Commands, /desktop/crates/opad-protocol/src/lib.rs#DEVICE_PROTOCOL_VERSION -->

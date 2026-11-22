@@ -2303,9 +2303,9 @@ impl App {
         if let Some(incompat) = &self.incompatible {
             main = main.push(
                 container(
-                    row![
-                        text(format!("⚠ Incompatible device protocol (device: {}, required: {}). Update firmware.", incompat.protocol_version, opad_ipc::IPC_PROTOCOL_VERSION)).size(14).color(theme::YELLOW),
-                    ]
+                    row![text(incompatible_banner(incompat))
+                        .size(14)
+                        .color(theme::YELLOW),]
                     .align_y(Alignment::Center),
                 )
                 .padding([8, 14])
@@ -3395,9 +3395,36 @@ fn magnet_tick() -> Task<Message> {
     )
 }
 
+/// The banner for a pad the daemon refused. The daemon compares the pad's
+/// protocol with `opad_protocol::DEVICE_PROTOCOL_VERSION` (as `opadctl
+/// status` prints it), not with the GUI-daemon IPC version.
+fn incompatible_banner(incompat: &opad_model::IncompatibleDevice) -> String {
+    format!(
+        "⚠ Incompatible device protocol (device: {}, required: {}). Update firmware.",
+        incompat.protocol_version,
+        opad_protocol::DEVICE_PROTOCOL_VERSION
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_incompatible_banner_names_the_pad_protocol_the_daemon_requires() {
+        let text = incompatible_banner(&opad_model::IncompatibleDevice {
+            firmware_version: "0.9.0".to_string(),
+            protocol_version: 7,
+        });
+        assert!(text.contains("device: 7"), "{text}");
+        assert!(
+            text.contains(&format!(
+                "required: {}",
+                opad_protocol::DEVICE_PROTOCOL_VERSION
+            )),
+            "{text}"
+        );
+    }
 
     #[test]
     fn every_page_token_round_trips() {

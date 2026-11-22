@@ -3898,6 +3898,7 @@ dependencies = [
  "opad-ipc",
  "opad-layout",
  "opad-model",
+ "opad-protocol",
  "opad-tosu",
  "opad-ui-preview",
  "rfd",

@@ -23,6 +23,8 @@ serde_json.workspace = true
 chrono.workspace = true
 opad-model = { path = "../crates/opad-model" }
 opad-ipc = { path = "../crates/opad-ipc" }
+# DEVICE_PROTOCOL_VERSION: the pad protocol the daemon checks a pad against
+opad-protocol = { path = "../crates/opad-protocol" }
 opad-tosu = { path = "../crates/opad-tosu" }
 dirs.workspace = true
 futures-util = { workspace = true, features = ["sink"] }
