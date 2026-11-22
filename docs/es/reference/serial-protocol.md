@@ -1,6 +1,8 @@
 ---
 title: Referencia del protocolo serie
 description: Especificación del entramado serie CDC, negociación y formato de cable Protocol Buffers entre anfitrión y teclado.
+sidebar:
+  order: 5
 ---
 
 La suite de escritorio de OPad se comunica con el teclado mediante serie USB CDC-ACM a 115200 baudios. Los mensajes de control y telemetría se codifican como Protocol Buffers v3 (`proto3`) dentro de tramas delimitadas por longitud. <!-- src: /desktop/crates/opad-protocol/src/lib.rs#Framing, /desktop/crates/opad-device/src/lib.rs -->
