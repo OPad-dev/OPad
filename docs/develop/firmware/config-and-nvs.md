@@ -1,6 +1,8 @@
 ---
 title: Firmware Config and NVS Subsystem
 description: Implementation reference for ESP32-S3 NVS namespaces, legacy osupad->opad migration, config versioning, and A/B CRC32 calibration records.
+sidebar:
+  order: 6
 ---
 
 Persistent pad state is stored in the ESP32-S3 NVS partition (`0x9000` in [/firmware/partitions.csv](/firmware/partitions.csv)). All NVS commits are forbidden during `PLAYING` and `COOLDOWN` and deferred to `IDLE`.
