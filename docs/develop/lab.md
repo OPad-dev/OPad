@@ -1,6 +1,8 @@
 ---
 title: Automated Testing Lab
 description: Self-hosted multi-OS VirtualBox testing lab architecture, VM topology, install/upgrade/uninstall validation, and health checks.
+sidebar:
+  order: 8
 ---
 
 OPad validates installers, upgrades, and clean uninstallation across Linux and Windows in a self-hosted VirtualBox lab ([/scripts/lab/lab-common.ps1](/scripts/lab/lab-common.ps1)).
