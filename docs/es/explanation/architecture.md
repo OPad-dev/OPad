@@ -29,7 +29,7 @@ El ESP32-S3 ejecuta dos núcleos Xtensa LX7 a 240 MHz (`CONFIG_ESP_DEFAULT_CPU_F
 ### Core 1: Servicios del sistema e interfaz
 - **`cdc_proto` (`usb_cdc_task`)**: Fijada en Core 1 (`tskIDLE_PRIORITY + 3`) en [/firmware/main/usb/usb_cdc.c](/firmware/main/usb/usb_cdc.c); decodifica mensajes del protocolo nanopb entramados y despacha las respuestas.
 - **`touch_retry` (`touch_retry_task`)**: Fijada en Core 1 (prioridad 2) en [/firmware/main/input/touch_retry.c](/firmware/main/input/touch_retry.c); duerme sobre la interrupción del CST816S y sondea I2C únicamente mientras hay un dedo apoyado.
-- **Pantalla y LVGL**: Renderiza diseños `320x240` hacia la ST7789 por SPI2 a 80 MHz ([/firmware/main/ui/ui_port.c](/firmware/main/ui/ui_port.c)).
+- **Pantalla y LVGL**: Renderiza diseños `320x240` hacia la ST7789 por SPI2 a 80 MHz hasta a 30 fps (`CONFIG_LV_DEF_REFR_PERIOD=33`), con el pool de 160 KB de LVGL y los búferes de UI/protocolo fuera de la ruta de teclas en los 8 MB de Octal PSRAM (`CONFIG_OPAD_LVGL_PSRAM=y`, `EXT_RAM_BSS_ATTR`) para que la RAM interna quede reservada a la entrada en Core 0, USB y los dos búferes de dibujo DMA de 40 líneas (`UI_DRAW_BUF_LINES = 40`), respaldados por 32 KB de caché de instrucciones y 64 KB de caché de datos ([/firmware/main/ui/ui_port.c](/firmware/main/ui/ui_port.c), [/firmware/main/ui/ui.h](/firmware/main/ui/ui.h), [/firmware/sdkconfig.defaults](/firmware/sdkconfig.defaults)).
 - **`runtime_task` (`runtime_supervisor_task`)**: Fijada en Core 1 (`tskIDLE_PRIORITY + 1`) en [/firmware/main/runtime/runtime.c](/firmware/main/runtime/runtime.c); gestiona las transiciones de estado de juego, temporizadores y volcados diferidos a NVS.
 
 ## Máquina de estados de ejecución del firmware
