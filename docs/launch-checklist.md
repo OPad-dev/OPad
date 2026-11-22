@@ -54,6 +54,11 @@ issue templates; V3 hardware and case docs; printing guide.
 5. [ ] **Installers tested in CI:** silent install, run, uninstall of the
    Windows installer on the Windows runner (PKG-01 … PKG-06); daemon and
    `opadctl` smoke tests on the packages; the AppImage.
+   Done except the AppImage: `lab-install.yml` runs after every app release, in
+   the lab VMs (Ubuntu 22.04/24.04/26.04, Fedora 43, Arch, Windows 10/11):
+   upgrade from the previous release, file hashes against `FILES.sha256`,
+   start at login, `opadctl status`, the GUI, data kept, clean uninstall. The
+   feed only deploys when it passes (first full pass: v1.0.0-rc.5).
 6. [ ] **`make release-local` and `make feed-local` on Linux** (release spec
    §18.3), and an end-to-end update from a local feed for each package type.
 7. [ ] **First release candidate.** Done 2026-11-21: `tosu-v4.26.2-r1`,
@@ -174,7 +179,7 @@ In this order (release spec §18.2–§18.3, §19):
 - [ ] First release PRs open; each shows all twelve crates bumped in `Cargo.lock` (§18.1 "Known limits").
 - [ ] Merge them: `v1.0.0-rc.1` and `firmware-v1.0.0-rc.1` build, `test_packages.sh` passes on ubuntu 22.04/24.04/26.04, debian 12/13, rockylinux 9, fedora 43, and both publish as pre-releases, not Latest for the firmware.
 - [ ] The release workflow's "image reports the tagged version" step passes, and `opadctl status` on a flashed pad shows that version.
-- [ ] *Update feed* deploys; `beta.json` lists the app, firmware and tosu; `opad-feed verify` passes on it.
+- [x] *Update feed* deploys; `beta.json` lists the app, firmware and tosu; `opad-feed verify` passes on it (v1.0.0-rc.5, 2026-11-22).
 - [ ] Signing (§19): `release` environment with you as reviewer; minisign key; SignPath accepted and configured; `SIGNING_ENABLED=true`. (No GPG key: no apt/dnf repositories.)
 - [ ] Rotation release trusting the test key **and** the real key is out, and an install of it updates from a real-key feed.
 - [ ] First stable release: `prerelease: false`, `release-as: 1.0.0`; `stable.json` lists it; release immutability on; `gh attestation verify` passes on a downloaded file; the Windows installer shows a valid signature.
