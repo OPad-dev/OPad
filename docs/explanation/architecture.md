@@ -1,6 +1,8 @@
 ---
 title: System Architecture
 description: Overall architecture of OPad, covering ESP32-S3 dual-core task isolation, firmware runtime states, and the desktop daemon actor model.
+sidebar:
+  order: 1
 ---
 
 OPad is organized around **latency always wins** ([/AGENTS.md](/AGENTS.md) §1.1): key scanning and 1000 Hz USB HID reporting run on Core 0 with zero heap allocation, zero blocking locks shared with Core 1, and zero flash writes during play. The LCD screen, NVS persistence, touchscreen gestures, and `tosu` telemetry stay off the keypress path.
