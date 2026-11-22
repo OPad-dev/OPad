@@ -1,100 +1,52 @@
 ---
-title: Laboratorio de Pruebas Automatizadas
-description: Descripción general del laboratorio con máquinas virtuales multi-OS autoalojado, aislamiento del ejecutor, pruebas automatizadas de instalación, validación de actualizaciones y verificación de desinstalación.
+title: Laboratorio de pruebas automatizadas
+description: Arquitectura del laboratorio autoalojado multi-SO en VirtualBox, topología de máquinas virtuales, validación de instalación/actualización/desinstalación y comprobaciones de salud.
 ---
 
-# Laboratorio de Pruebas Automatizadas
+OPad valida instaladores, actualizaciones y desinstalación limpia en Linux y Windows en un laboratorio autoalojado con VirtualBox ([/scripts/lab/lab-common.ps1](/scripts/lab/lab-common.ps1)).
 
-Para garantizar que los instaladores, las rutas de actualización y las integraciones de escritorio funcionen impecablemente en diversos sistemas operativos, OPad opera un laboratorio de pruebas físico, autoalojado y dedicado.
+## 1. Arquitectura del anfitrión y modelo de seguridad
 
-Este documento describe la arquitectura del laboratorio, las restricciones de seguridad, la topología de las máquinas virtuales y los procedimientos de pruebas automatizadas.
-
-<!-- src: /scripts/lab/lab-common.ps1#AllVms -->
-<!-- src: /.github/workflows/lab-check.yml#opad-lab -->
-<!-- src: /.github/workflows/lab-install.yml#concurrency -->
-<!-- src: /scripts/lab/vm-install-linux.sh#installed_version -->
-
----
-
-## 1. Hardware Architecture and Security Model
-
-El laboratorio se ejecuta en un mini PC dedicado con Windows 11 registrado como un ejecutor autoalojado de GitHub Actions con las etiquetas `[self-hosted, opad-lab]`.
+El laboratorio funciona en un anfitrión Windows 11 con Oracle VirtualBox (`C:\opad-lab`), registrado como runner autoalojado de GitHub Actions con las etiquetas `[self-hosted, opad-lab]`.
 
 ```mermaid
 flowchart TD
-    GH["Orquestador de GitHub Actions\n(release-app.yml o disparo manual)"] -->|Se ejecuta en [self-hosted, opad-lab]| MiniPC["Host Mini PC Windows 11\n(Oracle VirtualBox 7.x)"]
-    MiniPC --> Snap["Revertir VM a Snapshot Limpio 'limpia'"]
-    Snap --> Boot["Arrancar Máquinas Virtuales en Modo Headless"]
-    Boot --> VM1["Ubuntu 22.04 / 24.04 / 26.04 (APT)"]
-    Boot --> VM2["Fedora 43 (DNF)"]
-    Boot --> VM3["Arch Linux (AUR opad-bin)"]
-    Boot --> VM4["Windows 10 / Windows 11 (Inno Setup)"]
-    VM1 --> Test["Ejecutar vm-install-linux.sh vía SSH"]
-    VM2 --> Test
-    VM3 --> Test
-    VM4 --> WinTest["Ejecutar vm-install-windows.ps1 vía SSH"]
+    GH["GitHub Actions (lab-install.yml / lab-check.yml)"] -->|"runs-on: [self-hosted, opad-lab]"| Host["Windows 11 Host (VirtualBox)"]
+    Host --> Snap["Restore Clean 'limpia' Snapshot"]
+    Snap --> Boot["Boot Headless VMs"]
+    Boot --> Linux["Ubuntu 22.04 / 24.04 / 26.04, Fedora 43, Arch"]
+    Boot --> Win["Windows 10 / Windows 11"]
+    Linux --> LTest["vm-install-linux.sh over SSH"]
+    Win --> WTest["vm-install-windows.ps1 over SSH"]
 ```
 
-### Security Isolation Invariant
-
 > [!IMPORTANT]
-> **Sin Ejecución en Pull Requests**: El ejecutor autoalojado **nunca** ejecuta código proveniente de pull requests o forks. Solo se dispara en flujos de trabajo oficiales de release ([.github/workflows/lab-install.yml](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/.github/workflows/lab-install.yml)) o flujos disparados manualmente ([.github/workflows/lab-check.yml](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/.github/workflows/lab-check.yml)) en la rama `main`.
+> **Sin ejecución de Pull Requests**: El runner autoalojado nunca ejecuta pull requests ni forks no confiables. Solo corre en flujos oficiales de lanzamiento / `main` ([/.github/workflows/lab-install.yml](/.github/workflows/lab-install.yml), [/.github/workflows/lab-check.yml](/.github/workflows/lab-check.yml)).
 
----
+## 2. Topología de máquinas virtuales objetivo
 
-## 2. Target VM Topology
+Definida en `$AllVms` ([/scripts/lab/lab-common.ps1](/scripts/lab/lab-common.ps1)):
 
-El laboratorio mantiene siete máquinas virtuales gestionadas mediante VirtualBox ([scripts/lab/lab-common.ps1](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/scripts/lab/lab-common.ps1#L11-L19)):
+| Nombre de VM | SO invitado | Formato de paquete | Puerto SSH reenviado |
+|---|---|---|---|
+| `ubuntu-22.04` | Ubuntu 22.04 LTS | `.deb` | `2222` |
+| `ubuntu-24.04` | Ubuntu 24.04 LTS | `.deb` | `2224` |
+| `ubuntu-26.04` | Ubuntu 26.04 LTS | `.deb` | `2226` |
+| `fedora-43` | Fedora 43 | `.rpm` | `2243` |
+| `arch` | Arch Linux | `opad-bin` / `pacman` | `2250` |
+| `windows-10` | Windows 10 | `opad-setup.exe` | `2310` |
+| `windows-11` | Windows 11 | `opad-setup.exe` | `2311` |
 
-| Identificador VM | SO Huésped | Formato de Paquete | Puerto SSH del Host | Gestor de Paquetes |
-|---|---|---|---|---|
-| `ubuntu-22.04` | Ubuntu 22.04 LTS | `.deb` | 2222 | `apt-get` |
-| `ubuntu-24.04` | Ubuntu 24.04 LTS | `.deb` | 2224 | `apt-get` |
-| `ubuntu-26.04` | Ubuntu 26.04 LTS | `.deb` | 2226 | `apt-get` |
-| `fedora-43` | Fedora 43 | `.rpm` | 2243 | `dnf` |
-| `arch` | Arch Linux | AUR `opad-bin` | 2250 | `pacman` / `makepkg` |
-| `windows-10` | Windows 10 Pro | `.exe` | 2310 | Inno Setup |
-| `windows-11` | Windows 11 Pro | `.exe` | 2311 | Inno Setup |
+Cada VM inicia sesión automáticamente en una sesión de escritorio `opad` (`seat0` en Linux, consola activa en Windows) con `sudo` sin contraseña / elevación de Administrador sobre SSH en loopback (`127.0.0.1`).
 
-Cada máquina virtual arranca con inicio de sesión automático en una sesión de escritorio `opad` sin privilegios y proporciona `sudo` sin contraseña (Linux) o privilegios de Administrador (Windows) a través de puertos SSH redirigidos en bucle local (loopback).
+## 3. Ciclo automatizado de instalación, actualización y desinstalación
 
----
+Dirigido por [/scripts/lab/lab-install.ps1](/scripts/lab/lab-install.ps1) y [/scripts/lab/vm-install-linux.sh](/scripts/lab/vm-install-linux.sh):
 
-## 3. Automated Installation and Upgrade Lifecycle
+1. **Línea base limpia**: Restaura la instantánea `limpia`, arranca en modo headless hasta que la sesión de escritorio está lista, instala la versión base y reinicia para verificar el inicio automático.
+2. **Actualización en sitio**: Transfiere e instala la versión candidata, reinicia y verifica la versión de binarios, la ejecución de `opad-daemon` y la GUI en la bandeja del sistema, `opadctl status`, `cap_sys_ptrace=eip` en el `tosu` de `.deb`/`.rpm` y la persistencia de `opad.db` (`~/.local/share/opad/opad.db` en Linux, `%APPDATA%\opad\opad.db` en Windows).
+3. **Desinstalación limpia**: Desinstala el paquete/instalador y verifica la eliminación de binarios (`/usr/bin/` en Linux, `%LOCALAPPDATA%\Programs\opad` en Windows), archivos de inicio automático/systemd, reglas `udev` y procesos en segundo plano; luego apaga y restaura `limpia`.
 
-El entorno de pruebas principal está orquestado por [scripts/lab/lab-install.ps1](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/scripts/lab/lab-install.ps1), que ejecuta una prueba de tres fases en cada VM:
+## 4. Comprobaciones de salud bajo demanda
 
-### Phase 1: Clean Baseline Installation
-1. El host revierte la VM a su instantánea limpia `limpia` usando `VBoxManage snapshot restore`.
-2. La VM arranca hasta que su entorno gráfico de escritorio está activo (Linux: sesión en `seat0`; Windows: sesión activa de consola).
-3. El paquete de la release estable previa se transfiere vía SCP y se instala.
-4. La VM se reinicia para verificar que los servicios de inicio automático se inicien correctamente.
-
-### Phase 2: In-Place Upgrade Verification
-1. El paquete candidato a release nuevo se transfiere e instala.
-2. La VM se reinicia en la sesión de escritorio.
-3. Script de verificación ([scripts/lab/vm-install-linux.sh](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/scripts/lab/vm-install-linux.sh)):
-   - Verifica que la versión binaria instalada coincida con el tag de la release.
-   - Afirma que todos los archivos instalados coincidan con las sumas de verificación de la release.
-   - Valida que `opad-daemon` y la GUI en la bandeja del sistema estén ejecutándose.
-   - Comprueba la comunicación con el daemon mediante `opadctl status`.
-   - Confirma que `tosu` haya conservado su capacidad de seguridad `cap_sys_ptrace=eip`.
-   - Confirma que los ajustes de usuario y el historial en la base de datos (`~/.local/share/opad/opad.db` o `%LOCALAPPDATA%\opad\opad.db`) hayan sobrevivido a la actualización intactos.
-
-### Phase 3: Clean Uninstallation
-1. El paquete se desinstala mediante el gestor de paquetes de la distribución o el desinstalador de Windows.
-2. La prueba verifica la eliminación completa:
-   - Todos los binarios instalados en `/usr/bin/` o `Program Files` se han eliminado.
-   - Los archivos `.desktop` de inicio automático y las unidades de servicio de systemd son eliminados.
-   - Las reglas udev se eliminan y recargan.
-   - No quedan procesos huérfanos ejecutándose en segundo plano.
-
----
-
-## 4. Health Checks and Diagnostics
-
-El estado del laboratorio puede verificarse bajo demanda mediante [.github/workflows/lab-check.yml](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/.github/workflows/lab-check.yml):
-- Verifica que la sesión del host Windows 11 esté en ejecución.
-- Arranca todas las máquinas virtuales configuradas a partir de instantáneas en paralelo o individualmente.
-- Captura capturas de pantalla automáticas del escritorio de cada huésped para detectar regresiones en la interfaz gráfica, almacenándolas como artefactos del flujo de trabajo durante 14 días.
-- Publica resúmenes de ejecución usando `scripts/lab/lab-results.ps1`.
+[/.github/workflows/lab-check.yml](/.github/workflows/lab-check.yml) arranca las VMs desde `limpia`, verifica la disponibilidad de SSH y sesión, captura pantallas del escritorio mediante `VBoxManage controlvm screenshotpng` y publica resúmenes con [/scripts/lab/lab-results.ps1](/scripts/lab/lab-results.ps1).
