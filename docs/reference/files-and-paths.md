@@ -1,6 +1,8 @@
 ---
 title: Files and Paths Reference
 description: Filesystem locations, SQLite database schema, log files, private tool paths, and install identity used by the OPad desktop suite on Linux and Windows.
+sidebar:
+  order: 7
 ---
 
 The OPad desktop suite resolves all persistent paths, logs, and private bundled binaries through `desktop/crates/opad-model/src/paths.rs`. Because login-launched daemons inherit unpredictable working directories (such as `C:\Windows\System32` on Windows), OPad never falls back to relative paths. <!-- src: /desktop/crates/opad-model/src/paths.rs#PathError -->
