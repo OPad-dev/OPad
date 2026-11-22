@@ -1,6 +1,8 @@
 ---
 title: Uninstalling the Software
 description: How to uninstall the OPad desktop suite on Linux and Windows, what data is removed, and what stays on the pad.
+sidebar:
+  order: 8
 ---
 
 Uninstalling the desktop suite removes the background daemon, GUI, `opadctl`, bundled `tosu`, autostart entries, and desktop data.
