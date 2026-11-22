@@ -434,13 +434,13 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             if let Some(refused) = refuse_if_pad_guarded(state) {
                 return refused;
             }
-            if let Err(e) = new_config.validate() {
+            let current_cfg = { state.lock().config.clone() };
+            // A key may keep a pin older firmware allowed; a new one must be listed
+            if let Err(e) = new_config.validate_update(&current_cfg) {
                 return IpcResponse::OperationRejected {
                     reason: format!("Invalid configuration: {}", e),
                 };
             }
-
-            let current_cfg = { state.lock().config.clone() };
 
             if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
                 let keys_or_debounce_changed = current_cfg.key1_hid_usage

@@ -4531,3 +4531,46 @@ async fn calibration_start_preserves_fast_progress_and_cancel_is_forwarded() {
     assert!(matches!(response, IpcResponse::HeCalibrationCancelled));
     assert_eq!(*device.cal_requests.lock(), vec!["start", "cancel"]);
 }
+
+/// F7: a pad that older firmware let use GPIO 8 (no longer a key pin) can
+/// still change its other settings, but no key can be moved onto GPIO 8
+#[tokio::test]
+async fn a_pad_on_a_pin_no_longer_offered_keeps_it_but_cannot_choose_it() {
+    let (mut controller, _) = left_alone_foreign_pad();
+    controller.state.foreign_pad = false;
+    controller.state.config.key1_gpio = 8;
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    let device = MockDeviceLink::new(true);
+    let log_hub = LogHub::new();
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    let daemon_state = Arc::new(Mutex::new(controller.state.clone()));
+    let current = daemon_state.lock().config.clone();
+
+    let mut brighter = current.clone();
+    brighter.brightness = current.brightness.saturating_sub(1).max(1);
+    let mut onto_gpio8 = current.clone();
+    onto_gpio8.key1_gpio = 2;
+    onto_gpio8.key2_gpio = 8;
+
+    let ask = |cfg: DeviceConfig| {
+        handle_ipc_request(
+            IpcRequest::UpdateConfig(cfg),
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+            None,
+        )
+    };
+    match ask(brighter).await {
+        IpcResponse::ConfigUpdated { config, .. } => assert_eq!(config.key1_gpio, 8),
+        other => panic!("its other settings could not change: {other:?}"),
+    }
+    match ask(onto_gpio8).await {
+        IpcResponse::OperationRejected { reason } => {
+            assert!(reason.contains("Unsupported key 2 pin: GPIO8"), "{reason}")
+        }
+        other => panic!("moving a key onto GPIO 8 was accepted: {other:?}"),
+    }
+}

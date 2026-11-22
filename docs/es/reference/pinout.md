@@ -69,7 +69,7 @@ La validación del firmware (`device_config_validate`) rechaza estos pines:
 - **Interrupción táctil**: `GPIO 46` (interrupción activa-baja del CST816S). <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
 - **SPI de pantalla y retroiluminación**: `GPIO 38` (`MOSI`), `GPIO 39` (`SCLK`), `GPIO 42` (`DC`), `GPIO 45` (`CS`), `GPIO 1` (retroiluminación LEDC PWM). <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
 - **Pull-down de placa**: `GPIO 17` (`CAM_PWDN`, pull-down integrado de 10 kΩ a `GND`). <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED -->
-- **ADC de ID de módulo**: `GPIO 8` (conectado al divisor de ID de módulo en montajes con carrier; ten en cuenta que `opad-gui` actualmente lista `GPIO8 (P1 pin 8)` en su desplegable, pero el firmware lo rechaza). <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED -->
+- **ADC de ID de módulo**: `GPIO 8` (conectado al divisor de ID de módulo en montajes con carrier). No es un pin de tecla: el firmware lo rechaza y `opad-gui` no lo ofrece. <!-- src: /firmware/main/config/config_validate.c#KEY_GPIO_ALLOWED, /desktop/crates/opad-model/src/lib.rs#KEY_PINS -->
 
 ---
 

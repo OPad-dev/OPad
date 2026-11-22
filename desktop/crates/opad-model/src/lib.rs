@@ -164,11 +164,6 @@ pub const KEY_PINS: &[KeyPin] = &[
         pin: 9,
     },
     KeyPin {
-        gpio: 8,
-        header: "P1",
-        pin: 8,
-    },
-    KeyPin {
         gpio: 9,
         header: "P2",
         pin: 12,
@@ -248,11 +243,20 @@ fn default_key2_gpio() -> u32 {
     DEFAULT_KEY2_GPIO
 }
 
-fn validate_key_gpios(key1_gpio: u32, key2_gpio: u32) -> Result<(), String> {
-    if key_pin(key1_gpio).is_none() {
+/// A key may be given a pin from [`KEY_PINS`], or keep the one it already
+/// has (`current`). Firmware from before 26f5159 accepted pins it no longer
+/// does (GPIO 8, the carrier's module-ID line), and a pad still set to one
+/// must be able to change its other settings.
+fn validate_key_gpios(
+    key1_gpio: u32,
+    key2_gpio: u32,
+    current: Option<(u32, u32)>,
+) -> Result<(), String> {
+    let kept = |gpio: u32, now: Option<u32>| now == Some(gpio);
+    if key_pin(key1_gpio).is_none() && !kept(key1_gpio, current.map(|c| c.0)) {
         return Err(format!("Unsupported key 1 pin: GPIO{}", key1_gpio));
     }
-    if key_pin(key2_gpio).is_none() {
+    if key_pin(key2_gpio).is_none() && !kept(key2_gpio, current.map(|c| c.1)) {
         return Err(format!("Unsupported key 2 pin: GPIO{}", key2_gpio));
     }
     if key1_gpio == key2_gpio {
@@ -719,7 +723,25 @@ impl Default for DeviceConfig {
 }
 
 impl DeviceConfig {
+    /// Every rule, with both key pins from [`KEY_PINS`]
     pub fn validate(&self) -> Result<(), String> {
+        self.validate_settings()?;
+        validate_key_gpios(self.key1_gpio, self.key2_gpio, None)
+    }
+
+    /// [`validate`](Self::validate) for a change to the pad's `current`
+    /// config: a key may keep a pin outside [`KEY_PINS`] that it already has
+    /// (set by older firmware), but a new pin must be one of them
+    pub fn validate_update(&self, current: &DeviceConfig) -> Result<(), String> {
+        self.validate_settings()?;
+        validate_key_gpios(
+            self.key1_gpio,
+            self.key2_gpio,
+            Some((current.key1_gpio, current.key2_gpio)),
+        )
+    }
+
+    fn validate_settings(&self) -> Result<(), String> {
         if self.key1_hid_usage < 0x04 || self.key1_hid_usage > 0xE7 {
             return Err(format!(
                 "Invalid key1 HID usage: 0x{:02X}",
@@ -794,7 +816,7 @@ impl DeviceConfig {
                 self.game_keys
             ));
         }
-        validate_key_gpios(self.key1_gpio, self.key2_gpio)
+        Ok(())
     }
 
     pub fn key1_char(&self) -> String {
@@ -1372,12 +1394,63 @@ mod tests {
 
     #[test]
     fn test_key_pins_match_firmware_list() {
+        // The firmware's own list, so the two cannot drift apart again
+        const SRC: &str = include_str!("../../../../firmware/main/config/config_validate.c");
+        let start = SRC
+            .find("KEY_GPIO_ALLOWED[] = {")
+            .expect("config_validate.c defines KEY_GPIO_ALLOWED[]");
+        let body = &SRC[start..];
+        let body = &body[body.find('{').unwrap() + 1..body.find('}').unwrap()];
+        let firmware: Vec<u32> = body
+            .split(',')
+            .map(|g| {
+                g.trim()
+                    .parse()
+                    .expect("KEY_GPIO_ALLOWED holds plain numbers")
+            })
+            .collect();
         let gpios: Vec<u32> = KEY_PINS.iter().map(|p| p.gpio).collect();
-        assert_eq!(
-            gpios,
-            [2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 21]
-        );
+        assert_eq!(gpios, firmware);
         assert!(key_pin(DEFAULT_KEY1_GPIO).is_some() && key_pin(DEFAULT_KEY2_GPIO).is_some());
+    }
+
+    #[test]
+    fn a_pin_older_firmware_allowed_can_be_kept_but_not_chosen() {
+        // A pad set to GPIO 8 before 26f5159
+        let current = DeviceConfig {
+            key1_gpio: 8,
+            ..DeviceConfig::default()
+        };
+        assert!(key_pin(8).is_none());
+        // Its other settings still change
+        let brighter = DeviceConfig {
+            brightness: 40,
+            ..current.clone()
+        };
+        assert!(brighter.validate_update(&current).is_ok());
+        // Moving to a listed pin works; choosing GPIO 8 anew does not
+        let moved = DeviceConfig {
+            key1_gpio: 2,
+            ..current.clone()
+        };
+        assert!(moved.validate_update(&current).is_ok());
+        let chosen = DeviceConfig {
+            key2_gpio: 8,
+            ..DeviceConfig::default()
+        };
+        let err = chosen
+            .validate_update(&DeviceConfig::default())
+            .unwrap_err();
+        assert!(err.contains("GPIO8"), "{err}");
+        // Nor on the other key, which never had it
+        let swapped = DeviceConfig {
+            key1_gpio: 2,
+            key2_gpio: 8,
+            ..current.clone()
+        };
+        assert!(swapped.validate_update(&current).is_err());
+        // Without a current config (a backup), every pin must be listed
+        assert!(current.validate().is_err());
     }
 
     #[test]

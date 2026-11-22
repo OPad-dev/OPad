@@ -43,6 +43,8 @@ Key 1 y Key 2 no pueden compartir el mismo GPIO. Los siguientes pines están res
 - `GPIO 17`: Pull-down integrado de 10 kΩ (`CAM_PWDN`).
 - `GPIO 8`: Divisor resistivo ADC de identificación de módulo.
 
+`opad-gui` ofrece la misma lista que el firmware (`KEY_PINS`, comparada con `KEY_GPIO_ALLOWED` por un test). Un teclado que un firmware anterior al 2026-09-24 dejó en `GPIO 8` lo muestra como `GPIO8 (unsupported)` y lo conserva mientras cambian sus demás ajustes; solo se rechaza mover una tecla a un pin fuera de la lista. <!-- src: /desktop/crates/opad-model/src/lib.rs#KEY_PINS, /desktop/crates/opad-model/src/lib.rs#validate_update, /desktop/gui/src/pages.rs#settings -->
+
 ## Reasignar pines en `opad-gui`
 
 1. Abre `opad-gui` y haz clic en **Settings** en la barra lateral.

@@ -43,6 +43,8 @@ Key 1 and Key 2 cannot share the same GPIO. These pins are reserved and rejected
 - `GPIO 17`: Onboard 10 kΩ pull-down (`CAM_PWDN`).
 - `GPIO 8`: Module-ID ADC resistor divider.
 
+`opad-gui` offers the same list as the firmware (`KEY_PINS`, checked against `KEY_GPIO_ALLOWED` by a test). A pad that firmware from before 2026-09-24 left on `GPIO 8` shows it as `GPIO8 (unsupported)` and keeps it while its other settings change; only moving a key onto a pin outside the list is refused. <!-- src: /desktop/crates/opad-model/src/lib.rs#KEY_PINS, /desktop/crates/opad-model/src/lib.rs#validate_update, /desktop/gui/src/pages.rs#settings -->
+
 ## Reassigning Pins in `opad-gui`
 
 1. Open `opad-gui` and click **Settings** in the sidebar.
