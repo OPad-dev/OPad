@@ -7,7 +7,7 @@ description: Counter reconciliation rules, flashing procedures, bootloader entry
 
 Both the ESP32-S3 and the host PC maintain lifetime press counters for the physical keys:
 
-- **Device (ESP32-S3)**: Counters increment in RAM in the key-event path on Core 0, with zero flash writes during keypresses. Counters are checkpointed to NVS only during `IDLE` state — when leaving `COOLDOWN`, on the idle checkpoint schedule (`counters_checkpoint_due`), or on USB host suspend (`counters_request_checkpoint`). On three-key Hall Effect V3 pads, Key 3 keeps its own NVS key (`key3_cnt`). <!-- src: /firmware/main/counters/counters.c#counters_checkpoint, /firmware/main/runtime/runtime.c#runtime_supervisor_task, /firmware/main/app_main.c#usb_event_handler -->
+- **Device (ESP32-S3)**: Counters increment in RAM in the key-event path on Core 0, with zero flash writes during keypresses. Counters are checkpointed to NVS only during `IDLE` state — when leaving `COOLDOWN`, on the idle checkpoint schedule (`counters_checkpoint_due`), or on USB host suspend (`counters_request_checkpoint`). On three-key V3 pads (MX V3 and Hall Effect V3), Key 3 keeps its own NVS key (`key3_cnt`). <!-- src: /firmware/main/counters/counters.c#counters_checkpoint, /firmware/main/runtime/runtime.c#runtime_supervisor_task, /firmware/main/app_main.c#usb_event_handler -->
 - **Host PC**: Stored in SQLite (`device_state` table in `opad.db`). All SQLite writes are blocked during `PLAYING` and `COOLDOWN` (`set_writes_allowed(false)`). The daemon keeps live counts in memory and writes to SQLite during `SYNC` and `IDLE`. Key 3's lifetime count is stored in `device_state.lifetime_key3`. <!-- src: /desktop/crates/opad-storage/src/lib.rs#Storage, /desktop/daemon/src/runtime.rs#RuntimeController -->
 
 ## 2. Counter Generation & Monotonic Reconciliation
@@ -16,7 +16,7 @@ Each counter record tracks:
 
 - `device_id`: Derived from the ESP32-S3 Wi-Fi STA MAC address (`OPAD-<MAC>`). Older firmware used `OSUPAD-<MAC>`, which the host canonicalizes to `OPAD-<MAC>` and migrates in SQLite. <!-- src: /firmware/main/protocol/protocol.c#get_device_mac_string, /desktop/crates/opad-model/src/lib.rs#canonical_device_id, /desktop/crates/opad-storage/src/lib.rs#apply_v19 -->
 - `counter_generation`: Monotonically incrementing 32-bit integer (starts at `1` on a fresh NVS). Incremented whenever counters are reset, restored from backup, migrated from a replaced pad, manually reconciled, or taken over from another install. <!-- src: /firmware/main/counters/counters.c#counters_init, /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
-- `lifetime_key1` and `lifetime_key2`: Lifetime press totals for Key 1 and Key 2. On three-key Hall Effect V3 pads, `lifetime_key3` is tracked separately from Key 1 and Key 2 reconciliation. <!-- src: /desktop/crates/opad-model/src/lib.rs#CounterState, /desktop/crates/opad-model/src/lib.rs#Key3Counters -->
+- `lifetime_key1` and `lifetime_key2`: Lifetime press totals for Key 1 and Key 2. On three-key V3 pads (MX V3 and Hall Effect V3), `lifetime_key3` is tracked separately from Key 1 and Key 2 reconciliation. <!-- src: /desktop/crates/opad-model/src/lib.rs#CounterState, /desktop/crates/opad-model/src/lib.rs#Key3Counters -->
 
 ### Reconciliation Rules
 
