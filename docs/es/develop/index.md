@@ -1,6 +1,8 @@
 ---
 title: Guía para desarrolladores
 description: Flujo de trabajo para colaboradores, invariantes de producto, ciclo de vida de ramas git, convenciones de commits y reglas de documentación de OPad.
+sidebar:
+  order: 1
 ---
 
 Bienvenido a la documentación para desarrolladores de OPad. Esta sección cubre las reglas para colaboradores, la compilación desde el código fuente, la ejecución de pruebas automatizadas, los detalles internos del firmware y del escritorio, la evolución del protocolo, los archivos de hardware, el empaquetado, los lanzamientos, las pruebas de laboratorio y las mediciones de latencia.
