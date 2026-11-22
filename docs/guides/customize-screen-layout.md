@@ -1,6 +1,8 @@
 ---
 title: Customizing the Screen Layout
 description: How to design, preview, apply, export, and import custom Idle and Playing screen layouts in opad-gui, with every available data source.
+sidebar:
+  order: 3
 ---
 
 OPad's `320x240` LCD has two independent layouts: the **Idle screen** (shown outside a map) and the **Playing screen** (shown while a map is running). You edit both in the **Designer** page of `opad-gui` using a 2x pixel-exact preview rendered by the firmware's own LVGL layout engine (`opad-ui-preview`). <!-- src: /desktop/gui/src/designer/mod.rs, /firmware/main/ui/core/ui_core.h, /firmware/main/ui/ui_port.c#pad_timer_cb -->
