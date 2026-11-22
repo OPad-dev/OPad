@@ -1,6 +1,13 @@
 ---
-title: "Troubleshooting Guide"
-description: "Common issues with OPad, desktop integration, port access, tosu permissions, and display telemetry."
+title: Troubleshooting Guide
+description: Common issues with OPad, desktop integration, port access, tosu permissions, and display telemetry.
+category: reference
+source_files:
+  - /desktop/daemon/src/device_actor.rs
+  - /desktop/gui/src/diagnostics.rs
+  - /desktop/crates/opad-tosu/src/lib.rs
+  - /firmware/main/diag/diag.c
+  - /packaging/linux/udev/70-opad.rules
 ---
 
 This guide covers common questions and troubleshooting steps for the OPad keypad, desktop integration, key mappings, and overlay telemetry on Linux and Windows.
@@ -134,12 +141,12 @@ Because `tosu` reads the virtual memory of another process (`osu!.exe`), certain
 
 ## 5. Firmware Recovery & Re-flashing
 
-If the pad becomes unresponsive, corrupted, or needs a complete factory unbind:
-1. Unplug the USB cable.
-2. Hold down the **BOOT** button on the ESP32-S3 board.
-3. Plug in the USB cable while holding BOOT, then release after 2 seconds.
-4. Run recovery flash:
+If the pad becomes unresponsive, corrupted, or fails to enumerate as an OPad USB device:
+1. Run the non-interactive recovery command:
    ```bash
-   opadctl flash --full firmware/build
+   opadctl recover firmware/build
    ```
-See [docs/recovery.md](recovery.md) for full hardware recovery steps.
+2. When prompted by `opadctl`, simply unplug and replug the USB cable. The tool catches the ESP32-S3 ROM bootloader window upon power-on and recovers the pad over USB.
+3. The pad never needs physical BOOT or RESET button presses.
+
+See [docs/recovery.md](recovery.md) for full hardware recovery steps and rollback mechanisms.
