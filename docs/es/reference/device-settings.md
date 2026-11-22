@@ -1,6 +1,8 @@
 ---
 title: Referencia de ajustes del dispositivo
 description: Catálogo completo de ajustes de configuración de OPad, tipos de datos, rangos válidos, valores predeterminados y claves de almacenamiento NVS.
+sidebar:
+  order: 3
 ---
 
 Esta página documenta todos los ajustes de configuración almacenados por el firmware de OPad: códigos de tecla, asignaciones de pines GPIO, bloqueo de antirrebote inmediato, preferencias de pantalla, acciones de deslizamiento y parámetros Hall Effect.
