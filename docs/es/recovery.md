@@ -1,211 +1,203 @@
 ---
-title: Conciliación de contadores, recuperación y desvinculación
-description: Reglas de conciliación de contadores, procedimientos de flasheo, entrada en el bootloader y recuperación de un teclado no enumerado.
+title: Reconciliación de contadores, recuperación y desvinculación
+description: Reglas de reconciliación de contadores, procedimientos de flasheo, entrada en el bootloader y recuperación de un teclado que no enumera.
 ---
 
-## 1. Dual-Storage Model (§12, §13)
+## 1. Modelo de almacenamiento dual
 
-Tanto el ESP32-S3 como el PC host mantienen contadores de pulsaciones de por vida para ambas teclas físicas:
-- **Dispositivo (ESP32-S3)**: Los contadores se incrementan en RAM directamente en la ruta crítica de procesamiento de teclas en el Núcleo 0. **No se realiza ninguna escritura en flash durante las pulsaciones.** Los contadores solo se guardan en NVS durante el estado `IDLE` una vez concluido el enfriamiento posterior al mapa.
-- **PC host**: Se almacenan en SQLite (tabla `device_state`). **No se realiza ninguna escritura en disco durante `PLAYING` ni `COOLDOWN`.** El demonio mantiene los valores más recientes en memoria y los confirma en SQLite al pasar a `SYNC/IDLE`.
+Tanto el ESP32-S3 como el PC anfitrión mantienen contadores de pulsaciones de por vida para las teclas físicas:
 
----
+- **Dispositivo (ESP32-S3)**: Los contadores se incrementan en RAM dentro de la ruta de eventos de tecla en Core 0, sin ninguna escritura en flash durante las pulsaciones. Los contadores se guardan en NVS únicamente en estado `IDLE` — al salir de `COOLDOWN`, según la programación periódica en reposo (`counters_checkpoint_due`) o al suspender el anfitrión USB (`counters_request_checkpoint`). En los teclados Hall Effect V3 de tres teclas, Key 3 conserva su propia clave NVS (`key3_cnt`). <!-- src: /firmware/main/counters/counters.c#counters_checkpoint, /firmware/main/runtime/runtime.c#runtime_supervisor_task, /firmware/main/app_main.c#usb_event_handler -->
+- **PC anfitrión**: Almacenados en SQLite (tabla `device_state` en `opad.db`). Todas las escrituras en SQLite están bloqueadas durante `PLAYING` y `COOLDOWN` (`set_writes_allowed(false)`). El daemon mantiene los conteos en vivo en memoria y escribe en SQLite durante `SYNC` e `IDLE`. El conteo de por vida de Key 3 se guarda en `device_state.lifetime_key3`. <!-- src: /desktop/crates/opad-storage/src/lib.rs#Storage, /desktop/daemon/src/runtime.rs#RuntimeController -->
 
-## 2. Counter Generation & Monotonic Reconciliation
+## 2. Generación de contadores y reconciliación monotónica
 
-Cada registro de contador contiene:
-- `device_id`: Identificador único de hardware derivado de la dirección MAC del ESP32-S3 (`OPAD-<MAC>`).
-- `counter_generation`: Entero de incremento monótono. Se aumenta cada vez que los contadores se restablecen intencionadamente o se restauran desde una copia de seguridad.
-- `lifetime_key1`: Pulsaciones totales acumuladas para la Tecla 1.
-- `lifetime_key2`: Pulsaciones totales acumuladas para la Tecla 2.
+Cada registro de contador sigue estos campos:
 
-### Reconciliation Rules (§13):
-1. **Precedencia generacional**: Si `generation_A > generation_B`, el estado A prevalece incondicionalmente. Esto evita que una copia de seguridad antigua o una base de datos desactualizada sobrescriba un restablecimiento deliberado.
-2. **Fusión monótona (misma generación)**: Cuando las generaciones coinciden, se conserva el valor máximo de cada tecla:
-   $$\text{Key1} = \max(\text{pc.k1}, \text{esp.k1}), \quad \text{Key2} = \max(\text{pc.k2}, \text{esp.k2})$$
-3. **Política ante pérdida de energía (§12.1)**: Si la alimentación se interrumpe bruscamente durante una partida activa antes de concluir el enfriamiento, pueden perderse las pulsaciones no guardadas desde el último punto de control en IDLE. Se trata de un compromiso de diseño intencionado para garantizar un procesamiento de teclas sin latencia sin bloqueos por escrituras en flash.
+- `device_id`: Derivado de la dirección MAC Wi-Fi STA del ESP32-S3 (`OPAD-<MAC>`). El firmware más antiguo usaba `OSUPAD-<MAC>`, que el anfitrión canoniza a `OPAD-<MAC>` y migra en SQLite. <!-- src: /firmware/main/protocol/protocol.c#get_device_mac_string, /desktop/crates/opad-model/src/lib.rs#canonical_device_id, /desktop/crates/opad-storage/src/lib.rs#apply_v19 -->
+- `counter_generation`: Entero de 32 bits que aumenta de forma monotónica (comienza en `1` en una NVS nueva). Se incrementa cada vez que los contadores se reinician, se restauran desde una copia de seguridad, se migran desde un teclado reemplazado, se reconcilian manualmente o se asumen desde otra instalación. <!-- src: /firmware/main/counters/counters.c#counters_init, /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
+- `lifetime_key1` y `lifetime_key2`: Totales de pulsaciones de por vida para Key 1 y Key 2. En teclados Hall Effect V3 de tres teclas, `lifetime_key3` se registra por separado de la reconciliación de Key 1 y Key 2. <!-- src: /desktop/crates/opad-model/src/lib.rs#CounterState, /desktop/crates/opad-model/src/lib.rs#Key3Counters -->
 
----
+### Reglas de reconciliación
 
-## 3. Connect-Time Reconciliation Matrix
+1. **Precedencia generacional**: Si `generation_A > generation_B`, la generación mayor gana incondicionalmente. Esto impide que una base de datos o copia de seguridad antigua sobrescriba un reinicio o una importación. <!-- src: /desktop/crates/opad-storage/src/lib.rs#reconcile_counters, /firmware/main/counters/counter_sync_rules.c#counters_validate_sync_acceptance -->
+2. **Fusión monotónica (misma generación)**: Cuando las generaciones coinciden, se conserva el valor máximo para cada tecla (`max(pc.k1, esp.k1)` y `max(pc.k2, esp.k2)`). Sin `force_restore`, el firmware rechaza cualquier sincronización con una generación menor (`stale generation`) o con un conteo inferior en la misma generación (`non-monotonic`). <!-- src: /desktop/crates/opad-storage/src/lib.rs#reconcile_counters, /firmware/main/counters/counter_sync_rules.c#counters_validate_sync_acceptance -->
+3. **Política ante pérdida de energía**: Si la alimentación USB se desconecta durante un mapa activo o durante el enfriamiento antes de un punto de guardado `IDLE`, se pierden las pulsaciones sin guardar desde el último guardado en NVS. Este compromiso mantiene las escrituras en flash fuera de la ruta de pulsación. <!-- src: /firmware/main/counters/counters.c#checkpoint_locked, /firmware/main/runtime/runtime.c#runtime_supervisor_task -->
 
-Cuando el demonio abre el puerto serie USB CDC y recibe `HelloAck`:
+## 3. Matriz de reconciliación al conectar
 
-| Condición | Acción tomada |
+Cuando el daemon se conecta por USB CDC y recibe `HelloAck`, primero comprueba la compatibilidad del protocolo (`protocol_version == DEVICE_PROTOCOL_VERSION`) y la propiedad del teclado (`owner_id`), y después reconcilia los contadores cuando está en `IDLE` y tiene permiso para operar sobre el teclado: <!-- src: /desktop/daemon/src/runtime.rs#RuntimeController, /desktop/daemon/src/sync.rs#perform_sync -->
+
+| Condición | Acción ejecutada |
 |---|---|
-| **Teclado conocido, misma generación** | El demonio fusiona los recuentos más altos ($\max(\text{pc}, \text{esp})$) y sincroniza tanto la RAM del dispositivo como SQLite. |
-| **Teclado conocido, gen del dispositivo > gen del host** | El dispositivo se restauró o restableció en otro equipo. El host actualiza su base de datos SQLite para coincidir con la generación y recuentos del dispositivo. |
-| **Teclado conocido, gen del host > gen del dispositivo** | El dispositivo fue reflasheado o borrado. El host envía `CounterSync` para restaurar los recuentos guardados en el dispositivo. |
-| **Teclado nuevo, estado en blanco (`gen == 0`, `k1 == 0`, `k2 == 0`)** | Si existe exactamente un teclado anterior en SQLite, se activa el **Flujo de sustitución de dispositivo**. De lo contrario, se inicializa el nuevo dispositivo en la generación 1. |
+| **El teclado pertenece a otra instalación (`owner_id` distinto)** | Se activa la toma de propiedad antes de cualquier sincronización. Si el teclado tiene al menos tantas pulsaciones como este PC en ambas teclas, el daemon asume la propiedad en silencio conservando los contadores del teclado (`TakeOverIfPadIsAhead`). De lo contrario, se pausa la sincronización de contadores y la GUI muestra el aviso de toma de propiedad. <!-- src: /desktop/daemon/src/runtime.rs#RuntimeController, /desktop/daemon/src/ipc_handlers.rs#take_over_if_pad_is_ahead --> |
+| **Teclado conocido, misma generación** | El daemon fusiona `max(pc, esp)` para Key 1 y Key 2 y sincroniza tanto el teclado como SQLite. <!-- src: /desktop/crates/opad-storage/src/lib.rs#reconcile_counters, /desktop/daemon/src/sync.rs#perform_sync --> |
+| **Teclado conocido, generación del dispositivo > generación del anfitrión** | El anfitrión actualiza SQLite para igualar la generación y los conteos del teclado. <!-- src: /desktop/crates/opad-storage/src/lib.rs#reconcile_counters, /desktop/daemon/src/sync.rs#perform_sync --> |
+| **Teclado conocido, generación del anfitrión > generación del dispositivo** | El anfitrión envía `CounterSync` para restaurar sus conteos registrados en el teclado. <!-- src: /desktop/crates/opad-storage/src/lib.rs#reconcile_counters, /desktop/daemon/src/sync.rs#perform_sync --> |
+| **Teclado conocido con NVS borrada (`gen <= 1`, `k1 == 0`, `k2 == 0`, mientras el PC tiene pulsaciones)** | El daemon marca `nvs_restore_pending`, conserva la configuración guardada en el PC en lugar de adoptar los valores predeterminados del teclado, envía la configuración del PC y restaura los contadores (incluido Key 3 si estaba guardado) al sincronizar. <!-- src: /desktop/daemon/src/runtime.rs#RuntimeController, /desktop/daemon/src/sync.rs#key3_sync_target --> |
+| **Teclado nuevo (`device_id` desconocido), dispositivo previo en SQLite, `gen <= 1`, `k1 < 1000`, `k2 < 1000` y el PC va por delante** | Activa el **flujo de reemplazo de dispositivo** (`pending_replacement`). La sincronización se pausa hasta que respondas. <!-- src: /desktop/daemon/src/runtime.rs#RuntimeController, /desktop/daemon/src/runtime.rs#pc_is_ahead --> |
+| **Teclado nuevo (primer teclado registrado o sin cumplir criterios de reemplazo)** | Se registra en SQLite con su generación y conteos reportados. <!-- src: /desktop/daemon/src/runtime.rs#RuntimeController --> |
 
----
+## 4. Flujo de reemplazo de dispositivo
 
-## 4. Device Replacement Flow (§14 / P1-5)
+Cuando conectas un OPad de reemplazo en un PC que ya tiene historial de contadores de un teclado anterior:
 
-Cuando un jugador sustituye su OPad o cambia de hardware:
-1. El demonio detecta una conexión procedente de un `device_id` desconocido, pero encuentra exactamente un registro de dispositivo previo en SQLite.
-2. El demonio crea una recomendación de sustitución pendiente (`suggested_replacement: Some(old_device_id)`).
-3. La GUI muestra un aviso no bloqueante:
-   > *"Nuevo teclado detectado (`OPAD-NEW`). ¿Transferir las pulsaciones acumuladas de tu teclado anterior (`OPAD-OLD`)?"*
-4. **Si el usuario acepta (`InheritDeviceCounters`)**:
-   - El demonio incrementa `counter_generation` en 1.
-   - Migra los recuentos acumulados anteriores al nuevo `device_id` en SQLite.
-   - Transmite `CounterSync(force_restore = true)` al nuevo teclado, programando las estadísticas previas en el hardware.
-5. **Si el usuario lo rechaza o lo descarta**:
-   - El nuevo teclado inicia su ciclo de vida limpiamente con su propio `device_id`, generación 1 y 0 pulsaciones.
-   - El registro del dispositivo anterior se conserva en SQLite como dato histórico.
+1. Si el `device_id` conectado es desconocido, la base de datos ya tiene un teclado previo, el nuevo teclado reporta `counter_generation <= 1` con `lifetime_key1 < 1000` y `lifetime_key2 < 1000`, y el PC tiene más pulsaciones que el nuevo teclado en al menos una tecla (`pc_is_ahead`), el daemon establece `pending_replacement` al `device_id` previo conocido y bloquea la sincronización hasta que se resuelva. <!-- src: /desktop/daemon/src/runtime.rs#RuntimeController, /desktop/daemon/src/runtime.rs#pad_guard -->
+2. La GUI muestra un aviso:
+   > `This looks like a new pad. Restore counters from <old_id>?`
+   con dos botones: **Restore from previous pad** y **Treat as new pad**. `opadctl status` también imprime una línea de advertencia `Replacement:`. <!-- src: /desktop/gui/src/main.rs#App, /desktop/cli/src/main.rs#Commands -->
+3. **Si haces clic en Restore from previous pad** (`IpcRequest::ResolveReplacement { restore: true }`):
+   - El daemon establece `counter_generation` en `max(old_generation, current_generation) + 1`.
+   - Copia los conteos de por vida de Key 1, Key 2 (y Key 3 si estaba registrado) del teclado anterior al nuevo `device_id` en SQLite.
+   - Envía `CounterSync` con `force_restore = true` para escribir los conteos heredados en el nuevo teclado. <!-- src: /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
+4. **Si haces clic en Treat as new pad** (`IpcRequest::ResolveReplacement { restore: false }`):
+   - Registra el nuevo teclado como un dispositivo independiente en SQLite con sus propios conteos actuales.
+   - La fila del teclado anterior permanece en SQLite como dato histórico. <!-- src: /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
 
----
+## 5. Acciones de copia de seguridad, restauración y reinicio
 
-## 5. Backup, Restore, and Reset Actions
+Todas las operaciones de escritura siguientes se rechazan durante `PLAYING` y `COOLDOWN`, cuando el almacenamiento SQLite no está disponible o mientras exista un aviso pendiente de toma de propiedad o reemplazo. <!-- src: /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
 
-- **Restablecer contadores**:
-  - Restablece a 0 las pulsaciones acumuladas de la Tecla 1 y la Tecla 2.
-  - Incrementa automáticamente `counter_generation` para que todos los pares reconozcan el restablecimiento como la versión más reciente.
-  - Sincroniza tanto la base SQLite del host como la NVS del dispositivo.
+- **Reiniciar contadores**:
+  - Ejecuta `opadctl reset --yes`, o en la GUI abre **Device** -> **Reset lifetime counters**, escribe `RESET` y haz clic en **Confirm Reset**. <!-- src: /desktop/cli/src/main.rs#Commands, /desktop/gui/src/pages.rs#device, /desktop/gui/src/main.rs#App -->
+  - Pone a `0` los contadores de por vida de Key 1, Key 2 y Key 3, incrementa `counter_generation` en 1, guarda en SQLite y envía un `CounterSync` forzado al teclado (o encola `PendingCounterReset` si el teclado está desconectado para enviarlo en la siguiente sincronización). <!-- src: /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request, /desktop/daemon/src/sync.rs#perform_sync -->
 - **Exportar copia de seguridad**:
-  - Exporta un documento JSON portátil según la especificación del §21 que contiene:
-    - Versión del formato (`format_version: 1`).
-    - Metadatos de hardware (`device_id`, `board_profile`, `counter_generation`).
-    - Estadísticas (`lifetime_key1`, `lifetime_key2`).
-    - Configuración (`key1`, `key2`, `debounce_us`, `brightness`, `display_sleep_seconds`, `gameplay_display_hz`).
+  - Ejecuta `opadctl export <file>`, o en la GUI abre **Device** -> **Export backup**. <!-- src: /desktop/cli/src/main.rs#Commands, /desktop/gui/src/pages.rs#device -->
+  - Escribe un archivo JSON portable (`JsonBackup`) que contiene:
+    - `format_version`: `1` y `exported_at` (marca temporal UTC).
+    - `device`: `device_id`, `board_profile`, `counter_generation`.
+    - `stats`: `lifetime_key1`, `lifetime_key2` y `lifetime_key3` (en teclados de tres teclas cuando se conoce).
+    - `config`: `key1`, `key2`, `debounce_us`, `brightness`, `display_sleep_seconds`, `gameplay_display_hz`, `key1_gpio`, `key2_gpio`, acciones/teclas/modificadores de deslizamiento para las cuatro direcciones, `result_animations`, además de `key3` y `game_keys` en teclados de tres teclas. <!-- src: /desktop/crates/opad-model/src/lib.rs#JsonBackup -->
 - **Importar copia de seguridad (`PreviewImport` e `ImportBackup`)**:
-  - Control de seguridad en dos fases:
-    1. `PreviewImport`: Valida el esquema JSON, las asignaciones de teclas y los contadores. Devuelve una comparativa entre el estado actual y el de la copia.
-    2. `ImportBackup`: Requiere confirmación explícita (`confirm: true`). Conserva el `tosu_endpoint` local, incrementa la generación, aplica la configuración al dispositivo y guarda el nuevo estado de contadores.
+  - Ejecuta `opadctl import <file>` (añade `--yes` para omitir la confirmación en terminal), o en la GUI abre **Device** -> **Import backup**. <!-- src: /desktop/cli/src/main.rs#Commands, /desktop/gui/src/pages.rs#device -->
+  - Flujo de seguridad en dos fases:
+    1. `PreviewImport`: Valida `format_version == 1`, `board_profile == "waveshare_esp32s3_touch_lcd_2"`, usos de teclas, asignaciones de pines, rangos numéricos y marca temporal (rechaza marcas más de 1 día en el futuro). Devuelve una diferencia entre el estado actual y el entrante más advertencias por discrepancia de ID de dispositivo, retroceso de contadores o salto de generación. <!-- src: /desktop/crates/opad-model/src/lib.rs#JsonBackup, /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
+    2. `ImportBackup`: Requiere confirmación explícita (`confirm: true`). En la GUI, si algún contador entrante es menor que el valor actual, también debes marcar `I understand this replaces my counters with lower values` antes de hacer clic en **Apply Backup**. Conserva tu `tosu_endpoint` local, eleva `counter_generation` a `max(current_gen, backup_gen) + 1`, guarda en SQLite y envía tanto la configuración como un `CounterSync` forzado al teclado. <!-- src: /desktop/gui/src/main.rs#App, /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
 
-### 5.1 Automatic backups
+### 5.1 Copias de seguridad automáticas
 
-Exportar manualmente solo ayuda a quienes se acuerdan de hacerlo, por lo que el demonio también genera una copia de seguridad **de forma automática**, en el mismo formato JSON del §21, tras cada sesión de juego:
+Además de las exportaciones manuales, `opad-daemon` escribe una copia de seguridad JSON automática en el mismo formato `JsonBackup` tras cada sesión de juego: <!-- src: /desktop/daemon/src/backup.rs#current, /desktop/daemon/src/backup.rs#write -->
 
-| | |
+| Campo | Comportamiento |
 |---|---|
-| Dónde | `<data>/backups/opad-backup-YYYYMMDDTHHMMSSZ.json` — `~/.local/share/opad/backups` en Linux, `%APPDATA%\opad\backups` en Windows |
-| Cuándo | **20 segundos** después de que una sesión se estabilice en `IDLE` |
-| Cuántas | Las **10 más recientes**. Las más antiguas se eliminan; los archivos no generados por el demonio nunca se tocan. |
-| Restaurar | `opadctl import <archivo>` — idéntico a una exportación manual, ya que es el mismo documento creado por el mismo código |
-| Última copia | `opadctl status` → `Last Backup`, y la ruta completa se registra en el log del demonio cada vez que se escribe una |
+| Ubicación | `<data>/backups/opad-backup-YYYYMMDDTHHMMSSZ.json` — `$XDG_DATA_HOME/opad/backups` (por defecto `~/.local/share/opad/backups`) en Linux, `%APPDATA%\opad\backups` en Windows. <!-- src: /desktop/daemon/src/backup.rs#backup_dir, /desktop/crates/opad-model/src/paths.rs#data_dir --> |
+| Cuándo | **20 segundos** (`AUTO_BACKUP_DELAY`) después de completarse un ciclo post-partida `COOLDOWN` -> `SYNC` -> `IDLE`. Las sincronizaciones periódicas en reposo no disparan una copia de seguridad. <!-- src: /desktop/daemon/src/runtime.rs#AUTO_BACKUP_DELAY --> |
+| Retención | Conserva los **10 archivos más recientes** (`KEEP = 10`) `opad-backup-*.json` y elimina los más antiguos. Los archivos con otros nombres en esa carpeta nunca se borran. <!-- src: /desktop/daemon/src/backup.rs#KEEP, /desktop/daemon/src/backup.rs#prune --> |
+| Seguridad de escritura | Se escribe de forma atómica mediante archivo temporal + `fsync` + renombrado (`write_atomic`). Cualquier error de E/S se registra y se absorbe para que un fallo de copia nunca interrumpa la sincronización ni el juego. <!-- src: /desktop/daemon/src/backup.rs#write, /desktop/daemon/src/backup.rs#write_and_log --> |
+| Restauración | `opadctl import <file>` o en la GUI **Device** -> **Import backup**. <!-- src: /desktop/cli/src/main.rs#Commands, /desktop/gui/src/pages.rs#device --> |
+| Última copia | Se muestra en `opadctl status` bajo `Last Backup`, y el daemon la registra cada vez que la escribe. <!-- src: /desktop/cli/src/main.rs#Commands, /desktop/daemon/src/backup.rs#write_and_log --> |
 
-Los 20 segundos no son por capricho. Una copia de seguridad es una escritura de almacenamiento, y la regla P1-3 prohíbe escrituras durante `PLAYING` y `COOLDOWN` (§6). La secuencia tras un mapa es `COOLDOWN` → `SYNC` → `IDLE`; el temporizador comienza solo una vez que la sincronización posterior a la partida ha concluido, y la escritura vuelve a comprobar que el estado sigue siendo `IDLE` antes de efectuarse. Iniciar otro mapa dentro de esa ventana **cancela** la escritura pendiente en lugar de aplazarla; la siguiente sesión iniciará una nueva.
+La espera de 20 segundos solo comienza una vez alcanzado `IDLE`, y la escritura vuelve a comprobar `mode == RuntimeMode::Idle` antes de ejecutarse. Empezar otro mapa durante esos 20 segundos cancela la copia pendiente en lugar de posponerla; la siguiente sesión programará una nueva. <!-- src: /desktop/daemon/src/runtime.rs#RuntimeController -->
 
-Además, está diseñada de forma deliberada para no causar problemas: si una copia de seguridad no se puede escribir, se registra en el log y se ignora. Nunca provoca el fallo de la sincronización, nunca bloquea el demonio y nunca muestra un diálogo de error, ya que una red de seguridad que rompe lo que protege es peor que no tenerla. Como corolario, conviene revisar `Last Backup` periódicamente en lugar de darlo por sentado.
+Las copias automáticas se programan incluso si falla la sincronización post-partida, de modo que el daemon preserva los últimos conteos que tiene en memoria. Son una copia de lo que guarda el daemon, no un sustituto de una sincronización funcional. <!-- src: /desktop/daemon/src/runtime.rs#RuntimeController -->
 
-Lo que **no** hace: es una copia de los contadores, no una segunda fuente de verdad. Se escribe después de la sincronización, de modo que si esta falló, la copia contendrá los mismos datos desactualizados del demonio: mejor que nada, que es el objetivo, pero no sustituye a una sincronización funcional.
-
----
-
-## 6. Deferred Operations During Gameplay
+## 6. Operaciones diferidas durante el juego
 
 Durante los estados `PLAYING` y `COOLDOWN`:
-- Todas las escrituras en SQLite y en la flash del ESP32-S3 quedan estrictamente bloqueadas.
-- Si el usuario cambia la configuración, reinicia el diseño o fuerza una sincronización mientras juega, el demonio encola la acción en RAM.
-- Cuando tosu reporta `IDLE` (o tras 5 segundos de enfriamiento posterior al mapa), el supervisor de ejecución aplica de manera segura todas las operaciones pendientes en NVS y en disco.
 
----
+- Todas las escrituras en SQLite (`Storage::check_writes_allowed`) y en la NVS del ESP32-S3 (`device_config.c`, `counters.c`) están bloqueadas. <!-- src: /desktop/crates/opad-storage/src/lib.rs#Storage, /firmware/main/counters/counters.c#checkpoint_locked, /firmware/main/config/device_config.c#write_to_nvs -->
+- Los cambios de asignación de teclas, pines de teclas y antirrebote se encolan en `PendingOperations::pending_config` y devuelven `OperationDeferred` hasta `IDLE`. El brillo, el tiempo de reposo de pantalla y `gameplay_display_hz` se aplican inmediatamente en RAM mientras encolan la persistencia para `SYNC`. Las ediciones y reinicios de diseño se aplican en RAM del teclado y encolan la persistencia SQLite/NVS en `pending_layouts`. <!-- src: /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
+- La sincronización manual, el reinicio de contadores, la importación de copias, la resolución de propiedad y el flasheo de firmware se rechazan durante `PLAYING` y `COOLDOWN`. <!-- src: /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
+- Al terminar la partida (o si `tosu` se desconecta jugando), `COOLDOWN` dura **5 segundos** (`COOLDOWN_DURATION` en el anfitrión, `COOLDOWN_DURATION_US` en el firmware). Al expirar el enfriamiento, el daemon pasa a `SYNC` -> `IDLE`, rehabilita las escrituras de almacenamiento, sincroniza los contadores y vacía las operaciones pendientes. En el firmware, el supervisor de ejecución guarda en NVS los contadores, configuración, diseños y calibración Hall Effect pendientes en la transición `COOLDOWN` -> `IDLE`. <!-- src: /desktop/daemon/src/runtime.rs#COOLDOWN_DURATION, /desktop/daemon/src/sync.rs#perform_sync, /firmware/main/runtime/runtime.c#COOLDOWN_DURATION_US -->
 
-## 7. Reflashing & Unbinding a Pad (§W3-4)
+## 7. Reflasheo y desvinculación de un teclado
 
-Esta es la **única** forma de desvincular un teclado. No existe un botón para desemparejar en la aplicación ni un gesto de restablecimiento de fábrica en el teclado deliberadamente, ya que una asignación de propiedad que pudiera eliminarse por cable no protegería la integridad de los contadores (§W3-2 rechaza una reclamación con ceros por la misma razón).
+Borrar y reflashear el teclado es la única forma de eliminar su registro de propiedad (`owner_id`). No existe un botón de desvinculación en la aplicación, y el firmware rechaza cualquier mensaje `ClaimOwnership` con ceros (`OWNER_CLAIM_REJECT_INVALID`). <!-- src: /firmware/main/config/device_config.c#device_config_claim_owner -->
 
-Si has llegado aquí desde el aviso de toma de posesión: **no** necesitas nada de esto para utilizar el teclado. "Dejarlo como está" ya lo mantiene funcionando como teclado. Esta sección sirve para transferir el teclado a otra persona o para devolver a un estado conocido un teclado que no arranca.
+Si llegaste a esta sección desde el aviso de toma de propiedad, no necesitas reflashear solo para seguir usando el teclado: hacer clic en **Leave it alone** mantiene el teclado funcionando como teclado USB HID sin modificar su propietario ni sus contadores. Usa esta sección al entregar el teclado a otra persona o al recuperar un teclado que no arranca. <!-- src: /desktop/gui/src/main.rs#App, /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
 
-### 7.1 What it costs
+### 7.1 Qué implica
 
-El registro del propietario (`owner_id`) reside en la partición NVS del teclado, junto con los contadores de pulsaciones acumuladas. Nada puede borrar uno y conservar el otro.
+El registro de propietario de 16 bytes (`owner_id`) vive dentro de la partición NVS del teclado junto con los contadores de por vida, la configuración del dispositivo, los diseños personalizados y la calibración Hall Effect. Borrar la flash elimina todo en conjunto. <!-- src: /firmware/main/config/device_config.c#device_config_claim_owner, /firmware/partitions.csv -->
 
-> **`espflash erase-flash` borra los contadores de vida útil del lado del ESP.**
-> La Tecla 1 y la Tecla 2 vuelven a cero en el teclado. También se borran la configuración del dispositivo y los diseños guardados.
+> **`espflash erase-flash` borra los contadores de por vida, la configuración, los diseños, la calibración y el registro de propiedad del teclado.**
 
-Borra la totalidad de los 16 MB —la aplicación, el bootloader y la tabla de particiones también—, por lo que el teclado deja de funcionar como teclado hasta que el paso 7.4 vuelva a cargar el firmware.
+Borra los 16 MB completos de flash SPI (`CONFIG_ESPTOOLPY_FLASHSIZE_16MB`), incluidos el bootloader de segunda etapa y la tabla de particiones, de modo que el teclado deja de actuar como teclado hasta que el §7.4 vuelva a flashear el firmware. <!-- src: /firmware/sdkconfig.defaults -->
 
-**No queda inutilizado (brickeado), y no es posible que lo quede.** El bootloader de primera etapa del ESP32-S3 reside en la ROM de máscara y ningún comando del host puede borrarlo. Un teclado con la flash totalmente vacía continúa enumerándose como `303a:1001` y aceptando flasheos.
+El teclado no puede quedar inutilizado de forma permanente al borrar la flash: el bootloader ROM de primera etapa del ESP32-S3 reside en ROM de máscara, por lo que un teclado con flash vacía sigue enumerando por USB como `303a:1001` y acepta flasheo. <!-- src: /desktop/crates/opad-device/src/lib.rs#ESP_ROM_BOOTLOADER_PID, /desktop/crates/opad-device/src/flash.rs -->
 
-### 7.2 Export first
+### 7.2 Exporta primero
 
-Tu host mantiene su propia copia de los contadores en SQLite, pero exporta el archivo JSON portátil de todos modos: es la única copia que sobrevive a reinstalar la aplicación:
+Exporta una copia de seguridad JSON manual antes de borrar nada, ya que es la única copia que sobrevive a una reinstalación de la aplicación de escritorio: <!-- src: /desktop/cli/src/main.rs#Commands, /desktop/gui/src/pages.rs#device -->
 
-```bash
-opadctl export ~/opad-backup.json     # o bien: en la app → Dispositivo → Exportar copia
+```sh
+opadctl export ~/opad-backup.json
 ```
 
-Es probable que ya exista una. Desde que se implementaron las copias automáticas (§5.1), el demonio genera una exportación JSON 20 segundos después de cada sesión de juego, manteniendo las diez más recientes en `<data>/backups/`. Revisa qué hay guardado antes de borrar nada:
+O en la GUI: **Device** -> **Export backup**. También puedes revisar las copias automáticas existentes de §5.1: <!-- src: /desktop/cli/src/main.rs#Commands, /desktop/daemon/src/backup.rs#backup_dir -->
 
-```bash
+```sh
 opadctl status | grep 'Last Backup'
-ls -t ~/.local/share/opad/backups/ | head        # %APPDATA%\opad\backups en Windows
+ls -t ~/.local/share/opad/backups/ | head   # Windows: %APPDATA%\opad\backups
 ```
 
-Exporta manualmente de todas formas. Solo lleva un segundo, guarda el archivo en una ubicación elegida por ti en vez de un directorio que una reinstalación podría limpiar, y la copia automática tiene la antigüedad de tu última sesión, que no necesariamente coincide con la de los contadores si has jugado desde la última sincronización.
+Tras reflashear, restaura la copia con `opadctl import ~/opad-backup.json` (o en la GUI **Device** -> **Import backup**). <!-- src: /desktop/cli/src/main.rs#Commands -->
 
-Restaúrala después con `opadctl import ~/opad-backup.json`, lo que incrementa la generación del contador y devuelve los recuentos al teclado (§5).
+Nota sobre la propiedad tras el borrado: un teclado borrado tiene un `owner_id` de ceros, y la primera instalación de OPad a la que se conecte lo reclama en silencio (`Ownership::Unclaimed`). Si se trata del mismo PC desde el que lo borraste, el daemon también detecta `nvs_wiped` y restaura sus contadores y configuración guardados (§3). Si vas a entregar el teclado a otra persona, conéctalo primero al equipo del nuevo propietario para que su instalación lo reclame limpiamente. <!-- src: /desktop/daemon/src/runtime.rs#RuntimeController -->
 
-**Un detalle importante antes de borrar.** Reflashear deja el teclado sin reclamar, y un teclado sin reclamar es reclamado *silenciosamente* por el primer host al que se conecte (§W3-3). Si ese host es aquel desde el que acabas de borrarlo, restaurará también los contadores que recuerda, porque su generación será superior a la del teclado en blanco (§3). Eso es lo ideal si estás reparando una instalación dañada, pero un error si vas a ceder el teclado: en ese caso, conéctalo primero al ordenador de su nuevo propietario para que sea su instalación la que lo reclame.
+### 7.3 Pon el teclado en modo de descarga y libera el puerto
 
-### 7.3 Put the pad in download mode and free the port
-
-```bash
+```sh
 opadctl bootloader
 ```
 
-Esto ejecuta ambos pasos: solicita a `opad-daemon` que libere el puerto serie y luego reinicia el teclado en el bootloader de descarga ROM de forma desatendida, mostrando el puerto en el que reaparece. Funciona incluso si el demonio no se está ejecutando.
+`opadctl bootloader` pide a `opad-daemon` que libere el puerto serie (`IpcRequest::PrepareFlash`), activa el modo de descarga ROM por USB, reanuda el daemon (`IpcRequest::ResumeDevice`) e imprime el puerto del bootloader (`303a:1001`). También funciona cuando `opad-daemon` no se está ejecutando. <!-- src: /desktop/cli/src/main.rs#Commands, /desktop/crates/opad-device/src/flash.rs#enter_bootloader -->
 
-**Windows: el puerto debe estar libre, no solo inactivo.** Los identificadores serie en Windows son exclusivos (`CreateFileW` sin modo compartido), por lo que cualquier proceso que mantenga abierto el puerto hará que el flasheo falle de inmediato en vez de solo ralentizarlo, a diferencia de Linux, donde un segundo lector es solo descortés. `opadctl bootloader` gestiona el demonio; cierra por tu cuenta cualquier monitor serie, ventana de PuTTY o del IDE de Arduino. Si el flasheo se detiene con una infracción de uso compartido o "acceso denegado", ese es el motivo.
+En Windows los identificadores serie son exclusivos (`PortBusy`), así que cierra cualquier monitor serie u otro proceso que mantenga abierto el puerto COM antes de ejecutar `opadctl bootloader` o `espflash`. En cualquier sistema operativo puedes listar los puertos con `espflash list-ports` (o en Windows Administrador de dispositivos -> Puertos (COM y LPT)). <!-- src: /desktop/crates/opad-device/src/flash.rs#FlashError, /desktop/cli/src/main.rs#prepare_flash -->
 
-Localiza el puerto con `espflash list-ports` o en Administrador de dispositivos → Puertos (COM y LPT). Los puertos superiores a COM9 son válidos; tanto `opadctl` como `espflash` aplican el prefijo `\\.\` requerido por los nombres COM estándar.
+Para entrar en modo de descarga sin pulsar ningún botón, `enter_bootloader` prueba dos disparadores en orden (`BOOT_TRIGGERS`): primero el comando en texto plano `BOOTLOADER\n` por CDC, y después una apertura y cierre a 1200 baudios (bajando DTR). El firmware maneja ambos desconectando TinyUSB (`tud_disconnect()`), cambiando el PHY interno a USB-Serial-JTAG, manteniendo SE0 durante 300 ms, restaurando `dp_pu = 1` antes de soltar la anulación de pull, esperando hasta 1.5 s un reinicio del bus USB, activando `RTC_CNTL_FORCE_DOWNLOAD_BOOT` y llamando a `esp_restart()`. Si ninguno funciona, usa `opadctl recover` (§7.7). Nunca es necesario pulsar los botones BOOT o RESET. <!-- src: /desktop/crates/opad-device/src/flash.rs#BOOT_TRIGGERS, /firmware/main/usb/usb_cdc.c#reboot_to_rom_download -->
 
-**La peculiaridad del reinicio en descarga USB.** El teclado se reinicia a sí mismo en modo de descarga a través de su interfaz USB-Serial-JTAG, y dicha interfaz conserva la dirección USB que tenía al encenderse. El host debe detectar una desconexión real antes de la reconexión, por lo que el firmware fuerza una; si no surte efecto, se produce el error `-71` y la aplicación vuelve a arrancar. Por este motivo, `opadctl bootloader` intenta tres activadores distintos. Si todos fallan, recurre a `opadctl recover` (§7.7): introduce el teclado en modo de descarga mediante una reconexión del cable, sin intervención del firmware. El teclado nunca requiere pulsar sus botones BOOT o RESET.
+### 7.4 Borrar y luego flashear
 
-### 7.4 Erase, then flash
-
-Con el teclado en modo de descarga:
+Con el teclado en modo de descarga ROM (`303a:1001`):
 
 **Linux**
 
-```bash
+```sh
 espflash erase-flash -p /dev/ttyACM0 --before no-reset --after no-reset-no-stub
-opadctl flash --full ~/Downloads/opad-1.0.0/          # o firmware/build
+opadctl flash --full ~/Downloads/opad-1.0.0/   # or firmware/build
 ```
 
-**Windows (PowerShell o cmd)**
+**Windows (PowerShell o Símbolo del sistema)**
 
 ```powershell
 espflash erase-flash -p COM3 --before no-reset --after no-reset-no-stub
-opadctl flash --full C:\Users\tu\Downloads\opad-1.0.0\
+opadctl flash --full C:\Users\you\Downloads\opad-1.0.0\
 ```
 
-`--before no-reset` es fundamental: el teclado ya está en modo de descarga, y permitir que espflash intente su propio reinicio DTR/RTS por USB-Serial-JTAG solo corre el riesgo de devolverlo a la aplicación. Borrar los 16 MB lleva cerca de un minuto. **No lo desconectes mientras se ejecuta.**
+Usa `--before no-reset --after no-reset-no-stub` para que `espflash` deje el teclado en modo de descarga para `opadctl flash --full`. No desconectes el teclado mientras `erase-flash` esté en ejecución. <!-- src: /desktop/crates/opad-device/src/flash.rs#write_images -->
 
-`--full` es obligatorio en este paso, dado que `erase-flash` eliminó también el bootloader y la tabla de particiones. Escribe las cuatro imágenes en orden —bootloader en `0x0`, tabla de particiones en `0x8000`, datos OTA en `0xf000` y aplicación en `0x20000` (`ota_0`, §U-3a)— y luego reinicia el teclado en la aplicación. Acepta tanto un directorio de release desempaquetado como el árbol `firmware/build` de ESP-IDF.
+`--full` es obligatorio después de `erase-flash` porque el bootloader y la tabla de particiones fueron borrados. `resolve_flash_set` escribe las imágenes en orden ascendente de desplazamiento — bootloader en `0x0`, tabla de particiones en `0x8000`, `ota_data_initial.bin` en `0xf000` (cuando está presente) y `opad-firmware.bin` en `0x20000` (`ota_0`) — y luego reinicia el teclado hacia la aplicación mediante un reinicio del watchdog RTC (`reset_to_app`). Acepta tanto un directorio `firmware/build` de ESP-IDF como un directorio de lanzamiento desempaquetado. <!-- src: /desktop/cli/src/main.rs#resolve_flash_set, /desktop/crates/opad-device/src/flash.rs#reset_to_app -->
 
-### 7.5 Confirm
+### 7.5 Confirmar
 
-```bash
+```sh
 opadctl status
 ```
 
-Un teclado que se ha reiniciado correctamente indicará `ESP32 Device: Connected` y un `Running Slot` con valor `ota_0`.
+Un teclado que arrancó correctamente informa `ESP32 Device: Connected` y `Running Slot: ota_0`. <!-- src: /desktop/cli/src/main.rs#Commands -->
 
-Los contadores dependerán del host al que lo hayas conectado. En un equipo que nunca haya visto este teclado, se esperan cero pulsaciones en la generación 1. En el equipo desde el que lo borraste, se reflejarán los recuentos recordados: su generación supera a la del teclado en blanco, por lo que los restaura y vuelve a reclamar el teclado de forma silenciosa, y el log del demonio confirmará ambos eventos (§7.2).
+En un equipo que nunca haya visto este teclado, los contadores comienzan en 0 con generación 1. En el equipo desde el que lo borraste, el daemon restaura los contadores guardados y vuelve a reclamar la propiedad (§7.2). <!-- src: /firmware/main/counters/counters.c#counters_init, /desktop/daemon/src/runtime.rs#RuntimeController -->
 
-Si el teclado no vuelve a iniciar la aplicación en 15 segundos, `opadctl flash` lo indicará. Repite **únicamente el paso de flasheo del 7.4**; no vuelvas a borrar la memoria. El teclado continúa en modo de descarga y volver a flashear es completamente seguro. Si ha salido del modo de descarga y tampoco se detecta como OPad, utiliza `opadctl recover` (§7.7).
+Si el teclado no vuelve como la aplicación OPad en un plazo de 15 segundos tras un flasheo `--full`, `opadctl flash` informa un error. Vuelve a ejecutar el paso `opadctl flash --full` (no borres otra vez). Si el teclado salió del modo de descarga y no enumera como OPad (`303a:4001`), usa `opadctl recover` (§7.7). <!-- src: /desktop/cli/src/main.rs#Commands, /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
 
-### 7.6 When flashing is interrupted
+### 7.6 Cuando se interrumpe el flasheo
 
-Una actualización de la aplicación (`opadctl flash <app.bin>` o la actualización de firmware desde la app) escribe en la ranura en la que el teclado **no** se está ejecutando, y solo entonces hace que el bootloader apunte a ella (`plan_app_update` en `desktop/crates/opad-device/src/flash.rs`). La imagen en ejecución no se modifica, de modo que:
+Una actualización solo de aplicación (`opadctl flash <app.bin>` con el daemon informando la ranura activa, o una actualización desde la GUI / `opadctl firmware-update`) llama a `plan_app_update` para escribir primero en la ranura OTA inactiva (`ota_1` si corre en `ota_0`, o `ota_0` si corre en `ota_1`) y escribir `otadata` en segundo lugar para que el bootloader pruebe la nueva ranura una vez manteniendo la anterior como `OTA_IMG_VALID`. (Si `opadctl flash <app.bin>` se ejecuta sin conocer la ranura activa — por ejemplo sin daemon en ejecución o en firmware antiguo — recurre a escribir `ota_0` en su sitio en `0x20000` sin respaldo de reversión.) <!-- src: /desktop/crates/opad-device/src/flash.rs#plan_app_update, /desktop/cli/src/main.rs#Commands -->
 
-- **Interrupción antes del final:** la selección de arranque aún no se había escrito y el teclado arranca la imagen previa.
-- **Escrita, pero la nueva imagen está dañada:** arranca una vez en modo de prueba. El firmware solo la confirma una vez que el host ha configurado la interfaz USB (`confirm_image_once_usb_works` en `firmware/main/app_main.c`). Si el host reinicia el bus y no lo configura en 20 segundos, el teclado se reinicia y el bootloader marca la imagen como abortada, arrancando la versión anterior. Un bucle de reinicios revierte el sistema exactamente de la misma manera. `opadctl flash` informará de que "no se aceptó el nuevo firmware y se volvió al anterior"; el teclado funcionará como antes.
+- **Interrumpido antes de escribir `otadata`**: La selección de arranque sigue apuntando a la ranura anterior, por lo que el teclado arranca su firmware previo sin cambios. <!-- src: /desktop/crates/opad-device/src/flash.rs#plan_app_update -->
+- **Escrito, pero la nueva imagen falla**: La nueva imagen arranca en estado `ESP_OTA_IMG_PENDING_VERIFY`. Al final de `app_main`, `confirm_image_once_usb_works` espera hasta que el anfitrión configure el USB (`tud_mounted()`). Si un anfitrión USB se conecta (`tud_connected()`) y no configura el USB en 20 segundos (`IMAGE_CONFIRM_TIMEOUT_US`), el firmware llama a `esp_restart()`, y el bootloader marca la imagen de prueba como abortada y arranca la ranura válida anterior. Un bucle de reinicios revierte del mismo modo. Si se alimenta sin anfitrión USB (como un cargador de pared), la imagen queda pendiente hasta conectarse a un anfitrión. Cuando ocurre una reversión, `opadctl flash` informa `"The pad did not accept the new firmware (it never came up as a working USB device) and went back to the previous one on <slot>. It works as before; nothing else is needed."` <!-- src: /firmware/main/app_main.c#confirm_image_once_usb_works, /desktop/cli/src/main.rs#report_slot_after_flash -->
 
-Un flasheo `--full` (§7.4) escribe `ota_0` directamente sin alternativa de respaldo. Si se interrumpe, el teclado **no** queda inservible (§7.1): ejecuta `opadctl recover` (§7.7).
+Un flasheo `--full` (§7.4) escribe `ota_0` directamente sin respaldo. Si se interrumpe, recupera el teclado con `opadctl recover` (§7.7). <!-- src: /desktop/cli/src/main.rs#Commands -->
 
-### 7.7 A pad that does not show up as OPad (`opadctl recover`)
+### 7.7 Un teclado que no aparece como OPad (`opadctl recover`)
 
-Cuando no es posible comunicarse con la aplicación por USB en absoluto (por ejemplo, con una compilación que arranca pero nunca se enumera: `can't set config #1, error -32` en `dmesg`), nada puede ordenarle que acceda al bootloader. Recupéralo desconectando y volviendo a conectar el cable:
+Si el firmware arranca pero nunca enumera por USB (por ejemplo `can't set config #1, error -32` en `dmesg` de Linux), nada puede pedir a la aplicación por CDC que entre en modo de descarga. Recupéralo capturando la ventana de la ROM al encender: <!-- src: /desktop/crates/opad-device/src/flash.rs#recover, /desktop/cli/src/main.rs#Commands -->
 
-```bash
-opadctl recover firmware/build         # o un directorio de release desempaquetado
+```sh
+opadctl recover firmware/build   # or an unpacked release directory
 ```
 
-y desconecta y vuelve a conectar el cable USB del teclado cuando la herramienta lo indique. En cada encendido, antes de que la aplicación tome el control del puerto USB, la ROM del ESP32-S3 aparece en el bus como `303a:1001` durante una fracción de segundo. `recover` aprovecha esa ventana, reinicia el chip en modo de descarga a través de USB (las líneas DTR/RTS de USB-Serial-JTAG), desactiva el watchdog que el bootloader había iniciado, escribe el conjunto completo como hace `--full` y lo inicia (`recover` en `desktop/crates/opad-device/src/flash.rs`). En ningún momento se requiere pulsar los botones BOOT o RESET.
+Cuando aparezca el mensaje (`Unplug the pad's USB cable and plug it back in (waiting 300 s)...`, configurable con `--timeout`), desconecta y vuelve a conectar el cable USB del teclado. En cada encendido, antes de que la aplicación tome el control del PHY USB, la interfaz ROM USB-Serial-JTAG del ESP32-S3 aparece brevemente como `303a:1001`. `flash::recover` detecta ese puerto (sondeando directamente `/sys/class/tty/ttyACM*` en Linux porque udev es demasiado lento para la ventana de ~200 ms, y `bootloader_ports()` en Windows), reinicia el chip en modo de descarga vía DTR/RTS (`usj_reset_to_download`), ejecuta `SYNC` de ROM y desactiva los watchdogs de arranque (`disable_watchdogs`), escribe el conjunto completo de imágenes (`write_images`), reinicia en la aplicación (`reset_to_app`) y espera hasta 15 segundos al puerto de la aplicación OPad (`303a:4001`). Nunca se necesita ningún botón BOOT ni RESET. <!-- src: /desktop/crates/opad-device/src/flash.rs#recover, /desktop/crates/opad-device/src/flash.rs#rom_port_names, /desktop/crates/opad-device/src/flash.rs#disable_watchdogs, /desktop/cli/src/main.rs#Commands -->
 
-Un reinicio por software no vuelve a activar el puerto de la ROM; únicamente lo hace una conexión eléctrica real, motivo por el cual es lo único que se requiere hacer físicamente.
+Solo un ciclo de alimentación real hace reaparecer el puerto ROM — un reinicio por software no lo hace —, por lo que es obligatorio desconectar y volver a conectar el cable USB. <!-- src: /desktop/crates/opad-device/src/flash.rs -->
