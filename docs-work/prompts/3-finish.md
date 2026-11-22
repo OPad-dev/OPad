@@ -17,6 +17,46 @@ owner for review. You do not merge it.
    asks.
 5. Run `python3 docs-work/check_docs.py`.
 
+**Do not stop until the whole task is done** (§4 complete). Do not stop to
+report progress or wait for an OK. Anything §3 forbids you to decide goes in
+the final report, and you keep going with the rest.
+
+## 0.1 The code moved after layer 2. Re-verify that first.
+
+Layers 1 and 2 checked the docs against commit `86f7bf0`. The owner rebases
+`docs-wiki` onto `main` before you start, so the code you see now is newer.
+
+1. Run `python3 docs-work/affected_pages.py 86f7bf0`. It lists every page
+   (en and es) that cites a file changed since then.
+2. For each listed page, read `git diff 86f7bf0 HEAD -- <the changed files>`
+   and fix every claim the change makes wrong. Known ones: `opadctl update`
+   is new (`desktop/cli/src/main.rs`, `reference/opadctl.md`); the screen's
+   memory moved to PSRAM, with 40-line draw buffers and a 30 fps cap
+   (`firmware/main/ui/ui_port.c`, `sdkconfig.defaults`,
+   `develop/firmware/ui.md`, `explanation/architecture.md`); and the update
+   policy changed (silent app updates, firmware installed by itself after
+   30 min unused, "Update now" still asks, never during a map). Document the
+   update policy only as far as it is in the code on this branch.
+3. Pages that changes add a topic to without citing it yet: run
+   `git log --oneline 86f7bf0..HEAD -- ':!docs'` and check each `feat` and
+   `fix` commit for user-visible behaviour that no page covers.
+
+## 0.2 Items layer 2 left for you
+
+- FINDINGS F3 (host-driven updates need the pad running from `ota_0`,
+  `Blocker::NeedsFullReflash` in `desktop/crates/opad-update/src/firmware.rs`)
+  and F7 (the app's `KEY_PINS` in `desktop/crates/opad-model/src/lib.rs`
+  offers GPIO 8, which `KEY_GPIO_ALLOWED` in
+  `firmware/main/config/config_validate.c` rejects): confirm each in the code
+  and turn it into a question for the owner with a recommendation (§3). Do
+  not change code. The docs describe what the code does now.
+- Write `docs/guides/customize-screen-layout.md` (en and es): a how-to for
+  the Screen Designer (building, exporting and importing Idle/Playing
+  layouts), from `desktop/gui/src/designer/` and the firmware's `ui/` code,
+  listing every selectable data source (`ui_source_t`).
+- `docs/es/testing-checklist.md`: translate the headings that are still in
+  English, keeping the heading count the same as the English page.
+
 The site is a separate Astro Starlight repo that reads `docs/`: English at
 the root, Spanish in `docs/es/`, `draft: true` hides a page, and
 `docs/history/` is not published. Links to source files are repo-root
