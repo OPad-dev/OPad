@@ -1,3 +1,4 @@
+#include "esp_attr.h"
 #include "ui_core.h"
 #include "ui_internal.h"
 #include <math.h>
@@ -107,9 +108,10 @@ static const ui_source_info_t s_sources[UI_SRC_COUNT] = {
 #undef S
 #undef N
 
-static lv_subject_t s_subjects[UI_SRC_COUNT];
-static char s_str_buf[UI_SRC_COUNT][UI_STRING_MAX];
-static char s_str_prev[UI_SRC_COUNT][UI_STRING_MAX];
+// PSRAM: the screen's data, nothing on the key path reads it
+EXT_RAM_BSS_ATTR static lv_subject_t s_subjects[UI_SRC_COUNT];
+EXT_RAM_BSS_ATTR static char s_str_buf[UI_SRC_COUNT][UI_STRING_MAX];
+EXT_RAM_BSS_ATTR static char s_str_prev[UI_SRC_COUNT][UI_STRING_MAX];
 static bool s_initialized;
 
 const ui_source_info_t *ui_source_info(uint8_t source)

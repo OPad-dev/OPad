@@ -1,3 +1,4 @@
+#include "esp_attr.h"
 #include "config/nvs_ns.h"
 #include "ui_store.h"
 #include "counters/counters.h"
@@ -19,7 +20,8 @@ static const char *TAG = "ui_store";
 // flushed by the runtime supervisor on the other core: guarded by store_lock(),
 // which is also held across every layout NVS write so an older deferred layout
 // can never land on top of a newer one
-static ui_layout_t s_pending_layouts[UI_SCREEN_COUNT];
+// PSRAM: NVS copies it through an internal buffer when it writes
+EXT_RAM_BSS_ATTR static ui_layout_t s_pending_layouts[UI_SCREEN_COUNT];
 static uint8_t s_dirty_save_mask = 0;
 static uint8_t s_dirty_erase_mask = 0;
 // A failed deferred write is kept and retried, but not every 100 ms

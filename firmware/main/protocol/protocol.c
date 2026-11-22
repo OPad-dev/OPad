@@ -1,3 +1,4 @@
+#include "esp_attr.h"
 #include "protocol.h"
 #include "protocol/nanopb/pb_encode.h"
 #include "protocol/nanopb/pb_decode.h"
@@ -33,7 +34,9 @@
 
 static const char *TAG = "protocol";
 
-static frame_parser_t s_parser;
+// PSRAM, as the decoded message and layout below: the protocol task only, off
+// the key path
+EXT_RAM_BSS_ATTR static frame_parser_t s_parser;
 // Host frames are written in one go, so a partial frame that sits this long is
 // a false start (stray AA 55 + length): drop it rather than wait for bytes
 // that swallow the real frames behind it
@@ -906,7 +909,7 @@ static void handle_host_message(const opad_HostToDevice *msg)
     }
 
     case opad_HostToDevice_set_layout_tag: {
-        static ui_layout_t layout;  // ~2 KB, protocol task only
+        EXT_RAM_BSS_ATTR static ui_layout_t layout;  // ~2 KB, protocol task only
         const opad_SetLayout *sl = &msg->payload.set_layout;
         char err[64] = "";
         bool ok = layout_from_proto(sl, &layout, err, sizeof(err)) &&
@@ -1052,7 +1055,7 @@ static void handle_host_message(const opad_HostToDevice *msg)
 static void on_frame_received(const uint8_t *payload, size_t payload_len, void *user_data)
 {
     (void)user_data;
-    static opad_HostToDevice msg;
+    EXT_RAM_BSS_ATTR static opad_HostToDevice msg;
     msg = (opad_HostToDevice)opad_HostToDevice_init_zero;
     if (protocol_decode_host_message(payload, payload_len, &msg)) {
         // nanopb accepts most varint garbage with no payload set: only a

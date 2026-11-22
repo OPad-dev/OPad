@@ -45,8 +45,12 @@ CONFIG_LV_FONT_MONTSERRAT_32=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
 CONFIG_LV_USE_OBSERVER=y
 CONFIG_LV_USE_GIF=y
-# LVGL's own fixed pool: never contends with the heap used on the key/USB core
+# LVGL's own fixed pool: never contends with the heap used on the key/USB core.
+# It lives in PSRAM (OPAD_LVGL_PSRAM, on by default): internal RAM is for the keys
 CONFIG_LV_MEM_SIZE_KILOBYTES=160
+# Only the keys, USB and DMA stay in internal RAM: buffers nothing on the key
+# path touches are placed in PSRAM with EXT_RAM_BSS_ATTR
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
 
 # Only the LVGL widgets the layouts use (label, bar, image, observer)
 # CONFIG_LV_USE_ANIMIMG is not set

@@ -1,3 +1,4 @@
+#include "esp_attr.h"
 #include "ui.h"
 #include "ui/ui_store.h"
 #include "ui/easter_egg.h"
@@ -29,7 +30,7 @@ static const char *TAG = "ui";
 
 static lv_display_t *s_disp;
 
-static ui_layout_t s_layouts[UI_SCREEN_COUNT];
+EXT_RAM_BSS_ATTR static ui_layout_t s_layouts[UI_SCREEN_COUNT];  // PSRAM, as all of LVGL
 static lv_obj_t *s_screens[UI_SCREEN_COUNT];
 static int s_active_screen = -1;
 

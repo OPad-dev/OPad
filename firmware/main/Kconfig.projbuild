@@ -87,12 +87,15 @@ menu "OPad Testing and Benchmark"
 
     config OPAD_LVGL_PSRAM
         bool "LVGL memory pool in PSRAM"
-        default n
+        default y
         help
             Allocate LVGL's memory pool (CONFIG_LV_MEM_SIZE_KILOBYTES) from
             PSRAM at boot instead of a static array in internal RAM. Frees the
             pool's size in internal RAM; LVGL work that misses the cache gets
             slower. The draw buffers stay in internal DMA RAM either way.
+            On by default: with the pool in internal RAM, a Hall Effect V3
+            pad had too little left for the draw buffers and booted with a
+            blank screen.
 
     config OPAD_BENCH_DEBUG_GPIO
         bool "Toggle debug GPIO right after HID submit"

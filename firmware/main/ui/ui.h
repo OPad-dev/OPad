@@ -9,8 +9,9 @@
 #include "ui/core/ui_core.h"
 
 // Screen lines per draw buffer (two of them, in internal DMA RAM: the LCD's
-// SPI DMA reads from there): 25.6 KB each
-#define UI_DRAW_BUF_LINES 40
+// SPI DMA reads from there). 20 lines is 12.8 KB each; 40 took 51 KB of the
+// internal RAM the keys need, for a little faster drawing
+#define UI_DRAW_BUF_LINES 20
 
 #ifdef __cplusplus
 extern "C" {
