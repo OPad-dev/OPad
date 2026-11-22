@@ -22,6 +22,7 @@ Commands:
   recover          Recover a pad that no longer shows up as OPad: replug it, and its next boot is caught over USB and flashed with the full set. No buttons
   bootloader       Reboot device into ROM download bootloader mode hands-free over USB
   firmware-update  Update the pad's firmware from the signed release manifest (§U-3b)
+  update           Show, check for or install an update of the OPad app from the update feed, as the app's Updates page does
   latency          Show key-press-to-HID latency measured on the device
   stats            Show your tap rate in KPM (keys per minute, not the map's BPM): the current or last attempt and the history
   board-test       Test the carrier and input module PCBs: module ID, cable direction, key lines, connector shorts, and a Hall Effect V3 module's ADC and sensors. Release both keys while it runs
@@ -278,6 +279,32 @@ Options:
 
 Queries `opad-daemon` via `IpcRequest::GetFirmwareUpdate` to inspect installed version, available version, release notes, and active blockers. Before flashing, asks for explicit user confirmation unless `--yes` is passed. The daemon synchronizes counters to disk prior to flashing to preserve counter integrity.
 <!-- src: /desktop/cli/src/main.rs#Commands::FirmwareUpdate -->
+
+---
+
+## opadctl update
+
+Shows, checks for, or installs an update of the OPad desktop application from the signed update feed.
+<!-- src: /desktop/cli/src/main.rs#Commands::Update -->
+
+```text
+Show, check for or install an update of the OPad app from the update feed, as the app's Updates page does
+
+Usage: opadctl update [OPTIONS]
+
+Options:
+      --channel <CHANNEL>  Follow this channel from now on: stable, or beta for release candidates
+      --check              Check the feed now and wait for the answer
+      --install            Download, verify and install the available update. The installer restarts OPad, so this returns once it has started.
+  -h, --help               Print help
+```
+
+- `--channel <CHANNEL>`: Switches the daemon to follow `stable` or `beta` (`IpcRequest::SetUpdateChannel`), which also starts a check of the new channel.
+  <!-- src: /desktop/cli/src/main.rs#Commands::Update -->
+- `--check`: Triggers `IpcRequest::CheckForUpdates` and polls `IpcRequest::GetUpdateStatus` every 500 ms until the check finishes or times out after 120 seconds.
+  <!-- src: /desktop/cli/src/main.rs#Commands::Update -->
+- `--install`: Sends `IpcRequest::InstallUpdate` for the desktop app if an update is ready to install; returns once the updater starts the install (OPad restarts when it finishes). Package-manager installs marked notify-only (such as Arch) print `(update it with your package manager)` instead of installing.
+  <!-- src: /desktop/cli/src/main.rs#Commands::Update -->
 
 ---
 
