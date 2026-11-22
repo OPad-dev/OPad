@@ -1,6 +1,8 @@
 ---
 title: Referencia de la CLI opadctl
 description: Referencia de línea de comandos y opciones para la utilidad de gestión del teclado y del daemon opadctl.
+sidebar:
+  order: 1
 ---
 
 `opadctl` es la herramienta de gestión por línea de comandos de OPad. Se comunica con el servicio en segundo plano (`opad-daemon`) por IPC local para consultar el estado, sincronizar contadores de pulsaciones de por vida, exportar e importar copias de seguridad, transmitir registros de diagnóstico y controlar funciones del teclado. Los comandos de flasheo (`flash`, `recover`, `bootloader`) también pueden operar directamente por serie USB cuando el daemon está detenido.
