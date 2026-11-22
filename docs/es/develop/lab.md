@@ -1,6 +1,8 @@
 ---
 title: Laboratorio de pruebas automatizadas
 description: Arquitectura del laboratorio autoalojado multi-SO en VirtualBox, topología de máquinas virtuales, validación de instalación/actualización/desinstalación y comprobaciones de salud.
+sidebar:
+  order: 8
 ---
 
 OPad valida instaladores, actualizaciones y desinstalación limpia en Linux y Windows en un laboratorio autoalojado con VirtualBox ([/scripts/lab/lab-common.ps1](/scripts/lab/lab-common.ps1)).
