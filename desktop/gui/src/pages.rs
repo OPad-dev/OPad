@@ -957,14 +957,20 @@ fn firmware_updates(app: &App) -> Element<'_, Message> {
         .into();
     };
 
-    let installed_str = offer.installed.as_deref().unwrap_or("unknown (no pad?)");
-    let slot_str = offer
-        .running_partition
-        .as_deref()
-        .unwrap_or("unknown (predates OTA layout)");
-    let state_str = match &offer.available {
-        Some(v) => format!("{v} available"),
-        None => "Up to date".to_string(),
+    let (title, state_str) = match (&offer.installed, &offer.available) {
+        (None, _) => ("Firmware".to_string(), "No pad connected".to_string()),
+        (Some(i), available) => {
+            let state = match available {
+                Some(v) => format!("{v} available"),
+                None => "Up to date".to_string(),
+            };
+            let slot = offer
+                .running_partition
+                .as_deref()
+                .map(|s| format!(" · running slot {s}"))
+                .unwrap_or_default();
+            (format!("Firmware {i}"), format!("{state}{slot}"))
+        }
     };
 
     let can_update = offer.available.is_some() && offer.blockers.is_empty();
@@ -980,11 +986,7 @@ fn firmware_updates(app: &App) -> Element<'_, Message> {
     let mut content = column![
         caption("FIRMWARE UPDATE"),
         row![
-            column![
-                text(format!("Firmware {installed_str}")).size(13),
-                muted(format!("{state_str} · running slot {slot_str}")).size(11),
-            ]
-            .spacing(3),
+            column![text(title).size(13), muted(state_str).size(11),].spacing(3),
             Space::new().width(Length::Fill),
             update_btn,
         ]
@@ -993,8 +995,11 @@ fn firmware_updates(app: &App) -> Element<'_, Message> {
     ]
     .spacing(12);
 
-    for blocker in &offer.blockers {
-        content = content.push(text(format!("⚠ {blocker}")).size(12).color(theme::YELLOW));
+    // With no pad the subtitle says so; its blockers would only repeat it
+    if offer.installed.is_some() {
+        for blocker in &offer.blockers {
+            content = content.push(text(format!("⚠ {blocker}")).size(12).color(theme::YELLOW));
+        }
     }
 
     // When it installs by itself, and how close that is
@@ -1022,18 +1027,16 @@ fn firmware_updates(app: &App) -> Element<'_, Message> {
     content = content.push(rule::horizontal(1));
     content = content.push(
         checkbox(offer.auto)
-            .label(format!(
-                "Install firmware updates automatically, after {} minutes without using the pad",
-                offer.auto_after_minutes.max(1)
-            ))
+            .label("Install firmware updates automatically")
             .text_size(12)
             .on_toggle(|v| Message::ToggleUpdater(UpdateComponent::Firmware, v)),
     );
     content = content.push(
         muted(format!(
-            "A firmware update stops the pad being a keyboard for about {} seconds. \
-             It never runs during a map, and a pad that does not start the new \
-             firmware goes back to the old one by itself.",
+            "Only once the pad has gone {} minutes unused, never during a map: an \
+             update stops the pad being a keyboard for about {} seconds. A pad that \
+             does not start the new firmware goes back to the old one by itself.",
+            offer.auto_after_minutes.max(1),
             offer.outage_seconds.max(1)
         ))
         .size(11),

@@ -228,11 +228,19 @@ pub fn spawn_update_worker(
     storage: Arc<Mutex<Option<Storage>>>,
     tosu_supervisor: TosuSupervisor,
 ) -> UpdateService {
+    // What is installed is known before any check: the GUI shows it at once
+    let bundled_tosu = tosu::bundled_dir().ok();
     let status: SharedUpdateStatus = Arc::new(Mutex::new(UpdateStatus {
         channel: read_channel(&storage),
         app: ComponentUpdate {
             installed: Some(env!("CARGO_PKG_VERSION").to_string()),
             enabled: read_flag(&storage, APP_ENABLED_KEY),
+            ..Default::default()
+        },
+        tosu: ComponentUpdate {
+            installed: bundled_tosu.as_deref().and_then(tosu::installed_version),
+            enabled: read_flag(&storage, TOSU_ENABLED_KEY),
+            with_app: !InstallOrigin::detect().owns_bundled_tosu(),
             ..Default::default()
         },
         ..Default::default()
