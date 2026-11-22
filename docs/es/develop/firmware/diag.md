@@ -12,6 +12,9 @@ Implementado en [/firmware/main/diag/diag.c](/firmware/main/diag/diag.c):
 - Búfer circular fijo `s_entries[DIAG_RING_SIZE]` de `diag_entry_t` (`timestamp_ms`, `event_id`, `level`, `arg0`, `arg1`), protegido por un spinlock FreeRTOS (`taskENTER_CRITICAL(&s_mux)`).
 - `diag_record(uint16_t event_id, uint8_t level, uint32_t arg0, uint32_t arg1)` no realiza asignaciones en el heap ni formateo de cadenas; cuando está lleno, descarta la entrada más antigua e incrementa `s_dropped`.
 - `diag_drain(out_entries, max_entries, out_dropped)` vacía las entradas encoladas y reinicia `s_dropped` para que la tarea de protocolo las envíe al anfitrión en `LogEventBatch`.
+- Eventos de telemetría destacados en [/firmware/main/diag/diag.h](/firmware/main/diag/diag.h) y formateados en [/desktop/crates/opad-model/src/diag.rs](/desktop/crates/opad-model/src/diag.rs):
+  - `DIAG_EVENT_MEMORY = 23`: Registrado una vez tras el arranque en [/firmware/main/app_main.c](/firmware/main/app_main.c) con `arg0 =` RAM interna libre (bytes) y `arg1 =` mayor bloque interno compatible con DMA libre (bytes), visible en `opadctl monitor`.
+  - `DIAG_EVENT_UI_PERF = 24`: Registrado en compilaciones `CONFIG_OPAD_UI_PERF_TEST` por [/firmware/main/diag/ui_perf_test.c](/firmware/main/diag/ui_perf_test.c) al final de cada fase (`DIAG_UI_PERF_IDLE = 0`, `DIAG_UI_PERF_SONG = 1`, `DIAG_UI_PERF_RESULT = 2`) con el número de fotogramas, el tiempo medio por fotograma y el tiempo máximo por fotograma (en décimas de milisegundo).
 
 ## Autoprueba de PCB del carrier y módulo de entrada (`board_test.c`)
 
