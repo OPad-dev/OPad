@@ -1,6 +1,8 @@
 ---
 title: Referencia de archivos y rutas
 description: Ubicaciones del sistema de archivos, esquema de la base de datos SQLite, archivos de registro, rutas privadas de herramientas e identidad de instalación usadas por la suite de escritorio de OPad en Linux y Windows.
+sidebar:
+  order: 7
 ---
 
 La suite de escritorio de OPad resuelve todas las rutas persistentes, registros y binarios privados incluidos a través de `desktop/crates/opad-model/src/paths.rs`. Como los daemons iniciados al iniciar sesión heredan directorios de trabajo impredecibles (como `C:\Windows\System32` en Windows), OPad nunca recurre a rutas relativas. <!-- src: /desktop/crates/opad-model/src/paths.rs#PathError -->
