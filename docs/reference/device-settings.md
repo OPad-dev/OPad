@@ -1,6 +1,8 @@
 ---
 title: Device Settings Reference
 description: Complete catalog of OPad configuration settings, data types, valid ranges, default values, and NVS storage keys.
+sidebar:
+  order: 3
 ---
 
 This page documents every configuration setting stored by the OPad firmware: keycodes, GPIO pin assignments, eager debounce lockout, display preferences, swipe actions, and Hall Effect parameters.
