@@ -1,6 +1,8 @@
 ---
 title: Personalizar el diseño de pantalla
 description: Cómo diseñar, previsualizar, aplicar, exportar e importar diseños personalizados de pantalla Idle y Playing en opad-gui, con todas las fuentes de datos disponibles.
+sidebar:
+  order: 3
 ---
 
 La pantalla LCD de `320x240` de OPad tiene dos diseños independientes: la **Idle screen** (mostrada fuera de un mapa) y la **Playing screen** (mostrada durante un mapa). Puedes editar ambas desde la página **Designer** de `opad-gui` usando una previsualización 2x exacta píxel a píxel renderizada por el propio motor LVGL del firmware (`opad-ui-preview`). <!-- src: /desktop/gui/src/designer/mod.rs, /firmware/main/ui/core/ui_core.h, /firmware/main/ui/ui_port.c#pad_timer_cb -->
