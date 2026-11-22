@@ -1,6 +1,8 @@
 ---
 title: Arquitectura de hardware y ecosistema PCB
 description: Generaciones de hardware (V1, V2, V3), placas carrier, módulos de entrada MX y Hall Effect, diseño de carcasa 3D y suite de verificación opadverify.
+sidebar:
+  order: 5
 ---
 
 OPad separa la controladora Waveshare ESP32-S3-Touch-LCD-2 de los interruptores físicos mediante PCBs modulares de carrier y módulo de entrada.
