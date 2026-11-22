@@ -63,7 +63,7 @@ Firmware measures the time from the physical edge timestamp (`edge_us`) until th
 
 ## Core, Memory, and Flash Invariants
 
-- **Core isolation**: Input handling (`keypad_task`, `he_task`, `he_spi`) and TinyUSB run on Core 0 at top priority (`configMAX_PRIORITIES - 1`); LVGL UI rendering, touchscreen polling, and serial protocol framing run on Core 1 ([/firmware/main/app_main.c](/firmware/main/app_main.c)).
+- **Core isolation**: Input handling (`keypad_task`, `he_task`, `he_spi`) runs on Core 0 at top priority (`configMAX_PRIORITIES - 1`) and TinyUSB runs on Core 0 one level below (`configMAX_PRIORITIES - 2`); LVGL UI rendering, touchscreen polling, and serial protocol framing run on Core 1 ([/firmware/main/app_main.c](/firmware/main/app_main.c)).
 - **No dynamic allocation on the keypress path**: Debounce states, HID links, and latency histograms are statically allocated.
 - **IRAM placement**: Critical routines (`gpio_isr_handler`, `debounce_step`, `usb_hid_handle_key_event`, `latency_stats_record`, and the V1 ADC `on_frame` ISR) carry `IRAM_ATTR` so flash cache misses do not stall them.
 - **No flash writes during gameplay**: NVS commits (counters, configuration, calibration) are deferred while the runtime state is `PLAYING` or `COOLDOWN` and flushed only in `IDLE` ([/firmware/main/runtime/runtime.c](/firmware/main/runtime/runtime.c)).
