@@ -1,6 +1,8 @@
 ---
 title: Cambio de pines de teclas
 description: Cómo reasignar los pines GPIO de interruptores mecánicos cableados a mano en opad-gui, pines permitidos y reservados, y notas sobre pines del carrier V3.
+sidebar:
+  order: 5
 ---
 
 Por defecto, los montajes autónomos cableados a mano asignan Key 1 a `GPIO 14` (cabezal P2, pin 11) y Key 2 a `GPIO 9` (cabezal P2, pin 12). Si tus interruptores están cableados a otros pines admitidos del cabezal, puedes reasignarlos en `opad-gui` sin recompilar el firmware. <!-- src: /firmware/main/input/keypad.c --> <!-- src: /desktop/gui/src/pages.rs#settings -->
