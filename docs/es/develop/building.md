@@ -1,79 +1,75 @@
 ---
-title: Compilación desde el Código Fuente
-description: Guía completa de compilación para el firmware de OPad utilizando ESP-IDF v5.5.2 y las aplicaciones de escritorio en Rust para Linux y Windows.
+title: Compilación desde el código fuente
+description: Cómo compilar la suite de escritorio OPad en Rust y el firmware ESP32-S3 con ESP-IDF v5.5.2 desde el código fuente en Linux y Windows.
 ---
 
-Esta guía proporciona instrucciones para compilar desde el código fuente el firmware del ESP32-S3 de OPad y la suite de software de escritorio en Rust (`opad-daemon`, `opad-gui` y `opadctl`). <!-- src: /Makefile -->
+Esta guía cubre la compilación del espacio de trabajo de escritorio en Rust ([/desktop/Cargo.toml](/desktop/Cargo.toml)) y del firmware ESP32-S3 ([/firmware/CMakeLists.txt](/firmware/CMakeLists.txt)) desde el código fuente.
 
-## Prerequisites
+## Requisitos previos
 
-### 1. General Toolchain
-- **Git** con submódulos.
-- **Python 3.10+** con soporte de `venv`.
-- **GNU Make** y herramientas estándar de compilación (`gcc`, `g++`, `pkg-config`).
+### Suite de escritorio (Rust)
+- **Rust**: Cadena de herramientas estable de Rust (edición 2021) mediante [rustup](https://rustup.rs) ([/desktop/Cargo.toml](/desktop/Cargo.toml)).
+- **Linux (Ubuntu / Debian)** ([/README.md](/README.md)):
+  ```bash
+  sudo apt update
+  sudo apt install -y build-essential pkg-config libasound2-dev libudev-dev \
+      libx11-dev libxkbcommon-dev libwayland-dev libfontconfig1-dev libdbus-1-dev
+  ```
+- **Windows**: Visual Studio MSVC C++ Build Tools; Inno Setup 6 es opcional (solo necesario para generar `opad-setup.exe` desde [/packaging/windows/installer.iss](/packaging/windows/installer.iss)).
 
-### 2. Desktop Suite Requirements (Rust)
-- **Cadena de Herramientas Rust**: Rust estable (edición 2021) instalado a través de [rustup](https://rustup.rs). <!-- src: /desktop/Cargo.toml -->
-- **Bibliotecas del Sistema en Linux**:
-  - `libudev-dev`
-  - `libfontconfig1-dev`
-  - `libgl1-mesa-dev`
-- **Herramientas en Windows**:
-  - Herramientas de Compilación de MSVC C++ (Visual Studio 2022).
-  - Inno Setup 6 (opcional, para compilar el instalador de Windows).
+### Firmware (ESP-IDF v5.5.2)
+- **ESP-IDF v5.5.2** (versión fijada en [/AGENTS.md](/AGENTS.md) §4 y [/.github/workflows/ci.yml](/.github/workflows/ci.yml)).
 
-### 3. Firmware Requirements (ESP-IDF)
-- **ESP-IDF v5.5.2**: El firmware de OPad está fijado estrictamente a ESP-IDF **v5.5.2** (AGENTS.md §4, §5). La compilación con versiones principales anteriores o posteriores no está soportada. <!-- src: /AGENTS.md -->
-
-## Building the Desktop Suite
-
-El espacio de trabajo de escritorio está estructurado como un único workspace de Cargo en Rust (`desktop/Cargo.toml`): <!-- src: /desktop/Cargo.toml -->
+## Compilación de la suite de escritorio
 
 ```bash
 cd desktop
 cargo build --release
 ```
-
-Los binarios se generan en `desktop/target/release/`:
-- `opad-daemon`: El coordinador en segundo plano del hardware y de tosu.
-- `opad-gui`: La interfaz gráfica de configuración y diseñador de pantalla.
-- `opadctl`: La utilidad de línea de comandos para gestión y flasheo.
-
-### Running Workspace Checks
-Para ejecutar comprobaciones de formato, advertencias del compilador (`clippy -D warnings`) y pruebas unitarias: <!-- src: /AGENTS.md -->
+O desde la raíz del repositorio usando [/Makefile](/Makefile):
 ```bash
-make check
+make all
 ```
+Los binarios de lanzamiento se generan en `desktop/target/release/`:
+- `opad-daemon`
+- `opad-gui`
+- `opadctl`
 
-## Building the Firmware
+Objetivos auxiliares opcionales en [/Makefile](/Makefile):
+- `make espflash` descarga `espflash` **4.6.0** fijado y verificado por SHA-256.
+- `make tosu` compila `tosu` **v4.26.2** fijado (compilación portable para glibc 2.28 por defecto; define `TOSU_PORTABLE=0` o `TOSU_STANDALONE=0` para personalizarlo).
+- `make check` ejecuta `cargo fmt --check`, `cargo clippy --all-targets -D warnings`, `cargo test --workspace` y `firmware/test/host/run_tests.sh`.
 
-1. **Activa ESP-IDF v5.5.2**:
+## Compilación del firmware
+
+1. Carga el entorno de ESP-IDF v5.5.2:
    ```bash
    . $HOME/esp/esp-idf/export.sh
    ```
-2. **Navega al Directorio del Firmware**:
+2. Configura el objetivo y compila:
    ```bash
    cd firmware
-   ```
-3. **Establece el Objetivo y Compila**:
-   ```bash
    idf.py set-target esp32s3
    idf.py build
    ```
 
-### sdkconfig Rules
 > [!IMPORTANT]
-> Si editas `firmware/sdkconfig.defaults`, elimina siempre `firmware/sdkconfig` antes de volver a compilar (AGENTS.md §5). `idf.py fullclean` preserva el `sdkconfig` existente, haciendo que los cambios se ignoren silenciosamente.
+> Tras editar [/firmware/sdkconfig.defaults](/firmware/sdkconfig.defaults), elimina `firmware/sdkconfig` antes de recompilar ([/AGENTS.md](/AGENTS.md) §5). `idf.py fullclean` conserva el `sdkconfig` antiguo, por lo que las ediciones se ignoran silenciosamente.
 
-La compilación produce los siguientes binarios en `firmware/build/`:
-- `bootloader/bootloader.bin`: Bootloader de segunda etapa para ESP32-S3.
-- `partition_table/partition-table.bin`: Tabla de particiones OTA dual.
-- `opad-firmware.bin`: El binario principal de la aplicación.
+Salidas clave en `firmware/build/`:
+- `bootloader/bootloader.bin`
+- `partition_table/partition-table.bin`
+- `ota_data_initial.bin`
+- `opad-firmware.bin`
 
-## Flashing Built Firmware
+## Flasheo del firmware compilado
 
-Para flashear el firmware recién compilado en un pad conectado mediante `opadctl`: <!-- src: /AGENTS.md -->
+Actualiza la ranura OTA inactiva con protección automática de reversión:
 ```bash
 opadctl flash firmware/build/opad-firmware.bin
 ```
-Esto escribe la imagen de forma segura en la partición OTA inactiva y ejecuta un arranque de prueba.
+Para un flasheo completo (bootloader, tabla de particiones, datos OTA y aplicación):
+```bash
+opadctl flash --full firmware/build
+```
+Nunca hagas commit de `build/`, `target/`, `dist/`, `firmware/sdkconfig`, `firmware/managed_components/` ni `.tools/` ([/AGENTS.md](/AGENTS.md) §5).
