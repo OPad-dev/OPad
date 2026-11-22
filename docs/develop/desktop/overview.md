@@ -1,6 +1,8 @@
 ---
 title: Desktop Suite Overview
 description: High-level architectural overview of the Rust desktop workspace, process model, cross-platform IPC transport, and internal crate boundaries.
+sidebar:
+  order: 1
 ---
 
 The OPad desktop suite is a Rust (edition 2021) Cargo workspace ([/desktop/Cargo.toml](/desktop/Cargo.toml)) containing three binaries (`opad-daemon`, `opad-gui`, `opadctl`) and nine internal library crates supporting Linux (X11/Wayland) and Windows 10/11.
