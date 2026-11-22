@@ -1,6 +1,8 @@
 ---
 title: Hardware Pinout Reference
 description: Header pinouts, GPIO assignments, peripheral mappings, and V3 carrier FFC connections for OPad.
+sidebar:
+  order: 4
 ---
 
 This page documents the hardware pinout for the Waveshare ESP32-S3-Touch-LCD-2 board, standalone mechanical switch wiring, and the OPad V3 carrier and module FFC interconnects.
