@@ -642,6 +642,15 @@ async fn install_app(
             .and_then(|r| r)
     };
 
+    // Windows: the installer was only started. It closes this daemon, and
+    // the next one reports how it went (recover_interrupted, which also
+    // clears the staging directory); the file must stay until it has run.
+    if policy == ApplyPolicy::Installer {
+        applied?;
+        info!("Started the OPad {} installer; it restarts OPad", available);
+        return Ok(());
+    }
+
     // A .deb or an installer is worth tens of megabytes and has done its job.
     // Leaving it behind would put it on §W2-3's list of things to clean up for
     // no reason. Direct replacement consumes the file itself, so a missing one
@@ -700,9 +709,7 @@ fn run_staged_installer(storage: &Arc<Mutex<Option<Storage>>>, status: &SharedUp
             to: staged.version.clone(),
         },
     );
-    let cmd = app::installer_command(&path);
-    // Not waited for: the installer stops this process
-    if let Err(e) = std::process::Command::new(&cmd[0]).args(&cmd[1..]).spawn() {
+    if let Err(e) = spawn_installer(&path) {
         warn!(
             "Could not start the OPad {} installer: {}",
             staged.version, e
@@ -715,6 +722,33 @@ fn run_staged_installer(storage: &Arc<Mutex<Option<Storage>>>, status: &SharedUp
     }
 }
 
+/// Starts the Windows installer outside this daemon's process tree, and does
+/// not wait for it. installer.iss stops OPad with `taskkill /T`, which ends
+/// the daemon's whole tree: an installer the daemon started directly would
+/// end itself with it. `cmd /c start` makes cmd its parent, and cmd exits at
+/// once.
+fn spawn_installer(path: &std::path::Path) -> std::io::Result<()> {
+    let cmd = app::installer_command(path);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let args = cmd[1..].join(" ");
+        std::process::Command::new("cmd")
+            .raw_arg(format!("/C start \"\" \"{}\" {args}", cmd[0]))
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map(|_| ())
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new(&cmd[0])
+            .args(&cmd[1..])
+            .spawn()
+            .map(|_| ())
+    }
+}
+
 fn apply_downloaded(
     policy: ApplyPolicy,
     origin: InstallOrigin,
@@ -723,8 +757,12 @@ fn apply_downloaded(
 ) -> Result<(), UpdateError> {
     use std::process::Command;
 
+    // Install now on Windows: the installer closes OPad, this daemon too,
+    // and starts the new version; the next daemon reports how it went
+    if policy == ApplyPolicy::Installer {
+        return spawn_installer(file).map_err(UpdateError::Io);
+    }
     let cmd = match (policy, &feed_files) {
-        (ApplyPolicy::Installer, _) => Some(app::installer_command(file)),
         (ApplyPolicy::Helper(_), Some((feed, signature))) => {
             Some(app::helper_command(file, feed, signature))
         }
