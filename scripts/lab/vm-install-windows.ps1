@@ -92,7 +92,12 @@ switch ($Phase) {
             Start-Sleep 3; $t += 3
         } while ($t -lt 30)
         if ($out -match "Daemon Mode") { Pass "opadctl status reaches the daemon" }
-        else { Fail "opadctl status (exit $code): $out" }
+        else {
+            # NTSTATUS exit codes of a program Windows could not start
+            $why = @{ -1073741515 = "0xC0000135: a DLL it needs is missing"; -1073741701 = "0xC000007B: a DLL of the wrong architecture" }[$code]
+            Fail "opadctl status (exit $code$(if ($why) { ", $why" }))"
+            if ($out) { Write-Output $out }
+        }
         # Open the window the way a click on the Start menu entry would: a
         # process started over SSH has no desktop, a scheduled task for the
         # logged-on user does
