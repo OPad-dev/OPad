@@ -1,6 +1,8 @@
 ---
 title: Shared Crates Reference
 description: Technical catalog and responsibilities of the nine internal shared Rust crates in desktop/crates/.
+sidebar:
+  order: 5
 ---
 
 The desktop Cargo workspace ([/desktop/Cargo.toml](/desktop/Cargo.toml)) splits shared logic into nine internal crates under `desktop/crates/`:
