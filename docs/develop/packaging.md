@@ -1,109 +1,55 @@
 ---
 title: Packaging and Distribution Mechanics
-description: Technical guide to packaging OPad for Linux (.deb, .rpm, AppImage, Arch PKGBUILD) and Windows (Inno Setup), install-origin markers, permissions, and build scripts.
+description: Technical guide to packaging OPad for Linux (.deb, .rpm, AppImage, Arch PKGBUILD) and Windows (Inno Setup), install-origin markers, and build scripts.
 ---
 
-# Packaging and Distribution Mechanics
+OPad packages distribute `opad-daemon`, `opad-gui`, and `opadctl` together with pinned `tosu` (**v4.26.2**) and `espflash` (**4.6.0**).
 
-OPad packages distribute the full desktop suite—`opad-daemon`, `opad-gui`, and `opadctl`—alongside bundled prerequisites (`tosu` v4.26.2 and `espflash` v4.6.0).
-
-This document details the build scripts, target formats, permission configurations, and packaging invariants for Linux and Windows.
-
-<!-- src: /scripts/release/build_packages.sh#OPAD_PREBUILT -->
-<!-- src: /packaging/windows/installer.iss#AppId -->
-<!-- src: /packaging/linux/deb/postinst#udevadm -->
-<!-- src: /packaging/linux/appimage/build_appimage.sh#AppRun -->
-<!-- src: /packaging/linux/udev/70-opad.rules#303a -->
-
----
-
-## 1. Package Architecture and Manifest
+## 1. Package Architecture & Install-Origin Markers
 
 ```mermaid
 flowchart TD
-    Build["scripts/release/build_packages.sh"] --> PreReq["Verify Prerequisites\n(tosu v4.26.2, espflash 4.6.0)"]
-    PreReq --> Binaries["Desktop Binaries\n(opad-daemon, opad-gui, opadctl)"]
-    Binaries --> DEB["Debian (.deb)\ncargo-deb"]
-    Binaries --> RPM["Fedora / openSUSE (.rpm)\ncargo-generate-rpm"]
-    Binaries --> AppImage["Portable Linux (.AppImage)\nbuild_appimage.sh"]
-    Binaries --> Windows["Windows (.exe)\nInno Setup (installer.iss)"]
+    Build["scripts/release/build_packages.sh"] --> PreReq["Verify Prerequisites (tosu v4.26.2, espflash 4.6.0)"]
+    PreReq --> Binaries["Desktop Binaries (opad-daemon, opad-gui, opadctl)"]
+    Binaries --> DEB["Debian (.deb) via cargo-deb"]
+    Binaries --> RPM["Fedora/RHEL (.rpm) via cargo-generate-rpm"]
+    Binaries --> AppImage["Linux AppImage via build_appimage.sh"]
+    Binaries --> Windows["Windows (.exe) via Inno Setup installer.iss"]
 ```
 
-### Install-Origin Markers
+Every packaging path writes a single-word `install-origin` marker file read by [/desktop/crates/opad-update/src/origin.rs](/desktop/crates/opad-update/src/origin.rs) so the updater follows the exact policy for that install:
 
-To prevent self-updaters from overwriting packages managed by native system package managers, every installer drops an `install-origin` file into the installation directory:
+| Target | Marker Path | Marker Value | App Update Policy | Bundled `tosu` Self-Update? |
+|---|---|---|---|---|
+| **Windows (`.exe`)** | `{localappdata}\Programs\opad\install-origin` | `windows` | `Installer` (`/SILENT /RELAUNCH=1`) | Yes |
+| **Debian / Ubuntu (`.deb`)** | `/usr/lib/opad/install-origin` | `deb` | `PackageManager(Apt)` (polkit prompt) | No (owned by `dpkg`) |
+| **Fedora / RHEL (`.rpm`)** | `/usr/lib/opad/install-origin` | `rpm` | `PackageManager(Dnf)` (polkit prompt) | No (owned by `rpm`) |
+| **AppImage** | AppDir `/usr/lib/opad/install-origin` | `appimage` | `DirectReplace` | Yes |
+| **Arch (`PKGBUILD`)** | `/usr/lib/opad/install-origin` | `aur` | `NotifyOnly` | No (owned by `pacman`) |
+| **User local (`make install-user`)** | `~/.local/lib/opad/install-origin` | `user` | `DirectReplace` | Yes |
+| **System source (`make install`)** | `<prefix>/lib/opad/install-origin` | `source` | `NotifyOnly` | No |
 
-| Packaging Target | Install Location | File Content |
-|---|---|---|
-| **Debian (.deb)** | `/usr/lib/opad/install-origin` | `deb` |
-| **RPM (.rpm)** | `/usr/lib/opad/install-origin` | `rpm` |
-| **AppImage** | Internal AppDir `/usr/lib/opad/install-origin` | `appimage` |
-| **Arch (AUR)** | `/usr/lib/opad/install-origin` | `arch` |
-| **Windows (.exe)**| `{localappdata}\Programs\opad\install-origin` | `windows` |
-
-The desktop updater crate (`opad-update`) inspects this marker at runtime. If installed via `.deb`, `.rpm`, or `arch`, it suppresses in-app binary replacement and instead directs the user to update through their distribution package manager.
-
----
+Missing or unknown markers always degrade safely to `NotifyOnly`.
 
 ## 2. Build Automation (`build_packages.sh`)
 
-Package generation is driven by [scripts/release/build_packages.sh](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/scripts/release/build_packages.sh):
+[/scripts/release/build_packages.sh](/scripts/release/build_packages.sh) generates release packages into `dist/`:
 
-```bash
-# Generate all release packages into dist/
-./scripts/release/build_packages.sh
-```
+1. Builds `build/tosu` (`make tosu`) and `build/espflash/espflash` (`make espflash`) if absent.
+2. Uses prebuilt binaries when `OPAD_PREBUILT=1` (CI builds against glibc 2.31 via `cargo-zigbuild`), or compiles natively via `make all`.
+3. Expands `@BINDIR@` -> `/usr/bin` in [/packaging/linux/systemd-user/opad-daemon.service.in](/packaging/linux/systemd-user/opad-daemon.service.in) and writes `install-origin` markers without trailing newlines.
+4. Builds `.deb` (`cargo deb -p opad-gui --no-build`), `.rpm` (`cargo generate-rpm --auto-req disabled`, translating SemVer `-` to `~` so prereleases sort before finals), AppImage ([/packaging/linux/appimage/build_appimage.sh](/packaging/linux/appimage/build_appimage.sh)), Windows installer (`iscc` on [/packaging/windows/installer.iss](/packaging/windows/installer.iss) if available), and `dist/SHA256SUMS`.
 
-### Script Execution Stages
+## 3. Linux Targets
 
-1. **Prerequisites Check**: Verifies that bundled `tosu` and `espflash` binaries exist in `build/`, compiling them via `make tosu` and `make espflash` if missing.
-2. **Release Binaries**:
-   - If `OPAD_PREBUILT=1` is set (used by GitHub Actions release workflows), the script uses existing binaries compiled against glibc 2.31 with `cargo-zigbuild`.
-   - Otherwise, it invokes `make all` to compile native release binaries.
-3. **Template Resolution**: Replaces `@BINDIR@` in [packaging/linux/systemd-user/opad-daemon.service.in](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/packaging/linux/systemd-user/opad-daemon.service.in) with `/usr/bin`.
-4. **Origin Markers**: Writes the exact marker text without trailing newlines.
-5. **Debian Build**: Runs `cargo deb -p opad-gui --no-build` in `desktop/`.
-6. **RPM Build**: Translates SemVer prerelease tags (e.g., `-rc.1` to `~rc.1`) and invokes `cargo generate-rpm --auto-req disabled`.
-7. **AppImage Assembly**: Calls `packaging/linux/appimage/build_appimage.sh` to produce `dist/opad-x86_64.AppImage`.
-8. **Windows Installer**: If `iscc` (Inno Setup Compiler) is present, compiles `packaging/windows/installer.iss`.
-9. **Checksums**: Generates SHA256 checksums in `dist/SHA256SUMS`.
-
----
-
-## 3. Linux Distribution Targets
-
-### Debian (.deb)
-- **Tool**: `cargo-deb` configured via metadata in `desktop/gui/Cargo.toml`.
-- **System Integration**:
-  - Installs binaries to `/usr/bin/`.
-  - Installs systemd user service to `/usr/lib/systemd/user/opad-daemon.service`.
-  - Installs udev rules to `/usr/lib/udev/rules.d/70-opad.rules`.
-  - Post-installation script ([packaging/linux/deb/postinst](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/packaging/linux/deb/postinst#L7-L14)) reloads udev rules (`udevadm control --reload-rules`) and sets Linux capabilities on tosu:
-    ```bash
-    setcap cap_sys_ptrace=eip /usr/lib/opad/tosu/tosu
-    ```
-    This grants memory-reading permission for osu! under Yama `ptrace_scope` 1–2 without needing root.
-
-### Fedora / openSUSE (.rpm)
-- **Tool**: `cargo-generate-rpm`.
-- Follows the same file layout as Debian, maintaining distro-agnostic user paths.
-
-### Arch Linux (AUR)
-- Located in `packaging/linux/arch/PKGBUILD` (source build) and `PKGBUILD-bin.in` (prebuilt binary package).
-- Integrates `opad-bin.install` which runs equivalent udev reload and `setcap` hooks.
-
-### AppImage
-- Assembled by [packaging/linux/appimage/build_appimage.sh](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/packaging/linux/appimage/build_appimage.sh).
-- Bundles all binaries into `AppDir`.
-- Uses an embedded [AppRun](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/packaging/linux/appimage/AppRun) script to set up environment variables (`PATH`, `LD_LIBRARY_PATH`) and launch `opad-gui`.
-
----
+- **`.deb` / `.rpm`**: Install binaries in `/usr/bin/`, private files in `/usr/lib/opad/`, systemd user unit in `/usr/lib/systemd/user/opad-daemon.service`, and `70-opad.rules` ([/packaging/linux/udev/70-opad.rules](/packaging/linux/udev/70-opad.rules)). Post-install ([/packaging/linux/deb/postinst](/packaging/linux/deb/postinst)) reloads `udevadm` and applies `setcap cap_sys_ptrace=eip /usr/lib/opad/tosu/tosu`. Uninstall runs `/usr/lib/opad/uninstall-cleanup` ([/packaging/linux/uninstall-cleanup.sh](/packaging/linux/uninstall-cleanup.sh)) on remove/purge (never on upgrade).
+- **Arch Linux**: [/packaging/linux/arch/PKGBUILD](/packaging/linux/arch/PKGBUILD) builds from source with `TOSU_STANDALONE=0` (system `nodejs`) and `INSTALL_ORIGIN=aur`.
+- **AppImage**: [/packaging/linux/appimage/AppRun](/packaging/linux/appimage/AppRun) sets `PATH`/`LD_LIBRARY_PATH` and supports `install-udev` (via `pkexec`), `daemon`, `ctl`, or launching `opad-gui`.
 
 ## 4. Windows Inno Setup (`installer.iss`)
 
-The Windows installer is defined in [packaging/windows/installer.iss](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/packaging/windows/installer.iss):
-
-- **Unique Application ID**: `AppId={{E581335A-9877-4C7D-894C-97495B422B59}}`. Preserving this fixed GUID across versions guarantees seamless in-place upgrades.
-- **Privilege Level**: `PrivilegesRequired=lowest`. Installs into `{localappdata}\Programs\opad` without requiring administrator privileges or UAC elevation.
-- **Auto-Start**: Can optionally configure registry run keys for the daemon and system tray GUI on user logon.
-- **Bundled Binaries**: Copies `opad-gui.exe`, `opad-daemon.exe`, `opadctl.exe`, and bundled `tosu.exe`.
+Defined in [/packaging/windows/installer.iss](/packaging/windows/installer.iss):
+- Fixed `AppId={{E581335A-9877-4C7D-894C-97495B422B59}}` for clean in-place upgrades.
+- Per-user install (`PrivilegesRequired=lowest`) into `{localappdata}\Programs\opad` (`%LOCALAPPDATA%\Programs\opad`), bundling `opad-gui.exe`, `opad-daemon.exe`, `opadctl.exe`, `espflash.exe`, `install-origin`, `tosu\tosu.exe`, and license notices.
+- Optional login autostart (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run` for `opad-daemon` and `opad-gui --tray`).
+- Strong uninstall: stops `opad-daemon.exe`, `opad-gui.exe`, `opadctl.exe`, and `tosu.exe`, removes `{app}`, deletes Run keys, and deletes `{userappdata}\opad`.
