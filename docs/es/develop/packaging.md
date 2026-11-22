@@ -21,7 +21,7 @@ Cada vía de empaquetado escribe un archivo marcador `install-origin` de una sol
 
 | Objetivo | Ruta del marcador | Valor del marcador | Política de actualización de app | ¿Autoactualización del `tosu` incluido? |
 |---|---|---|---|---|
-| **Windows (`.exe`)** | `{localappdata}\Programs\opad\install-origin` | `windows` | `Installer` (`/SILENT /RELAUNCH=1`) | Sí |
+| **Windows (`.exe`)** | `{localappdata}\Programs\opad\install-origin` | `windows` | `Installer` (`/SILENT /NORESTART /RELAUNCH=1`) | Sí |
 | **Debian / Ubuntu (`.deb`)** | `/usr/lib/opad/install-origin` | `deb` | `PackageManager(Apt)` (aviso polkit) | No (propiedad de `dpkg`) |
 | **Fedora / RHEL (`.rpm`)** | `/usr/lib/opad/install-origin` | `rpm` | `PackageManager(Dnf)` (aviso polkit) | No (propiedad de `rpm`) |
 | **AppImage** | AppDir `/usr/lib/opad/install-origin` | `appimage` | `DirectReplace` | Sí |
