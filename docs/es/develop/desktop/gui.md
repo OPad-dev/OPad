@@ -1,6 +1,8 @@
 ---
 title: Arquitectura del subsistema GUI
 description: Referencia de implementación de opad-gui, arquitectura Elm de iced, traspaso de instancia única, tokens de tema, vista previa de Screen Designer y bandeja del sistema.
+sidebar:
+  order: 3
 ---
 
 `opad-gui` está construida con `iced` usando `iced::daemon` (de modo que cerrar la ventana minimiza a la bandeja del sistema) y se comunica asíncronamente con `opad-daemon` mediante IPC local ([/desktop/gui/src/main.rs](/desktop/gui/src/main.rs)).
