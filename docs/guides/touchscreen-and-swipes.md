@@ -1,6 +1,8 @@
 ---
 title: Using the Touchscreen and Swipes
 description: How to use the touchscreen third button for in-game Quick Retry and configure directional swipe actions for volume control, media, and shortcuts.
+sidebar:
+  order: 2
 ---
 
 OPad's 2.0-inch capacitive touchscreen acts as **the third button** (AGENTS.md §1.4). During an osu! map, a resting finger sends Quick Retry (`` ` ``) while swipes never trigger Quick Retry; outside a map, taps do nothing and directional swipes run configurable actions. Without a host or without `tosu`, every touch is Quick Retry. <!-- src: /firmware/main/input/touch_retry.c#touch_mode_now -->
