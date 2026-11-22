@@ -31,3 +31,8 @@ Discrepancies, code bugs, documentation conflicts, and notable architectural obs
 - **Page**: `docs/guides/uninstall.md`
 - **Problem**: `README.md` states that the Windows uninstaller "asks before it touches your `opad.db`", whereas `packaging/windows/installer.iss` (`CurUninstallStepChanged`) unconditionally deletes `%APPDATA%\opad` (including `opad.db`, logs, and update staging) with no prompt, matching the Linux strong-uninstall cleanup in `packaging/linux/uninstall-cleanup.sh`.
 - **Files involved**: `README.md`, `packaging/windows/installer.iss`, `packaging/linux/uninstall-cleanup.sh`.
+
+## F7: `opad-model::KEY_PINS` still offers `GPIO 8`, which firmware `config_validate.c` rejects
+- **Page**: `docs/reference/pinout.md`, `docs/guides/change-key-pins.md`
+- **Problem**: `desktop/crates/opad-model/src/lib.rs` (`KEY_PINS`) lists 15 header pins including `GPIO 8` (`P1 pin 8`), whereas `firmware/main/config/config_validate.c` (`KEY_GPIO_ALLOWED`) lists 14 pins and explicitly excludes `GPIO 8` because it is the carrier module-ID ADC divider line (`10k` to `GND`). Selecting `GPIO 8` in `opad-gui` is rejected by firmware validation.
+- **Files involved**: `desktop/crates/opad-model/src/lib.rs`, `firmware/main/config/config_validate.c`.
