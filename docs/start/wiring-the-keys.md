@@ -1,6 +1,8 @@
 ---
 title: Wiring the Keys
 description: How to wire hand-wired mechanical switches to Header P2 on the Waveshare ESP32-S3-Touch-LCD-2, or assemble the OPad V3 carrier and input modules.
+sidebar:
+  order: 2
 ---
 
 Mechanical switches on OPad are read active-low using the ESP32-S3's internal pull-ups (`GPIO_PULLUP_ONLY`): pressing a switch connects its GPIO pin to `GND`. No external resistors or diodes are required for hand-wired builds. <!-- src: /firmware/main/input/keypad.c --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
