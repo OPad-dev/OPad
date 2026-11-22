@@ -1,35 +1,32 @@
 ---
-title: Subsistema de Entrada del Firmware
-description: Referencia de implementación para el cauce de entrada del firmware, antirrebote de interruptores mecánicos, muestreo ADC de Hall Effect y despacho unificado de eventos de teclas.
+title: Subsistema de entrada del firmware
+description: Referencia de implementación de la tubería de entrada del firmware, antirrebote mecánico inmediato, muestreo Hall Effect V1/V3 y despacho unificado de eventos de tecla.
 ---
 
-El subsistema de entrada captura los contactos físicos de los interruptores y las transiciones de flujo magnético, aplica algoritmos de antirrebote o Rapid Trigger, actualiza los contadores de pulsaciones monotónicos y envía informes HID a los endpoints USB. Todo el código de entrada se ejecuta estrictamente en Core 0 con `configMAX_PRIORITIES - 1`. <!-- src: /firmware/main/input/keypad.c -->
+El subsistema de entrada lee interruptores mecánicos físicos y sensores Hall Effect, ejecuta el antirrebote o Rapid Trigger, actualiza los contadores monotónicos de pulsaciones y envía reportes USB HID. Todas las tareas de la ruta de teclas se ejecutan en **Core 0** con prioridad `configMAX_PRIORITIES - 1`.
 
-## Mechanical Keypad Pipeline (keypad.c & debounce.c)
+## Tubería de teclado mecánico (`keypad.c` y `debounce.c`)
 
-Para interruptores mecánicos, el cauce consta de interrupciones GPIO disparadas por flanco emparejadas con un antirrebote anticipado (eager debouncing): <!-- src: /firmware/main/input/debounce.c -->
+Implementada en [/firmware/main/input/keypad.c](/firmware/main/input/keypad.c) y [/firmware/main/input/debounce.c](/firmware/main/input/debounce.c):
 
-- **Gestión de Interrupciones**: Los cambios de estado de pin en Key 1 (GPIO 14) y Key 2 (GPIO 9) activan una interrupción GPIO sensible a flancos (`gpio_isr_handler`). La ISR marca el tiempo de transición con `esp_timer_get_time()` y envía el evento a `s_input_task_handle` mediante notificaciones directas entre tareas (`vTaskNotifyGiveFromISR`). <!-- src: /firmware/main/input/keypad.c -->
-- **Máquina de Estados de Antirrebote Anticipado (`debounce_step`)**:
-  - `DEBOUNCE_SOURCE_EDGE`: Cuando llega un flanco, si el nivel difiere de `accepted_pressed` y la marca de tiempo actual supera `lockout_end_us`, el nuevo estado se acepta inmediatamente (`DEBOUNCE_ACTION_PRESS` o `RELEASE`). El fin del bloqueo se avanza: `lockout_end_us = now_us + lockout_us`. <!-- src: /firmware/main/input/debounce.c#debounce_step -->
-  - `DEBOUNCE_SOURCE_SAMPLE`: Al expirar el bloqueo, se remuestrea el pin. Si el nivel físico coincide con el estado aceptado, el antirrebote se estabiliza; si el contacto rebotó de vuelta, se programa la liberación.
+- **ISR GPIO (`gpio_isr_handler`, `IRAM_ATTR`)**: Se dispara en los flancos de interruptor configurados (por defecto `GPIO 14` para Key 1, `GPIO 9` para Key 2; carrier MX V3 usa `GPIO 10`, `GPIO 7`, `GPIO 6`). Marca el flanco con `esp_timer_get_time()`, llama a `debounce_step(..., DEBOUNCE_SOURCE_EDGE, s_config.debounce_us)`, incrementa los contadores aceptados vía `key_event_press_accepted` y despierta `keypad_task` mediante `vTaskNotifyGiveFromISR`.
+- **Antirrebote inmediato (`debounce_step`)**:
+  - `DEBOUNCE_SOURCE_EDGE`: Si `level != state->accepted_pressed` y `now_us >= state->lockout_end_us`, acepta la transición de inmediato (`DEBOUNCE_ACTION_PRESS` o `DEBOUNCE_ACTION_RELEASE`) y establece `lockout_end_us = now_us + lockout_us` (`DEBOUNCE_DEFAULT_US = 5000`, rango `500`–`20000` µs en [/firmware/main/input/debounce.h](/firmware/main/input/debounce.h)).
+  - `DEBOUNCE_SOURCE_RESAMPLE`: Ejecutado por `keypad_task` al expirar `lockout_end_us`; lee el GPIO una vez y corrige `accepted_pressed` (iniciando un nuevo bloqueo) si el pin quedó en el estado opuesto.
+- **Preparación diferida de configuración**: `keypad_set_config` prepara los cambios de pin/código de tecla y los aplica en `keypad_task` solo cuando las teclas están sueltas, de modo que los códigos nunca cambian en mitad de una pulsación mantenida y solo `keypad_task` toca los GPIOs de teclas.
+- **Detección de pines y prueba de líneas**: `keypad_task` también atiende la detección interactiva de pines (`detect_scan_step`, `DETECT_CONFIRM_US = 15000` µs) y `keypad_line_test` (comprobación pull-up/pull-down para `board_test.c`).
 
-## Hall Effect Pipeline (he_backend.c & he_rt.c)
+## Tubería Hall Effect (`he_backend.c`, `he_spi_source.c`, `he_rt.c`)
 
-Para interruptores magnéticos, la entrada se gestiona mediante muestreo continuo por ADC en lugar de flancos GPIO: <!-- src: /firmware/main/input/he_backend.c -->
+Implementada en [/firmware/main/input/he_backend.c](/firmware/main/input/he_backend.c), [/firmware/main/input/he_spi_source.c](/firmware/main/input/he_spi_source.c) y [/firmware/main/input/he_rt.c](/firmware/main/input/he_rt.c):
 
-- **Muestreo Continuo por DMA**: El hardware ADC1 muestrea Key 1 (CH9) y Key 2 (CH6) en búferes DMA ping-pong continuos a `HE_SAMPLE_HZ` (250 µs por trama de conversión). <!-- src: /firmware/main/input/he_backend.c -->
-- **Filtrado de Mediana (`he_frame.h`)**: La interrupción de trama en IRAM calcula la mediana de todas las conversiones válidas en la ventana de 250 µs para filtrar el ruido electromagnético sin añadir retraso de grupo.
-- **Paso de Rapid Trigger (`he_rt_step`)**:
-  - Compara el flujo mediano con `p->actuation` y con los umbrales dinámicos `p->rt_release` / `p->rt_press`. <!-- src: /firmware/main/input/he_rt.c#he_rt_step -->
-  - Emite `HE_RT_DOWN` o `HE_RT_UP` directamente dentro de la interrupción.
-  - Solo si ocurre una transición de estado de tecla, la interrupción notifica a `he_task` para encolar el informe USB HID.
+- **ADC interno V1 (`HE_SOURCE_INTERNAL_ADC`)**: DMA continuo de ADC1 alternando `ADC_CHANNEL_9` (Key 1) y `ADC_CHANNEL_6` (Key 2) a `HE_SAMPLE_HZ = 64000` Hz (`HE_FRAME_CONVS = 16`, tramas de 250 µs / 4 kHz). La ISR en IRAM `on_frame` calcula la mediana de cada canal, ejecuta `he_rt_step` y notifica a `he_task` solo en flancos de estado de tecla.
+- **ADS7028 externo V3 (`HE_SOURCE_SPI_ADC`)**: Un `gptimer` hardware despierta la tarea `he_spi` de Core 0 cada `HE_SPI_FRAME_US = 50` µs (20 kHz). `he_spi` lee 4 palabras de 32 bits protegidas con CRC por SPI3 a 40 MHz (`SPI_DMA_DISABLED`, bucle directo sobre registros `GPSPI3` `ads7028_read16_again` en [/firmware/main/input/ads7028.c](/firmware/main/input/ads7028.c)) para `AIN3`/`AIN4`/`AIN5` (Keys 3/2/1), ejecuta `he_rt_step` y llama directamente a `key_event_report`. La captura de calibración se diezma 5:1 (`SPI_CAL_DECIMATE = 5`) para igualar el corredor a 4 kHz.
+- **Rapid Trigger de 3 estados (`he_rt_step`)**: Transiciona entre `HE_RT_ARMED`, `HE_RT_PRESSED` y `HE_RT_RT_RELEASED`, exigiendo `need_release` tras el arranque, cambios de parámetros o paradas del ADC (`he_rt_fault`).
 
-## Unified Key Event Dispatch (key_event.c)
+## Despacho unificado de eventos de tecla (`key_event.c`)
 
-Tanto el cauce mecánico como el de Hall Effect convergen en el despachador unificado de eventos de teclas (`firmware/main/input/key_event.c`): <!-- src: /firmware/main/input/key_event.c -->
+Tanto el backend mecánico como el Hall Effect convergen en [/firmware/main/input/key_event.c](/firmware/main/input/key_event.c):
 
-- **Contadores de Pulsaciones Atómicos**: Incrementa `s_lifetime_presses[key_id]` y el contador específico del mapa `s_map_presses[key_id]`.
-- **Telemetría de Latencia**: Llama a `latency_stats_record()` con el delta de microsegundos transcurrido entre la detección del contacto físico y el encolado en el búfer HID. <!-- src: /firmware/main/input/key_event.c -->
-- **Disparo de Informes USB**: Despacha el estado a `usb_hid_set_key1_pressed()` o `usb_hid_set_key2_pressed()`, indicando a TinyUSB que transmita en el Endpoint IN 1 o Endpoint IN 2. <!-- src: /firmware/main/usb/usb_hid.c -->
-- **Registro de Diagnóstico**: Añade transiciones con marca de tiempo al registro de depuración circular (`press_log_record`).
+- **`key_event_press_accepted` (`IRAM_ATTR`)**: Incrementa atómicamente `s_lifetime_presses[key_index]` y `s_map_presses[key_index]`, registra `s_last_press_us` y empuja las pulsaciones de teclas de juego (filtradas por `s_game_keys`) a `press_log_push`.
+- **`key_event_report` (`IRAM_ATTR`)**: Llama primero a `usb_hid_handle_key_event(key_index, pressed, edge_us)` en [/firmware/main/usb/usb_hid.c](/firmware/main/usb/usb_hid.c); registra la latencia de entrega vía `latency_stats_record` (o `latency_stats_record_deferred` cuando el endpoint está ocupado), conmuta `CONFIG_OPAD_BENCH_DEBUG_GPIO_NUM` si está habilitado y notifica actividad a la interfaz (`ui_notify_activity`) al pulsar.
