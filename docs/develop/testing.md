@@ -1,6 +1,8 @@
 ---
 title: Testing and Quality Assurance
 description: Running make check, desktop Cargo tests, the 28 firmware host unit tests, CI checks, and the manual hardware testing checklist.
+sidebar:
+  order: 3
 ---
 
 OPad verifies changes across four layers: local `make check`, 28 host-compiled C unit tests for firmware logic, GitHub Actions CI, and manual on-pad verification ([/AGENTS.md](/AGENTS.md) §4, [/Makefile](/Makefile)).
