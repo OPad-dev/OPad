@@ -1,6 +1,8 @@
 ---
 title: Metodología de medición y pruebas de latencia
 description: Metodología de medición de latencia en hardware, histogramas de 10 us en el dispositivo, etapas de referencia A a D, script evdev en anfitrión y criterios de liberación.
+sidebar:
+  order: 9
 ---
 
 Una latencia de pulsación baja y sin fluctuaciones es el invariante principal de OPad ([/AGENTS.md](/AGENTS.md) §1.1). Esta página documenta el histograma en el dispositivo, las etapas de prueba A–D y los scripts de medición.
