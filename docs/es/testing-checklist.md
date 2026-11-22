@@ -1,6 +1,8 @@
 ---
 title: Lista de verificación de hardware y versiones
 description: Lista manual de control de calidad para firmware, software de escritorio y hardware antes del lanzamiento.
+sidebar:
+  order: 4
 ---
 
 Esta lista de verificación documenta el procedimiento manual de verificación del hardware previo al lanzamiento (§34, §35) requerido antes de las versiones etiquetadas. Cada fila es ejecutada por una persona con el teclado delante; nada de esto puede automatizarse ni inferirse del resultado en otra plataforma.
