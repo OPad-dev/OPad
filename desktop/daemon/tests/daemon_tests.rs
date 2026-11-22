@@ -4279,6 +4279,7 @@ fn uncalibrated_he_pad_launches_gui_calibration_once() {
     // 1. Status with locked calibration triggers LaunchGuiCalibration
     let actions = controller.on_event(
         RuntimeEvent::DeviceStatus {
+            display_asleep: false,
             key3: opad_model::Key3Counters::default(),
             latency: opad_model::LatencyStats::default(),
             he_calibration: Some(opad_model::HeCalibrationStatus {
@@ -4297,6 +4298,7 @@ fn uncalibrated_he_pad_launches_gui_calibration_once() {
     // 2. Subsequent status does not trigger LaunchGuiCalibration again
     let actions2 = controller.on_event(
         RuntimeEvent::DeviceStatus {
+            display_asleep: false,
             key3: opad_model::Key3Counters::default(),
             latency: opad_model::LatencyStats::default(),
             he_calibration: Some(opad_model::HeCalibrationStatus {
@@ -4331,6 +4333,7 @@ fn calibrated_he_and_mx_pads_do_not_launch_gui_calibration() {
 
     let actions = controller.on_event(
         RuntimeEvent::DeviceStatus {
+            display_asleep: false,
             key3: opad_model::Key3Counters::default(),
             latency: opad_model::LatencyStats::default(),
             he_calibration: Some(opad_model::HeCalibrationStatus {
@@ -4355,6 +4358,7 @@ fn calibrated_he_and_mx_pads_do_not_launch_gui_calibration() {
         .he_calibration = false;
     let actions_mx = controller.on_event(
         RuntimeEvent::DeviceStatus {
+            display_asleep: false,
             key3: opad_model::Key3Counters::default(),
             latency: opad_model::LatencyStats::default(),
             he_calibration: None,
@@ -4381,6 +4385,7 @@ fn pre_calibration_firmware_status_does_not_launch_or_offer_calibration() {
     );
     let actions = controller.on_event(
         RuntimeEvent::DeviceStatus {
+            display_asleep: false,
             key3: opad_model::Key3Counters::default(),
             latency: opad_model::LatencyStats::default(),
             he_calibration: Some(opad_model::HeCalibrationStatus {
@@ -4406,6 +4411,7 @@ fn reconnect_allows_one_new_calibration_launch_and_clears_progress() {
         for repeat in 0..3 {
             let actions = controller.on_event(
                 RuntimeEvent::DeviceStatus {
+                    display_asleep: false,
                     key3: opad_model::Key3Counters::default(),
                     latency: Default::default(),
                     he_calibration: Some(opad_model::HeCalibrationStatus {
@@ -4567,5 +4573,24 @@ async fn a_pad_on_a_pin_no_longer_offered_keeps_it_but_cannot_choose_it() {
             assert!(reason.contains("Unsupported key 2 pin: GPIO8"), "{reason}")
         }
         other => panic!("moving a key onto GPIO 8 was accepted: {other:?}"),
+    }
+}
+
+#[test]
+fn a_screen_asleep_before_the_daemon_connected_is_known_from_the_status() {
+    // The sleep log event went to an earlier daemon: only the status says it
+    let (mut controller, _) = left_alone_foreign_pad();
+    assert!(!controller.state.pad_activity.display_asleep);
+    for asleep in [true, false] {
+        controller.on_event(
+            RuntimeEvent::DeviceStatus {
+                display_asleep: asleep,
+                key3: opad_model::Key3Counters::default(),
+                latency: opad_model::LatencyStats::default(),
+                he_calibration: None,
+            },
+            Instant::now(),
+        );
+        assert_eq!(controller.state.pad_activity.display_asleep, asleep);
     }
 }

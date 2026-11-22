@@ -441,6 +441,7 @@ async fn main() -> Result<()> {
                                 deferred_reports: status.hid_deferred_reports,
                             },
                             he_calibration: cal,
+                            display_asleep: status.display_asleep,
                             key3: opad_model::Key3Counters {
                                 lifetime: status.lifetime_key3,
                                 map: status.map_key3,

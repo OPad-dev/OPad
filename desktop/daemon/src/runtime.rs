@@ -125,7 +125,8 @@ pub struct DaemonState {
 pub struct PadActivity {
     /// The last key press or screen wake, or when the pad connected
     pub last: Option<std::time::Instant>,
-    /// The pad said its screen went to sleep, and not that it woke since
+    /// The pad's screen is asleep: from its status, then its sleep and wake
+    /// log events
     pub display_asleep: bool,
 }
 
@@ -222,6 +223,8 @@ pub enum RuntimeEvent {
         latency: LatencyStats,
         he_calibration: Option<opad_model::HeCalibrationStatus>,
         key3: opad_model::Key3Counters,
+        /// The pad's screen is asleep (`DeviceStatus.display_asleep`)
+        display_asleep: bool,
     },
     DeviceHeCalibrationProgress(opad_model::HeCalibrationProgress),
     DeviceLayoutAck {
@@ -974,8 +977,13 @@ impl RuntimeController {
                 latency,
                 he_calibration,
                 key3,
+                display_asleep,
             } => {
                 self.state.latency = Some(latency);
+                // The sleep and wake log events only say when it changes: a
+                // pad whose screen fell asleep before this daemon connected
+                // says so here
+                self.state.pad_activity.display_asleep = display_asleep;
                 let three_keys = self
                     .state
                     .device_info
