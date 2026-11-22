@@ -1,6 +1,8 @@
 ---
 title: Visión general y arquitectura del firmware
 description: Arquitectura interna del firmware ESP32-S3, tareas y prioridades de FreeRTOS, colocación en IRAM por el enlazador, distribución de memoria y opciones Kconfig de prueba.
+sidebar:
+  order: 1
 ---
 
 El firmware de OPad está escrito en C para ESP-IDF **v5.5.2** dirigido a la placa Waveshare ESP32-S3-Touch-LCD-2 (Xtensa LX7 de doble núcleo a 240 MHz, 16 MB Flash, 8 MB Octal PSRAM) ([/firmware/sdkconfig.defaults](/firmware/sdkconfig.defaults), [/firmware/main/app_main.c](/firmware/main/app_main.c)).
