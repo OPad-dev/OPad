@@ -23,7 +23,7 @@ Leyenda: **PASS** / **FAIL** / **NOT RUN** / **n/r** = no requerido en esta plat
 
 ---
 
-## 1. Physical Key Performance & Latency Invariants
+## 1. Rendimiento físico de teclas e invariantes de latencia
 
 | ID | Elemento de prueba | Procedimiento | Criterios de aceptación | Linux | Windows |
 |---|---|---|---|---|---|
@@ -45,7 +45,7 @@ Leyenda: **PASS** / **FAIL** / **NOT RUN** / **n/r** = no requerido en esta plat
 
 ---
 
-## 2. Communication & Protocol Robustness
+## 2. Comunicación y robustez del protocolo
 
 | ID | Elemento de prueba | Procedimiento | Criterios de aceptación | Linux | Windows |
 |---|---|---|---|---|---|
@@ -57,7 +57,7 @@ Leyenda: **PASS** / **FAIL** / **NOT RUN** / **n/r** = no requerido en esta plat
 
 ---
 
-## 3. Storage & Failure Isolation (§P0-1, §P2-12)
+## 3. Almacenamiento y aislamiento de fallos (§P0-1, §P2-12)
 
 | ID | Elemento de prueba | Procedimiento | Criterios de aceptación | Linux | Windows |
 |---|---|---|---|---|---|
@@ -72,14 +72,14 @@ Leyenda: **PASS** / **FAIL** / **NOT RUN** / **n/r** = no requerido en esta plat
 
 ---
 
-## 4. Endurance & Stress Testing
+## 4. Pruebas de resistencia y carga
 
 | ID | Elemento de prueba | Procedimiento | Criterios de aceptación | Linux | Windows |
 |---|---|---|---|---|---|
 | STR-01 | Sesión de juego extendida | Ejecutar sesión continua durante ≥ 2 horas con tosu en vivo y pantalla activa. | 0 bloqueos, 0 fugas de memoria, 0 caídas de cuadros, latencia p99 estable (< 60 µs), estabilidad térmica. | **PASS** | **PASS** (2026-09-18) — Sesión extendida completada; cero bloqueos, cero fugas de memoria, pantalla estable |
 | STR-02 | Invariante de cero escrituras | Monitorizar E/S de disco al jugar un mapa y durante los 5s de enfriamiento. | Cero transacciones SQLite o escrituras en disco hasta alcanzar IDLE. Verificado por `test_writes_blocked_guard`. | **PASS** | **PASS** (2026-09-18) — Verificado mediante `test_zero_storage_writes_during_gameplay_and_cooldown`; cero escrituras durante PLAYING o COOLDOWN |
 
-### Windows equivalents for the Linux tooling above
+### Equivalentes en Windows de las herramientas de Linux anteriores
 
 Los procedimientos están redactados con las herramientas de Linux. En Windows, sustituir por:
 
@@ -93,7 +93,7 @@ Los procedimientos están redactados con las herramientas de Linux. En Windows, 
 
 ---
 
-## 5. Windows platform integration (§W4-2)
+## 5. Integración con la plataforma Windows (§W4-2)
 
 Estas pruebas carecen de contrapartida en Linux y representan trabajo nuevo, por lo que comienzan en NOT RUN.
 
@@ -110,7 +110,7 @@ Estas pruebas carecen de contrapartida en Linux y representan trabajo nuevo, por
 
 ---
 
-## 6. Install and uninstall leave nothing behind (§L-3, §W2-3)
+## 6. La instalación y desinstalación no dejan residuos (§L-3, §W2-3)
 
 En Windows (§W2-3), ejecutar en VM limpia con instantánea previa del sistema de archivos y registro. En Linux (§L-3), verificado en contenedores Docker limpios (`debian:latest` y `fedora:latest`).
 
@@ -125,7 +125,7 @@ En Windows (§W2-3), ejecutar en VM limpia con instantánea previa del sistema d
 
 ---
 
-## 7. Update verification (§W4-2b)
+## 7. Verificación de actualizaciones (§W4-2b)
 
 | ID | Elemento de prueba | Procedimiento | Criterios de aceptación | Estado |
 |---|---|---|---|---|
@@ -143,11 +143,11 @@ En Windows (§W2-3), ejecutar en VM limpia con instantánea previa del sistema d
 
 ---
 
-## 9. Linux hardware run, 2026-09-17 (U-3a, W3-2, U-3b)
+## 9. Ejecución en hardware Linux, 2026-09-17 (U-3a, W3-2, U-3b)
 
 Ejecutado en teclado `OSUPAD-3CDC75701678`, contadores **3745 / 20594**. Firmware compilado con ESP-IDF v5.5.2.
 
-### 9.1 U-3a — the two-slot partition table on real hardware
+### 9.1 U-3a — tabla de particiones de dos ranuras en hardware real
 
 | ID | Prueba | Resultado | Evidencia |
 |---|---|---|---|
@@ -156,7 +156,7 @@ Ejecutado en teclado `OSUPAD-3CDC75701678`, contadores **3745 / 20594**. Firmwar
 | U3A-03 | Contadores sobreviven al cambio de tabla | **PASS** | 3745 / 20594, generación 12, inalterados tras el flasheo. |
 | U3A-04 | Notificación de ranura en ejecución | **PASS** | `opadctl status` → `Running Slot: ota_0` |
 
-### 9.2 W3-2 — the five ownership checks
+### 9.2 W3-2 — las cinco comprobaciones de propiedad
 
 | ID | Prueba | Resultado | Evidencia |
 |---|---|---|---|
@@ -166,14 +166,14 @@ Ejecutado en teclado `OSUPAD-3CDC75701678`, contadores **3745 / 20594**. Firmwar
 | W32-04 | Reclamación durante PLAYING denegada | **PASS** | Con pad en PLAYING, se envió reclamación para otro propietario: `owner_id` inalterado. En IDLE se aplicó correctamente. |
 | W32-05 | Reclamación con todo ceros denegada | **PASS** | Enviar `ClaimOwnership { owner_id: [0; 16] }` mantuvo `owner_id` intacto. |
 
-### 9.3 U-3b — host-driven firmware update
+### 9.3 U-3b — actualización de firmware dirigida desde el anfitrión
 
 | ID | Prueba | Resultado | Evidencia |
 |---|---|---|---|
 | UPD-06 | Actualización conserva contadores | **PASS** | Actualización 1.0.0 a 1.0.1 con manifiesto firmado: contadores intactos en **3745 / 20594**. |
 | UPD-07 | Consentimiento requerido | **PASS (primera parte)** | `opadctl firmware-update` sin `--yes` mostró la oferta y denegó la operación por falta de confirmación. |
 
-### 9.4 Still open on Linux
+### 9.4 Pendiente en Linux
 
 | ID | Motivo por el que sigue abierto |
 |---|---|
@@ -181,7 +181,7 @@ Ejecutado en teclado `OSUPAD-3CDC75701678`, contadores **3745 / 20594**. Firmwar
 | FAIL-03 | Requiere ~500 pulsaciones y desconexión física de alimentación. |
 | STR-02 | Requiere jugar un mapa real mientras se monitoriza la E/S de disco. |
 
-### 9.5 Automatic counter backup, end to end on a running daemon
+### 9.5 Copia automática de contadores, de principio a fin en un daemon en ejecución
 
 | Observación | Resultado |
 |---|---|
@@ -195,7 +195,7 @@ Ejecutado en teclado `OSUPAD-3CDC75701678`, contadores **3745 / 20594**. Firmwar
 
 ---
 
-## 10. W4-1 CI, run by hand on Windows (2026-09-17)
+## 10. CI W4-1, ejecutado a mano en Windows (2026-09-17)
 
 Ejecutado a mano en VM con Windows 11 Pro 25H2, Rust 1.98.1 MSVC y VS 2022 Build Tools 14.44.
 
@@ -209,60 +209,60 @@ Ejecutado a mano en VM con Windows 11 Pro 25H2, Rust 1.98.1 MSVC y VS 2022 Build
 | `rust-windows-gui` / `cargo build -p opad-gui` | **PASS** (§10.2) |
 | `rust-windows-gui` / `cargo test -p opad-gui` | **PASS** (4 superados) |
 
-### 10.1 Three defects had to be fixed before any of it could run
+### 10.1 Tres defectos que hubo que corregir antes de poder ejecutar nada
 
 1. `protoc` no estaba instalado por ningún job (`1c0fb3f`).
 2. Macro de inclusión de LVGL no soportaba MSVC (`67f00fc`).
 3. Rutas literales `\\?\` rompían la lista de fuentes en Windows (`cd33dc4`).
 
-### 10.2 opad-gui — four Windows errors (FIXED)
+### 10.2 `opad-gui` — cuatro errores en Windows (CORREGIDOS)
 
 Resueltos los cuatro errores: adición de `Win32_Security` en `windows-sys`, comparaciones de puntero nulo para `HANDLE`, eliminación de importación innecesaria en bandeja y configuración condicional de `PlatformSpecific`.
 
-### 10.3 Clean-checkout CI blocker — RESOLVED
+### 10.3 Bloqueo de CI en checkout limpio — RESUELTO
 
 Implementado stub de respaldo `csrc/preview_stub.c` en `opad-ui-preview` para permitir compilación limpia en entornos CI donde falten los componentes gestionados de ESP-IDF.
 
 ---
 
-## 11. Windows run, 2026-09-17 — environment and caveats
+## 11. Ejecución en Windows, 2026-09-17 — entorno y matices
 
-### 11.1 The machine
+### 11.1 La máquina
 VM Windows 11 Pro 25H2 en libvirt/QEMU: UEFI con Secure Boot, TPM 2.0 emulado, 4 vCPU, 6 GB de RAM.
 
-### 11.2 The pad reached the VM by USB passthrough
+### 11.2 El teclado llegó a la VM por passthrough USB
 Dispositivos `303a:4001` y `303a:1001` conectados en vivo por redirección USB.
 
-### 11.3 WIN-06 failed for an environmental reason, and that matters
+### 11.3 WIN-06 falló por un motivo de entorno, y eso importa
 La redirección USB en VM libvirt devolvió el dispositivo al host al re-enumerarse como bootloader ROM. Se recuperó limpiamente desde Linux mediante `opadctl flash`.
 
-### 11.4 Verified along the way, outside the numbered rows
+### 11.4 Verificado sobre la marcha, fuera de las filas numeradas
 - Rutas del §W0-4 validadas en Windows (`%APPDATA%\opad`).
 - Propiedad entre dos máquinas verificada en hardware real: la sincronización se pausó al detectar pad externo sin afectar a la escritura.
 
 ---
 
-## 12. Windows Bare-Metal Run, 2026-09-18 (GFerreiroS)
+## 12. Ejecución en Windows sobre hardware real, 2026-09-18 (GFerreiroS)
 
 Ejecutado en host físico `DESKTOP-U6AF6VD` (Windows 11 x86_64) con teclado ESP32-S3 (`OSUPAD-3CDC75701678`) en `COM3`.
 
-### 12.1 Codebase Compilation & Test Suite (100% Green)
+### 12.1 Compilación del código y batería de pruebas (100% en verde)
 Todos los 12 crates del espacio de trabajo compilan sin advertencias bajo `-D warnings` y superan el 100% de las pruebas unitarias.
 
-### 12.2 Protocol & Fault Isolation on Live Hardware
+### 12.2 Protocolo y aislamiento de fallos en hardware real
 - **COM-01:** Enumeración correcta sin daemon.
 - **COM-02:** Recuperación inmediata tras inyección de ruido y tramas malformadas.
 - **FAIL-04:** Inicio y conexión en modo degradado con base de datos de solo lectura.
 
-### 12.3 Windows Packaging & Lifecycle (PKG-01 to PKG-06, WIN-04)
+### 12.3 Empaquetado y ciclo de vida en Windows (PKG-01 a PKG-06, WIN-04)
 Instalador Inno Setup probado: instalación limpia, desinstalación completa sin residuos y detención de procesos en ejecución.
 
-### 12.4 Friendly Device Naming (Microsoft OS 2.0 Descriptors)
+### 12.4 Nombre descriptivo del dispositivo (Descriptores Microsoft OS 2.0)
 Descriptores Microsoft OS 2.0 implementados en firmware; Windows asigna automáticamente el nombre descriptivo "OPad".
 
 ---
 
-## 13. Tap rate (KPM, formerly PPM; issues #2 and #8)
+## 13. Ritmo de pulsación (KPM, antes PPM; issues #2 y #8)
 
 | ID | Elemento de prueba | Procedimiento | Criterios de aceptación | Linux | Windows |
 |---|---|---|---|---|---|
@@ -275,7 +275,7 @@ Descriptores Microsoft OS 2.0 implementados en firmware; Windows asigna automát
 
 ---
 
-## 14. Touchscreen swipes
+## 14. Deslizamientos en pantalla táctil
 
 | ID | Elemento de prueba | Procedimiento | Criterios de aceptación | Linux | Windows |
 |---|---|---|---|---|---|
@@ -294,7 +294,7 @@ Descriptores Microsoft OS 2.0 implementados en firmware; Windows asigna automát
 
 ---
 
-## 15. Hall Effect calibration lock screen, on-pad flow and app flow
+## 15. Pantalla de bloqueo de calibración Hall Effect, flujo en el teclado y en la app
 
 | ID | Elemento de prueba | Procedimiento | Criterios de aceptación | Linux | Windows |
 |---|---|---|---|---|---|
@@ -313,7 +313,7 @@ Descriptores Microsoft OS 2.0 implementados en firmware; Windows asigna automát
 
 ---
 
-## 16. OPad identity and checked frames (2026-11-21)
+## 16. Identidad OPad y tramas comprobadas (2026-11-21)
 
 | ID | Elemento de prueba | Procedimiento | Criterios de aceptación | Linux | Windows |
 |---|---|---|---|---|---|
@@ -327,7 +327,7 @@ Descriptores Microsoft OS 2.0 implementados en firmware; Windows asigna automát
 
 ---
 
-## 8. Verification Sign-Off
+## 8. Aprobación de la verificación
 
 - **Linux v1.0.0, 2026-09-13:** Secciones 1–4 verificadas y superadas, **excepto** HW-01, HW-02, FAIL-03 y STR-02 reabiertas en §9.4.
 - **Linux, 2026-09-17:** U-3a, cuatro comprobaciones W3-2 y actualización U-3b verificadas con éxito en hardware.
