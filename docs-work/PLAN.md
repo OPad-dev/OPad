@@ -61,7 +61,7 @@ Status values:
 | `docs/develop/releases.md` | explanation | draft | `/.github/workflows/`, `/scripts/release/publish_release.sh`, `/release-please-config.json`, `/desktop/crates/opad-update/src/` | Release automation: release-please, artifact builders, release signing, update feed manifest generation. |
 | `docs/develop/lab.md` | reference | draft | `/scripts/lab/`, `/.github/workflows/lab-check.yml`, `/.github/workflows/lab-install.yml` | Self-hosted automated testing lab: VM environment, script execution, smoke testing installers and recovery. |
 | `docs/develop/latency-testing.md` | reference | draft | `/scripts/bench_latency.py`, `/scripts/bench_latency.sh`, `/scripts/latency_row.py`, `/docs/latency-testing.md` | Hardware latency measurement methodology, oscilloscope/electronic gate harness, latency test stages A-D. |
-| `docs/testing-checklist.md` | reference | fixed | `/docs/testing-checklist.md`, `/Makefile` | Fixed path (§3). Comprehensive quality assurance checklist covering firmware, daemon, GUI, and hardware. |
+| `docs/testing-checklist.md` | reference | translated | `/docs/testing-checklist.md`, `/Makefile` | Fixed path (§3). Comprehensive quality assurance checklist covering firmware, daemon, GUI, and hardware. |
 | `docs/launch-checklist.md` | internal | fixed | `/docs/launch-checklist.md` | Internal release preparation checklist (`draft: true`). |
 | `docs/pad-test-sheet.md` | internal | fixed | `/docs/pad-test-sheet.md` | Internal single-pad testing sheet (`draft: true`). |
 | `docs/README.md` | meta | draft | `/docs/README.md`, `/AGENTS.md` | Documentation hub map, guidelines for contributors, Diátaxis rules. Rewritten in Phase 7. |
