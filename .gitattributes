@@ -1,0 +1,4 @@
+# Shell scripts keep LF everywhere: the lab's Windows runner checks the repo
+# out with CRLF (Git for Windows' default) and copies scripts/lab/*.sh into
+# Linux VMs, where bash cannot run CRLF.
+*.sh text eol=lf

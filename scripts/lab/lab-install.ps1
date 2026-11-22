@@ -127,6 +127,11 @@ function Invoke-Phase([string]$Vm, [string]$Phase, [string]$Arg, [string]$Dir, [
     $log = Join-Path $OutDir "$Vm.log"
     Add-Content $log "== $Phase $Arg $Dir (exit $($r.Code))`n$($r.Out)"
     Add-LabOutput $r.Out $Prefix -Previous:$Previous
+    # Failed without naming a check (the script itself broke): the output is the detail
+    if ($r.Code -gt 0 -and $r.Out -notmatch '(?m)^\s*FAIL:') {
+        $tail = (($r.Out -split "`r?`n") | Select-Object -Last 25) -join "`n"
+        if ($Previous) { Skip "$Prefix$Phase exited $($r.Code)" $tail } else { Fail "$Prefix$Phase exited $($r.Code)" $tail }
+    }
     if ($r.Code -eq -1) {
         if ($Previous) { Skip "$Prefix$Phase timed out after $TimeoutSec s" } else { Fail "$Prefix$Phase timed out after $TimeoutSec s" }
     }
