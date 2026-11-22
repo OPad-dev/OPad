@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.0-rc.5](https://github.com/OPad-dev/OPad/compare/v1.0.0-rc.4...v1.0.0-rc.5) (2026-11-22)
+
+
+### Bug Fixes
+
+* **lab:** each file goes into the VM as its own path ([b1e79ae](https://github.com/OPad-dev/OPad/commit/b1e79aefe215741c58eff863d77bbdbbf81ed358))
+* **lab:** the Linux VMs get their script with LF whatever the checkout has ([1b20a17](https://github.com/OPad-dev/OPad/commit/1b20a171f02a93c2b5661612a8939a61c3bdcb29))
+* **lab:** the Windows install phase waits for the setup, not the daemon it starts ([711a96e](https://github.com/OPad-dev/OPad/commit/711a96e4f91d9560aa857d921c0672e4ca64d327))
+* **packaging:** opad-bin installs the release's binaries unstripped ([17322a9](https://github.com/OPad-dev/OPad/commit/17322a900498fe326671167e960846fdac79f16c))
+
 ## [1.0.0-rc.4](https://github.com/OPad-dev/OPad/compare/v1.0.0-rc.3...v1.0.0-rc.4) (2026-11-22)
 
 
