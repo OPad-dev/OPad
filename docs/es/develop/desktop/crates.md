@@ -1,6 +1,8 @@
 ---
 title: Referencia de crates compartidos
 description: Catálogo técnico y responsabilidades de los nueve crates internos compartidos de Rust en desktop/crates/.
+sidebar:
+  order: 5
 ---
 
 El espacio de trabajo Cargo de escritorio ([/desktop/Cargo.toml](/desktop/Cargo.toml)) divide la lógica compartida en nueve crates internos bajo `desktop/crates/`:
