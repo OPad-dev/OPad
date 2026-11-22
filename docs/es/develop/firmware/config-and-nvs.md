@@ -1,42 +1,37 @@
 ---
-title: Subsistema de Configuración y NVS del Firmware
-description: Referencia de implementación para la gestión de Non-Volatile Storage (NVS), migración de espacios de nombres, registros atómicos A/B y verificación CRC32.
+title: Subsistema de configuración y NVS del firmware
+description: Referencia de implementación de espacios de nombres NVS del ESP32-S3, migración heredada osupad->opad, versionado de configuración y registros de calibración A/B con CRC32.
 ---
 
-El subsistema de configuración y almacenamiento gestiona el estado persistente del pad dentro de la partición flash de Non-Volatile Storage (NVS) del ESP32-S3. Aísla las operaciones de borrado y escritura en flash del juego activo, gestiona la migración de espacios de nombres y garantiza actualizaciones atómicas de registros mediante ranuras A/B protegidas por suma de verificación. <!-- src: /firmware/main/config/device_config.c -->
+El estado persistente del teclado se almacena en la partición NVS del ESP32-S3 (`0x9000` en [/firmware/partitions.csv](/firmware/partitions.csv)). Todas las escrituras NVS están prohibidas durante `PLAYING` y `COOLDOWN` y se difieren a `IDLE`.
 
-## NVS Namespaces & Migration (nvs_ns.c)
+## Espacios de nombres NVS y migración (`nvs_ns.c`)
 
-El almacenamiento está dividido en cinco espacios de nombres lógicos distintos (`nvs_ns.c`): <!-- src: /firmware/main/config/nvs_ns.c -->
+Definidos en [/firmware/main/config/nvs_ns.c](/firmware/main/config/nvs_ns.c):
 
-| Constante de Espacio de Nombres | Nombre Activo | Nombre Legacy | Contenido |
+| Enum (`nvs_ns_id_t`) | Nombre activo | Nombre heredado | Datos almacenados |
 |---|---|---|---|
-| `NVS_NS_COUNTERS` | `"opad"` | `"osupad"` | Contadores de pulsaciones monotónicos de por vida, generación de contadores, identidad de propietario. <!-- src: /firmware/main/config/nvs_ns.c --> |
-| `NVS_NS_CONFIG` | `"opad_cfg"` | `"osupad_cfg"` | Ventana de antirrebote, asignación de pines de teclas, brillo de pantalla, enlaces de deslizamiento. <!-- src: /firmware/main/config/nvs_ns.c --> |
-| `NVS_NS_CAL` | `"opad_cal"` | `"osupad_cal"` | Registros de calibración de Hall Effect para Key 1 y Key 2. <!-- src: /firmware/main/config/nvs_ns.c --> |
-| `NVS_NS_CAL3` | `"opad_cal3"` | `"osupad_cal3"` | Registros de calibración de Hall Effect para Key 3 (módulo V3). <!-- src: /firmware/main/config/nvs_ns.c --> |
-| `NVS_NS_UI` | `"opad_ui"` | `"osupad_ui"` | Diseños de pantalla personalizados de widgets serializados (`idle` y `playing`). <!-- src: /firmware/main/config/nvs_ns.c --> |
+| `NVS_NS_COUNTERS` | `"opad"` | `"osupad"` | `generation`, `key1_cnt`, `key2_cnt`, `key3_cnt` ([/firmware/main/counters/counters.c](/firmware/main/counters/counters.c)) |
+| `NVS_NS_CONFIG` | `"opad_cfg"` | `"osupad_cfg"` | `"cfg"` (`device_config_data_t` v7 incluyendo `owner_id[16]`), `"cfg_ext"` (`device_config_ext_t` v1), `"he_cfg"`, `"he_cfg3"` ([/firmware/main/config/device_config.c](/firmware/main/config/device_config.c)) |
+| `NVS_NS_CAL` | `"opad_cal"` | `"osupad_cal"` | Calibración A/B Hall Effect V1 (`cal_a`, `cal_b`) ([/firmware/main/input/he_cal.c](/firmware/main/input/he_cal.c)) |
+| `NVS_NS_CAL3` | `"opad_cal3"` | `"osupad_cal3"` | Calibración A/B Hall Effect V3 (`cal_a`/`cal_b` para Keys 1–2, `cal3_a`/`cal3_b` para Key 3) ([/firmware/main/input/he_cal.c](/firmware/main/input/he_cal.c)) |
+| `NVS_NS_UI` | `"opad_ui"` | `"osupad_ui"` | Diseños personalizados de pantalla (`layout0`, `layout1`) ([/firmware/main/ui/ui_store.c](/firmware/main/ui/ui_store.c)) |
 
-Para garantizar la compatibilidad hacia atrás (Regla de Producto 3), el resolutor de espacios de nombres comprueba la existencia de nombres de espacios de nombres legacy antes de abrir los activos; los pads existentes leen sus registros antiguos de forma transparente sin perder datos. <!-- src: /firmware/main/config/nvs_ns.c -->
+Al arrancar, `nvs_ns_migrate()` copia cada entrada de cada espacio de nombres heredado `osupad*` a su equivalente `opad*`, confirma todas las entradas y escribe al final el marcador `NVS_NS_MIGRATED_KEY` (`1`). Si algún paso falla o cae la alimentación a mitad de copia, se borra el espacio de nombres nuevo parcial y `nvs_ns_name()` continúa abriendo el espacio de nombres heredado para que los datos existentes nunca se pierdan.
 
-## Atomic A/B Record Architecture (he_cal_record.c)
+## Compatibilidad de blobs de configuración (`device_config.h`, `config_validate.c`)
 
-Las escrituras en flash conllevan riesgo de corrupción si la alimentación se interrumpe a mitad de la transacción. Los registros críticos (como la calibración y configuración de Hall Effect) emplean un esquema de almacenamiento alterno A/B ping-pong: <!-- src: /firmware/main/input/he_cal_record.c -->
+- `device_config_data_t` (versión `7`) admite cargar blobs heredados más cortos v1–v6 (`device_config_blob_layout_ok` en [/firmware/main/config/config_validate.c](/firmware/main/config/config_validate.c)) rellenando los campos nuevos con valores predeterminados.
+- Los ajustes añadidos tras v7 (`key3_usage`, `game_keys`) viven en una clave separada `"cfg_ext"` (`device_config_ext_t`) para que revertir a firmware anterior nunca invalide `"cfg"`.
+- Los ajustes Hall Effect viven en `"he_cfg"` (Keys 1–2) y `"he_cfg3"` (Key 3) como `he_config_record_t` (`HE_CONFIG_RECORD_MAGIC = 0x48454346` `"HECF"`, versión `1`, `flags` para `no_floor`, CRC-32 IEEE 802.3) ([/firmware/main/config/he_config_record.h](/firmware/main/config/he_config_record.h)).
 
-- **Estructura del Registro (`he_cal_record_t`)**:
-  - `magic`: Magic de validación de 32 bits (`HE_CAL_MAGIC = 0x4845434C`). <!-- src: /firmware/main/input/he_cal_record.c -->
-  - `version`: Revisión del formato (`HE_CAL_VERSION = 1`).
-  - `seq`: Número de secuencia de 32 bits en incremento monotónico.
-  - `keys[2]`: Estructuras de calibración por tecla (reposo, fondo, recorrido).
-  - `crc32`: Suma de comprobación estándar IEEE 802.3 CRC32 que cubre todo el registro. <!-- src: /firmware/main/input/he_cal_record.c#he_cal_crc32 -->
-- **Dos Ranuras (`cal_a` y `cal_b`)**:
-  - Al arrancar, se leen ambas ranuras y se validan contra sus sumas de comprobación CRC32.
-  - Si ambas son válidas, se carga la ranura con el número de secuencia (`seq`) más alto.
-  - Al escribir actualizaciones, la ranura inactiva se escribe y se confirma primero antes de invalidar o reemplazar la ranura previa. Una escritura interrumpida deja intacto el registro válido anterior.
+## Registros atómicos de calibración A/B (`he_cal_record.h`, `he_cal.c`)
 
-## Runtime Staging & Flash Invariant
+Implementados en [/firmware/main/input/he_cal_record.h](/firmware/main/input/he_cal_record.h) y [/firmware/main/input/he_cal.c](/firmware/main/input/he_cal.c):
 
-Los ciclos de borrado en flash tardan entre 20 ms y 100 ms, deteniendo la ejecución de la caché de CPU en ambos núcleos Xtensa: <!-- src: /firmware/main/config/device_config.c -->
-- Cuando el host envía `SetConfig` o `SetLayout`, los ajustes se aplican inmediatamente a las variables activas en RAM (`s_config`).
-- Si el estado del dispositivo es `OPAD_STATE_PLAYING` u `OPAD_STATE_COOLDOWN`, las escrituras en flash se posponen (`s_dirty = true`).
-- El supervisor de runtime vuelca los registros de configuración pendientes a NVS únicamente tras el regreso del pad a `OPAD_STATE_IDLE`.
+- **Estructura (`he_cal_record_t`)**: `magic = 0x4F504341` (`"OPCA"`), `version = 1`, `seq` (`uint32_t` monotónico con comparación segura ante desbordamiento), `keys[2]` (`rest`, `full`, `valid`) y `crc32` IEEE 802.3.
+- **Escrituras ping-pong A/B**: Cada guardado alterna entre la ranura A y la ranura B (`cal_a`/`cal_b`, y `cal3_a`/`cal3_b` para Key 3 en V3). Al arrancar se leen y validan por CRC ambas ranuras, eligiendo la ranura válida con mayor `seq`. Los registros ausentes o corruptos recurren a valores provisionales de fábrica (`valid = false`) sin borrar NVS.
+
+## Volcado diferido
+
+Cuando llegan actualizaciones de `SetConfig`, `SetLayout` o calibración durante `PLAYING` o `COOLDOWN`, el firmware actualiza la RAM de inmediato, marca las banderas de pendiente y espera a que `runtime_supervisor_task` ([/firmware/main/runtime/runtime.c](/firmware/main/runtime/runtime.c)) las vuelque al alcanzar `OPAD_STATE_IDLE`.
