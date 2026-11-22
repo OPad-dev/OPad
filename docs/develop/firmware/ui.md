@@ -1,44 +1,32 @@
 ---
 title: Firmware UI Subsystem
-description: Implementation reference for the ST7789 display driver, LVGL integration, PSRAM framebuffers, and layout store architecture.
+description: Implementation reference for the ST7789 SPI2 display driver, LVGL v9.5 integration, memory allocation, layout store, and Hall Effect calibration overlay.
 ---
 
-The UI subsystem renders dynamic telemetry HUD widgets, song metadata, celebration grade animations, and guided calibration wizards on the Waveshare 2.0-inch ST7789 LCD display (320x240 resolution). All display rendering runs on Core 1 under LVGL v8, using PSRAM memory pools to protect internal SRAM and keypress latency. <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c -->
+The UI subsystem renders customizable `320x240` layouts, live telemetry, result animations, and the Hall Effect calibration overlay on the Waveshare 2.0-inch ST7789 IPS LCD. All rendering runs on **Core 1** under **LVGL v9.5.0** and `esp_lvgl_port` 2.9.0 ([/firmware/dependencies.lock](/firmware/dependencies.lock), [/firmware/main/ui/ui_port.c](/firmware/main/ui/ui_port.c)).
 
-## Display Hardware & SPI Driver (`board_display.c`)
+## Display Hardware & SPI2 Driver (`board_display.c`)
 
-- **Controller**: Sitronix ST7789 IPS LCD controller. <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c -->
-- **Interface**: SPI2 host (`BOARD_LCD_SPI_HOST`) operating at high clock speed with hardware DMA transfers.
-- **Pin Assignments**:
-  - `SCLK`: GPIO 39
-  - `MOSI`: GPIO 38
-  - `DC`: GPIO 42
-  - `CS`: GPIO 45
-  - `Backlight (BL)`: GPIO 1 (driven by LEDC PWM timer for granular 0–100% brightness control). <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c#board_display_set_brightness -->
+Implemented in [/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c](/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c) and [/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h](/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h):
 
-## LVGL Integration & PSRAM Memory Pool
+- **Controller**: ST7789 IPS LCD (`320x240`, RGB565, `LCD_RGB_ENDIAN_RGB`, color inversion on, `swap_xy = true`, `mirror_x = true` for landscape orientation).
+- **Bus**: `SPI2_HOST` with `SPI_DMA_CH_AUTO` at `BOARD_LCD_PIXEL_CLOCK_HZ = 80 MHz` (~15 ms full-frame transfer). SPI DMA interrupts are pinned to Core 1 (`ESP_INTR_CPU_AFFINITY_1`) so LCD transfers never preempt Core 0 input.
+- **Pins**: `SCLK = GPIO 39`, `MOSI = GPIO 38`, `DC = GPIO 42`, `CS = GPIO 45`, backlight `BL = GPIO 1` (LEDC PWM, `board_display_set_brightness`).
+- **Fault injection**: `CONFIG_OPAD_TEST_FAIL_LCD` forces `board_display_init` to return `ESP_FAIL` to verify headless keyboard operation.
 
-- **PSRAM Allocation (`CONFIG_OPAD_LVGL_PSRAM`)**: LVGL's internal memory pool (`lv_mem_init`) and double-buffered RGB565 draw buffers are allocated out of external 2 MB PSRAM using `opad_lvgl_pool_alloc` (`ui/lvgl_psram_pool.h`). This keeps the internal 512 KB SRAM completely free for FreeRTOS tasks and high-priority ISR stacks. <!-- src: /firmware/CMakeLists.txt -->
-- **Display Rotation**: The ST7789 hardware panel is mounted in portrait (240x320); `ui_port.c` rotates the display context via `swap_xy` and `mirror_x` to present a 320x240 landscape interface with zero software rotation penalty.
+## LVGL Memory & Render Loop (`ui_port.c`)
 
-## Layout Engine & UI Store (`ui_store.c` & `ui_screen.c`)
+- **Memory pool (`CONFIG_LV_MEM_SIZE_KILOBYTES = 160`)**: Dedicated 160 KB pool so LVGL never contends with the system heap ([/firmware/sdkconfig.defaults](/firmware/sdkconfig.defaults)). By default (`CONFIG_OPAD_LVGL_PSRAM=n`) this pool lives in internal RAM; setting `CONFIG_OPAD_LVGL_PSRAM=y` moves the LVGL pool into the 8 MB Octal PSRAM while **LCD draw buffers always stay in internal DMA-capable RAM** ([/firmware/main/Kconfig.projbuild](/firmware/main/Kconfig.projbuild)).
+- **20 ms UI timer (`pad_timer_cb`)**: Runs inside the Core 1 LVGL task (`PAD_TIMER_PERIOD_MS = 20`), updating pad-local sources (key lifetime/map counts, 80 ms key-flash hold, 1 s rolling KPS, clock/date, PC/tosu status) and display sleep/wake (`update_sleep`).
 
-Screen layouts are structured as collections of up to 32 dynamic widgets (`ui_widget_t`): <!-- src: /firmware/main/ui/ui_store.c -->
+## Layout Engine & Deferred Persistence (`ui_store.c`, `ui_screen.c`)
 
-- **Profiles Supported**:
-  - `UI_SCREEN_IDLE`: Rendered during menu navigation or desktop usage.
-  - `UI_SCREEN_PLAYING`: Rendered during active osu! gameplay attempts.
-- **Widget Properties (`ui_screen.c`)**:
-  - Bound data sources (combo, accuracy, UR, PPM, song artist/title).
-  - Configurable typography (`s_fonts` table: Montserrat 12, 14, 16, 20, 24, 32, 48 pt). <!-- src: /firmware/main/ui/core/ui_screen.c#s_fonts -->
-  - Text alignments (`LV_TEXT_ALIGN_LEFT`, `CENTER`, `RIGHT`). <!-- src: /firmware/main/ui/core/ui_screen.c#s_text_align -->
-  - Visual flags (`FLAG_BORDER`, `FLAG_BG_FILL`, `FLAG_HIDE_WHEN_EMPTY`).
-- **Deferred NVS Persistence**: When the host sends `SetLayout` during a map, the layout is staged in RAM (`s_pending_layout`). Layouts are written to NVS only when the device transitions back to `IDLE` (`ui_store_flush_dirty`), ensuring flash erase cycles never coincide with gameplay. <!-- src: /firmware/main/ui/ui_store.c -->
+- **Two screens**: `UI_SCREEN_IDLE` and `UI_SCREEN_PLAYING`, each holding up to 32 widgets with Montserrat 12/14/16/20/24/32/48 pt fonts ([/firmware/main/ui/core/ui_screen.c](/firmware/main/ui/core/ui_screen.c), [/firmware/sdkconfig.defaults](/firmware/sdkconfig.defaults)).
+- **NVS store ([/firmware/main/ui/ui_store.c](/firmware/main/ui/ui_store.c))**: Saves layouts in `NVS_NS_UI` (`opad_ui`) under keys `"layout0"` / `"layout1"` wrapped in `layout_blob_t` (`LAYOUT_BLOB_VERSION = 1`).
+- **Gameplay flash invariant**: `ui_store_save` and `ui_store_erase` defer writes into `s_pending_layouts` / `s_dirty_save_mask` / `s_dirty_erase_mask` whenever `runtime_get_state() != OPAD_STATE_IDLE`, and `ui_store_flush_dirty` commits them in `IDLE` (retrying failed writes after `FLUSH_RETRY_US = 10 s`).
 
-## Guided Calibration UI (`he_cal_ui.c`)
+## Hall Effect Calibration Overlay (`he_cal_ui.c`)
 
-When Hall Effect calibration is active: <!-- src: /firmware/main/ui/he_cal_ui.c -->
-- Normal HUD screens are suppressed, and the calibration wizard screen (`he_cal_ui`) is created.
-- Renders step-by-step instructions (rest position settling, bottom-out capture for Key 1 and Key 2).
-- Shows live feedback bars reflecting raw ADC readings and errors (`HE_CAL_ERR_REST_NOT_STILL`, `HE_CAL_ERR_SPAN_TOO_SMALL`).
-- Touch input on this screen is restricted strictly to calibration button hits, completely suppressing normal touchscreen Quick Retry and gesture swipes. <!-- src: /firmware/main/ui/he_cal_ui.c -->
+Implemented in [/firmware/main/ui/he_cal_ui.c](/firmware/main/ui/he_cal_ui.c) on `lv_layer_top()` (20 ms LVGL timer, only initialized when `he_backend_running()`):
+- Shows the red **Keys not calibrated** lock screen (`HE_LOCK_SCREEN_WAIT_FOR_APP` for 5 s, then `HE_LOCK_SCREEN_NO_APP_BUTTON` with **Calibrate here** if no capable app connects, or `HE_LOCK_SCREEN_USE_APP` when connected).
+- Displays rest capture, 5 numbered progress boxes (`1`–`5`) turning green across 5 full presses per key (Keys 1–2 on V1, Keys 1–3 on V3), 1 s green **Done!** confirmation, or 2 s red **Calibration failed** reason.
