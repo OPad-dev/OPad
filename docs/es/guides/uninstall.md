@@ -1,6 +1,8 @@
 ---
 title: Desinstalación del software
 description: Cómo desinstalar la suite de escritorio de OPad en Linux y Windows, qué datos se eliminan y qué permanece en el teclado.
+sidebar:
+  order: 8
 ---
 
 Desinstalar la suite de escritorio elimina el daemon en segundo plano, la GUI, `opadctl`, el `tosu` incluido, las entradas de inicio automático y los datos de escritorio.
