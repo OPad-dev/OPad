@@ -1,6 +1,8 @@
 ---
 title: Compilación desde el código fuente
 description: Cómo compilar la suite de escritorio OPad en Rust y el firmware ESP32-S3 con ESP-IDF v5.5.2 desde el código fuente en Linux y Windows.
+sidebar:
+  order: 2
 ---
 
 Esta guía cubre la compilación del espacio de trabajo de escritorio en Rust ([/desktop/Cargo.toml](/desktop/Cargo.toml)) y del firmware ESP32-S3 ([/firmware/CMakeLists.txt](/firmware/CMakeLists.txt)) desde el código fuente.
