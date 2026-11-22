@@ -1,6 +1,8 @@
 ---
 title: Arquitectura del sistema
 description: Arquitectura general de OPad, incluyendo el aislamiento de tareas en doble núcleo del ESP32-S3, los estados de ejecución del firmware y el modelo de actor del daemon de escritorio.
+sidebar:
+  order: 1
 ---
 
 OPad está organizado alrededor de **la latencia siempre gana** ([/AGENTS.md](/AGENTS.md) §1.1): el escaneo de teclas y los reportes USB HID a 1000 Hz se ejecutan en Core 0 sin asignaciones en el heap, sin bloqueos compartidos con Core 1 y sin escrituras en flash durante la partida. La pantalla LCD, la persistencia NVS, los gestos táctiles y la telemetría de `tosu` permanecen fuera de la ruta de pulsación.
