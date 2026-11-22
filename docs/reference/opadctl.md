@@ -1,6 +1,8 @@
 ---
 title: opadctl CLI Reference
 description: Command-line reference and options for the opadctl pad and daemon management utility.
+sidebar:
+  order: 1
 ---
 
 `opadctl` is the command-line management tool for OPad. It communicates with the background service (`opad-daemon`) over local IPC to query status, synchronize lifetime press counters, export and import backups, stream diagnostic logs, and control pad functions. Flashing commands (`flash`, `recover`, `bootloader`) can also operate directly over USB serial when the daemon is stopped.
