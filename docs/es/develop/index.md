@@ -1,46 +1,42 @@
 ---
-title: Guía de Desarrollo
-description: Flujo de trabajo de colaboradores, ciclo de vida de ramas git, firma de commits, trailers de atribución de IA y pautas de arquitectura del repositorio.
+title: Guía para desarrolladores
+description: Flujo de trabajo para colaboradores, invariantes de producto, ciclo de vida de ramas git, convenciones de commits y reglas de documentación de OPad.
 ---
 
-Te damos la bienvenida a la documentación de desarrollo de OPad. Esta sección cubre los flujos de trabajo de desarrollo, las invariantes del repositorio, las instrucciones de compilación, los entornos de prueba y las referencias de arquitectura para contribuir al firmware, a la suite de escritorio y a los diseños de hardware. <!-- src: /AGENTS.md -->
+Bienvenido a la documentación para desarrolladores de OPad. Esta sección cubre las reglas para colaboradores, la compilación desde el código fuente, la ejecución de pruebas automatizadas, los detalles internos del firmware y del escritorio, la evolución del protocolo, los archivos de hardware, el empaquetado, los lanzamientos, las pruebas de laboratorio y las mediciones de latencia.
 
-## Core Product Invariants
+## Invariantes principales de producto
 
-Todo el desarrollo en este repositorio debe adherirse a las reglas inmutables de producto definidas en [AGENTS.md](file:///home/paella/Documents/projects/esp32/osu-pad-esp32-docs/AGENTS.md): <!-- src: /AGENTS.md -->
+Todo cambio en este repositorio debe respetar las seis reglas de producto en [/AGENTS.md](/AGENTS.md) §1:
 
-1. **La Latencia Siempre Gana**: Si una característica empeora de forma medible la latencia de las teclas o la fluctuación (jitter), se reduce, se pospone, se congela durante el juego o se elimina. Nada se une a la ruta crítica de teclas: la pantalla, el almacenamiento, la bandeja del sistema y tosu permanecen completamente fuera de ella.
-2. **El Pad es un Teclado sin Software Instalado**: Funciona como un teclado compuesto USB HID a 1000 Hz que no requiere controladores ni daemons en Linux ni en Windows.
-3. **La Aplicación y el Pad se Actualizan de Forma Independiente**: Los protocolos de comunicación deben seguir siendo bidireccionales (aplicación nueva con firmware antiguo, aplicación antigua con firmware nuevo). Nunca se debe exigir actualizar ambos juntos.
-4. **La Pantalla Táctil es el Tercer Botón**: En partida, el dedo en reposo es Quick Retry (`` ` ``) y los deslizamientos nunca lo activan. Fuera de partida, los deslizamientos ejecutan acciones multimedia. Los deslizamientos en plena partida nunca insertan Alt en el informe del teclado.
-5. **Nunca los Botones BOOT o RESET**: El flasheo, la actualización y la recuperación ocurren estrictamente por USB o serie. Una actualización flashea la ranura OTA alterna y revierte si la enumeración USB falla.
-6. **Cada Tecla Proviene de un Dedo**: Nada de macros, pulsación automática, entradas programadas o temporizadas, ni comandos de inyección de teclas del host al pad.
+1. **La latencia siempre gana**: Si una funcionalidad empeora de forma medible la latencia de tecla o su fluctuación (jitter), se reduce, se difiere, se congela durante la partida o se elimina. Nada entra en la ruta de pulsación: la pantalla, el almacenamiento, la bandeja del sistema y `tosu` permanecen fuera.
+2. **El teclado es un teclado sin software instalado**: Teclado USB HID a 1000 Hz que no requiere controladores ni software de escritorio en Linux o Windows 10/11.
+3. **La app y el teclado se actualizan de forma independiente**: Los cambios de protocolo y formato en el cable deben funcionar en ambos sentidos (app nueva con firmware antiguo, app antigua con firmware nuevo) mediante detección y negociación.
+4. **La pantalla táctil es el tercer botón**: Pulsación/mantenimiento/liberación limpios; Quick Retry (`` ` ``) durante un mapa (nunca desde deslizamientos); deslizamientos configurables fuera de un mapa; nunca inserta modificadores ni teclas extra en los reportes de teclado durante un mapa; excepción: un teclado Hall Effect sin calibrar queda bloqueado en su pantalla de calibración (D7).
+5. **Nunca los botones BOOT o RESET**: El flasheo, la actualización y la recuperación ocurren por USB/serie con reversión OTA A/B y `opadctl recover`.
+6. **Cada tecla proviene de un dedo**: Sin macros, auto-tap, entrada programada/temporizada ni comandos anfitrión-a-teclado que inyecten teclas.
 
-## Git Workflow & Repository Rules
+## Flujo de trabajo Git y reglas de commits
 
-Los colaboradores deben seguir las siguientes reglas de flujo de trabajo en git: <!-- src: /AGENTS.md -->
+Según [/AGENTS.md](/AGENTS.md) §2–§3:
 
-- **Historial Lineal**: Rebase sobre `main`. Sin commits de fusión (merge commits).
-- **Ramas de Vida Corta**: Las ramas existen solo mientras el trabajo está activo. Elimina las ramas y los worktrees inmediatamente tras la fusión.
-- **Identidad de Autor y Declaración de IA**:
-  - Firma los commits con tu propio nombre y correo electrónico. Nunca pongas una herramienta de IA como autor del commit.
-  - Incluye un trailer de declaración de IA al final del mensaje de commit:
-    - `AI: assisted`: Una persona dirigió o escribió el cambio con asistencia de IA.
-    - `AI: generated`: Una IA escribió el cambio, revisado y confirmado por una persona.
-    - La ausencia de trailer indica que no hubo participación de IA.
-- **Commits Convencionales**: Da formato a los asuntos de los commits como `type(scope): subject (#issue)`.
+- **Historial lineal**: Rebase sobre `main`; sin commits de mezcla (merge commits).
+- **Ramas de corta duración**: Los mantenedores trabajan en un worktree en su propia rama, hacen merge fast-forward a `main` y luego eliminan la rama y el worktree. Los colaboradores externos hacen fork, crean una rama y abren un PR contra `main`.
+- **Autoría de commits y divulgación de IA**: Firma siempre los commits con tu propio nombre y correo (nunca con una IA como autor). Termina los commits asistidos por IA con un solo pie (`AI: assisted` o `AI: generated`); omítelo si no se usó IA. Reemplaza líneas específicas de herramientas como `Co-Authored-By` por este pie.
+- **Commits convencionales**: `type(scope): plain statement of behaviour (#issue)`. Añade un pie `Compatibility:` siempre que cambie el comportamiento del protocolo o de IPC.
+- **Licencias (REUSE)**: Los archivos nuevos necesitan cabeceras de licencia o una entrada en [/REUSE.toml](/REUSE.toml).
 
-## Code as the Single Source of Truth
+## El código como única fuente de verdad
 
-La documentación en `docs/` se redacta contra el código base: <!-- src: /AGENTS.md -->
-- Cuando el código y la documentación discrepan, **el código es la autoridad**. Corrige o actualiza la documentación para que coincida con el código.
-- Cada afirmación factual en la documentación de desarrollo incluye citas a las fuentes (comentarios HTML invisibles a la fuente o enlaces directos a archivos). <!-- src: /AGENTS.md -->
-- Nunca inventes parámetros, opciones de CLI ni pines de hardware que no estén presentes en el código base.
+Según [/AGENTS.md](/AGENTS.md) §7:
 
-## Documentation Structure (Diátaxis Framework)
+- Cuando la documentación y el código discrepen, gana el código: corrige o elimina el documento obsoleto.
+- Las páginas de desarrollo (`docs/explanation/*`, `docs/develop/*`) enlazan archivos fuente mediante rutas desde la raíz del repositorio (por ejemplo, `[/firmware/main/app_main.c](/firmware/main/app_main.c)`).
+- Nunca inventes opciones de CLI, campos de configuración ni pines GPIO que no existan en el código base.
 
-La documentación de OPad sigue los cuatro cuadrantes de Diátaxis:
-- **Tutoriales (`docs/es/start/*`)**: Guías paso a paso para recién llegados (Qué Necesitas, Primera Conexión, Cableado de las Teclas).
-- **Guías Paso a Paso (`docs/es/guides/*`)**: Instrucciones orientadas a tareas (Actualizar Firmware, Calibrar Hall Effect, Copia de Seguridad y Restauración).
-- **Explicación (`docs/es/explanation/*`)**: Contexto conceptual y justificación de arquitectura (Arquitectura del Sistema, Ingeniería de Latencia, La Pantalla Táctil como Tercer Botón).
-- **Referencia (`docs/es/reference/*` y `docs/es/develop/*`)**: Catálogos detallados de APIs, comandos de CLI, ajustes del dispositivo, distribución de pines e información interna de subsistemas.
+## Estructura de la documentación (Diátaxis)
+
+- **Inicio (`docs/start/*`)**: Tutoriales de primeros pasos (hardware, cableado, primera conexión, instalación de la app).
+- **Guías (`docs/guides/*`, `docs/recovery.md`)**: Procedimientos paso a paso orientados a tareas.
+- **Referencia (`docs/reference/*`, `docs/troubleshooting.md`, `docs/develop/*`)**: Catálogos autorizados de CLI, GUI, ajustes, pinout, protocolos serie/IPC, rutas e implementación interna.
+- **Explicaciones (`docs/explanation/*`)**: Arquitectura del sistema y justificación de diseño.
