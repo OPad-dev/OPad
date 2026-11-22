@@ -1,6 +1,8 @@
 ---
 title: Subsistema de contadores del firmware
 description: Referencia de implementación de los contadores monotónicos de pulsaciones, reglas de validación de sincronización, reajuste atómico por diferencias y guardado diferido en NVS.
+sidebar:
+  order: 7
 ---
 
 El subsistema de contadores persiste conteos de pulsaciones de por vida de 64 bits para Key 1, Key 2 y Key 3 en NVS (`NVS_NS_COUNTERS` / `"opad"`) manteniendo todos los incrementos en vivo sin bloqueos en RAM en Core 0 ([/firmware/main/counters/counters.c](/firmware/main/counters/counters.c), [/firmware/main/counters/counter_sync_rules.c](/firmware/main/counters/counter_sync_rules.c)).
