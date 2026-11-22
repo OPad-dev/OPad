@@ -1,6 +1,8 @@
 ---
 title: Uso con tosu
 description: Cómo se integra OPad con tosu para la telemetría en vivo de mapas de osu!, configuración de ptrace en Linux, binarios personalizados de tosu y verificación de estado.
+sidebar:
+  order: 6
 ---
 
 OPad incluye `tosu` (v4.26.2, LGPL-3.0) para leer el estado en vivo de `osu!` / `osu!lazer` y transmitir metadatos del mapa, precisión, PP, combo, unstable rate (UR) y ritmo de pulsación a la pantalla LCD del teclado. <!-- src: /desktop/crates/opad-tosu/src/lib.rs --> <!-- src: /Makefile -->
