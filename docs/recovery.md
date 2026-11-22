@@ -1,6 +1,8 @@
 ---
 title: Counter Reconciliation, Recovery & Unbinding
 description: Counter reconciliation rules, flashing procedures, bootloader entry, and recovering an un-enumerated pad.
+sidebar:
+  order: 2
 ---
 
 ## 1. Dual-Storage Model
