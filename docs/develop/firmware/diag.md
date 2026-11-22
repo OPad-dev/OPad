@@ -1,34 +1,32 @@
 ---
 title: Firmware Diagnostics Subsystem
-description: Implementation reference for firmware telemetry, circular ring buffer logging, board electrical self-tests, and Hall Effect bench analysis.
+description: Implementation reference for the diagnostic event ring buffer, carrier/module board self-test, and Hall Effect bench streaming mode.
 ---
 
-The diagnostics subsystem provides self-test routines, electrical continuity verification, circular ring buffer event recording, and magnetic sensor benchmarking tools. <!-- src: /firmware/main/diag/diag.c -->
+The diagnostics subsystem provides zero-allocation ring-buffer event logging, carrier/module PCB electrical testing, and a compile-time Hall Effect sensor bench mode.
 
-## Diagnostic Ring Buffer Logging (`diag.c`)
+## Diagnostic Ring Buffer (`diag.c`)
 
-Firmware events (USB connect/disconnect, framing drops, CRC mismatches, NVS flushes) are recorded in an in-memory circular ring buffer: <!-- src: /firmware/main/diag/diag.c -->
+Implemented in [/firmware/main/diag/diag.c](/firmware/main/diag/diag.c):
 
-- **Data Structure (`diag_entry_t`)**: Stored in a fixed-size circular array `s_entries[DIAG_RING_SIZE]`. <!-- src: /firmware/main/diag/diag.c -->
-- **Zero-Allocation Critical Sections**: Events are appended via `diag_record(event_id, severity, arg1, arg2)`. The function acquires a FreeRTOS port spinlock (`taskENTER_CRITICAL`), writes the entry, and exits immediately. No memory allocation or formatted string generation occurs on the target. <!-- src: /firmware/main/diag/diag.c#diag_init -->
-- **Drain Interface**: The host drains logged entries periodically over serial via `LogEventBatch` protobuf envelopes.
+- Fixed circular buffer `s_entries[DIAG_RING_SIZE]` of `diag_entry_t` (`timestamp_ms`, `event_id`, `level`, `arg0`, `arg1`), guarded by a FreeRTOS spinlock (`taskENTER_CRITICAL(&s_mux)`).
+- `diag_record(uint16_t event_id, uint8_t level, uint32_t arg0, uint32_t arg1)` performs no heap allocation and no string formatting; when full, it drops the oldest entry and increments `s_dropped`.
+- `diag_drain(out_entries, max_entries, out_dropped)` drains queued entries and resets `s_dropped` so the protocol task can ship them to the host in `LogEventBatch`.
 
-## Board Electrical Self-Test (`board_test.c`)
+## Carrier & Input Module PCB Self-Test (`board_test.c`)
 
-When triggered via `run_board_test` over serial or `opadctl board-test`, the firmware runs hardware continuity and peripheral checks: <!-- src: /firmware/main/diag/board_test.c -->
+Implemented in [/firmware/main/diag/board_test.c](/firmware/main/diag/board_test.c) and invoked by `BoardTestRequest` (`opadctl board-test` or `opad-gui` **Diagnostics** -> **🔧 PCB Test**, `IDLE` only):
 
-1. **Spare GPIO Pull Test**: Exercises spare module header lines (`BOARD_MODULE_IO6_GPIO`, `IO4`, `IO2`). Toggles pull-up and pull-down states (`read_with_pull`), verifying lines follow internal pulls without short circuits to ground or 3.3V. <!-- src: /firmware/main/diag/board_test.c#read_with_pull -->
-2. **I2C Bus Scan**: Scans address `0x15` (CST816S touch controller) and checks responsiveness.
-3. **Display Communication**: Reads back the ST7789 display controller ID register.
-4. **Input Module Identification**: Samples the analog divider on GPIO 8 (`module_id`) to verify whether an MX mechanical module, Hall Effect V1 module, or V3 carrier is installed.
-5. **Report Generation**: Populates `BoardTestResult` with per-subsystem pass/fail status flags and diagnostic messages.
+1. **Key line pull test (`keypad_line_test`)**: Temporarily switches each armed key GPIO between internal pull-up and pull-down (`LINE_TEST_SETTLE_US = 300` µs) to verify whether an MX module's external 10 kΩ pull-ups hold the line high against pull-down, or whether a switch is held / shorted to `GND`.
+2. **Module ID read (`board_read_module_id`)**: Samples open and loaded voltages on the module ID ADC pin (`GPIO 8`) to classify `MX`, `HE`, `HE_V3`, `MX_V3`, or `NONE` (skipped on V1 HE where ADC1 continuous DMA owns ADC1, using boot module instead).
+3. **Reversed-cable probe (`board_probe_reversed_cable`)**: When no module answers on `GPIO 8` and `GPIO 2` (`BOARD_REVERSE_PROBE_GPIO`) is not a key pin, probes for a reversed cable.
+4. **V1 spare-line continuity & bridge test (`test_spares`)**: For V1 `MX` / `HE` modules, tests `GPIO 6`, `GPIO 4`, and `GPIO 2` with pull-up/pull-down and drives neighboring pins low one at a time to detect pin-to-pin shorts (`bridged_gpios`).
+5. **HE V3 ADS7028 test (`he_adc_test_run`)**: For `BOARD_MODULE_HE_V3`, pauses the streaming SPI sampler (`he_backend_run_paused`) if running, resets and reads ADS7028 status registers, and samples the sensors.
 
-## Hall Effect Bench Test Mode (`hall_bench.c`)
+## Hall Effect Bench Mode (`hall_bench.c`)
 
-For characterization of magnetic switch travel curves during hardware validation (`CONFIG_OPAD_HALL_BENCH`): <!-- src: /firmware/main/diag/hall_bench.c -->
+Compiled only when `CONFIG_OPAD_HALL_BENCH=y` (not a release build; stop `opad-daemon` because it streams plain text over CDC) ([/firmware/main/diag/hall_bench.c](/firmware/main/diag/hall_bench.c)):
 
-- **Continuous Streaming**: Streams raw 12-bit ADC conversions directly over USB CDC at millisecond resolution:
-  `H,<ms>,<key1_raw>,<key2_raw>`
-- **Statistical Aggregation**: Every second, computes spread statistics across thousands of conversions:
-  `S,<key>,<sample_count>,<min>,<max>,<mean>,<stddev_x100>,<overflows>`
-- **Python Harness**: Companion host script `scripts/hall_bench.py` records streams to compute standard deviation, resting noise floors, and magnetic travel deltas.
+- Samples four ADC1 channels at `BENCH_SAMPLE_HZ = 64000` Hz (`BENCH_FRAME_CONVS = 64`, 1 ms frames): Key 1 (`ADC_CHANNEL_9`), Key 2 (`ADC_CHANNEL_6`), module ID (`ADC_CHANNEL_7`), and reference (`ADC_CHANNEL_5`, `GPIO 6`).
+- Emits 1 ms averaged lines `H,<ms>,<key1>,<key2>`, 1 s per-channel spread summaries `S,<key>,<n>,<min>,<max>,<mean>,<stddev_x100>,<overflows>`, and pull-cycle phase lines `P,<phase>` for `scripts/hall_bench.py`.
+- Also displays a live 2-key voltage/bar view on the LCD (`hall_bench_show_ui`, 33 ms timer, measuring rest during the first `BENCH_REST_MS = 500` ms).
