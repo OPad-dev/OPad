@@ -19,6 +19,25 @@ $script:LabGroup = $null
 function New-LabRun([string]$Kind, [string]$Title) {
     $runs = Join-Path $LabResults "runs"
     New-Item -ItemType Directory -Force $runs | Out-Null
+    # One lab job runs at a time (the opad-lab concurrency group): a run still
+    # "running" was cancelled or its runner stopped. Mark it so
+    foreach ($old in Get-ChildItem $runs -Directory) {
+        $f = Join-Path $old.FullName "run.json"
+        if (-not (Test-Path $f)) { continue }
+        try {
+            $r = [System.IO.File]::ReadAllText($f) | ConvertFrom-Json
+            if ($r.status -ne "running") { continue }
+            $r.status = "fail"
+            $r.summary.fail = [int]$r.summary.fail + 1
+            foreach ($g in $r.groups) { if ($g.status -eq "running") { $g.status = "fail" } }
+            $r.groups += [pscustomobject][ordered]@{
+                id = "interrupted"; name = "Interrupted"; status = "fail"; os = $null; started = $null; duration_s = $null
+                checks = @([pscustomobject][ordered]@{ status = "fail"; name = "the run stopped before it finished (cancelled, or the runner stopped)"; detail = $null })
+                files = @()
+            }
+            [System.IO.File]::WriteAllText($f, ($r | ConvertTo-Json -Depth 10), (New-Object System.Text.UTF8Encoding $false))
+        } catch { }
+    }
     $id = "$((Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss'))-$Kind"
     $script:LabRunDir = Join-Path $runs $id
     New-Item -ItemType Directory -Force $script:LabRunDir | Out-Null
