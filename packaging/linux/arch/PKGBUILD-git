@@ -10,7 +10,7 @@ provides=('opad')
 conflicts=('opad')
 
 depends=(
-    'vulkan-loader'
+    'vulkan-icd-loader'
     'wayland'
     'libx11'
     'libxcursor'

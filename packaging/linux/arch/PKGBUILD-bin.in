@@ -13,7 +13,7 @@ arch=('x86_64')
 url="https://github.com/OPad-dev/OPad"
 license=('GPL-3.0-or-later' 'LGPL-3.0-only' 'OFL-1.1')
 depends=(
-    'vulkan-loader'
+    'vulkan-icd-loader'
     'wayland'
     'libx11'
     'libxcursor'
@@ -21,10 +21,11 @@ depends=(
     'libxi'
     'libxrandr'
     'dbus'
+    # setcap: lets tosu read osu! under Yama ptrace_scope 1-2 (opad-bin.install)
+    'libcap'
 )
 optdepends=(
     'vulkan-driver: Hardware Vulkan acceleration for iced/wgpu GUI renderer'
-    'libcap: lets tosu read osu! under Yama ptrace_scope 1-2 (setcap at install)'
 )
 provides=('opad')
 conflicts=('opad' 'opad-git')
