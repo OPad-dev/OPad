@@ -1,6 +1,8 @@
 ---
 title: Firmware Input Subsystem
 description: Implementation reference for the firmware input pipeline, eager mechanical debouncing, Hall Effect V1/V3 sampling, and unified key event dispatching.
+sidebar:
+  order: 2
 ---
 
 The input subsystem reads physical mechanical switches and Hall Effect sensors, runs debouncing or Rapid Trigger, updates monotonic press counters, and submits USB HID reports. All key-path tasks run on **Core 0** at `configMAX_PRIORITIES - 1`.
@@ -20,8 +22,8 @@ Implemented in [/firmware/main/input/keypad.c](/firmware/main/input/keypad.c) an
 
 Implemented across [/firmware/main/input/he_backend.c](/firmware/main/input/he_backend.c), [/firmware/main/input/he_spi_source.c](/firmware/main/input/he_spi_source.c), and [/firmware/main/input/he_rt.c](/firmware/main/input/he_rt.c):
 
-- **V1 Internal ADC (`HE_SOURCE_INTERNAL_ADC`)**: Continuous ADC1 DMA alternating `ADC_CHANNEL_9` (Key 1) and `ADC_CHANNEL_6` (Key 2) at `HE_SAMPLE_HZ = 64000` Hz (`HE_FRAME_CONVS = 16`, 250 µs / 4 kHz frames). The IRAM ISR `on_frame` computes each channel's median, steps `he_rt_step`, and notifies `he_task` only on key state edges.
-- **V3 External ADS7028 (`HE_SOURCE_SPI_ADC`)**: A hardware `gptimer` wakes Core 0 task `he_spi` every `HE_SPI_FRAME_US = 50` µs (20 kHz). `he_spi` reads 4 CRC-protected 32-bit words over 40 MHz SPI3 (`SPI_DMA_DISABLED`, direct `GPSPI3` register loop `ads7028_read16_again` in [/firmware/main/input/ads7028.c](/firmware/main/input/ads7028.c)) for `AIN3`/`AIN4`/`AIN5` (Keys 3/2/1), runs `he_rt_step`, and calls `key_event_report` directly. Calibration capture is decimated 5:1 (`SPI_CAL_DECIMATE = 5`) to match the 4 kHz runner.
+- **V1 Internal ADC (`HE_SOURCE_ESP_ADC`)**: Continuous ADC1 DMA alternating `ADC_CHANNEL_9` (Key 1) and `ADC_CHANNEL_6` (Key 2) at `HE_SAMPLE_HZ = 64000` Hz (`HE_FRAME_CONVS = 16`, 250 µs / 4 kHz frames). The IRAM ISR `on_frame` computes each channel's median, steps `he_rt_step`, and notifies `he_task` only on key state edges.
+- **V3 External ADS7028 (`HE_SOURCE_ADS7028`)**: A hardware `gptimer` wakes Core 0 task `he_spi` every `HE_SPI_FRAME_US = 50` µs (20 kHz). `he_spi` reads 4 CRC-protected 32-bit words over 40 MHz SPI3 (`SPI_DMA_DISABLED`, direct `GPSPI3` register loop `ads7028_read16_again` in [/firmware/main/input/ads7028.c](/firmware/main/input/ads7028.c)) for `AIN3`/`AIN4`/`AIN5` (Keys 3/2/1), runs `he_rt_step`, and calls `key_event_report` directly. Calibration capture is decimated 5:1 (`HE_CAL_EVERY_V3 = 5`) to match the 4 kHz runner.
 - **3-State Rapid Trigger (`he_rt_step`)**: Transitions between `HE_RT_ARMED`, `HE_RT_PRESSED`, and `HE_RT_RT_RELEASED`, enforcing `need_release` after boot, parameter changes, or ADC stalls (`he_rt_fault`).
 
 ## Unified Key Event Dispatch (`key_event.c`)
