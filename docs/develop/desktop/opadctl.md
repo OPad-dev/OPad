@@ -17,7 +17,7 @@ description: Implementation reference for the opadctl command-line utility, clap
         v                                             v                      v
 [IPC Client Mode]                             [Direct Hardware Mode]  [Local Setup]
 (status, sync, reset, export, import,         (flash, recover,        (setup)
- monitor, firmware-update, latency,            bootloader)
+ monitor, firmware-update, update, latency,    bootloader)
  stats, board-test, animation, restart)               |
         |                                             |
         v                                             v
@@ -31,7 +31,7 @@ Unix socket / Windows named pipe              if running; flashes via espflash
 
 ## Subcommands (`Commands` enum)
 
-All 16 subcommands in [/desktop/cli/src/main.rs](/desktop/cli/src/main.rs):
+All 17 subcommands in [/desktop/cli/src/main.rs](/desktop/cli/src/main.rs):
 - `status`: Prints daemon mode, pad info, running OTA slot, input module & HE calibration, counters, ownership, `tosu` state, latency (`p50`/`p99.9`/`max`), and config.
 - `sync`: Sends `IpcRequest::ForceSync`.
 - `reset [--yes]`: Destructive generation-bumping counter reset (aborts without `--yes`).
@@ -41,6 +41,7 @@ All 16 subcommands in [/desktop/cli/src/main.rs](/desktop/cli/src/main.rs):
 - `recover [--timeout <SECONDS>] <FIRMWARE>`: Catches ESP32-S3 ROM bootloader on cable replug and writes the full flash set (no BOOT or RESET buttons).
 - `bootloader [--port <PORT>]`: Reboots pad into ROM download mode (`303a:1001`) and leaves it there.
 - `firmware-update [--yes]`: Checks signed release manifest and installs firmware update with explicit consent.
+- `update [--channel <CHANNEL>] [--check] [--install]`: Shows app update status, switches channel (`stable`/`beta`), checks the feed (waiting up to 120 s), or starts installing an available app update via `IpcRequest::InstallUpdate`.
 - `latency [--reset]`: Prints or resets device-measured keypress-to-HID latency (`p50`, `p99`, `p99.9`, `max`, deferred count).
 - `stats [--period <DAYS>]`: Prints attempt and historical KPM tap rates (and optionally updates history period, `0` = all time, max `3650`).
 - `board-test [--fix-pins] [--magnet]`: Runs carrier/module PCB test (module ID, FFC orientation, key lines, shorts, HE V3 ADS7028/sensors).
