@@ -1,6 +1,8 @@
 ---
 title: Interoperabilidad de versiones de la app y del teclado
 description: Negociación de protocolo, reglas de compatibilidad hacia atrás y hacia adelante, autodetección de entramado y manejo de discrepancias de versión entre el software de escritorio y el firmware del teclado.
+sidebar:
+  order: 4
 ---
 
 La suite de escritorio de OPad y el firmware del teclado se actualizan de forma independiente (AGENTS.md §1.3). Nunca se exige a los usuarios actualizar ambos a la vez. El entramado, las banderas de capacidad y los campos protobuf están diseñados para interoperar en ambos sentidos: una aplicación de escritorio nueva funciona con firmware antiguo, y un firmware nuevo funciona con versiones antiguas de la aplicación. <!-- src: /desktop/crates/opad-protocol/src/lib.rs#DEVICE_PROTOCOL_VERSION -->
