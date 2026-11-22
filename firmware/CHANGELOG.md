@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.0-rc.2](https://github.com/OPad-dev/OPad/compare/firmware-v1.0.0-rc.1...firmware-v1.0.0-rc.2) (2026-11-22)
+
+
+### Features
+
+* **diag:** the pad reports its free internal RAM, and the UI test its frame times ([632e839](https://github.com/OPad-dev/OPad/commit/632e8399cb455790cd921dde4cc15d57d582abb8))
+
+
+### Bug Fixes
+
+* **ui:** the desktop's UI preview builds ui_data.c without esp_attr.h ([7620152](https://github.com/OPad-dev/OPad/commit/7620152f8c57156ebbfee89a34f99da06653cbf3))
+
+
+### Performance
+
+* **display:** 40-line draw buffers, the largest caches, and at most 30 fps ([16e54fc](https://github.com/OPad-dev/OPad/commit/16e54fc2c5faeb7ed350762bfec6f50ca6f0dc77))
+* **firmware:** only the keys, USB and DMA stay in internal RAM; the screen's memory moves to PSRAM ([b10de88](https://github.com/OPad-dev/OPad/commit/b10de88b0c99db1cd8d71334b47be85f204b126a))
+
 ## [1.0.0-rc.1](https://github.com/OPad-dev/OPad/compare/firmware-v1.0.0-rc...firmware-v1.0.0-rc.1) (2026-11-21)
 
 
