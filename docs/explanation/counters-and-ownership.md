@@ -1,6 +1,8 @@
 ---
 title: Counters and Ownership Model
 description: How OPad tracks monotonic 64-bit keypress counters, pairs pads to desktop installations, resolves ownership conflicts, and preserves taps during sync.
+sidebar:
+  order: 5
 ---
 
 OPad records lifetime keypress counts on both the pad (in NVS flash) and the host PC (in SQLite `opad.db`). To keep counts accurate across disconnects, multiple PCs, and hardware replacements, OPad combines monotonic 64-bit counters, generation numbers, and an explicit installation-ownership model.
