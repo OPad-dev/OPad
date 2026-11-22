@@ -4,7 +4,10 @@ name: Lab install
 # Windows 11 mini PC, runner label opad-lab): in each VM, from a clean
 # snapshot, install the previous release, upgrade to this one, check OPad
 # starts at login, opens and keeps its data, then uninstall and check nothing
-# is left. See scripts/lab/lab-install.ps1. Called by release-app.yml for
+# is left. See scripts/lab/lab-install.ps1. Called with feed: true (release-
+# app.yml), the upgrade is the app's own updater taking this release from the
+# signed feed that release built (its github-pages artifact), served inside
+# each VM; the feed is deployed only if this passes. Called by release-app.yml for
 # every app release, or started by hand; never from a pull request (a
 # self-hosted runner must not run code from one).
 
@@ -14,6 +17,11 @@ on:
       tag:
         required: true
         type: string
+      feed:
+        description: "Upgrade through the app's updater from this run's github-pages artifact"
+        required: false
+        default: false
+        type: boolean
   workflow_dispatch:
     inputs:
       tag:
@@ -31,6 +39,11 @@ on:
         required: false
         default: ""
         type: string
+      deployed_feed:
+        description: "Upgrade through the app's updater from the deployed beta feed (it must offer the tag)"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -51,16 +64,42 @@ jobs:
         with:
           ref: main
 
-      - name: Install, start and uninstall in each VM
+      # The signed feeds update-feed.yml built for this release, not deployed
+      - uses: actions/download-artifact@v8
+        if: ${{ inputs.feed }}
+        with:
+          name: github-pages
+          path: lab-feed-artifact
+
+      - name: Download the deployed feed
+        if: ${{ inputs.deployed_feed }}
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force lab-feed | Out-Null
+          foreach ($f in "beta.json", "beta.json.minisig") {
+              Invoke-WebRequest -UseBasicParsing -OutFile "lab-feed\$f" "https://updates.opad.dev/$f"
+          }
+
+      - name: Unpack the feed
+        if: ${{ inputs.feed }}
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force lab-feed | Out-Null
+          tar -xf lab-feed-artifact\artifact.tar -C lab-feed
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem lab-feed
+
+      - name: Install, update, start and uninstall in each VM
         shell: powershell
         env:
           TAG: ${{ inputs.tag }}
           FROM: ${{ inputs.from }}
           VMS: ${{ inputs.vms }}
+          FEED: ${{ (inputs.feed || inputs.deployed_feed) && 'lab-feed' || '' }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           $vms = @($env:VMS -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-          & scripts\lab\lab-install.ps1 -Tag $env:TAG -From $env:FROM -Vms $vms -OutDir lab-install
+          & scripts\lab\lab-install.ps1 -Tag $env:TAG -From $env:FROM -Vms $vms -Feed $env:FEED -OutDir lab-install
           exit $LASTEXITCODE
 
       - uses: actions/upload-artifact@v7

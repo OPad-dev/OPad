@@ -15,10 +15,20 @@
 #                    reaches the daemon, the GUI's window opens on the
 #                    desktop, and the app's database exists (the same one as
 #                    before, after an upgrade)
+#   update VERSION DIR
+#                    after check, with the previous release installed: OPad's
+#                    own updater takes VERSION from the signed feed in DIR
+#                    (beta.json and its .minisig, the release's update feed
+#                    before it is deployed), served on this VM's loopback:
+#                    the daemon is restarted in the desktop session with
+#                    OPAD_MANIFEST_URL pointing at it, then asked over its
+#                    named pipe, as the app's Updates page does, to follow
+#                    beta, check, and install. It downloads the installer from
+#                    the release, verifies it against the feed and runs it.
 #   remove           the uninstaller, silent; nothing of OPad is left: files,
 #                    %APPDATA%\opad, Run keys, shortcuts, the Apps entry
 param(
-    [Parameter(Mandatory)][ValidateSet("install", "check", "remove")][string]$Phase,
+    [Parameter(Mandatory)][ValidateSet("install", "check", "update", "remove")][string]$Phase,
     [string]$Arg = "",
     [string]$Dir = ""
 )
@@ -122,6 +132,120 @@ switch ($Phase) {
             elseif ((Get-Content $mark).Trim() -eq "$id") { Pass "the upgrade kept the app's data ($db)" }
             else { Fail "the upgrade replaced $db" }
         } else { Fail "no $db after use" }
+    }
+    "update" {
+        $want = $Arg
+        $feed = Join-Path $HOME $Dir
+        if (-not (Test-Path (Join-Path $feed "beta.json")) -or -not (Test-Path (Join-Path $feed "beta.json.minisig"))) {
+            Fail "no signed feed in $feed"; break
+        }
+        # Programs started from here would end with the SSH session: the feed
+        # server and the daemon run as tasks in the desktop session instead
+        function Start-InSession([string]$Name, [string]$Exe, [string]$Arguments = "") {
+            $action = if ($Arguments) { New-ScheduledTaskAction -Execute $Exe -Argument $Arguments } else { New-ScheduledTaskAction -Execute $Exe }
+            Register-ScheduledTask -TaskName $Name -Force -Action $action `
+                -Settings (New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 2)) `
+                -Principal (New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive) | Out-Null
+            Start-ScheduledTask -TaskName $Name
+        }
+        # The feed on loopback: the updater takes plain HTTP from there only
+        $server = Join-Path $HOME "lab-feed-server.ps1"
+        Set-Content $server -Encoding UTF8 -Value @'
+param([string]$Dir)
+$l = New-Object System.Net.Sockets.TcpListener ([System.Net.IPAddress]::Loopback), 8000
+$l.Start()
+while ($true) {
+    $c = $l.AcceptTcpClient()
+    try {
+        $st = $c.GetStream()
+        $r = New-Object System.IO.StreamReader $st
+        $line = $r.ReadLine()
+        while ($true) { $h = $r.ReadLine(); if (-not $h) { break } }
+        $name = [System.IO.Path]::GetFileName((($line -split ' ')[1] -split '\?')[0])
+        $f = Join-Path $Dir $name
+        if ($name -and (Test-Path -LiteralPath $f -PathType Leaf)) {
+            $b = [System.IO.File]::ReadAllBytes($f); $code = "200 OK"
+        } else { $b = New-Object byte[] 0; $code = "404 Not Found" }
+        $head = [System.Text.Encoding]::ASCII.GetBytes("HTTP/1.1 $code`r`nContent-Length: $($b.Length)`r`nContent-Type: application/octet-stream`r`nConnection: close`r`n`r`n")
+        $st.Write($head, 0, $head.Length)
+        if ($b.Length) { $st.Write($b, 0, $b.Length) }
+        $st.Flush()
+    } catch { } finally { $c.Close() }
+}
+'@
+        Start-InSession "opad-lab-feed" "powershell.exe" "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$server`" -Dir `"$feed`""
+        # The daemon reading it: a task gets the user's environment from the registry
+        [Environment]::SetEnvironmentVariable("OPAD_MANIFEST_URL", "http://127.0.0.1:8000/beta.json", "User")
+        Stop-Process -Name opad-daemon -Force -ErrorAction SilentlyContinue
+        Start-Sleep 2
+        Start-InSession "opad-lab-daemon" (Join-Path $app "opad-daemon.exe")
+
+        # The daemon's IPC (opad-ipc: a little-endian u32 length, then JSON), as
+        # the GUI's Updates page uses it: follow beta, check, then install
+        $pipe = "opad-ipc-" + [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        function Connect-Daemon {
+            $p = New-Object System.IO.Pipes.NamedPipeClientStream ".", $pipe, ([System.IO.Pipes.PipeDirection]::InOut)
+            $p.Connect(60000)
+            return $p
+        }
+        function Invoke-Ipc($p, [string]$Json) {
+            $data = [System.Text.Encoding]::UTF8.GetBytes($Json)
+            $p.Write([BitConverter]::GetBytes([uint32]$data.Length), 0, 4)
+            $p.Write($data, 0, $data.Length); $p.Flush()
+            $read = { param([int]$n) $b = New-Object byte[] $n; $o = 0
+                while ($o -lt $n) { $k = $p.Read($b, $o, $n - $o); if ($k -le 0) { throw "the daemon closed the pipe" }; $o += $k }; ,$b }
+            $len = [BitConverter]::ToUInt32((& $read 4), 0)
+            return [System.Text.Encoding]::UTF8.GetString((& $read ([int]$len)))
+        }
+        try {
+            # The daemon accepts a client of its own version only: it names it
+            $p = Connect-Daemon
+            $r = Invoke-Ipc $p '{"Handshake":{"client_version":"0","client_protocol":1}}'
+            $p.Dispose()
+            $running = if ($r -match 'running daemon is (\S+?)\.? ') { $Matches[1] } else { "0" }
+            Write-Output "info: the running daemon is $running"
+            $p = Connect-Daemon
+            $r = Invoke-Ipc $p ('{"Handshake":{"client_version":"' + $running + '","client_protocol":1}}')
+            if ($r -notmatch 'HandshakeAck') { throw "the daemon refused the handshake: $r" }
+            $before = ((Invoke-Ipc $p '"GetUpdateStatus"') | ConvertFrom-Json).UpdateStatus.last_check
+            $r = Invoke-Ipc $p '{"SetUpdateChannel":{"channel":"beta"}}'
+            if ($r -ne '"UpdateCheckStarted"') { throw "following the beta channel: $r" }
+            $deadline = (Get-Date).AddSeconds(180)
+            do {
+                Start-Sleep 1
+                $st = ((Invoke-Ipc $p '"GetUpdateStatus"') | ConvertFrom-Json).UpdateStatus
+                if ((Get-Date) -gt $deadline) { throw "the update check did not finish within 180 s" }
+            } while ($st.checking -or ($st.last_check -eq $before -and -not $st.last_error))
+            if ($st.last_error) { throw "the update check failed: $($st.last_error)" }
+            if ($st.app.available -ne $want) { throw "the feed offers $($st.app.available), not $want" }
+            if (-not $st.app.ready_to_install) { throw "$want is offered but not ready to install (notify only: $($st.app.notify_only))" }
+            Pass "the updater found $want in the signed feed"
+            $r = Invoke-Ipc $p '{"InstallUpdate":{"component":"App"}}'
+            if ($r -notmatch 'UpdateStarted') { throw "Install was refused: $r" }
+            $p.Dispose()
+        } catch {
+            Fail "updating through the app's updater: $_"
+        }
+        if (-not $script:failed) {
+            # The updater downloads, verifies and runs the installer in the background
+            $deadline = (Get-Date).AddSeconds(600)
+            while ((Get-InstalledVersion) -ne $want -and (Get-Date) -lt $deadline) { Start-Sleep 5 }
+            # Its files are replaced only once the installer has finished
+            while ((Get-Process opad-setup* -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep 2 }
+            if ((Get-InstalledVersion) -eq $want) { Pass "OPad updated itself to $want from the feed (its installer, /SILENT)" }
+            else {
+                Fail "still $(Get-InstalledVersion) 600 s after Install, not $want"
+                $log = Join-Path $env:APPDATA "opad\daemon.log"
+                if (Test-Path $log) { Write-Output "  daemon log:"; Get-Content $log -Tail 40 | ForEach-Object { "  $_" } }
+            }
+        }
+        foreach ($t in "opad-lab-feed", "opad-lab-daemon") {
+            Stop-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue
+            Unregister-ScheduledTask -TaskName $t -Confirm:$false -ErrorAction SilentlyContinue
+        }
+        Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -like "*lab-feed-server*" } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        [Environment]::SetEnvironmentVariable("OPAD_MANIFEST_URL", $null, "User")
     }
     "remove" {
         $unins = Join-Path $app "unins000.exe"

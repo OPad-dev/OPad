@@ -6,8 +6,14 @@
 #
 #   1. installs the previous app release, reboots, checks OPad starts at
 #      login, its window opens and it wrote its data;
-#   2. upgrades to the release under test the way the in-app updater does,
-#      reboots, checks the same, the new version, and that the data was kept;
+#   2. upgrades to the release under test, reboots, checks the same, the new
+#      version, and that the data was kept. With -Feed (the release's signed
+#      update feed, built but not deployed yet) the upgrade is OPad's own
+#      updater taking the release from that feed, served inside the VM; on
+#      Arch the updater must only report it, and makepkg installs it. If the
+#      updater fails, that fails the run, and the package is installed
+#      directly so the rest is still checked. Without -Feed, the package
+#      manager's command the updater runs (and the installer, on Windows);
 #   3. uninstalls it and checks nothing of OPad is left.
 #
 # Each installed program is checked against the release's FILES.sha256 (the
@@ -18,12 +24,14 @@
 # release) step 1 is skipped. The VM goes back to "limpia" afterwards. Run by
 # .github/workflows/lab-install.yml, also for every app release.
 #
-#   powershell -File scripts/lab/lab-install.ps1 [-Tag v1.0.0] [-From v1.0.0-rc.3|none] [-Vms arch,windows-11] [-OutDir out]
+#   powershell -File scripts/lab/lab-install.ps1 [-Tag v1.0.0] [-From v1.0.0-rc.3|none] [-Vms arch,windows-11]
+#       [-Feed dir-with-beta.json] [-OutDir out]
 
 param(
     [string]$Tag = "",
     [string]$From = "",
     [string[]]$Vms = @(),
+    [string]$Feed = "",
     [string]$OutDir = "lab-install"
 )
 
@@ -99,6 +107,21 @@ try {
     $new = Get-Release $Tag
     $old = if ($From -ne "none") { Get-Release $From } else { $null }
 } catch { Fail "download" "$_"; Complete-LabRun; exit 1 }
+# The feed the VMs update from: it must offer this release, and only files
+# of this release
+if ($Feed) {
+    $Feed = (Resolve-Path $Feed).Path
+    $beta = Join-Path $Feed "beta.json"
+    if (-not (Test-Path $beta) -or -not (Test-Path "$beta.minisig")) { Fail "no signed beta.json in $Feed" }
+    else {
+        $app = ([System.IO.File]::ReadAllText($beta) | ConvertFrom-Json).components.app
+        if ($app.version -eq $new.Version) { Pass "the update feed under test offers $($new.Version) on the beta channel" }
+        else { Fail "the update feed under test offers $($app.version), not $($new.Version)" }
+        $other = @($app.artifacts | Where-Object { $_.url -notlike "https://github.com/$Repo/releases/download/$Tag/*" })
+        if ($other.Count -eq 0) { Pass "its $(@($app.artifacts).Count) app downloads are this release's files" }
+        else { Fail "the feed's app downloads include files from elsewhere: $(($other | ForEach-Object { $_.url }) -join ', ')" }
+    }
+}
 foreach ($r in @($new, $old) | Where-Object { $_ }) {
     if (-not (Test-Path (Join-Path $r.Dir "FILES.sha256"))) { Skip "$($r.Tag) has no FILES.sha256: its installed files cannot be checked" }
 }
@@ -147,13 +170,20 @@ function Restart-Vm([string]$Vm) {
     if (-not (Wait-VmReady $Vm)) { throw "no logged-in desktop within 300 s after the reboot" }
 }
 # Install (or upgrade to) one release, reboot, check it. The previous
-# release's checks are prefixed with its tag and cannot fail the run
+# release's checks are prefixed with its tag and cannot fail the run.
+# Returns whether it got installed
 function Test-Release([string]$Vm, [string]$Sub, $Rel, [switch]$Previous) {
     $prefix = "$($Rel.Tag): "
     if (-not (Invoke-Phase $Vm "install" $Sub "" 1800 $prefix -Previous:$Previous)) {
-        if ($Previous) { return }
+        if ($Previous) { return $false }
         throw "installing $($Rel.Tag) failed"
     }
+    Test-Installed $Vm $Sub $Rel -Previous:$Previous
+    return $true
+}
+# After an install or update: reboot, check
+function Test-Installed([string]$Vm, [string]$Sub, $Rel, [switch]$Previous) {
+    $prefix = "$($Rel.Tag): "
     Restart-Vm $Vm
     $null = Invoke-Phase $Vm "check" $Rel.Version $Sub 300 $prefix -Previous:$Previous
     Start-Sleep 3
@@ -186,15 +216,27 @@ foreach ($vm in $Vms) {
         Write-Host "    $os"
         Set-LabGroupOs $os
         $script = if (Test-WindowsVm $vm) { Join-Path $PSScriptRoot "vm-install-windows.ps1" } else { $linuxScript }
-        $mk = if (Test-WindowsVm $vm) { "New-Item -ItemType Directory -Force old,new | Out-Null" } else { "mkdir -p old new" }
+        $mk = if (Test-WindowsVm $vm) { "New-Item -ItemType Directory -Force old,new,feed | Out-Null" } else { "mkdir -p old new feed" }
         $null = Invoke-VmSsh $port $mk
         $c = Copy-ToVm $port @($script)
         if ($c.Code -eq 0 -and $old) { $c = Copy-ToVm $port (Get-VmFiles $vm $old) "old/" }
         if ($c.Code -eq 0) { $c = Copy-ToVm $port (Get-VmFiles $vm $new) "new/" }
+        if ($c.Code -eq 0 -and $Feed) { $c = Copy-ToVm $port @((Join-Path $Feed "beta.json"), (Join-Path $Feed "beta.json.minisig")) "feed/" }
         if ($c.Code -ne 0) { throw "copy into the VM: $($c.Out)" }
 
-        if ($old) { Test-Release $vm "old" $old -Previous }
-        Test-Release $vm "new" $new
+        $oldIn = if ($old) { Test-Release $vm "old" $old -Previous } else { $false }
+        if ($Feed -and $oldIn) {
+            # OPad's own updater, from the feed; Arch only reports it
+            $updated = Invoke-Phase $vm "update" $new.Version "feed" 1200 "$($new.Tag): "
+            if ($updated -and $vm -ne "arch") { Test-Installed $vm "new" $new }
+            else {
+                if (-not $updated) { Add-LabCheck info "the package is installed directly instead, to check the rest" }
+                $null = Test-Release $vm "new" $new
+            }
+        } else {
+            if ($Feed) { Skip "the update from the feed needs $(if ($old) { "$($old.Tag) installed" } else { 'an earlier release' })" }
+            $null = Test-Release $vm "new" $new
+        }
         $null = Invoke-Phase $vm "remove" "" "" 600 "$($new.Tag): "
     } catch { Fail "$_" }
     finally { Stop-LabVm $vm; Complete-LabGroup }

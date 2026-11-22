@@ -16,6 +16,18 @@
 #                    reaches the daemon, tosu has its capability, the GUI's
 #                    window opens on the desktop, and the app's database exists
 #                    (the same one as before, after an upgrade)
+#   update VERSION DIR
+#                    after check, with the previous release installed: OPad's
+#                    own updater takes VERSION from the signed feed in ~/DIR
+#                    (beta.json and its .minisig, the release's update feed
+#                    before it is deployed), served on this VM's loopback:
+#                    the daemon is restarted with OPAD_MANIFEST_URL pointing
+#                    at it, then asked over its IPC socket, as the app's
+#                    Updates page does, to follow beta, check, and install.
+#                    It downloads the package from the release, verifies it
+#                    against the feed and hands it to apt/dnf through pkexec.
+#                    On Arch it must only report the update (pacman owns
+#                    OPad's files); lab-install.ps1 then installs it.
 #   remove           uninstalls it and checks nothing of OPad is left: files,
 #                    the user's data, autostart entries, processes
 set -u
@@ -115,6 +127,124 @@ check)
   else fail "no $DB after use"
   fi
   ;;
+update)
+  want="${2:?usage: update VERSION DIR}"
+  feed=~/"${3:?usage: update VERSION DIR}"
+  [ -f "$feed/beta.json" ] && [ -f "$feed/beta.json.minisig" ] || { fail "no signed feed in $feed"; exit 1; }
+  # python3 serves the feed and talks to the daemon
+  if ! command -v python3 >/dev/null; then
+    case $KIND in
+      aur) sudo pacman -S --needed --noconfirm python ;;
+      deb) sudo apt-get -o DPkg::Lock::Timeout=600 install -y python3 ;;
+      rpm) sudo dnf install -y python3 ;;
+    esac >update.log 2>&1 || { fail "cannot install python3"; exit 1; }
+  fi
+  # The updater's pkexec has no one to ask in a VM: polkit lets the lab user
+  # through (old polkit reads .pkla, new polkit .rules). Lab VMs only
+  sudo mkdir -p /etc/polkit-1/rules.d
+  echo 'polkit.addRule(function (action, subject) { if (subject.user == "opad") return polkit.Result.YES; });' |
+    sudo tee /etc/polkit-1/rules.d/49-opad-lab.rules >/dev/null
+  if [ -d /etc/polkit-1/localauthority ]; then
+    printf '[OPad lab]\nIdentity=unix-user:opad\nAction=*\nResultAny=yes\nResultInactive=yes\nResultActive=yes\n' |
+      sudo tee /etc/polkit-1/localauthority/50-local.d/49-opad-lab.pkla >/dev/null
+  fi
+  # The feed on loopback (the updater takes plain HTTP from there only), and
+  # the daemon reading it, both in the user's systemd so they outlive SSH
+  systemctl --user stop opad-lab-feed opad-lab-daemon 2>/dev/null
+  systemd-run --user --unit=opad-lab-feed --collect \
+    python3 -m http.server 8000 --bind 127.0.0.1 --directory "$feed" >/dev/null 2>&1
+  systemctl --user stop opad-daemon 2>/dev/null
+  pkill -x opad-daemon; sleep 2
+  systemd-run --user --unit=opad-lab-daemon --collect \
+    --setenv=OPAD_MANIFEST_URL=http://127.0.0.1:8000/beta.json --setenv=RUST_LOG=info \
+    /usr/bin/opad-daemon >/dev/null 2>&1
+  daemon_log() { journalctl --user -u opad-lab-daemon -n "${1:-25}" --no-pager -o cat 2>/dev/null; }
+  # The daemon's IPC (opad-ipc: a little-endian u32 length, then JSON), as
+  # the GUI's Updates page uses it: follow beta, check, then install
+  cat > lab-ipc.py <<'PY'
+import json, os, re, socket, struct, sys, time
+want = sys.argv[1]
+path = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/run/user/%d" % os.getuid(), "opad", "daemon.sock")
+def conn():
+    for _ in range(60):
+        try:
+            s = socket.socket(socket.AF_UNIX); s.connect(path); return s
+        except OSError:
+            time.sleep(1)
+    print("FAIL: the daemon's socket %s did not appear within 60 s" % path); sys.exit(1)
+def ask(s, req):
+    data = json.dumps(req).encode()
+    s.sendall(struct.pack("<I", len(data)) + data)
+    def read(n):
+        b = b""
+        while len(b) < n:
+            c = s.recv(n - len(b))
+            if not c: raise EOFError("the daemon closed the connection")
+            b += c
+        return b
+    return json.loads(read(struct.unpack("<I", read(4))[0]))
+def handshake():
+    # The daemon accepts a client of its own version only: it names it
+    s = conn()
+    r = ask(s, {"Handshake": {"client_version": "0", "client_protocol": 1}})
+    m = re.search(r"running daemon is (\S+?)\.? ", json.dumps(r))
+    version = m.group(1) if m else "0"
+    s = conn()
+    r = ask(s, {"Handshake": {"client_version": version, "client_protocol": 1}})
+    if "HandshakeAck" not in r:
+        print("FAIL: the daemon refused the handshake: %s" % r); sys.exit(1)
+    return s, version
+s, running = handshake()
+print("info: the running daemon is %s" % running)
+def status():
+    return ask(s, "GetUpdateStatus")["UpdateStatus"]
+before = status().get("last_check")
+r = ask(s, {"SetUpdateChannel": {"channel": "beta"}})
+if r != "UpdateCheckStarted":
+    print("FAIL: following the beta channel: %s" % r); sys.exit(1)
+deadline = time.time() + 180
+while True:
+    time.sleep(1)
+    st = status()
+    if not st.get("checking") and (st.get("last_check") != before or st.get("last_error")):
+        break
+    if time.time() > deadline:
+        print("FAIL: the update check did not finish within 180 s"); sys.exit(1)
+app = st["app"]
+if st.get("last_error"):
+    print("FAIL: the update check failed: %s" % st["last_error"]); sys.exit(1)
+if app.get("available") != want:
+    print("FAIL: the feed offers %s, not %s" % (app.get("available"), want)); sys.exit(1)
+if app.get("notify_only"):
+    print("ok:   the updater reports %s and leaves installing it to the package manager" % want)
+    print("RESULT notify"); sys.exit(0)
+if not app.get("ready_to_install"):
+    print("FAIL: %s is offered but not ready to install: %s" % (want, app)); sys.exit(1)
+print("ok:   the updater found %s in the signed feed" % want)
+r = ask(s, {"InstallUpdate": {"component": "App"}})
+if "UpdateStarted" not in json.dumps(r):
+    print("FAIL: Install was refused: %s" % r); sys.exit(1)
+print("RESULT installing")
+PY
+  out=$(python3 lab-ipc.py "$want" 2>&1); rc=$?
+  echo "$out" | grep -v '^RESULT'
+  if [ $rc -ne 0 ]; then echo "  daemon log:"; daemon_log | sed 's/^/  /'; fail "updating through the app's updater"; exit 1; fi
+  if echo "$out" | grep -q '^RESULT notify'; then
+    [ $KIND = aur ] && pass "on Arch the update is only reported, as pacman owns OPad's files" ||
+      fail "the updater only reported the update on a $KIND install"
+  else
+    [ $KIND = aur ] && fail "the updater wants to install on Arch, where pacman owns OPad's files"
+    # The updater downloads, verifies and runs pkexec apt/dnf in the background
+    for _ in $(seq 120); do [ "$(installed_version)" = "$want" ] && break; sleep 5; done
+    if [ "$(installed_version)" = "$want" ]; then
+      pass "OPad updated itself to $want from the feed ($KIND, through pkexec)"
+    else
+      fail "still $(installed_version) 600 s after Install, not $want"
+      echo "  daemon log:"; daemon_log 40 | sed 's/^/  /'
+    fi
+  fi
+  systemctl --user stop opad-lab-feed opad-lab-daemon 2>/dev/null
+  ;;
 remove)
   # tosu's directories go only where OPad created them (its marker); one
   # made by a release before the marker existed is kept, like a user's own
@@ -148,6 +278,6 @@ remove)
   pgrep -f '^/usr/lib/opad/tosu/tosu' >/dev/null && fail "tosu still running after removal"
   [ $FAILED -eq 0 ] && pass "nothing of OPad left"
   ;;
-*) echo "usage: $0 install DIR | check VERSION [DIR] | remove"; exit 2 ;;
+*) echo "usage: $0 install DIR | check VERSION [DIR] | update VERSION DIR | remove"; exit 2 ;;
 esac
 [ $FAILED -eq 0 ]

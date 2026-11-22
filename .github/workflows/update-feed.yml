@@ -8,12 +8,22 @@ name: Update feed
 # pull a release or change a rollout), and weekly: a feed expires 30 days
 # after it was built, so it must be republished before then.
 #
+# An app release (release-app.yml) calls it with deploy: false first: the
+# lab VMs update the previous release from this signed feed, served inside
+# each VM, and release-app.yml deploys the same feed only once they passed.
+#
 # Until SIGNING_ENABLED is "true" the feeds are signed with the committed
 # test key (§5.4), which protects nothing. After that, with the real key in
 # the "release" environment, which waits for approval (§19).
 
 on:
   workflow_call:
+    inputs:
+      deploy:
+        description: "Deploy the signed feeds (false: leave them as this run's github-pages artifact)"
+        type: boolean
+        required: false
+        default: true
   workflow_dispatch:
   schedule:
     - cron: "17 6 * * 1"
@@ -186,7 +196,8 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     needs: [sign-test, sign-release]
-    if: always() && (needs.sign-test.result == 'success' || needs.sign-release.result == 'success')
+    # inputs.deploy is unset (not false) for the schedule and by hand
+    if: always() && inputs.deploy != false && (needs.sign-test.result == 'success' || needs.sign-release.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       pages: write
