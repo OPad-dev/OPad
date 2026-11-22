@@ -1,9 +1,9 @@
 ---
-title: Referencia de CLI opadctl
-description: Referencia de línea de comandos y opciones para la utilidad de gestión de pad y daemon opadctl.
+title: Referencia de la CLI opadctl
+description: Referencia de línea de comandos y opciones para la utilidad de gestión del teclado y del daemon opadctl.
 ---
 
-`opadctl` es la herramienta de gestión por línea de comandos para OPad. Se comunica con el servicio en segundo plano (`opad-daemon`) a través de IPC local para consultar el estado, sincronizar los contadores de pulsaciones totales, exportar e importar copias de seguridad, transmitir registros de diagnóstico y configurar parámetros del dispositivo. También puede realizar operaciones USB directas —como el flasheo de firmware y la recuperación del dispositivo— incluso cuando el daemon está detenido.
+`opadctl` es la herramienta de gestión por línea de comandos de OPad. Se comunica con el servicio en segundo plano (`opad-daemon`) por IPC local para consultar el estado, sincronizar contadores de pulsaciones de por vida, exportar e importar copias de seguridad, transmitir registros de diagnóstico y controlar funciones del teclado. Los comandos de flasheo (`flash`, `recover`, `bootloader`) también pueden operar directamente por serie USB cuando el daemon está detenido.
 <!-- src: /desktop/cli/src/main.rs#main -->
 
 ```text
@@ -34,14 +34,14 @@ Options:
   -h, --help  Print help
 ```
 
-La mayoría de los subcomandos requieren que `opad-daemon` esté en ejecución. Si el daemon no está accesible, los comandos reportan un error a menos que pertenezcan al grupo de flasheo (`flash`, `recover`, `bootloader`), a los que se les permite operar de forma autónoma directamente contra el puerto serie.
+La mayoría de los subcomandos requieren que `opad-daemon` esté en ejecución. `flash`, `recover` y `bootloader` funcionan incluso si el daemon no está ejecutándose (cuando sí lo está, le piden que libere primero el puerto serie). `setup` se ejecuta localmente sin requerir el daemon.
 <!-- src: /desktop/cli/src/main.rs#main -->
 
 ---
 
 ## opadctl status
 
-Consulta e imprime el estado actual del daemon, el hardware conectado, la reconciliación de contadores, la telemetría del juego y la configuración del pad.
+Consulta e imprime el estado actual del daemon, el hardware conectado, la reconciliación de contadores, la telemetría del juego y la configuración del teclado.
 <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
 
 ```text
@@ -54,32 +54,32 @@ Options:
 ```
 
 La salida incluye:
-- **Modo del Daemon**: El estado operativo del runtime del daemon.
+- **Daemon Mode**: El estado operativo del entorno de ejecución del daemon.
   <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-- **Dispositivo ESP32**: Estado de conexión (`Connected` o `Disconnected`).
+- **ESP32 Device**: Estado de conexión (`Connected` o `Disconnected`).
   <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-- **ID del Dispositivo y Perfil de Placa**: Identificador único de hardware (por ejemplo, `OPAD-XX:XX:XX:XX:XX:XX`) y perfil de hardware.
+- **Device ID & Board Profile**: Identificador de hardware derivado de la dirección MAC del ESP32-S3 (formato `OPAD-XXXXXXXXXXXX`, 12 dígitos hexadecimales) y perfil de placa.
+  <!-- src: /desktop/cli/src/main.rs#Commands::Status --> <!-- src: /firmware/main/usb/usb_descriptors.c#usb_descriptors_init -->
+- **Firmware Version & Running Slot**: Versión del firmware y ranura de partición OTA activa (`ota_0` u `ota_1`).
   <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-- **Versión de Firmware y Ranura en Ejecución**: Ranura de partición OTA en ejecución actualmente (`ota_0` u `ota_1`).
+- **Input Module & Calibration**: Tipo de módulo detectado (por ejemplo, Mechanical o Hall Effect) y estado de calibración por tecla.
   <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-- **Módulo de Entrada y Calibración**: Tipo de módulo detectado (por ejemplo, Hall Effect) y estado de calibración por tecla.
+- **Key Press Counters**: Totales de pulsaciones de por vida para Key 1, Key 2 y Key 3 (cuando está presente), más el número de generación de contadores.
   <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-- **Contadores de Pulsaciones de Teclas**: Totales de pulsaciones a lo largo de la vida útil para Key 1, Key 2 y la opcional Key 3, además del número de generación del contador.
+- **Ownership State**: Advierte si el teclado pertenece a otra instalación y la sincronización de contadores está en pausa a la espera de que el usuario asuma la propiedad.
   <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-- **Estado de Propiedad**: Advierte si el pad pertenece a otra instalación y la sincronización de contadores está en pausa esperando la confirmación del usuario.
+- **tosu (osu!)**: Estado de conexión del WebSocket local de telemetría de `tosu`.
   <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-- **tosu (osu!)**: Estado de conexión del WebSocket local de telemetría de tosu.
+- **Key Latency**: Percentil 50 (`p50`), percentil 99.9 (`p99.9`) y latencia máxima desde el flanco de tecla hasta el reporte HID en microsegundos.
   <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-- **Latencia de Tecla**: Percentil 50, percentil 99.9 y latencia máxima entre el flanco y el informe HID en microsegundos.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-- **Valores de Configuración**: Mapeos de pines GPIO activos, tiempo de bloqueo de rebote (debounce lockout) en microsegundos, gestos de deslizamiento, brillo de pantalla y tiempo de inactividad para suspensión.
+- **Configuration Values**: Asignaciones activas de pines GPIO, tiempo de bloqueo de antirrebote en microsegundos, acciones de deslizamiento, brillo de pantalla y tiempo de reposo.
   <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
 
 ---
 
 ## opadctl sync
 
-Desencadena la reconciliación manual inmediata de los contadores de pulsaciones y sincroniza la hora del dispositivo con el PC anfitrión.
+Dispara una reconciliación manual inmediata de los contadores de pulsaciones y sincroniza la hora del reloj con el PC anfitrión.
 <!-- src: /desktop/cli/src/main.rs#Commands::Sync -->
 
 ```text
@@ -91,14 +91,14 @@ Options:
   -h, --help  Print help
 ```
 
-Envía una solicitud `IpcRequest::ForceSync` al daemon. Si el dispositivo está inactivo y los contadores se reconcilian limpiamente, devuelve los valores actualizados de vida útil para Key 1 y Key 2.
+Envía `IpcRequest::ForceSync` al daemon. Si el dispositivo está en reposo y los contadores se reconcilian limpiamente, imprime los conteos de por vida sincronizados.
 <!-- src: /desktop/cli/src/main.rs#Commands::Sync -->
 
 ---
 
 ## opadctl reset
 
-Restablece los contadores de pulsaciones de por vida tanto en la base de datos del anfitrión como en el pad conectado.
+Reinicia los contadores de pulsaciones de por vida tanto en la base de datos del anfitrión como en el teclado conectado.
 <!-- src: /desktop/cli/src/main.rs#Commands::Reset -->
 
 ```text
@@ -111,14 +111,14 @@ Options:
   -h, --help  Print help
 ```
 
-Debido a que el restablecimiento de contadores es irreversible, ejecutar sin `--yes` cancela la ejecución. Cuando se confirma, se asigna y almacena una nueva generación de contadores.
+Como el reinicio de contadores es irreversible, ejecutarlo sin `--yes` aborta la operación. Al confirmarlo, se asigna y almacena una nueva generación de contadores.
 <!-- src: /desktop/cli/src/main.rs#Commands::Reset -->
 
 ---
 
 ## opadctl export
 
-Exporta la configuración del pad y los contadores de pulsaciones a un archivo de copia de seguridad JSON portátil.
+Exporta la configuración del teclado y los contadores de por vida a un archivo de copia de seguridad JSON portable.
 <!-- src: /desktop/cli/src/main.rs#Commands::Export -->
 
 ```text
@@ -133,7 +133,7 @@ Options:
   -h, --help  Print help
 ```
 
-El archivo JSON generado contiene el ID del dispositivo, la generación de contadores, las estadísticas de vida útil y la configuración completa del dispositivo.
+El archivo JSON generado contiene el ID de dispositivo, la generación de contadores, los conteos de por vida y la configuración del dispositivo.
 <!-- src: /desktop/cli/src/main.rs#Commands::Export -->
 
 ---
@@ -156,14 +156,14 @@ Options:
   -h, --help  Print help
 ```
 
-Antes de aplicar los cambios, `opadctl` valida la estructura de la copia de seguridad y muestra una vista previa comparativa indicando los conteos actuales frente a los entrantes, la coincidencia del ID del dispositivo y advertencias de retroceso de contadores. En modo interactivo, se requiere confirmación explícita (`y/N`) a menos que se especifique `--yes`.
+Antes de aplicarla, `opadctl` valida la estructura de la copia de seguridad y muestra una previsualización comparando los conteos actuales frente a los entrantes, la coincidencia del ID de dispositivo y las advertencias de retroceso de contadores. En modo interactivo se requiere confirmación explícita (`y/N`) salvo que se especifique `--yes`.
 <!-- src: /desktop/cli/src/main.rs#Commands::Import -->
 
 ---
 
 ## opadctl monitor
 
-Transmite eventos de diagnóstico en vivo desde los búferes de registro del daemon y del dispositivo.
+Transmite en vivo los eventos de diagnóstico desde los búferes de registro del daemon y del dispositivo.
 <!-- src: /desktop/cli/src/main.rs#Commands::Monitor -->
 
 ```text
@@ -179,20 +179,20 @@ Options:
   -h, --help             Print help
 ```
 
-- `-l, --limit`: Número de entradas históricas de registro a mostrar inicialmente (por defecto 50).
+- `-l, --limit`: Número de entradas históricas de registro a mostrar inicialmente (por defecto `50`).
   <!-- src: /desktop/cli/src/main.rs#Commands::Monitor -->
-- `-f, --follow`: Sondea continuamente el concentrador de registros cada 500 ms en busca de nuevos eventos entrantes.
+- `-f, --follow`: Sondea continuamente el concentrador de registros cada 500 ms buscando nuevos eventos entrantes.
   <!-- src: /desktop/cli/src/main.rs#Commands::Monitor -->
 - `--level`: Filtra mensajes por nivel mínimo de severidad (`debug`, `info`, `warn`, `error`).
   <!-- src: /desktop/cli/src/main.rs#Commands::Monitor -->
-- `--source`: Restringe mensajes a una sola fuente de registro (`host`, `esp`, `program`, `tosu`).
+- `--source`: Restringe los mensajes a una sola fuente de registro (`host`, `esp`, `program`, `tosu`).
   <!-- src: /desktop/cli/src/main.rs#Commands::Monitor -->
 
 ---
 
 ## opadctl flash
 
-Flashea un nuevo binario de firmware en el ESP32-S3 a través de USB utilizando `espflash`.
+Flashea un nuevo binario de firmware en el ESP32-S3 por USB usando `espflash`.
 <!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
 
 ```text
@@ -209,18 +209,18 @@ Options:
   -h, --help         Print help
 ```
 
-- En modo normal (sin `--full`), `opadctl flash` consulta al daemon la ranura OTA actualmente en ejecución (`ota_0` u `ota_1`), planifica una actualización A/B en la ranura alternativa inactiva, solicita al daemon que libere el puerto serie, reinicia el pad en modo de descarga ROM de forma automatizada, flashea el binario y verifica que el pad re-enumere correctamente.
+- En modo normal (sin `--full`), `opadctl flash` consulta al daemon la ranura OTA activa (`ota_0` u `ota_1`), planifica una actualización A/B en la ranura alternativa inactiva, pide al daemon que libere el puerto serie, reinicia el teclado en modo de descarga ROM sin botones, flashea el binario y verifica que el teclado vuelva a enumerar como OPad (`303a:4001`).
   <!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
 - Con `--full`, realiza un flasheo completo de recuperación: escribe `bootloader.bin` en `0x0000`, `partition-table.bin` en `0x8000`, `ota_data_initial.bin` en `0xf000` y la imagen de aplicación en `0x20000`.
   <!-- src: /desktop/cli/src/main.rs#resolve_flash_set -->
-- `--port <PORT>`: Anula la detección automática del puerto serie si hay múltiples dispositivos serie USB conectados.
+- `--port <PORT>`: Anula la detección automática de puerto serie si hay varios dispositivos serie USB conectados.
   <!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
 
 ---
 
 ## opadctl recover
 
-Recupera un pad que ya no enumera como OPad en el bus USB sin necesidad de presionar ningún botón físico.
+Recupera un teclado que dejó de enumerar como OPad en el bus USB sin pulsar ningún botón físico.
 <!-- src: /desktop/cli/src/main.rs#Commands::Recover -->
 
 ```text
@@ -236,14 +236,14 @@ Options:
   -h, --help               Print help
 ```
 
-Este comando espera a que el usuario desconecte y vuelva a conectar el cable USB del pad. Al conectarse, captura el bootloader ROM del ESP32-S3 durante su ventana inicial de enumeración, escribe el conjunto completo de flasheo (bootloader, tabla de particiones, datos OTA e imagen de aplicación) y espera hasta 15 segundos a que el pad arranque en la aplicación. Los botones físicos BOOT y RESET nunca se presionan.
-<!-- src: /desktop/cli/src/main.rs#Commands::Recover -->
+Este comando espera a que el usuario desconecte y vuelva a conectar el cable USB del teclado (hasta `--timeout`, por defecto 300 s). Al conectarse, captura el bootloader ROM del ESP32-S3 (`303a:1001`) durante su ventana inicial de enumeración, escribe el conjunto completo de flash (bootloader, tabla de particiones, datos OTA e imagen de aplicación), reinicia el chip mediante el watchdog RTC y espera hasta 15 segundos a que el teclado arranque en la aplicación (`303a:4001`). Nunca se pulsan los botones físicos BOOT ni RESET.
+<!-- src: /desktop/cli/src/main.rs#Commands::Recover --> <!-- src: /desktop/crates/opad-device/src/flash.rs#recover -->
 
 ---
 
 ## opadctl bootloader
 
-Reinicia el pad conectado en modo bootloader de descarga ROM de forma automatizada por USB y lo deja en ese estado.
+Reinicia el teclado conectado en modo de descarga del bootloader ROM sin botones por USB y lo deja en ese estado.
 <!-- src: /desktop/cli/src/main.rs#Commands::Bootloader -->
 
 ```text
@@ -256,14 +256,14 @@ Options:
   -h, --help         Print help
 ```
 
-Pide a `opad-daemon` que libere el puerto serie CDC, inicia el reinicio por software en el bootloader ROM del ESP32-S3 y finaliza. El dispositivo permanece en modo de descarga listo para herramientas de desarrollo de bajo nivel o flasheo.
+Pide a `opad-daemon` que libere el puerto serie CDC, inicia el reinicio por software hacia el bootloader ROM del ESP32-S3 (`303a:1001`) y termina. El dispositivo permanece en modo de descarga listo para herramientas de desarrollo o flasheo de bajo nivel.
 <!-- src: /desktop/cli/src/main.rs#Commands::Bootloader -->
 
 ---
 
 ## opadctl firmware-update
 
-Comprueba e instala actualizaciones firmadas de firmware desde el manifiesto oficial de actualización.
+Comprueba e instala actualizaciones de firmware firmadas desde el manifiesto del feed oficial de actualizaciones.
 <!-- src: /desktop/cli/src/main.rs#Commands::FirmwareUpdate -->
 
 ```text
@@ -276,14 +276,14 @@ Options:
   -h, --help  Print help
 ```
 
-Consulta a `opad-daemon` mediante `IpcRequest::GetFirmwareUpdate` para inspeccionar la versión instalada, la versión disponible, las notas de la versión y los bloqueadores activos. Antes de flashear, solicita confirmación explícita del usuario a menos que se pase `--yes`. El daemon sincroniza los contadores en disco antes del flasheo para garantizar la integridad de los contadores.
+Consulta a `opad-daemon` mediante `IpcRequest::GetFirmwareUpdate` para inspeccionar la versión instalada, la versión disponible, las notas de lanzamiento y los bloqueos activos. Antes de flashear, solicita confirmación explícita del usuario salvo que se pase `--yes`. El daemon sincroniza los contadores en disco antes de flashear para preservar su integridad.
 <!-- src: /desktop/cli/src/main.rs#Commands::FirmwareUpdate -->
 
 ---
 
 ## opadctl latency
 
-Muestra estadísticas de latencia medidas en el dispositivo entre la pulsación de la tecla y el informe HID.
+Muestra las estadísticas de latencia desde la pulsación de tecla hasta el reporte HID medidas en el propio dispositivo.
 <!-- src: /desktop/cli/src/main.rs#Commands::Latency -->
 
 ```text
@@ -296,8 +296,8 @@ Options:
   -h, --help   Print help
 ```
 
-- Cuando se ejecuta sin opciones, muestra el conteo de muestras, p50, p99, p99.9 y la latencia máxima en microsegundos, junto con los informes diferidos que tuvieron que esperar al siguiente microframe USB.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Latency -->
+- Al ejecutarse sin opciones, muestra el número de muestras, `p50`, `p99`, `p99.9` y latencia máxima en microsegundos, junto con los reportes diferidos que tuvieron que esperar a la siguiente trama USB de 1 ms.
+  <!-- src: /desktop/cli/src/main.rs#Commands::Latency --> <!-- src: /firmware/main/input/latency_stats.c -->
 - Con `--reset`, limpia los contadores de muestras en el dispositivo para iniciar una nueva ventana de medición.
   <!-- src: /desktop/cli/src/main.rs#Commands::Latency -->
 
@@ -305,7 +305,7 @@ Options:
 
 ## opadctl stats
 
-Muestra estadísticas de frecuencia de pulsación en teclas por minuto (KPM) para los intentos de juego en vivo o recientes, así como para sesiones históricas agregadas.
+Muestra estadísticas de ritmo de pulsación en teclas por minuto (KPM) para el intento actual o más reciente, así como para sesiones históricas agregadas.
 <!-- src: /desktop/cli/src/main.rs#Commands::Stats -->
 
 ```text
@@ -318,16 +318,16 @@ Options:
   -h, --help           Print help
 ```
 
-- Muestra el KPM promedio de la canción y el KPM de ráfaga máxima (las 7 pulsaciones consecutivas más rápidas) para Key 1, Key 2 y canales combinados.
-  <!-- src: /desktop/cli/src/main.rs#format_tap_stats -->
-- `--period <DAYS>`: Configura la ventana histórica de agregación en días (0 representa el historial completo).
-  <!-- src: /desktop/cli/src/main.rs#Commands::Stats -->
+- Muestra el KPM medio de pulsación, el pico de ráfaga KPM (las 7 pulsaciones consecutivas más rápidas, `WINDOW_INTERVALS = 6` intervalos) y el KPM global de la canción para Key 1, Key 2 y combinado.
+  <!-- src: /desktop/cli/src/main.rs#format_tap_stats --> <!-- src: /desktop/crates/opad-model/src/tap_rate.rs -->
+- `--period <DAYS>`: Configura la ventana de agregación histórica en días (`0` representa todo el historial; máximo `3650` días). El ajuste persiste tanto en la aplicación de escritorio como en el teclado.
+  <!-- src: /desktop/cli/src/main.rs#Commands::Stats --> <!-- src: /desktop/crates/opad-model/src/tap_rate.rs#MAX_HISTORY_DAYS -->
 
 ---
 
 ## opadctl board-test
 
-Ejecuta diagnósticos de hardware en las PCB del carrier y del módulo de entrada intercambiable.
+Ejecuta diagnósticos de hardware en las PCBs del carrier y del módulo de entrada intercambiable.
 <!-- src: /desktop/cli/src/main.rs#Commands::BoardTest -->
 
 ```text
@@ -341,19 +341,19 @@ Options:
   -h, --help      Print help
 ```
 
-Verifica voltajes de identificación de módulo, orientación del cable (detecta cables FFC invertidos), integridad de líneas de teclas y comunicación con registros del ADC ADS7028 en módulos Hall Effect V3. Ambos interruptores deben estar liberados mientras se ejecuta la prueba.
+Verifica las tensiones de identificación del módulo, la orientación del cable (detecta cables FFC invertidos), la integridad de los pull-up de las líneas de teclas y la comunicación de registros del ADC ADS7028 en módulos Hall Effect V3. Suelta todos los interruptores mientras se ejecuta la prueba.
 <!-- src: /desktop/cli/src/main.rs#Commands::BoardTest -->
 
-- `--fix-pins`: Si las teclas están mapeadas a pines de cabecera independientes por defecto en lugar del enrutamiento del carrier V3, asigna automáticamente Key 1 a GPIO10 y Key 2 a GPIO7, pausa 300 ms y vuelve a probar.
+- `--fix-pins`: Si las teclas están asignadas a los pines predeterminados de cabezal autónomo en lugar del enrutado del carrier V3, configura Key 1 en `GPIO10` y Key 2 en `GPIO7`, espera 300 ms y vuelve a probar.
   <!-- src: /desktop/cli/src/main.rs#Commands::BoardTest -->
-- `--magnet`: Inicia la prueba interactiva de sensores en módulos Hall Effect, transmitiendo voltajes y desfases de código en vivo mientras se acerca un imán a cada sensor por turno (hasta 60 segundos).
+- `--magnet`: Ejecuta comprobaciones en vivo de los sensores en módulos Hall Effect V3, consultando lecturas mientras se acerca un imán a cada tecla por turno (hasta 60 segundos, `Ctrl-C` para detener).
   <!-- src: /desktop/cli/src/main.rs#magnet_test -->
 
 ---
 
 ## opadctl animation
 
-Desencadena una animación de calificación de pantalla de resultados en la pantalla del pad.
+Dispara una animación de calificación de pantalla de resultados en la pantalla del teclado.
 <!-- src: /desktop/cli/src/main.rs#Commands::Animation -->
 
 ```text
@@ -369,16 +369,16 @@ Options:
   -h, --help  Print help
 ```
 
-- `<NAME>`: Tipo de animación integrada (`pop`, `drop`, `burst` o ID de animación numérico). Especificar `none` detiene las animaciones en reproducción.
+- `<NAME>`: Tipo de animación integrada (`pop`, `drop`, `burst` o ID numérico de animación). Especificar `none` detiene cualquier animación en reproducción.
   <!-- src: /desktop/cli/src/main.rs#Commands::Animation -->
-- `[GRADE]`: Letra de calificación a renderizar (`SS`, `S`, `A`, `B`, `C` o `D`, por defecto `S`).
+- `[GRADE]`: Letra de calificación a mostrar (`SS`, `S`, `A`, `B`, `C` o `D`; por defecto `S`).
   <!-- src: /desktop/cli/src/main.rs#Commands::Animation -->
 
 ---
 
 ## opadctl restart
 
-Ordena al pad conectado que guarde el estado y realice un reinicio limpio.
+Ordena al teclado conectado guardar su estado y realizar un reinicio limpio.
 <!-- src: /desktop/cli/src/main.rs#Commands::Restart -->
 
 ```text
@@ -390,7 +390,7 @@ Options:
   -h, --help  Print help
 ```
 
-Envía `IpcRequest::RestartPad` al daemon. El pad vuelca los contadores persistentes a NVS, pospone el reinicio hasta que cese el juego activo y se reinicia limpiamente. El pad re-enumera y se reconecta en unos pocos segundos.
+Envía `IpcRequest::RestartPad` al daemon. El teclado vuelca los contadores persistentes a NVS, espera hasta que no haya ningún mapa en juego y se reinicia limpiamente.
 <!-- src: /desktop/cli/src/main.rs#Commands::Restart -->
 
 ---
@@ -410,11 +410,11 @@ Options:
 ```
 
 En Linux:
-- Comprueba si la regla udev (`/etc/udev/rules.d/70-opad.rules` o `/usr/lib/udev/rules.d/70-opad.rules`) está instalada y coincide con la regla incrustada en el paquete. Si falta o está modificada, imprime los comandos de instalación.
+- Comprueba si la regla udev (`/etc/udev/rules.d/70-opad.rules` o `/usr/lib/udev/rules.d/70-opad.rules`) está instalada y coincide con la regla integrada, imprimiendo comandos de instalación si falta o difiere.
   <!-- src: /desktop/cli/src/main.rs#run_setup -->
-- Comprueba la configuración de `ptrace_scope` de Yama en el kernel Linux y determina si tosu posee privilegios `CAP_SYS_PTRACE` para inspeccionar la memoria del proceso de osu!.
+- Comprueba el parámetro `ptrace_scope` de Yama en el núcleo Linux y si `tosu` dispone de `cap_sys_ptrace` para inspeccionar la memoria del proceso `osu!`.
   <!-- src: /desktop/cli/src/main.rs#run_setup -->
 
 En Windows:
-- Informa al usuario de que no se requiere configuración ya que el dispositivo utiliza los controladores integrados en el sistema de USB HID (`hidclass.sys`) y CDC (`usbser.sys`).
+- Informa que no se necesita configuración manual de controladores porque OPad usa los controladores integrados USB HID y CDC (`usbser.sys`) de Windows.
   <!-- src: /desktop/cli/src/main.rs#run_setup -->
