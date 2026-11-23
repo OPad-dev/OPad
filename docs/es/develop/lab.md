@@ -39,6 +39,8 @@ Definida en `$AllVms` ([/scripts/lab/lab-common.ps1](/scripts/lab/lab-common.ps1
 | `windows-10` | Windows 10 | `opad-setup.exe` | `2310` |
 | `windows-11` | Windows 11 | `opad-setup.exe` | `2311` |
 
+Hay una VM más, `ci-linux` (Ubuntu 24.04, puerto SSH `2260`), que no está en `$AllVms` ni tiene snapshot `limpia`: se conserva entre ejecuciones, con sus cachés de compilación, para los trabajos de Linux del CI del laboratorio que se ejecuta antes de cada push de `main` ([/scripts/ci/lab-ci.sh](/scripts/ci/lab-ci.sh), preparada por [/scripts/ci/provision-linux.sh](/scripts/ci/provision-linux.sh); ver [testing.md](testing.md)). Los trabajos de Windows se ejecutan en el propio mini PC, en `C:\opad-lab\ci`.
+
 Cada VM inicia sesión automáticamente en una sesión de escritorio `opad` (`seat0` en Linux, consola activa en Windows) con `sudo` sin contraseña / elevación de Administrador sobre SSH en loopback (`127.0.0.1`).
 
 ## 3. Ciclo automatizado de instalación, actualización y desinstalación

@@ -35,7 +35,12 @@ El script ejecuta **28** suites de pruebas que cubren:
 
 ## Integración continua (CI)
 
-GitHub Actions ([/.github/workflows/ci.yml](/.github/workflows/ci.yml)) no se ejecuta en cada push. Se ejecuta en los pull requests, a mano (`gh workflow run ci.yml --ref <rama>`) y antes de cada versión: al mergear un PR de versión, [/.github/workflows/release-please.yml](/.github/workflows/release-please.yml) lo lanza y la versión solo se compila si pasa. Además de `make check`, ejecuta:
+Todas las comprobaciones están en [/scripts/ci/jobs.sh](/scripts/ci/jobs.sh) (trabajos de Linux) y [/scripts/ci/jobs.ps1](/scripts/ci/jobs.ps1) (trabajos de Windows). Se ejecutan en dos sitios:
+
+- **El laboratorio, antes de cada push de `main`**: [/scripts/ci/lab-ci.sh](/scripts/ci/lab-ci.sh) (`make push`, o `make lab-ci` sin hacer push) copia el commit al mini PC y ejecuta los trabajos de Linux en su VM `ci-linux` ([/scripts/ci/provision-linux.sh](/scripts/ci/provision-linux.sh)) y los de Windows en el propio mini PC, con el checkout CRLF de Git para Windows. Si pasan todos, registra el commit, y el hook de pre-push ([/scripts/git-hooks/pre-push](/scripts/git-hooks/pre-push), que instala `make hooks`) solo deja hacer push a `main` de un commit registrado.
+- **GitHub Actions** ([/.github/workflows/ci.yml](/.github/workflows/ci.yml)), que no se ejecuta en los push: en los pull requests, a mano (`gh workflow run ci.yml --ref <rama>`) y antes de cada versión, porque al mergear un PR de versión [/.github/workflows/release-please.yml](/.github/workflows/release-please.yml) lo lanza y la versión solo se compila si pasa.
+
+Además de `make check`, los trabajos ejecutan:
 - Compilación y pruebas MSVC en Windows (con la GUI en un trabajo separado).
 - Regeneración de protobuf mediante [/scripts/gen_proto.sh](/scripts/gen_proto.sh) (falla si los archivos generados `opad.pb.c/.h` difieren).
 - Compilación del firmware ESP32-S3 en el contenedor `espressif/idf:v5.5.2`.

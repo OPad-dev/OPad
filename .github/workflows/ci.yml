@@ -1,9 +1,14 @@
 name: CI
 
-# Not on every push (owner, 2026-11-23). It runs before a release is
-# built (release-please.yml calls it once a release PR is merged, and the
-# build waits for it), on pull requests, and by hand (Run workflow, or
-# `gh workflow run ci.yml --ref <branch>`).
+# Not on every push (owner, 2026-11-23): main reaches GitHub only after
+# the same jobs passed on the lab's mini PC (scripts/ci/lab-ci.sh, `make
+# push`). It runs before a release is built (release-please.yml calls it
+# once a release PR is merged, and the build waits for it), on pull
+# requests, and by hand (Run workflow, or `gh workflow run ci.yml --ref
+# <branch>`).
+#
+# Each job installs its tools here, then runs scripts/ci/jobs.sh or
+# jobs.ps1: the lab runs those same scripts, so the checks are written once.
 on:
   workflow_call:
   workflow_dispatch:
@@ -28,7 +33,7 @@ jobs:
       # .release-please-manifest.json and Cargo.lock, and every workspace
       # crate listed for release-please's Cargo.lock bump
       - name: Check versions
-        run: python3 scripts/release/check_versions.py
+        run: scripts/ci/jobs.sh versions
 
   rust:
     name: Rust (Format, Clippy, Tests)
@@ -64,17 +69,8 @@ jobs:
         with:
           workspaces: desktop
 
-      - name: Check code formatting
-        working-directory: desktop
-        run: cargo fmt --check
-
-      - name: Clippy
-        working-directory: desktop
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-      - name: Workspace Unit & Integration Tests
-        working-directory: desktop
-        run: cargo test --workspace
+      - name: Format, Clippy, Unit & Integration Tests
+        run: scripts/ci/jobs.sh rust
 
   rust-windows:
     # §W4-1. cargo check alone is not enough: the ksni/tray-icon split and the
@@ -99,23 +95,10 @@ jobs:
           workspaces: desktop
           key: windows
 
-      - name: Check code formatting
-        working-directory: desktop
-        run: cargo fmt --check
-
       # opad-gui is excluded here and built by the job below, so that one
       # crate's Windows port does not hide regressions in the other eleven.
-      - name: Clippy
-        working-directory: desktop
-        run: cargo clippy --workspace --exclude opad-gui --all-targets -- -D warnings
-
-      - name: Build
-        working-directory: desktop
-        run: cargo build --workspace --exclude opad-gui
-
-      - name: Workspace Unit & Integration Tests
-        working-directory: desktop
-        run: cargo test --workspace --exclude opad-gui
+      - name: Format, Clippy, Build, Unit & Integration Tests
+        run: ./scripts/ci/jobs.ps1 rust-windows
 
   rust-windows-gui:
     name: Windows GUI (Clippy, Build, Tests)
@@ -137,17 +120,8 @@ jobs:
           workspaces: desktop
           key: windows-gui
 
-      - name: Clippy
-        working-directory: desktop
-        run: cargo clippy -p opad-gui --all-targets -- -D warnings
-
-      - name: Build
-        working-directory: desktop
-        run: cargo build -p opad-gui
-
-      - name: GUI Unit Tests
-        working-directory: desktop
-        run: cargo test -p opad-gui
+      - name: Clippy, Build, GUI Unit Tests
+        run: ./scripts/ci/jobs.ps1 rust-windows-gui
 
   firmware-host-tests:
     name: Firmware Host Unit Tests
@@ -164,7 +138,7 @@ jobs:
           $SUDO apt-get install -y build-essential
 
       - name: Run firmware host unit tests
-        run: ./firmware/test/host/run_tests.sh
+        run: scripts/ci/jobs.sh firmware-host-tests
 
   proto-check:
     name: Protobuf Drift Check
@@ -185,11 +159,8 @@ jobs:
           # nanopb fails the diff on that line alone
           pip install protobuf grpcio-tools nanopb==0.4.9.1
 
-      - name: Regenerate protobuf
-        run: ./scripts/gen_proto.sh
-
-      - name: Verify no diff
-        run: git diff --exit-code firmware/main/protocol/
+      - name: Regenerate protobuf and verify no diff
+        run: scripts/ci/jobs.sh proto-check
 
   firmware-build:
     name: ESP32-S3 Firmware Build
@@ -216,12 +187,7 @@ jobs:
         shell: bash
         env:
           CCACHE_DIR: ${{ github.workspace }}/.ccache
-        run: |
-          . /opt/esp/idf/export.sh
-          if command -v ccache >/dev/null; then export IDF_CCACHE_ENABLE=1; fi
-          cd firmware
-          idf.py set-target esp32s3 build
-          if command -v ccache >/dev/null; then ccache --show-stats; fi
+        run: scripts/ci/jobs.sh firmware-build
 
       - name: Upload firmware binaries
         uses: actions/upload-artifact@v7
@@ -239,27 +205,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      # Plain `reuse lint` can never pass: the easter-egg GIF is deliberately
-      # kept under LicenseRef-Unknown-ThirdParty. This fails on anything else.
-      - name: REUSE compliance
-        run: |
-          pipx install reuse
-          python3 scripts/check_reuse.py
+      - name: Install reuse
+        run: pipx install reuse
 
-      - name: cargo-deny (advisories, licences, bans, sources)
-        uses: EmbarkStudios/cargo-deny-action@v2
-        with:
-          manifest-path: desktop/Cargo.toml
-
-      - name: Install cargo-about
+      - name: Install cargo-deny and cargo-about
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-about
+          tool: cargo-deny,cargo-about
 
-      # cargo about runs --offline, reading licence files from the crates
-      - name: Fetch crates
-        working-directory: desktop
-        run: cargo fetch --locked
-
-      - name: Third-party notices generate
-        run: make notices
+      # REUSE, cargo-deny (advisories, licences, bans, sources), and the
+      # third-party notices generate
+      - name: Licence checks
+        run: scripts/ci/jobs.sh licences

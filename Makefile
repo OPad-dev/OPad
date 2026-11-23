@@ -50,7 +50,7 @@ BINS := opad-daemon opad-gui opadctl
 APP_VERSION := $(shell sed -n 's/^version = "\([^"]*\)".*/\1/p' desktop/Cargo.toml | head -n 1)
 RPM_VERSION := $(subst -,~,$(APP_VERSION))
 
-.PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage deb rpm packages notices tosu-source tosu-notices lvgl espflash lazer-calculator lazer-calculator-source release-local feed-local
+.PHONY: all tosu firmware install install-user uninstall uninstall-user check clean appimage deb rpm packages notices tosu-source tosu-notices lvgl espflash lazer-calculator lazer-calculator-source release-local feed-local lab-ci push hooks
 
 # L-4: Build AppDir / AppImage
 appimage: all
@@ -343,6 +343,20 @@ check:
 	./firmware/test/host/run_tests.sh
 	python3 scripts/release/check_versions.py
 	@echo "✓ All checks passed!"
+
+# All of CI on the lab's mini PC for HEAD (scripts/ci/lab-ci.sh). main goes
+# to GitHub only once it passed: `make push` runs it and pushes, and the
+# pre-push hook (`make hooks`) refuses a main the lab has not passed.
+lab-ci:
+	scripts/ci/lab-ci.sh HEAD
+
+push:
+	scripts/ci/lab-ci.sh main
+	git push origin main
+
+hooks:
+	git config core.hooksPath scripts/git-hooks
+	@echo "✓ pre-push hook on: main is pushed only after the lab's CI passed it"
 
 # B-2: Clean build artifacts
 clean:

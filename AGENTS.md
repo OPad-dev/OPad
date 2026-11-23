@@ -100,6 +100,7 @@ AI: assisted
 | What | Command |
 |---|---|
 | Everything CI checks on the desktop side + firmware host tests | `make check` |
+| All of CI on the lab's mini PC, then push `main` | `make push` (`make lab-ci` runs the lab only) |
 | Desktop | `cd desktop && cargo build` |
 | Firmware (ESP-IDF **v5.5.2**) | `cd firmware && idf.py set-target esp32s3 build` |
 | Regenerate protobuf | `./scripts/gen_proto.sh` |
@@ -114,6 +115,14 @@ tests and `firmware/test/host/run_tests.sh`. CI additionally:
 - builds the firmware in `espressif/idf:v5.5.2`;
 - checks licences (REUSE via `scripts/check_reuse.py`, cargo-deny, third-party
   notices).
+
+CI does not run on pushes. `main` goes to GitHub only after the lab ran all
+of it on that exact commit (`scripts/ci/lab-ci.sh`: Linux jobs in the mini
+PC's `ci-linux` VM, Windows jobs on the mini PC); `make hooks` installs the
+pre-push hook that enforces it. GitHub runs the same jobs
+(`scripts/ci/jobs.sh`, `jobs.ps1`) on pull requests, by hand, and before
+every release build. A change to a check goes in those scripts, never only
+in `ci.yml`.
 
 The firmware builds on any machine with ESP-IDF v5.5.2. Build it before calling
 a firmware change unverified. Changes that touch input, USB, touch or the

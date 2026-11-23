@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Lets main go to GitHub only once the lab's CI passed that exact commit
+# (scripts/ci/lab-ci.sh; owner, 2026-11-23). Other branches are not checked.
+# Installed by `make hooks` (core.hooksPath). `make push` runs the lab and
+# pushes in one step.
+set -euo pipefail
+
+common="$(cd "$(git rev-parse --git-common-dir)" && pwd)"
+zero="0000000000000000000000000000000000000000"
+while read -r _ local_sha remote_ref _; do
+    [ "$remote_ref" = refs/heads/main ] || continue
+    [ "$local_sha" = "$zero" ] && continue
+    if [ ! -f "$common/lab-ci/$local_sha/ok" ]; then
+        echo "pre-push: the lab's CI has not passed ${local_sha:0:7}, so main is not pushed." >&2
+        echo "Run scripts/ci/lab-ci.sh $local_sha (or make push)." >&2
+        exit 1
+    fi
+done
