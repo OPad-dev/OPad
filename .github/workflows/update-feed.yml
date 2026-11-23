@@ -210,8 +210,10 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     needs: [sign-test, sign-release]
-    # inputs.deploy is unset (not false) for the schedule and by hand
-    if: always() && inputs.deploy != false && (needs.sign-test.result == 'success' || needs.sign-release.result == 'success')
+    # inputs.deploy is unset for the schedule and by hand, and an unset input
+    # compares equal to false (both are 0 to GitHub's ==), so it is compared
+    # as text: '' deploys, only 'false' does not
+    if: always() && format('{0}', inputs.deploy) != 'false' && (needs.sign-test.result == 'success' || needs.sign-release.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       pages: write
