@@ -35,7 +35,7 @@ El script ejecuta **28** suites de pruebas que cubren:
 
 ## Integración continua (CI)
 
-GitHub Actions ([/.github/workflows/ci.yml](/.github/workflows/ci.yml)) ejecuta adicionalmente:
+GitHub Actions ([/.github/workflows/ci.yml](/.github/workflows/ci.yml)) no se ejecuta en cada push. Se ejecuta en los pull requests, a mano (`gh workflow run ci.yml --ref <rama>`) y antes de cada versión: al mergear un PR de versión, [/.github/workflows/release-please.yml](/.github/workflows/release-please.yml) lo lanza y la versión solo se compila si pasa. Además de `make check`, ejecuta:
 - Compilación y pruebas MSVC en Windows (con la GUI en un trabajo separado).
 - Regeneración de protobuf mediante [/scripts/gen_proto.sh](/scripts/gen_proto.sh) (falla si los archivos generados `opad.pb.c/.h` difieren).
 - Compilación del firmware ESP32-S3 en el contenedor `espressif/idf:v5.5.2`.

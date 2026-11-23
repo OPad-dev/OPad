@@ -67,11 +67,21 @@ jobs:
           git commit -m "chore(main): Cargo.lock at the release version" -- desktop/Cargo.lock
           git push origin "$BRANCH"
 
+  # CI does not run on pushes (ci.yml): it runs here, once a release PR is
+  # merged, and a release is built only from a commit it passed
+  ci:
+    name: CI
+    needs: release-please
+    if: needs.release-please.outputs.app_created == 'true' || needs.release-please.outputs.firmware_created == 'true'
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   # A tag pushed with GITHUB_TOKEN starts no workflow, so the builds are
   # called from here rather than triggered by the tag
   app:
     name: App release
-    needs: release-please
+    needs: [release-please, ci]
     if: needs.release-please.outputs.app_created == 'true'
     uses: ./.github/workflows/release-app.yml
     with:
@@ -86,7 +96,7 @@ jobs:
 
   firmware:
     name: Firmware release
-    needs: release-please
+    needs: [release-please, ci]
     if: needs.release-please.outputs.firmware_created == 'true'
     uses: ./.github/workflows/release-firmware.yml
     with:

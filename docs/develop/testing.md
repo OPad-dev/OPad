@@ -35,7 +35,7 @@ The script runs **28** test suites covering:
 
 ## Continuous Integration (CI)
 
-GitHub Actions ([/.github/workflows/ci.yml](/.github/workflows/ci.yml)) additionally runs:
+GitHub Actions ([/.github/workflows/ci.yml](/.github/workflows/ci.yml)) does not run on every push. It runs on pull requests, by hand (`gh workflow run ci.yml --ref <branch>`), and before every release: merging a release PR runs it from [/.github/workflows/release-please.yml](/.github/workflows/release-please.yml), and the release is built only if it passes. Besides `make check`, it runs:
 - Windows MSVC build and tests (with GUI in a separate job).
 - Protobuf regeneration via [/scripts/gen_proto.sh](/scripts/gen_proto.sh) (fails if generated `opad.pb.c/.h` differ).
 - ESP32-S3 firmware build in the `espressif/idf:v5.5.2` container.
