@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.0.0-rc.6](https://github.com/OPad-dev/OPad/compare/v1.0.0-rc.5...v1.0.0-rc.6) (2026-11-23)
+
+
+### Features
+
+* **cli:** opadctl update shows, checks for and installs app updates ([c8acc14](https://github.com/OPad-dev/OPad/commit/c8acc14cedc067a165f22230421da309660da40b))
+* **diag:** the pad reports its free internal RAM, and the UI test its frame times ([632e839](https://github.com/OPad-dev/OPad/commit/632e8399cb455790cd921dde4cc15d57d582abb8))
+* **gui:** --page updates opens Settings on its Updates tab ([c6a71c7](https://github.com/OPad-dev/OPad/commit/c6a71c726629f67978d111a657e79686e2427894))
+* **update:** every install updates itself silently; the new version runs from the next start ([3314389](https://github.com/OPad-dev/OPad/commit/3314389457d6abb73bcec6c2d992357851e4641e))
+* **update:** the pad's firmware updates itself once the pad has gone 30 minutes unused ([a215e7a](https://github.com/OPad-dev/OPad/commit/a215e7a1766f9eccdbcb9d3ac7be079472739e0a))
+
+
+### Bug Fixes
+
+* **ci:** the update helper's signed test feed keeps its bytes on Windows checkouts ([a50b6ba](https://github.com/OPad-dev/OPad/commit/a50b6ba0812341d703842f9a5f013e8b3be9d9b2))
+* **config:** the app no longer offers GPIO 8 as a key pin, which the firmware rejects (F7) ([03b64e6](https://github.com/OPad-dev/OPad/commit/03b64e642168ccb457e61bcd0f5a0e0cde446796))
+* **gui:** the incompatible-pad banner names the pad protocol required, not the IPC version (F5) ([1b03691](https://github.com/OPad-dev/OPad/commit/1b03691db7c1467d1cd385dfd424befe7626fdcf))
+* **gui:** the Updates tab knows tosu's version and packaging from the start, and says plainly when no pad is connected ([eadf0c6](https://github.com/OPad-dev/OPad/commit/eadf0c608b782cfcd329d8d575cb67736eca1154))
+* **update:** a pad on ota_1 can take the next firmware update from the app (F3) ([7a22b53](https://github.com/OPad-dev/OPad/commit/7a22b5352e1bbc270e18b6a78e9f5d5ed4deaaef))
+* **update:** a pad whose screen fell asleep before the daemon connected can update itself ([08b8113](https://github.com/OPad-dev/OPad/commit/08b8113e2cef60b61dd7d77a85ff09adf43150d2))
+* **update:** the passwordless helper trusts only the feed key, never the public test key ([b01627a](https://github.com/OPad-dev/OPad/commit/b01627a39a9315f671346277179b5be9b23f98e9))
+* **update:** the Windows installer is started outside the daemon's process tree ([852da31](https://github.com/OPad-dev/OPad/commit/852da31ea508b38e27399f8542f6d321e3beefc2))
+
 ## [1.0.0-rc.5](https://github.com/OPad-dev/OPad/compare/v1.0.0-rc.4...v1.0.0-rc.5) (2026-11-22)
 
 
