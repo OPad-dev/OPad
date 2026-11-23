@@ -4,8 +4,10 @@
 //! entire project that can stop it being one.** Everything here follows from
 //! that, and the shape is deliberately different from the other two updaters:
 //!
-//! - There is no automatic path at all. Not on by default, not opt-in. A
-//!   person is shown what will happen and answers yes, every single time.
+//! - It never runs while the pad is in use. Update now shows a person what
+//!   will happen and asks every time; the automatic path (on by default) waits
+//!   until the pad has gone 30 minutes unused, never during a map
+//!   (`daemon/src/firmware_update.rs`, `auto_wait`).
 //! - The app partition is written and nothing else. `erase-flash` would take
 //!   NVS with it, and NVS holds the lifetime counters and the owner record.
 //! - Counters are synced to the host first, so the worst case is that the pad

@@ -39,8 +39,8 @@ La página **Settings** tiene cinco pestañas: <!-- src: /desktop/gui/src/pages.
 - **Advanced**: Deslizador **GAMEPLAY REFRESH RATE** (`1–30 Hz`, por defecto `10 Hz`) y casilla **Start in tray at login**. <!-- src: /desktop/gui/src/pages.rs#settings -->
 
 ### `🔄 Updates & Firmware`
-- **SOFTWARE UPDATES**: Versiones instalada frente a disponible para **OPad** (**Install now**, **Check automatically**) y **tosu** (**Update now**, **Update automatically**), selector **Channel** (`stable` / `beta`) y botón **Check now**. <!-- src: /desktop/gui/src/pages.rs#updates -->
-- **FIRMWARE UPDATE**: Firmware instalado, ranura OTA activa (`ota_0` / `ota_1`), notas de lanzamiento, bloqueos activos y botón **Update firmware** (abre un diálogo de consentimiento explícito con **Confirm & Flash Pad**). <!-- src: /desktop/gui/src/pages.rs#firmware_updates -->
+- **SOFTWARE UPDATES**: Versiones instalada frente a disponible para **OPad** y **tosu**, **What's new**, **Install now**, los interruptores **Install OPad updates automatically** e **Install tosu updates automatically** (ambos activados por defecto), selector **Channel** (`stable` / `beta`) y botón **Check now**. <!-- src: /desktop/gui/src/pages.rs#updates -->
+- **FIRMWARE UPDATE**: Firmware instalado, ranura OTA activa (`ota_0` / `ota_1`), notas de lanzamiento, bloqueos activos, cuándo se instalará una actualización automática, el interruptor **Install firmware updates automatically** y **Update now** (abre un diálogo de consentimiento explícito con **Confirm & Flash Pad**). <!-- src: /desktop/gui/src/pages.rs#firmware_updates, /desktop/gui/src/main.rs -->
 
 ### `ℹ About & tosu`
 - **TOSU INTEGRATION**: Muestra **Binary source:**, **Status:** (`Connected (streaming telemetry)` / `Not running / Disconnected`), **Custom path:**, **Browse external tosu...** y **Use bundled** (cuando se sustituye). <!-- src: /desktop/gui/src/pages.rs#tosu_settings -->
