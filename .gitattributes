@@ -2,3 +2,7 @@
 # out with CRLF (Git for Windows' default) and copies scripts/lab/*.sh into
 # Linux VMs, where bash cannot run CRLF.
 *.sh text eol=lf
+
+# Signed test fixtures are compared byte for byte against their minisign
+# signatures (opad-update's helper tests), so no line-ending conversion
+desktop/crates/opad-update/tests/fixtures/** -text
