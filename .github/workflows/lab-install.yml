@@ -47,6 +47,9 @@ on:
 
 permissions:
   contents: read
+  # The release-extras-<tag> artifacts (FILES.sha256, the PKGBUILD) of the
+  # runs that built the releases under test
+  actions: read
 
 jobs:
   install:

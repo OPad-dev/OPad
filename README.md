@@ -146,7 +146,7 @@ If the pad will not enter download mode or has to be returned to stock, see
 WinUSB, no Zadig, no install. The software below is for configuring it, the
 telemetry HUD and the lifetime counters.
 
-1. Download `opad-setup-<version>.exe` from the GitHub Releases page and run it.
+1. Download `OPad-Windows-Setup-<version>.exe` from the GitHub Releases page and run it.
 2. It installs the daemon, the GUI and `opadctl`, bundles tosu, and configures
    both to start at login. There is nothing else to do.
 
@@ -154,8 +154,8 @@ telemetry HUD and the lifetime counters.
 > OPad is applying to SignPath Foundation for free OSS signing, which
 > requires the repository to be public first. Until then, Windows shows
 > "Windows protected your PC" — choose **More info → Run anyway**. Check the
-> download against `SHA256SUMS` on the release page if you would rather verify
-> it than trust the dialog.
+> download against the SHA-256 the release page shows next to it if you would
+> rather verify it than trust the dialog.
 
 Uninstall from Settings → Apps. It removes everything it installed, including
 the two `Run` registry values and `%APPDATA%\opad` (the database with your
@@ -174,7 +174,8 @@ the pad's lifetime counters along with the owner record.
 
 ### Option A: Pre-built Packages (Recommended)
 
-Pre-built packages are on the GitHub Releases page. The `.deb` and `.rpm` set
+Pre-built packages are on the GitHub Releases page; each release's notes start
+with which file is for your system. The `.deb` and `.rpm` set
 up everything: the udev rule, the daemon's systemd user service, tray autostart,
 the bundled `espflash`, and the ptrace capability tosu needs to read osu!'s
 memory (see [docs/troubleshooting.md](docs/troubleshooting.md) §2).
@@ -185,28 +186,33 @@ Arch. The release packages, bundled tosu included, need glibc 2.28 or newer.
 
 #### Debian / Ubuntu / Pop!_OS (`.deb`):
 ```bash
-sudo apt install ./opad_<version>_amd64.deb
+sudo apt install ./OPad-Linux-Debian-Ubuntu-<version>.deb
 # Or via dpkg:
-sudo dpkg -i opad_<version>_amd64.deb
+sudo dpkg -i OPad-Linux-Debian-Ubuntu-<version>.deb
 ```
 
 #### Fedora / RHEL / openSUSE (`.rpm`):
 ```bash
-sudo dnf install ./opad-<version>.x86_64.rpm
+sudo dnf install ./OPad-Linux-Fedora-<version>.rpm
 ```
 
 #### Standalone AppImage:
 ```bash
-chmod +x opad-x86_64.AppImage
-./opad-x86_64.AppImage
+chmod +x OPad-Linux-<version>.AppImage
+./OPad-Linux-<version>.AppImage
 ```
 The AppImage installs nothing system-wide. On first run it offers to install
 the udev rule (it asks for your password), or run
-`./opad-x86_64.AppImage install-udev` yourself. It cannot give tosu the ptrace
+`./OPad-Linux-<version>.AppImage install-udev` yourself. It cannot give tosu the ptrace
 capability; `opadctl setup` and the Diagnostics page explain the alternative.
 
 #### Arch Linux:
-The repository's `PKGBUILD` builds from source (tosu runs on the system
+The release's prebuilt package (`opad-bin`, which updates itself like the
+`.deb` and `.rpm`):
+```bash
+sudo pacman -U ./OPad-Linux-Arch-<version>.pkg.tar.zst
+```
+Or the repository's `PKGBUILD` builds from source (tosu runs on the system
 `nodejs`, so see troubleshooting §2 about ptrace):
 ```bash
 makepkg -si

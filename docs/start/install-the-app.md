@@ -14,15 +14,15 @@ The optional OPad desktop suite adds live osu! gameplay telemetry, a screen layo
 
 ## Linux Installation
 
-Pre-built Linux packages are published on the [GitHub Releases](https://github.com/OPad-dev/OPad/releases) page (targeting glibc 2.28+, covering Ubuntu 22.04/24.04/26.04, Debian 12/13, RHEL/AlmaLinux/Rocky 9–10, Fedora, and Arch). <!-- src: /README.md -->
+Pre-built Linux packages are published on the [GitHub Releases](https://github.com/OPad-dev/OPad/releases) page; each release's notes start with which file is for your system. <!-- src: /scripts/release/release_notes.sh --> They target glibc 2.28+, covering Ubuntu 22.04/24.04/26.04, Debian 12/13, RHEL/AlmaLinux/Rocky 9–10, Fedora, and Arch. <!-- src: /README.md -->
 
 ### Debian / Ubuntu / Pop!_OS (`.deb`)
 ```bash
-sudo apt install ./opad_<version>_amd64.deb
+sudo apt install ./OPad-Linux-Debian-Ubuntu-<version>.deb
 ```
 Or with `dpkg`:
 ```bash
-sudo dpkg -i opad_<version>_amd64.deb
+sudo dpkg -i OPad-Linux-Debian-Ubuntu-<version>.deb
 sudo apt-get install -f
 ```
 The package installs: <!-- src: /packaging/linux/deb/postinst --> <!-- src: /Makefile -->
@@ -33,12 +33,16 @@ The package installs: <!-- src: /packaging/linux/deb/postinst --> <!-- src: /Mak
 
 ### Fedora / RHEL / openSUSE (`.rpm`)
 ```bash
-sudo dnf install ./opad-<version>.x86_64.rpm
+sudo dnf install ./OPad-Linux-Fedora-<version>.rpm
 ```
 Sets up the same binaries, `udev` rule, `cap_sys_ptrace=eip` capability, and systemd user unit as the `.deb` package. <!-- src: /README.md -->
 
-### Arch Linux (`PKGBUILD`)
-Build and install from the repository's `packaging/linux/arch/PKGBUILD` (package name `opad`): <!-- src: /packaging/linux/arch/PKGBUILD -->
+### Arch Linux
+Install the release's prebuilt `opad-bin` package, which updates itself like the `.deb` and `.rpm`: <!-- src: /.github/workflows/release-app.yml -->
+```bash
+sudo pacman -U ./OPad-Linux-Arch-<version>.pkg.tar.zst
+```
+Or build and install from the repository's `packaging/linux/arch/PKGBUILD` (package name `opad`): <!-- src: /packaging/linux/arch/PKGBUILD -->
 ```bash
 makepkg -si
 ```
@@ -46,14 +50,14 @@ On Arch, `tosu` runs under the system `nodejs` (`TOSU_STANDALONE=0`), so file ca
 
 ### Standalone AppImage
 ```bash
-chmod +x opad-x86_64.AppImage
-./opad-x86_64.AppImage
+chmod +x OPad-Linux-<version>.AppImage
+./OPad-Linux-<version>.AppImage
 ```
 On first run, the AppImage offers to install the `udev` rule, or you can install it explicitly via `pkexec`: <!-- src: /packaging/linux/appimage/AppRun -->
 ```bash
-./opad-x86_64.AppImage install-udev
+./OPad-Linux-<version>.AppImage install-udev
 ```
-You can also invoke the bundled daemon or CLI through the AppImage: `./opad-x86_64.AppImage daemon` or `./opad-x86_64.AppImage ctl <command>`. Because an AppImage mounts `nosuid`, `cap_sys_ptrace` does not apply to its bundled `tosu`; see [Troubleshooting §2](../troubleshooting.md). <!-- src: /packaging/linux/appimage/AppRun --> <!-- src: /desktop/crates/opad-tosu/src/lib.rs#ptrace_access -->
+You can also invoke the bundled daemon or CLI through the AppImage: `./OPad-Linux-<version>.AppImage daemon` or `./OPad-Linux-<version>.AppImage ctl <command>`. Because an AppImage mounts `nosuid`, `cap_sys_ptrace` does not apply to its bundled `tosu`; see [Troubleshooting §2](../troubleshooting.md). <!-- src: /packaging/linux/appimage/AppRun --> <!-- src: /desktop/crates/opad-tosu/src/lib.rs#ptrace_access -->
 
 ### Manual `udev` Rule (Source Installs)
 If you installed from source with `make && sudo make install` or `make install-user`, install `70-opad.rules` so non-root users can open the CDC port, USB node, and input node and so ModemManager does not probe the pad: <!-- src: /packaging/linux/udev/70-opad.rules -->
@@ -65,9 +69,9 @@ Run `opadctl setup` to verify `udev` rules and `ptrace` configuration. <!-- src:
 
 ## Windows Installation
 
-Download `opad-setup.exe` (or `opad-setup-<version>.exe`) from GitHub Releases and run it. <!-- src: /packaging/windows/installer.iss -->
+Download `OPad-Windows-Setup-<version>.exe` from [GitHub Releases](https://github.com/OPad-dev/OPad/releases) and run it. <!-- src: /packaging/windows/installer.iss -->
 
-1. **SmartScreen**: Until code signing is enabled, Windows displays "Windows protected your PC". Click **More info** -> **Run anyway** (you can verify the file against `SHA256SUMS` on the release page first). <!-- src: /README.md -->
+1. **SmartScreen**: Until code signing is enabled, Windows displays "Windows protected your PC". Click **More info** -> **Run anyway** (you can first check the file against the SHA-256 the release page shows next to it). <!-- src: /README.md -->
 2. **Per-user install**: Installs without administrator rights (`PrivilegesRequired=lowest`) into `%LOCALAPPDATA%\Programs\opad` (`DefaultDirName={localappdata}\Programs\opad`). <!-- src: /packaging/windows/installer.iss -->
 3. **Installed files**: `opad-gui.exe`, `opad-daemon.exe`, `opadctl.exe`, `espflash.exe`, `install-origin`, and `tosu\tosu.exe`. <!-- src: /packaging/windows/installer.iss -->
 4. **Startup**: The optional task **Start OPad when I log in** (checked by default) adds `opad-daemon` and `opad-gui` (`--tray`) under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. <!-- src: /packaging/windows/installer.iss -->

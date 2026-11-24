@@ -16,8 +16,8 @@ flowchart TD
     Merge --> Tag["Component Tag (vX.Y.Z or firmware-vX.Y.Z)"]
     Tag --> AppBuild["release-app.yml (Linux zigbuild, Windows MSVC, Inno Setup)"]
     Tag --> FWBuild["release-firmware.yml (ESP-IDF v5.5.2)"]
-    AppBuild --> Upload["publish_release.sh (Assets & SHA256SUMS)"]
-    FWBuild --> FWUpload["publish_release.sh (Assets & SHA256SUMS)"]
+    AppBuild --> Upload["publish_release.sh (assets)"]
+    FWBuild --> FWUpload["publish_release.sh (assets)"]
     Upload --> StageFeed["update-feed.yml (deploy: false, signed artifact)"]
     StageFeed --> Lab["lab-install.yml (feed: true, VMs update from feed)"]
     Lab --> DeployFeed["feed-deploy (GitHub Pages: updates.opad.dev)"]
@@ -38,7 +38,7 @@ Configured in [/release-please-config.json](/release-please-config.json) and [/.
 
 - **Desktop ([/.github/workflows/release-app.yml](/.github/workflows/release-app.yml))**: Compiles Linux x86_64 binaries via `cargo-zigbuild` (glibc 2.31), Windows x86_64 binaries via MSVC, and packages `.deb`, `.rpm`, AppImage, and `opad-setup.exe`.
 - **Firmware ([/.github/workflows/release-firmware.yml](/.github/workflows/release-firmware.yml))**: Compiles in `espressif/idf:v5.5.2`, publishing the OTA binary and full recovery artifacts.
-- **Publication ([/scripts/release/publish_release.sh](/scripts/release/publish_release.sh))**: Uploads artifacts and `SHA256SUMS` to GitHub Releases.
+- **Publication ([/scripts/release/publish_release.sh](/scripts/release/publish_release.sh))**: Uploads the files to GitHub Releases and starts an app release's notes with which file to download ([/scripts/release/release_notes.sh](/scripts/release/release_notes.sh)). There is no `SHA256SUMS`: GitHub shows each file's SHA-256. What only the lab and the AUR need (`FILES.sha256`, the `opad-bin` PKGBUILD and `.SRCINFO`) is the run's `release-extras-<tag>` artifact.
 
 ## 4. Signed Update Feeds (`opad-feed`)
 

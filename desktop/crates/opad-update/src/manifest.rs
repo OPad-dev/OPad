@@ -32,7 +32,7 @@ pub const FIRMWARE: &str = "firmware";
 pub const STABLE: &str = "stable";
 pub const BETA: &str = "beta";
 
-/// The `target` of the Arch Linux package (`opad-bin-*.pkg.tar.zst`, kind
+/// The `target` of the Arch Linux package (`OPad-Linux-Arch-<v>.pkg.tar.zst`, kind
 /// `archive`), which the update helper installs with pacman. A target of its
 /// own rather than a new kind: builds up to 1.0.0-rc.6 reject a feed with an
 /// artifact kind they do not know, and they look for `archive` only under

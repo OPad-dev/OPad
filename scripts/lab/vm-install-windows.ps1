@@ -1,5 +1,5 @@
 # Runs inside a Windows lab VM over SSH as opad (an administrator), from its
-# home directory. lab-install.ps1 copied each release's opad-setup-<version>.exe
+# home directory. lab-install.ps1 copied each release's Windows installer
 # into its own directory (old, new). One phase per call, like
 # scripts/lab/vm-install-linux.sh:
 #
@@ -53,8 +53,9 @@ function Get-InstalledVersion {
 
 switch ($Phase) {
     "install" {
-        $setup = Get-ChildItem (Join-Path $HOME "$Arg\opad-setup-*.exe") | Select-Object -First 1
-        if (-not $setup) { Fail "no opad-setup-*.exe in $HOME\$Arg"; break }
+        # OPad-Windows-Setup-<v>.exe, opad-setup-<v>.exe before 1.0.0-rc.7
+        $setup = Get-ChildItem (Join-Path $HOME "$Arg\*.exe") | Select-Object -First 1
+        if (-not $setup) { Fail "no installer (.exe) in $HOME\$Arg"; break }
         # Not -Wait: in PowerShell 5.1 it also waits for the setup's children,
         # and the daemon the setup starts never exits
         $p = Start-Process $setup.FullName -PassThru `
@@ -73,7 +74,7 @@ switch ($Phase) {
         # After an automatic update the installer runs at login: give it time
         $deadline = (Get-Date).AddSeconds(180)
         while ((Get-InstalledVersion) -ne $Arg -and (Get-Date) -lt $deadline) { Start-Sleep 5 }
-        while ((Get-Process opad-update-* , opad-setup* -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep 2 }
+        while ((Get-Process opad-update-* , opad-setup*, OPad-Windows-Setup* -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) { Start-Sleep 2 }
         $v = Get-InstalledVersion
         if ($v -eq $Arg) { Pass "version $Arg installed" } else { Fail "installed version is '$v', not $Arg" }
         # Integrity: the installed programs are the ones the release built

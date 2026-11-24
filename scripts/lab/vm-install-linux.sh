@@ -61,12 +61,20 @@ install)
       # A fresh boot may have unattended-upgrades holding the dpkg lock
       sudo apt-get -o DPkg::Lock::Timeout=600 update -qq >install.log 2>&1
       # The in-app updater's command (opad-update apply_command)
-      sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 install -y "$dir"/opad_*_amd64.deb >>install.log 2>&1 ;;
+      sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 install -y "$dir"/*.deb >>install.log 2>&1 ;;
     rpm)
-      sudo dnf install -y "$dir"/opad-*.x86_64.rpm >install.log 2>&1 ;;
+      sudo dnf install -y "$dir"/*.rpm >install.log 2>&1 ;;
     aur)
-      { pacman -Q base-devel >/dev/null 2>&1 || sudo pacman -Syu --needed --noconfirm base-devel; } >install.log 2>&1 &&
-        (cd "$dir" && mv -f opad-bin.PKGBUILD PKGBUILD 2>/dev/null; makepkg -sif --noconfirm) >>install.log 2>&1 ;;
+      # The AUR way (makepkg on the PKGBUILD) when lab-install.ps1 has the
+      # release's PKGBUILD; otherwise (its release-extras artifact expired)
+      # the built package, with pacman -U
+      if [ -f "$dir/opad-bin.PKGBUILD" ] || [ -f "$dir/PKGBUILD" ]; then
+        { pacman -Q base-devel >/dev/null 2>&1 || sudo pacman -Syu --needed --noconfirm base-devel; } >install.log 2>&1 &&
+          (cd "$dir" && mv -f opad-bin.PKGBUILD PKGBUILD 2>/dev/null; makepkg -sif --noconfirm) >>install.log 2>&1
+      else
+        echo "no PKGBUILD: installing the built package with pacman -U"
+        sudo pacman -U --noconfirm "$dir"/*.pkg.tar.zst >install.log 2>&1
+      fi ;;
   esac
   rc=$?
   if [ $rc -eq 0 ]; then pass "installed $(installed_version) with $KIND"; else tail -15 install.log; fail "install ($KIND) exited $rc"; fi

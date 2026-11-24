@@ -13,8 +13,9 @@ Obtained:  https://github.com/KotRikD/tosu/releases/tag/v4.26.2
 The full licence text is in LICENSE next to this file.
 
 Corresponding source for this exact version is published alongside the
-OPad release this binary came from as tosu-4.26.2-source.tar.gz, upstream's
-tree at the tag above (`make tosu-source`).
+OPad release this binary came from as Source-tosu-4.26.2.tar.gz (in
+releases before 1.0.0-rc.7, tosu-4.26.2-source.tar.gz), upstream's tree at
+the tag above (`make tosu-source`).
 
 THIRD_PARTY_NOTICES.txt lists what the binary contains besides tosu itself:
 its npm production dependencies and the embedded Node.js 24 runtime.
@@ -31,4 +32,5 @@ change is that ppy.osu.Game.Resources, taken by upstream at version "*", is
 pinned to the version the pinned osu! revision names. The build script is
 scripts/release/lazer-calculator/build-in-container.sh in the OPad repository,
 and the calculator's source is published with each OPad release as
-lazer-calculator-<version>-source.tar.gz.
+Source-lazer-calculator-<version>.tar.gz (in releases before 1.0.0-rc.7,
+lazer-calculator-<version>-source.tar.gz).

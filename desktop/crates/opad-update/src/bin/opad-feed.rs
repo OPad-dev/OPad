@@ -140,9 +140,17 @@ fn classify(component: &str, name: &str) -> Option<(String, ArtifactKind)> {
     }
 }
 
+/// By the names release-app.yml publishes (`OPad-Windows-Setup-<v>.exe`,
+/// `OPad-Linux-Debian-Ubuntu-<v>.deb`, `OPad-Linux-Fedora-<v>.rpm`,
+/// `OPad-Linux-Arch-<v>.pkg.tar.zst`, `OPad-Linux-<v>.AppImage`), and by the
+/// ones releases before 1.0.0-rc.7 used (`opad-setup-<v>.exe`,
+/// `opad_<v>_amd64.deb`, `opad-bin-<pkgver>-1-x86_64.pkg.tar.zst`, the
+/// `opad-linux-x86_64-<v>.tar.gz` archive, ...)
 fn app_artifact(name: &str) -> Option<(String, ArtifactKind)> {
     let lower = name.to_ascii_lowercase();
-    if lower.starts_with("opad-setup") && lower.ends_with(".exe") {
+    if (lower.starts_with("opad-setup") || lower.starts_with("opad-windows-setup-"))
+        && lower.ends_with(".exe")
+    {
         return Some(("windows-x86_64".into(), ArtifactKind::Installer));
     }
     if lower.starts_with("opad") && lower.ends_with(".deb") {
@@ -153,9 +161,11 @@ fn app_artifact(name: &str) -> Option<(String, ArtifactKind)> {
     }
     // The Arch package the update helper installs with pacman: a target of
     // its own, never the plain linux-x86_64 archive (manifest::PACMAN_TARGET)
-    if lower.starts_with("opad-bin-")
-        && !lower.starts_with("opad-bin-debug-")
-        && lower.ends_with("-x86_64.pkg.tar.zst")
+    if (lower.starts_with("opad-linux-arch-")
+        || (lower.starts_with("opad-bin-")
+            && !lower.starts_with("opad-bin-debug-")
+            && lower.ends_with("-x86_64.pkg.tar.zst")))
+        && lower.ends_with(".pkg.tar.zst")
     {
         return Some((PACMAN_TARGET.into(), ArtifactKind::Archive));
     }
@@ -651,10 +661,33 @@ mod tests {
             classify(APP, "opad-bin-debug-1.2.0-1-x86_64.pkg.tar.zst"),
             None
         );
+        // The names from 1.0.0-rc.7 on
+        assert_eq!(
+            classify(APP, "OPad-Windows-Setup-1.2.0.exe"),
+            Some(("windows-x86_64".into(), ArtifactKind::Installer))
+        );
+        assert_eq!(
+            classify(APP, "OPad-Linux-Debian-Ubuntu-1.2.0.deb"),
+            Some(("linux-x86_64".into(), ArtifactKind::Deb))
+        );
+        assert_eq!(
+            classify(APP, "OPad-Linux-Fedora-1.2.0.rpm"),
+            Some(("linux-x86_64".into(), ArtifactKind::Rpm))
+        );
+        assert_eq!(
+            classify(APP, "OPad-Linux-1.2.0.AppImage"),
+            Some(("linux-x86_64".into(), ArtifactKind::Binary))
+        );
+        assert_eq!(
+            classify(APP, "OPad-Linux-Arch-1.2.0-rc.1.pkg.tar.zst"),
+            Some((PACMAN_TARGET.into(), ArtifactKind::Archive))
+        );
         for other in [
             "SHA256SUMS",
             "THIRD_PARTY_NOTICES.html",
             "tosu-4.26.2-source.tar.gz",
+            "Source-tosu-4.26.2.tar.gz",
+            "Source-lazer-calculator-0.6.1-20260729-main.0.tar.gz",
             "opad-firmware.bin",
         ] {
             assert_eq!(classify(APP, other), None, "{other}");

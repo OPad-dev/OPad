@@ -40,11 +40,8 @@ make tosu-source
 make lazer-calculator-source
 
 # The same names release-app.yml publishes
-rm -rf build/local-tar && mkdir -p build/local-tar/bin "$OUT"
-cp desktop/target/release/{opad-daemon,opad-gui,opadctl} build/local-tar/bin/
-cp README.md LICENSE dist/THIRD_PARTY_NOTICES.html build/local-tar/
-tar -czf "$OUT/opad-linux-x86_64-${VERSION}.tar.gz" -C build/local-tar .
-cp dist/*.deb "$OUT/opad_${VERSION}_amd64.deb"
-cp dist/*.rpm "$OUT/opad-${VERSION}.x86_64.rpm"
-cp dist/*.AppImage "$OUT/opad-${VERSION}-x86_64.AppImage"
-cp dist/THIRD_PARTY_NOTICES.html dist/*-source.tar.gz "$OUT/"
+mkdir -p "$OUT"
+cp dist/*.deb "$OUT/OPad-Linux-Debian-Ubuntu-${VERSION}.deb"
+cp dist/*.rpm "$OUT/OPad-Linux-Fedora-${VERSION}.rpm"
+cp dist/*.AppImage "$OUT/OPad-Linux-${VERSION}.AppImage"
+cp dist/Source-*.tar.gz "$OUT/"

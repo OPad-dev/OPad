@@ -89,6 +89,7 @@ jobs:
     secrets: inherit
     permissions:
       contents: write
+      actions: read
       pages: write
       id-token: write
       attestations: write

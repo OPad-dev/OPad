@@ -91,7 +91,7 @@ Upstream `tosu`'s prebuilt `@tosuapp/lazer-calculator` requires glibc 2.38, whic
 On Linux, standard users need a `udev` rule to access the pad's CDC serial device (`/dev/ttyACM*`), USB device node, and input node (needed by the `opad-gui` switch chatter tester). <!-- src: /packaging/linux/udev/70-opad.rules --> <!-- src: /desktop/gui/src/diagnostics.rs#open_opad_evdev -->
 
 ### Fix
-The `.deb` and `.rpm` packages install `/etc/udev/rules.d/70-opad.rules` automatically. For the AppImage, accept the first-run prompt or run `./opad-x86_64.AppImage install-udev`. From a source checkout: <!-- src: /packaging/linux/appimage/AppRun --> <!-- src: /packaging/linux/udev/70-opad.rules -->
+The `.deb` and `.rpm` packages install `/etc/udev/rules.d/70-opad.rules` automatically. For the AppImage, accept the first-run prompt or run `./OPad-Linux-<version>.AppImage install-udev`. From a source checkout: <!-- src: /packaging/linux/appimage/AppRun --> <!-- src: /packaging/linux/udev/70-opad.rules -->
 
 ```bash
 sudo cp packaging/linux/udev/70-opad.rules /etc/udev/rules.d/
@@ -118,10 +118,10 @@ Compare the physical GPIO silkscreen label the switch wire is connected to again
 ## 4. Windows SmartScreen & Permissions
 
 ### Windows Defender SmartScreen
-The Windows installer (`opad-setup.exe`) is built by GitHub Actions and is unsigned until code signing is enabled. If SmartScreen shows "Windows protected your PC": <!-- src: /packaging/windows/installer.iss --> <!-- src: /README.md -->
+The Windows installer (`OPad-Windows-Setup-<version>.exe`) is built by GitHub Actions and is unsigned until code signing is enabled. If SmartScreen shows "Windows protected your PC": <!-- src: /packaging/windows/installer.iss --> <!-- src: /README.md -->
 1. Click **More info**.
 2. Click **Run anyway**.
-3. Optionally verify the download against `SHA256SUMS` published alongside the GitHub Release.
+3. Optionally check the download against the SHA-256 the GitHub release page shows next to it.
 
 Windows 10/11 uses built-in USB HID and CDC (`usbser.sys`) drivers with no driver install; OPad's MS OS 2.0 descriptor labels the serial port **OPad (COMx)** in Device Manager. <!-- src: /firmware/main/usb/usb_descriptors.c -->
 

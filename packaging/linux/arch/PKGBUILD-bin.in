@@ -35,16 +35,16 @@ conflicts=('opad' 'opad-git')
 # strip, no split debug package
 options=('!strip' '!debug')
 install=opad-bin.install
-source=("opad_${_pkgver}_amd64.deb::${url}/releases/download/v${_pkgver}/opad_${_pkgver}_amd64.deb"
+source=("${url}/releases/download/v${_pkgver}/OPad-Linux-Debian-Ubuntu-${_pkgver}.deb"
         "opad-bin.install")
 sha256sums=('@SHA256@'
             '@INSTALL_SHA256@')
-noextract=("opad_${_pkgver}_amd64.deb")
+noextract=("OPad-Linux-Debian-Ubuntu-${_pkgver}.deb")
 
 package() {
     cd "$srcdir"
     # The .deb's data.tar.* (cargo-deb compresses it with xz)
-    bsdtar -xOf "opad_${_pkgver}_amd64.deb" 'data.tar.*' | bsdtar -xf - -C "$pkgdir"
+    bsdtar -xOf "OPad-Linux-Debian-Ubuntu-${_pkgver}.deb" 'data.tar.*' | bsdtar -xf - -C "$pkgdir"
     # pacman owns these files now: the in-app updater only notifies (§6.1)
     printf 'aur' > "$pkgdir/usr/lib/opad/install-origin"
     if [ -f "$pkgdir/etc/opad/install-origin" ]; then

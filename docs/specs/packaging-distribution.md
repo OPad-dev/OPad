@@ -423,8 +423,8 @@ It is also the only workable one. Both archives require every Rust dependency to
 
 | Distro | Command |
 |---|---|
-| Debian / Ubuntu / Mint / Pop | `apt install ./opad_<ver>_amd64.deb` |
-| Fedora / RHEL / openSUSE | `dnf install ./opad-<ver>.x86_64.rpm` |
+| Debian / Ubuntu / Mint / Pop | `apt install ./OPad-Linux-Debian-Ubuntu-<ver>.deb` |
+| Fedora / RHEL / openSUSE | `dnf install ./OPad-Linux-Fedora-<ver>.rpm` |
 | Arch / Manjaro | `yay -S opad` |
 
 **Three consequences that follow directly, and must be handled rather than discovered:**

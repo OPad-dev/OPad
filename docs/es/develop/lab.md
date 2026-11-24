@@ -45,6 +45,8 @@ Cada VM inicia sesión automáticamente en una sesión de escritorio `opad` (`se
 
 ## 3. Ciclo automatizado de instalación, actualización y desinstalación
 
+Los paquetes son los archivos de la release, elegidos por tipo y comprobados con el SHA-256 que GitHub da de cada uno (`digest`), así que sirven tanto los nombres desde `1.0.0-rc.7` (`OPad-Linux-*`, `OPad-Windows-Setup-*`) como los anteriores. `FILES.sha256` y el PKGBUILD de `opad-bin` son archivos de las releases anteriores; desde `1.0.0-rc.7` son el artefacto `release-extras-<tag>` de la ejecución que construyó la release (se guarda 90 días y se lee con el token `actions: read` del job). Si ya caducó, Arch instala el `.pkg.tar.zst` ya construido con `pacman -U` y los archivos instalados no se comprueban contra `FILES.sha256`.
+
 Dirigido por [/scripts/lab/lab-install.ps1](/scripts/lab/lab-install.ps1), [/scripts/lab/vm-install-linux.sh](/scripts/lab/vm-install-linux.sh) (normalizado a saltos de línea LF antes de subirlo) y [/scripts/lab/vm-install-windows.ps1](/scripts/lab/vm-install-windows.ps1):
 
 1. **Línea base limpia**: Restaura la instantánea `limpia`, arranca en modo headless hasta que la sesión de escritorio está lista, instala la versión base y reinicia para verificar el inicio automático.

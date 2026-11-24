@@ -1,8 +1,8 @@
 # Tests an app release's installers in the lab VMs, on the self-hosted runner
 # (the Windows 11 mini PC). It downloads the release's assets (what a user
-# downloads) and checks them against SHA256SUMS. Then in each VM, from its
-# clean "limpia" snapshot, with the package for that system (.deb, .rpm, the
-# AUR opad-bin PKGBUILD, the Windows installer):
+# downloads) and checks them against the SHA-256 GitHub gives for each. Then
+# in each VM, from its clean "limpia" snapshot, with the package for that
+# system (.deb, .rpm, the AUR opad-bin PKGBUILD, the Windows installer):
 #
 #   1. installs the previous app release, reboots, checks OPad starts at
 #      login, its window opens and it wrote its data;
@@ -17,7 +17,11 @@
 #   3. uninstalls it and checks nothing of OPad is left.
 #
 # Each installed program is checked against the release's FILES.sha256 (the
-# hash of every file each package installs), when the release has one.
+# hash of every file each package installs), when the release has one. From
+# 1.0.0-rc.7 on, FILES.sha256 and the PKGBUILD are not release assets but the
+# release-extras-<tag> artifact of the run that built it (kept 90 days); with
+# it expired, Arch gets the built package (pacman -U) and the installed files
+# are not checked.
 # Results go to the lab dashboard (lab-results.ps1).
 #
 # Screenshots of the window after each step. With -From none (or no earlier
@@ -85,45 +89,74 @@ if (-not $LocalNew) {
     Set-LabTitle "Installers $(if ($From -ne 'none') { "$From -> " })$Tag"
 }
 
-# Each release's files in packages\<tag>, checked against its SHA256SUMS
+# A release's release-extras-<tag> artifact (FILES.sha256, the PKGBUILD) into
+# $Dir; false when there is none (before 1.0.0-rc.7, or expired). Needs a
+# token that may read Actions (actions: read)
+function Get-ReleaseExtras([string]$T, [string]$Dir) {
+    if (-not $env:GITHUB_TOKEN) { return $false }
+    $list = Invoke-WithRetry { Invoke-RestMethod -Headers $headers "https://api.github.com/repos/$Repo/actions/artifacts?name=release-extras-$T&per_page=20" }
+    $art = @($list.artifacts | Where-Object { -not $_.expired } | Sort-Object created_at -Descending) | Select-Object -First 1
+    if (-not $art) { return $false }
+    $zip = Join-Path $Dir "release-extras.zip"
+    # The download redirects to storage that takes no token; Windows
+    # PowerShell drops the Authorization header on the redirect
+    Invoke-WithRetry { Invoke-WebRequest -UseBasicParsing -Headers $headers -OutFile $zip $art.archive_download_url } | Out-Null
+    Expand-Archive -Force $zip $Dir
+    Remove-Item $zip
+    return $true
+}
+# Each release's files in packages\<tag>, checked against the SHA-256 GitHub
+# gives for each asset. Files are picked by type, so both the names from
+# 1.0.0-rc.7 on (OPad-Linux-*, OPad-Windows-Setup-*) and the older ones work
 function Get-Release([string]$T) {
     $v = $T.TrimStart("v")
     $dir = Join-Path $OutDir "packages\$T"
     New-Item -ItemType Directory -Force $dir | Out-Null
-    $files = @{
-        deb = "opad_${v}_amd64.deb"; rpm = "opad-${v}.x86_64.rpm"
-        aur = "opad-bin.PKGBUILD"; win = "opad-setup-${v}.exe"
+    $rel = Invoke-WithRetry { Invoke-RestMethod -Headers $headers "https://api.github.com/repos/$Repo/releases/tags/$T" }
+    $assets = @($rel.assets)
+    $pick = {
+        param($glob, [switch]$Optional)
+        $a = @($assets | Where-Object { $_.name -like $glob -and $_.name -notlike "*-debug-*" })
+        if ($a.Count -eq 0 -and $Optional) { return $null }
+        if ($a.Count -ne 1) { throw "$T has $($a.Count) assets named $glob" }
+        return $a[0]
     }
-    foreach ($name in @($files.Values) + "SHA256SUMS") {
-        $u = "https://github.com/$Repo/releases/download/$T/$name"
-        Invoke-WithRetry { Invoke-WebRequest -UseBasicParsing -Headers $headers -OutFile (Join-Path $dir $name) $u } | Out-Null
+    $chosen = @{ deb = (& $pick "*.deb"); rpm = (& $pick "*.rpm"); win = (& $pick "*.exe")
+                 pkg = (& $pick "*.pkg.tar.zst" -Optional); aur = (& $pick "opad-bin.PKGBUILD" -Optional)
+                 sums = (& $pick "FILES.sha256" -Optional) }
+    $files = @{}
+    foreach ($k in @($chosen.Keys)) {
+        $a = $chosen[$k]
+        if (-not $a) { continue }
+        $path = Join-Path $dir $a.name
+        Invoke-WithRetry { Invoke-WebRequest -UseBasicParsing -Headers $headers -OutFile $path $a.browser_download_url } | Out-Null
+        if ($a.digest -notmatch '^sha256:([0-9a-f]{64})$') { Fail "GitHub gives no SHA-256 for $T $($a.name)"; continue }
+        if ((Get-FileHash $path -Algorithm SHA256).Hash -eq $Matches[1].ToUpper()) { Pass "SHA256 matches: $T $($a.name)" }
+        else { Fail "SHA256 mismatch: $T $($a.name)" }
+        if ($k -ne "sums") { $files[$k] = $a.name }
     }
-    # The hash of every file each package installs (releases after rc.3)
-    try {
-        Invoke-WebRequest -UseBasicParsing -Headers $headers -OutFile (Join-Path $dir "FILES.sha256") `
-            "https://github.com/$Repo/releases/download/$T/FILES.sha256" | Out-Null
-    } catch { Remove-Item (Join-Path $dir "FILES.sha256") -ErrorAction SilentlyContinue }
+    # From 1.0.0-rc.7 on, FILES.sha256 and the PKGBUILD come from the run that built the release
+    if (-not $chosen.sums -and (Get-ReleaseExtras $T $dir)) {
+        if (Test-Path (Join-Path $dir "opad-bin.PKGBUILD")) { $files.aur = "opad-bin.PKGBUILD" }
+        Pass "$T`: FILES.sha256 and the PKGBUILD from its release-extras artifact"
+    }
     # The PKGBUILD's own source: its install hooks, from the tagged tree
-    $u = "https://raw.githubusercontent.com/$Repo/$T/packaging/linux/arch/opad-bin.install"
-    Invoke-WithRetry { Invoke-WebRequest -UseBasicParsing -Headers $headers -OutFile (Join-Path $dir "opad-bin.install") $u } | Out-Null
-    foreach ($line in Get-Content (Join-Path $dir "SHA256SUMS")) {
-        $sum, $file = $line -split '\s+\*?', 2
-        if (@($files.Values) + "FILES.sha256" -notcontains $file) { continue }
-        if ((Get-FileHash (Join-Path $dir $file) -Algorithm SHA256).Hash -eq $sum.ToUpper()) { Pass "SHA256 matches: $T $file" }
-        else { Fail "SHA256 mismatch: $T $file" }
+    if ($files.aur) {
+        $u = "https://raw.githubusercontent.com/$Repo/$T/packaging/linux/arch/opad-bin.install"
+        Invoke-WithRetry { Invoke-WebRequest -UseBasicParsing -Headers $headers -OutFile (Join-Path $dir "opad-bin.install") $u } | Out-Null
     }
     return @{ Tag = $T; Version = $v; Dir = $dir; Files = $files }
 }
 # A local build's files (no SHA256SUMS or FILES.sha256: nothing published)
 function Get-LocalRelease([string]$Dir) {
     $Dir = (Resolve-Path $Dir).Path
-    $deb = Get-ChildItem $Dir -Filter "opad_*_amd64.deb" | Select-Object -First 1
-    if (-not $deb) { throw "no opad_*_amd64.deb in $Dir" }
-    $v = $deb.Name -replace '^opad_(.+)_amd64\.deb$', '$1'
-    $pick = { param($f) $x = Get-ChildItem $Dir -Filter $f | Select-Object -First 1; if (-not $x) { throw "no $f in $Dir" }; $x.Name }
+    $pick = { param($f) $x = Get-ChildItem $Dir -Filter $f | Where-Object { $_.Name -notlike "*-debug-*" } | Select-Object -First 1; if (-not $x) { throw "no $f in $Dir" }; $x.Name }
+    $deb = & $pick "*.deb"
+    # OPad-Linux-Debian-Ubuntu-<v>.deb, opad_<v>_amd64.deb before 1.0.0-rc.7
+    $v = $deb -replace '^OPad-Linux-Debian-Ubuntu-(.+)\.deb$', '$1' -replace '^opad_(.+)_amd64\.deb$', '$1'
     $files = @{
-        deb = $deb.Name; rpm = (& $pick "opad-*.x86_64.rpm"); aur = "opad-bin.PKGBUILD"
-        win = (& $pick "opad-setup-*.exe"); pkg = (& $pick "opad-bin-*-x86_64.pkg.tar.zst")
+        deb = $deb; rpm = (& $pick "*.rpm"); aur = "opad-bin.PKGBUILD"
+        win = (& $pick "*.exe"); pkg = (& $pick "*.pkg.tar.zst")
     }
     foreach ($f in $files.Values) { Pass "local build file: $f" }
     return @{ Tag = "v$v"; Version = $v; Dir = $Dir; Files = $files }
@@ -170,8 +203,11 @@ function Get-VmFiles([string]$Vm, $Rel) {
         "ubuntu-*"  { @(Join-Path $Rel.Dir $f.deb) }
         "fedora-*"  { @(Join-Path $Rel.Dir $f.rpm) }
         # The .deb too: makepkg takes the PKGBUILD's source from beside it
-        # rather than downloading it (a local build was never published)
-        "arch"      { @((Join-Path $Rel.Dir $f.aur), (Join-Path $Rel.Dir "opad-bin.install"), (Join-Path $Rel.Dir $f.deb)) }
+        # rather than downloading it (a local build was never published).
+        # Without the PKGBUILD, the built package (pacman -U)
+        "arch"      { if ($f.aur) { @((Join-Path $Rel.Dir $f.aur), (Join-Path $Rel.Dir "opad-bin.install"), (Join-Path $Rel.Dir $f.deb)) }
+                      elseif ($f.pkg) { @(Join-Path $Rel.Dir $f.pkg) }
+                      else { throw "$($Rel.Tag) has neither a PKGBUILD nor an Arch package" } }
         "windows-*" { @(Join-Path $Rel.Dir $f.win) }
     })
     $sums = Join-Path $Rel.Dir "FILES.sha256"
@@ -229,11 +265,13 @@ function Test-Installed([string]$Vm, [string]$Sub, $Rel, [switch]$Previous) {
 }
 
 # Whether the previous release updates itself silently: it has the update
-# helper (releases from 1.0.0-rc.6 on; a local test build always does)
+# helper (releases from 1.0.0-rc.6 on; a local test build always does). Its
+# FILES.sha256 says; without one, only rc.1 to rc.5 lack it
 $oldSelfUpdates = $false
 if ($old) {
     $oldSums = Join-Path $old.Dir "FILES.sha256"
-    $oldSelfUpdates = [bool]$LocalNew -or ((Test-Path $oldSums) -and (Select-String -Quiet -SimpleMatch "opad-update-helper" $oldSums))
+    $oldSelfUpdates = [bool]$LocalNew -or $(if (Test-Path $oldSums) { [bool](Select-String -Quiet -SimpleMatch "opad-update-helper" $oldSums) }
+                                            else { $old.Tag -notmatch '^v1\.0\.0-rc\.[1-5]$' })
 }
 
 # The Linux VMs' script with LF line endings whatever the checkout has: bash

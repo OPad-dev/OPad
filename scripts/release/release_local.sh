@@ -115,7 +115,7 @@ if [ "${WINDOWS}" = 1 ]; then
         '/DSourceDir=..\..\build\local-win\bin' '/DTosuDir=..\..\build\local-win\tosu' \
         packaging/windows/installer.iss
     give_back "${REPO_ROOT}/build/installer"
-    cp build/installer/opad-setup.exe "${OUT}/opad-setup-${VERSION}.exe"
+    cp build/installer/opad-setup.exe "${OUT}/OPad-Windows-Setup-${VERSION}.exe"
 fi
 
 (cd "${OUT}" && rm -f SHA256SUMS && sha256sum -- * > SHA256SUMS)

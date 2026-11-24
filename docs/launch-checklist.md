@@ -187,8 +187,8 @@ In this order (release spec §18.2–§18.3, §19):
 - [ ] Signing (§19): `release` environment with you as reviewer; minisign key; SignPath accepted and configured; `SIGNING_ENABLED=true`. (No GPG key: no apt/dnf repositories.)
 - [ ] Rotation release trusting the test key **and** the real key is out, and an install of it updates from a real-key feed.
 - [ ] First stable release: `prerelease: false`, `release-as: 1.0.0`; `stable.json` lists it; release immutability on; `gh attestation verify` passes on a downloaded file; the Windows installer shows a valid signature.
-- [ ] AUR `opad-bin` from `aur_bin.sh`; `makepkg -si` on Arch; `.SRCINFO` matches.
-- [ ] Download page (0.7) links the current stable files and SHA256SUMS.
+- [ ] AUR `opad-bin` from the release run's `release-extras-<tag>` artifact (`aur_bin.sh`); `makepkg -si` on Arch; `.SRCINFO` matches.
+- [ ] Download page (0.7) links the current stable files and their SHA-256.
 
 ## 3. Pad: firmware and V3 hardware
 
@@ -346,7 +346,7 @@ compliance lab or advisor; this list is what to ask about, not legal advice.
 - [ ] **Packaging:** packaging producer registration (Spain's EPR for packaging) if applicable to your volume.
 - [ ] **UK (UKCA) and US (FCC Part 15 B)** only if you sell there.
 - [ ] **USB:** do not use the USB-IF logo; resolve 0.9.
-- [ ] **Open-source obligations:** the firmware is GPL-3.0-or-later and the boards CERN-OHL-S-2.0. Each unit ships with a written notice saying where the source and hardware files are (the firmware release already attaches its source bundle). Bundled tosu, espflash and LVGL notices are in the releases (`THIRD_PARTY_NOTICES.html`, `FIRMWARE_THIRD_PARTY_NOTICES.md`).
+- [ ] **Open-source obligations:** the firmware is GPL-3.0-or-later and the boards CERN-OHL-S-2.0. Each unit ships with a written notice saying where the source and hardware files are (the firmware release already attaches its source bundle). Bundled tosu, espflash and LVGL notices are in the packages (`THIRD_PARTY_NOTICES.html`) and the firmware release (`FIRMWARE_THIRD_PARTY_NOTICES.md`).
 - [ ] **The easter-egg GIF** is `LicenseRef-Unknown-ThirdParty`. In a sold product it needs a licence from its author, or it comes out of the release image.
 - [ ] **Trademark:** "osu!" is ppy's. The disclaimer in `README.md:296` also goes on the store page and the box; product name, logo and photos must not suggest endorsement. Read ppy's brand guidelines before using "osu!" in marketing.
 - [ ] **Consumer law (Spain/EU):** 3-year legal guarantee, 14-day withdrawal for online sales, terms of sale, privacy policy (the app contacts GitHub for updates: say so).

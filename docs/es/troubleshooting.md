@@ -91,7 +91,7 @@ El `@tosuapp/lazer-calculator` precompilado del proyecto original de `tosu` requ
 En Linux, los usuarios estándar necesitan una regla `udev` para acceder al dispositivo serie CDC del teclado (`/dev/ttyACM*`), al nodo de dispositivo USB y al nodo de entrada (necesario para el probador de rebote de interruptores de `opad-gui`). <!-- src: /packaging/linux/udev/70-opad.rules --> <!-- src: /desktop/gui/src/diagnostics.rs#open_opad_evdev -->
 
 ### Solución
-Los paquetes `.deb` y `.rpm` instalan `/etc/udev/rules.d/70-opad.rules` automáticamente. En el AppImage, acepta el aviso de la primera ejecución o ejecuta `./opad-x86_64.AppImage install-udev`. Desde el código fuente: <!-- src: /packaging/linux/appimage/AppRun --> <!-- src: /packaging/linux/udev/70-opad.rules -->
+Los paquetes `.deb` y `.rpm` instalan `/etc/udev/rules.d/70-opad.rules` automáticamente. En el AppImage, acepta el aviso de la primera ejecución o ejecuta `./OPad-Linux-<version>.AppImage install-udev`. Desde el código fuente: <!-- src: /packaging/linux/appimage/AppRun --> <!-- src: /packaging/linux/udev/70-opad.rules -->
 
 ```bash
 sudo cp packaging/linux/udev/70-opad.rules /etc/udev/rules.d/
@@ -118,10 +118,10 @@ Compara la etiqueta física de serigrafía del GPIO al que está conectado el ca
 ## 4. Windows SmartScreen y permisos
 
 ### Windows Defender SmartScreen
-El instalador de Windows (`opad-setup.exe`) se compila en GitHub Actions y no está firmado hasta que se habilite la firma de código. Si SmartScreen muestra "Windows protected your PC": <!-- src: /packaging/windows/installer.iss --> <!-- src: /README.md -->
+El instalador de Windows (`OPad-Windows-Setup-<version>.exe`) se compila en GitHub Actions y no está firmado hasta que se habilite la firma de código. Si SmartScreen muestra "Windows protected your PC": <!-- src: /packaging/windows/installer.iss --> <!-- src: /README.md -->
 1. Haz clic en **More info**.
 2. Haz clic en **Run anyway**.
-3. Opcionalmente verifica la descarga contra el archivo `SHA256SUMS` publicado junto al lanzamiento de GitHub.
+3. Opcionalmente comprueba la descarga con el SHA-256 que la página del lanzamiento de GitHub muestra junto a ella.
 
 Windows 10/11 usa controladores integrados USB HID y CDC (`usbser.sys`) sin necesidad de instalar controladores; el descriptor MS OS 2.0 de OPad etiqueta el puerto serie como **OPad (COMx)** en el Administrador de dispositivos. <!-- src: /firmware/main/usb/usb_descriptors.c -->
 

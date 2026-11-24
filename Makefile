@@ -98,7 +98,7 @@ lazer-calculator:
 	@echo "✓ lazer-calculator $(LAZER_VERSION) in $(LAZER_DIR)/binding.node"
 
 # LGPL-3.0 corresponding source for the rebuilt calculator
-LAZER_SOURCE_TARBALL ?= dist/lazer-calculator-$(LAZER_VERSION)-source.tar.gz
+LAZER_SOURCE_TARBALL ?= dist/Source-lazer-calculator-$(LAZER_VERSION).tar.gz
 lazer-calculator-source:
 	@test -d "$(LAZER_DIR)/src" || $(MAKE) lazer-calculator
 	@mkdir -p "$(dir $(LAZER_SOURCE_TARBALL))"
@@ -158,7 +158,7 @@ endif
 
 # LGPL-3.0 corresponding source for the bundled tosu: upstream's tree at the
 # exact tag we build, lockfile included, published with every release.
-TOSU_SOURCE_TARBALL ?= dist/tosu-$(TOSU_VERSION:v%=%)-source.tar.gz
+TOSU_SOURCE_TARBALL ?= dist/Source-tosu-$(TOSU_VERSION:v%=%).tar.gz
 tosu-source:
 	@if [ ! -d "$(TOSU_SRC_DIR)" ]; then \
 		git clone --depth 1 --branch $(TOSU_VERSION) $(TOSU_REPO) $(TOSU_SRC_DIR); \

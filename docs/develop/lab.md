@@ -45,6 +45,8 @@ Each VM auto-logs into an `opad` desktop session (`seat0` on Linux, active conso
 
 ## 3. Automated Install, Upgrade, and Uninstall Lifecycle
 
+The release's packages are its assets, picked by type and checked against the SHA-256 GitHub gives for each (`digest`), so the names from `1.0.0-rc.7` on (`OPad-Linux-*`, `OPad-Windows-Setup-*`) and the older ones both work. `FILES.sha256` and the `opad-bin` PKGBUILD are assets of the older releases; from `1.0.0-rc.7` on they are the `release-extras-<tag>` artifact of the run that built the release (kept 90 days, read with the job's `actions: read` token). Once it has expired, Arch installs the built `.pkg.tar.zst` with `pacman -U` and the installed files are not checked against `FILES.sha256`.
+
 Driven by [/scripts/lab/lab-install.ps1](/scripts/lab/lab-install.ps1), [/scripts/lab/vm-install-linux.sh](/scripts/lab/vm-install-linux.sh) (normalized to LF line endings before upload), and [/scripts/lab/vm-install-windows.ps1](/scripts/lab/vm-install-windows.ps1):
 
 1. **Clean Baseline**: Restores the `limpia` snapshot, boots headless until the desktop session is ready, installs the baseline release, and reboots to verify autostart.

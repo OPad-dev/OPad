@@ -1,8 +1,12 @@
 name: Release app
 
 # Builds and publishes one app release (tag vX.Y.Z): the Windows installer,
-# the Linux packages (glibc <= 2.31), the AppImage and the tarball, with
-# third-party notices and the bundled tosu's source. Started by
+# the Linux packages (glibc <= 2.31) and the AppImage, with the bundled
+# tosu's source. Every asset is a file a user may download, named so that
+# GitHub's alphabetical list reads well (OPad-Linux-*, OPad-Windows-*, then
+# Source-*), and the release notes start with which one to pick
+# (scripts/release/release_notes.sh). What only the lab and the AUR need
+# goes to the release-extras-<tag> workflow artifact instead. Started by
 # release-please.yml when an app release PR is merged, or by hand with a tag.
 # See docs/specs/release-and-updates.md §4.
 #
@@ -219,19 +223,18 @@ jobs:
           make tosu-source
           make lazer-calculator-source
 
-      # One file name per format, with the SemVer version in it. The package
-      # managers read the version from inside the package; GitHub would mangle
-      # the "~" cargo-deb and RPM put in theirs.
+      # One file name per format, named for the system it is for, with the
+      # SemVer version in it (no architecture: there is only x86_64). The
+      # package managers read the version from inside the package; GitHub
+      # would mangle the "~" cargo-deb and RPM put in theirs. The third-party
+      # notices are inside every package, so they are not an asset of their own.
       - name: Stage Linux artifacts
         run: |
-          mkdir -p staging/tar/bin out
-          cp desktop/target/release/{opad-daemon,opad-gui,opadctl} staging/tar/bin/
-          cp README.md LICENSE dist/THIRD_PARTY_NOTICES.html staging/tar/
-          tar -czf "out/opad-linux-x86_64-${VERSION}.tar.gz" -C staging/tar .
-          mv dist/*.deb "out/opad_${VERSION}_amd64.deb"
-          mv dist/*.rpm "out/opad-${VERSION}.x86_64.rpm"
-          mv dist/*.AppImage "out/opad-${VERSION}-x86_64.AppImage"
-          mv dist/THIRD_PARTY_NOTICES.html dist/*-source.tar.gz out/
+          mkdir -p out
+          mv dist/*.deb "out/OPad-Linux-Debian-Ubuntu-${VERSION}.deb"
+          mv dist/*.rpm "out/OPad-Linux-Fedora-${VERSION}.rpm"
+          mv dist/*.AppImage "out/OPad-Linux-${VERSION}.AppImage"
+          mv dist/Source-*.tar.gz out/
           ls -l out
 
       - uses: actions/upload-artifact@v7
@@ -378,7 +381,7 @@ jobs:
         run: |
           mkdir -p out
           iscc packaging/windows/installer.iss
-          cp build/installer/opad-setup.exe "out/opad-setup-${VERSION}.exe"
+          cp build/installer/opad-setup.exe "out/OPad-Windows-Setup-${VERSION}.exe"
 
       - name: Upload the installer for signing
         id: unsigned-installer
@@ -386,7 +389,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: unsigned-installer
-          path: out/opad-setup-*.exe
+          path: out/OPad-Windows-Setup-*.exe
 
       - name: Sign the installer (SignPath)
         if: vars.SIGNING_ENABLED == 'true'
@@ -405,7 +408,7 @@ jobs:
         with:
           name: windows
           path: |
-            out/opad-setup-*.exe
+            out/OPad-Windows-Setup-*.exe
             out/windows-files.sha256
 
   # §19.3: dnf's gpgcheck=1 needs the package itself signed, so this happens
@@ -479,26 +482,30 @@ jobs:
           path: staging
           merge-multiple: true
 
-      # For the AUR (§10.1); pushing it there is a manual step
+      # For the AUR (§10.1); pushing it there is a manual step. Not a
+      # release asset: it goes to the release-extras artifact (below)
       - name: opad-bin PKGBUILD
         run: |
-          scripts/release/aur_bin.sh "$VERSION" "staging/opad_${VERSION}_amd64.deb" aur
-          cp aur/PKGBUILD staging/opad-bin.PKGBUILD
-          cp aur/.SRCINFO staging/opad-bin.SRCINFO
+          mkdir -p extras
+          scripts/release/aur_bin.sh "$VERSION" "staging/OPad-Linux-Debian-Ubuntu-${VERSION}.deb" aur
+          cp aur/PKGBUILD extras/opad-bin.PKGBUILD
+          cp aur/.SRCINFO extras/opad-bin.SRCINFO
 
-      # The same package, built (opad-bin-<pkgver>-1-x86_64.pkg.tar.zst): the
-      # update helper installs it with pacman on Arch installs, as yay or
-      # paru would build it from the AUR
+      # The same package, built: the update helper installs it with pacman
+      # on Arch installs, as yay or paru would build it from the AUR, and a
+      # person can install it with pacman -U
       - name: opad-bin package
         run: |
           mkdir -p archbuild
-          cp aur/PKGBUILD aur/opad-bin.install "staging/opad_${VERSION}_amd64.deb" archbuild/
+          cp aur/PKGBUILD aur/opad-bin.install "staging/OPad-Linux-Debian-Ubuntu-${VERSION}.deb" archbuild/
           docker run --rm -v "$PWD/archbuild:/build" archlinux:base-devel bash -euc '
             useradd -m builder
             chown -R builder /build
             su builder -c "cd /build && makepkg --nodeps --noconfirm"'
-          cp archbuild/opad-bin-*-x86_64.pkg.tar.zst staging/
-          ls -l staging/opad-bin-*.pkg.tar.zst
+          pkg=(archbuild/opad-bin-*-x86_64.pkg.tar.zst)
+          [ ${#pkg[@]} -eq 1 ] || { echo "expected one opad-bin package, got: ${pkg[*]}" >&2; exit 1; }
+          cp "${pkg[0]}" "staging/OPad-Linux-Arch-${VERSION}.pkg.tar.zst"
+          ls -l staging/*.pkg.tar.zst
 
       # Every file each package installs, by hash: the lab checks the
       # installed copies against it (scripts/lab/vm-install-*.sh/.ps1)
@@ -507,21 +514,28 @@ jobs:
           sudo apt-get install -y -qq libarchive-tools >/dev/null
           for pkg in deb rpm; do
             dir="$(mktemp -d)"
-            if [ $pkg = deb ]; then bsdtar -xOf staging/opad_*_amd64.deb 'data.tar.*' | bsdtar -xf - -C "$dir"
-            else bsdtar -xf staging/opad-*.x86_64.rpm -C "$dir"; fi
+            if [ $pkg = deb ]; then bsdtar -xOf staging/*.deb 'data.tar.*' | bsdtar -xf - -C "$dir"
+            else bsdtar -xf staging/*.rpm -C "$dir"; fi
             (cd "$dir" && find . -type f | sort | while read -r f; do
               echo "$(sha256sum "$f" | cut -d' ' -f1)  ${pkg}:${f#.}"
             done)
-          done > staging/FILES.sha256
-          cat staging/windows-files.sha256 >> staging/FILES.sha256
+          done > extras/FILES.sha256
+          cat staging/windows-files.sha256 >> extras/FILES.sha256
           rm staging/windows-files.sha256
-          cat staging/FILES.sha256
+          cat extras/FILES.sha256
 
-      - name: Checksums
-        run: |
-          cd staging
-          sha256sum * > SHA256SUMS
-          cat SHA256SUMS
+      # What only the lab (scripts/lab/lab-install.ps1 finds it by name) and
+      # the AUR push need, kept off the release. GitHub shows every asset's
+      # SHA-256 itself, so there is no SHA256SUMS either.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-extras-${{ inputs.tag }}
+          path: extras/
+          include-hidden-files: true
+          retention-days: 90
+
+      - name: Release files
+        run: ls -l staging
 
       # §19: signed statement of which workflow built each file, from which
       # commit (gh attestation verify). Needs a public repository.
@@ -564,6 +578,7 @@ jobs:
       feed: true
     permissions:
       contents: read
+      actions: read
 
   # Installed apps are offered the release only once its installers, and
   # the update to it from that feed, passed the lab: with the mini PC off,

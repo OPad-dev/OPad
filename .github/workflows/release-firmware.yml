@@ -139,11 +139,12 @@ jobs:
           name: firmware
           path: staging
 
+      # Printed for the log only: GitHub shows every asset's SHA-256 itself,
+      # so the release carries no SHA256SUMS
       - name: Checksums
         run: |
           cd staging
-          sha256sum * > SHA256SUMS
-          cat SHA256SUMS
+          sha256sum *
 
       # §19: signed statement of which workflow built each file, from which
       # commit (gh attestation verify). Needs a public repository.

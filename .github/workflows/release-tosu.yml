@@ -109,7 +109,7 @@ jobs:
           cp licenses/tosu/LICENSE out/tosu-LICENSE
           cp licenses/tosu/NOTICE out/tosu-NOTICE
           cp licenses/tosu/THIRD_PARTY_NOTICES.txt out/tosu-THIRD_PARTY_NOTICES.txt
-          mv dist/*-source.tar.gz out/
+          mv dist/Source-*.tar.gz out/
           ls -l out
 
       - uses: actions/upload-artifact@v7
@@ -170,11 +170,12 @@ jobs:
           path: staging
           merge-multiple: true
 
+      # Printed for the log only: GitHub shows every asset's SHA-256 itself,
+      # so the release carries no SHA256SUMS
       - name: Checksums
         run: |
           cd staging
-          sha256sum * > SHA256SUMS
-          cat SHA256SUMS
+          sha256sum *
 
       # §19: signed statement of which workflow built each file, from which
       # commit (gh attestation verify). Needs a public repository.

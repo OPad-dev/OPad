@@ -144,9 +144,23 @@ monorepo with several products.
 
 | Track | Tag | Release contains | GitHub "Latest" |
 |---|---|---|---|
-| **App** | `v1.2.0` | `opad-setup-1.2.0.exe`, `.deb`, `.rpm`, `.AppImage`, `.tar.gz`, `THIRD_PARTY_NOTICES.html`, `opad-bin` PKGBUILD + `.SRCINFO`, `SHA256SUMS` | **yes** |
-| **Firmware** | `firmware-v1.1.0` | `opad-firmware.bin`, `bootloader.bin`, `partition-table.bin`, `ota_data_initial.bin`, notices, source bundle (§13), `SHA256SUMS` | no |
-| **tosu** | `tosu-v4.26.2-r1` | `tosu-linux-x86_64`, `tosu-windows-x86_64.exe`, tosu `NOTICE`, `THIRD_PARTY_NOTICES.txt`, LGPL source archive, `SHA256SUMS` | no |
+| **App** | `v1.2.0` | `OPad-Linux-1.2.0.AppImage`, `OPad-Linux-Arch-1.2.0.pkg.tar.zst`, `OPad-Linux-Debian-Ubuntu-1.2.0.deb`, `OPad-Linux-Fedora-1.2.0.rpm`, `OPad-Windows-Setup-1.2.0.exe`, `Source-tosu-*.tar.gz`, `Source-lazer-calculator-*.tar.gz` | **yes** |
+| **Firmware** | `firmware-v1.1.0` | `opad-firmware.bin`, `bootloader.bin`, `partition-table.bin`, `ota_data_initial.bin`, notices, source bundle (§13) | no |
+| **tosu** | `tosu-v4.26.2-r1` | `tosu-linux-x86_64`, `tosu-windows-x86_64.exe`, tosu `NOTICE`, `THIRD_PARTY_NOTICES.txt`, LGPL source archive | no |
+
+- An app release carries only files a user may download, named for the system
+  they are for and sorted the way GitHub lists them (alphabetically:
+  `OPad-Linux-*`, `OPad-Windows-*`, then `Source-*`); its notes start with a
+  table of which one to pick (`scripts/release/release_notes.sh`). There is no
+  architecture in the names: OPad is x86_64 only. Releases before
+  `1.0.0-rc.7` used `opad-setup-<v>.exe`, `opad_<v>_amd64.deb`,
+  `opad-<v>.x86_64.rpm`, `opad-bin-<pkgver>-1-x86_64.pkg.tar.zst`,
+  `opad-<v>-x86_64.AppImage` and a `.tar.gz`; `opad-feed` recognises both.
+- What only the lab and the AUR push need (`FILES.sha256`, the `opad-bin`
+  PKGBUILD and `.SRCINFO`) is the `release-extras-<tag>` artifact of the run,
+  kept 90 days. The third-party notices are inside every package.
+- No release carries `SHA256SUMS`: GitHub shows each asset's SHA-256 on the
+  release page and in the API (`digest`), which `opad-feed` and the lab use.
 
 - The app keeps the plain `v` tag so GitHub's "Latest release" is always what
   users download.
@@ -249,9 +263,9 @@ https://opad-dev.github.io/OPad/apt/…   https://opad-dev.github.io/OPad/rpm/�
       "rollout": { "percent": 100 },
       "artifacts": [
         { "target": "windows-x86_64", "kind": "installer",
-          "url": "https://github.com/OPad-dev/OPad/releases/download/v1.2.0/opad-setup-1.2.0.exe",
+          "url": "https://github.com/OPad-dev/OPad/releases/download/v1.2.0/OPad-Windows-Setup-1.2.0.exe",
           "sha256": "…", "size": 41234567 },
-        { "target": "linux-x86_64", "kind": "deb", "url": "…/v1.2.0/opad_1.2.0_amd64.deb", "sha256": "…" }
+        { "target": "linux-x86_64", "kind": "deb", "url": "…/v1.2.0/OPad-Linux-Debian-Ubuntu-1.2.0.deb", "sha256": "…" }
       ]
     },
     "firmware": {
@@ -357,7 +371,7 @@ restarts whichever of itself and the daemon is still the old version
 | Origin | Install does | Password |
 |---|---|---|
 | **Windows** | automatic: downloads and verifies `opad-setup.exe` and runs it `/SILENT /SUPPRESSMSGBOXES /NORESTART /RELAUNCH=1` the next time OPad starts (`run_staged_installer`, `daemon/src/updater.rs`), because Windows cannot replace a running program. *Install now* runs it at once. Inno closes GUI, daemon and tosu (`CloseApplications`) and starts them again. | none (per-user install, `PrivilegesRequired=lowest`) |
-| **`.deb`, `.rpm`, Arch `opad-bin`** | the update helper `/usr/lib/opad/opad-update-helper`, through `pkexec`: it re-checks the feed's signature, the package's SHA-256 and that the version is newer (`opad-update/src/helper.rs`), copies the package where only root can write, and installs it with `apt-get install`, `dnf install` or `pacman -U`. Arch uses the prebuilt `opad-bin-*.pkg.tar.zst` each release publishes (feed target `linux-x86_64-pacman`). | none for the user at the computer: the packages' polkit action `dev.opad.update` (`packaging/linux/polkit/`) allows it (`allow_active=yes`); anyone else is asked for an administrator password |
+| **`.deb`, `.rpm`, Arch `opad-bin`** | the update helper `/usr/lib/opad/opad-update-helper`, through `pkexec`: it re-checks the feed's signature, the package's SHA-256 and that the version is newer (`opad-update/src/helper.rs`), copies the package where only root can write, and installs it with `apt-get install`, `dnf install` or `pacman -U`. Arch uses the prebuilt `OPad-Linux-Arch-<v>.pkg.tar.zst` (the `opad-bin` package) each release publishes (feed target `linux-x86_64-pacman`). | none for the user at the computer: the packages' polkit action `dev.opad.update` (`packaging/linux/polkit/`) allows it (`allow_active=yes`); anyone else is asked for an administrator password |
 | **AppImage** | replaces the AppImage file | none |
 | **`make install-user` / tarball** | extracts over the prefix | none |
 | **`make install` (source), unknown** | shows the version only | — |
@@ -925,7 +939,7 @@ Needs the repository to be **public**.
    is active, and that releases are built by CI from public source.
 2. Once accepted: install the SignPath GitHub App on the repository, and in
    SignPath create the project `opad` with a signing policy `release-signing`
-   and an artifact configuration for `opad-setup-*.exe` and the `.exe`
+   and an artifact configuration for `OPad-Windows-Setup-*.exe` and the `.exe`
    files inside it.
 3. In SignPath, give the signing policy **manual approval**: the token is a
    repository secret (the Windows build job reads it), so SignPath's approval
@@ -938,7 +952,7 @@ Needs the repository to be **public**.
 5. The signing steps in `release-app.yml` are already there, switched off.
    They expect two artifact configurations in SignPath: `programs` (a zip of
    `opad-daemon.exe`, `opad-gui.exe`, `opadctl.exe`) and `installer`
-   (`opad-setup-*.exe`).
+   (`OPad-Windows-Setup-*.exe`).
 
 ### 19.5 Turn signing on
 
@@ -972,9 +986,9 @@ curl -fsSLO https://updates.opad.dev/stable.json.release.minisig
 minisign -Vm stable.json -x stable.json.release.minisig -P '<public key>'
 
 # A release file was built by the workflow from this repository
-gh attestation verify opad-setup-1.0.0.exe -R OPad-dev/OPad
+gh attestation verify OPad-Windows-Setup-1.0.0.exe -R OPad-dev/OPad
 
-# Windows: right click opad-setup-1.0.0.exe → Properties → Digital Signatures
+# Windows: right click OPad-Windows-Setup-1.0.0.exe → Properties → Digital Signatures
 ```
 
 And on a clean Ubuntu and Fedora container, add the repository and install
