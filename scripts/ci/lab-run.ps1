@@ -10,6 +10,11 @@ param([string]$Bundle, [string]$Sha)
 $ErrorActionPreference = "Continue"
 $env:Path = "$env:USERPROFILE\.cargo\bin;$env:Path"
 $env:CARGO_TERM_COLOR = "never"
+# A smaller build cache on a small disk: no incremental state and no debug
+# info, neither of which changes what the jobs check
+$env:CARGO_INCREMENTAL = "0"
+$env:CARGO_PROFILE_DEV_DEBUG = "0"
+$env:CARGO_PROFILE_TEST_DEBUG = "0"
 $work = "C:\opad-lab\ci\repo"
 
 # Not named Git: PowerShell names are case-insensitive, so it would call itself

@@ -53,8 +53,29 @@ vm_scp() { scp -q "${VM_SSH[@]}" -P "$VM_PORT" "$@"; }
 
 echo "lab CI for ${sha:0:7}: $(git log -1 --format=%s "$sha")"
 
-# The VM stays set up between runs; boot it if it is off
-if ! host "& '$VBOX' showvminfo $VM --machinereadable" | grep -q '^VMState="running"'; then
+# Disk space on the mini PC. When it runs out, VirtualBox pauses ci-linux
+# (its disk image cannot grow) and the Windows build dies writing its
+# cache, both far from the cause. Under 20 GB free, the Windows build
+# cache goes (it rebuilds in a few minutes); under 10 GB the run stops here.
+free_gb() { host '[int]((Get-PSDrive C).Free / 1GB)' | tr -dc '0-9'; }
+free="$(free_gb)"
+if [ "${free:-0}" -lt 20 ]; then
+    echo "the mini PC has ${free} GB free: removing the Windows build cache"
+    host "\$t = 'C:\\opad-lab\\ci\\repo\\desktop\\target'; if (Test-Path \$t) { Remove-Item -Recurse -Force \$t }; exit 0"
+    free="$(free_gb)"
+fi
+if [ "${free:-0}" -lt 10 ]; then
+    echo "the mini PC has only ${free} GB free on C: (the VMs need room to grow): free some space, then run it again" >&2
+    exit 1
+fi
+
+# The VM stays set up between runs; boot it if it is off, resume it if a
+# full disk paused it
+state="$(host "& '$VBOX' showvminfo $VM --machinereadable" | sed -n 's/^VMState="\(.*\)".*/\1/p')"
+if [ "$state" = paused ]; then
+    echo "resuming $VM (paused, probably by a full disk)"
+    host "& '$VBOX' controlvm $VM resume" >/dev/null
+elif [ "$state" != running ]; then
     echo "starting $VM"
     host "& '$VBOX' startvm $VM --type headless" >/dev/null
 fi

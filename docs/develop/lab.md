@@ -39,7 +39,7 @@ Defined in `$AllVms` ([/scripts/lab/lab-common.ps1](/scripts/lab/lab-common.ps1)
 | `windows-10` | Windows 10 | `opad-setup.exe` | `2310` |
 | `windows-11` | Windows 11 | `opad-setup.exe` | `2311` |
 
-One more VM, `ci-linux` (Ubuntu 24.04, SSH port `2260`), is not in `$AllVms` and has no `limpia` snapshot: it is kept between runs, with its build caches, for the Linux jobs of the lab CI that runs before every push of `main` ([/scripts/ci/lab-ci.sh](/scripts/ci/lab-ci.sh), set up by [/scripts/ci/provision-linux.sh](/scripts/ci/provision-linux.sh); see [testing.md](testing.md)). The Windows jobs run on the mini PC itself, in `C:\opad-lab\ci`.
+One more VM, `ci-linux` (Ubuntu 24.04, SSH port `2260`), is not in `$AllVms` and has no `limpia` snapshot: it is kept between runs, with its build caches, for the Linux jobs of the lab CI that runs before every push of `main` ([/scripts/ci/lab-ci.sh](/scripts/ci/lab-ci.sh), set up by [/scripts/ci/provision-linux.sh](/scripts/ci/provision-linux.sh); see [testing.md](testing.md)). The Windows jobs run on the mini PC itself, in `C:\opad-lab\ci`. The mini PC's disk is small for all of this: `ci-linux`'s disk has discard on (`VBoxManage storageattach ci-linux --storagectl SATA --port 0 --device 0 --nonrotational on --discard on`) and each run ends with `fstrim`, so its image shrinks back; `lab-ci.sh` removes the Windows build cache under 20 GB free and stops under 10 GB, and `lab-run.sh` starts the Linux cache over past 10 GB.
 
 Each VM auto-logs into an `opad` desktop session (`seat0` on Linux, active console on Windows) with passwordless `sudo` / Administrator elevation over loopback SSH (`127.0.0.1`).
 
