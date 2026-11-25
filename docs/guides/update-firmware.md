@@ -87,5 +87,5 @@ In the GUI, open **Device** and check **Firmware** and **Running slot**. <!-- sr
 ## What to do if it did not work
 
 - If the pad rolled back to the previous slot, it keeps working as a keyboard on its earlier firmware; see [Recovery §7.6](../recovery.md#76-when-flashing-is-interrupted).
-- If flashing failed or the pad no longer enumerates as OPad (`303a:4001`), run `opadctl recover` as described in [Recovery §7.7](../recovery.md#77-a-pad-that-does-not-show-up-as-opad-opadctl-recover).
+- If flashing failed or the pad no longer enumerates as OPad (`303a:8415`), run `opadctl recover` as described in [Recovery §7.7](../recovery.md#77-a-pad-that-does-not-show-up-as-opad-opadctl-recover).
 - If the serial port is busy or permissions fail, see [Troubleshooting](../troubleshooting.md).

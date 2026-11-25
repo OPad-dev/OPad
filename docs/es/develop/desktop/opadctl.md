@@ -28,7 +28,7 @@ Unix socket / Windows named pipe              if running; flashes via espflash
 ```
 
 1. **Modo cliente IPC**: Se conecta mediante `opad_ipc::connect_and_handshake`, envía tramas tipadas `IpcRequest` y formatea la salida de `IpcResponse`.
-2. **Modo hardware directo (`flash`, `recover`, `bootloader`)**: Si `opad-daemon` está en ejecución, envía `IpcRequest::PrepareFlash` para que el daemon libere el puerto CDC, y luego ejecuta las rutinas `opad_device::flash` sobre el teclado (`303a:4001`) o el bootloader ROM del ESP32-S3 (`303a:1001`) usando `espflash` **4.6.0** fijado. Después envía `FinishFlash` (o `ResumeDevice` tras `bootloader`/fallo). Funciona de forma autónoma si el daemon está detenido.
+2. **Modo hardware directo (`flash`, `recover`, `bootloader`)**: Si `opad-daemon` está en ejecución, envía `IpcRequest::PrepareFlash` para que el daemon libere el puerto CDC, y luego ejecuta las rutinas `opad_device::flash` sobre el teclado (`303a:8415`) o el bootloader ROM del ESP32-S3 (`303a:1001`) usando `espflash` **4.6.0** fijado. Después envía `FinishFlash` (o `ResumeDevice` tras `bootloader`/fallo). Funciona de forma autónoma si el daemon está detenido.
 3. **Modo configuración local (`setup`)**: Comprueba localmente `70-opad.rules` y `ptrace_scope` / `cap_sys_ptrace` de Yama en Linux sin necesitar `opad-daemon` (o informa de los controladores integrados en Windows).
 
 ## Subcomandos (enum `Commands`)

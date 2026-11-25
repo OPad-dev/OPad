@@ -5,7 +5,7 @@ sidebar:
   order: 3
 ---
 
-The USB subsystem implements a USB 2.1 Full-Speed composite device (`VID 0x303A`, `PID 0x4001`, `bcdDevice 0x0102`) using TinyUSB (`espressif/esp_tinyusb` 2.3.0 / `tinyusb` 0.21.0~2) pinned to Core 0 at priority `configMAX_PRIORITIES - 2` ([/firmware/main/app_main.c](/firmware/main/app_main.c), [/firmware/main/usb/usb_descriptors.c](/firmware/main/usb/usb_descriptors.c)).
+The USB subsystem implements a USB 2.1 Full-Speed composite device (`VID 0x303A`, `PID 0x8415`, `bcdDevice 0x0102`) using TinyUSB (`espressif/esp_tinyusb` 2.3.0 / `tinyusb` 0.21.0~2) pinned to Core 0 at priority `configMAX_PRIORITIES - 2` ([/firmware/main/app_main.c](/firmware/main/app_main.c), [/firmware/main/usb/usb_descriptors.c](/firmware/main/usb/usb_descriptors.c)).
 
 ## Composite Descriptors & Interface Topology
 

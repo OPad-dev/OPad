@@ -5,7 +5,7 @@ sidebar:
   order: 3
 ---
 
-El subsistema USB implementa un dispositivo compuesto USB 2.1 Full-Speed (`VID 0x303A`, `PID 0x4001`, `bcdDevice 0x0102`) mediante TinyUSB (`espressif/esp_tinyusb` 2.3.0 / `tinyusb` 0.21.0~2) fijado en Core 0 con prioridad `configMAX_PRIORITIES - 2` ([/firmware/main/app_main.c](/firmware/main/app_main.c), [/firmware/main/usb/usb_descriptors.c](/firmware/main/usb/usb_descriptors.c)).
+El subsistema USB implementa un dispositivo compuesto USB 2.1 Full-Speed (`VID 0x303A`, `PID 0x8415`, `bcdDevice 0x0102`) mediante TinyUSB (`espressif/esp_tinyusb` 2.3.0 / `tinyusb` 0.21.0~2) fijado en Core 0 con prioridad `configMAX_PRIORITIES - 2` ([/firmware/main/app_main.c](/firmware/main/app_main.c), [/firmware/main/usb/usb_descriptors.c](/firmware/main/usb/usb_descriptors.c)).
 
 ## Descriptores compuestos y topología de interfaces
 

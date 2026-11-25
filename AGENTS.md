@@ -172,7 +172,8 @@ to follow.
   - leaving download mode needs an RTC watchdog reset. espflash's own
     `--after watchdog-reset` is a silent no-op on the S3, so the flasher runs
     with `--after no-reset-no-stub` and resets with its own `WRITE_REG`.
-- **USB IDs:** app `303a:4001`, ROM bootloader `303a:1001`.
+- **USB IDs:** app `303a:8415` (Espressif-granted; release-candidate
+  firmware used `303a:4001`), ROM bootloader `303a:1001`.
 - **VMs:** with the pad passed through to a VM, flashing fails because the
   pad's USB ID changes mid-flash. Test flashing on bare metal.
 - **Board:** Waveshare ESP32-S3-Touch-LCD-2. Schematic:

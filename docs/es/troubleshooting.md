@@ -101,10 +101,10 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 Mantén el prefijo `70-` en el nombre del archivo para que se ordene antes de `73-seat-late.rules`, donde `systemd` aplica las ACL `TAG+="uaccess"` a la sesión de usuario activa. Ejecuta `opadctl setup` para verificar que la regla instalada coincide con la integrada. <!-- src: /packaging/linux/udev/70-opad.rules --> <!-- src: /desktop/cli/src/main.rs#run_setup -->
 
 ### Interferencia de ModemManager
-ModemManager sondea los puertos CDC ACM recién conectados con comandos `AT`, lo cual puede interferir con el entramado serie de OPad. `70-opad.rules` desactiva el sondeo tanto para el PID de la aplicación (`303a:4001`) como para el del bootloader ROM (`303a:1001`): <!-- src: /packaging/linux/udev/70-opad.rules -->
+ModemManager sondea los puertos CDC ACM recién conectados con comandos `AT`, lo cual puede interferir con el entramado serie de OPad. `70-opad.rules` desactiva el sondeo tanto para el PID de la aplicación (`303a:8415`) como para el del bootloader ROM (`303a:1001`): <!-- src: /packaging/linux/udev/70-opad.rules -->
 
 ```udev
-ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4001|1001", ENV{ID_MM_DEVICE_IGNORE}="1"
+ATTRS{idVendor}=="303a", ATTRS{idProduct}=="8415|4001|1001", ENV{ID_MM_DEVICE_IGNORE}="1"
 ```
 
 ### Puerto serie ocupado
@@ -134,7 +134,7 @@ Dado que `tosu.exe` lee la memoria virtual de `osu!.exe`, algunos antivirus lo m
 
 ## 5. Recuperación de firmware y reflasheo
 
-Si el teclado deja de responder o deja de enumerar como OPad (`303a:4001`): <!-- src: /desktop/cli/src/main.rs#Commands::Recover --> <!-- src: /desktop/crates/opad-device/src/flash.rs#recover -->
+Si el teclado deja de responder o deja de enumerar como OPad (`303a:8415`): <!-- src: /desktop/cli/src/main.rs#Commands::Recover --> <!-- src: /desktop/crates/opad-device/src/flash.rs#recover -->
 1. Ejecuta el comando de recuperación sin botones indicando un directorio de compilación de ESP-IDF o un lanzamiento de firmware desempaquetado:
    ```bash
    opadctl recover firmware/build

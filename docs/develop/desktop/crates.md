@@ -31,7 +31,7 @@ SQLite persistence (`opad.db`):
 
 ### 5. `opad-device` ([/desktop/crates/opad-device/src/lib.rs](/desktop/crates/opad-device/src/lib.rs))
 Serial device manager and firmware flasher:
-- Auto-discovers `303a:4001`, negotiates Marked/Legacy framing (`HELLO_RETRY = 400 ms`), exposes `Ownership` state.
+- Auto-discovers `303a:8415`, negotiates Marked/Legacy framing (`HELLO_RETRY = 400 ms`), exposes `Ownership` state.
 - Implements hands-free flashing (`flash.rs`: `plan_app_update`, `flash_firmware`, `recover`, `reboot_to_bootloader`) wrapping pinned `espflash` **4.6.0** plus RTC watchdog reset out of ROM download mode.
 
 ### 6. `opad-layout` ([/desktop/crates/opad-layout/src/lib.rs](/desktop/crates/opad-layout/src/lib.rs))

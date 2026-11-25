@@ -18,7 +18,7 @@ OPad works out of the box as a standalone 1000 Hz USB HID keyboard with no deskt
 OPad enumerates as a USB composite device with two 1000 Hz (`bInterval = 1`) HID interfaces (keyboard + media/Key 2) and one CDC-ACM serial interface: <!-- src: /firmware/main/usb/usb_descriptors.c -->
 
 - **Vendor ID (VID)**: `0x303A` (Espressif)
-- **Product ID (PID)**: `0x4001` (OPad application firmware; `0x1001` is the ESP32-S3 ROM bootloader)
+- **Product ID (PID)**: `0x8415` (OPad application firmware; `0x1001` is the ESP32-S3 ROM bootloader)
 - **Manufacturer String**: `GFerreiroS` <!-- src: /firmware/main/usb/usb_descriptors.c#opad_usb_string_desc -->
 - **Product String**: `OPad ESP32-S3` <!-- src: /firmware/main/usb/usb_descriptors.c#opad_usb_string_desc -->
 - **Serial String**: `OPAD-XXXXXXXXXXXX` (12 uppercase hex digits derived from the ESP32-S3 Wi-Fi STA MAC address) <!-- src: /firmware/main/usb/usb_descriptors.c#usb_descriptors_init -->
@@ -26,7 +26,7 @@ OPad enumerates as a USB composite device with two 1000 Hz (`bInterval = 1`) HID
 ### Verifying on Linux
 Run `lsusb`:
 ```bash
-lsusb -d 303a:4001
+lsusb -d 303a:8415
 ```
 Check kernel messages with `dmesg`:
 ```bash

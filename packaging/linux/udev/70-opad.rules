@@ -1,14 +1,16 @@
 # 70-opad.rules
-# Espressif ESP32-S3 OPad (application firmware PID 0x4001, ROM bootloader PID 0x1001)
+# Espressif ESP32-S3 OPad (application firmware PID 0x8415, ROM bootloader PID 0x1001;
+# 0x4001 is release-candidate firmware from before OPad had its own PID,
+# kept so those pads can still be updated)
 #
 # Must sort before 73-seat-late.rules: that is where systemd turns the uaccess
 # tag into an ACL for the logged-in user. A rule numbered after it tags the
 # device too late and the user gets no access.
 
 # Ignore in ModemManager to prevent AT probe traffic on the CDC port
-ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4001|1001", ENV{ID_MM_DEVICE_IGNORE}="1"
+ATTRS{idVendor}=="303a", ATTRS{idProduct}=="8415|4001|1001", ENV{ID_MM_DEVICE_IGNORE}="1"
 
-SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4001|1001", TAG+="uaccess"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4001|1001", TAG+="uaccess"
-SUBSYSTEM=="input", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4001|1001", TAG+="uaccess"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="8415|4001|1001", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="8415|4001|1001", TAG+="uaccess"
+SUBSYSTEM=="input", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="8415|4001|1001", TAG+="uaccess"
 

@@ -18,7 +18,7 @@ OPad funciona de fábrica como un teclado USB HID autónomo a 1000 Hz sin softwa
 OPad enumera como un dispositivo USB compuesto con dos interfaces HID a 1000 Hz (`bInterval = 1`) (teclado + multimedia/Key 2) y una interfaz serie CDC-ACM: <!-- src: /firmware/main/usb/usb_descriptors.c -->
 
 - **Vendor ID (VID)**: `0x303A` (Espressif)
-- **Product ID (PID)**: `0x4001` (firmware de aplicación OPad; `0x1001` es el bootloader ROM del ESP32-S3)
+- **Product ID (PID)**: `0x8415` (firmware de aplicación OPad; `0x1001` es el bootloader ROM del ESP32-S3)
 - **Manufacturer String**: `GFerreiroS` <!-- src: /firmware/main/usb/usb_descriptors.c#opad_usb_string_desc -->
 - **Product String**: `OPad ESP32-S3` <!-- src: /firmware/main/usb/usb_descriptors.c#opad_usb_string_desc -->
 - **Serial String**: `OPAD-XXXXXXXXXXXX` (12 dígitos hexadecimales en mayúsculas derivados de la dirección MAC Wi-Fi STA del ESP32-S3) <!-- src: /firmware/main/usb/usb_descriptors.c#usb_descriptors_init -->
@@ -26,7 +26,7 @@ OPad enumera como un dispositivo USB compuesto con dos interfaces HID a 1000 Hz 
 ### Verificación en Linux
 Ejecuta `lsusb`:
 ```bash
-lsusb -d 303a:4001
+lsusb -d 303a:8415
 ```
 Comprueba los mensajes del núcleo con `dmesg`:
 ```bash

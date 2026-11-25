@@ -212,7 +212,7 @@ Options:
   -h, --help         Print help
 ```
 
-- En modo normal (sin `--full`), `opadctl flash` consulta al daemon la ranura OTA activa (`ota_0` u `ota_1`), planifica una actualización A/B en la ranura alternativa inactiva, pide al daemon que libere el puerto serie, reinicia el teclado en modo de descarga ROM sin botones, flashea el binario y verifica que el teclado vuelva a enumerar como OPad (`303a:4001`).
+- En modo normal (sin `--full`), `opadctl flash` consulta al daemon la ranura OTA activa (`ota_0` u `ota_1`), planifica una actualización A/B en la ranura alternativa inactiva, pide al daemon que libere el puerto serie, reinicia el teclado en modo de descarga ROM sin botones, flashea el binario y verifica que el teclado vuelva a enumerar como OPad (`303a:8415`).
   <!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
 - Con `--full`, realiza un flasheo completo de recuperación: escribe `bootloader.bin` en `0x0000`, `partition-table.bin` en `0x8000`, `ota_data_initial.bin` en `0xf000` y la imagen de aplicación en `0x20000`.
   <!-- src: /desktop/cli/src/main.rs#resolve_flash_set -->
@@ -239,7 +239,7 @@ Options:
   -h, --help               Print help
 ```
 
-Este comando espera a que el usuario desconecte y vuelva a conectar el cable USB del teclado (hasta `--timeout`, por defecto 300 s). Al conectarse, captura el bootloader ROM del ESP32-S3 (`303a:1001`) durante su ventana inicial de enumeración, escribe el conjunto completo de flash (bootloader, tabla de particiones, datos OTA e imagen de aplicación), reinicia el chip mediante el watchdog RTC y espera hasta 15 segundos a que el teclado arranque en la aplicación (`303a:4001`). Nunca se pulsan los botones físicos BOOT ni RESET.
+Este comando espera a que el usuario desconecte y vuelva a conectar el cable USB del teclado (hasta `--timeout`, por defecto 300 s). Al conectarse, captura el bootloader ROM del ESP32-S3 (`303a:1001`) durante su ventana inicial de enumeración, escribe el conjunto completo de flash (bootloader, tabla de particiones, datos OTA e imagen de aplicación), reinicia el chip mediante el watchdog RTC y espera hasta 15 segundos a que el teclado arranque en la aplicación (`303a:8415`). Nunca se pulsan los botones físicos BOOT ni RESET.
 <!-- src: /desktop/cli/src/main.rs#Commands::Recover --> <!-- src: /desktop/crates/opad-device/src/flash.rs#recover -->
 
 ---

@@ -850,7 +850,7 @@ async fn main() -> Result<()> {
             let app_port = prepare_flash(stream.as_mut(), port).await?;
             let interrupt = resume_on_interrupt(stream.is_some());
             let result = flash::enter_bootloader(app_port.as_deref(), None).await;
-            // The daemon only opens the app port (303a:4001), so resuming now cannot
+            // The daemon only opens the app port (303a:8415), so resuming now cannot
             // interfere with the bootloader; it reconnects once the app is flashed.
             // No FinishFlash: the pad is meant to stay in the bootloader, so a
             // wait for it to come back as the app could only time out.

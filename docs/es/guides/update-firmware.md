@@ -87,5 +87,5 @@ En la GUI, abre **Device** y comprueba **Firmware** y **Running slot**. <!-- src
 ## Qué hacer si no funcionó
 
 - Si el teclado revirtió a la ranura anterior, sigue funcionando como teclado con su firmware previo; consulta [Recuperación §7.6](../recovery.md).
-- Si el flasheo falló o el teclado dejó de enumerar como OPad (`303a:4001`), ejecuta `opadctl recover` como se describe en [Recuperación §7.7](../recovery.md).
+- Si el flasheo falló o el teclado dejó de enumerar como OPad (`303a:8415`), ejecuta `opadctl recover` como se describe en [Recuperación §7.7](../recovery.md).
 - Si el puerto serie está ocupado o fallan los permisos, consulta [Solución de problemas](../troubleshooting.md).

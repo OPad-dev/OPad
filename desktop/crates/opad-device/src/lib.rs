@@ -23,8 +23,9 @@ pub const ESPRESSIF_VID: u16 = 0x303A;
 /// pid.codes open-source VID, the other one an OPad may enumerate under
 pub const PIDCODES_VID: u16 = 0x1209;
 pub use opad_model::{canonical_device_id, DEVICE_ID_PREFIX};
-/// USB PID of the OPad application firmware (TinyUSB composite device)
-pub const OPAD_APP_PID: u16 = 0x4001;
+/// USB PID of the OPad application firmware (TinyUSB composite device),
+/// granted by Espressif (espressif/usb-pids#491)
+pub const OPAD_APP_PID: u16 = 0x8415;
 /// USB PID of the ESP32-S3 ROM download bootloader (USB-Serial-JTAG)
 pub const ESP_ROM_BOOTLOADER_PID: u16 = 0x1001;
 
@@ -2012,12 +2013,12 @@ mod tests {
 
     #[test]
     fn tier_one_needs_an_opad_vid_and_an_opad_string() {
-        let by_product = usb(0x303A, 0x4001, Some("OPad ESP32-S3"), None);
+        let by_product = usb(0x303A, 0x8415, Some("OPad ESP32-S3"), None);
         assert_eq!(classify_port("/dev/ttyACM0", &by_product), PortClass::Opad);
         let by_serial = usb(0x1209, 0x1234, None, Some("OPAD-A1B2C3D4E5F6"));
         assert_eq!(classify_port("COM7", &by_serial), PortClass::Opad);
         // Another Espressif board that names itself
-        let other = usb(0x303A, 0x4001, Some("TinyUSB CDC"), Some("123456"));
+        let other = usb(0x303A, 0x8415, Some("TinyUSB CDC"), Some("123456"));
         assert_eq!(classify_port("/dev/ttyACM1", &other), PortClass::Skip);
         // Right strings, foreign VID
         let foreign = usb(0x2341, 0x0043, Some("OPad"), None);
@@ -2026,7 +2027,7 @@ mod tests {
 
     #[test]
     fn ports_without_strings_are_probed_and_system_ports_never() {
-        let bare = usb(0x303A, 0x4001, None, None);
+        let bare = usb(0x303A, 0x8415, None, None);
         assert_eq!(
             classify_port("COM5", &bare),
             PortClass::Probe { known_vid: true }

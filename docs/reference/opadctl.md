@@ -212,7 +212,7 @@ Options:
   -h, --help         Print help
 ```
 
-- In normal mode (without `--full`), `opadctl flash` queries the daemon for the current running OTA slot (`ota_0` or `ota_1`), plans an A/B update into the inactive alternate slot, asks the daemon to release the serial port, reboots the pad into ROM download mode hands-free, flashes the binary, and verifies that the pad re-enumerates as OPad (`303a:4001`).
+- In normal mode (without `--full`), `opadctl flash` queries the daemon for the current running OTA slot (`ota_0` or `ota_1`), plans an A/B update into the inactive alternate slot, asks the daemon to release the serial port, reboots the pad into ROM download mode hands-free, flashes the binary, and verifies that the pad re-enumerates as OPad (`303a:8415`).
   <!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
 - With `--full`, performs a complete recovery flash: writes `bootloader.bin` at `0x0000`, `partition-table.bin` at `0x8000`, `ota_data_initial.bin` at `0xf000`, and the application image at `0x20000`.
   <!-- src: /desktop/cli/src/main.rs#resolve_flash_set -->
@@ -239,7 +239,7 @@ Options:
   -h, --help               Print help
 ```
 
-This command waits for the user to unplug and replug the pad's USB cable (up to `--timeout`, default 300 s). On connection, it catches the ESP32-S3 ROM bootloader (`303a:1001`) during its initial enumeration window, writes the complete flash set (bootloader, partition table, OTA data, and application image), resets the chip via RTC watchdog, and waits up to 15 seconds for the pad to boot into the application (`303a:4001`). Physical BOOT and RESET buttons are never pressed.
+This command waits for the user to unplug and replug the pad's USB cable (up to `--timeout`, default 300 s). On connection, it catches the ESP32-S3 ROM bootloader (`303a:1001`) during its initial enumeration window, writes the complete flash set (bootloader, partition table, OTA data, and application image), resets the chip via RTC watchdog, and waits up to 15 seconds for the pad to boot into the application (`303a:8415`). Physical BOOT and RESET buttons are never pressed.
 <!-- src: /desktop/cli/src/main.rs#Commands::Recover --> <!-- src: /desktop/crates/opad-device/src/flash.rs#recover -->
 
 ---

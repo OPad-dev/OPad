@@ -129,7 +129,7 @@ fn otadata_crc(seq: u32) -> u32 {
 
 #[derive(Debug, Error)]
 pub enum FlashError {
-    #[error("OPad not found: neither the app (303a:4001) nor the ROM bootloader (303a:1001) is connected")]
+    #[error("OPad not found: neither the app (303a:8415) nor the ROM bootloader (303a:1001) is connected")]
     NoDevice,
     #[error("{0} could not be opened. On Windows the port is exclusive: close anything else using it (a serial monitor, another opad-daemon) first. ({1})")]
     PortBusy(String, String),

@@ -101,10 +101,10 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 Keep the filename prefixed `70-` so it sorts before `73-seat-late.rules`, where `systemd` applies `TAG+="uaccess"` ACLs to the active user session. Run `opadctl setup` to verify the installed rule matches the embedded rule. <!-- src: /packaging/linux/udev/70-opad.rules --> <!-- src: /desktop/cli/src/main.rs#run_setup -->
 
 ### ModemManager Interference
-ModemManager probes newly attached CDC ACM ports with `AT` commands, which can interfere with OPad's serial framing. `70-opad.rules` disables probing for both application (`303a:4001`) and ROM bootloader (`303a:1001`) PIDs: <!-- src: /packaging/linux/udev/70-opad.rules -->
+ModemManager probes newly attached CDC ACM ports with `AT` commands, which can interfere with OPad's serial framing. `70-opad.rules` disables probing for both application (`303a:8415`) and ROM bootloader (`303a:1001`) PIDs: <!-- src: /packaging/linux/udev/70-opad.rules -->
 
 ```udev
-ATTRS{idVendor}=="303a", ATTRS{idProduct}=="4001|1001", ENV{ID_MM_DEVICE_IGNORE}="1"
+ATTRS{idVendor}=="303a", ATTRS{idProduct}=="8415|4001|1001", ENV{ID_MM_DEVICE_IGNORE}="1"
 ```
 
 ### Serial Port Busy
@@ -134,7 +134,7 @@ Because `tosu.exe` reads the virtual memory of `osu!.exe`, some antivirus produc
 
 ## 5. Firmware Recovery & Re-flashing
 
-If the pad becomes unresponsive or stops enumerating as OPad (`303a:4001`): <!-- src: /desktop/cli/src/main.rs#Commands::Recover --> <!-- src: /desktop/crates/opad-device/src/flash.rs#recover -->
+If the pad becomes unresponsive or stops enumerating as OPad (`303a:8415`): <!-- src: /desktop/cli/src/main.rs#Commands::Recover --> <!-- src: /desktop/crates/opad-device/src/flash.rs#recover -->
 1. Run the hands-free recovery command with an ESP-IDF build directory or unpacked firmware release:
    ```bash
    opadctl recover firmware/build

@@ -38,7 +38,7 @@ import sys
 import threading
 import time
 
-VID, PID = "303a", "4001"
+VID, PID = "303a", "8415"
 KBD_GLOBS = ("/dev/input/by-id/usb-*OPad*-event-kbd",)
 EVENT = struct.Struct("llHHi")  # struct input_event on 64-bit Linux
 EV_KEY = 1

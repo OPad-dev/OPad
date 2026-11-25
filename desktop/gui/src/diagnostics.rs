@@ -230,7 +230,8 @@ fn find_opad_evdev() -> Option<evdev::Device> {
 
     for (_path, dev) in evdev::enumerate() {
         let id = dev.input_id();
-        if id.vendor() == 0x303a && id.product() == 0x4001 {
+        // 0x4001: release-candidate firmware before it had OPad's own PID
+        if id.vendor() == 0x303a && matches!(id.product(), 0x8415 | 0x4001) {
             return Some(dev);
         }
     }

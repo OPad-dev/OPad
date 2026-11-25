@@ -35,7 +35,7 @@ const tusb_desc_device_t opad_usb_device_desc = {
     .bDeviceProtocol    = MISC_PROTOCOL_IAD,
     .bMaxPacketSize0    = CFG_TUD_ENDPOINT0_SIZE,
     .idVendor           = 0x303A,   // Espressif VID
-    .idProduct          = 0x4001,   // Custom PID for OPad
+    .idProduct          = 0x8415,   // OPad's own PID, granted by Espressif (espressif/usb-pids#491)
     // A new bcdDevice makes Windows read the descriptors again instead of
     // reusing the ones it cached: 1.0.1 added the media interface, 1.0.2 put
     // a keyboard report for key 2 on it
