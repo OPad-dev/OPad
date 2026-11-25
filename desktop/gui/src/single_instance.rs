@@ -39,12 +39,23 @@ mod platform {
     /// the bind and the other connects to it. The file is only removed when
     /// nothing answers on it (ECONNREFUSED: a crashed instance's leftover);
     /// removing it unconditionally let a second launch unlink the first's
-    /// fresh socket and run as a second instance.
+    /// fresh socket and run as a second instance. The claim runs under a lock
+    /// file because bind() creates the socket file before listen(): a launch
+    /// connecting in between is refused too, and took the fresh socket for a
+    /// crashed instance's.
     pub(super) fn claim_at(path: &Path, page: Option<&str>) -> Claim {
         if let Some(dir) = path.parent() {
             let _ = std::fs::create_dir_all(dir);
             let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
         }
+        // Released when it drops at the end of the claim; without it the claim
+        // still works, as before, outside that rare race
+        let _lock = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(path.with_extension("lock"))
+            .and_then(|file| file.lock().map(|()| file));
         for attempt in 0..2 {
             match bind(path) {
                 Ok(listener) => return Claim::Primary(Some(listener)),
