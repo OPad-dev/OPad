@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="OPad">
+  <!-- Placeholder logo: a keycap seen from above with an "O" ring. -->
+  <defs>
+    <linearGradient id="cap" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8B6CFF"/>
+      <stop offset="1" stop-color="#5B3FE0"/>
+    </linearGradient>
+  </defs>
+  <rect x="6" y="6" width="116" height="116" rx="28" fill="#2A1C6E"/>
+  <rect x="14" y="10" width="100" height="100" rx="22" fill="url(#cap)"/>
+  <circle cx="64" cy="60" r="27" fill="none" stroke="#FFFFFF" stroke-width="11"/>
+  <circle cx="64" cy="60" r="7" fill="#FFD166"/>
+</svg>
