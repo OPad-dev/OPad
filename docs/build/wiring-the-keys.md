@@ -5,6 +5,8 @@ sidebar:
   order: 2
 ---
 
+Two ways to build the keys: hand-wire two switches to the Waveshare board, or plug the OPad V3 boards together. [Parts and boards](parts.md) lists what each needs.
+
 ## Option 1: hand-wire two switches
 
 Each switch goes between one GPIO pin and GND. The firmware turns on the pin's internal pull-up, so the pin reads high when the switch is open and low when you press it. You need no resistors or diodes. <!-- src: /firmware/main/input/keypad.c --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
@@ -45,7 +47,7 @@ The firmware reads which module is fitted from the module ID line. A turned-over
 
 ## Check your wiring
 
-1. Plug the pad into your PC. With no app at all, open a text editor and press each key: you should see `z`, `x` (and `c` for Key 3 on a V3 module). See [First connection](first-connection.md). <!-- src: /firmware/main/usb/usb_hid.c -->
+1. Plug the pad into your PC. With no app at all, open a text editor and press each key: you should see `z`, `x` (and `c` for Key 3 on a V3 module). See [First connection](../start/first-connection.md). <!-- src: /firmware/main/usb/usb_hid.c -->
 2. With the desktop app installed, run `opadctl status` and check **Key Pins** and **Input Module**. <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
 3. On a V3 carrier, run the board self-test with every key released: <!-- src: /desktop/cli/src/main.rs#Commands::BoardTest -->
 

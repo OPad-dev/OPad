@@ -5,6 +5,8 @@ sidebar:
   order: 2
 ---
 
+Hay dos formas de montar las teclas: cablear a mano dos interruptores a la placa Waveshare o encajar entre sí las placas OPad V3. [Piezas y placas](parts.md) enumera lo que necesita cada una.
+
 ## Opción 1: cablear a mano dos interruptores
 
 Cada interruptor va entre un pin GPIO y GND. El firmware activa el pull-up interno del pin, así que el pin lee nivel alto cuando el interruptor está abierto y nivel bajo cuando lo pulsas. No necesitas resistencias ni diodos. <!-- src: /firmware/main/input/keypad.c --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
@@ -45,7 +47,7 @@ El firmware lee qué módulo está montado a través de la línea de ID de módu
 
 ## Comprueba el cableado
 
-1. Conecta el teclado a tu PC. Sin ninguna app, abre un editor de texto y pulsa cada tecla: deberías ver `z`, `x` (y `c` para Key 3 en un módulo V3). Consulta [Primera conexión](first-connection.md). <!-- src: /firmware/main/usb/usb_hid.c -->
+1. Conecta el teclado a tu PC. Sin ninguna app, abre un editor de texto y pulsa cada tecla: deberías ver `z`, `x` (y `c` para Key 3 en un módulo V3). Consulta [Primera conexión](../start/first-connection.md). <!-- src: /firmware/main/usb/usb_hid.c -->
 2. Con la app de escritorio instalada, ejecuta `opadctl status` y revisa **Key Pins** e **Input Module**. <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
 3. En un carrier V3, ejecuta la autoprueba de la placa con todas las teclas sueltas: <!-- src: /desktop/cli/src/main.rs#Commands::BoardTest -->
 

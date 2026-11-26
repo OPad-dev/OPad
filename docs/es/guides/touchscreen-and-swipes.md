@@ -1,11 +1,11 @@
 ---
 title: Usar la pantalla táctil y los deslizamientos
-description: La pantalla táctil es el tercer botón de OPad. Un dedo apoyado es Quick Retry durante un mapa, y los deslizamientos ejecutan acciones que tú eliges, como el volumen y las teclas multimedia.
+description: La pantalla táctil es el cuarto botón de OPad, después de sus tres teclas. Un dedo apoyado es Quick Retry durante un mapa, y los deslizamientos ejecutan acciones que tú eliges, como el volumen y las teclas multimedia.
 sidebar:
   order: 2
 ---
 
-La pantalla táctil es el tercer botón de OPad. Durante un mapa de osu!, un dedo apoyado en ella mantiene pulsado Quick Retry (`` ` ``) mientras siga ahí. Los deslizamientos ejecutan acciones que tú eliges, de forma predeterminada controles de volumen y de pista. <!-- src: /AGENTS.md#1. Product rules --> <!-- src: /firmware/main/input/touch_retry.c#touch_retry_task -->
+La pantalla táctil es el cuarto botón de OPad, después de sus tres teclas. Durante un mapa de osu!, un dedo apoyado en ella mantiene pulsado Quick Retry (`` ` ``) mientras siga ahí. Los deslizamientos ejecutan acciones que tú eliges, de forma predeterminada controles de volumen y de pista. <!-- src: /AGENTS.md#1. Product rules --> <!-- src: /firmware/main/input/touch_retry.c#touch_retry_task -->
 
 Para distinguir un mapa de un menú, el teclado necesita la app de escritorio con tosu conectado. Sin ellos, cada toque es Quick Retry y no hay deslizamientos. <!-- src: /firmware/main/input/touch_retry.c#touch_mode_now --> <!-- src: /firmware/main/input/touch_retry.c#touch_retry_set_host_status -->
 

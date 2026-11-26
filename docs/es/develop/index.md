@@ -26,7 +26,7 @@ Las seis reglas de producto de [AGENTS.md](https://github.com/OPad-dev/OPad/blob
 1. **La latencia siempre gana.** Nada entra en la ruta de pulsación. Un cambio en `firmware/main/input/` o `firmware/main/usb/` indica cómo afecta a la latencia y cómo se comprobó. Consulta [Ingeniería de latencia](../explanation/latency.md).
 2. **El teclado es un teclado sin software instalado.** Escribir nunca depende del daemon, de la GUI ni de un controlador.
 3. **La app y el teclado se actualizan por separado.** Todo cambio de protocolo funciona con app nueva y teclado antiguo, y con app antigua y teclado nuevo. Consulta [Versiones de la app y del teclado](../explanation/app-and-pad-versions.md) y [Cambios en el protocolo](protocol-changes.md).
-4. **La pantalla táctil es el tercer botón**, con pulsación, mantenimiento y liberación limpios, y sin teclas de más a mitad de mapa. Consulta [La pantalla táctil como tercer botón](../explanation/touchscreen-third-button.md).
+4. **La pantalla táctil es el cuarto botón**, con pulsación, mantenimiento y liberación limpios, y sin teclas de más a mitad de mapa. Consulta [La pantalla táctil como cuarto botón](../explanation/touchscreen-button.md).
 5. **Nunca los botones BOOT ni RESET.** El flasheo y la recuperación se hacen por USB. Consulta [Actualizaciones y reversión automática](../explanation/updates-and-rollback.md).
 6. **Cada tecla sale de un dedo.** Ni macros, ni auto-tap, ni entrada temporizada, ni inyección de teclas del anfitrión al teclado, ni siquiera como opción.
 

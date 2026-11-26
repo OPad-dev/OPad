@@ -5,7 +5,7 @@ sidebar:
   order: 4
 ---
 
-La pantalla táctil es el tercer botón de OPad ([/AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §1.4): una pulsación limpia, un estado mantenido mientras el dedo sigue apoyado y una suelta limpia. La maneja `touch_retry_task` en el **núcleo 1** con prioridad `2` ([/firmware/main/input/touch_retry.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c)); sus teclas llegan al report de teclado a través de `usb_hid_set_touch_key()` ([USB](usb.md#envío-hid-con-endpoints-separados-usb_hidc)). Comportamiento de cara al usuario: [Pantalla táctil y deslizamientos](../../guides/touchscreen-and-swipes.md); diseño: [La pantalla táctil como tercer botón](../../explanation/touchscreen-third-button.md).
+La pantalla táctil es el cuarto botón de OPad ([/AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §1.4): una pulsación limpia, un estado mantenido mientras el dedo sigue apoyado y una suelta limpia. La maneja `touch_retry_task` en el **núcleo 1** con prioridad `2` ([/firmware/main/input/touch_retry.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c)); sus teclas llegan al report de teclado a través de `usb_hid_set_touch_key()` ([USB](usb.md#envío-hid-con-endpoints-separados-usb_hidc)). Comportamiento de cara al usuario: [Pantalla táctil y deslizamientos](../../guides/touchscreen-and-swipes.md); diseño: [La pantalla táctil como tercer botón](../../explanation/touchscreen-button.md).
 
 ## Hardware e I2C
 

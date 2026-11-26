@@ -9,6 +9,8 @@ OPad mantiene la Waveshare ESP32-S3-Touch-LCD-2 como controlador sin modificar y
 
 ## Generaciones
 
+El OPad que se vende es el **OPad V1**; sus placas y su carcasa son la revisión **V3** de abajo. En esta documentación, V1, V2 y V3 nombran revisiones de placa y de carcasa, nunca el producto. <!-- src: /docs/launch-checklist.md#Decisions (owner, 2026-11-21) --> <!-- src: /hardware/pcb/V3/README.md -->
+
 | Generación | Placa carrier | Tipo de cable | Módulos de teclas | Arquitectura de ADC y sensores | Estado |
 |---|---|---|---|---|---|
 | **V1** | Carrier de controlador V1 (conectores P1/P2) | JST SH de 8 pines (1,0 mm) | MX V1 (2 teclas), HE V1.1 (2 teclas) | Tensiones analógicas de los DRV5055A3 llevadas por el cable hasta el ADC1 interno del ESP32-S3. | Sustituida ([/hardware/pcb/V1/README.md](https://github.com/OPad-dev/OPad/blob/main/hardware/pcb/V1/README.md)) |

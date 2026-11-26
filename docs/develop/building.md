@@ -28,7 +28,21 @@ cargo build --release
 
 or, from the repository root, `make all` ([Makefile](https://github.com/OPad-dev/OPad/blob/main/Makefile)), which runs `cargo build --release --bins` on the workspace. The binaries land in `desktop/target/release/`: `opad-daemon`, `opad-gui` and `opadctl`, plus the release tools `opad-update-helper` (the root helper the Linux packages install) and `opad-feed` (builds and verifies update feeds).
 
+### Installing a source build
+
 To install a build for your user on Linux, `make install-user` copies the binaries to `~/.local/bin`, adds the systemd user unit and autostart entry, and writes the `user` install-origin marker; `make install` does the same system-wide under `PREFIX` (default `/usr/local`) with the `source` marker. [Packaging](packaging.md) explains what the marker changes.
+
+On Arch Linux, the `PKGBUILD` in [`packaging/linux/arch/`](https://github.com/OPad-dev/OPad/blob/main/packaging/linux/arch/PKGBUILD) builds an Arch package named `opad` from the checkout. <!-- src: /packaging/linux/arch/PKGBUILD -->
+
+Two things differ from the release packages:
+
+- The source `PKGBUILD` runs tosu with the system `nodejs`, which cannot carry `cap_sys_ptrace`; with `ptrace_scope` above 0 you have to lower it ([Troubleshooting §2](../troubleshooting.md#2-linux-tosu-cannot-read-osu-yama-ptrace_scope)). <!-- src: /packaging/linux/arch/PKGBUILD -->
+- `make install-user` does not install the udev rule (`make install` does). Install it once with: <!-- src: /Makefile#install-user --> <!-- src: /Makefile#install -->
+
+  ```bash
+  sudo cp packaging/linux/udev/70-opad.rules /etc/udev/rules.d/
+  sudo udevadm control --reload-rules && sudo udevadm trigger
+  ```
 
 ### The Screen Designer preview
 

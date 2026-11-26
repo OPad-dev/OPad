@@ -1,11 +1,11 @@
 ---
 title: Using the Touchscreen and Swipes
-description: The touchscreen is OPad's third button. A resting finger is Quick Retry during a map, and swipes run actions you choose, such as volume and media keys.
+description: The touchscreen is OPad's fourth button, after its three keys. A resting finger is Quick Retry during a map, and swipes run actions you choose, such as volume and media keys.
 sidebar:
   order: 2
 ---
 
-The touchscreen is OPad's third button. During an osu! map, a finger resting on it holds Quick Retry (`` ` ``) for as long as it stays down. Swipes run actions you choose, by default volume and track controls. <!-- src: /AGENTS.md#1. Product rules --> <!-- src: /firmware/main/input/touch_retry.c#touch_retry_task -->
+The touchscreen is OPad's fourth button, after its three keys. During an osu! map, a finger resting on it holds Quick Retry (`` ` ``) for as long as it stays down. Swipes run actions you choose, by default volume and track controls. <!-- src: /AGENTS.md#1. Product rules --> <!-- src: /firmware/main/input/touch_retry.c#touch_retry_task -->
 
 To tell a map from a menu, the pad needs the desktop app with tosu connected. Without them, every touch is Quick Retry and there are no swipes. <!-- src: /firmware/main/input/touch_retry.c#touch_mode_now --> <!-- src: /firmware/main/input/touch_retry.c#touch_retry_set_host_status -->
 

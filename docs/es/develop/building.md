@@ -28,7 +28,21 @@ cargo build --release
 
 o, desde la raíz del repositorio, `make all` ([Makefile](https://github.com/OPad-dev/OPad/blob/main/Makefile)), que ejecuta `cargo build --release --bins` sobre el workspace. Los binarios quedan en `desktop/target/release/`: `opad-daemon`, `opad-gui` y `opadctl`, más las herramientas de publicación `opad-update-helper` (el asistente con root que instalan los paquetes de Linux) y `opad-feed` (construye y verifica los feeds de actualización).
 
+### Instalar una compilación desde el código fuente
+
 Para instalar una compilación para tu usuario en Linux, `make install-user` copia los binarios a `~/.local/bin`, añade la unidad de usuario de systemd y la entrada de inicio automático, y escribe el marcador de origen de instalación `user`; `make install` hace lo mismo para todo el sistema bajo `PREFIX` (por defecto `/usr/local`) con el marcador `source`. [Empaquetado](packaging.md) explica qué cambia el marcador.
+
+En Arch Linux, el `PKGBUILD` de [`packaging/linux/arch/`](https://github.com/OPad-dev/OPad/blob/main/packaging/linux/arch/PKGBUILD) compila desde la copia del repositorio un paquete de Arch llamado `opad`. <!-- src: /packaging/linux/arch/PKGBUILD -->
+
+Hay dos diferencias con los paquetes de las versiones publicadas:
+
+- El `PKGBUILD` del código fuente ejecuta tosu con el `nodejs` del sistema, que no puede llevar `cap_sys_ptrace`; con `ptrace_scope` por encima de 0 tienes que bajarlo ([Solución de problemas §2](../troubleshooting.md#2-linux-tosu-no-puede-leer-osu-yama-ptrace_scope)). <!-- src: /packaging/linux/arch/PKGBUILD -->
+- `make install-user` no instala la regla udev (`make install` sí). Instálala una vez con: <!-- src: /Makefile#install-user --> <!-- src: /Makefile#install -->
+
+  ```bash
+  sudo cp packaging/linux/udev/70-opad.rules /etc/udev/rules.d/
+  sudo udevadm control --reload-rules && sudo udevadm trigger
+  ```
 
 ### La vista previa del Screen Designer
 

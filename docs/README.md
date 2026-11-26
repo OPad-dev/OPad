@@ -14,6 +14,7 @@ Welcome to the OPad documentation suite. This directory is organized according t
 ```mermaid
 flowchart TD
     Docs["docs/"] --> Start["start/ (Tutorials)"]
+    Docs --> Build["build/ (Build your own)"]
     Docs --> Guides["guides/ (How-To)"]
     Docs --> Ref["reference/ (Reference)"]
     Docs --> Expl["explanation/ (Explanations)"]
@@ -24,10 +25,13 @@ flowchart TD
 - [Documentation Home](index.md) — entry point for users and developers.
 
 ### Getting Started (Tutorials)
-* [What You Need](start/what-you-need.md) — Hardware prerequisites and supported host systems.
-* [Wiring the Keys](start/wiring-the-keys.md) — Header P2 pinout, switch wiring, and V3 carrier/module connections.
+* [What You Need](start/what-you-need.md) — A finished OPad, a USB-C data cable, and supported host systems.
 * [First Connection](start/first-connection.md) — Direct USB HID plug-and-play verification without software.
 * [Installing the Desktop App](start/install-the-app.md) — Installing daemon, GUI, `opadctl`, and `tosu` on Linux and Windows.
+
+### Build Your Own
+* [Parts and Boards](build/parts.md) — Waveshare board, switches or V3 PCBs, cables, case, and the OPad V1 / V3 revision naming.
+* [Wiring the Keys](build/wiring-the-keys.md) — Header P2 pinout, switch wiring, and V3 carrier/module connections.
 
 ### User Guides (How-To)
 * [Updating the Firmware](guides/update-firmware.md) — USB A/B OTA firmware updates via `opad-gui` or `opadctl`.
@@ -51,7 +55,7 @@ flowchart TD
 ### System Architecture (Explanation)
 * [System Architecture](explanation/architecture.md) — Dual-core isolation, runtime states, and daemon device actor.
 * [Latency Engineering](explanation/latency.md) — Split 1000 Hz USB HID endpoints, eager debouncing, and telemetry.
-* [Touchscreen as Third Button](explanation/touchscreen-third-button.md) — CST816S interrupt polling and gesture classifier.
+* [Touchscreen as Fourth Button](explanation/touchscreen-button.md) — CST816S interrupt polling and gesture classifier.
 * [App and Pad Versions](explanation/app-and-pad-versions.md) — Independent upgrades and framing negotiation.
 * [Counters and Ownership](explanation/counters-and-ownership.md) — Monotonic 64-bit counters and pad pairing.
 * [Updates and Automatic Rollback](explanation/updates-and-rollback.md) — Dual OTA slots, trial boot, and signed feeds.

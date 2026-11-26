@@ -43,7 +43,7 @@ El **núcleo 0** contiene la ruta de pulsación y nada más:
 El **núcleo 1** ejecuta el trabajo al que se le permite ser lento:
 
 - `cdc_proto` ([usb_cdc.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/usb/usb_cdc.c), `tskIDLE_PRIORITY + 3`) decodifica las tramas del protocolo que llegan del anfitrión y envía las respuestas.
-- `touch_retry` ([touch_retry.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c), prioridad 2) duerme a la espera de la interrupción del controlador táctil y sondea el I2C solo mientras hay un dedo apoyado. Consulta [La pantalla táctil como tercer botón](touchscreen-third-button.md).
+- `touch_retry` ([touch_retry.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c), prioridad 2) duerme a la espera de la interrupción del controlador táctil y sondea el I2C solo mientras hay un dedo apoyado. Consulta [La pantalla táctil como tercer botón](touchscreen-button.md).
 - La tarea de LVGL ([ui_port.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/ui/ui_port.c), `task_affinity = 1`, prioridad 2) dibuja diseños de 320×240 en el ST7789 por SPI2 a 80 MHz (`BOARD_LCD_PIXEL_CLOCK_HZ`), como mucho cada 33 ms (`CONFIG_LV_DEF_REFR_PERIOD=33`).
 - `runtime_task` ([runtime.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/runtime/runtime.c), `tskIDLE_PRIORITY + 1`) ejecuta la máquina de estados descrita más abajo y realiza todas las escrituras diferidas en NVS.
 

@@ -2,14 +2,14 @@
 title: First Connection
 description: Plug OPad in and check that it works as a USB keyboard, with no software or driver installed.
 sidebar:
-  order: 3
+  order: 2
 ---
 
 OPad is a standard USB keyboard. It needs no driver, daemon or app to type, so you can test it on any Linux or Windows 10/11 PC straight away. <!-- src: /AGENTS.md#1. Product rules -->
 
 ## Plug it in
 
-1. Connect a USB-C **data** cable to the Waveshare board, or to the rear USB-C port of a V3 case.
+1. Connect a USB-C **data** cable to the USB-C port on the back of the pad. (On a pad you built without the V3 case, use the Waveshare board's own USB-C port.) <!-- src: /hardware/3d/custom_case/V3/README.md -->
 2. Plug the other end into your PC, preferably straight into the PC rather than through a hub.
 3. The screen turns on and the pad appears on your PC as a keyboard.
 
@@ -22,7 +22,7 @@ Open any text editor:
 
 1. Press **Key 1**: `z` appears.
 2. Press **Key 2**: `x` appears.
-3. On a V3 module, press **Key 3**: `c` appears.
+3. Press **Key 3**: `c` appears. (A hand-wired pad has only Key 1 and Key 2.)
 4. Touch the screen and keep your finger down: `` ` `` (backtick) is held until you lift it. Without the desktop app every touch is osu!'s Quick Retry key. <!-- src: /firmware/main/input/touch_retry.c#touch_mode_now -->
 
 These are the defaults: <!-- src: /firmware/main/usb/usb_hid.c --> <!-- src: /firmware/main/config/device_config.h -->
@@ -31,7 +31,7 @@ These are the defaults: <!-- src: /firmware/main/usb/usb_hid.c --> <!-- src: /fi
 |---|---|---|
 | Key 1 | `z` | `0x1D` |
 | Key 2 | `x` | `0x1B` |
-| Key 3 (V3 modules) | `c` | `0x06` |
+| Key 3 | `c` | `0x06` |
 | Touchscreen | `` ` `` (Quick Retry) | `0x35` |
 
 The pad sends key positions, not letters, so on another keyboard layout you may see different characters (`w` instead of `z` on AZERTY, for example). That is expected; see [Troubleshooting §1](../troubleshooting.md#1-keyboard-layouts-qwerty-azerty-qwertz).

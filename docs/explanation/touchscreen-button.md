@@ -1,11 +1,11 @@
 ---
-title: Touchscreen as the Third Button
+title: Touchscreen as the Fourth Button
 description: How the CST816 touchscreen works as a held Quick Retry key during a map and as swipe controls outside one, without ever putting extra keys in a mid-map report or costing CPU while idle.
 sidebar:
   order: 3
 ---
 
-The touchscreen is the pad's **third button** ([AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §1.4). During a map, a resting finger holds osu!'s Quick Retry key (`` ` ``) for as long as it stays down, because osu!'s retry is itself a hold. Outside a map the same surface becomes four swipe actions. Doing both on one surface, cheaply and without ever confusing the two, is what [touch_retry.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c) is about.
+The touchscreen is the pad's **fourth button**, after its three keys ([AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §1.4). During a map, a resting finger holds osu!'s Quick Retry key (`` ` ``) for as long as it stays down, because osu!'s retry is itself a hold. Outside a map the same surface becomes four swipe actions. Doing both on one surface, cheaply and without ever confusing the two, is what [touch_retry.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c) is about.
 
 For the user-facing behaviour and settings, see [Touchscreen and Swipes](../guides/touchscreen-and-swipes.md).
 

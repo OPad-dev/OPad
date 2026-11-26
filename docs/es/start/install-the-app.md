@@ -2,7 +2,7 @@
 title: Instalar la app de escritorio
 description: Instala la app de escritorio opcional de OPad (opad-daemon, opad-gui, opadctl y el tosu incluido) en Linux o Windows 10/11.
 sidebar:
-  order: 4
+  order: 3
 ---
 
 La app de escritorio es opcional: el teclado escribe sin ella. Instálala para tener datos de osu! en vivo en la pantalla del teclado, el diseñador de pantalla, contadores de por vida en tu PC, acciones por deslizamiento, ajuste Hall Effect y actualizaciones de firmware. <!-- src: /AGENTS.md#1. Product rules -->
@@ -27,6 +27,16 @@ Cada versión en la página de [GitHub Releases](https://github.com/OPad-dev/OPa
 | Fedora, RHEL, AlmaLinux, Rocky | `OPad-Linux-Fedora-<version>.rpm` |
 | Arch Linux | `OPad-Linux-Arch-<version>.pkg.tar.zst` |
 | Cualquier otro Linux | `OPad-Linux-<version>.AppImage` |
+
+Los paquetes se compilan para x86-64 y están pensados para: <!-- src: /README.md --> <!-- src: /scripts/release/release_notes.sh -->
+
+- Ubuntu 22.04, 24.04 y 26.04; Debian 12 y 13 (`.deb`);
+- Fedora y RHEL / AlmaLinux / Rocky 9 y 10 (`.rpm`);
+- Arch Linux (`.pkg.tar.zst`);
+- cualquier otro Linux (AppImage);
+- Windows 10 y 11 (instalador).
+
+Los binarios de Linux se compilan contra glibc 2.31 y el tosu incluido contra glibc 2.28, así que funcionan en todas las distribuciones anteriores. <!-- src: /.github/workflows/release-app.yml --> <!-- src: /Makefile#TOSU_GLIBC -->
 
 ## Linux
 
@@ -81,19 +91,7 @@ El mismo archivo ejecuta también los demás programas: `./OPad-Linux-<version>.
 > [!NOTE]
 > Una AppImage no puede dar a tosu la capacidad `cap_sys_ptrace`, así que en un sistema con el `ptrace_scope` de Yama por encima de 0 tienes que bajarlo para tener datos de osu! en vivo. Consulta [Solución de problemas §2](../troubleshooting.md#2-linux-tosu-no-puede-leer-osu-yama-ptrace_scope). <!-- src: /desktop/crates/opad-tosu/src/lib.rs#ptrace_access -->
 
-### Compilar desde el código fuente
-
-Desde una copia del repositorio, el `PKGBUILD` de [`packaging/linux/arch/`](https://github.com/OPad-dev/OPad/blob/main/packaging/linux/arch/PKGBUILD) compila un paquete de Arch llamado `opad`, y `sudo make install` instala en `/usr/local` (regla udev incluida). [Compilar desde el código fuente](../develop/building.md) explica los detalles. <!-- src: /packaging/linux/arch/PKGBUILD --> <!-- src: /Makefile#install -->
-
-Hay dos diferencias con los paquetes de las versiones publicadas:
-
-- El `PKGBUILD` del código fuente ejecuta tosu con el `nodejs` del sistema, que no puede llevar `cap_sys_ptrace`; con `ptrace_scope` por encima de 0 tienes que bajarlo ([Solución de problemas §2](../troubleshooting.md#2-linux-tosu-no-puede-leer-osu-yama-ptrace_scope)). <!-- src: /packaging/linux/arch/PKGBUILD -->
-- `make install-user` instala en `~/.local` y no instala la regla udev. Instálala una vez con: <!-- src: /Makefile#install-user -->
-
-  ```bash
-  sudo cp packaging/linux/udev/70-opad.rules /etc/udev/rules.d/
-  sudo udevadm control --reload-rules && sudo udevadm trigger
-  ```
+Si prefieres compilar la app tú mismo e instalarla desde una copia del repositorio, consulta [Compilar desde el código fuente](../develop/building.md#instalar-una-compilación-desde-el-código-fuente).
 
 ### Comprueba tu configuración en Linux
 

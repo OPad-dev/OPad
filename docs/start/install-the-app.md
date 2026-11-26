@@ -2,7 +2,7 @@
 title: Installing the Desktop App
 description: Install the optional OPad desktop app (opad-daemon, opad-gui, opadctl and the bundled tosu) on Linux or Windows 10/11.
 sidebar:
-  order: 4
+  order: 3
 ---
 
 The desktop app is optional: the pad types without it. Install it for live osu! data on the pad's screen, the screen designer, lifetime counters on your PC, swipe actions, Hall Effect tuning and firmware updates. <!-- src: /AGENTS.md#1. Product rules -->
@@ -27,6 +27,16 @@ Every release on the [GitHub Releases](https://github.com/OPad-dev/OPad/releases
 | Fedora, RHEL, AlmaLinux, Rocky | `OPad-Linux-Fedora-<version>.rpm` |
 | Arch Linux | `OPad-Linux-Arch-<version>.pkg.tar.zst` |
 | Any other Linux | `OPad-Linux-<version>.AppImage` |
+
+The packages are built for x86-64 and target: <!-- src: /README.md --> <!-- src: /scripts/release/release_notes.sh -->
+
+- Ubuntu 22.04, 24.04 and 26.04; Debian 12 and 13 (`.deb`);
+- Fedora and RHEL / AlmaLinux / Rocky 9 and 10 (`.rpm`);
+- Arch Linux (`.pkg.tar.zst`);
+- any other Linux (AppImage);
+- Windows 10 and 11 (installer).
+
+The Linux binaries are built against glibc 2.31 and the bundled tosu against glibc 2.28, so they run on every distribution above. <!-- src: /.github/workflows/release-app.yml --> <!-- src: /Makefile#TOSU_GLIBC -->
 
 ## Linux
 
@@ -81,19 +91,7 @@ The same file also runs the other programs: `./OPad-Linux-<version>.AppImage dae
 > [!NOTE]
 > An AppImage cannot give tosu the `cap_sys_ptrace` capability, so on a system with Yama `ptrace_scope` above 0 you have to lower it for live osu! data. See [Troubleshooting §2](../troubleshooting.md#2-linux-tosu-cannot-read-osu-yama-ptrace_scope). <!-- src: /desktop/crates/opad-tosu/src/lib.rs#ptrace_access -->
 
-### Building from source
-
-From a checkout of the repository, the `PKGBUILD` in [`packaging/linux/arch/`](https://github.com/OPad-dev/OPad/blob/main/packaging/linux/arch/PKGBUILD) builds an Arch package named `opad`, and `sudo make install` installs into `/usr/local` (udev rule included). [Building from source](../develop/building.md) covers the details. <!-- src: /packaging/linux/arch/PKGBUILD --> <!-- src: /Makefile#install -->
-
-Two things differ from the release packages:
-
-- The source `PKGBUILD` runs tosu with the system `nodejs`, which cannot carry `cap_sys_ptrace`; with `ptrace_scope` above 0 you have to lower it ([Troubleshooting §2](../troubleshooting.md#2-linux-tosu-cannot-read-osu-yama-ptrace_scope)). <!-- src: /packaging/linux/arch/PKGBUILD -->
-- `make install-user` installs into `~/.local` and does not install the udev rule. Install it once with: <!-- src: /Makefile#install-user -->
-
-  ```bash
-  sudo cp packaging/linux/udev/70-opad.rules /etc/udev/rules.d/
-  sudo udevadm control --reload-rules && sudo udevadm trigger
-  ```
+To build the app yourself and install it from a checkout of the repository instead, see [Building from source](../develop/building.md#installing-a-source-build).
 
 ### Check your Linux setup
 

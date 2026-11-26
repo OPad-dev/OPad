@@ -2,14 +2,14 @@
 title: Primera conexión
 description: Conecta OPad y comprueba que funciona como teclado USB, sin instalar ningún software ni controlador.
 sidebar:
-  order: 3
+  order: 2
 ---
 
 OPad es un teclado USB estándar. No necesita controlador, daemon ni app para escribir, así que puedes probarlo enseguida en cualquier PC con Linux o Windows 10/11. <!-- src: /AGENTS.md#1. Product rules -->
 
 ## Conéctalo
 
-1. Conecta un cable USB-C **de datos** a la placa Waveshare o al puerto USB-C trasero de una carcasa V3.
+1. Conecta un cable USB-C **de datos** al puerto USB-C de la parte trasera del teclado. (En un teclado montado por ti sin la carcasa V3, usa el propio puerto USB-C de la placa Waveshare). <!-- src: /hardware/3d/custom_case/V3/README.md -->
 2. Conecta el otro extremo a tu PC, preferiblemente directo al PC y no a través de un hub.
 3. La pantalla se enciende y el teclado aparece en tu PC como teclado.
 
@@ -22,7 +22,7 @@ Abre cualquier editor de texto:
 
 1. Pulsa **Key 1**: aparece `z`.
 2. Pulsa **Key 2**: aparece `x`.
-3. En un módulo V3, pulsa **Key 3**: aparece `c`.
+3. Pulsa **Key 3**: aparece `c`. (Un teclado cableado a mano solo tiene Key 1 y Key 2).
 4. Toca la pantalla y mantén el dedo: `` ` `` (acento grave) se mantiene pulsado hasta que lo levantes. Sin la app de escritorio, cada toque es la tecla Quick Retry de osu!. <!-- src: /firmware/main/input/touch_retry.c#touch_mode_now -->
 
 Estos son los valores predeterminados: <!-- src: /firmware/main/usb/usb_hid.c --> <!-- src: /firmware/main/config/device_config.h -->
@@ -31,7 +31,7 @@ Estos son los valores predeterminados: <!-- src: /firmware/main/usb/usb_hid.c --
 |---|---|---|
 | Key 1 | `z` | `0x1D` |
 | Key 2 | `x` | `0x1B` |
-| Key 3 (módulos V3) | `c` | `0x06` |
+| Key 3 | `c` | `0x06` |
 | Pantalla táctil | `` ` `` (Quick Retry) | `0x35` |
 
 El teclado envía posiciones de tecla, no letras, así que con otra distribución de teclado puedes ver caracteres distintos (por ejemplo, `w` en lugar de `z` en AZERTY). Es lo esperado; consulta [Solución de problemas §1](../troubleshooting.md#1-distribuciones-de-teclado-qwerty-azerty-qwertz).

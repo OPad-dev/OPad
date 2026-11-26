@@ -1,11 +1,11 @@
 ---
-title: La pantalla táctil como tercer botón
+title: La pantalla táctil como cuarto botón
 description: Cómo funciona la pantalla táctil CST816 como una tecla Quick Retry mantenida durante un mapa y como controles por deslizamiento fuera de él, sin meter nunca teclas de más en un informe a mitad de mapa ni gastar CPU en reposo.
 sidebar:
   order: 3
 ---
 
-La pantalla táctil es el **tercer botón** del teclado ([AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §1.4). Durante un mapa, un dedo apoyado mantiene pulsada la tecla Quick Retry de osu! (`` ` ``) mientras siga abajo, porque el reintento de osu! es en sí una pulsación mantenida. Fuera de un mapa, la misma superficie se convierte en cuatro acciones de deslizamiento. Hacer ambas cosas en una sola superficie, con poco coste y sin confundir nunca una con otra, es de lo que trata [touch_retry.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c).
+La pantalla táctil es el **cuarto botón** del teclado, después de sus tres teclas ([AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §1.4). Durante un mapa, un dedo apoyado mantiene pulsada la tecla Quick Retry de osu! (`` ` ``) mientras siga abajo, porque el reintento de osu! es en sí una pulsación mantenida. Fuera de un mapa, la misma superficie se convierte en cuatro acciones de deslizamiento. Hacer ambas cosas en una sola superficie, con poco coste y sin confundir nunca una con otra, es de lo que trata [touch_retry.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c).
 
 Para el comportamiento y los ajustes de cara al usuario, consulta [Pantalla táctil y deslizamientos](../guides/touchscreen-and-swipes.md).
 

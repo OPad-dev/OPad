@@ -26,7 +26,7 @@ The six product rules of [AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/
 1. **Latency always wins.** Nothing joins the keypress path. A change to `firmware/main/input/` or `firmware/main/usb/` states how it affects latency and how that was checked. See [Latency Engineering](../explanation/latency.md).
 2. **The pad is a keyboard with no software installed.** Typing never depends on the daemon, the GUI or a driver.
 3. **The app and the pad update independently.** Every protocol change works new-app/old-pad and old-app/new-pad. See [App and Pad Versions](../explanation/app-and-pad-versions.md) and [Protocol Changes](protocol-changes.md).
-4. **The touchscreen is the third button**, with a clean press, hold and release, and no extra keys mid-map. See [Touchscreen as the Third Button](../explanation/touchscreen-third-button.md).
+4. **The touchscreen is the fourth button**, with a clean press, hold and release, and no extra keys mid-map. See [Touchscreen as the Fourth Button](../explanation/touchscreen-button.md).
 5. **Never the BOOT or RESET buttons.** Flashing and recovery happen over USB. See [Updates and Automatic Rollback](../explanation/updates-and-rollback.md).
 6. **Every key comes from a finger.** No macros, auto-tap, timed input or host-to-pad key injection, not even as an opt-in.
 

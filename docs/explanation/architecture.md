@@ -43,7 +43,7 @@ flowchart LR
 **Core 1** runs the work that is allowed to be slow:
 
 - `cdc_proto` ([usb_cdc.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/usb/usb_cdc.c), `tskIDLE_PRIORITY + 3`) decodes protocol frames from the host and sends replies.
-- `touch_retry` ([touch_retry.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c), priority 2) sleeps on the touch controller's interrupt and polls I2C only while a finger is down. See [Touchscreen as the Third Button](touchscreen-third-button.md).
+- `touch_retry` ([touch_retry.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c), priority 2) sleeps on the touch controller's interrupt and polls I2C only while a finger is down. See [Touchscreen as the Third Button](touchscreen-button.md).
 - The LVGL task ([ui_port.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/ui/ui_port.c), `task_affinity = 1`, priority 2) draws 320×240 layouts to the ST7789 over SPI2 at 80 MHz (`BOARD_LCD_PIXEL_CLOCK_HZ`), at most every 33 ms (`CONFIG_LV_DEF_REFR_PERIOD=33`).
 - `runtime_task` ([runtime.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/runtime/runtime.c), `tskIDLE_PRIORITY + 1`) runs the state machine below and does every deferred NVS write.
 

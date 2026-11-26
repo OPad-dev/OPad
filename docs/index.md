@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-OPad is a two-key osu! keypad built on the Waveshare ESP32-S3-Touch-LCD-2. It is a 1000 Hz USB keyboard, and its touchscreen is a third button. <!-- src: /AGENTS.md#1. Product rules --> <!-- src: /firmware/main/usb/usb_descriptors.c#opad_usb_config_desc -->
+OPad is a three-key osu! keypad built on the Waveshare ESP32-S3-Touch-LCD-2. It is a 1000 Hz USB keyboard: osu! plays with two keys, the third is there for your play style, and the touchscreen is a fourth button. <!-- src: /AGENTS.md#1. Product rules --> <!-- src: /firmware/main/usb/usb_descriptors.c#opad_usb_config_desc -->
 
 You do not need any software to play: plug the pad in and it types like any keyboard, on Linux and Windows 10/11, with no driver. The optional desktop app (`opad-daemon`, `opad-gui` and `opadctl`) adds the extras: <!-- src: /AGENTS.md#1. Product rules -->
 
@@ -18,10 +18,14 @@ You do not need any software to play: plug the pad in and it types like any keyb
 
 ## Get started
 
-1. [What you need](start/what-you-need.md): the board, switches or V3 PCBs, a cable and a supported OS.
-2. [Wiring the keys](start/wiring-the-keys.md): hand-wire two switches, or assemble the V3 carrier and module.
-3. [First connection](start/first-connection.md): plug the pad in and check that it types.
-4. [Installing the desktop app](start/install-the-app.md): Linux packages, AppImage and the Windows installer.
+1. [What you need](start/what-you-need.md): your OPad, a USB-C data cable and a supported OS.
+2. [First connection](start/first-connection.md): plug the pad in and check that it types.
+3. [Installing the desktop app](start/install-the-app.md): Linux packages, AppImage and the Windows installer.
+
+## Build your own
+
+- [Parts and boards](build/parts.md): the Waveshare board, switches or V3 PCBs, cables and case.
+- [Wiring the keys](build/wiring-the-keys.md): hand-wire two switches, or assemble the V3 carrier and module.
 
 ## Common tasks
 
@@ -42,5 +46,5 @@ You do not need any software to play: plug the pad in and it types like any keyb
 ## Reference and background
 
 - **Reference:** [`opadctl`](reference/opadctl.md), [GUI](reference/gui.md), [device settings](reference/device-settings.md), [pinout](reference/pinout.md), [serial protocol](reference/serial-protocol.md), [daemon IPC](reference/ipc.md), [files and paths](reference/files-and-paths.md).
-- **How it works:** [architecture](explanation/architecture.md), [latency](explanation/latency.md), [the touchscreen as a third button](explanation/touchscreen-third-button.md), [app and pad versions](explanation/app-and-pad-versions.md), [counters and ownership](explanation/counters-and-ownership.md), [updates and rollback](explanation/updates-and-rollback.md), [Hall Effect and rapid trigger](explanation/hall-effect.md).
+- **How it works:** [architecture](explanation/architecture.md), [latency](explanation/latency.md), [the touchscreen as a fourth button](explanation/touchscreen-button.md), [app and pad versions](explanation/app-and-pad-versions.md), [counters and ownership](explanation/counters-and-ownership.md), [updates and rollback](explanation/updates-and-rollback.md), [Hall Effect and rapid trigger](explanation/hall-effect.md).
 - **Contributing:** the [developer hub](develop/index.md) covers building, testing, internals, packaging and releases. The [testing checklist](testing-checklist.md) lists every hardware and software check.

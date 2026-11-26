@@ -5,7 +5,7 @@ sidebar:
   order: 4
 ---
 
-The touchscreen is OPad's third button ([/AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §1.4): a clean press, a held state while the finger stays down, and a clean release. It is driven by `touch_retry_task` on **core 1** at priority `2` ([/firmware/main/input/touch_retry.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c)); its keys reach the keyboard report through `usb_hid_set_touch_key()` ([USB](usb.md#split-endpoint-hid-submission-usb_hidc)). User-facing behaviour: [Touchscreen and Swipes](../../guides/touchscreen-and-swipes.md); design: [Touchscreen as Third Button](../../explanation/touchscreen-third-button.md).
+The touchscreen is OPad's fourth button ([/AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §1.4): a clean press, a held state while the finger stays down, and a clean release. It is driven by `touch_retry_task` on **core 1** at priority `2` ([/firmware/main/input/touch_retry.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c)); its keys reach the keyboard report through `usb_hid_set_touch_key()` ([USB](usb.md#split-endpoint-hid-submission-usb_hidc)). User-facing behaviour: [Touchscreen and Swipes](../../guides/touchscreen-and-swipes.md); design: [Touchscreen as Third Button](../../explanation/touchscreen-button.md).
 
 ## Hardware and I2C
 

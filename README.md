@@ -5,7 +5,7 @@
   <img alt="OPad" src="docs/assets/wordmark-light.svg" width="420">
 </picture>
 
-### A low-latency two-key osu! keypad with a touchscreen, that is just a keyboard until you want more.
+### A low-latency three-key osu! keypad with a touchscreen, that is just a keyboard until you want more.
 
 [![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%2010%2F11-5B3FE0)](docs/start/what-you-need.md)
 [![USB](https://img.shields.io/badge/USB%20HID-1000%20Hz-5B3FE0)](docs/explanation/latency.md)
@@ -37,7 +37,7 @@ calibration and one-click firmware updates.
 |---|---|
 | ⚡ **Latency always wins** | Keys go straight from the switch to the USB report. The screen, storage, tray and tosu are never on that path, and anything that measurably adds latency or jitter is cut. |
 | 🔌 **Works with nothing installed** | Standard HID keyboard (`Z` / `X` by default). The desktop software only adds features. |
-| 👆 **The touchscreen is a third button** | During a map a resting finger is Quick Retry. Outside a map, swipes change the volume or the track. |
+| 👆 **The touchscreen is a fourth button** | During a map a resting finger is Quick Retry. Outside a map, swipes change the volume or the track. |
 | 📊 **Live telemetry** | With [tosu](https://github.com/KotRikD/tosu), the pad shows PP, accuracy, combo and more, in layouts you design yourself. |
 | 🧲 **Mechanical or Hall Effect** | MX switches wired by hand, or the OPad V3 carrier with MX or Hall Effect modules, guided calibration and Rapid Trigger. |
 | 🛟 **Can't be bricked by an update** | Updates go to the other flash slot and roll back on their own if the pad doesn't come back. No BOOT or RESET buttons, ever. |
@@ -48,7 +48,7 @@ calibration and one-click firmware updates.
 
 1. **Wire two switches** between header **P2 pin 11** (GPIO 14, `Z`) /
    **pin 12** (GPIO 9, `X`) and **GND** (pin 13 or 2), or assemble the V3
-   carrier. → [Wiring the keys](docs/start/wiring-the-keys.md)
+   carrier. → [Wiring the keys](docs/build/wiring-the-keys.md)
 2. **Plug it in.** It types immediately. → [First connection](docs/start/first-connection.md)
 3. **Optional: install the app** for the screen, counters and updates.
    → [Install the app](docs/start/install-the-app.md)
@@ -89,7 +89,7 @@ published as a website.
 
 | | |
 |---|---|
-| 🚀 **Getting started** | [What you need](docs/start/what-you-need.md) · [Wiring](docs/start/wiring-the-keys.md) · [First connection](docs/start/first-connection.md) · [Install the app](docs/start/install-the-app.md) |
+| 🚀 **Getting started** | [What you need](docs/start/what-you-need.md) · [Wiring](docs/build/wiring-the-keys.md) · [First connection](docs/start/first-connection.md) · [Install the app](docs/start/install-the-app.md) |
 | 🧭 **Guides** | [Update firmware](docs/guides/update-firmware.md) · [Touchscreen & swipes](docs/guides/touchscreen-and-swipes.md) · [Screen layouts](docs/guides/customize-screen-layout.md) · [Hall Effect calibration](docs/guides/calibrate-hall-effect.md) · [tosu](docs/guides/use-with-tosu.md) · [Backup](docs/guides/backup-and-restore.md) |
 | 🛟 **When something's wrong** | [Troubleshooting](docs/troubleshooting.md) · [Recovery & reflashing](docs/recovery.md) |
 | 📖 **Reference** | [`opadctl`](docs/reference/opadctl.md) · [GUI](docs/reference/gui.md) · [Device settings](docs/reference/device-settings.md) · [Pinout](docs/reference/pinout.md) · [Serial protocol](docs/reference/serial-protocol.md) |
