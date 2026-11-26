@@ -1,57 +1,83 @@
 ---
 title: Referencia de archivos y rutas
-description: Ubicaciones del sistema de archivos, esquema de la base de datos SQLite, archivos de registro, rutas privadas de herramientas e identidad de instalación usadas por la suite de escritorio de OPad en Linux y Windows.
+description: Dónde guarda la suite de escritorio de OPad su base de datos, copias de seguridad, registros, punto de conexión IPC y herramientas incluidas en Linux y Windows, y el esquema SQLite.
 sidebar:
   order: 7
 ---
 
-La suite de escritorio de OPad resuelve todas las rutas persistentes, registros y binarios privados incluidos a través de `desktop/crates/opad-model/src/paths.rs`. Como los daemons iniciados al iniciar sesión heredan directorios de trabajo impredecibles (como `C:\Windows\System32` en Windows), OPad nunca recurre a rutas relativas. <!-- src: /desktop/crates/opad-model/src/paths.rs#PathError -->
+Todas las rutas que la suite de escritorio lee o escribe se resuelven en `desktop/crates/opad-model/src/paths.rs`. Un daemon iniciado al iniciar sesión hereda un directorio de trabajo impredecible (a menudo `C:\Windows\System32` en Windows), así que ninguna ruta es nunca relativa: cuando no se puede resolver un directorio, la llamada falla en lugar de adivinar.
+<!-- src: /desktop/crates/opad-model/src/paths.rs -->
 
-## Ubicaciones en el sistema de archivos por plataforma
+## Ubicaciones
 
-| Componente | Ubicación en Linux | Ubicación en Windows | Propósito |
-|---|---|---|---|
-| **Directorio de datos** | `$XDG_DATA_HOME/opad` (respaldo `~/.local/share/opad`) | `%APPDATA%\opad` | Datos persistentes del usuario (`opad.db`, copias automáticas). <!-- src: /desktop/crates/opad-model/src/paths.rs#data_dir --> |
-| **Directorio de estado** | `$XDG_STATE_HOME/opad` (respaldo `~/.local/state/opad`) | `%APPDATA%\opad` | Registros de ejecución desechables. <!-- src: /desktop/crates/opad-model/src/paths.rs#state_dir --> |
-| **Archivo de base de datos** | `<data_dir>/opad.db` | `<data_dir>\opad.db` | Base de datos SQLite principal (modo WAL). <!-- src: /desktop/crates/opad-model/src/paths.rs#database_path --> |
-| **Copias de seguridad automáticas** | `<data_dir>/backups/` | `<data_dir>\backups\` | Archivos `JsonBackup` automáticos rotativos (se conservan los 10 más recientes). <!-- src: /desktop/daemon/src/backup.rs#backup_dir --> |
-| **Registro del daemon** | `<state_dir>/daemon.log` | `<state_dir>\daemon.log` | Salida de un daemon lanzado por la GUI. <!-- src: /desktop/crates/opad-model/src/paths.rs#daemon_log_path --> |
-| **Registro de tosu** | `<state_dir>/tosu.log` | `<state_dir>\tosu.log` | Salida del proceso `tosu` supervisado. <!-- src: /desktop/crates/opad-model/src/paths.rs#tosu_log_path --> |
-| **Punto de conexión IPC** | `$XDG_RUNTIME_DIR/opad/daemon.sock` (respaldos `/run/user/<uid>/opad/daemon.sock`, `/tmp/opad-<uid>/daemon.sock`) | `\\.\pipe\opad-ipc-<SID>` | Socket de dominio Unix / Named Pipe IPC local del daemon. <!-- src: /desktop/crates/opad-ipc/src/transport/unix.rs#get_socket_path --> <!-- src: /desktop/crates/opad-ipc/src/transport/windows.rs#get_socket_path --> |
-| **Directorio privado de librerías** | `<install_prefix>/lib/opad` | `<install_dir>` (`%LOCALAPPDATA%\Programs\opad`) | `tosu` incluido, `espflash` fijado e `install-origin`. <!-- src: /desktop/crates/opad-model/src/paths.rs#install_lib_dir --> |
-| **Binario de tosu incluido** | `<install_lib_dir>/tosu/tosu` | `<install_lib_dir>\tosu\tosu.exe` | Lector de memoria de osu! incluido. <!-- src: /desktop/crates/opad-model/src/paths.rs#bundled_tosu_binary --> |
-| **Origen de instalación** | `<install_lib_dir>/install-origin` | `<install_lib_dir>\install-origin` | Marcador de canal de empaquetado (`windows`, `deb`, `rpm`, `aur`, `appimage`, `user`, `source`). <!-- src: /desktop/crates/opad-model/src/paths.rs#install_origin_path --> <!-- src: /desktop/crates/opad-update/src/origin.rs#InstallOrigin --> |
+| Qué | Linux | Windows |
+|---|---|---|
+| Directorio de datos | `$XDG_DATA_HOME/opad`, si no `~/.local/share/opad` | `%APPDATA%\opad` |
+| Directorio de estado (registros) | `$XDG_STATE_HOME/opad`, si no `~/.local/state/opad` | `%APPDATA%\opad` (no hay directorio de estado aparte) |
+| Base de datos | `<data>/opad.db` | `<data>\opad.db` |
+| Copias de seguridad automáticas | `<data>/backups/`, se conservan las 10 más recientes | `<data>\backups\` |
+| Registro del daemon (un daemon que inició la GUI) | `<state>/daemon.log` | `<state>\daemon.log` |
+| Registro de tosu | `<state>/tosu.log` | `<state>\tosu.log` |
+| Punto de conexión IPC | `$XDG_RUNTIME_DIR/opad/daemon.sock` (alternativas en la [Referencia del protocolo IPC](ipc.md#transporte)) | `\\.\pipe\opad-ipc-<SID>` |
+<!-- src: /desktop/crates/opad-model/src/paths.rs#data_dir, /desktop/crates/opad-model/src/paths.rs#state_dir, /desktop/daemon/src/backup.rs#backup_dir, /desktop/daemon/src/backup.rs#KEEP, /desktop/crates/opad-ipc/src/transport/unix.rs#get_socket_path, /desktop/crates/opad-ipc/src/transport/windows.rs#get_socket_path -->
 
-### Resolución de rutas en Linux
+## Archivos instalados
 
-- **Directorios de datos y estado** siguen XDG (`$XDG_DATA_HOME/opad` / `$XDG_STATE_HOME/opad`, por defecto `~/.local/share/opad` y `~/.local/state/opad`). <!-- src: /desktop/crates/opad-model/src/paths.rs#data_dir -->
-- **Prefijo de instalación** se deriva del directorio abuelo del ejecutable en curso (por ejemplo, `/usr/bin/opad-daemon` -> prefijo `/usr` -> `/usr/lib/opad`; `~/.local/bin/opad-daemon` -> `~/.local/lib/opad`). <!-- src: /desktop/crates/opad-model/src/paths.rs#install_prefix -->
+El directorio de instalación privado se localiza a partir del ejecutable en marcha, así que una sola regla cubre todos los prefijos:
+<!-- src: /desktop/crates/opad-model/src/paths.rs#install_prefix, /desktop/crates/opad-model/src/paths.rs#install_lib_dir -->
 
-### Resolución de rutas en Windows
+| Qué | Linux | Windows |
+|---|---|---|
+| Prefijo de instalación | El directorio abuelo del ejecutable (`/usr/bin/opad-daemon` → `/usr`, `~/.local/bin/opad-daemon` → `~/.local`) | El directorio del ejecutable, por defecto `%LOCALAPPDATA%\Programs\opad` (instalación por usuario) |
+| Directorio privado (`install_lib_dir`) | `<prefix>/lib/opad` | `<prefix>` |
+| tosu incluido | `<lib>/tosu/tosu` | `<prefix>\tosu\tosu.exe` |
+| Marcador de origen de instalación | `<lib>/install-origin` | `<prefix>\install-origin` |
+| `espflash` fijado | `<prefix>/lib/opad/bin/espflash` (o junto al ejecutable) | `<prefix>\espflash.exe` |
+<!-- src: /desktop/crates/opad-model/src/paths.rs#bundled_tosu_binary, /desktop/crates/opad-model/src/paths.rs#install_origin_path, /desktop/crates/opad-device/src/flash.rs#resolve_espflash, /packaging/windows/installer.iss -->
 
-- Windows no tiene un directorio de estado XDG separado, por lo que tanto los datos persistentes (`opad.db`, `backups\`) como los registros (`daemon.log`, `tosu.log`) residen en `%APPDATA%\opad`. <!-- src: /desktop/crates/opad-model/src/paths.rs#state_dir -->
-- El instalador de Inno Setup instala por usuario (`PrivilegesRequired=lowest`) en `%LOCALAPPDATA%\Programs\opad`, colocando juntos los binarios, `espflash.exe`, `install-origin` y `tosu\tosu.exe` en ese directorio. <!-- src: /packaging/windows/installer.iss -->
+Si no encuentra un `espflash` incluido, el flasheador prueba `%USERPROFILE%\.cargo\bin\espflash.exe` en Windows y después `espflash` en el `PATH`.
+<!-- src: /desktop/crates/opad-device/src/flash.rs#resolve_espflash -->
+
+El marcador `install-origin` indica cómo se instaló OPad, lo que decide cómo se actualiza: `windows`, `deb`, `rpm`, `aur`, `appimage`, `user` o `source`. Cualquier otro valor se interpreta como desconocido.
+<!-- src: /desktop/crates/opad-update/src/origin.rs#InstallOrigin -->
 
 ## Base de datos SQLite (`opad.db`)
 
-`opad.db` se abre en modo Write-Ahead Logging (`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;`) y registra las migraciones en `schema_migrations` (actualmente esquema v19). <!-- src: /desktop/crates/opad-storage/src/lib.rs#open -->
+La base de datos se abre con `PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;`. Las migraciones aplicadas se registran en `schema_migrations (version, applied_at)`; el esquema actual es v19.
+<!-- src: /desktop/crates/opad-storage/src/lib.rs#open, /desktop/crates/opad-storage/src/lib.rs#migrate -->
 
-### Tablas principales
+| Tabla | Clave | Contenido | Desde |
+|---|---|---|---|
+| `device_state` | `device_id` (`OPAD-<MAC>`) | `board_profile`, `firmware_version`, `counter_generation`, `lifetime_key1`, `lifetime_key2`, `lifetime_key3` (NULL hasta que se sincroniza un teclado de tres teclas), `last_seen_at`, `last_sync_at` | v1; tecla 3 v18 |
+| `config` | `id` = `1` (una sola fila) | La copia de la aplicación de la configuración del teclado: teclas, antirrebote, brillo, reposo de pantalla, frecuencia de refresco en juego, `tosu_endpoint`, `press_color_rgb`, pines de tecla, acciones/teclas/modificadores de deslizamiento, `result_animations`, `key3_hid_usage`, `game_keys` | v1, columnas añadidas en v2–v17 |
+| `layouts` | `screen` (`0` = Idle, `1` = Playing) | `json`, `updated_at` | v3 |
+| `app_state` | `key` | `value`, `updated_at` | v7 |
+| `tap_attempts` | `id` | Una fila por intento terminado: tiempos, beatmap, mods, título/artista/dificultad, por canal (`k1`, `k2`, `combined`) número de pulsaciones, intervalos, media y pico, número de pulsaciones y duración de la canción, pico de la canción | v9; canción v10, pico de la canción v11 |
+<!-- src: /desktop/crates/opad-storage/src/lib.rs#apply_v1, /desktop/crates/opad-storage/src/lib.rs#apply_v3, /desktop/crates/opad-storage/src/lib.rs#apply_v7, /desktop/crates/opad-storage/src/lib.rs#apply_v18, /desktop/crates/opad-storage/src/tap_stats.rs#apply_v9, /desktop/crates/opad-layout/src/lib.rs#Screen -->
 
-- **`app_state`**: Metadatos clave-valor del anfitrión (`key`, `value`, `updated_at`), que guardan `install.id`, `tap_stats.history_days` y ajustes/programaciones del actualizador. <!-- src: /desktop/crates/opad-storage/src/lib.rs#apply_v7 -->
-- **`device_state`**: Filas por teclado indexadas por el `device_id` canónico (`OPAD-<MAC>`), guardando `board_profile`, `firmware_version`, `counter_generation`, `lifetime_key1`, `lifetime_key2`, `lifetime_key3`, `last_seen_at` y `last_sync_at`. <!-- src: /desktop/crates/opad-storage/src/lib.rs#apply_v1 --> <!-- src: /desktop/crates/opad-storage/src/lib.rs#apply_v18 -->
-- **`config`**: Fila única (`id = 1`) que almacena en caché `DeviceConfig` (códigos de tecla, pines GPIO, antirrebote, brillo, reposo, Hz de refresco en partida, `tosu_endpoint`, acciones/teclas/modificadores de deslizamiento, `result_animations`, `key3_hid_usage`, `game_keys`). <!-- src: /desktop/crates/opad-storage/src/lib.rs#apply_v1 -->
-- **`layouts`**: JSON de diseños de pantalla personalizados indexados por `screen` (`Idle` / `Playing`). <!-- src: /desktop/crates/opad-storage/src/lib.rs#apply_v3 -->
-- **Tablas de estadísticas de pulsación** (`apply_v10` / `apply_v11`): Ritmos de pulsación de intentos registrados e historial. <!-- src: /desktop/crates/opad-storage/src/lib.rs#migrate -->
+La migración v19 renombró los teclados guardados como `OSUPAD-<MAC>` (firmware hasta `1.0.0-rc`) a `OPAD-<MAC>`, conservando sus contadores.
+<!-- src: /desktop/crates/opad-storage/src/lib.rs#apply_v19 -->
 
-### Guardia de escritura
+### Claves de `app_state`
 
-Todas las mutaciones en SQLite comprueban `writes_allowed` y devuelven `StorageError::WritesBlocked` durante `Playing` y `Cooldown`; las escrituras pendientes se vuelcan en cuanto el daemon regresa a `Idle`. <!-- src: /desktop/crates/opad-storage/src/lib.rs#WritesBlocked -->
+| Clave | Contiene |
+|---|---|
+| `install.id` | La identidad de esta instalación (ver más abajo) |
+| `stats.history_days` | El periodo del historial de estadísticas, `0` = todo el historial |
+| `update.app.enabled`, `update.tosu.enabled`, `update.firmware.auto` | Interruptores de actualización automática; si faltan = activados |
+| `update.channel` | `stable` (predeterminado) o `beta` |
+| `update.schedule`, `update.last_result` | El calendario de comprobaciones del actualizador y el resultado de la última instalación |
+<!-- src: /desktop/daemon/src/identity.rs#INSTALL_ID_KEY, /desktop/crates/opad-storage/src/tap_stats.rs#HISTORY_DAYS_KEY, /desktop/daemon/src/updater.rs#APP_ENABLED_KEY, /desktop/daemon/src/updater.rs#read_flag -->
 
-## Identidad de instalación (`install.id`)
+### Bloqueo de escritura
 
-En la primera ejecución, `opad-daemon` genera un UUIDv4 guardado bajo `install.id` en `app_state`: <!-- src: /desktop/daemon/src/identity.rs#INSTALL_ID_KEY -->
+El daemon desactiva las escrituras en el almacenamiento durante un mapa y su enfriamiento: entonces toda escritura devuelve `StorageError::WritesBlocked`. Los datos que deben sobrevivir, como los intentos de pulsación terminados y un nuevo periodo de historial, se mantienen en memoria y se guardan en cuanto vuelven a permitirse las escrituras.
+<!-- src: /desktop/crates/opad-storage/src/lib.rs#check_writes_allowed, /desktop/daemon/src/runtime.rs, /desktop/crates/opad-ipc/src/lib.rs#TapStatsSnapshot, /desktop/crates/opad-ipc/src/lib.rs#IpcRequest -->
 
-- **Ámbito por instalación**: Desinstalar OPad borra el directorio de datos de escritorio (`%APPDATA%\opad` en Windows, `~/.local/share/opad` en desinstalación de paquetes Linux), por lo que reinstalar crea un nuevo `install.id`. <!-- src: /desktop/daemon/src/identity.rs -->
-- **Propiedad del teclado**: Su forma binaria de 16 bytes (`OWNER_ID_LEN = 16`) se escribe en el teclado mediante `ClaimOwnership`. <!-- src: /desktop/daemon/src/identity.rs#OWNER_ID_LEN -->
-- **Modo degradado**: Si no se puede abrir `opad.db`, el daemon se ejecuta sin identidad y omite reclamar teclados o actualizar los contadores del PC en lugar de cerrarse inesperadamente. <!-- src: /desktop/daemon/src/identity.rs#load_or_create -->
+## Identidad de instalación
+
+En la primera ejecución, el daemon genera un UUIDv4 y lo guarda como `install.id`. Sus 16 bytes son lo que un teclado registra como su propietario (`ClaimOwnership`). Es por instalación, no por máquina: desinstalar borra el directorio de datos (el desinstalador de Windows, y `uninstall-cleanup` de los paquetes de Linux para las rutas XDG predeterminadas), así que una reinstalación obtiene una identidad nueva. Protege la integridad de los contadores, no la exclusividad; no tiene nada de criptográfico.
+<!-- src: /desktop/daemon/src/identity.rs, /packaging/windows/installer.iss, /packaging/linux/uninstall-cleanup.sh -->
+
+Si no se puede abrir la base de datos, el daemon funciona sin identidad: no reclama teclados ni muestra avisos de propiedad.
+<!-- src: /desktop/daemon/src/identity.rs#load_or_create -->

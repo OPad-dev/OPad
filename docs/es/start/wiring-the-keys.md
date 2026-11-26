@@ -1,56 +1,57 @@
 ---
 title: Cableado de las teclas
-description: Cómo cablear interruptores mecánicos a mano al cabezal P2 de la Waveshare ESP32-S3-Touch-LCD-2 o ensamblar el carrier y los módulos de entrada OPad V3.
+description: Cablea dos interruptores mecánicos al cabezal P2 de la Waveshare ESP32-S3-Touch-LCD-2, o conecta el carrier, el módulo y la USB board OPad V3.
 sidebar:
   order: 2
 ---
 
-Los interruptores mecánicos en OPad se leen en lógica activa-baja utilizando las resistencias pull-up internas del ESP32-S3 (`GPIO_PULLUP_ONLY`): pulsar un interruptor conecta su pin GPIO a `GND`. No se requieren resistencias ni diodos externos en montajes cableados a mano. <!-- src: /firmware/main/input/keypad.c --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
+## Opción 1: cablear a mano dos interruptores
 
-## Opción 1: Cableado manual de interruptores mecánicos (cabezal P2)
-
-Cuando cableas dos interruptores directamente a los cabezales de la Waveshare ESP32-S3-Touch-LCD-2: <!-- src: /README.md --> <!-- src: /firmware/main/input/keypad.c -->
+Cada interruptor va entre un pin GPIO y GND. El firmware activa el pull-up interno del pin, así que el pin lee nivel alto cuando el interruptor está abierto y nivel bajo cuando lo pulsas. No necesitas resistencias ni diodos. <!-- src: /firmware/main/input/keypad.c --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
 
 ```text
-Switch 1 (Key 1) ------------ P2 Pin 11 (GPIO 14)
-                 \
-                  ----------- P2 Pin 13 or Pin 2 (GND)
-
-Switch 2 (Key 2) ------------ P2 Pin 12 (GPIO 9)
-                 \
-                  ----------- P2 Pin 13 or Pin 2 (GND)
+Switch 1 (Key 1):  one leg -> P2 pin 11 (GPIO14)   other leg -> GND (P2 pin 13 or pin 2)
+Switch 2 (Key 2):  one leg -> P2 pin 12 (GPIO9)    other leg -> GND (P2 pin 13 or pin 2)
 ```
+<!-- src: /firmware/main/input/keypad.c#KEYPAD_DEFAULT_KEY1_GPIO --> <!-- src: /AGENTS.md#6. Hardware and debugging facts -->
 
-1. **Localiza el cabezal P2** en la parte trasera de la placa Waveshare ESP32-S3-Touch-LCD-2.
-2. **Cablea Key 1**: Conecta un terminal del interruptor 1 a **P2 Pin 11 (`GPIO 14`)** y el otro terminal a **GND** (P2 Pin 13 está justo al lado, o puedes usar P2 Pin 2). <!-- src: /firmware/main/input/keypad.c#KEYPAD_DEFAULT_KEY1_GPIO -->
-3. **Cablea Key 2**: Conecta un terminal del interruptor 2 a **P2 Pin 12 (`GPIO 9`)** y el otro terminal a **GND**. <!-- src: /firmware/main/input/keypad.c#KEYPAD_DEFAULT_KEY2_GPIO -->
-4. **Polaridad**: Los interruptores mecánicos no tienen polaridad; cualquiera de las dos patillas puede ir al pin GPIO y la otra a `GND`.
-5. **Pines personalizados**: Si conectas los interruptores a otros GPIOs admitidos de P1/P2, reasígnalos después en `opad-gui` (**Settings** -> **⌨ Keypad** -> **KEY 1 PIN** / **KEY 2 PIN** o **Auto-Detect**). Consulta [Cambio de pines de teclas](../guides/change-key-pins.md) y [Referencia de pinout](../reference/pinout.md). <!-- src: /desktop/gui/src/pages.rs#settings -->
+1. Localiza el cabezal **P2** en la placa Waveshare.
+2. Cablea **Key 1**: una patilla del primer interruptor a **P2 pin 11 (GPIO14)** y la otra a **GND**. El P2 pin 13, justo al lado, es GND, y el P2 pin 2 también.
+3. Cablea **Key 2**: una patilla del segundo interruptor a **P2 pin 12 (GPIO9)** y la otra a GND.
+4. Cualquiera de las dos patillas de un interruptor puede ir al GPIO. Los interruptores no tienen polaridad.
+
+Estos dos pines son los predeterminados, así que el teclado funciona sin configurar nada. Si prefieres usar otros pines del cabezal, cabléalos ahora y configúralos después en la app; [Cambiar los pines de las teclas](../guides/change-key-pins.md) enumera los pines que puedes usar.
 
 > [!WARNING]
-> Compara siempre la etiqueta física de serigrafía de la placa con **Key Pins** en `opadctl status` si una tecla no hace nada. El desplegable de la GUI muestra posiciones del cabezal del esquemático (como `GPIO14 (P2 pin 11)`), fáciles de confundir al contar los pines del cabezal. <!-- src: /AGENTS.md -->
+> Si una tecla no hace nada, compara primero la etiqueta GPIO impresa en la placa junto al cable (la serigrafía) con **Key Pins** en `opadctl status`. La lista de pines de la app nombra posiciones del cabezal según el esquemático, como `GPIO14 (P2 pin 11)`, y es fácil contar mal los pines del cabezal. <!-- src: /AGENTS.md#6. Hardware and debugging facts --> <!-- src: /desktop/crates/opad-model/src/lib.rs#KEY_PINS -->
 
-## Opción 2: Carrier y PCBs modulares OPad V3
+## Opción 2: las PCBs OPad V3
 
-Si estás montando el conjunto de PCBs OPad V3 (`hardware/pcb/V3/`): <!-- src: /hardware/pcb/V3/README.md --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
+El conjunto V3 te da tres teclas y un puerto USB-C trasero. Todo se monta encajando piezas; no hay que soldar nada a la placa. <!-- src: /hardware/pcb/V3/README.md -->
 
-- **Controller Carrier V3**: Encaja sobre los cabezales P1 y P2 de la placa Waveshare mediante dos conectores hembra 1x14.
-- **Cable de módulo**: Conecta el carrier al **MX Input Module V3** (3 teclas, zócalos hot-swap Kailh) o al **HE Input Module V3** (3 teclas, sensores Hall Effect + ADC ADS7028) mediante un **FFC tipo B de 14 vías y 1.0 mm** (80 mm en la carcasa V3).
-- **Cable USB**: Conecta el carrier a la **USB Board V3** mediante un **FFC tipo A de 8 vías y 1.0 mm** (80 mm en la carcasa V3, pinout simétrico).
-- **Enrutado fijo del carrier V3**:
-  - **MX Input Module V3** (FFC derecho): `KEY1 = GPIO 10`, `KEY2 = GPIO 7`, `KEY3 = GPIO 6`, `ID = GPIO 8` (nota: un módulo MX V3 con el FFC invertido no se lee; inserta el cable tipo B derecho). <!-- src: /hardware/pcb/V3/README.md --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
-  - **HE Input Module V3**: `ID = GPIO 8`, SPI3 hacia el ADS7028 en `MISO = GPIO 6`, `SCLK = GPIO 2`, `MOSI = GPIO 4`, `CS = GPIO 10` (el firmware remapea automáticamente los pines SPI si el FFC de 14 vías está invertido, con `ID` en `GPIO 7`). <!-- src: /hardware/pcb/V3/README.md --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
+1. Asienta el **controller carrier V3** en los cabezales P1 y P2 de la placa Waveshare.
+2. Conecta el carrier a tu módulo de entrada, el **MX input module V3** o el **HE input module V3**, con el **FFC de 14 vías, 1,0 mm y tipo B**.
+3. Conecta el carrier a la **USB board V3** con el **FFC de 8 vías, 1,0 mm y tipo A**. Su pinout es el mismo desde cualquiera de los dos extremos.
+4. Conecta tu PC al puerto USB-C de la USB board.
 
-## Verificar el cableado
+El carrier fija qué pines usa cada tecla, así que no hay nada que configurar: <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
 
-1. Conecta el teclado al ordenador por USB.
-2. Comprueba las asignaciones de pines activas y el módulo detectado en un terminal: <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-   ```bash
-   opadctl status
-   ```
-3. En un carrier + módulo V3, ejecuta la autoprueba de PCB de hardware con todas las teclas sueltas: <!-- src: /desktop/cli/src/main.rs#Commands::BoardTest -->
+| Módulo | Líneas en el ESP32-S3 |
+|---|---|
+| MX input module V3 | Key 1 GPIO10, Key 2 GPIO7, Key 3 GPIO6, ID de módulo GPIO8 |
+| HE input module V3 | ADS7028 por SPI: MISO GPIO6, SCLK GPIO2, MOSI GPIO4, CS GPIO10; ID de módulo GPIO8 |
+
+El firmware lee qué módulo está montado a través de la línea de ID de módulo. Un cable de 14 vías dado la vuelta mueve el ID a GPIO7: el firmware reasigna las líneas SPI de un módulo HE para que coincidan, pero no puede leer así un módulo MX V3, de modo que asegúrate de que el cable no está dado la vuelta. <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h#BOARD_MODULE_ID_ALT_GPIO --> <!-- src: /hardware/pcb/V3/README.md -->
+
+## Comprueba el cableado
+
+1. Conecta el teclado a tu PC. Sin ninguna app, abre un editor de texto y pulsa cada tecla: deberías ver `z`, `x` (y `c` para Key 3 en un módulo V3). Consulta [Primera conexión](first-connection.md). <!-- src: /firmware/main/usb/usb_hid.c -->
+2. Con la app de escritorio instalada, ejecuta `opadctl status` y revisa **Key Pins** e **Input Module**. <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
+3. En un carrier V3, ejecuta la autoprueba de la placa con todas las teclas sueltas: <!-- src: /desktop/cli/src/main.rs#Commands::BoardTest -->
+
    ```bash
    opadctl board-test
    ```
-   (Añade `--fix-pins` si un módulo MX en carrier sigue configurado en los pines predeterminados autónomos `GPIO 14` / `GPIO 9`, o `--magnet` para verificar los sensores Hall Effect V3 en vivo.)
-4. En montajes cableados a mano, también puedes activar **Settings** -> **🛠 Diagnostics** -> **Enable Diagnostics Menu in Navigation** en `opad-gui` y probar pulsaciones y rebotes en la pestaña **⌨ Switch Chatter & Input**, o usar **Auto-Detect** en **Settings** -> **⌨ Keypad**. <!-- src: /desktop/gui/src/pages.rs#settings --> <!-- src: /desktop/gui/src/diagnostics.rs -->
+
+   Comprueba el ID de módulo, la orientación del cable, las líneas de las teclas y los cortocircuitos del conector y, en un módulo HE V3, el ADC y los sensores. Añade `--magnet` para ver después los sensores HE en vivo mientras sostienes un imán sobre cada tecla, o `--fix-pins` si las teclas de un módulo MX siguen con los valores predeterminados del cableado a mano (GPIO14 / GPIO9): las mueve a GPIO10 / GPIO7 y vuelve a probar.
+4. Para ver cada pulsación y cualquier rebote del interruptor, activa **Settings** → **🛠 Diagnostics** → **Enable Diagnostics Menu in Navigation** en `opad-gui` y abre **Diagnostics** → **⌨ Switch Chatter & Input**. <!-- src: /desktop/gui/src/pages.rs#settings --> <!-- src: /desktop/gui/src/diagnostics.rs -->

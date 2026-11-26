@@ -1,16 +1,16 @@
 ---
-title: Personalizar el diseño de pantalla
+title: Personalizar el diseño de la pantalla
 description: Cómo diseñar, previsualizar, aplicar, exportar e importar diseños personalizados de pantalla Idle y Playing en opad-gui, con todas las fuentes de datos disponibles.
 sidebar:
   order: 3
 ---
 
-La pantalla LCD de `320x240` de OPad tiene dos diseños independientes: la **Idle screen** (mostrada fuera de un mapa) y la **Playing screen** (mostrada durante un mapa). Puedes editar ambas desde la página **Designer** de `opad-gui` usando una previsualización 2x exacta píxel a píxel renderizada por el propio motor LVGL del firmware (`opad-ui-preview`). <!-- src: /desktop/gui/src/designer/mod.rs, /firmware/main/ui/core/ui_core.h, /firmware/main/ui/ui_port.c#pad_timer_cb -->
+La pantalla de 320×240 del teclado tiene dos diseños: la **Idle screen**, que se muestra fuera de un mapa, y la **Playing screen**, que se muestra durante uno. Editas ambas en la página **Designer** de la app. Su previsualización, dibujada al doble de tamaño, la genera el propio código de interfaz del firmware, así que lo que ves es lo que muestra el teclado. <!-- src: /desktop/gui/src/designer/mod.rs, /firmware/main/ui/core/ui_core.h, /firmware/main/ui/ui_port.c#pad_timer_cb -->
 
 ## Qué necesitas
 
 - `opad-gui` y `opad-daemon` en ejecución. Puedes diseñar, exportar e importar diseños incluso con el teclado desconectado; al pulsar **Apply to pad** el daemon guarda el diseño y lo envía automáticamente la próxima vez que se conecte el teclado. <!-- src: /desktop/gui/src/designer/mod.rs#update, /desktop/daemon/src/ipc_handlers.rs#IpcRequest::SetLayout -->
-- Tu OPad conectado por USB para ver los cambios en vivo en la pantalla. Si el teclado pertenece a otra instalación, asume primero la propiedad (consulta [Recuperación, reflasheo y desvinculación](../recovery.md)). <!-- src: /desktop/daemon/src/ipc_handlers.rs#IpcRequest::SetLayout -->
+- Tu OPad conectado por USB para ver los cambios en vivo en la pantalla. Si la app dice que el teclado pertenece a otra instalación de OPad, resuélvelo primero (consulta [Recuperación §7](../recovery.md#7-reflashear-y-desvincular-un-teclado)). <!-- src: /desktop/daemon/src/ipc_handlers.rs#IpcRequest::SetLayout -->
 - `tosu` en ejecución si quieres previsualizar **Live data from osu!** (de lo contrario la previsualización usa valores de ejemplo integrados). <!-- src: /desktop/gui/src/designer/mod.rs#Message::LiveData -->
 
 ## Crear un diseño
@@ -39,11 +39,11 @@ La pantalla LCD de `320x240` de OPad tiene dos diseños independientes: la **Idl
    - **Show keys pressed**: Simula ambas teclas pulsadas para comprobar los colores de resaltado de las Key card. <!-- src: /desktop/gui/src/designer/mod.rs#Message::SimulatePress -->
 7. Haz clic en **Apply to pad** (mostrado como **Apply to pad •** mientras haya cambios sin aplicar). <!-- src: /desktop/gui/src/designer/mod.rs#view -->
    - Fuera de un mapa (`Idle`), el daemon guarda el diseño en SQLite y lo envía al teclado, que lo almacena en NVS (`opad_ui`). <!-- src: /desktop/daemon/src/ipc_handlers.rs#IpcRequest::SetLayout, /firmware/main/ui/ui_store.c -->
-   - Durante un mapa o el enfriamiento (`Playing` / `Cooldown`), el diseño se aplica a la RAM del teclado de inmediato y se persiste en disco y NVS cuando el teclado vuelve a `Idle`. <!-- src: /desktop/daemon/src/ipc_handlers.rs#IpcRequest::SetLayout, /firmware/main/ui/ui_store.c#ui_store_save -->
+   - Durante un mapa o el cooldown (`Playing` / `Cooldown`), el diseño se aplica a la RAM del teclado de inmediato y se persiste en disco y NVS cuando el teclado vuelve a `Idle`. <!-- src: /desktop/daemon/src/ipc_handlers.rs#IpcRequest::SetLayout, /firmware/main/ui/ui_store.c#ui_store_save -->
 
 Para deshacer cambios sin aplicar, haz clic en **Revert**. Para restaurar el diseño integrado del firmware en la pantalla activa, haz clic en **Reset to default** y después en **Apply to pad**. Para descartar cambios locales y recargar los diseños guardados desde el daemon, haz clic en **Reload**. <!-- src: /desktop/gui/src/designer/mod.rs#update -->
 
-## Exportar e importar diseños
+## Exportar e importar un diseño
 
 - **Export**: Selecciona **Idle screen** o **Playing screen** y haz clic en **Export**. `opad-gui` abre un diálogo para guardar con nombre predeterminado `opad-idle.json` u `opad-playing.json` y escribe el diseño en JSON formateado. <!-- src: /desktop/gui/src/designer/mod.rs#export_layout -->
 - **Import**: Selecciona la pantalla de destino (**Idle screen** o **Playing screen**), haz clic en **Import** y elige un archivo `.json`. `opad-gui` lo analiza y valida con las mismas reglas que el firmware (`ui_layout_validate`), lo carga en el editor y te indica que pulses **Apply to pad** para guardarlo y enviarlo. <!-- src: /desktop/gui/src/designer/mod.rs#import_layout, /desktop/crates/opad-layout/src/lib.rs#validate -->
@@ -179,15 +179,15 @@ Cada widget puede enlazarse a un ID de fuente de datos definido en `ui_source_t`
 | `82` | `status.osu` | `Connection: Osu` | Entero (`0`/`1`) | `1` cuando `tosu` detecta un proceso `osu!` en ejecución. |
 <!-- src: /firmware/main/ui/core/ui_ids.h, /firmware/main/ui/core/ui_data.c, /desktop/crates/opad-layout/src/lib.rs#source_info -->
 
-## Cómo comprobar que funcionó
+## Cómo comprobar que ha funcionado
 
-- Al pulsar **Apply to pad**, la línea de estado bajo la previsualización cambia a `Applied to the pad` (o `Layout applied to pad RAM; will be saved after gameplay` durante un mapa) y el indicador `•` desaparece del botón. <!-- src: /desktop/gui/src/designer/mod.rs#Message::Applied -->
+- Al pulsar **Apply to pad**, la línea de estado bajo la previsualización dice `Applied to the pad` (durante un mapa: `Applied: Layout applied to pad RAM; will be saved after gameplay`; con el teclado desconectado: `Applied: Saved; it will be applied when the pad connects`) y el indicador `•` desaparece del botón. <!-- src: /desktop/gui/src/designer/mod.rs#Message::Applied -->
 - La LCD del teclado muestra de inmediato el nuevo diseño de **Idle screen** (y cambia a tu diseño de **Playing screen** al empezar un mapa en osu!). <!-- src: /firmware/main/ui/ui_port.c#pad_timer_cb -->
 - Desconecta y vuelve a conectar el teclado: los diseños personalizados se recargan automáticamente desde NVS (`opad_ui`). <!-- src: /firmware/main/ui/ui_port.c#ui_init, /firmware/main/ui/ui_store.c -->
 
-## Si no funcionó
+## Si no ha funcionado
 
-- **`This pad's firmware shows tap rates in KPM only; update the pad's firmware to show them in KPS`**: Algún widget usa **Unit** = `KPS (keys per second)` (`FLAG_PER_SECOND`), que el firmware anterior ignora. Cambia el widget a `KPM (keys per minute)` o sigue [Actualización del firmware](update-firmware.md). <!-- src: /desktop/daemon/src/ipc_handlers.rs#IpcRequest::SetLayout -->
-- **`Daemon unavailable (...)` o `No live data yet (is tosu running?)`**: Comprueba que `opad-daemon` y `tosu` estén en ejecución; consulta [Solución de problemas](../troubleshooting.md) y [Uso con tosu](use-with-tosu.md). <!-- src: /desktop/gui/src/designer/mod.rs#update -->
+- **`This pad's firmware shows tap rates in KPM only; update the pad's firmware to show them in KPS`**: Algún widget usa **Unit** = `KPS (keys per second)` (`FLAG_PER_SECOND`), que el firmware anterior ignora. Cambia el widget a `KPM (keys per minute)` o sigue [Actualizar el firmware](update-firmware.md). <!-- src: /desktop/daemon/src/ipc_handlers.rs#IpcRequest::SetLayout -->
+- **`Daemon unavailable (...)` o `No live data yet (is tosu running?)`**: Comprueba que `opad-daemon` y `tosu` estén en ejecución; consulta [Solución de problemas](../troubleshooting.md) y [Usar OPad con tosu](use-with-tosu.md). <!-- src: /desktop/gui/src/designer/mod.rs#update -->
 - **Diseño rechazado al importar o aplicar**: Comprueba que el diseño tenga como máximo `32` widgets, dimensiones válidas (`Width` 1–640, `Height` 1–480), `Label` ≤ 31 bytes, `Suffix` ≤ 11 bytes e IDs válidos de `ui_source_t`. <!-- src: /desktop/crates/opad-layout/src/lib.rs#validate -->
-- **El teclado está bloqueado en la pantalla roja de calibración**: Un teclado Hall Effect sin calibrar oculta las pantallas normales hasta completar la calibración; consulta [Calibración de interruptores Hall Effect](calibrate-hall-effect.md). <!-- src: /firmware/main/ui/ui_port.c#pad_timer_cb -->
+- **El teclado está bloqueado en la pantalla roja de calibración**: Un teclado Hall Effect sin calibrar oculta las pantallas normales hasta completar la calibración; consulta [Calibrar interruptores Hall Effect](calibrate-hall-effect.md). <!-- src: /firmware/main/ui/ui_port.c#pad_timer_cb -->

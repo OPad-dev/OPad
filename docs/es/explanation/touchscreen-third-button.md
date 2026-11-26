@@ -1,58 +1,74 @@
 ---
 title: La pantalla táctil como tercer botón
-description: Explicación de la integración del controlador táctil capacitivo CST816S, Quick Retry con dedo apoyado, clasificación de gestos y aislamiento durante la partida.
+description: Cómo funciona la pantalla táctil CST816 como una tecla Quick Retry mantenida durante un mapa y como controles por deslizamiento fuera de él, sin meter nunca teclas de más en un informe a mitad de mapa ni gastar CPU en reposo.
 sidebar:
   order: 3
 ---
 
-En la Waveshare ESP32-S3-Touch-LCD-2, la pantalla táctil capacitiva funciona como **el tercer botón** (AGENTS.md §1.4). Ofrece una pulsación limpia, un estado sostenido mientras el dedo permanece apoyado y una liberación limpia, manteniendo la sobrecarga de CPU e I2C fuera de la ruta de pulsación ([`touch_retry.c`](/firmware/main/input/touch_retry.c)).
+La pantalla táctil es el **tercer botón** del teclado ([AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §1.4). Durante un mapa, un dedo apoyado mantiene pulsada la tecla Quick Retry de osu! (`` ` ``) mientras siga abajo, porque el reintento de osu! es en sí una pulsación mantenida. Fuera de un mapa, la misma superficie se convierte en cuatro acciones de deslizamiento. Hacer ambas cosas en una sola superficie, con poco coste y sin confundir nunca una con otra, es de lo que trata [touch_retry.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c).
 
-## Arquitectura de hardware e interrupciones
+Para el comportamiento y los ajustes de cara al usuario, consulta [Pantalla táctil y deslizamientos](../guides/touchscreen-and-swipes.md).
 
-El subsistema táctil utiliza un controlador táctil capacitivo CST816 por I2C (`CST816_I2C_ADDR = 0x15` a 100 kHz en `I2C_NUM_0`) cableado a **GPIO 48 (SDA)** y **GPIO 47 (SCL)**, con una línea de interrupción activa-baja en **GPIO 46** ([`board_pins.h`](/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h), [`touch_retry.c`](/firmware/main/input/touch_retry.c)). La tarea corre en Core 1 para no competir nunca con la entrada de teclas ni TinyUSB en Core 0.
+## Barata en reposo
 
-Las coordenadas del panel (vertical `240x320`) se transforman con `TOUCH_SWAP_XY = 1` y `TOUCH_MIRROR_Y = 1` a coordenadas horizontales `320x240` para que las direcciones coincidan con la orientación del teclado ([`touch_retry.c`](/firmware/main/input/touch_retry.c)).
+El controlador CST816 está en I2C (`CST816_I2C_ADDR = 0x15`, 100 kHz, `I2C_NUM_0`) en GPIO 48 (SDA) y GPIO 47 (SCL), con una interrupción activa a nivel bajo en GPIO 46 ([board_pins.h](https://github.com/OPad-dev/OPad/blob/main/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h)). Su tarea se ejecuta en el núcleo 1 con prioridad 2, lejos de las teclas.
 
-### Modelo de ejecución de bajo consumo de CPU
+- **Sin dedo: sin trabajo.** `touch_retry_task` se bloquea en `ulTaskNotifyTake()` hasta que salta la interrupción (`touch_int_isr`). También se despierta una vez por segundo (`TOUCH_IDLE_CHECK_MS = 1000`) como red de seguridad por si la línea INT enmudece; si la interrupción no se puede configurar en absoluto, recurre a sondear a 100 Hz.
+- **Dedo apoyado: sondeo a 100 Hz.** Mientras hay contacto, la tarea lee el controlador cada `TOUCH_POLL_MS = 10` ms. INT puede dar un pulso por informe en lugar de quedarse a nivel bajo, así que lo que mantiene pulsado el botón es el número de toques, no el pin.
+- **Una liberación limpia.** El botón solo se suelta tras `TOUCH_RELEASE_READS = 2` lecturas vacías seguidas (~20 ms), así que una lectura errónea no termina una pulsación mantenida.
 
-- **Reposo en interrupción**: Cuando no hay ningún dedo apoyado, `touch_retry_task` bloquea en `ulTaskNotifyTake()` esperando la ISR de flanco descendente de GPIO 46 (`touch_int_isr`), con un respaldo de seguridad `TOUCH_IDLE_CHECK_MS = 1000` ms (recurriendo a sondeo a 100 Hz solo si falla la configuración de la ISR). No se realizan lecturas I2C en reposo ([`touch_retry.c`](/firmware/main/input/touch_retry.c)).
-- **Sondeo a 100 Hz mientras el dedo está apoyado**: Al iniciarse un toque, la tarea sondea cada `TOUCH_POLL_MS = 10` ms (100 Hz) para seguir el desplazamiento del dedo y detectar la liberación, ya que el pin INT del CST816 puede emitir pulsos por reporte en vez de permanecer en bajo.
-- **Antirrebote de liberación**: Soltar requiere `TOUCH_RELEASE_READS = 2` lecturas vacías consecutivas (~20 ms) antes de soltar el estado mantenido, evitando que una lectura ruidosa corte una pulsación sostenida.
+El panel es vertical (240×320) y la interfaz se dibuja en horizontal, así que las coordenadas se intercambian y se reflejan (`TOUCH_SWAP_XY`, `TOUCH_MIRROR_Y`) para que "arriba" sea arriba tal como se sostiene el teclado.
 
-## Modos táctiles sensibles al contexto
+## Tres modos, elegidos al tocar
 
-Al tocar la pantalla, [`touch_mode_now()`](/firmware/main/input/touch_retry.c) elige uno de tres modos:
+Lo que hace un toque depende de si el teclado sabe que se está jugando un mapa. `touch_mode_now()` decide una sola vez, cuando el dedo se apoya:
 
-| Modo | Condición | Acción de toque | Acción de deslizamiento |
+```mermaid
+flowchart TD
+    T["Dedo apoyado"] --> Q1{"¿HostStatus con tosu conectado<br/>en los últimos 3 s?"}
+    Q1 -- no --> R["RETRY: Quick Retry pulsado al instante,<br/>mantenido hasta soltar; sin deslizamientos"]
+    Q1 -- sí --> Q2{"¿Estado de ejecución PLAYING?"}
+    Q2 -- sí --> P["PLAY: reposo = Quick Retry,<br/>deslizamiento = solo volumen/multimedia"]
+    Q2 -- no --> M["MENU: un toque no envía nada,<br/>el deslizamiento ejecuta su acción configurada"]
+```
+
+| Modo | Cuándo | Un toque | Un deslizamiento |
 |---|---|---|---|
-| **`TOUCH_MODE_PLAY`** | El anfitrión envió `HostStatus` con `tosu_connected = true` dentro de `HOST_STATUS_TIMEOUT_US` (3 s) y el estado del dispositivo es `PLAYING`. | Un dedo apoyado (o un toque corto sin deslizar) envía Quick Retry (`` ` ``). | Los deslizamientos multimedia/volumen se ejecutan sin añadir Alt ni otras teclas; los deslizamientos de teclado se suprimen. |
-| **`TOUCH_MODE_MENU`** | El anfitrión envió `HostStatus` con `tosu_connected = true` dentro de 3 s y el estado no es `PLAYING`. | Los toques y pulsaciones mantenidas no envían nada. | Los deslizamientos ejecutan las acciones configuradas de volumen, multimedia, atajos de osu! o teclas libres. |
-| **`TOUCH_MODE_RETRY`** | Sin anfitrión conectado, `tosu` desconectado o sin `HostStatus` durante > 3 s. | Todo toque pulsa y mantiene inmediatamente Quick Retry (`` ` ``). | Deslizamientos desactivados. |
+| `TOUCH_MODE_RETRY` | Ningún `HostStatus` con tosu conectado en los últimos 3 s (`HOST_STATUS_TIMEOUT_US`): sin daemon, sin tosu, o un anfitrión que ha enmudecido. | Quick Retry, pulsado al tocar y mantenido hasta soltar. | Desactivado. |
+| `TOUCH_MODE_PLAY` | Anfitrión visto hace poco con tosu, y el estado de ejecución es `PLAYING`. | Quick Retry en cuanto el dedo reposa (ver abajo). | Solo acciones de volumen y multimedia; nunca una tecla del teclado. |
+| `TOUCH_MODE_MENU` | Anfitrión visto hace poco con tosu, y no está en `PLAYING`. | Nada. | La acción configurada. |
 
-### El dedo apoyado en partida (Quick Retry)
+`RETRY` es la alternativa a propósito: sin anfitrión, el teclado no puede distinguir un mapa de un menú, y lo único que un toque nunca puede dejar de hacer es reintentar.
 
-En `TOUCH_MODE_PLAY`, Quick Retry no se activa al instante del primer contacto para que un deslizamiento nunca reinicie un mapa por accidente ([`touch_retry_task()`](/firmware/main/input/touch_retry.c)):
+### Distinguir un reposo de un deslizamiento durante un mapa
 
-- Si el dedo se mueve menos de `PLAY_RETRY_STILL_PX = 12` píxeles (distancia de Chebyshev, [`gesture_distance()`](/firmware/main/input/gesture.c)) durante `PLAY_RETRY_STILL_US = 60,000` µs (60 ms), se clasifica como dedo apoyado y `usb_hid_set_touch_retry(true)` activa Quick Retry (`` ` ``).
-- Si el dedo permanece apoyado durante `PLAY_SWIPE_WINDOW_US = 250,000` µs (250 ms) sin convertirse en deslizamiento, también activa Quick Retry.
-- Si el dedo se levanta antes de 60 ms sin deslizar, [`tap_retry()`](/firmware/main/input/touch_retry.c) envía una pulsación y liberación de Quick Retry.
-- En cuanto se dispara un deslizamiento, `retry_pending` se borra para que ese toque nunca envíe Quick Retry.
+En modo `PLAY`, el teclado no debe enviar Quick Retry por un dedo que está a punto de deslizar (un reintento reinicia el mapa). Así que espera, brevemente, a ver qué es ([`touch_retry_task()`](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c)):
 
-## Clasificación de deslizamientos y gestos multimedia
+- Si el dedo se queda a menos de `PLAY_RETRY_STILL_PX = 12` px de donde se apoyó (distancia de Chebyshev, [`gesture_distance()`](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/gesture.c)) durante `PLAY_RETRY_STILL_US = 60` ms, está en reposo: Quick Retry se pulsa y se mantiene.
+- Un dedo que sigue apoyado pasados `PLAY_SWIPE_WINDOW_US = 250` ms sin haberse convertido en deslizamiento es igualmente una pulsación mantenida.
+- Un dedo levantado antes de cualquiera de los dos, sin deslizamiento, envía una pulsación y liberación cortas (`tap_retry()`).
+- En cuanto se dispara un deslizamiento, ese toque nunca envía Quick Retry.
 
-El seguimiento de movimiento reside en [`firmware/main/input/gesture.c`](/firmware/main/input/gesture.c) y [`gesture.h`](/firmware/main/input/gesture.h):
+La espera de 60 ms no cuesta nada apreciable, porque osu! solo reintenta tras mantener la tecla un rato de todos modos.
 
-- **Umbral y bloqueo de eje**: Partiendo de `(origin_x, origin_y)`, el dedo debe desplazarse al menos `GESTURE_SWIPE_PX = 30` píxeles en un eje con relación mínima 1.5:1 (`2 * |dy| >= 3 * |dx|` para vertical, `2 * |dx| >= 3 * |dy|` para horizontal) antes de fijarse en ese eje. El movimiento diagonal espera un desplazamiento más claro.
-- **Repetición vertical frente a disparo único horizontal**: Los arrastres verticales avanzan un paso cada `30` píxeles (`origin_y` avanza `±30`), permitiendo ajustar el volumen de forma continua en arrastres largos (e invertir la dirección); los deslizamientos horizontales se disparan una sola vez por toque (`horizontal_fired`). Las acciones que no son de volumen solo se disparan en el primer paso (`!repeat`).
-- **Asignaciones predeterminadas** ([`touch_retry.c`](/firmware/main/input/touch_retry.c), [`opad-model/src/lib.rs`](/desktop/crates/opad-model/src/lib.rs)):
-  - **Arriba / Abajo**: `Volume up` / `Volume down`. Cuando el anfitrión activa `HostStatus.osu_active` (osu! está en primer plano en Windows u osu!lazer está ejecutándose en Linux), el propio teclado ajusta el volumen de osu! mediante rueda de ratón HID (`usb_media_wheel`): rueda sola durante un mapa (`playing == true`) y Left Alt + rueda en menús (`playing == false`). Cuando `osu_active` es falso, envía USB HID Consumer Control Volume Up / Down (`usb_media_consumer_tap`).
-  - **Izquierda / Derecha**: `Previous track` / `Next track` mediante USB HID Consumer Control.
-- **Protección del menú Alt en Windows**: En los menús, [`step_volume()`](/firmware/main/input/touch_retry.c) mantiene Left Alt (`HID_MOD_LEFT_ALT = 0x04`) durante todos los pasos de rueda de un arrastre. Antes de soltar Alt al levantar el dedo, [`release_alt()`](/firmware/main/input/touch_retry.c) pulsa `HID_KEY_F24` (`0x73`) y espera la entrega HID (`TOUCH_KEY_WAIT_MS = 30` ms) para que Windows no interprete una pulsación aislada de Alt como apertura del menú de ventana (`SC_KEYMENU`).
+## Deslizamientos
 
-## Invariante de aislamiento durante la partida
+El movimiento se clasifica en [gesture.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/gesture.c):
 
-De acuerdo con AGENTS.md §1.4:
+- **Bloqueo de eje.** El dedo tiene que moverse `GESTURE_SWIPE_PX = 30` px, con un eje claramente dominante (al menos 1,5 : 1, `2·|dy| >= 3·|dx|` para el vertical), antes de elegir una dirección. Un movimiento diagonal espera a que haya más desplazamiento.
+- **El vertical se repite, el horizontal se dispara una vez.** Un arrastre vertical avanza un paso cada 30 px y puede dar la vuelta, así que un arrastre largo sube o baja el volumen varias veces. Un deslizamiento horizontal se dispara una vez por toque. Solo las acciones de volumen se repiten; cualquier otra acción se dispara únicamente en el primer paso.
 
-1. **Nunca Alt ni teclas extra en mitad de un mapa**: Durante `TOUCH_MODE_PLAY`, [`step_volume()`](/firmware/main/input/touch_retry.c) usa la rueda de ratón sin Left Alt, y [`run_swipe_action()`](/firmware/main/input/touch_retry.c) ignora `SWIPE_ACTION_KEY` para que el reporte de teclado solo transporte las teclas físicas y Quick Retry.
-2. **Pantalla limpia durante el juego**: [`handle_swipe()`](/firmware/main/input/touch_retry.c) solo llama a `ui_show_swipe()` cuando `!playing`; no se dibuja nada adicional en la LCD durante un mapa.
-3. **Teclados Hall Effect sin calibrar**: Cuando `he_cal_suppress_input(he_backend_is_locked(), he_backend_is_calibrating())` es verdadero (registro de decisiones D7 en [`v2-hall-effect-decisions.md`](../../specs/v2-hall-effect-decisions.md)), [`touch_retry_task()`](/firmware/main/input/touch_retry.c) dirige los toques exclusivamente a la interfaz de calibración (`he_cal_ui_touch_sample`), desactiva los deslizamientos y no envía reportes de teclado ni multimedia.
+La acción de cada dirección sale de la configuración del dispositivo. Los valores por defecto ([touch_retry.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c), [opad-model](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-model/src/lib.rs)) son:
+
+- **Arriba / abajo: volumen.** Cuando el anfitrión informa `HostStatus.osu_active` ([osu_window.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/osu_window.rs): osu! es la ventana en primer plano en Windows, osu!lazer se está ejecutando en Linux), el teclado cambia el volumen *de osu!* con la rueda del ratón (`usb_media_wheel`): Alt + rueda en los menús, donde la rueda sola desplaza la selección de canciones, y la rueda sola durante un mapa. Si no, envía las teclas de consumo Volume Up / Down del sistema (`usb_media_consumer_tap`).
+- **Izquierda / derecha: pista anterior / siguiente** (teclas de consumo).
+
+En los menús, [`step_volume()`](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c) mantiene Alt izquierdo durante todos los pasos de un mismo arrastre. Windows interpreta una pulsación y liberación de Alt sin nada entre medias como "abrir el menú de la ventana" (`SC_KEYMENU`), lo que puede hacer que un juego pierda la siguiente tecla, así que antes de soltar Alt [`release_alt()`](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c) pulsa F24 (`HID_KEY_F24`, una tecla que nada usa), esperando hasta `TOUCH_KEY_WAIT_MS = 30` ms a que se entregue cada informe.
+
+## Lo que nunca ocurre durante un mapa
+
+1. **Ni Alt ni teclas de más.** En modo `PLAY` el deslizamiento de volumen usa la rueda sola, y [`run_swipe_action()`](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c) rechaza `SWIPE_ACTION_KEY`. El informe de teclado de la tecla 1 solo lleva las teclas de juego y Quick Retry.
+2. **Nada extra en pantalla.** [`handle_swipe()`](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/touch_retry.c) muestra la respuesta visual del deslizamiento (`ui_show_swipe()`) solo fuera de un mapa.
+3. **Un teclado Hall Effect sin calibrar es la excepción.** Mientras `he_cal_suppress_input()` sea verdadero (decisión D7 en [v2-hall-effect-decisions.md](../../specs/v2-hall-effect-decisions.md)), todo toque va al botón de la pantalla de calibración (`he_cal_ui_touch_sample`), los deslizamientos están desactivados y no se envía ninguna tecla. Un bloqueo que empieza con un dedo ya apoyado suelta Quick Retry y cualquier Alt mantenido al instante.
+
+Cómo comparte la tecla táctil el informe de la tecla 1 con el interruptor del núcleo 0, sin cerrojos, está en [Ingeniería de latencia](latency.md#seguimiento-de-secuencias-sin-bloqueos-hid_link_t). Los detalles internos de la tarea están en [Tacto (firmware)](../develop/firmware/touch.md).

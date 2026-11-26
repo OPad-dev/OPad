@@ -1,79 +1,157 @@
 ---
 title: Referencia de la GUI
-description: Guía de referencia de las páginas de opad-gui, navegación lateral, pestañas de Settings, página Keys de Hall Effect, Screen Designer, suite Diagnostics y página Stats.
+description: Las páginas de opad-gui, las pestañas de Settings, la página Keys, el Screen Designer, las pestañas de Diagnostics y la página Stats, con sus etiquetas y rangos.
 sidebar:
   order: 2
 ---
 
-`opad-gui` es una aplicación de escritorio basada en `iced` con icono en la bandeja del sistema (`--tray` inicia oculta en la bandeja, y `--page <name>` abre una página concreta). Se comunica con `opad-daemon` mediante IPC local. <!-- src: /desktop/gui/src/main.rs#parse_page_arg -->
+`opad-gui` es una aplicación de escritorio `iced` con icono en la bandeja del sistema. Se comunica con `opad-daemon` por IPC local (consulta la [Referencia del protocolo IPC](ipc.md)) y no mantiene ninguna conexión propia con el teclado.
+<!-- src: /desktop/gui/src/main.rs#main -->
 
-## Páginas de navegación
+| Argumento | Efecto |
+|---|---|
+| `--tray` | Arranca oculta en la bandeja. |
+| `--page <name>`, `-p <name>` | Abre en una página (tokens más abajo, sin distinguir mayúsculas). Un segundo lanzamiento pasa la página a la instancia en marcha en lugar de abrir otra. |
+<!-- src: /desktop/gui/src/main.rs#parse_page_arg, /desktop/gui/src/main.rs#main, /desktop/gui/src/single_instance.rs -->
 
-La barra lateral izquierda muestra `Dashboard`, `Stats`, `Designer`, `Settings`, `Device`, `Logs` y `About`, además de `Keys` (mostrada automáticamente cuando hay conectado un teclado Hall Effect) y `Diagnostics` (cuando está activada en **Settings** -> **🛠 Diagnostics**). `Calibration` se abre desde **Keys** -> **Recalibrate**, **Settings** -> **⌨ Keypad** -> **Recalibrate Keys** o `--page calibrate`. <!-- src: /desktop/gui/src/main.rs#Page -->
+## Páginas
 
-| Página | Tokens de `--page` | Propósito |
+La barra lateral muestra `Dashboard`, `Stats`, `Designer`, `Settings`, `Device`, `Logs` y `About`. `Keys` se añade después de `Device` mientras hay conectado un teclado con un backend Hall Effect activo, `Diagnostics` antes de `About` una vez activado en **Settings → 🛠 Diagnostics**, y `Calibration` al final mientras está abierta.
+<!-- src: /desktop/gui/src/main.rs#Page::ALL, /desktop/gui/src/main.rs#view -->
+
+| Página | Tokens de `--page` | Contenido |
 |---|---|---|
-| **Dashboard** | `dashboard` | Estado de conexión y modo, contadores de pulsaciones de por vida, perfil de osu! / resumen del mapa en vivo y latencia de teclas medida en el dispositivo (`p50`, `p99`, `p99.9`, `max`, `deferred`, `presses`, **Reset**). <!-- src: /desktop/gui/src/pages.rs#dashboard --> |
-| **Keys** (solo HE) | `keys`, `rapid-trigger` | Actuación Hall Effect, Rapid Trigger, umbrales avanzados y visualizador en vivo del corte transversal del interruptor. <!-- src: /desktop/gui/src/keys.rs#view --> |
-| **Stats** | `stats`, `kpm`, `ppm` | Ritmo de pulsación del intento actual/último e histórico en KPM (teclas por minuto). <!-- src: /desktop/gui/src/stats.rs --> |
-| **Designer** | `designer` | Editor WYSIWYG del diseño de la pantalla LCD 320x240 para las vistas `Idle` y `Playing`. <!-- src: /desktop/gui/src/designer/mod.rs --> |
-| **Settings** | `settings` | Cinco subpestañas para teclado, pantalla, actualizaciones/firmware, `tosu`/acerca de y conmutador de diagnósticos. <!-- src: /desktop/gui/src/pages.rs#settings --> |
-| **Device** | `device` | Información de hardware (`Device ID`, `Board`, `Firmware`, `Running slot`, `Counter generation`, `Last sync`), tabla **Counter Reconciliation State**, **Sync now**, **Update firmware**, **Reset lifetime counters** y **Backup & Restore** (**Export backup** / **Import backup**). <!-- src: /desktop/gui/src/pages.rs#device --> |
-| **Logs** | `logs`, `monitor` | Flujo en vivo de registros de diagnóstico del daemon, teclado, programa y `tosu`. <!-- src: /desktop/gui/src/main.rs#Page --> |
-| **Diagnostics** | `diagnostics`, `test`, `testing` | Suite de pruebas de hardware y protocolo en cinco pestañas (activable desde Settings). <!-- src: /desktop/gui/src/diagnostics.rs#DiagnosticsTab --> |
-| **Calibration** | `calibrate`, `calibration` | Asistente guiado de calibración Hall Effect de 5 pulsaciones por tecla. <!-- src: /desktop/gui/src/pages.rs#calibration --> |
-| **About** | `about`, `license`, `licenses` | Versión de la aplicación, licencias de código abierto y avisos de terceros. <!-- src: /desktop/gui/src/main.rs#Page --> |
+| **Dashboard** | `dashboard` | Conexión y modo, pulsaciones totales, perfil de osu! y el mapa seleccionado en ese momento, y **Key latency** (`p50`, `p99`, `p99.9`, `max`, `deferred`, `presses`, **Reset**). |
+| **Stats** | `stats`, `kpm`, `ppm` | Ritmo de pulsación en KPM del intento actual o del último, y el historial. |
+| **Designer** | `designer` | Editor del diseño de pantalla. |
+| **Settings** | `settings`, `updates` | Cinco pestañas; `updates` abre la pestaña **🔄 Updates & Firmware**. |
+| **Device** | `device` | Detalles del teclado, conciliación de contadores, acciones, copia de seguridad y restauración. |
+| **Keys** | `keys`, `rapid-trigger` | Actuación Hall Effect y rapid trigger. |
+| **Logs** | `logs`, `monitor` | Flujo de registros con los filtros **LEVEL:** y **SOURCE:**, **Clear**, **Copy** y **Save log**. |
+| **Diagnostics** | `diagnostics`, `test`, `testing` | Cinco pestañas de pruebas. |
+| **Calibration** | `calibrate`, `calibration` | Calibración Hall Effect guiada. |
+| **About** | `about`, `license`, `licenses` | Versión, datos del sistema y del hardware, licencias de código abierto. |
+<!-- src: /desktop/gui/src/main.rs#Page::TOKENS, /desktop/gui/src/main.rs#wants_updates_tab, /desktop/gui/src/pages.rs -->
 
-## Pestañas de ajustes (`Settings`)
+## Settings
 
-La página **Settings** tiene cinco pestañas: <!-- src: /desktop/gui/src/pages.rs#settings -->
+Pestañas, por orden: **⌨ Keypad**, **🖥 Display & Game**, **🔄 Updates & Firmware**, **ℹ About & tosu**, **🛠 Diagnostics**. Las dos primeras terminan con **Save settings**, que envía los ajustes al teclado.
+<!-- src: /desktop/gui/src/pages.rs#settings -->
 
-### `⌨ Keypad`
-- **Keys**: **KEY 1** y **KEY 2** (más **KEY 3** y casillas **GAME KEYS** en teclados V3 de 3 teclas), desplegables **KEY 1 PIN** / **KEY 2 PIN** con **Auto-Detect** (mostrados solo en montajes cableados a mano), deslizador **DEBOUNCE LOCKOUT** (`0.5 ms`–`20.0 ms`, paso `0.5 ms`) y **HALL EFFECT CALIBRATION** (botón **Recalibrate Keys** en teclados HE). <!-- src: /desktop/gui/src/pages.rs#settings -->
-- **Touchscreen swipes**: Selectores por dirección (`↑ SWIPE UP`, `↓ SWIPE DOWN`, `← SWIPE LEFT`, `SWIPE RIGHT →`) con `Nothing`, `Volume up`, `Volume down`, `Previous track`, `Next track`, `Play / pause`, `Mute`, atajos de osu! u `Other key (F13-F24)…`. <!-- src: /desktop/gui/src/pages.rs#settings --> <!-- src: /desktop/crates/opad-model/src/swipe.rs -->
-- **Save settings** aplica los cambios en el teclado.
+### ⌨ Keypad
 
-### `🖥 Display & Game`
-- **Display**: Deslizador **BRIGHTNESS** (`10%`–`100%`) y deslizador **SLEEP AFTER** (`1 min`–`60 min`, `60..=3600` s en pasos de 60 s). <!-- src: /desktop/gui/src/pages.rs#settings -->
-- **Result animations**: Desplegables de animación por calificación (`SS`, `S`, `A`, `B`, `C`, `D`) y botones de vista previa **Play**. <!-- src: /desktop/gui/src/pages.rs#settings -->
-- **Advanced**: Deslizador **GAMEPLAY REFRESH RATE** (`1–30 Hz`, por defecto `10 Hz`) y casilla **Start in tray at login**. <!-- src: /desktop/gui/src/pages.rs#settings -->
+| Control | Se muestra | Rango / opciones |
+|---|---|---|
+| **KEY 1**, **KEY 2** | Siempre | La tecla que envía cada interruptor |
+| **KEY 3**, **GAME KEYS** | Teclados de tres teclas | La tecla de la tecla 3 (vacía no envía nada); una o dos de Key 1–3 como teclas de juego |
+| **KEY 1 PIN**, **KEY 2 PIN** con **Auto-Detect** | Teclados cableados a mano (sin módulo), o firmware que no comunica el módulo | Los pines de cabezal permitidos, menos el pin de la otra tecla |
+| **DEBOUNCE LOCKOUT** | Siempre | `0.5`–`20.0` ms en pasos de `0.5` ms |
+| **HALL EFFECT CALIBRATION**: **Recalibrate Keys** | Teclados Hall Effect | Abre **Calibration** |
+| **↑ SWIPE UP**, **↓ SWIPE DOWN**, **← SWIPE LEFT**, **SWIPE RIGHT →** | Siempre | Ver más abajo |
+<!-- src: /desktop/gui/src/pages.rs#settings, /desktop/crates/opad-model/src/lib.rs#key_pins_configurable -->
 
-### `🔄 Updates & Firmware`
-- **SOFTWARE UPDATES**: Versiones instalada frente a disponible para **OPad** y **tosu**, **What's new**, **Install now**, los interruptores **Install OPad updates automatically** e **Install tosu updates automatically** (ambos activados por defecto), selector **Channel** (`stable` / `beta`) y botón **Check now**. <!-- src: /desktop/gui/src/pages.rs#updates -->
-- **FIRMWARE UPDATE**: Firmware instalado, ranura OTA activa (`ota_0` / `ota_1`), notas de lanzamiento, bloqueos activos, cuándo se instalará una actualización automática, el interruptor **Install firmware updates automatically** y **Update now** (abre un diálogo de consentimiento explícito con **Confirm & Flash Pad**). <!-- src: /desktop/gui/src/pages.rs#firmware_updates, /desktop/gui/src/main.rs -->
+Cada selector de deslizamiento ofrece `Nothing`, `Volume up`, `Volume down`, `Previous track`, `Next track`, `Play / pause`, `Mute`, los atajos de osu! (por ejemplo `Random beatmap`, `Mod select`, `Settings`) y `Other key (F13-F24)…`. Las teclas libres que se ofrecen son F13–F23 en Windows y F14–F19 en Linux. Rangos y valores en el cable: [Referencia de ajustes del dispositivo](device-settings.md#deslizamientos-en-la-pantalla-táctil-cfg).
+<!-- src: /desktop/crates/opad-model/src/lib.rs#SwipeAction, /desktop/crates/opad-model/src/swipe.rs#swipe_choices, /desktop/crates/opad-model/src/swipe.rs#free_keys -->
 
-### `ℹ About & tosu`
-- **TOSU INTEGRATION**: Muestra **Binary source:**, **Status:** (`Connected (streaming telemetry)` / `Not running / Disconnected`), **Custom path:**, **Browse external tosu...** y **Use bundled** (cuando se sustituye). <!-- src: /desktop/gui/src/pages.rs#tosu_settings -->
-- **ABOUT & THIRD-PARTY SOFTWARE**: Versión, licencia GPL-3.0-or-later y atribución LGPL-3.0 del `tosu` incluido. <!-- src: /desktop/gui/src/pages.rs#about_section -->
+### 🖥 Display & Game
 
-### `🛠 Diagnostics`
-- Casilla **Enable Diagnostics Menu in Navigation** y botón **Open Diagnostics Menu →**. <!-- src: /desktop/gui/src/pages.rs#settings -->
+| Sección | Control | Rango |
+|---|---|---|
+| Display | **BRIGHTNESS** | `10`–`100` % |
+| Display | **SLEEP AFTER** | `1`–`60` min (`60`–`3600` s, pasos de 60 s) |
+| Result animations | Un selector de animación y un botón **Play** por calificación (`SS`, `S`, `A`, `B`, `C`, `D`) | |
+| Advanced | **GAMEPLAY REFRESH RATE** | `1`–`30` Hz (predeterminado `10`) |
+| Advanced | **Start in tray at login** | Casilla |
+<!-- src: /desktop/gui/src/pages.rs#settings -->
 
-## Página Keys (ajuste Hall Effect)
+### 🔄 Updates & Firmware
 
-Se muestra únicamente cuando hay conectado un teclado Hall Effect. Todos los ajustes de recorrido son porcentajes del rango magnético calibrado de cada tecla (pasos de `0.5 %` en el deslizador, nunca milímetros según D3): <!-- src: /desktop/gui/src/keys.rs#view -->
-- Barra superior: conmutador **Set keys separately**, botón **Advanced** / **Hide advanced**, botón **Recalibrate**.
-- Modo básico: **ACTUATION POINT**, conmutador **Rapid trigger**, **SENSITIVITY** (`1.0 %`–`50.0 %`), conmutador **Continuous**.
-- El modo avanzado añade: **PRESS SENSITIVITY**, **RELEASE SENSITIVITY**, **RELEASE POINT**, **TOP RESET** (con Continuous activo), **BOTTOM DEAD ZONE** (`0.0 %`–`30.0 %`, `0 = off`) y **Allow below the noise floor**.
-- Lienzo en vivo del corte transversal del interruptor: consulta `GetHeLive` a ~50 Hz con suavizado visual One Euro y ajuste directo en los flancos (el teclado decide con lecturas crudas); se pausa durante los mapas.
-- Barra inferior: **Revert** y **Save to pad**.
+- **SOFTWARE UPDATES**: una fila para OPad y otra para tosu (versión instalada y disponible, **What's new**, **Install now**), **Install OPad updates automatically**, **Install tosu updates automatically**, el selector **Channel** (`stable`: solo versiones finales; `beta`: también versiones candidatas) y **Check now**.
+- **FIRMWARE UPDATE**: firmware instalado y ranura en ejecución, bloqueos, cuándo se instalará una actualización automática, notas de la versión, **Install firmware updates automatically** y **Update now**, que pide consentimiento explícito antes de flashear.
+<!-- src: /desktop/gui/src/pages.rs#updates, /desktop/gui/src/pages.rs#firmware_updates -->
 
-## Diseñador de pantalla (`Designer`)
+Los tres interruptores de actualización automática están activados por defecto.
+<!-- src: /desktop/daemon/src/updater.rs#read_flag -->
 
-Editor visual para la pantalla LCD `320x240` (diseños `Idle` y `Playing`), renderizado a escala `2.0x` (`SCALE = 2.0`) usando la propia interfaz LVGL del firmware compilada en `opad-ui-preview`: <!-- src: /desktop/gui/src/designer/mod.rs -->
-- Hasta `32` widgets (`MAX_WIDGETS`), asas de arrastre/redimensionado (`HANDLE = 5` píxeles del teclado), ajuste fino con teclas de flecha, orden Z (**Raise** / **Lower**) y duplicar/eliminar.
-- Propiedades de widget: tipo, fuente de datos, fuente tipográfica, alineación, geometría (`X`, `Y`, `W`, `H`, radio), decimales, unidad de ritmo de pulsación, etiqueta/sufijo, colores (primer plano, fondo, acento, fondo de pantalla) y banderas (`FLAG_BG_FILL`, `FLAG_BORDER`, `FLAG_HIDE_WHEN_EMPTY`, `FLAG_KEY_RATE`).
-- Conmutador de vista previa de datos en vivo, simulación de pulsaciones, exportación/importación JSON de diseños, **Apply**, **Revert** y restablecimiento al diseño predeterminado integrado.
+### ℹ About & tosu
 
-## Suite de diagnósticos (`Diagnostics`)
+- **TOSU INTEGRATION**: **Binary source:**, **Status:**, **Custom path:**, **Browse external tosu...** y **Use bundled** mientras hay una ruta personalizada.
+- **ABOUT & THIRD-PARTY SOFTWARE**: la licencia de OPad (GPL-3.0-or-later) y el componente tosu incluido.
+<!-- src: /desktop/gui/src/pages.rs#tosu_settings, /desktop/gui/src/pages.rs#about_section -->
 
-Cinco pestañas (`DiagnosticsTab` en `desktop/gui/src/diagnostics.rs`): <!-- src: /desktop/gui/src/diagnostics.rs#DiagnosticsTab -->
-1. **`⌨ Switch Chatter & Input`**: Tarjetas de pulsación en vivo, detección de rebote definitivo `< 15 ms` con pitido opcional, seguimiento de fluctuación `15–35 ms`, conteo de pulsaciones simultáneas (`<= 10 ms`) y monitor de registro de depuración HE/MX.
-2. **`🔌 Hardware COM & Protocol`**: Latencia de ping al daemon, salud de conexión serie y protocolo, y control de reinicio del teclado.
-3. **`🖥 Screen & Backlight`**: Patrones de prueba de pantalla y controles de prueba del brillo de retroiluminación.
-4. **`🔧 PCB Test`**: Ejecuta `RunBoardTest` sobre las PCBs del carrier y del módulo de entrada (ID de módulo, orientación FFC, líneas de teclas, cortocircuitos, ADS7028), asistente **Use carrier key pins** y prueba de imán en vivo para Hall Effect V3.
-5. **`📦 Export Diagnostic Bundle`**: Exporta información del sistema, estadísticas USB/latencia, contadores y registros recientes para depuración.
+### 🛠 Diagnostics
 
-## Página de estadísticas (`Stats`)
+**Enable Diagnostics Menu in Navigation** y **Open Diagnostics Menu →**.
+<!-- src: /desktop/gui/src/pages.rs#settings -->
 
-Muestra el ritmo de pulsación en vivo e histórico en **KPM** (teclas por minuto, distinto del BPM del mapa) para Key 1, Key 2 y canales combinados, incluyendo promedio del intento actual/último, pico de ráfaga (7 pulsaciones consecutivas), ritmo de canción y botones de periodo histórico (`7` días, `30` días, `90` días y `All time` (`0`)). <!-- src: /desktop/gui/src/stats.rs --> <!-- src: /desktop/crates/opad-model/src/tap_rate.rs#HISTORY_PERIOD_CHOICES -->
+## Device
+
+| Sección | Contenido |
+|---|---|
+| Teclado | **Device ID**, **Board**, **Firmware**, **Running slot**, **Mode**, **Counters source**, **Counter generation**, **Last sync** |
+| Counter Reconciliation State | **PC Database** frente a **PAD Hardware** para generación, Key 1, Key 2 y total, con `✓ SYNCHRONIZED` o `⚠ MISMATCH DETECTED`; si no coinciden, **Restore PAD from PC** e **Import PC from PAD** |
+| Acciones | **Sync now**, **Update firmware** (abre Settings), **Reset lifetime counters** |
+| Backup & Restore | **Export backup**, **Import backup**; desactivados durante un mapa y su enfriamiento |
+<!-- src: /desktop/gui/src/pages.rs#device -->
+
+## Keys
+
+Solo se muestra mientras hay conectado un teclado con un backend Hall Effect activo. Cada ajuste es un porcentaje del rango magnético calibrado de la tecla, en pasos de deslizador de `0.5` %.
+<!-- src: /desktop/gui/src/keys.rs#view, /desktop/gui/src/keys.rs#setting -->
+
+| Control | Se muestra | Rango |
+|---|---|---|
+| **Set keys separately** | Siempre | Una columna por tecla, o un único control para todas |
+| **Advanced** / **Hide advanced**, **Recalibrate** | Siempre | |
+| **ACTUATION POINT** | Siempre | Desde el punto más bajo en que puede pulsar la tecla hasta `95.0` % |
+| **Rapid trigger** | Siempre | Conmutador |
+| **SENSITIVITY** | Rapid trigger activado, vista básica | `1.0`–`50.0` % |
+| **Continuous** | Rapid trigger activado | Conmutador |
+| **PRESS SENSITIVITY**, **RELEASE SENSITIVITY** | Avanzado, rapid trigger activado | `1.0`–`50.0` % |
+| **RELEASE POINT** | Avanzado | `1.0`–`50.0` % |
+| **TOP RESET** | Avanzado, Continuous activado | `1.0`–`50.0` % |
+| **BOTTOM DEAD ZONE** | Avanzado | `0.0`–`30.0` %, `0` = desactivada |
+| **Allow below the noise floor** | Avanzado, firmware que comunica sus pisos de ruido | Conmutador |
+| **Revert**, **Save to pad** | Siempre | |
+<!-- src: /desktop/gui/src/keys.rs#key_controls, /desktop/gui/src/keys.rs#min_actuation -->
+
+La vista en vivo del interruptor sondea `GetHeLive` cada 20 ms, suaviza el dibujo con un filtro One Euro y lo ajusta a la profundidad real cuando el teclado pulsa; el propio teclado decide con lecturas crudas. Durante un mapa muestra `Waiting for the pad (paused during a map)`.
+<!-- src: /desktop/gui/src/main.rs#subscription, /desktop/gui/src/keys.rs -->
+
+## Calibration
+
+Un proceso guiado: mide la posición de reposo y después pulsa Key 1, Key 2 (y Key 3 en teclados de tres teclas) hasta el fondo 5 veces cada una. Termina con `✓ Calibration Complete` o `⚠ Calibration Failed` y **Retry Calibration**. Consulta [Calibración de interruptores Hall Effect](../guides/calibrate-hall-effect.md).
+<!-- src: /desktop/gui/src/pages.rs#calibration -->
+
+## Designer
+
+Edita los diseños `Idle` y `Playing` de la pantalla de 320 × 240, dibujados a 2× (`SCALE = 2.0`) por la propia interfaz LVGL del firmware compilada en `opad-ui-preview`.
+<!-- src: /desktop/gui/src/designer/mod.rs#SCALE, /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h#BOARD_LCD_H_RES -->
+
+- Hasta 32 widgets por pantalla (`MAX_WIDGETS`), con asas de arrastre y redimensionado (`HANDLE = 5` píxeles del teclado). Las flechas mueven la selección (Shift = 10 px); Supr la elimina.
+- Lista de widgets con **Raise**, **Lower**, **Duplicate** y **Delete**; lo que está arriba en la lista se dibuja encima.
+- Por widget: tipo, fuente de datos, fuente tipográfica, alineación, posición y tamaño, radio, decimales, etiqueta, sufijo, colores, y **Fill background (text)**, **Border**, **Hide when there is no data**, **Show tap rate (key's live KPM or KPS)**.
+- Barra de herramientas: **Apply to pad**, **Revert**, **Reset to default**, **Export**, **Import** (JSON, `opad-<screen>.json`), **Live data from osu!**, **Show keys pressed**.
+<!-- src: /desktop/gui/src/designer/mod.rs, /desktop/crates/opad-layout/src/lib.rs#MAX_WIDGETS, /desktop/crates/opad-layout/src/lib.rs#FLAG_BG_FILL -->
+
+El formato del diseño y las fuentes de datos están en [Personalizar el diseño de pantalla](../guides/customize-screen-layout.md).
+
+## Diagnostics
+
+| Pestaña | Contenido |
+|---|---|
+| **⌨ Switch Chatter & Input** | Tarjetas de teclas en vivo; las pulsaciones de menos de 15 ms cuentan como rebote (con un pitido opcional), las de 15–35 ms como **RAPID FLUTTER** y las que caen a menos de 10 ms de la otra tecla como **SIMULTANEOUS PRESSES (NKRO)**; el monitor de pulsaciones Hall Effect o MX. |
+| **🔌 Hardware COM & Protocol** | Latencia de ping al daemon, estado de la conexión serie y del protocolo, percentiles de latencia. |
+| **🖥 Screen & Backlight** | Niveles de retroiluminación, patrones de prueba, vista previa del diseño. |
+| **🔧 PCB Test** | **Run PCB Test** (`RunBoardTest`); un arreglo **Set Key 1 = GPIO10, Key 2 = GPIO7** cuando los pines no son los de la placa portadora; la prueba de imanes de Hall Effect V3; **Restart Pad**. |
+| **📦 Export Diagnostic Bundle** | Un paquete JSON con datos de la aplicación, el sistema operativo, el daemon, el teclado, la prueba de placa y la configuración. |
+<!-- src: /desktop/gui/src/diagnostics.rs#DiagnosticsTab, /desktop/gui/src/diagnostics.rs#view_board_test, /desktop/gui/src/diagnostics.rs#view_restart, /desktop/gui/src/diagnostics.rs#generate_diagnostic_bundle -->
+
+## Stats
+
+Ritmo de pulsación en **KPM** (teclas por minuto, no el BPM del mapa).
+<!-- src: /desktop/gui/src/stats.rs -->
+
+- **Current attempt** (`LIVE`) o **Last attempt**: el mapa, **AVG KPM**, **PEAK KPM** (las 7 pulsaciones seguidas más rápidas), **BEST 10 S** y una tabla por canal (K1, K2, Combined) con el valor actual, la media al pulsar, el pico y las pulsaciones. Una repetición se marca `REPLAY · NOT SAVED`.
+- **History**: botones de periodo `7 days`, `30 days`, `90 days`, `All time`; **ATTEMPTS**, **AVG KPM**, **PEAK KPM**, **BEST 10 S**, **TAPPING AVG**, **PRESSES** y, por canal, media al pulsar, pico medio, mejor pico y pulsaciones.
+<!-- src: /desktop/gui/src/stats.rs, /desktop/crates/opad-model/src/tap_rate.rs#HISTORY_PERIOD_CHOICES -->

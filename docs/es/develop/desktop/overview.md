@@ -1,42 +1,45 @@
 ---
 title: Visión general de la suite de escritorio
-description: Visión arquitectónica de alto nivel del espacio de trabajo de escritorio en Rust, modelo de procesos, transporte IPC multiplataforma y límites entre crates internos.
+description: Arquitectura del workspace de Rust de escritorio, sus tres procesos, cómo se comunican entre sí y con el pad, y los límites entre sus nueve crates de biblioteca.
 sidebar:
   order: 1
 ---
 
-La suite de escritorio de OPad es un espacio de trabajo Cargo en Rust (edición 2021) ([/desktop/Cargo.toml](/desktop/Cargo.toml)) que contiene tres binarios (`opad-daemon`, `opad-gui`, `opadctl`) y nueve crates de librería internos compatibles con Linux (X11/Wayland) y Windows 10/11.
+La suite de escritorio de OPad es un workspace de Cargo en Rust (edición 2021), versión `1.0.0-rc.6` ([/desktop/Cargo.toml](https://github.com/OPad-dev/OPad/blob/main/desktop/Cargo.toml)): tres binarios (`opad-daemon`, `opad-gui`, `opadctl`) y nueve crates de biblioteca, para Linux (X11 y Wayland) y Windows 10/11. Es opcional: sin ella, el pad es un teclado normal ([/AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §1.2). Cómo compilarla: [Compilar desde el código fuente](../building.md); tests: [Pruebas](../testing.md).
 
-## Modelo de procesos y separación de responsabilidades
+## Modelo de procesos
 
-```text
-+--------------------+            IPC             +--------------------+
-|     opad-gui       | <------------------------> |    opad-daemon     |
-| (iced / GUI / Tray)|   (Unix Socket / Pipe)     | (Tokio Runtime)    |
-+--------------------+                            +--------------------+
-                                                             |
-+--------------------+            IPC                        | USB CDC-ACM
-|      opadctl       | <-------------------------------------+
-| (Clap CLI Utility) |                                       |
-+--------------------+                                       v
-                                                  +--------------------+
-                                                  |    Physical Pad    |
-                                                  |  (ESP32-S3 Device) |
-                                                  +--------------------+
+```mermaid
+flowchart LR
+    GUI["opad-gui<br/>ventana iced + bandeja"] <-->|"IPC: JSON con prefijo de longitud<br/>socket Unix / named pipe"| D["opad-daemon<br/>tokio"]
+    CLI["opadctl<br/>CLI clap"] <-->|IPC| D
+    D <-->|"USB CDC-ACM<br/>tramas protobuf"| PAD["Pad (ESP32-S3)"]
+    D <-->|"WebSocket v2 + precise"| TOSU["tosu<br/>(proceso hijo)"]
+    TOSU -.->|lee la memoria| OSU["osu!"]
+    D --- DB[("opad.db<br/>SQLite")]
+    CLI -.->|"flash / recover / bootloader:<br/>serie + espflash, después de que el daemon<br/>libere el puerto"| PAD
 ```
 
-1. **`opad-daemon`** ([/desktop/daemon/src/main.rs](/desktop/daemon/src/main.rs)): Servicio Tokio en segundo plano sin interfaz gráfica que mantiene el puerto serie CDC-ACM del teclado, ejecuta el actor ordenado de dispositivo, supervisa `tosu`, persiste el estado en SQLite (`opad.db`) y atiende IPC local.
-2. **`opad-gui`** ([/desktop/gui/src/main.rs](/desktop/gui/src/main.rs)): Aplicación gráfica basada en `iced` y applet en la bandeja del sistema (`--tray`, `--page <name>`). Arranca `opad-daemon` automáticamente si está detenido.
-3. **`opadctl`** ([/desktop/cli/src/main.rs](/desktop/cli/src/main.rs)): CLI basada en Clap que se comunica por IPC para gestión/diagnóstico y directamente por serie USB para `flash`, `recover` y `bootloader`.
+1. **`opad-daemon`** ([/desktop/daemon/src/main.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/main.rs)): el único proceso que tiene abierto el puerto serie del pad en el uso normal. Ejecuta el actor ordenado del dispositivo, supervisa `tosu`, guarda en SQLite, busca actualizaciones y sirve la IPC. Detalles: [Daemon](daemon.md).
+2. **`opad-gui`** ([/desktop/gui/src/main.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/main.rs)): la ventana y el applet de bandeja (`--tray`, `--page <name>`). Arranca el daemon si no está en marcha. Detalles: [GUI](gui.md).
+3. **`opadctl`** ([/desktop/cli/src/main.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/cli/src/main.rs)): scripts y diagnóstico por IPC; `flash`, `recover` y `bootloader` hablan directamente con el puerto serie. Detalles: [Funcionamiento interno de opadctl](opadctl.md).
 
-## Crates del espacio de trabajo (`desktop/crates/`)
+La GUI y `opadctl` se distribuyen con el daemon y deben coincidir exactamente con su versión: el handshake de IPC comprueba `IPC_PROTOCOL_VERSION` y la versión del paquete ([/desktop/daemon/src/ipc_handlers.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/ipc_handlers.rs)). El pad, en cambio, se actualiza por separado, así que el protocolo serie negocia ([Versiones de la app y del pad](../../explanation/app-and-pad-versions.md)).
 
-- **`opad-model`** ([/desktop/crates/opad-model/src/lib.rs](/desktop/crates/opad-model/src/lib.rs)): Tipos de dominio (`DeviceInfo`, `DeviceConfig`, `CounterState`, `JsonBackup`), rutas, acciones de deslizamiento, cálculo de ritmo de pulsación, evaluación de pruebas de placa y animaciones de resultados.
-- **`opad-protocol`** ([/desktop/crates/opad-protocol/src/lib.rs](/desktop/crates/opad-protocol/src/lib.rs)): Protobuf en Rust puro (`protox`/`prost`), entramado Marked/Checked y CRC-16/CCITT-FALSE.
-- **`opad-ipc`** ([/desktop/crates/opad-ipc/src/lib.rs](/desktop/crates/opad-ipc/src/lib.rs)): JSON delimitado por longitud sobre sockets de dominio Unix (`0700`/`0600`) o Named Pipes de Windows (DACL SDDL protegida solo para el usuario).
-- **`opad-storage`** ([/desktop/crates/opad-storage/src/lib.rs](/desktop/crates/opad-storage/src/lib.rs)): SQLite (WAL, esquema v19), guardia de escrituras durante partida (`StorageError::WritesBlocked`) y reconciliación de contadores.
-- **`opad-device`** ([/desktop/crates/opad-device/src/lib.rs](/desktop/crates/opad-device/src/lib.rs)): Descubrimiento USB CDC, apretón de manos/negociación de entramado y flasheo/recuperación basados en `espflash`.
-- **`opad-tosu`** ([/desktop/crates/opad-tosu/src/lib.rs](/desktop/crates/opad-tosu/src/lib.rs)): Supervisor de proceso hijo `tosu`, cliente WebSocket v2/precise y comprobaciones Yama `ptrace` en Linux.
-- **`opad-layout`** ([/desktop/crates/opad-layout/src/lib.rs](/desktop/crates/opad-layout/src/lib.rs)): Validación de diseños `320x240` y empaquetado binario equivalente a `ui_layout_t` del firmware.
-- **`opad-ui-preview`** ([/desktop/crates/opad-ui-preview/src/lib.rs](/desktop/crates/opad-ui-preview/src/lib.rs)): Renderizador de vista previa LVGL del firmware compilado en el anfitrión para el diseñador de pantalla de la GUI.
-- **`opad-update`** ([/desktop/crates/opad-update/src/lib.rs](/desktop/crates/opad-update/src/lib.rs)): Verificación de feeds de actualización firmados (minisign Ed25519 + SHA-256), políticas por origen de instalación, reemplazos atómicos de binarios y `opad-feed`.
+## Crates del workspace (`desktop/crates/`)
+
+Las dependencias apuntan hacia abajo: `opad-model` no depende de ninguno de los demás.
+
+| Crate | Función |
+|---|---|
+| [`opad-model`](crates.md#1-opad-model) | Tipos de dominio (`DeviceInfo`, `DeviceConfig`, `CounterState`, `JsonBackup`), rutas, acciones de deslizamiento, cálculos de frecuencia de toques, evaluación de la prueba de placa, animaciones de resultado |
+| [`opad-protocol`](crates.md#2-opad-protocol) | Tipos protobuf generados en tiempo de compilación con `protox` / `prost` (sin `protoc`), framing legacy / marcado / comprobado, CRC-16/CCITT-FALSE |
+| [`opad-ipc`](crates.md#3-opad-ipc) | Tipos de petición y respuesta, JSON con prefijo de longitud `u32` sobre un socket Unix o un named pipe de Windows |
+| [`opad-storage`](crates.md#4-opad-storage) | SQLite (WAL, esquema v19), la protección de escritura durante la partida (`StorageError::WritesBlocked`), conciliación de contadores |
+| [`opad-device`](crates.md#5-opad-device) | Descubrimiento de puertos serie, handshake y negociación del framing, el canal de comandos, flasheo y recuperación basados en `espflash` |
+| [`opad-layout`](crates.md#6-opad-layout) | Validación de layouts de 320×240 y empaquetado al `ui_layout_t` del firmware |
+| [`opad-ui-preview`](crates.md#7-opad-ui-preview) | El `ui/core` del firmware y LVGL compilados para el host, para que el Screen Designer muestre exactamente lo que dibuja el pad |
+| [`opad-tosu`](crates.md#8-opad-tosu) | Supervisor del proceso hijo `tosu` y cliente WebSocket, comprobaciones de `ptrace` de Yama en Linux |
+| [`opad-update`](crates.md#9-opad-update) | Feed de actualizaciones firmado (minisign Ed25519 + SHA-256), política según el origen de la instalación, sustitución atómica de archivos, binarios `opad-feed` y `opad-update-helper` |
+
+Dónde guarda sus archivos cada proceso: [Archivos y rutas](../../reference/files-and-paths.md).

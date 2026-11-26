@@ -1,54 +1,71 @@
 ---
-title: Modelo de contadores y propiedad
-description: Cómo registra OPad contadores monotónicos de pulsaciones de 64 bits, vincula teclados a instalaciones de escritorio, resuelve conflictos de propiedad y preserva pulsaciones durante la sincronización.
+title: Contadores y propiedad
+description: Cómo mantiene OPad correctos los contadores de pulsaciones de por vida cuando el teclado y el PC cuentan a la vez, se desconectan, cambian de ordenador o se reinician - generaciones, fusión por máximo, reajuste por diferencia y propiedad del teclado.
 sidebar:
   order: 5
 ---
 
-OPad registra conteos de pulsaciones de por vida tanto en el teclado (en flash NVS) como en el PC anfitrión (en SQLite `opad.db`). Para mantener los conteos precisos entre desconexiones, varios PCs y reemplazos de hardware, OPad combina contadores monotónicos de 64 bits, números de generación y un modelo explícito de propiedad por instalación.
+Los contadores de pulsaciones de por vida viven en dos sitios: en el teclado (flash NVS) y en el PC (SQLite, `opad.db`). El teclado tiene que contar sin PC, porque ante todo es un teclado; el PC guarda el historial y las copias de seguridad. Dos copias de un número pueden discrepar, y la pregunta de diseño es cómo fusionarlas sin perder nunca pulsaciones ni resucitar recuentos que el usuario puso a cero a propósito.
 
-## Contadores monotónicos de pulsaciones
+Tres ideas la responden: dentro de una **generación** los recuentos solo suben, las fusiones se quedan con el **máximo**, y el teclado registra qué instalación es su **dueña**.
 
-Los conteos de por vida se mantienen de forma independiente para Key 1, Key 2 y (en módulos V3 de 3 teclas) Key 3 en [/firmware/main/counters/counters.c](/firmware/main/counters/counters.c):
+## Contar en el teclado
 
-- **Contadores de 64 bits**: `lifetime_key1`, `lifetime_key2` y `lifetime_key3` son `uint64_t`. Dentro de la misma `counter_generation`, los conteos solo avanzan ([/firmware/main/counters/counter_sync_rules.c](/firmware/main/counters/counter_sync_rules.c)).
-- **Incremento en RAM sin bloqueos**: Las pulsaciones aceptadas en Core 0 incrementan inmediatamente los contadores en RAM sin tocar la flash.
-- **Guardado diferido en NVS**: Para proteger la latencia y limitar el desgaste de la flash, `counters_checkpoint_due` en [/firmware/main/counters/counter_sync_rules.c](/firmware/main/counters/counter_sync_rules.c) bloquea escrituras NVS durante `PLAYING` y `COOLDOWN`, y solo guarda en `IDLE` tras un periodo de reposo (o al suspender USB / sincronización explícita / antes de reiniciar).
+[counters.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/counters/counters.c) y [key_event.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/key_event.c) llevan un contador de por vida de 64 bits por tecla (la tecla 3 solo en un módulo V3 de tres teclas):
 
-## Propiedad del teclado e identidad de instalación
+- **Contar no cuesta nada.** Una pulsación aceptada incrementa un atómico en RAM (`key_event_press_accepted`, llamado desde la ruta de teclas en el núcleo 0). Nada toca la flash.
+- **Guardar es poco frecuente.** Los recuentos llegan a NVS en un punto de control, y `counters_checkpoint()` no escribe nada salvo que el estado de ejecución sea `IDLE`, así que nunca durante un mapa ni su enfriamiento. En `IDLE`, la tarea de ejecución guarda los recuentos pendientes cuando lleva 30 s sin pulsarse ninguna tecla, o al menos cada 5 minutos mientras se siguen pulsando teclas (`counters_checkpoint_due` en [counter_sync_rules.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/counters/counter_sync_rules.c)), y de inmediato cuando el anfitrión suspende el USB, cuando el anfitrión sincroniza, tras un enfriamiento y antes de un reinicio.
 
-Dado que un teclado puede moverse entre ordenadores (PC de casa, portátil, evento LAN), OPad vincula los teclados a instalaciones de escritorio en lugar de sobrescribir conteos silenciosamente ([/desktop/daemon/src/identity.rs](/desktop/daemon/src/identity.rs)):
+El compromiso: desconectar el teclado puede perder las pulsaciones desde el último punto de control. Un PC que sincronizó entre medias todavía las tiene, y la fusión de abajo las recupera.
 
-- **ID de instalación (`install.id`)**: Se genera como un UUIDv4 en el primer arranque del daemon y se almacena en `app_state` de SQLite. Identifica la instalación de escritorio, no el equipo: desinstalar OPad elimina `opad.db` e `install.id`, de modo que reinstalar crea una identidad nueva.
-- **`owner_id` en el teclado**: El UUID binario de 16 bytes (`OWNER_ID_LEN = 16`) se escribe en el teclado mediante `ClaimOwnership` y se persiste en `device_config_data_t` en NVS.
+## Fusión: generaciones y máximo
 
-### Resolución de propiedad al conectar
-
-Cuando un teclado se conecta, informa su `owner_id` de 16 bytes en `HelloAck` ([/desktop/crates/opad-device/src/lib.rs](/desktop/crates/opad-device/src/lib.rs), [/desktop/daemon/src/ipc_handlers.rs](/desktop/daemon/src/ipc_handlers.rs)):
-
-1. **Teclado sin propietario** (`owner_id` de ceros o vacío): El daemon reclama automáticamente el teclado y guarda su `install.id` de 16 bytes en la NVS del teclado (en `IDLE`).
-2. **Propietario coincidente** (`owner_id == esta instalación`): La reconciliación bidireccional normal de contadores continúa automáticamente.
-3. **Propietario ajeno** (`owner_id != esta instalación`):
-   - **El teclado va por delante o igual en ambas teclas**: `take_over_if_pad_is_ahead` en [/desktop/daemon/src/ipc_handlers.rs](/desktop/daemon/src/ipc_handlers.rs) reclama automáticamente el teclado conservando los contadores del teclado, por lo que mover tu teclado a un PC nuevo o reinstalar conserva cada pulsación sin avisos.
-   - **El PC va por delante en al menos una tecla**: El daemon activa `pending_takeover` (`TakeoverPrompt`) y `foreign_pad = true`, pausa la sincronización de contadores y pregunta al usuario en `opad-gui` (vía `ResolveTakeover`):
-     - Asumir la propiedad conservando los contadores del teclado (`take_over: true, keep_device_counters: true`).
-     - Asumir la propiedad enviando los contadores de este PC (`take_over: true, keep_device_counters: false`).
-     - Dejar el teclado sin tocar (`take_over: false`): el teclado sigue siendo un teclado USB de 1000 Hz no gestionado mientras `foreign_pad` permanece activo.
-
-## Secuencias de generación y reconciliación
-
-La reconciliación de contadores en [/desktop/crates/opad-storage/src/lib.rs](/desktop/crates/opad-storage/src/lib.rs) (`reconcile_counters`) usa `counter_generation` para distinguir el juego normal de reinicios o importaciones de copias intencionadas:
+El estado de cada lado lleva un `counter_generation` junto a los recuentos. [`reconcile_counters()`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-storage/src/lib.rs) los fusiona:
 
 ```rust
 if pc.counter_generation > esp.counter_generation {
-    pc.clone()
+    pc.clone()          // a deliberate reset or restore on the PC wins
 } else if esp.counter_generation > pc.counter_generation {
     esp.clone()
 } else {
-    // Same generation: component-wise max(pc, esp) for Key 1 and Key 2
+    // same generation: lifetime_key1/2 = max(pc, esp)
 }
 ```
 
-1. **Gana la generación mayor**: Reiniciar contadores (`opadctl reset --yes` o **Device** -> **Reset lifetime counters**) o importar una copia de seguridad incrementa `counter_generation`, permitiendo que conteos menores o cero sustituyan legítimamente a la generación anterior.
-2. **Misma generación (máximo por componente)**: `lifetime_key1 = max(pc.k1, esp.k1)` y `lifetime_key2 = max(pc.k2, esp.k2)`, fusionando automáticamente las pulsaciones sin conexión hechas mientras estaba desconectado del PC.
-3. **Preservación de incrementos en el teclado**: En [/firmware/main/counters/counters.c](/firmware/main/counters/counters.c) (`counters_sync_from_host`), aplicar una sincronización del anfitrión no sobrescribe a ciegas los contadores en RAM con un valor absoluto. `rebase_lifetime_presses` (y `key_event_add_lifetime_key3(*k3 - current.lifetime_key3)`) aplica la diferencia relativa a la instantánea tomada antes de validar para preservar cualquier tecla pulsada mientras la sincronización estaba en vuelo.
+- **Misma generación: el máximo, tecla a tecla.** Dentro de una generación los recuentos solo crecen, así que el número mayor siempre es el más completo. Se conservan las pulsaciones hechas mientras el teclado estaba desconectado de este PC.
+- **La generación más alta gana sin más.** Poner a cero los contadores (`opadctl reset --yes`, o **Reset lifetime counters** en la GUI) o restaurar una copia de seguridad sube la generación. Es la única forma legítima de que un recuento *menor* sustituya a uno mayor, y la generación hace explícita la intención en lugar de adivinarla.
+
+El teclado aplica la misma regla: [counter_sync_rules.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/counters/counter_sync_rules.c) (`counters_validate_sync_acceptance`) rechaza una sincronización de una generación más antigua, o una que bajaría un recuento dentro de la misma generación, salvo que el anfitrión la fuerce.
+
+La reconciliación abarca las teclas 1 y 2. La tecla 3 se cuenta y se guarda en el teclado, y el anfitrión solo la reescribe al restaurar una copia de seguridad (`send_counter_sync_key3` en [ipc_handlers.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/ipc_handlers.rs)).
+
+### Las pulsaciones durante una sincronización no se pierden
+
+Una sincronización tarda su tiempo en el cable, y el jugador puede pulsar una tecla mientras está en curso. Si el teclado guardara sin más el número del anfitrión, esas pulsaciones desaparecerían. En su lugar, `counters_sync_from_host()` toma una instantánea, valida la sincronización contra ella y luego mueve los contadores vivos según la *diferencia* entre la instantánea y el objetivo (`rebase_lifetime_presses`, y `key_event_add_lifetime_key3(*k3 - current.lifetime_key3)` para la tecla 3). Una pulsación contada después de la instantánea sigue contada.
+
+## Propiedad: a qué PC pertenece un teclado
+
+La fusión supone que ambas copias describen la misma historia. Eso falla cuando un teclado pasa a otro ordenador, o cuando se reinstala OPad: la base de datos de la nueva instalación no sabe nada del pasado del teclado, o guarda el pasado de otro teclado. Por eso el teclado almacena un dueño ([identity.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/identity.rs)):
+
+- **ID de instalación.** Un UUIDv4 aleatorio generado en la primera ejecución del daemon y guardado en SQLite (`app_state`, clave `install.id`). Identifica la *instalación*, no la máquina: desinstalar elimina `opad.db`, y una reinstalación recibe una identidad nueva.
+- **El dueño del teclado.** 16 bytes (`OWNER_ID_LEN`), escritos por `ClaimOwnership` y guardados en la configuración NVS del teclado. Se devuelve en cada `HelloAck.owner_id`. No tiene nada de criptográfico: protege la integridad de los contadores, no la exclusividad.
+
+La propiedad se decide en el mismo `HelloAck` que trae los recuentos, antes de reconciliar nada ([runtime.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/runtime.rs), `ownership_of`):
+
+```mermaid
+flowchart TD
+    H["HelloAck.owner_id"] --> U{"¿Vacío o todo ceros?"}
+    U -- sí --> C["Sin dueño: reclamarlo en silencio,<br/>sincronizar con normalidad"]
+    U -- no --> O{"¿Esta instalación?"}
+    O -- sí --> S["Nuestro: sincronizar con normalidad"]
+    O -- no --> A{"¿El PC va por delante en alguna tecla?"}
+    A -- no --> T["Quedárselo, conservando los recuentos del teclado<br/>(sin preguntar)"]
+    A -- sí --> P["Pausar la sincronización y preguntar en la GUI"]
+```
+
+- **Sin dueño** (vacío o todo ceros, que es también lo que envía el firmware anterior a la propiedad): el daemon escribe su ID de instalación en el teclado (`ClaimOwnership`, una escritura NVS solo en `IDLE`).
+- **Nuestro:** reconciliación normal.
+- **De otro, y el teclado tiene al menos las pulsaciones de este PC en ambas teclas** (`pc_is_ahead` es falso): [`take_over_if_pad_is_ahead()`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/ipc_handlers.rs) lo reclama y conserva los recuentos del teclado. Pasar un teclado a un PC nuevo, o reinstalar, no requiere preguntar nada.
+- **De otro, y este PC va por delante en alguna tecla:** quedárselo automáticamente tiraría pulsaciones en un sentido u otro, así que el daemon activa `pending_takeover` y `foreign_pad`, deja de sincronizar, y la GUI pregunta (`ResolveTakeover`): quedárselo conservando los recuentos del teclado, quedárselo escribiendo los recuentos de este PC, o dejar el teclado en paz. Un teclado que se deja en paz sigue funcionando como teclado; el daemon simplemente no escribe en él.
+
+El conjunto completo de casos al conectar, la sustitución del dispositivo y la restauración de copias de seguridad están en [Recuperación, reflasheo y desvinculación](../recovery.md); la parte del firmware está en [Contadores (firmware)](../develop/firmware/counters.md).
