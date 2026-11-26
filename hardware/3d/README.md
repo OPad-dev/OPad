@@ -9,7 +9,12 @@ This directory contains the ready-to-print/modify OPad enclosure for the **Waves
 ```
 hardware/3d/
 └── custom_case/
-    ├── V3/                                 # Current: the V3 carrier, USB board and three-key MX/HE modules on FFCs
+    ├── V4/                                 # Current: V3's inside in a faceted outside ("Stealth")
+    │   ├── opad_params.scad / opad_enclosure.scad
+    │   ├── opad_case_top.stl, opad_case_bottom.stl
+    │   ├── README.md                       # the new outside; the rest as V3
+    │   └── tools/                          # fit check (V3's, run against V4)
+    ├── V3/                                 # The V3 carrier, USB board and three-key MX/HE modules on FFCs; printed and fitted
     │   ├── opad_params.scad / opad_enclosure.scad
     │   ├── opad_case_top.stl, opad_case_bottom.stl
     │   ├── README.md                       # changes from V1.1, cables, assembly, printing
@@ -29,7 +34,7 @@ hardware/3d/
         └── opad_preview.png
 ```
 
-Use **V3** with the V3 boards (the ones that ship); see [`custom_case/V3/README.md`](custom_case/V3/README.md). **V1.1** is for the old V1 PCBs.
+Use **V4** with the V3 boards (the ones that ship); see [`custom_case/V4/README.md`](custom_case/V4/README.md). V4 is not printed yet; **V3** has the same inside in the old outside and has been printed and fitted ([`custom_case/V3/README.md`](custom_case/V3/README.md)). **V1.1** is for the old V1 PCBs.
 
 Third-party models (the Waveshare board model and other keypads) are not stored in this repository, since their licences differ from OPad's. Download them from their authors if you want them as a modelling reference; see section 4.
 
@@ -56,10 +61,10 @@ Third-party models (the Waveshare board model and other keypads) are not stored 
 ## 3. How to Use & Modify These Models
 
 ### Option A: Use the OpenSCAD Parametric Generator (Recommended)
-1. Open [`hardware/3d/custom_case/V1.1/opad_enclosure.scad`](custom_case/V1.1/opad_enclosure.scad) in [OpenSCAD](https://openscad.org/) (dimensions are in `opad_params.scad`).
+1. Open [`hardware/3d/custom_case/V4/opad_enclosure.scad`](custom_case/V4/opad_enclosure.scad) in [OpenSCAD](https://openscad.org/) (dimensions are in `opad_params.scad`).
 2. Change `PART` to `"top_case"` or `"bottom_plate"`.
 3. Press `F6` to render, then `F7` to export directly to `.stl`.
-4. All dimensions, wall thicknesses, and tolerances are fully configurable as variables at the top of the file.
+4. Every dimension, wall thickness and tolerance is a variable in `opad_params.scad`. After a change, run `tools/check_fit.py` (see the case's README).
 
 ### Option B: Model Around the Board in FreeCAD, Fusion 360 or Onshape
 1. Download the official board STEP model from the [Waveshare Wiki](https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-2) (not redistributed here).

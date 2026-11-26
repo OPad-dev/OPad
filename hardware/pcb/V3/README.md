@@ -27,7 +27,7 @@ module cable is not read; every pad ships with the type B cable.
   the Waveshare's own port.
 - **The carrier's USB connector** sits on a lug in the window's USB-end rear corner,
   mouth on the USB-end edge: P1's sockets fill the rear edge, and the lug keeps clear of
-  the M2 hole at the USB-end rear corner. (The V3 case does not use that hole: the USB
+  the M2 hole at the USB-end rear corner. (The V3 and V4 cases do not use that hole: the USB
   board lies under it, so a support presses the rear rail instead.)
 - **Three keys** on both modules, and **four corner holes** for the case's locating pins.
 - **HE:**
@@ -42,7 +42,7 @@ module cable is not read; every pad ships with the type B cable.
 
 ## Cables
 
-### Module (14-way FFC, 1.0 mm, type B, 80 mm in the V3 case)
+### Module (14-way FFC, 1.0 mm, type B, 80 mm in the V3 and V4 cases)
 
 | Contact | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -58,7 +58,7 @@ follows every pin both ways round. MX keeps KEY1 = GPIO10 and KEY2 = GPIO7, as o
 Module IDs: MX V3 = 47k/100k = 2.24 V, HE V3 = 100k/100k = 1.65 V (the class HE V2
 reserved, since the ADC and pins are the same). Firmware cut-offs: 0.68 / 1.35 / 1.95 / 2.6 V.
 
-### USB (8-way FFC, 1.0 mm, type A, 80 mm in the V3 case)
+### USB (8-way FFC, 1.0 mm, type A, 80 mm in the V3 and V4 cases)
 
 | Contact | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
 |---|---|---|---|---|---|---|---|---|
@@ -117,7 +117,8 @@ cd hardware/verify && ../../.tools/venv/bin/python -m opadverify golden/he_v3.to
 ## Before ordering more
 
 1. **Case:** `hardware/3d/custom_case/V3` was printed and fits these boards; the
-   latest small changes to it have not been printed.
+   latest small changes to it have not been printed. `hardware/3d/custom_case/V4`, the
+   case to ship, is V3 inside a new outside: its fit check passes, it is not printed yet.
 2. **JLCPCB preview:** check every part sits on its pads before paying. The checker
    predicts no turning is needed (`-v` prints where pin 1 of each polarised part must be).
 

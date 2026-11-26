@@ -16,7 +16,7 @@ OPad is built around an off-the-shelf microcontroller development board paired w
 You can build an OPad with hand-wired mechanical switches or the OPad V3 modular PCBs: <!-- src: /hardware/pcb/V3/README.md -->
 - **Hand-Wired Mechanical (MX)**: Two standard Cherry MX-compatible mechanical switches (Cherry, Gateron, Kailh, Outemu, etc.) wired between header P2 and `GND`. No external resistors or diodes are needed. <!-- src: /README.md --> <!-- src: /firmware/main/input/keypad.c -->
 - **OPad V3 Modular PCBs**:
-  - **Controller Carrier V3**: Plugs directly onto headers P1 and P2 of the Waveshare board and connects to the input module via a 14-way, 1.0 mm type B FFC cable (80 mm in the V3 case) and to the USB board via an 8-way, 1.0 mm type A FFC cable. <!-- src: /hardware/pcb/V3/README.md -->
+  - **Controller Carrier V3**: Plugs directly onto headers P1 and P2 of the Waveshare board and connects to the input module via a 14-way, 1.0 mm type B FFC cable (80 mm in the V3 and V4 cases) and to the USB board via an 8-way, 1.0 mm type A FFC cable. <!-- src: /hardware/pcb/V3/README.md -->
   - **MX Input Module V3**: 3-key mechanical hotswap PCB with Kailh hot-swap sockets (`CPG151101S11`). <!-- src: /hardware/pcb/V3/README.md -->
   - **HE Input Module V3**: 3-key Hall Effect magnetic switch PCB with TI DRV5055A3 Hall sensors, TI ADS7028 12-bit SPI ADC, and dedicated LP5907 3.3 V LDO. <!-- src: /hardware/pcb/V3/README.md -->
   - **USB Board V3**: Passive rear USB-C daughterboard with ESD protection, ferrite, and back-feed Schottky diode. <!-- src: /hardware/pcb/V3/README.md -->

@@ -1,5 +1,8 @@
 # OPad case V3
 
+> **Superseded by [V4](../V4/README.md)** (2026-11-26): the same inside, in a new faceted
+> outside. This folder stays as the printed, test-fitted reference.
+
 The case for the V3 boards (`hardware/pcb/V3`):
 - the carrier under the Waveshare board;
 - the USB board, on an 8-way FFC, with its USB-C through the rear wall;

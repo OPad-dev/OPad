@@ -76,7 +76,7 @@ Mirror-symmetric (`k` -> `9 - k`), carrying up to 1.0 A across the paired 5 V co
 
 ## 4. 3D Enclosure Design
 
-Parametric OpenSCAD enclosure files live in [/hardware/3d/README.md](/hardware/3d/README.md) (`hardware/3d/custom_case/V3/`), using a 1.5 mm switch plate with `14.0 x 14.0 mm` cutouts, `19.05 mm` key pitch, and four corner locating pins.
+Parametric OpenSCAD enclosure files live in [/hardware/3d/README.md](/hardware/3d/README.md) (`hardware/3d/custom_case/V4/`), using a 1.5 mm switch plate with `14.0 x 14.0 mm` cutouts, `19.05 mm` key pitch, and four corner locating pins.
 
 ## 5. Automated Hardware Verification (`opadverify`)
 

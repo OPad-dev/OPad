@@ -113,7 +113,7 @@ Each of these was checked on 2026-11-20 against GitHub or the code.
 | 0.10 | P1 | Hardware docs contradict the bench. | `hardware/pcb/V3/README.md` says every V3 board is "Not ordered, not built" and "No firmware supports them yet"; `docs/history/2026-11-20-v3-modules-handoff.md` has V3 boards on the bench and their firmware merged. `hardware/3d/README.md` lists only V1 and V1.1 cases. | Update both READMEs to what was built and what was not. **Done** (`911c2c1`). |
 | 0.11 | P1 | User-facing docs still use the old names. | 59 mentions of the old binary names in `README.md` and `docs/*.md` (32 in `docs/testing-checklist.md`, whose §7 recipe also runs a manifest binary that no longer exists). | Rename, and move the old reviews (`docs/software-*review*`, `docs/todo-2026-09-21-evening.md`, `docs/full-repo-…guide.md`) to `docs/history/` (AGENTS.md §7). **Done** (`fd76efd`, `911c2c1`): nothing is named osupad except what pads store (0.15); old reviews in `docs/history/`. |
 | 0.12 | P1 | Open firmware bug: the pad dropped two host messages (231 and 175 bytes) as an HE map ended. | Handoff "Open" item 1; `5715b9f` only adds logging. | Reproduce with `opadctl monitor` during the soak in §3.9, then fix the host or `protocol/opad.options`. Not shippable while unexplained. **Fixed** 2026-11-21: checked frames with a CRC, negotiated (see the note below and `docs/reference/serial-protocol.md`). |
-| 0.13 | P1 | The V3 case has never been printed. | `hardware/3d/custom_case/V3/README.md:9`: "Not printed or test-fitted yet". HW-12 and HW-14 note "no case yet". | §4. **Done**: printed and fitted (owner); the latest small changes are not printed, accepted. |
+| 0.13 | P1 | The V3 case has never been printed. | `hardware/3d/custom_case/V3/README.md:9`: "Not printed or test-fitted yet". HW-12 and HW-14 note "no case yet". | §4. **Done**: printed and fitted (owner); the latest small changes are not printed, accepted. 2026-11-26: the case to ship is now V4 (`hardware/3d/custom_case/V4`), V3 inside a new faceted outside; its fit check passes, it is **not printed yet** (§4 Fit and assembly). |
 | 0.14 | P2 | Repository hygiene for a sold product. | No `SECURITY.md`, `CONTRIBUTING.md`, issue templates or `CHANGELOG.md` (release-please creates the last on its first PR). | Add `SECURITY.md` (where to report, response time) and issue templates (bug, pad info from `opadctl status`). **Done** (`911c2c1`): `SECURITY.md` with GitHub private reporting (enabled), issue templates sending help to Discord. |
 
 | 0.15 | P1 | What pads and PCs store still says osupad. | NVS namespaces `osupad`, `osupad_cfg`, `osupad_cal`, `osupad_cal3`, `osupad_ui` (`counters.c`, `device_config.c`, `he_cal.c`, `ui_store.c`); USB serial and device ID `OSUPAD-<MAC>` (`usb_descriptors.c`, `protocol.c`, `DEVICE_ID_PREFIX` in `opad-device`), which the app keys counters and ownership on. | **Done** 2026-11-21: namespaces copied to `opad*` at boot (old ones kept for rollbacks), serial and ID `OPAD-<MAC>`, the app maps `OSUPAD-` to the same pad. Tested on the owner's MX V3 pad (`docs/testing-checklist.md` §16). The PID is 0.9. |
@@ -159,7 +159,7 @@ found and delivered.
   Waveshare board matters in every market (CE/RED, UKCA, FCC, ISED, TELEC,
   RCM, KC). Waveshare is asked for its certificates first.
 - **Case:** PETG printed in-house for testers and early batches; MJF PA12
-  quoted in batches for volumes (`hardware/3d/custom_case/V3/README.md`).
+  quoted in batches for volumes (`hardware/3d/custom_case/V4/README.md`).
 - **Test machines:** the owner's mini PC becomes a bare-metal Windows 11 test
   machine (flashing and WIN rows cannot run in a VM).
 - **Domain:** `opad.dev` is registered at Cloudflare.
@@ -289,7 +289,7 @@ afford to break, and a note of the result. Nothing here has been done yet
 (owner, 2026-11-21).
 
 **Fit and assembly**
-- [ ] Print the case as production will (same printer, filament, settings); fit every board. Re-check the clearances under 0.5 mm listed in `hardware/3d/custom_case/V3/README.md`: nothing rubs or is forced.
+- [ ] Print the case as production will (same printer, filament, settings); fit every board. Re-check the clearances under 0.5 mm listed in `hardware/3d/custom_case/V4/README.md`: nothing rubs or is forced.
 - [ ] Both FFCs fold as modelled, without a sharp crease or pulling at a connector; the screen sits flush.
 - [ ] Assemble one from a written step list, timing it; then someone else assembles one from the list alone. Every step they get wrong is a fix to the list or the case.
 - [ ] Swap the module (MX ↔ HE) 20 times as a buyer would: the FFC and its latch still hold, nothing cracks.

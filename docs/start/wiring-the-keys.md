@@ -35,8 +35,8 @@ Switch 2 (Key 2) ------------ P2 Pin 12 (GPIO 9)
 If you are assembling the OPad V3 PCB set (`hardware/pcb/V3/`): <!-- src: /hardware/pcb/V3/README.md --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
 
 - **Controller Carrier V3**: Seats onto headers P1 and P2 of the Waveshare board via two 1x14 female sockets.
-- **Module cable**: Connects the carrier to either the **MX Input Module V3** (3 keys, Kailh hot-swap sockets) or **HE Input Module V3** (3 keys, Hall Effect sensors + ADS7028 ADC) using a **14-way, 1.0 mm type B FFC** (80 mm in the V3 case).
-- **USB cable**: Connects the carrier to the **USB Board V3** using an **8-way, 1.0 mm type A FFC** (80 mm in the V3 case, symmetric pinout).
+- **Module cable**: Connects the carrier to either the **MX Input Module V3** (3 keys, Kailh hot-swap sockets) or **HE Input Module V3** (3 keys, Hall Effect sensors + ADS7028 ADC) using a **14-way, 1.0 mm type B FFC** (80 mm in the V3 and V4 cases).
+- **USB cable**: Connects the carrier to the **USB Board V3** using an **8-way, 1.0 mm type A FFC** (80 mm in the V3 and V4 cases, symmetric pinout).
 - **Fixed V3 carrier routing**:
   - **MX Input Module V3** (straight FFC): `KEY1 = GPIO 10`, `KEY2 = GPIO 7`, `KEY3 = GPIO 6`, `ID = GPIO 8` (note: an MX V3 module on a reversed FFC is not read; insert the type B cable straight). <!-- src: /hardware/pcb/V3/README.md --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
   - **HE Input Module V3**: `ID = GPIO 8`, SPI3 to ADS7028 on `MISO = GPIO 6`, `SCLK = GPIO 2`, `MOSI = GPIO 4`, `CS = GPIO 10` (firmware automatically remaps SPI pins if the 14-way FFC is reversed, with `ID` on `GPIO 7`). <!-- src: /hardware/pcb/V3/README.md --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->

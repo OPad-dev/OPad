@@ -551,3 +551,4 @@ Still open:
 3. FFC pitch, pin count and pinout (proposal in progress).
 4. ~~Case~~: designed 2026-10-24 (`hardware/3d/custom_case/V3`): 84 x 83 mm, USB-C out of
    the rear wall, stack inserted from below against a lip, four module pins. Not printed yet.
+   2026-11-26: V4 (`hardware/3d/custom_case/V4`) puts V3's inside in a new faceted outside.

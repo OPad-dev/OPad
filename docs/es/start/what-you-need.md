@@ -16,7 +16,7 @@ OPad se construye en torno a una placa de desarrollo microcontroladora comercial
 Puedes montar un OPad con interruptores mecánicos cableados a mano o con las PCBs modulares OPad V3: <!-- src: /hardware/pcb/V3/README.md -->
 - **Mecánico cableado a mano (MX)**: Dos interruptores mecánicos estándar compatibles con Cherry MX (Cherry, Gateron, Kailh, Outemu, etc.) cableados entre el cabezal P2 y `GND`. No se necesitan resistencias ni diodos externos. <!-- src: /README.md --> <!-- src: /firmware/main/input/keypad.c -->
 - **PCBs modulares OPad V3**:
-  - **Controller Carrier V3**: Se acopla directamente a los cabezales P1 y P2 de la placa Waveshare y se conecta al módulo de entrada mediante un cable FFC tipo B de 14 vías y 1.0 mm (80 mm en la carcasa V3) y a la placa USB mediante un cable FFC tipo A de 8 vías y 1.0 mm. <!-- src: /hardware/pcb/V3/README.md -->
+  - **Controller Carrier V3**: Se acopla directamente a los cabezales P1 y P2 de la placa Waveshare y se conecta al módulo de entrada mediante un cable FFC tipo B de 14 vías y 1.0 mm (80 mm en las carcasas V3 y V4) y a la placa USB mediante un cable FFC tipo A de 8 vías y 1.0 mm. <!-- src: /hardware/pcb/V3/README.md -->
   - **MX Input Module V3**: PCB hotswap mecánica de 3 teclas con zócalos hot-swap Kailh (`CPG151101S11`). <!-- src: /hardware/pcb/V3/README.md -->
   - **HE Input Module V3**: PCB de interruptores magnéticos Hall Effect de 3 teclas con sensores Hall TI DRV5055A3, ADC SPI de 12 bits TI ADS7028 y LDO LP5907 de 3.3 V dedicado. <!-- src: /hardware/pcb/V3/README.md -->
   - **USB Board V3**: Placa auxiliar USB-C trasera pasiva con protección ESD, ferrita y diodo Schottky antirretorno. <!-- src: /hardware/pcb/V3/README.md -->

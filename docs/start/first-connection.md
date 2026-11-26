@@ -9,7 +9,7 @@ OPad works out of the box as a standalone 1000 Hz USB HID keyboard with no deskt
 
 ## Plugging in the Pad
 
-1. Plug a USB Type-C data cable into the Waveshare ESP32-S3 board (or the rear USB-C port on an OPad V3 case). <!-- src: /hardware/pcb/V3/README.md -->
+1. Plug a USB Type-C data cable into the Waveshare ESP32-S3 board (or the rear USB-C port on an OPad V3 or V4 case). <!-- src: /hardware/pcb/V3/README.md -->
 2. Connect the other end to a USB port on your PC.
 3. The ESP32-S3 powers on, initializes the 2.0-inch LCD, and enumerates over USB. (Note: if an uncalibrated Hall Effect module is installed, the screen locks to the calibration prompt and suppresses keys until calibrated; see [Calibrating Hall Effect Switches](../guides/calibrate-hall-effect.md).) <!-- src: /firmware/main/ui/he_cal_ui.c -->
 

@@ -76,7 +76,7 @@ Simétrico en espejo (`k` -> `9 - k`), transportando hasta 1.0 A entre los conta
 
 ## 4. Diseño de carcasa 3D
 
-Los archivos paramétricos de OpenSCAD para la carcasa residen en [/hardware/3d/README.md](/hardware/3d/README.md) (`hardware/3d/custom_case/V3/`), usando una placa de interruptores de 1.5 mm con huecos de `14.0 x 14.0 mm`, paso de tecla de `19.05 mm` y cuatro pasadores de centrado en las esquinas.
+Los archivos paramétricos de OpenSCAD para la carcasa residen en [/hardware/3d/README.md](/hardware/3d/README.md) (`hardware/3d/custom_case/V4/`), usando una placa de interruptores de 1.5 mm con huecos de `14.0 x 14.0 mm`, paso de tecla de `19.05 mm` y cuatro pasadores de centrado en las esquinas.
 
 ## 5. Verificación automatizada de hardware (`opadverify`)
 
