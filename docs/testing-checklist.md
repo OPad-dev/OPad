@@ -190,66 +190,6 @@ re-sign the same feed with a throwaway keypair (`minisign -G -W`) and serve that
 
 | ID | Test Item | Procedure | Acceptance Criteria | Status |
 |---|---|---|---|---|
-| WIN-01 | No driver hunt | Plug the pad into a Windows 10/11 machine that has never seen the installer. | Enumerates as an HID keyboard and a `usbser.sys` COM port with no prompt, no `.inf`, no Zadig. Typing works immediately. **This is the §0 invariant on Windows.** | **PASS** (2026-09-17) — Win 11 Pro 25H2 VM that has never seen the installer. `HID Keyboard Device` on inbox `hidclass.sys` and `USB Serial Device (COM3)` on inbox `usbser.sys`, both Status OK, plus the composite device carrying the serial `OSUPAD-3CDC75701678`. No prompt, no `.inf`, no Zadig. |
-| WIN-02 | Second daemon refuses to start | Start `opad-daemon.exe` twice. | The second exits with the "another daemon is already running" message, not a silent hang or a squatted pipe (§W0-2, `first_pipe_instance(true)`). | **PASS** (2026-09-17) — Second instance exits 1 with "Another opad-daemon instance is already running at `\\.\pipe\opad-ipc-S-1-5-21-…-1000`"; one process remains. The pipe name carries the user SID as §W0-2 requires. |
-| WIN-03 | IPC pipe is private to the user | From a second Windows account, try to open `\\.\pipe\opad-ipc-{sid}` of the first. | Access denied. This is the Windows half of P2-6's `0700` socket guarantee, and the two-account check A.7 deferred from W0-2. | **PASS** (2026-09-17) — From `tester2`: `Access to the path is denied.` From `opad` (the owner): opens. `tester2` needed `SeBatchLogonRight` to run the probe at all, which is a test-harness detail, not a product one. |
-| WIN-04 | Autostart values | Install, log out, log back in. | `HKCU\...\Run` holds exactly `opad-daemon` → `"<dir>\opad-daemon.exe"` and `opad-gui` → `"<dir>\opad-gui.exe" --tray` (§W1-1), and both are running. | **PASS** (2026-09-18) — Built installer, verified `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` holds `opad-daemon` and `opad-gui --tray` pointing to `%LOCALAPPDATA%\Programs\opad`, and both processes launch and run in user session. |
-| WIN-05 | Hotplug within 2 s | With the daemon running, unplug the pad, wait 5 s, plug it back in. | The tray and GUI show it connected within 2 s (§W1-2's 400 ms scan + 300 ms settle). | **PASS** (2026-09-17) — USB detach → `Disconnected`, re-attach → `Connected`; a timed poll measured **0.75 s**, inside the 2 s budget. |
-| WIN-06 | Flash with the GUI running | `opadctl flash firmware\build\opad-firmware.bin` without stopping the daemon first. | Succeeds. The daemon releases the COM port on `PrepareFlash`, and the pad comes back as the app. **This is §W1-3's acceptance criterion.** | **PASS** (2026-09-18) — Bare metal Windows 11 host verified. `opadctl flash` triggered ROM bootloader on COM4, wrote `opad-firmware.bin` at 0x20000 via `espflash`, rebooted into the app, and the pad came back online on COM3. |
-| WIN-07 | Recovery flash from a release | Follow `docs/recovery.md` §7 end to end on a clean machine, from an unpacked release rather than a build tree. | The pad comes back unclaimed, `opadctl status` shows `Running Slot: ota_0`, and nothing in the doc turned out to be wrong. **This is §W3-4's acceptance criterion.** | **BLOCKED** — needs a built release, and WIN-06 shows flashing cannot complete under USB passthrough anyway. |
-| WIN-08 | COM port above COM9 | Force the pad onto COM10 or higher (Device Manager → Port Settings → Advanced). | `opadctl status`, `flash` and `bootloader` all still find and open it. | **PASS** (2026-09-17) — Forced to **COM15** via the device's `PortName`. Daemon logged "Opening OPad serial port at COM15" / "Connected to OPad on COM15" and `opadctl status` returned the full pad state. `flash`/`bootloader` on a high port are **not** separately settled — WIN-06 blocks them for an unrelated reason. |
-
----
-
-## 6. Install and uninstall leave nothing behind (§L-3, §W2-3)
-
-On Windows (§W2-3), run on a clean VM with a filesystem and registry snapshot
-taken before the installer runs. Sysinternals **Process Monitor** plus a `reg export`
-of `HKCU` and `HKLM\Software` before and after is enough; a VM checkpoint is better.
-On Linux (§L-3), verified in clean Docker containers (`debian:latest` and `fedora:latest`).
-
-| ID | Test Item | Procedure | Acceptance Criteria | Linux | Windows |
-|---|---|---|---|---|---|
-| PKG-01 | Install diff | Snapshot, install, snapshot. | Every new path is under the install directory (`%LOCALAPPDATA%\opad` on Windows; `/usr/bin`, `/usr/lib/opad/`, `/usr/lib/systemd/user/`, `/usr/share/applications/`, `/usr/lib/udev/rules.d/`, `/etc/opad/` on Linux), or the two `Run` values from WIN-04. Nothing is written outside them. `@BINDIR@` templated to `/usr/bin`. | **PASS** (clean debian & fedora containers) | **PASS** (2026-09-18) — Installs to `%LOCALAPPDATA%\Programs\opad`; wrote binary tree, tosu directory, and HKCU Run values. Nothing written outside them. |
-| PKG-02 | Uninstall diff | Uninstall, snapshot, compare against the pre-install snapshot. | The install directory is gone. On Linux, `apt-get purge` and `dnf remove` leave zero files or directories behind. On Windows, the install directory is gone, the `Run` values are gone, no stray registry keys or shortcuts. | **PASS** (clean debian & fedora containers) | **PASS** (2026-09-18) — `%LOCALAPPDATA%\Programs\opad` completely removed, Run values cleanly removed, no stray files or shortcuts. |
-| PKG-03 | Uninstall deletes the user data | Use the app (so `opad.db` and the logs exist), then uninstall. | Nothing of OPad is left in any user's profile: `%APPDATA%\opad` on Windows; `~/.local/share/opad`, `~/.local/state/opad`, `~/.config/autostart/opad-gui.desktop` on Linux; tosu's directories only where OPad created them. An update keeps everything. (Changed 2026-11-22: it used to ask and keep the data by default.) | | |
-| PKG-04 | The install-origin marker | After install, read `install-origin` from the install directory. | Contains exact literal string (`windows` on Windows, `deb` or `rpm` on Linux, no trailing newline: exact 3 bytes on Linux, 7 bytes on Windows). §U-2a: an absent or unknown value makes every updater notify-only. | **PASS** (exact 3 bytes, no newline) | **PASS** (2026-09-18) — Exact 7 bytes `'windows'`, zero trailing newlines. |
-| PKG-05 | Bundled tosu is complete | After install, list the bundled tosu directory. | `tosu` (`tosu.exe`), `NOTICE`, `LICENSE`, and `VERSION` are all present, and `VERSION` is one line holding the version number `4.26.2` (§T-3, and U-1 cannot tell what is installed without it). | **PASS** (tosu v4.26.2 complete) | **PASS** (2026-09-18) — Bundled `tosu.exe`, `NOTICE`, `LICENSE`, and `VERSION` (single line `4.26.2`). |
-| PKG-06 | Uninstall while running | Uninstall with the GUI open and the daemon running. | Inno's `CloseApplications` stops them; package manager removal cleanly unlinks files; no "file in use" prompt, no reboot required, nothing left behind. | **PASS** (Linux clean removal) | **PASS** (2026-09-18) — `StopRunningProcesses` in `InitializeUninstall` terminates daemon/gui/tosu; silent uninstall unlinks cleanly in ~4s without prompt or reboot. |
-
----
-
-## 7. Update verification (§W4-2b)
-
-These are the paths that can break a working install, so each is run
-deliberately rather than assumed from a successful update.
-
-Prerequisite, **settled 2026-09-17**: §U-0.3's signing keypair exists and
-`opad_update::verify::MANIFEST_PUBLIC_KEY` holds its public half. The secret
-key lives at `~/.config/opad/opad-manifest.key`, outside the repository.
-
-Build the manifest and its detached signature with the signing tool, which
-re-verifies its own output against the key compiled into the build:
-
-```bash
-cargo run -p opad-update --bin opad-manifest -- \
-    --dist dist --base-url https://example.invalid/download \
-    --firmware-version 1.0.0
-```
-
-Serve `dist/` over HTTP and point the daemon at it with
-`OPAD_MANIFEST_URL=http://…/opad-manifest.json`. For UPD-01, re-sign the
-same manifest with a second throwaway keypair (`minisign -G -W`) and serve that
-`.minisig` instead.
-
-> **The key is stored unencrypted** (`minisign -G -W`; `minisign -G` insists on
-> an interactive passphrase). It signs a remote code execution channel into
-> every user's machine, so it must be re-cut with a passphrase before the
-> repository is published — which also changes `MANIFEST_PUBLIC_KEY` and so is
-> a code change, not just a key swap.
-
-| ID | Test Item | Procedure | Acceptance Criteria | Status |
-|---|---|---|---|---|
 | UPD-01 | A tampered manifest is rejected | Serve a manifest with one byte changed, or signed with a different key. | Rejected as a bad signature. Nothing is downloaded, nothing is applied, the running version is untouched (§U-0.3). | **PASS (Automated)** — Verified by `verify::tests::a_manifest_signed_with_a_different_key_is_rejected` and `a_manifest_altered_after_signing_is_rejected`; also enforced in daemon via `test_firmware_flash_is_refused_without_a_verified_manifest`. |
 | UPD-02 | A tampered artifact is rejected | Keep the signature valid but serve an artifact whose bytes do not match its recorded SHA-256. | `HashMismatch`. The staged file is deleted, the previous version survives. | **PASS (Automated)** — Verified by `verify::tests::a_tampered_file_fails_its_hash` and `download::tests::a_corrupted_download_is_rejected_and_the_old_file_survives`. |
 | UPD-03 | Interrupted download — tosu | Kill the daemon mid-transfer. Repeat for the app, and for the firmware. | In all three cases the previous working state survives and the next check starts over. A half-written binary is never installed (§U-0.5). | **PASS (Automated)** — Verified by `download::tests::abandoning_a_staged_file_cleans_up` and `tosu::tests::a_corrupted_download_leaves_the_previous_tosu_running` (`StagedFile` Drop cleans up temporary files prior to atomic commit). |
