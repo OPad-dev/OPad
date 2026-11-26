@@ -1,55 +1,76 @@
 ---
-title: Interoperabilidad de versiones de la app y del teclado
-description: Negociación de protocolo, reglas de compatibilidad hacia atrás y hacia adelante, autodetección de entramado y manejo de discrepancias de versión entre el software de escritorio y el firmware del teclado.
+title: Versiones de la app y del teclado
+description: Por qué la app de escritorio y el firmware del teclado pueden actualizarse por separado, y los mecanismos que lo hacen posible - negociación del entramado, banderas de capacidad, reglas de los campos protobuf y la versión mayor del protocolo.
 sidebar:
   order: 4
 ---
 
-La suite de escritorio de OPad y el firmware del teclado se actualizan de forma independiente (AGENTS.md §1.3). Nunca se exige a los usuarios actualizar ambos a la vez. El entramado, las banderas de capacidad y los campos protobuf están diseñados para interoperar en ambos sentidos: una aplicación de escritorio nueva funciona con firmware antiguo, y un firmware nuevo funciona con versiones antiguas de la aplicación. <!-- src: /desktop/crates/opad-protocol/src/lib.rs#DEVICE_PROTOCOL_VERSION -->
+La app de escritorio y el firmware del teclado se actualizan cada uno a su ritmo ([AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §1.3). Un usuario puede actualizar la app y no el teclado durante meses, o flashear un firmware más nuevo y quedarse con una app antigua. Toda combinación tiene que funcionar, y nunca se le dice al usuario que "actualice ambos a la vez".
 
-## Dimensiones de compatibilidad
+Funciona por capas, y cada una se degrada por su cuenta:
 
-La interoperabilidad opera en tres capas:
+```mermaid
+flowchart TB
+    L1["1. Teclado USB HID<br/>(sin software del anfitrión)"]
+    L2["2. Entramado serie<br/>(legacy / marked / checked, negociado)"]
+    L3["3. Mensajes protobuf<br/>(campos desconocidos omitidos, banderas de capacidad)"]
+    L4["4. Versión mayor del protocolo<br/>(si no coincide, la app deja el teclado en paz)"]
+    L1 --- L2 --- L3 --- L4
+```
 
-1. **Capa física de teclado HID**: Independiente del software anfitrión. El teclado se enumera como un teclado USB HID estándar a 1000 Hz sin requerir daemon, GUI ni controlador en Linux o Windows (AGENTS.md §1.2). <!-- src: /firmware/main/usb/usb_descriptors.c -->
-2. **Capa de transporte serie y entramado**: Negociación dinámica entre los formatos de trama legacy (sin marcar), marked (`0xAA, 0x55`) y checked (`0xAA, 0x5A` + CRC-16) ([`Framing`](/desktop/crates/opad-protocol/src/lib.rs), [`frame_parser_feed()`](/firmware/main/protocol/frame_parser.c)).
-3. **Capa de aplicación y Protobuf**: Comprobación de versión mayor del protocolo (`DEVICE_PROTOCOL_VERSION`), banderas de capacidad en el apretón de manos [`Hello`](/protocol/opad.proto) y [`HelloAck`](/protocol/opad.proto), y omisión de campos desconocidos de proto3.
+1. **El teclado no necesita software.** Se enumera como un teclado USB HID estándar a 1000 Hz ([usb_descriptors.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/usb/usb_descriptors.c)). Ninguna versión de la app puede romper la escritura ([AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §1.2).
+2. **El entramado se negocia**, así que a un interlocutor antiguo nunca se le envían bytes que no pueda analizar.
+3. **Los mensajes evolucionan añadiendo**, y las funciones se anuncian, no se suponen.
+4. **Una ruptura real se detecta**, y entonces la app no estorba al teclado.
 
-## Negociación de versión de protocolo y entramado
+## Entramado: el teclado responde con el entramado del anfitrión
 
-Cada sesión USB CDC comienza con un apretón de manos `Hello` / `HelloAck` ([`Handshake`](/desktop/crates/opad-device/src/lib.rs), [`protocol_send_hello_ack()`](/firmware/main/protocol/protocol.c)):
+El enlace serie ha usado tres entramados a lo largo del tiempo ([`Framing`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-protocol/src/lib.rs), [frame_parser.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/protocol/frame_parser.c)): legacy (sin marca, longitud y luego carga), marked (`0xAA 0x55`, longitud, carga) y checked (`0xAA 0x5A`, longitud, carga, CRC-16/CCITT-FALSE). La disposición de los bytes está en la referencia del [protocolo serie](../reference/serial-protocol.md).
 
-- **Sondeo del anfitrión (`Hello`)**:
-  Mientras se desconoce el entramado del teclado, el anfitrión envía un `Hello` cada 400 ms (`HELLO_RETRY`), alternando entre entramado marked (`0xAA, 0x55`) en intentos pares y legacy en intentos impares ([`hello_framing()`](/desktop/crates/opad-device/src/lib.rs)). La carga de `Hello` establece `protocol_version = 1`, `client_version`, `he_calibration = true` y `frame_crc = true` ([`hello_message()`](/desktop/crates/opad-device/src/lib.rs)).
-- **Fijación de entramado y respuesta del teclado (`HelloAck`)**:
-  Hasta que se decodifica la primera trama válida, el firmware no envía nada (`s_host_framing_known = false`) para que las tramas no solicitadas no desincronicen a un anfitrión antiguo ([`protocol.c`](/firmware/main/protocol/protocol.c)). En el primer mensaje decodificado, el firmware fija `s_host_framing` y bloquea su analizador a esa familia:
-  - Si el anfitrión envió una trama **legacy**, el teclado responde en legacy e ignora cabeceras marked/checked durante el resto de la conexión.
-  - Si el anfitrión envió una trama **marked** con `Hello.frame_crc = true`, el teclado responde con `HelloAck` (`frame_crc = true`) en una trama **marked** y después activa el entramado checked (`s_tx_crc = true`, `0xAA, 0x5A` + CRC-16) para todas las tramas siguientes. Los analizadores marked de ambos lados aceptan tanto tramas marked como checked.
-  - Si el anfitrión envió `Hello.frame_crc = false` (o el teclado ejecuta firmware antiguo que ignora `Hello.frame_crc` y responde `frame_crc = false`), ambos lados permanecen en entramado marked (`0xAA, 0x55`).
-- **Negociación de capacidades**:
-  [`HelloAck`](/protocol/opad.proto) anuncia funciones opcionales del firmware (como `running_partition`, `key_press_times`, `board_test`, `builtin_animations`, `restart`, `he_input`, `he_calibration`, `he_live`, `tap_rate_per_second`, `key_count`, `input_module` y `frame_crc`). El firmware antiguo omite campos nuevos, que se decodifican como `false`/`0`/vacío en el anfitrión para que la aplicación degrade con elegancia (por ejemplo, recurriendo a `tosu` para tiempos de ritmo de pulsación cuando `key_press_times` es falso).
+Al conectarse, ninguno de los dos lados sabe lo antiguo que es el otro, así que ninguno puede suponer un entramado. La regla es que **el anfitrión habla primero y el teclado responde en el mismo formato**:
 
-## Compatibilidad hacia adelante y hacia atrás en Protobuf
+```mermaid
+sequenceDiagram
+    participant H as Anfitrión (opad-device)
+    participant P as Teclado (protocol.c)
+    Note over P: no envía nada hasta decodificar una trama válida
+    H->>P: Hello (marked), frame_crc = true
+    Note over H: sin respuesta en 400 ms
+    H->>P: Hello (legacy)
+    Note over H: ...alternando cada 400 ms (hello_framing)
+    P-->>H: HelloAck con el entramado del anfitrión (aquí marked), frame_crc = true
+    Note over H,P: desde el siguiente mensaje, ambos envían tramas checked
+```
 
-El esquema del cable usa Protocol Buffers v3 ([`protocol/opad.proto`](/protocol/opad.proto)):
+- **El anfitrión sondea.** Mientras no conoce el entramado del teclado, el anfitrión envía un `Hello` cada 400 ms (`HELLO_RETRY`), marked en los intentos pares y legacy en los impares ([`hello_framing()`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-device/src/lib.rs)). El `Hello` lleva `protocol_version = 1`, `client_version`, `he_calibration = true` y `frame_crc = true` ([`hello_message()`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-device/src/lib.rs)).
+- **El teclado calla hasta oír uno.** Hasta que decodifica un mensaje reconocido, el firmware no envía nada (`s_host_framing_known = false` en [protocol.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/protocol/protocol.c)); una trama no solicitada podría confundir a un anfitrión antiguo. El primer mensaje reconocido fija `s_host_framing`, y a partir de ahí el analizador solo acepta esa familia.
+- **Anfitrión legacy:** el teclado responde en entramado legacy durante el resto de la conexión.
+- **Anfitrión marked que pide CRC** (`Hello.frame_crc = true`): el propio `HelloAck` sale como trama marked con `frame_crc = true`, y todas las tramas posteriores son checked. Los analizadores marked de ambos lados leen igual tramas marked y checked.
+- **Anfitrión marked que no lo pide, o firmware anterior al CRC** (ignora el campo y su `HelloAck.frame_crc` se decodifica como `false`): ambos se quedan en entramado marked.
 
-- **Escritorio nuevo con firmware antiguo**:
-  Cuando una aplicación nueva envía campos que el firmware antiguo no reconoce (por ejemplo ajustes Hall Effect o modificadores de deslizamiento), nanopb omite las etiquetas desconocidas durante `pb_decode` y aplica los campos que entiende.
-- **Escritorio antiguo con firmware nuevo**:
-  Cuando una aplicación antigua se conecta a un firmware nuevo, prost ignora los campos desconocidos en los mensajes `DeviceToHost` y extrae los que conoce.
-- **Límites estáticos en el firmware**:
-  [`protocol/opad.options`](/protocol/opad.options) establece límites fijos `max_size` y `max_count` para nanopb de modo que el firmware decodifica en búferes estáticos sin asignación en el heap. Las tramas más largas que `FRAME_MAX_PAYLOAD` (8186 bytes) son descartadas por [`frame_parser_feed()`](/firmware/main/protocol/frame_parser.c); las cargas que desbordan un límite de campo fallan limpiamente dentro de [`protocol_decode_host_message()`](/firmware/main/protocol/protocol.c) y registran `DIAG_EVENT_DECODE_FAILED`.
+Siempre es el anfitrión quien avanza, y solo después de que el teclado haya dicho que puede seguirle. Un teclado antiguo, sencillamente, nunca lo dice.
 
-## Dispositivos incompatibles y gestión de discrepancias de versión
+## Mensajes: campos añadidos y banderas de capacidad
 
-La versión mayor del protocolo de cable es [`DEVICE_PROTOCOL_VERSION`](/desktop/crates/opad-protocol/src/lib.rs) (`1`):
+El esquema es [protocol/opad.proto](https://github.com/OPad-dev/OPad/blob/main/protocol/opad.proto) (proto3). Dos propiedades de protobuf hacen casi todo el trabajo:
 
-- Si `HelloAck.protocol_version` no es igual a `DEVICE_PROTOCOL_VERSION`, el daemon registra [`IncompatibleDevice`](/desktop/crates/opad-model/src/lib.rs) en [`RuntimeController::on_event()`](/desktop/daemon/src/runtime.rs), restaura su estado de contadores previo al apretón de manos y deja `device_connected = false`:
-  ```rust
-  pub struct IncompatibleDevice {
-      pub firmware_version: String,
-      pub protocol_version: u32,
-  }
-  ```
-- **Respaldo seguro**:
-  Un teclado incompatible sigue funcionando como teclado USB HID a 1000 Hz. El daemon no sincroniza contadores, no sobrescribe su configuración ni le envía telemetría. `opadctl status` imprime una línea de advertencia `Incompatible:` ([`desktop/cli/src/main.rs`](/desktop/cli/src/main.rs)), y `opad-gui` muestra un aviso ([`desktop/gui/src/main.rs`](/desktop/gui/src/main.rs)). Ambos indican el protocolo del teclado y el requerido, `DEVICE_PROTOCOL_VERSION`; la versión del IPC entre GUI y daemon (`IPC_PROTOCOL_VERSION`) no interviene. <!-- src: /desktop/gui/src/main.rs#incompatible_banner, /desktop/cli/src/main.rs#Commands, /desktop/crates/opad-protocol/src/lib.rs#DEVICE_PROTOCOL_VERSION -->
+- **Los campos desconocidos se omiten.** App nueva, firmware antiguo: nanopb ignora las etiquetas que no conoce y aplica el resto. App antigua, firmware nuevo: prost hace lo mismo con los mensajes `DeviceToHost`.
+- **Los campos ausentes se leen como cero.** Un campo que el emisor no conoce se decodifica como `0`, `false` o vacío. Por eso cada campo nuevo se diseña para que cero signifique "el comportamiento antiguo", y se usa `optional` donde cero es un valor con sentido (por ejemplo `ConfigPayload.key3_hid_usage`).
+
+Esa segunda propiedad es lo que hace funcionar las **banderas de capacidad** de `HelloAck`. El teclado anuncia lo que sabe hacer: `running_partition`, `key_press_times`, `board_test`, `builtin_animations`, `restart`, `he_input`, `he_calibration`, `he_live`, `tap_rate_per_second`, `key_count`, `input_module`, `frame_crc`. Un firmware anterior a una bandera no envía nada, el anfitrión lee `false` y recurre a la alternativa: por ejemplo, sin `key_press_times` el ritmo de pulsación se mide desde tosu en lugar de con los tiempos de pulsación del propio teclado, y sin `tap_rate_per_second` el anfitrión rechaza los diseños que dependen de él.
+
+El firmware decodifica en búferes de tamaño fijo: [protocol/opad.options](https://github.com/OPad-dev/OPad/blob/main/protocol/opad.options) acota cada cadena y cada campo repetido, `frame_parser_feed()` descarta las tramas más largas que `FRAME_MAX_PAYLOAD` (8186 bytes), y una carga que desborda un campo falla limpiamente en `protocol_decode_host_message()` y registra `DIAG_EVENT_DECODE_FAILED`. Un campo demasiado largo enviado por una app más nueva se rechaza; no se escribe más allá del búfer.
+
+El procedimiento para añadir un campo o un mensaje está en [Cambios en el protocolo](../develop/protocol-changes.md).
+
+## Una ruptura real: la versión mayor del protocolo
+
+Si algún día un cambio no puede hacerse añadiendo, cambia la versión mayor [`DEVICE_PROTOCOL_VERSION`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-protocol/src/lib.rs) (ahora `1`). Cuando `HelloAck.protocol_version` es distinta, [`RuntimeController::on_event()`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/runtime.rs) registra un [`IncompatibleDevice`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-model/src/lib.rs) (`firmware_version`, `protocol_version`) y trata el teclado como no conectado:
+
+- el teclado sigue funcionando como teclado a 1000 Hz, porque la capa 1 no depende de nada de esto;
+- el daemon no sincroniza contadores, no escribe configuración ni le envía telemetría;
+- `opadctl status` imprime una línea `Incompatible:` ([cli/src/main.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/cli/src/main.rs)) y la GUI muestra un aviso (`incompatible_banner` en [gui/src/main.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/main.rs)); ambos indican el protocolo del teclado y el que se requiere.
+
+El IPC entre la GUI y el daemon tiene su propia versión, independiente (`IPC_PROTOCOL_VERSION`, consulta el [protocolo IPC de escritorio](../reference/ipc.md)); no interviene en esta comprobación.
+
+<!-- src: /desktop/gui/src/main.rs#incompatible_banner, /desktop/cli/src/main.rs#Commands, /desktop/crates/opad-protocol/src/lib.rs#DEVICE_PROTOCOL_VERSION -->

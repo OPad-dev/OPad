@@ -1,28 +1,54 @@
 ---
-title: Arquitectura del subsistema GUI
-description: Referencia de implementación de opad-gui, arquitectura Elm de iced, traspaso de instancia única, tokens de tema, vista previa de Screen Designer y bandeja del sistema.
+title: Arquitectura del subsistema de la GUI
+description: Referencia de implementación de opad-gui, su bucle de actualización iced y sus sondeos, el arranque del daemon y la comprobación de versión, el traspaso a la instancia única, los tokens del tema, la vista previa del Screen Designer y la bandeja del sistema.
 sidebar:
   order: 3
 ---
 
-`opad-gui` está construida con `iced` usando `iced::daemon` (de modo que cerrar la ventana minimiza a la bandeja del sistema) y se comunica asíncronamente con `opad-daemon` mediante IPC local ([/desktop/gui/src/main.rs](/desktop/gui/src/main.rs)).
+`opad-gui` es una app de `iced` 0.14 construida con `iced::daemon`, así que al cerrar la ventana se queda en la bandeja del sistema. No guarda estado propio del pad: todo le llega de `opad-daemon` por IPC ([/desktop/gui/src/main.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/main.rs), [/desktop/gui/src/ipc.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/ipc.rs)). Qué hace cada página para el usuario: [Referencia de la GUI](../../reference/gui.md).
 
-## Arquitectura de la aplicación (`main.rs`)
+## Módulos
 
-- **Model-View-Update**: `App::new`, `App::update` (que devuelve `Task<Message>`), `App::view` y `App::subscription` (sondeo de estado en segundo plano, sondeo de `GetHeLive` a ~50 Hz en la página **Keys**, fotogramas de animación y minimizado a la bandeja al cerrar).
-- **Opciones CLI**: `--tray` inicia oculta en la bandeja del sistema; `--page <token>` / `-p <token>` abre una página concreta (por ejemplo, `dashboard`, `stats`, `designer`, `settings`, `device`, `logs`, `diagnostics`, `about`, `calibrate`, `keys`).
-- **Traspaso de instancia única** ([/desktop/gui/src/single_instance.rs](/desktop/gui/src/single_instance.rs)): Un segundo lanzamiento reenvía su token `--page` por un socket/tubería local privada para enfocar y navegar en la instancia en ejecución, y luego sale.
+| Módulo | Función |
+|---|---|
+| [`main.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/main.rs) | `App` (`new`, `update`, `view`, `subscription`), el enum `Page` y sus tokens de `--page`, el arranque del daemon y la comprobación de versión |
+| [`pages.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/pages.rs) | Páginas Dashboard, Settings, Device y Logs |
+| [`stats.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/stats.rs) | Página Stats: frecuencia de toques en KPM del intento y del periodo del historial |
+| [`keys.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/keys.rs) | Página Keys: actuación HE y Rapid Trigger con un corte en vivo de cada interruptor; solo se muestra cuando está en marcha el backend HE del pad |
+| [`diagnostics.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/diagnostics.rs), [`he_monitor.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/he_monitor.rs) | Página Diagnostics: pruebas de hardware, la prueba de PCB (evaluada por `opad_model::board_test`) y el monitor de pulsaciones fantasma / dobles HE que sigue `he-debug.log` |
+| [`designer/`](https://github.com/OPad-dev/OPad/tree/main/desktop/gui/src/designer) | Screen Designer (`mod.rs`, `overlay.rs`) |
+| [`chrome.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/chrome.rs) | Barra de título propia y bordes de redimensionado en lugar de las decoraciones del sistema |
+| [`theme.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/theme.rs) | Colores y fuentes |
+| [`tray.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/tray.rs) | Icono y menú de la bandeja |
+| [`single_instance.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/single_instance.rs) | Una sola GUI a la vez |
+| [`platform_linux.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/platform_linux.rs), [`platform_windows.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/platform_windows.rs) | Arranque automático (unidades de usuario de systemd en Linux, el mecanismo por usuario en Windows) y otras piezas de integración con el sistema operativo |
+
+## Bucle de actualización y sondeos
+
+`App::subscription` gobierna todo el tráfico hacia el daemon:
+
+| Sondeo | Intervalo |
+|---|---|
+| Estado (`Message::Poll`) | 2 s con el daemon desconectado, 1 s con la ventana abierta, 3 s oculta en la bandeja |
+| Muestras HE en vivo (página Keys) | 20 ms, más los fotogramas de animación |
+| Progreso de la calibración (página Calibration) | 100 ms |
+| Estado de las actualizaciones | 60 s, 2 s mientras hay una actualización en curso |
+
+Si el daemon no está en marcha, la GUI lo arranca una vez. Si el daemon responde con otra versión (se actualizó uno de los dos), el más antiguo se reinicia como la versión nueva, una vez por ejecución.
+
+## Flags de CLI e instancia única
+
+- `--tray` arranca oculta en la bandeja; `--page <token>` / `-p <token>` abre una página. Tokens (`Page::TOKENS`): `dashboard`, `stats` (`kpm`, `ppm`), `designer`, `settings` (`updates`), `device`, `logs` (`monitor`), `diagnostics` (`test`, `testing`), `about` (`license`, `licenses`), `calibrate` (`calibration`), `keys` (`rapid-trigger`).
+- Un segundo lanzamiento pide a la instancia en ejecución que muestre su ventana (y abra su `--page`) y después termina. En Unix, la instancia hace bind de `gui.sock` junto al socket de IPC; de dos lanzamientos simultáneos, exactamente uno gana el bind y el otro se conecta. Un socket sobrante solo se borra cuando conectarse a él falla con `ECONNREFUSED`. En Windows decide un mutex con nombre y la petición va por el pipe `\\.\pipe\opad-gui`.
 
 ## Tema y tipografía (`theme.rs`)
 
-[/desktop/gui/src/theme.rs](/desktop/gui/src/theme.rs) replica la paleta de la pantalla del teclado (`firmware/main/ui/core/ui_defaults.c`):
-- `BG = #0E0E16`, `SURFACE = #13131E`, `CARD = #1B1B28`, `CARD_HOVER = #24243A`, `BORDER = #2A2A3C`, `PINK = #FF66AA`, `WHITE = #FFFFFF`, `MUTED = #8C8CA6`, `GREEN = #44DD88`, `RED = #FF5566`, `CYAN = #66CCFF`, `YELLOW = #FFCC33`.
-- Incrusta `Montserrat-Medium.ttf` y `Montserrat-Bold.ttf` (`SIL OFL 1.1`).
+La paleta es la misma que la del pad ([/firmware/main/ui/core/ui_defaults.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/ui/core/ui_defaults.c)): `BG = #0E0E16`, `SURFACE = #13131E`, `CARD = #1B1B28`, `CARD_HOVER = #24243A`, `BORDER = #2A2A3C`, `PINK = #FF66AA`, `WHITE = #FFFFFF`, `MUTED = #8C8CA6`, `GREEN = #44DD88`, `RED = #FF5566`, `CYAN = #66CCFF`, `YELLOW = #FFCC33`, más `PINK_HOVER` y `OFF`. Incrusta `Montserrat-Medium.ttf` y `Montserrat-Bold.ttf` (SIL OFL 1.1).
 
-## Diseñador de pantalla (`designer/mod.rs`)
+## Screen Designer (`designer/`)
 
-[/desktop/gui/src/designer/mod.rs](/desktop/gui/src/designer/mod.rs) edita los diseños `Idle` y `Playing` (`MAX_WIDGETS = 32`) en un lienzo de vista previa a `2.0x` (`SCALE = 2.0`, `HANDLE = 5` píxeles del teclado) renderizado por [/desktop/crates/opad-ui-preview/src/lib.rs](/desktop/crates/opad-ui-preview/src/lib.rs), que compila el código real de renderizado LVGL en C del firmware para vistas previas exactas al píxel en escritorio.
+[/desktop/gui/src/designer/mod.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/designer/mod.rs) edita los layouts Idle y Playing (hasta 32 widgets, validados por `opad-layout`) en un lienzo a `SCALE = 2.0` con tiradores de redimensionado de `HANDLE = 5` píxeles del pad (`overlay.rs`). La imagen de fondo la renderiza `opad-ui-preview`, el propio código `ui/core` del firmware compilado para el host ([crates](crates.md#7-opad-ui-preview)). Guía de usuario: [Personalizar el layout de la pantalla](../../guides/customize-screen-layout.md).
 
 ## Bandeja del sistema (`tray.rs`)
 
-[/desktop/gui/src/tray.rs](/desktop/gui/src/tray.rs) implementa un modelo de bandeja agnóstico al backend (`IconState`: `Warning` / `Connected` / `Disconnected`) respaldado por `ksni` (StatusNotifierItem) en Linux y `tray-icon` en Windows, exponiendo los elementos `TrayAction`: `ShowWindow`, `OpenMonitor`, `SyncNow`, `StartDaemon` y `Quit`.
+Un modelo de vista independiente del backend (`IconState`: `Warning`, `Connected`, `Disconnected`; `TrayAction`: `ShowWindow`, `OpenMonitor`, `SyncNow`, `StartDaemon`, `Quit`) implementado con `ksni` (StatusNotifierItem) en Linux y `tray-icon` en Windows.

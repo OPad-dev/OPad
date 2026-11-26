@@ -1,54 +1,75 @@
 ---
-title: Using with tosu
-description: How OPad integrates with tosu for live osu! beatmap telemetry, Linux ptrace setup, custom tosu binaries, and status verification.
+title: Using OPad with tosu
+description: How OPad uses tosu for live osu! data on the pad's screen, what to set up on Linux, how to use your own tosu, and how to check that it works.
 sidebar:
   order: 6
 ---
 
-OPad bundles `tosu` (v4.26.2, LGPL-3.0) to read live game state from `osu!` / `osu!lazer` and stream beatmap metadata, accuracy, PP, combo, unstable rate (UR), and tap rate to the pad's LCD display. <!-- src: /desktop/crates/opad-tosu/src/lib.rs --> <!-- src: /Makefile -->
+[tosu](https://github.com/tosuapp/tosu) reads osu!'s memory and serves the current map and play over a local WebSocket. OPad bundles tosu v4.26.2 (LGPL-3.0) and uses it to: <!-- src: /Makefile --> <!-- src: /desktop/gui/src/pages.rs#about_section -->
+
+- show map and play data on the pad's screen (title, stars, accuracy, PP, combo, UR, hit counts and more; see [Customizing the screen layout](customize-screen-layout.md));
+- switch the pad to its **Playing** screen during a map; <!-- src: /firmware/main/ui/ui_port.c#pad_timer_cb -->
+- tell the touchscreen when you are in a map, so a resting finger is Quick Retry there and swipes work outside it (see [Touchscreen and swipes](touchscreen-and-swipes.md)). <!-- src: /firmware/main/input/touch_retry.c#touch_mode_now -->
+
+Your keys never depend on tosu: the pad types the same with or without it. <!-- src: /AGENTS.md#1. Product rules -->
 
 ## What you need
 
-- The OPad desktop suite installed (`opad-daemon` running) and your OPad connected over USB.
-- `osu!` (stable or `osu!lazer`) running on Linux or Windows 10/11.
+- The OPad desktop app installed, with the pad connected.
+- osu! (stable or lazer) running.
 
-## How tosu Integration Works
+There is nothing to start by hand: the daemon runs tosu for you.
 
-1. **Automatic supervision**: When `opad-daemon` starts, its `tosu` supervisor checks if anything is already listening on `127.0.0.1:24050`. If not, it launches `tosu` automatically (searching `$OPAD_TOSU_PATH`, `~/.local/opt/tosu/tosu`, `tosu` on `$PATH`, and finally the bundled copy last—so a user-installed `tosu` always wins). It restarts `tosu` with exponential backoff (5 s up to 60 s) if it exits, and disables `tosu`'s own self-updater and auto-opened browser dashboard. <!-- src: /desktop/crates/opad-tosu/src/lib.rs#find_tosu_binary --> <!-- src: /desktop/crates/opad-tosu/src/lib.rs#spawn_tosu_supervisor -->
-2. **WebSocket connection**: `opad-daemon` connects to `ws://127.0.0.1:24050/websocket/v2` for beatmap and gameplay state, and to `/websocket/v2/precise` for osu!'s K1/K2 key-down counters. (Stored legacy `/ws` URLs are normalized to `/websocket/v2`.) <!-- src: /desktop/crates/opad-tosu/src/lib.rs#DEFAULT_TOSU_ENDPOINT --> <!-- src: /desktop/crates/opad-tosu/src/lib.rs#follow_keys -->
-3. **Rate-limited USB updates**: `DataSync` sends only changed values to the pad, throttled to the configured **GAMEPLAY REFRESH RATE** (1–30 Hz, default 10 Hz, set in **Settings** -> **🖥 Display & Game**) while playing and 2 Hz (`500 ms`) while idle. <!-- src: /desktop/daemon/src/telemetry.rs#flush_interval_playing --> <!-- src: /desktop/gui/src/pages.rs#settings -->
-4. **Touchscreen awareness**: While `tosu` is connected, the pad knows when you are inside a map (`Playing`) vs in menus, enabling Quick Retry during maps and swipe actions outside maps. Without `tosu`, every touch acts as Quick Retry. <!-- src: /desktop/gui/src/pages.rs#settings --> <!-- src: /firmware/main/input/touch_retry.c -->
+## How it works
 
-## Linux Setup (`ptrace` Permissions)
+1. **The daemon starts tosu.** If nothing is listening on tosu's port (`127.0.0.1:24050`) yet, the daemon starts tosu, and restarts it if it exits (after 5 seconds, doubling up to 60). It turns off tosu's own self-updater and its habit of opening a browser dashboard. If you already run a tosu yourself, the daemon uses that one. <!-- src: /desktop/crates/opad-tosu/src/lib.rs#spawn_tosu_supervisor --> <!-- src: /desktop/crates/opad-tosu/src/lib.rs#INITIAL_BACKOFF -->
+2. **The daemon reads tosu's data** from `ws://127.0.0.1:24050/websocket/v2`, and osu!'s own key counts from `/websocket/v2/precise`. <!-- src: /desktop/crates/opad-tosu/src/lib.rs#DEFAULT_TOSU_ENDPOINT --> <!-- src: /desktop/crates/opad-tosu/src/lib.rs#precise_endpoint -->
+3. **The daemon sends the pad only what changed.** During a map it sends at the **GAMEPLAY REFRESH RATE** (1–30 Hz, default 10 Hz, in **Settings** → **🖥 Display & Game**), and outside a map twice a second. <!-- src: /desktop/daemon/src/telemetry.rs#flush_interval_playing --> <!-- src: /desktop/daemon/src/telemetry.rs#FLUSH_INTERVAL_IDLE --> <!-- src: /desktop/gui/src/pages.rs#settings -->
 
-Under Linux Yama (`/proc/sys/kernel/yama/ptrace_scope > 0`), unprivileged processes cannot inspect the memory of unrelated processes like `osu!`: <!-- src: /desktop/crates/opad-tosu/src/lib.rs#ptrace_access -->
+The daemon looks for tosu in this order, and uses the first one it finds: <!-- src: /desktop/crates/opad-tosu/src/lib.rs#find_tosu_binary -->
 
-- **`.deb` and `.rpm` packages**: The package post-install script automatically runs `setcap cap_sys_ptrace=eip /usr/lib/opad/tosu/tosu`, so `tosu` works out of the box without lowering system-wide `ptrace_scope`. <!-- src: /packaging/linux/deb/postinst -->
-- **AppImage and Arch (`PKGBUILD`)**: File capabilities do not work on AppImage (`nosuid` FUSE mount) and are not set on Arch's system `node` binary. On those installs, lower `ptrace_scope` to `0` (see [Troubleshooting §2](../troubleshooting.md)): <!-- src: /packaging/linux/arch/PKGBUILD --> <!-- src: /desktop/crates/opad-tosu/src/lib.rs#ptrace_access -->
-  ```bash
-  echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope
-  ```
-  To make it persistent across reboots, set `kernel.yama.ptrace_scope = 0` in `/etc/sysctl.d/10-ptrace.conf` and run `sudo sysctl --system`.
+1. the file in the `OPAD_TOSU_PATH` environment variable;
+2. `~/.local/opt/tosu/tosu` (`tosu.exe` on Windows);
+3. `tosu` on your `PATH`;
+4. the bundled copy.
 
-Run `opadctl setup` to check your exact `ptrace_scope` and capability status. <!-- src: /desktop/cli/src/main.rs#run_setup -->
+So a tosu you installed yourself always wins over the bundled one.
 
-## Windows Setup
+## Linux: let tosu read osu!
 
-On Windows 10 and 11, `tosu.exe` works out of the box once `opad-daemon` is running and `osu!` is open. If telemetry never appears, check whether antivirus software quarantined `%LOCALAPPDATA%\Programs\opad\tosu\tosu.exe` (see [Troubleshooting §4](../troubleshooting.md)). <!-- src: /packaging/windows/installer.iss -->
+On Linux, the Yama setting `ptrace_scope` stops one program reading another's memory whenever it is above 0, so tosu needs permission. <!-- src: /desktop/crates/opad-tosu/src/lib.rs#ptrace_access -->
 
-## Using Your Own `tosu` Binary
+- **`.deb`, `.rpm` and the Arch release package** give the bundled tosu the `cap_sys_ptrace` capability when they install. Nothing to do. <!-- src: /packaging/linux/deb/postinst --> <!-- src: /packaging/linux/arch/opad-bin.install -->
+- **The AppImage and the Arch package built from source** cannot carry that capability. There you lower `ptrace_scope` to 0 instead. <!-- src: /packaging/linux/arch/PKGBUILD -->
 
-Under LGPL-3.0 you can replace the bundled `tosu` at any time: <!-- src: /desktop/gui/src/pages.rs#tosu_settings -->
-- In `opad-gui`: open **Settings** -> **ℹ About & tosu** and click **Browse external tosu...** (click **Use bundled** to revert).
-- Or set the `OPAD_TOSU_PATH` environment variable to your `tosu` executable path, or run your own `tosu` on port `24050` before starting `opad-daemon`. <!-- src: /desktop/crates/opad-tosu/src/lib.rs#find_tosu_binary -->
+To see which case applies to you, run:
 
-## How to check
+```bash
+opadctl setup
+```
 
-1. In `opad-gui`, open **Settings** -> **ℹ About & tosu** and confirm **Status:** shows **Connected (streaming telemetry)** (and check **Binary source:**). <!-- src: /desktop/gui/src/pages.rs#tosu_settings -->
-2. Or run `opadctl status` and confirm `tosu (osu!)` is connected. <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-3. Start a beatmap in `osu!`: the pad LCD switches to the playing layout with live map stats.
+It prints your `ptrace_scope` and the exact command that fixes it. [Troubleshooting §2](../troubleshooting.md#2-linux-tosu-cannot-read-osu-yama-ptrace_scope) explains both fixes. <!-- src: /desktop/cli/src/main.rs#run_setup -->
 
-## What to do if it did not work
+## Windows
 
-- **Linux `tosu` connects but shows empty stats**: Run `opadctl setup` or open **Diagnostics** in `opad-gui` and follow the Yama `ptrace_scope` instructions in [Troubleshooting §2](../troubleshooting.md).
-- **Check `tosu` logs**: Run `opadctl monitor --source tosu` or inspect `<state_dir>/tosu.log`. <!-- src: /desktop/cli/src/main.rs#Commands::Monitor --> <!-- src: /desktop/crates/opad-model/src/paths.rs#tosu_log_path -->
+tosu works with no setup. If live data never shows up, check that your antivirus has not quarantined `%LOCALAPPDATA%\Programs\opad\tosu\tosu.exe`; see [Troubleshooting §4](../troubleshooting.md#4-windows-smartscreen-and-antivirus). <!-- src: /packaging/windows/installer.iss -->
+
+## Use your own tosu
+
+tosu is LGPL-3.0, so you may replace the bundled copy with your own build. Pick the way that suits you: <!-- src: /desktop/crates/opad-tosu/src/lib.rs#find_tosu_binary -->
+
+- **Run your own tosu first.** When something already listens on port 24050, the daemon starts none and reads from yours. <!-- src: /desktop/crates/opad-tosu/src/lib.rs#spawn_tosu_supervisor -->
+- **Install it in `~/.local/opt/tosu/` or put it on your `PATH`.** The daemon prefers it over the bundled copy.
+- **Set `OPAD_TOSU_PATH`** to your tosu executable in the daemon's environment.
+- **In the app:** **Settings** → **ℹ About & tosu** → **Browse external tosu...** (and **Use bundled** to go back). The app remembers the file and uses it when it starts tosu or the daemon itself. A daemon that starts at login (systemd, or the Windows Run entry) does not see this choice; use one of the ways above for it. <!-- src: /desktop/gui/src/pages.rs#tosu_settings --> <!-- src: /desktop/gui/src/main.rs#App --> <!-- src: /desktop/gui/src/platform_linux.rs#start_daemon -->
+
+## Check that it works
+
+1. Run `opadctl status` and look for `tosu (osu!):      Active`. <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
+2. Or open **Settings** → **ℹ About & tosu** in the app: **Status** should say **Connected (streaming telemetry)**, and **Binary source** says which tosu is in use. <!-- src: /desktop/gui/src/pages.rs#tosu_settings -->
+3. Start a map in osu!. The pad switches to its Playing screen with live data.
+
+## If it did not work
+
+- **Linux: tosu is connected, but the pad shows no map data:** tosu cannot read osu!'s memory. Run `opadctl setup` and follow [Troubleshooting §2](../troubleshooting.md#2-linux-tosu-cannot-read-osu-yama-ptrace_scope).
+- **tosu does not start, or keeps restarting:** read its log with `opadctl monitor --source tosu`, or open `tosu.log` (in `~/.local/state/opad/` on Linux, `%APPDATA%\opad\` on Windows). <!-- src: /desktop/cli/src/main.rs#Commands::Monitor --> <!-- src: /desktop/crates/opad-model/src/paths.rs#tosu_log_path -->

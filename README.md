@@ -1,291 +1,120 @@
-# OPad
+<div align="center">
 
-**Low-Latency ESP32-S3 Rhythm Gaming Keypad & Telemetry Display**
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/wordmark-dark.svg">
+  <img alt="OPad" src="docs/assets/wordmark-light.svg" width="420">
+</picture>
 
-A deterministic, ultra-low-latency mechanical keypad and live telemetry HUD designed for competitive osu!, osu!lazer, and rhythm games on **Linux and Windows 10/11**.
+### A low-latency three-key osu! keypad with a touchscreen, that is just a keyboard until you want more.
 
-**[Downloads](https://github.com/OPad-dev/OPad/releases)** · [Code signing policy](#code-signing-policy)
+[![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%2010%2F11-5B3FE0)](docs/start/what-you-need.md)
+[![USB](https://img.shields.io/badge/USB%20HID-1000%20Hz-5B3FE0)](docs/explanation/latency.md)
+[![Software licence](https://img.shields.io/badge/software-GPL--3.0--or--later-2A1C6E)](LICENSE)
+[![Hardware licence](https://img.shields.io/badge/hardware-CERN--OHL--S--2.0-2A1C6E)](hardware/LICENSE)
+[![REUSE](https://img.shields.io/badge/REUSE-compliant-2A1C6E)](REUSE.toml)
 
----
+**[Download](https://github.com/OPad-dev/OPad/releases)** ·
+**[Documentation](docs/index.md)** ·
+[Get started](docs/start/what-you-need.md) ·
+[Troubleshooting](docs/troubleshooting.md) ·
+[Code signing policy](#code-signing-policy) ·
+[Privacy](#privacy)
 
-## ⚡ Core Principle: Latency Always Wins
-
-> **"If a feature measurably worsens keyboard latency or latency jitter, the feature is reduced, deferred, frozen during gameplay, or removed."**
-
-The keypad functions as a standalone 1000 Hz USB HID keyboard out of the box with zero host software running. Auxiliary features (LVGL telemetry, SQLite persistence, system tray, and tosu integration) are completely isolated from the keypress critical path.
-
----
-
-## 🏗️ System Architecture
-
-```text
-                      +-------------------+
-                      |    osu!lazer      |
-                      +---------+---------+
-                                | (observes)
-                                v
-                      +-------------------+
-                      |       tosu        |
-                      +---------+---------+
-                                | (WebSocket v2)
-                                v
-+--------------------+   +-------------------------+
-|      opad-gui      |   |       opad-daemon       |
-|     (Rust/iced)    |<->|         (Rust)          |
-|  - System Tray     |IPC|  - State Machine        |
-|  - Layout Designer |   |  - SQLite Storage       |
-|  - Configuration   |   |  - Headless Service     |
-|  - Diagnostics     |   |  - tosu & Device Owner  |
-+--------------------+   +------------+------------+
-                                      |
-                           USB CDC    |    USB HID (1000 Hz)
-                                      |
-                                      v
-                         +-------------------------+
-                         |  ESP32-S3 Touch LCD 2   |
-                         |  - Eager Debounce ISR   |
-                         |  - Core 0: Input & HID  |
-                         |  - Core 1: LVGL & CDC   |
-                         |  - ST7789 Telemetry HUD |
-                         +-------------------------+
-```
+</div>
 
 ---
 
-## 🔌 Hardware Target & Switch Wiring
+OPad turns a **Waveshare ESP32-S3-Touch-LCD-2** and two switches into a
+competition-grade keypad for osu! and osu!lazer. It is a plain **1000 Hz USB
+HID keyboard**: plug it into any Linux or Windows 10/11 machine and it types,
+with no driver and no setup. The optional desktop app adds live gameplay stats
+on the pad's screen, a screen designer, lifetime key counters, Hall Effect
+calibration and one-click firmware updates.
 
-### Supported Hardware
-- **Board**: **Waveshare ESP32-S3-Touch-LCD-2** (ESP32-S3, 16MB Flash, 8MB PSRAM, 2.0" ST7789 LCD)
-- **Switches**: Any two standard MX-compatible mechanical switches.
+## Highlights
 
-### Switch Pinout (Header P2)
-Standard MX mechanical switches have no polarity. Connect each switch between its designated GPIO and ground:
-
-| Input | Board Header & Pin | GPIO | Switch Connection |
-|---|---|---|---|
-| **Key 1** (Default `Z`) | **Header P2, Pin 11** | `GPIO 14` | Pin A -> Pin 11, Pin B -> GND (Pin 13) |
-| **Key 2** (Default `X`) | **Header P2, Pin 12** | `GPIO 9` | Pin A -> Pin 12, Pin B -> GND (Pin 2) |
-| **Ground** | **Header P2, Pin 13 / Pin 2** | `GND` | Ground Reference |
-
-*Note: Pins 11, 12, and 13 are directly adjacent on Header P2 for simple breadboard/Dupont jumper wiring.*
-
-These are the defaults. Each key's pin can be changed in the app under **Settings → ⌨ Keypad**. The list only offers header pins that work with a switch to GND:
-
-| Header | Pins (GPIO) |
+|  |  |
 |---|---|
-| **P1** | 1 (`GPIO 2`), 2 (`GPIO 4`), 3 (`GPIO 6`), 4 (`GPIO 16`), 6 (`GPIO 18`), 7 (`GPIO 21`), 9 (`GPIO 7`), 10 (`GPIO 10`) |
-| **P2** | 7 (`GPIO 15`), 8 (`GPIO 13`), 9 (`GPIO 11`), 10 (`GPIO 12`), 11 (`GPIO 14`), 12 (`GPIO 9`) |
+| ⚡ **Latency always wins** | Keys go straight from the switch to the USB report. The screen, storage, tray and tosu are never on that path, and anything that measurably adds latency or jitter is cut. |
+| 🔌 **Works with nothing installed** | Standard HID keyboard (`Z` / `X` by default). The desktop software only adds features. |
+| 👆 **The touchscreen is a fourth button** | During a map a resting finger is Quick Retry. Outside a map, swipes change the volume or the track. |
+| 📊 **Live telemetry** | With [tosu](https://github.com/KotRikD/tosu), the pad shows PP, accuracy, combo and more, in layouts you design yourself. |
+| 🧲 **Mechanical or Hall Effect** | MX switches wired by hand, or the OPad V3 carrier with MX or Hall Effect modules, guided calibration and Rapid Trigger. |
+| 🛟 **Can't be bricked by an update** | Updates go to the other flash slot and roll back on their own if the pad doesn't come back. No BOOT or RESET buttons, ever. |
+| 🔁 **App and pad update independently** | Any app version talks to any pad version; they negotiate. |
+| 🚫 **Every key comes from a finger** | No macros, auto-tap or host-injected keys. Not even as an option. |
 
-Left out: `GPIO 19/20` (USB), `GPIO 43/44` (UART0 console), `GPIO 47/48` (touch and IMU I2C), `GPIO 17` (pulled down on the board) and `GPIO 8` (the carrier's module-ID line). Most listed pins are also wired to the camera connector, so don't use them with a camera fitted.
+## Quick start
 
----
+1. **Wire two switches** between header **P2 pin 11** (GPIO 14, `Z`) /
+   **pin 12** (GPIO 9, `X`) and **GND** (pin 13 or 2), or assemble the V3
+   carrier. → [Wiring the keys](docs/build/wiring-the-keys.md)
+2. **Plug it in.** It types immediately. → [First connection](docs/start/first-connection.md)
+3. **Optional: install the app** for the screen, counters and updates.
+   → [Install the app](docs/start/install-the-app.md)
 
-## 🛠️ Building From Source
+| System | Download from [Releases](https://github.com/OPad-dev/OPad/releases) |
+|---|---|
+| Windows 10/11 | `OPad-Windows-Setup-<version>.exe` |
+| Debian, Ubuntu, Pop!_OS | `OPad-Linux-Debian-Ubuntu-<version>.deb` |
+| Fedora, RHEL, Alma, Rocky | `OPad-Linux-Fedora-<version>.rpm` |
+| Arch | `OPad-Linux-Arch-<version>.pkg.tar.zst` |
+| Any other Linux | `OPad-Linux-<version>.AppImage` |
 
-### 1. Prerequisites (Ubuntu / Debian)
-```bash
-sudo apt update
-sudo apt install -y build-essential pkg-config libasound2-dev libudev-dev \
-    libx11-dev libxkbcommon-dev libwayland-dev libfontconfig1-dev libdbus-1-dev
+> [!NOTE]
+> The Windows installer is not code-signed yet, so SmartScreen warns about it
+> (**More info → Run anyway**). Each release page lists the SHA-256 of every
+> file if you'd rather verify the download. See the
+> [code signing policy](#code-signing-policy).
+
+## How it fits together
+
+```mermaid
+flowchart LR
+    osu["osu! / osu!lazer"] -. read by .-> tosu["tosu"]
+    tosu -- WebSocket --> daemon["opad-daemon<br/>settings · stats · updates"]
+    gui["opad-gui<br/>tray · designer · diagnostics"] <-- IPC --> daemon
+    cli["opadctl"] <-- IPC --> daemon
+    daemon <-- "USB serial (CDC)" --> pad["OPad<br/>ESP32-S3 + 2&quot; touchscreen"]
+    pad == "USB HID keyboard, 1000 Hz" ==> os["Your computer"]
 ```
 
-### 2. Desktop Software Suite (Rust)
-```bash
-cd desktop
-cargo build --release
-```
-The compiled binaries are produced in `desktop/target/release/`:
-- `opad-daemon`: Background service.
-- `opad-gui`: Graphical configuration, layout designer, and system tray.
-- `opadctl`: Command-line management tool.
+The keyboard link (thick arrow) needs none of the boxes above it.
+[Architecture](docs/explanation/architecture.md) explains the rest.
 
-### 3. Firmware Build (ESP-IDF v5.5.2)
-```bash
-cd firmware
-idf.py set-target esp32s3
-idf.py build
-```
+## Documentation
 
----
+The full documentation lives in [`docs/`](docs/index.md) and is also
+published as a website.
 
-## ⚡ Flashing the Firmware
+| | |
+|---|---|
+| 🚀 **Getting started** | [What you need](docs/start/what-you-need.md) · [Wiring](docs/build/wiring-the-keys.md) · [First connection](docs/start/first-connection.md) · [Install the app](docs/start/install-the-app.md) |
+| 🧭 **Guides** | [Update firmware](docs/guides/update-firmware.md) · [Touchscreen & swipes](docs/guides/touchscreen-and-swipes.md) · [Screen layouts](docs/guides/customize-screen-layout.md) · [Hall Effect calibration](docs/guides/calibrate-hall-effect.md) · [tosu](docs/guides/use-with-tosu.md) · [Backup](docs/guides/backup-and-restore.md) |
+| 🛟 **When something's wrong** | [Troubleshooting](docs/troubleshooting.md) · [Recovery & reflashing](docs/recovery.md) |
+| 📖 **Reference** | [`opadctl`](docs/reference/opadctl.md) · [GUI](docs/reference/gui.md) · [Device settings](docs/reference/device-settings.md) · [Pinout](docs/reference/pinout.md) · [Serial protocol](docs/reference/serial-protocol.md) |
+| 💡 **How it works** | [Architecture](docs/explanation/architecture.md) · [Latency](docs/explanation/latency.md) · [Updates & rollback](docs/explanation/updates-and-rollback.md) · [Hall Effect](docs/explanation/hall-effect.md) |
+| 🛠️ **Contributing** | [Developer hub](docs/develop/index.md) · [Building](docs/develop/building.md) · [Testing](docs/develop/testing.md) · [AGENTS.md](AGENTS.md) |
 
-### Option A: Via `opadctl` (Recommended)
-`opadctl` drives `espflash` directly and needs no shell script and no ESP-IDF
-toolchain. It asks the daemon to release the serial port first, reboots the pad
-into the ROM download bootloader hands-free, writes the image and reboots back
-into the app — on Linux and on Windows, with the app running:
+Documentation is also available in [Spanish](docs/es/index.md).
+
+## Building from source
 
 ```bash
-# Update the app image only (ota_0 at 0x20000)
+# Desktop suite (daemon, GUI, opadctl)
+cd desktop && cargo build --release
+
+# Firmware (ESP-IDF v5.5.2)
+cd firmware && idf.py set-target esp32s3 build
+
+# Flash it over USB: the other OTA slot, rolls back if it never enumerates
 opadctl flash firmware/build/opad-firmware.bin
-
-# Recovery flash: bootloader + partition table + OTA data + app
-opadctl flash --full firmware/build
 ```
 
-It also works with no daemon running at all, which is the state a recovery
-flash usually happens in.
-
-### Option B: Via ESP-IDF
-```bash
-cd firmware
-idf.py -p /dev/ttyACM0 flash
-```
-
-If the pad will not enter download mode or has to be returned to stock, see
-[Recovery, Reflashing & Unbinding](docs/recovery.md).
-
----
-
-## 🪟 Windows Setup & Installation
-
-**The pad needs none of this to work as a keyboard.** Plug it into any Windows
-10 or 11 machine and it types immediately: HID binds to the inbox
-`hidclass.sys` and the CDC port to the inbox `usbser.sys`. No `.inf`, no
-WinUSB, no Zadig, no install. The software below is for configuring it, the
-telemetry HUD and the lifetime counters.
-
-1. Download `OPad-Windows-Setup-<version>.exe` from the GitHub Releases page and run it.
-2. It installs the daemon, the GUI and `opadctl`, bundles tosu, and configures
-   both to start at login. There is nothing else to do.
-
-> **SmartScreen will warn you.** The installer is **not code-signed** yet:
-> OPad is applying to SignPath Foundation for free OSS signing, which
-> requires the repository to be public first. Until then, Windows shows
-> "Windows protected your PC" — choose **More info → Run anyway**. Check the
-> download against the SHA-256 the release page shows next to it if you would
-> rather verify it than trust the dialog.
-
-Uninstall from Settings → Apps. It removes everything it installed, including
-the two `Run` registry values and `%APPDATA%\opad` (the database with your
-settings, layouts and play statistics, logs and update files), without
-asking. Export a backup first if you want to keep them. The pad's own lifetime
-counters stay on the pad, and an update never runs the uninstaller.
-
-**To reset a pad completely, or hand it to someone else**, see
-[Recovery, Reflashing & Unbinding](docs/recovery.md). There is no unpair button
-in the app, deliberately: the only unbind is a documented reflash, and it erases
-the pad's lifetime counters along with the owner record.
-
----
-
-## 🚀 Linux Setup & Installation
-
-### Option A: Pre-built Packages (Recommended)
-
-Pre-built packages are on the GitHub Releases page; each release's notes start
-with which file is for your system. The `.deb` and `.rpm` set
-up everything: the udev rule, the daemon's systemd user service, tray autostart,
-the bundled `espflash`, and the ptrace capability tosu needs to read osu!'s
-memory (see [docs/troubleshooting.md](docs/troubleshooting.md) §2).
-
-Supported: every Ubuntu LTS and Debian release in support (Ubuntu 22.04, 24.04,
-26.04; Debian 12, 13), RHEL / AlmaLinux / Rocky 9 and 10, current Fedora and
-Arch. The release packages, bundled tosu included, need glibc 2.28 or newer.
-
-#### Debian / Ubuntu / Pop!_OS (`.deb`):
-```bash
-sudo apt install ./OPad-Linux-Debian-Ubuntu-<version>.deb
-# Or via dpkg:
-sudo dpkg -i OPad-Linux-Debian-Ubuntu-<version>.deb
-```
-
-#### Fedora / RHEL / openSUSE (`.rpm`):
-```bash
-sudo dnf install ./OPad-Linux-Fedora-<version>.rpm
-```
-
-#### Standalone AppImage:
-```bash
-chmod +x OPad-Linux-<version>.AppImage
-./OPad-Linux-<version>.AppImage
-```
-The AppImage installs nothing system-wide. On first run it offers to install
-the udev rule (it asks for your password), or run
-`./OPad-Linux-<version>.AppImage install-udev` yourself. It cannot give tosu the ptrace
-capability; `opadctl setup` and the Diagnostics page explain the alternative.
-
-#### Arch Linux:
-The release's prebuilt package (`opad-bin`, which updates itself like the
-`.deb` and `.rpm`):
-```bash
-sudo pacman -U ./OPad-Linux-Arch-<version>.pkg.tar.zst
-```
-Or the repository's `PKGBUILD` builds from source (tosu runs on the system
-`nodejs`, so see troubleshooting §2 about ptrace):
-```bash
-makepkg -si
-```
-
----
-
-### Option B: Installing From Source
-
-#### 1. System-wide Install:
-```bash
-make
-sudo make install
-```
-
-#### 2. User-local Install (`~/.local`):
-```bash
-make
-make install-user
-systemctl --user daemon-reload
-systemctl --user enable --now opad-daemon.service
-```
-
-#### 3. Manual Udev Rules:
-If not installing from package, allow non-root user access to USB CDC and ROM bootloader devices:
-```bash
-sudo cp packaging/linux/udev/70-opad.rules /etc/udev/rules.d/
-sudo udevadm control --reload-rules && sudo udevadm trigger
-```
-
----
-
-## 💻 CLI Quick Reference (`opadctl`)
-
-```bash
-# Check device, daemon, and tosu state
-opadctl status
-
-# Trigger safe reconciliation
-opadctl sync
-
-# Export portable JSON backup
-opadctl export backup.json
-
-# Import validated backup
-opadctl import backup.json
-
-# Flash firmware image directly over USB
-opadctl flash firmware/build/opad-firmware.bin
-
-# Recovery flash (bootloader, partition table, OTA data and app)
-opadctl flash --full firmware/build
-
-# Reboot the pad into the ROM download bootloader and leave it there
-opadctl bootloader
-
-# Stream real-time diagnostic logs
-opadctl monitor
-```
-
----
-
-## 📄 Documentation
-- [Documentation Hub & Wiki](docs/README.md)
-- [System Architecture](docs/explanation/architecture.md)
-- [Installing the app on Linux and Windows](docs/start/install-the-app.md)
-- [USB Framing & Serial Protocol](docs/reference/serial-protocol.md)
-- [Counter Reconciliation, Recovery & Unbinding](docs/recovery.md) — including the reflash / unbind path
-- [Latency Testing Methodology](docs/develop/latency-testing.md)
-- [Testing & Hardware Checklist](docs/testing-checklist.md)
-- [Technical Specification v1](docs/specs/technical-spec-v1.md)
-- [Rapid Trigger v2 Specification](docs/specs/v2-rapid-trigger.md)
-
+System packages, `make install`, tests and CI are covered in
+[Building from source](docs/develop/building.md) and
+[Testing](docs/develop/testing.md). Contributions are welcome: read
+[AGENTS.md](AGENTS.md) first. It holds the product rules every change keeps.
 
 ---
 
@@ -312,41 +141,32 @@ OPad collects no personal data and has no telemetry or analytics. The desktop ap
 
 GitHub, which hosts the update list and the downloads, sees your IP address as it does for any website; see [GitHub's privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement). Everything the app stores (settings, statistics, backups) stays on your computer and your pad.
 
----
-
-## 📦 Third-Party Software
+## Third-party software
 
 OPad bundles or interacts with the following third-party software:
 
-### tosu
-- **Project**: [tosu](https://github.com/KotRikD/tosu)
-- **Author**: Mikhail Babynichev and the tosu contributors
-- **License**: [GNU Lesser General Public License v3.0 (LGPL-3.0)](licenses/tosu/LICENSE)
-- **Redistribution Notice**: See [licenses/tosu/NOTICE](licenses/tosu/NOTICE)
-- **User Replacement Rights**: Under the terms of LGPL-3.0, users are entitled to replace the bundled tosu binary with their own version. You can point the `OPAD_TOSU_PATH` environment variable to a custom tosu executable, or configure an external path in the OPad desktop GUI (**Settings → tosu**).
+- **[tosu](https://github.com/KotRikD/tosu)** by Mikhail Babynichev and the tosu contributors, under the [LGPL-3.0](licenses/tosu/LICENSE) ([notice](licenses/tosu/NOTICE)). Under the LGPL you may replace the bundled tosu with your own build: point the `OPAD_TOSU_PATH` environment variable at it, or set an external path in the GUI under **Settings → tosu**.
+- **[espflash](https://github.com/esp-rs/espflash)**, bundled with the desktop packages as the upstream release binary.
 
----
+## Licence
 
-## ⚖️ Trademark Disclaimer
-OPad is an independent open-source hardware and software project. OPad is not affiliated with, endorsed by, or sponsored by ppy Pty Ltd or osu!. "osu!" is a registered trademark of ppy Pty Ltd.
-
----
-
-## 📜 License
 OPad is free and open source, software and hardware:
 
-- **Software** — the firmware, the desktop app (daemon, GUI, CLI), the protocol, the scripts and the documentation — is licensed under the [GNU General Public License v3.0 or later](LICENSE) (`GPL-3.0-or-later`).
-- **Hardware** — everything in [`hardware/`](hardware/): the PCB designs, footprints and symbols, the enclosure CAD and the production files — is licensed under the [CERN Open Hardware Licence v2, Strongly Reciprocal](hardware/LICENSE) (`CERN-OHL-S-2.0`). The scripts in `hardware/` that generate and check those files are software, under `GPL-3.0-or-later`.
+- **Software**: the firmware, the desktop app (daemon, GUI, CLI), the protocol, the scripts and the documentation, under the [GNU General Public License v3.0 or later](LICENSE) (`GPL-3.0-or-later`).
+- **Hardware**: everything in [`hardware/`](hardware/) (the PCB designs, footprints and symbols, the enclosure CAD and the production files), under the [CERN Open Hardware Licence v2, Strongly Reciprocal](hardware/LICENSE) (`CERN-OHL-S-2.0`). The scripts in `hardware/` that generate and check those files are software, under `GPL-3.0-or-later`.
 
 You may build, modify and sell OPad. If you distribute a modified version, of the software or of the hardware, you must publish its source under the same licence. Every file's licence is recorded in [`REUSE.toml`](REUSE.toml).
 
-Third-party components keep their own open licenses and ship with their notices:
-- [tosu](licenses/tosu/LICENSE) (LGPL-3.0), built from upstream source and bundled with the desktop packages, see the section above. Not stored in this repository.
-- [Montserrat](desktop/gui/assets/fonts/Montserrat-OFL.txt) fonts embedded in the GUI (SIL Open Font License 1.1).
-- [nanopb](firmware/main/protocol/nanopb/LICENSE.txt) protobuf runtime vendored in the firmware (zlib license).
+Third-party components keep their own open licences and ship with their notices:
 
-Libraries pulled in at build time (Rust crates, ESP-IDF components such as LVGL and TinyUSB) are not stored here and are used under their own permissive licenses.
+- [tosu](licenses/tosu/LICENSE) (LGPL-3.0), built from upstream source and bundled with the desktop packages, see above. Not stored in this repository.
+- [Montserrat](desktop/gui/assets/fonts/Montserrat-OFL.txt) fonts embedded in the GUI (SIL Open Font License 1.1).
+- [nanopb](firmware/main/protocol/nanopb/LICENSE.txt) protobuf runtime vendored in the firmware (zlib licence).
+
+Libraries pulled in at build time (Rust crates, ESP-IDF components such as LVGL and TinyUSB) are not stored here and are used under their own permissive licences.
 
 The firmware's easter-egg animation (`firmware/main/ui/easter_egg_gif.h`) is the one exception: it was made from images found online whose author and licence are unknown, and no rights to it are granted. If you hold the rights and want it credited or no longer used, open an issue or write to the contact in [`SECURITY.md`](SECURITY.md); it is then credited, or removed from the firmware ([`LICENSES/LicenseRef-Unknown-ThirdParty.txt`](LICENSES/LicenseRef-Unknown-ThirdParty.txt)).
 
+## Trademark
 
+OPad is an independent open-source hardware and software project. It is not affiliated with, endorsed by, or sponsored by ppy Pty Ltd or osu!. "osu!" is a registered trademark of ppy Pty Ltd.

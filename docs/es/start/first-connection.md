@@ -1,60 +1,65 @@
 ---
 title: Primera conexión
-description: Cómo conectar OPad a un ordenador anfitrión, verificar la enumeración como teclado USB HID a 1000 Hz sin software y probar las asignaciones predeterminadas.
+description: Conecta OPad y comprueba que funciona como teclado USB, sin instalar ningún software ni controlador.
 sidebar:
-  order: 3
+  order: 2
 ---
 
-OPad funciona de fábrica como un teclado USB HID autónomo a 1000 Hz sin software de escritorio ni controladores instalados. No hace falta ningún daemon en segundo plano, aplicación complementaria ni controlador de terceros para escribir o jugar juegos de ritmo. <!-- src: /AGENTS.md --> <!-- src: /README.md -->
+OPad es un teclado USB estándar. No necesita controlador, daemon ni app para escribir, así que puedes probarlo enseguida en cualquier PC con Linux o Windows 10/11. <!-- src: /AGENTS.md#1. Product rules -->
 
-## Conectar el teclado
+## Conéctalo
 
-1. Conecta un cable USB Tipo-C de datos a la placa Waveshare ESP32-S3 (o al puerto USB-C trasero en una carcasa OPad V3). <!-- src: /hardware/pcb/V3/README.md -->
-2. Conecta el otro extremo a un puerto USB de tu PC.
-3. El ESP32-S3 se enciende, inicializa la pantalla LCD de 2.0 pulgadas y enumera por USB. (Nota: si hay instalado un módulo Hall Effect sin calibrar, la pantalla se bloquea en el aviso de calibración y suprime las teclas hasta que se calibre; consulta [Calibración de interruptores Hall Effect](../guides/calibrate-hall-effect.md).) <!-- src: /firmware/main/ui/he_cal_ui.c -->
+1. Conecta un cable USB-C **de datos** al puerto USB-C de la parte trasera del teclado. (En un teclado montado por ti sin carcasa, usa el propio puerto USB-C de la placa Waveshare). <!-- src: /hardware/3d/custom_case/V3/README.md -->
+2. Conecta el otro extremo a tu PC, preferiblemente directo al PC y no a través de un hub.
+3. La pantalla se enciende y el teclado aparece en tu PC como teclado.
 
-## Detalles de enumeración USB
+> [!NOTE]
+> Un teclado Hall Effect que nunca se ha calibrado muestra en su lugar la pantalla de calibración y no envía ninguna tecla hasta que lo calibres. Consulta [Calibrar interruptores Hall Effect](../guides/calibrate-hall-effect.md). <!-- src: /firmware/main/ui/he_cal_ui.c#show_lock_screen --> <!-- src: /docs/specs/v2-hall-effect-decisions.md -->
 
-OPad enumera como un dispositivo USB compuesto con dos interfaces HID a 1000 Hz (`bInterval = 1`) (teclado + multimedia/Key 2) y una interfaz serie CDC-ACM: <!-- src: /firmware/main/usb/usb_descriptors.c -->
+## Prueba las teclas
 
-- **Vendor ID (VID)**: `0x303A` (Espressif)
-- **Product ID (PID)**: `0x8415` (firmware de aplicación OPad; `0x1001` es el bootloader ROM del ESP32-S3)
-- **Manufacturer String**: `GFerreiroS` <!-- src: /firmware/main/usb/usb_descriptors.c#opad_usb_string_desc -->
-- **Product String**: `OPad ESP32-S3` <!-- src: /firmware/main/usb/usb_descriptors.c#opad_usb_string_desc -->
-- **Serial String**: `OPAD-XXXXXXXXXXXX` (12 dígitos hexadecimales en mayúsculas derivados de la dirección MAC Wi-Fi STA del ESP32-S3) <!-- src: /firmware/main/usb/usb_descriptors.c#usb_descriptors_init -->
+Abre cualquier editor de texto:
 
-### Verificación en Linux
-Ejecuta `lsusb`:
+1. Pulsa **Key 1**: aparece `z`.
+2. Pulsa **Key 2**: aparece `x`.
+3. Pulsa **Key 3**: aparece `c`. (Un teclado cableado a mano solo tiene Key 1 y Key 2).
+4. Toca la pantalla y mantén el dedo: `` ` `` (acento grave) se mantiene pulsado hasta que lo levantes. Sin la app de escritorio, cada toque es la tecla Quick Retry de osu!. <!-- src: /firmware/main/input/touch_retry.c#touch_mode_now -->
+
+Estos son los valores predeterminados: <!-- src: /firmware/main/usb/usb_hid.c --> <!-- src: /firmware/main/config/device_config.h -->
+
+| Control | Tecla predeterminada (US QWERTY) | Uso HID |
+|---|---|---|
+| Key 1 | `z` | `0x1D` |
+| Key 2 | `x` | `0x1B` |
+| Key 3 | `c` | `0x06` |
+| Pantalla táctil | `` ` `` (Quick Retry) | `0x35` |
+
+El teclado envía posiciones de tecla, no letras, así que con otra distribución de teclado puedes ver caracteres distintos (por ejemplo, `w` en lugar de `z` en AZERTY). Es lo esperado; consulta [Solución de problemas §1](../troubleshooting.md#1-distribuciones-de-teclado-qwerty-azerty-qwertz).
+
+## Comprueba cómo lo ve tu PC
+
+No lo necesitas para jugar. Ayuda cuando algo no funciona.
+
+OPad aparece como un único dispositivo USB con dos interfaces HID (el teclado y los controles multimedia) y un puerto serie (CDC-ACM) que usa la app de escritorio. Las dos interfaces HID se sondean cada 1 ms (1000 Hz). <!-- src: /firmware/main/usb/usb_descriptors.c#opad_usb_config_desc -->
+
+| Campo | Valor |
+|---|---|
+| ID USB | `303a:8415` (`303a:1001` es el bootloader integrado del ESP32-S3, que solo ves mientras se flashea) |
+| Fabricante | `GFerreiroS` |
+| Producto | `OPad ESP32-S3` |
+| Número de serie | `OPAD-` seguido de 12 dígitos hexadecimales de la dirección MAC de la placa |
+<!-- src: /firmware/main/usb/usb_descriptors.c#opad_usb_device_desc --> <!-- src: /firmware/main/usb/usb_descriptors.c#opad_usb_string_desc --> <!-- src: /firmware/main/usb/usb_descriptors.c#usb_descriptors_init -->
+
+**Linux:**
+
 ```bash
 lsusb -d 303a:8415
 ```
-Comprueba los mensajes del núcleo con `dmesg`:
-```bash
-dmesg | grep -i opad
-```
-Deberías ver enumeradas las interfaces de teclado HID `OPad ESP32-S3`, controles multimedia y serie CDC-ACM (`/dev/ttyACM*`). <!-- src: /firmware/main/usb/usb_descriptors.c -->
 
-### Verificación en Windows
-1. Abre el **Administrador de dispositivos** (**Device Manager**).
-2. Despliega **Teclados** (**Keyboards**): aparecen entradas estándar **HID Keyboard Device** usando el controlador integrado `hidclass.sys`. <!-- src: /README.md -->
-3. Despliega **Puertos (COM y LPT)** (**Ports (COM & LPT)**): aparece **OPad (COMx)** usando el controlador integrado `usbser.sys` (Windows lee la propiedad `FriendlyName = "OPad"` del descriptor MS OS 2.0 de OPad). <!-- src: /firmware/main/usb/usb_descriptors.c#opad_usb_ms_os_20_desc -->
+El puerto serie del teclado aparece como `/dev/ttyACM*`.
 
-## Asignaciones de teclas predeterminadas
+**Windows:** abre el **Device Manager** (Administrador de dispositivos). Las teclas del teclado aparecen en **Keyboards** y su puerto serie en **Ports (COM & LPT)** como **OPad (COMx)**; ese nombre se lo da el propio descriptor USB del teclado. <!-- src: /firmware/main/usb/usb_descriptors.c#opad_usb_ms_os_20_desc -->
 
-De fábrica, OPad utiliza estos códigos HID predeterminados: <!-- src: /firmware/main/usb/usb_hid.c --> <!-- src: /firmware/main/input/keypad.c -->
+## Siguiente paso
 
-| Control | Conexión de hardware | Uso HID por defecto | Tecla US QWERTY |
-|---|---|---|---|
-| **Key 1** | Cableado manual: `GPIO 14` (P2 Pin 11) / V3 MX: `GPIO 10` / V3 HE: ADS7028 `AIN5` | `0x1D` | `z` <!-- src: /firmware/main/usb/usb_hid.c --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h --> |
-| **Key 2** | Cableado manual: `GPIO 9` (P2 Pin 12) / V3 MX: `GPIO 7` / V3 HE: ADS7028 `AIN4` | `0x1B` | `x` <!-- src: /firmware/main/usb/usb_hid.c --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h --> |
-| **Key 3** (módulos V3 de 3 teclas) | V3 MX: `GPIO 6` / V3 HE: ADS7028 `AIN3` | `0x06` | `c` <!-- src: /firmware/main/usb/usb_hid.c --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h --> |
-| **Pantalla táctil** | Táctil capacitivo CST816S | `0x35` | `` ` `` / `~` (Quick Retry en modo autónomo o dentro de un mapa) <!-- src: /firmware/main/usb/usb_hid.c --> <!-- src: /firmware/main/input/touch_retry.c --> |
-
-### Prueba rápida de escritura
-Abre cualquier editor de texto:
-1. Pulsa Key 1: aparece `z` (o la tecla equivalente en distribuciones no QWERTY; consulta [Solución de problemas §1](../troubleshooting.md)).
-2. Pulsa Key 2: aparece `x`.
-3. Pulsa Key 3 (en módulos V3 de 3 teclas): aparece `c`.
-4. Toca y mantén pulsada la pantalla LCD (sin daemon ni `tosu` conectados): `` ` `` se mantiene pulsada mientras el dedo sigue apoyado y se suelta limpiamente al levantarlo. <!-- src: /firmware/main/input/touch_retry.c -->
-
-Para habilitar la telemetría HUD de osu! en vivo, la personalización del diseño de pantalla, las acciones de deslizamiento o los ajustes Hall Effect, continúa con [Instalación de la suite de escritorio](install-the-app.md).
+El teclado ya está listo para jugar. Para tener datos del mapa en vivo en la pantalla, el diseñador de pantalla, los deslizamientos y las actualizaciones de firmware, sigue con [Instalar la app de escritorio](install-the-app.md).

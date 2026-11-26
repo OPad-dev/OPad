@@ -1,41 +1,18 @@
 ---
 title: What You Need
-description: Hardware prerequisites, board specifications, compatible switches, USB cables, and operating system requirements for building and using OPad.
+description: An OPad, a USB-C data cable and a Linux or Windows 10/11 computer. The desktop app is optional.
 sidebar:
   order: 1
 ---
 
-OPad is built around an off-the-shelf microcontroller development board paired with either hand-wired switches or custom OPad V3 modular PCBs. <!-- src: /README.md --> <!-- src: /hardware/pcb/V3/README.md -->
+- **Your OPad.** It comes assembled, with three keys (mechanical or Hall Effect, depending on the version you chose; osu! plays with two, and the third is there for your play style), plus a touchscreen you can tap for Quick Retry during a map. <!-- src: /docs/launch-checklist.md#Decisions (owner, 2026-11-21) --> <!-- src: /hardware/pcb/V3/README.md --> <!-- src: /AGENTS.md#1. Product rules -->
+- **A USB-C data cable.** One comes with the pad. If you use another, make sure it carries data: a charge-only cable powers the pad, but your PC never sees it as a keyboard. <!-- src: /docs/launch-checklist.md#Decisions (owner, 2026-11-21) -->
+- **A computer with Linux or Windows 10/11 (x64).** The pad uses the drivers your system already has (`usbhid` and `cdc_acm` on Linux, `hidclass.sys` and `usbser.sys` on Windows), so you never install a driver. <!-- src: /README.md --> <!-- src: /packaging/windows/installer.iss -->
 
-## Hardware Requirements
+The desktop app is optional. Without it the pad is still a complete 1000 Hz keyboard, and its touchscreen sends Quick Retry. [Installing the desktop app](install-the-app.md) lists what the app adds and which Linux distributions its packages are built for. <!-- src: /AGENTS.md#1. Product rules -->
 
-### 1. Main Controller Board
-- **Waveshare ESP32-S3-Touch-LCD-2**: ESP32-S3R8 microcontroller (240 MHz dual-core Xtensa LX7, **16 MB Flash**, **8 MB Octal PSRAM**), integrated 2.0-inch ST7789 IPS LCD (`320x240`), and CST816S capacitive touchscreen. <!-- src: /README.md --> <!-- src: /firmware/sdkconfig.defaults --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
+Building your own pad from a Waveshare board instead? Start with [Parts and boards](../build/parts.md).
 
-### 2. Switches & Input Modules
-You can build an OPad with hand-wired mechanical switches or the OPad V3 modular PCBs: <!-- src: /hardware/pcb/V3/README.md -->
-- **Hand-Wired Mechanical (MX)**: Two standard Cherry MX-compatible mechanical switches (Cherry, Gateron, Kailh, Outemu, etc.) wired between header P2 and `GND`. No external resistors or diodes are needed. <!-- src: /README.md --> <!-- src: /firmware/main/input/keypad.c -->
-- **OPad V3 Modular PCBs**:
-  - **Controller Carrier V3**: Plugs directly onto headers P1 and P2 of the Waveshare board and connects to the input module via a 14-way, 1.0 mm type B FFC cable (80 mm in the V3 and V4 cases) and to the USB board via an 8-way, 1.0 mm type A FFC cable. <!-- src: /hardware/pcb/V3/README.md -->
-  - **MX Input Module V3**: 3-key mechanical hotswap PCB with Kailh hot-swap sockets (`CPG151101S11`). <!-- src: /hardware/pcb/V3/README.md -->
-  - **HE Input Module V3**: 3-key Hall Effect magnetic switch PCB with TI DRV5055A3 Hall sensors, TI ADS7028 12-bit SPI ADC, and dedicated LP5907 3.3 V LDO. <!-- src: /hardware/pcb/V3/README.md -->
-  - **USB Board V3**: Passive rear USB-C daughterboard with ESD protection, ferrite, and back-feed Schottky diode. <!-- src: /hardware/pcb/V3/README.md -->
+## Next
 
-### 3. USB Cable
-- A USB Type-C **data** cable (USB-C to USB-A or USB-C to USB-C). Charge-only cables supply power but cannot enumerate USB HID or CDC interfaces.
-
-## Host Computer Requirements
-
-OPad supports **Linux** and **Windows 10/11**: <!-- src: /README.md -->
-
-### Linux
-- Standard kernel `usbhid` and `cdc_acm` drivers.
-- Supported release package targets: Ubuntu 22.04 / 24.04 / 26.04, Debian 12 / 13, RHEL / AlmaLinux / Rocky 9 & 10, current Fedora, and Arch Linux (release packages and bundled `tosu` require glibc 2.28 or newer). <!-- src: /README.md -->
-- `udev` rule `70-opad.rules` for non-root serial and input access (installed automatically by `.deb` and `.rpm` packages). <!-- src: /packaging/linux/udev/70-opad.rules -->
-
-### Windows
-- **Windows 10 or Windows 11 (64-bit / x64)**. <!-- src: /README.md --> <!-- src: /packaging/windows/installer.iss -->
-- Built-in inbox drivers (`hidclass.sys` for HID and `usbser.sys` for CDC serial); no third-party driver or Zadig setup is required. <!-- src: /README.md -->
-
-### Optional Desktop Software
-OPad works immediately as a 1000 Hz USB HID keyboard with no software installed. The optional desktop suite (`opad-daemon`, `opad-gui`, `opadctl`, and bundled `tosu`) adds live osu! telemetry, display layout editing, lifetime counters, Hall Effect tuning, and firmware updates. <!-- src: /AGENTS.md --> <!-- src: /README.md -->
+Plug the pad in: [First connection](first-connection.md).

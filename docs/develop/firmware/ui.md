@@ -1,37 +1,70 @@
 ---
 title: Firmware UI Subsystem
-description: Implementation reference for the ST7789 SPI2 display driver, LVGL v9.5 integration, memory allocation, layout store, and Hall Effect calibration overlay.
+description: Implementation reference for the ST7789 SPI2 display driver, LVGL 9.5 integration on core 1, memory placement, the 20 ms pad timer, the portable ui/core layout engine, deferred layout storage, and the Hall Effect calibration overlay.
 sidebar:
   order: 5
 ---
 
-The UI subsystem renders customizable `320x240` layouts, live telemetry, result animations, and the Hall Effect calibration overlay on the Waveshare 2.0-inch ST7789 IPS LCD. All rendering runs on **Core 1** under **LVGL v9.5.0** and `esp_lvgl_port` 2.9.0 ([/firmware/dependencies.lock](/firmware/dependencies.lock), [/firmware/main/ui/ui_port.c](/firmware/main/ui/ui_port.c)).
+The UI draws the customizable 320×240 Idle and Playing layouts, result animations, swipe feedback and the Hall Effect calibration overlay on the Waveshare 2.0" ST7789 IPS LCD. It runs entirely on **core 1** under LVGL **9.5.0** with `esp_lvgl_port` **2.9.0** ([/firmware/dependencies.lock](https://github.com/OPad-dev/OPad/blob/main/firmware/dependencies.lock)). The keypad path only ever touches it through `ui_notify_activity()`, one atomic timestamp store ([/firmware/main/ui/ui.h](https://github.com/OPad-dev/OPad/blob/main/firmware/main/ui/ui.h)).
 
-## Display Hardware & SPI2 Driver (`board_display.c`)
+The screen is optional: if `ui_init()` fails the pad logs `DIAG_EVENT_LCD_INIT_FAILED` and keeps working as a headless keyboard (`CONFIG_OPAD_TEST_FAIL_LCD` proves it).
 
-Implemented in [/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c](/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c) and [/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h](/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h):
+## Files
 
-- **Controller**: ST7789 IPS LCD (`320x240`, RGB565, `LCD_RGB_ENDIAN_RGB`, color inversion on, `swap_xy = true`, `mirror_x = true` for landscape orientation).
-- **Bus**: `SPI2_HOST` with `SPI_DMA_CH_AUTO` at `BOARD_LCD_PIXEL_CLOCK_HZ = 80 MHz` (~15 ms full-frame transfer). SPI DMA interrupts are pinned to Core 1 (`ESP_INTR_CPU_AFFINITY_1`) so LCD transfers never preempt Core 0 input.
-- **Pins**: `SCLK = GPIO 39`, `MOSI = GPIO 38`, `DC = GPIO 42`, `CS = GPIO 45`, backlight `BL = GPIO 1` (LEDC PWM, `board_display_set_brightness`).
-- **Fault injection**: `CONFIG_OPAD_TEST_FAIL_LCD` forces `board_display_init` to return `ESP_FAIL` to verify headless keyboard operation.
+| File | Role |
+|---|---|
+| [/firmware/main/ui/ui_port.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/ui/ui_port.c) | `ui_init()`, LVGL port setup, screen switching, `pad_timer_cb`, display sleep, the public `ui_*` API used by the protocol task |
+| [/firmware/main/ui/ui_store.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/ui/ui_store.c) | Layout persistence in NVS, deferred outside `IDLE` |
+| [/firmware/main/ui/he_cal_ui.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/ui/he_cal_ui.c) | HE lock screen and calibration flow overlay |
+| [/firmware/main/ui/easter_egg.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/ui/easter_egg.c) | The "67" GIF (`FREAKY67`, or a map ending on a PP ending in 67) |
+| [/firmware/main/ui/core/](https://github.com/OPad-dev/OPad/tree/main/firmware/main/ui/core) | Portable engine: layout model (`ui_core.h`), data subjects (`ui_data.c`), screen builder (`ui_screen.c`), result animations (`ui_anim.c`), default layouts and palette (`ui_defaults.c`), wire IDs (`ui_ids.h`). Depends only on LVGL, so `opad-ui-preview` compiles the same code for the desktop Screen Designer ([crates](../desktop/crates.md#7-opad-ui-preview)) |
+| [/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c](https://github.com/OPad-dev/OPad/blob/main/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c) | ST7789 panel bring-up, sleep/wake, brightness |
 
-## LVGL Memory & Render Loop (`ui_port.c`)
+`ui_ids.h` values are wire format shared with `protocol/opad.proto` and the desktop: append only, never renumber. The data sources a layout can bind are listed in [Customizing the Screen Layout](../../guides/customize-screen-layout.md).
 
-- **Memory pool in PSRAM (`CONFIG_LV_MEM_SIZE_KILOBYTES = 160`, `CONFIG_OPAD_LVGL_PSRAM = y`)**: Dedicated 160 KB pool allocated in the 8 MB Octal PSRAM by default so LVGL never contends with internal RAM needed by the key path and DMA buffers (a Hall Effect V3 build with the pool in internal RAM ran out of DMA RAM for the draw buffers) ([/firmware/sdkconfig.defaults](/firmware/sdkconfig.defaults), [/firmware/main/Kconfig.projbuild](/firmware/main/Kconfig.projbuild)).
-- **Off-key-path UI buffers in PSRAM (`CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y`)**: `s_layouts` in [/firmware/main/ui/ui_port.c](/firmware/main/ui/ui_port.c), `s_pending_layouts` in [/firmware/main/ui/ui_store.c](/firmware/main/ui/ui_store.c), and `s_subjects` / `s_str_buf` / `s_str_prev` in [/firmware/main/ui/core/ui_data.c](/firmware/main/ui/core/ui_data.c) are placed in PSRAM with `EXT_RAM_BSS_ATTR` (guarded by `#ifdef ESP_PLATFORM` in `ui_data.c` so the desktop `opad-ui-preview` crate builds without `esp_attr.h`).
-- **40-line DMA draw buffers (`UI_DRAW_BUF_LINES = 40`)**: `ui_init` allocates two `320x40` RGB565 draw buffers (`25.6 KB` each) in internal DMA-capable RAM for the LCD SPI2 DMA ([/firmware/main/ui/ui.h](/firmware/main/ui/ui.h), [/firmware/main/ui/ui_port.c](/firmware/main/ui/ui_port.c)).
-- **30 fps cap & largest caches**: `CONFIG_LV_DEF_REFR_PERIOD = 33` caps redraws at 30 fps (a full frame takes ~15.4 ms over 80 MHz SPI), paired with 32 KB instruction cache (`CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y`) and 64 KB / 64 B-line data cache (`CONFIG_ESP32S3_DATA_CACHE_64KB=y`, `CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y`) to keep PSRAM/flash-backed rendering fast ([/firmware/sdkconfig.defaults](/firmware/sdkconfig.defaults)).
-- **20 ms UI timer (`pad_timer_cb`)**: Runs inside the Core 1 LVGL task (`PAD_TIMER_PERIOD_MS = 20`), updating pad-local sources (key lifetime/map counts, 80 ms key-flash hold, 1 s rolling KPS, clock/date, PC/tosu status) and display sleep/wake (`update_sleep`).
+## Display Hardware (`board_display.c`)
 
-## Layout Engine & Deferred Persistence (`ui_store.c`, `ui_screen.c`)
+- **Panel**: ST7789, 320×240 RGB565, `LCD_RGB_ENDIAN_RGB`, colour inversion on; landscape via `swap_xy` and `mirror_x` on the panel, mirrored by `.rotation` in the LVGL display config. `.swap_bytes = true` gives the big-endian RGB565 the panel wants.
+- **Bus**: `SPI2_HOST`, DMA (`buff_dma`), `BOARD_LCD_PIXEL_CLOCK_HZ = 80 MHz`: a full frame in ~15 ms instead of ~31 ms. That is above the ST7789's rated 62.5 MHz write clock; it was checked on a pad with no artifacts ([/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h](https://github.com/OPad-dev/OPad/blob/main/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h)).
+- **Interrupt affinity**: the panel IO's SPI interrupt is allocated on core 1 (`isr_cpu_id = ESP_INTR_CPU_AFFINITY_1`), so LCD transfers never interrupt core 0.
+- **Pins**: SCLK GPIO39, MOSI GPIO38, DC GPIO42, CS GPIO45, no reset line, backlight GPIO1 on LEDC PWM (`board_backlight_init`, `board_display_set_brightness`).
 
-- **Two screens**: `UI_SCREEN_IDLE` and `UI_SCREEN_PLAYING`, each holding up to 32 widgets with Montserrat 12/14/16/20/24/32/48 pt fonts ([/firmware/main/ui/core/ui_screen.c](/firmware/main/ui/core/ui_screen.c), [/firmware/sdkconfig.defaults](/firmware/sdkconfig.defaults)).
-- **NVS store ([/firmware/main/ui/ui_store.c](/firmware/main/ui/ui_store.c))**: Saves layouts in `NVS_NS_UI` (`opad_ui`) under keys `"layout0"` / `"layout1"` wrapped in `layout_blob_t` (`LAYOUT_BLOB_VERSION = 1`).
-- **Gameplay flash invariant**: `ui_store_save` and `ui_store_erase` defer writes into `s_pending_layouts` / `s_dirty_save_mask` / `s_dirty_erase_mask` whenever `runtime_get_state() != OPAD_STATE_IDLE`, and `ui_store_flush_dirty` commits them in `IDLE` (retrying failed writes after `FLUSH_RETRY_US = 10 s`).
+## LVGL Port and Render Loop (`ui_port.c`)
+
+- **Port task**: `lvgl_port_init()` with `task_affinity = 1`, `task_priority = 2`, `task_max_sleep_ms = 500`. `esp_lvgl_port`'s tick timer lives on core 0, so `ui_init()` stops it (`lvgl_port_stop()`) and sets `lv_tick_set_cb(ui_tick_ms)`: LVGL reads `esp_timer` directly.
+- **Draw buffers**: two (`double_buffer`) of `UI_SCREEN_W × UI_DRAW_BUF_LINES` = 320×40 pixels, 25.6 KB each, in internal DMA RAM. 20 lines saved 25.6 KB but drew the result animation a third slower.
+- **Refresh**: `CONFIG_LV_DEF_REFR_PERIOD = 33` caps redraws at 30 fps; values change at most 10 times a second and 60 fps looked no different ([/firmware/sdkconfig.defaults](https://github.com/OPad-dev/OPad/blob/main/firmware/sdkconfig.defaults)).
+- **`pad_timer_cb`** (`PAD_TIMER_PERIOD_MS = 20`, in the LVGL task):
+  - loads `UI_SCREEN_PLAYING` while `runtime_get_state() == OPAD_STATE_PLAYING`, otherwise `UI_SCREEN_IDLE`; forces Idle while the HE pad is locked or calibrating; stops a result animation when a map starts;
+  - triggers the easter egg when a map ends with PP ending in 67;
+  - `update_sleep()`: after `sleep_s` without activity (default 600 s) disables invalidation and sleeps the panel; activity wakes it and restores brightness;
+  - while awake, `update_pad_sources()`: lifetime and per-map counts of the two game-key cards (`game_keys_slots`), an 80 ms key-flash hold so a tap is visible, totals, 1 s rolling KPS, PC/tosu status (clears daemon-sourced values when the port closes), uptime, and clock/date once a minute after the host has set the time.
+- **Protocol-side API**: `ui_set_number()`, `ui_set_string()`, `ui_set_layout()`, `ui_play_animation()` (ignored during a map) take the LVGL lock from the protocol task; `ui_lock()` / `ui_unlock()` batch several updates and return false when headless.
+
+## Memory Placement
+
+- **LVGL pool**: `CONFIG_LV_MEM_SIZE_KILOBYTES = 160`, allocated from PSRAM at boot when `CONFIG_OPAD_LVGL_PSRAM = y` (default) through `LV_MEM_POOL_ALLOC` ([/firmware/main/ui/lvgl_psram_pool.h](https://github.com/OPad-dev/OPad/blob/main/firmware/main/ui/lvgl_psram_pool.h)). With the pool in internal RAM an HE V3 pad had too little DMA RAM left for the draw buffers and booted blank. `easter_egg_init()` adds a further 512 KB PSRAM pool for the GIF.
+- **Static buffers in PSRAM** (`EXT_RAM_BSS_ATTR`, `CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY`): `s_layouts` (`ui_port.c`), `s_pending_layouts` (`ui_store.c`), `s_subjects` / `s_str_buf` / `s_str_prev` (`ui_data.c`, behind `#ifdef ESP_PLATFORM` so the desktop preview builds without `esp_attr.h`).
+- **Caches**: 32 KB instruction and 64 KB / 64 B-line data cache halve frame time for flash-resident code and fonts and the PSRAM pool (gameplay screen 29 → 14.5 ms per frame, per the comment in `sdkconfig.defaults`).
+
+## Layouts and Deferred Persistence (`ui_store.c`)
+
+- Two screens, `UI_SCREEN_IDLE` and `UI_SCREEN_PLAYING`, each up to `UI_MAX_WIDGETS = 32` widgets ([/firmware/main/ui/core/ui_core.h](https://github.com/OPad-dev/OPad/blob/main/firmware/main/ui/core/ui_core.h)). At boot `ui_store_load()` reads each, falling back to `ui_default_layout()`.
+- Stored in `NVS_NS_UI` (`opad_ui`) under `layout0` / `layout1`, wrapped in `layout_blob_t` (`LAYOUT_BLOB_VERSION = 1`, size-checked against `ui_layout_t`).
+- **No flash writes outside `IDLE`**: `ui_store_save()` and `ui_store_erase()` only set `s_pending_layouts`, `s_dirty_save_mask` and `s_dirty_erase_mask` while `runtime_get_state() != OPAD_STATE_IDLE`; `ui_store_flush_dirty()` (called by the runtime task) commits them in `IDLE` and retries a failed write after `FLUSH_RETRY_US = 10 s`.
 
 ## Hall Effect Calibration Overlay (`he_cal_ui.c`)
 
-Implemented in [/firmware/main/ui/he_cal_ui.c](/firmware/main/ui/he_cal_ui.c) on `lv_layer_top()` (20 ms LVGL timer, only initialized when `he_backend_running()`):
-- Shows the red **Keys not calibrated** lock screen (`HE_LOCK_SCREEN_WAIT_FOR_APP` for 5 s, then `HE_LOCK_SCREEN_NO_APP_BUTTON` with **Calibrate here** if no capable app connects, or `HE_LOCK_SCREEN_USE_APP` when connected).
-- Displays rest capture, 5 numbered progress boxes (`1`–`5`) turning green across 5 full presses per key (Keys 1–2 on V1, Keys 1–3 on V3), 1 s green **Done!** confirmation, or 2 s red **Calibration failed** reason.
+Built on `lv_layer_top()` with its own 20 ms LVGL timer, and only when `he_backend_running()` (MX pads have no calibration timer). It implements decision D7 of [/docs/specs/v2-hall-effect-decisions.md](../../specs/v2-hall-effect-decisions.md); the user flow is in [Calibrating Hall Effect](../../guides/calibrate-hall-effect.md).
+
+| Screen | Shown when | Text |
+|---|---|---|
+| `HE_LOCK_SCREEN_WAIT_FOR_APP` | Locked, first 5 s after boot (`BOOT_APP_WAIT_US`) | **Keys not calibrated** / "Looking for the OPad app..." |
+| `HE_LOCK_SCREEN_USE_APP` | Locked, an app that can calibrate is connected | "Calibrate in the OPad app" / "on your PC"; no button |
+| `HE_LOCK_SCREEN_NO_APP_BUTTON` | Locked, no capable app | "For the best setup, get the app:" `https://opad.dev/download` (`OPAD_DOWNLOAD_URL`) and a **Calibrate here** button |
+| Rest | Calibration started | **Calibrating** / "Take your fingers off both keys" (all keys on V3) |
+| Key *n* | Each key in turn | **Key *n*** / "Press key *n* all the way, 5 times", five progress boxes |
+| Success | All keys captured and saved | **Done!** / "Your keys are ready", green, 1 s |
+| Failure | Capture error, save error, or the app disconnected | **Calibration failed** with the reason, red, 2 s; a **Try again** button only on a locked pad with no app |
+
+The button uses `he_cal_button.c` (down and up inside it, excursion under 30 px), so a swipe across it does nothing. The lock lifts as soon as the new calibration is saved; no reboot.

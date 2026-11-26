@@ -5,26 +5,26 @@ sidebar:
   order: 4
 ---
 
-Hall Effect magnetic switches measure the magnetic field of a magnet inside each switch stem instead of a metal contact leaf. Calibration records each key's resting reading and normal full-press reading so the pad knows its magnetic travel span. Under decision record D7, an uncalibrated Hall Effect pad is locked to its calibration screen: no keys are sent, touchscreen swipes are disabled, and touch only operates the calibration button until calibration completes. <!-- src: /firmware/main/ui/he_cal_ui.c --> <!-- src: /docs/specs/v2-hall-effect-decisions.md -->
+A Hall Effect switch has a magnet in its stem, and a sensor under it measures how far the key is pressed. Calibration records each key's reading at rest and at a full press, so the pad knows each key's travel. Until a Hall Effect pad is calibrated it is locked to its calibration screen: it sends no keys, swipes are off, and a touch only presses that screen's button ([decision D7](../specs/v2-hall-effect-decisions.md)). <!-- src: /firmware/main/ui/he_cal_ui.c --> <!-- src: /docs/specs/v2-hall-effect-decisions.md -->
 
 ## What you need
 
 - An OPad with a Hall Effect module installed (V1 2-key or V3 3-key). <!-- src: /firmware/main/input/he_backend.c -->
 - A flat, steady desk so the switches do not move during rest capture. <!-- src: /firmware/main/input/he_cal_runner.c -->
-- Optionally, the OPad desktop app (`opad-gui` and `opad-daemon`) for guided calibration and actuation/rapid-trigger tuning. Calibration also works directly on the pad without the app. <!-- src: /firmware/main/ui/he_cal_ui.c -->
+- Optionally, the OPad desktop app, for guided calibration and for tuning actuation and rapid trigger. Calibration also works on the pad alone, without the app. <!-- src: /firmware/main/ui/he_cal_ui.c -->
 
 ## Calibrating with the OPad app (recommended)
 
 When an uncalibrated Hall Effect pad connects to a PC running `opad-daemon`, the pad screen shows **Keys not calibrated** / **Calibrate in the OPad app** / **on your PC**, and the daemon can open `opad-gui` on the **Hall Effect Calibration** page. <!-- src: /firmware/main/ui/he_cal_ui.c#show_lock_screen --> <!-- src: /desktop/gui/src/pages.rs#calibration -->
 
-To recalibrate an already-calibrated pad, open `opad-gui` and click **Keys** -> **Recalibrate**, or **Settings** -> **⌨ Keypad** -> **Recalibrate Keys**. Calibration only starts while no map is playing (`IDLE` state) and no finger is touching the pad screen. <!-- src: /desktop/gui/src/keys.rs#view --> <!-- src: /desktop/gui/src/pages.rs --> <!-- src: /firmware/main/ui/he_cal_ui.c#he_cal_ui_start_calibration -->
+To recalibrate an already-calibrated pad, open `opad-gui` and click **Keys** -> **Recalibrate**, or **Settings** -> **⌨ Keypad** -> **Recalibrate Keys**. Calibration only starts while no map is playing and no finger is touching the pad screen. <!-- src: /desktop/gui/src/keys.rs#view --> <!-- src: /desktop/gui/src/pages.rs --> <!-- src: /firmware/main/ui/he_cal_ui.c#he_cal_ui_start_calibration -->
 
 1. On the **Hall Effect Calibration** page in `opad-gui`, take your fingers off all keys and click **Start Calibration**. <!-- src: /desktop/gui/src/pages.rs#calibration -->
-2. **Step 1: Measuring Rest Position**: Keep your fingers off every key and do not touch the pad. The firmware waits 16 ms to settle (`REST_SETTLE_SAMPLES = 64` at 4 kHz), then averages 64 samples (another 16 ms) to record each key's resting level and verify it is steady and in range. <!-- src: /firmware/main/input/he_cal_runner.c#REST_SETTLE_SAMPLES --> <!-- src: /firmware/main/input/he_cal_capture.h#he_cal_capture_cfg_t -->
-3. **Step 2: Press Key 1 (5 Times)**: Press Key 1 firmly all the way to the bottom and let it come fully back up, 5 times slowly. Each completed press fills one of the 5 numbered boxes on both `opad-gui` and the pad display. There is no walk-away timeout — take your time. <!-- src: /desktop/gui/src/pages.rs#calibration --> <!-- src: /firmware/main/ui/he_cal_ui.c#update_calibration_screen -->
+2. **Step 1: Measuring Rest Position**: Keep your fingers off every key and do not touch the pad. The pad lets the readings settle for 16 ms, then averages 16 ms of readings (64 samples at 4 kHz) to record each key's resting level and check that it is steady and in range. <!-- src: /firmware/main/input/he_cal_runner.c#REST_SETTLE_SAMPLES --> <!-- src: /firmware/main/input/he_cal_capture.h#he_cal_capture_cfg_t -->
+3. **Step 2: Press Key 1 (5 Times)**: Press Key 1 firmly all the way to the bottom and let it come fully back up, 5 times slowly. Each completed press fills one of the 5 numbered boxes on both `opad-gui` and the pad display. There is no time limit: take your time. <!-- src: /desktop/gui/src/pages.rs#calibration --> <!-- src: /firmware/main/ui/he_cal_ui.c#update_calibration_screen -->
 4. **Step 3: Press Key 2 (5 Times)**: Repeat 5 full, consistent presses and full releases on Key 2. <!-- src: /desktop/gui/src/pages.rs#calibration -->
 5. **Step 4: Press Key 3 (5 Times)** (V3 3-key Hall Effect module only): Repeat 5 full presses and releases on Key 3. <!-- src: /desktop/gui/src/pages.rs#calibration --> <!-- src: /firmware/main/ui/he_cal_ui.c#update_calibration_screen -->
-6. Once the last key's 5th press completes, the pad validates the span and peak consistency (using the median of the 5 peaks as the full-press reading) and writes the calibration record to NVS (`opad_cal` on V1, `opad_cal3` on V3). The pad displays **Done!** / **Your keys are ready** for 1 second and immediately unlocks the keys. <!-- src: /firmware/main/input/he_cal_capture.h --> <!-- src: /firmware/main/input/he_cal.c --> <!-- src: /firmware/main/ui/he_cal_ui.c#he_cal_ui_timer_cb -->
+6. Once the last key's 5th press completes, the pad validates the span and peak consistency (using the median of the 5 peaks as the full-press reading) and writes the calibration record to NVS (`opad_cal` on V1, `opad_cal3` on V3). The pad shows **Done!** / **Your keys are ready** for 1 second and the keys work at once. <!-- src: /firmware/main/input/he_cal_capture.h --> <!-- src: /firmware/main/input/he_cal.c --> <!-- src: /firmware/main/ui/he_cal_ui.c#he_cal_ui_timer_cb -->
 
 Click **Cancel** in `opad-gui` at any time during capture to abort; a recalibration restores the previous saved calibration, while an uncalibrated pad stays locked. <!-- src: /desktop/gui/src/pages.rs#calibration --> <!-- src: /firmware/main/ui/he_cal_ui.c#he_cal_ui_cancel_calibration -->
 
@@ -38,7 +38,7 @@ If no capable OPad app is connected, the pad waits 5 seconds after boot (**Looki
 
 ## Tuning actuation and rapid trigger in opad-gui
 
-After calibration, open `opad-gui` and click **Keys** in the sidebar. All depth and sensitivity sliders use a percentage of each key's calibrated magnetic span (never fixed millimeters, per decision record D3), adjusted in `0.5 %` steps (`step(5)` in `0.1 %` units). <!-- src: /desktop/gui/src/keys.rs#view --> <!-- src: /desktop/gui/src/keys.rs#setting -->
+After calibration, open `opad-gui` and click **Keys** in the sidebar. Every depth and sensitivity slider is a percentage of that key's calibrated travel, not millimetres, and moves in `0.5 %` steps. <!-- src: /desktop/gui/src/keys.rs#view --> <!-- src: /desktop/gui/src/keys.rs#setting -->
 
 1. **Link or split keys**: By default, edits apply to all keys together (**Both keys** or **All keys**). Toggle **Set keys separately** at the top to configure Key 1, Key 2 (and Key 3 on V3) independently. Switching it off copies Key 1's settings to the other keys. <!-- src: /desktop/gui/src/keys.rs#view --> <!-- src: /desktop/gui/src/keys.rs#edit_settings -->
 2. **Basic controls**:
@@ -59,15 +59,15 @@ After calibration, open `opad-gui` and click **Keys** in the sidebar. All depth 
 
 - On the pad, the red **Keys not calibrated** lock screen is gone and normal key presses type your configured keys (`Z`, `X`, and `C` on 3-key V3). <!-- src: /firmware/main/ui/he_cal_ui.c --> <!-- src: /firmware/main/usb/usb_hid.c -->
 - In `opad-gui` **Keys**, pressing each switch smoothly moves the cut-away stem from `0 %` (`rest`) to `100 %` (`full`) and toggles the status label between **Released** and **Pressed**. <!-- src: /desktop/gui/src/keys.rs#live_view -->
-- From a terminal, `opadctl status` shows every active Hall Effect key as calibrated with its `rest..full` raw ADC range. <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
+- From a terminal, `opadctl status` shows `Input Module:     Hall Effect` and `HE Calibrated:    K1: yes, K2: yes` (with `K3: yes` on a V3 module). <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
 
 ## What to do if it did not work
 
-If validation fails, the pad shows **Calibration failed** with the specific reason for 2 seconds (and a **Try again** button when running standalone, or **Try again in the OPad app** when connected to the app): <!-- src: /firmware/main/ui/he_cal_ui.c#update_calibration_screen --> <!-- src: /firmware/main/input/he_cal_runner.c#he_cal_runner_error_string -->
+If a check fails, the pad shows **Calibration failed** and the reason. Without the app it offers a **Try again** button; with the app it says **Try again in the OPad app**: <!-- src: /firmware/main/ui/he_cal_ui.c#update_calibration_screen --> <!-- src: /firmware/main/input/he_cal_runner.c#he_cal_runner_error_string -->
 
 - **Keep both keys still while resting** (`HE_CAL_ERR_REST_NOT_STILL`): A key moved or vibrated during rest capture. Place the pad on a steady surface, keep fingers off all keys, and retry.
-- **A key was pressed while resting** (`HE_CAL_ERR_REST_PRESSED`): A key was partially held during Step 1 and released higher during Step 2. Start again with all keys completely released.
+- **A key was pressed while resting** (`HE_CAL_ERR_REST_PRESSED`): a key was held down during Step 1. Start again with every key fully released.
 - **Sensor reading looks wrong** (`HE_CAL_ERR_REST_OUT_OF_RANGE`) or **The key didn't register** (`HE_CAL_ERR_SIGNAL_NOT_RISING`): Check that magnetic (Hall Effect) switches are seated properly and, on V3, run `opadctl board-test --magnet` or **Diagnostics** -> **🔧 PCB Test** to check the cable and sensors. <!-- src: /desktop/cli/src/main.rs#Commands::BoardTest -->
 - **Press each key all the way down** (`HE_CAL_ERR_SPAN_TOO_SMALL`) or **Press the same way every time** (`HE_CAL_ERR_PEAKS_INCONSISTENT`): Bottom out each switch fully and consistently on all 5 presses, letting the stem return completely to rest between presses.
 - **Press exactly 5 times** (`HE_CAL_ERR_TOO_FEW_PEAKS` / `HE_CAL_ERR_TOO_MANY_PEAKS`): Make 5 clean, distinct full presses without double-bouncing mid-press.
-- **The OPad app disconnected** or **Could not save calibration**: Reconnect the USB cable and retry while no map is running (`IDLE`).
+- **The OPad app disconnected** or **Could not save calibration**: check the USB connection and try again while no map is running.

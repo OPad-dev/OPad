@@ -12,6 +12,9 @@ target/
 # ESP-IDF build artifacts
 build/
 **/build/
+# docs/build/ is the "Build your own" docs section, not a build artifact
+!docs/build/
+!docs/es/build/
 managed_components/
 **/managed_components/
 **/dependencies.lock

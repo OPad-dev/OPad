@@ -1,71 +1,85 @@
 ---
 title: Backup and Restore
-description: How automatic JSON backups work and how to export, preview, and restore OPad configuration and lifetime counters using opadctl or opad-gui.
+description: Export your OPad settings and lifetime counters to a JSON file, restore them with a preview first, and find the automatic backups the daemon writes after each session.
 sidebar:
   order: 7
 ---
 
-OPad exports device configuration and lifetime key press counters as portable JSON files (`JsonBackup`, `format_version: 1`). You can export and restore backups manually via `opadctl` or `opad-gui`, and `opad-daemon` also writes automatic backups after play sessions so counters survive hardware damage or replacement. <!-- src: /desktop/daemon/src/backup.rs --> <!-- src: /desktop/crates/opad-model/src/lib.rs#JsonBackup -->
+A backup is a JSON file with your pad's settings and lifetime key counters. Make one by hand with `opadctl` or the app, or use the ones the daemon writes by itself after every play session. Keep one somewhere safe: it is what brings your counts back if a pad is lost, replaced or erased. <!-- src: /desktop/crates/opad-model/src/lib.rs#JsonBackup --> <!-- src: /desktop/daemon/src/backup.rs -->
 
 ## What you need
 
-- `opad-daemon` running (and your OPad connected over USB when restoring onto hardware).
-- The pad must be idle (not in active gameplay or post-map cooldown); backup operations are disabled during `Playing` and `Cooldown`. <!-- src: /desktop/gui/src/pages.rs#device -->
+- The desktop app installed, with the daemon running. Restoring onto the pad also needs it connected.
+- No map running. Backups are disabled during a map and its 5-second cooldown. <!-- src: /desktop/gui/src/pages.rs#device --> <!-- src: /desktop/daemon/src/runtime.rs#COOLDOWN_DURATION -->
 
-## Automatic Backups
+## What a backup contains
 
-- After a play session finishes (`COOLDOWN` -> `SYNC` -> `IDLE`), `opad-daemon` waits **20 seconds** in `IDLE` before writing an automatic backup so disk I/O never touches the gameplay path (starting another map cancels the pending timer). <!-- src: /desktop/daemon/src/backup.rs -->
-- Files are written atomically (`write_atomic`) to `<data_dir>/backups/opad-backup-<YYYYMMDDTHHMMSSZ>.json` (see [Files & Paths](../reference/files-and-paths.md)). <!-- src: /desktop/daemon/src/backup.rs#backup_dir -->
-- The daemon keeps the **10** newest automatic backup files (`KEEP = 10`) and prunes older ones (leaving manually named files alone). <!-- src: /desktop/daemon/src/backup.rs#KEEP -->
+| Part | Contents |
+|---|---|
+| `device` | the pad's `device_id`, `board_profile` (`waveshare_esp32s3_touch_lcd_2`) and `counter_generation` |
+| `stats` | `lifetime_key1`, `lifetime_key2`, and `lifetime_key3` on a three-key pad when its count is known |
+| `config` | key codes (`key1`, `key2`, and on a three-key pad `key3` and `game_keys`), `debounce_us`, `brightness`, `display_sleep_seconds`, `gameplay_display_hz`, `key1_gpio`, `key2_gpio`, the four swipe actions with their keys, and `result_animations` |
+<!-- src: /desktop/crates/opad-model/src/lib.rs#JsonBackup --> <!-- src: /desktop/crates/opad-model/src/lib.rs#JsonBackupConfig -->
 
-## What a Backup Contains
+Screen layouts are not in it: export those from the Designer (see [Customizing the screen layout](customize-screen-layout.md#export-and-import-a-layout)). <!-- src: /desktop/gui/src/designer/mod.rs#export_layout -->
 
-A `JsonBackup` file records: <!-- src: /desktop/crates/opad-model/src/lib.rs#JsonBackup -->
-- `device`: `device_id`, `board_profile` (`waveshare_esp32s3_touch_lcd_2`), and `counter_generation`.
-- `stats`: `lifetime_key1`, `lifetime_key2`, and optional `lifetime_key3` (included for 3-key pads when known).
-- `config`: `key1`, `key2`, optional `key3` and `game_keys` (3-key pads), `debounce_us`, `brightness`, `display_sleep_seconds`, `gameplay_display_hz`, `key1_gpio`, `key2_gpio`, touchscreen swipe actions/keys/modifiers, and `result_animations`.
+## Export a backup
 
-(Custom screen layouts are exported and imported separately inside the **Designer** page in `opad-gui`.) <!-- src: /desktop/gui/src/designer/mod.rs -->
+**Terminal:**
 
-## Exporting a Backup
-
-### Via `opadctl`
 ```bash
 opadctl export opad-backup.json
 ```
 <!-- src: /desktop/cli/src/main.rs#Commands::Export -->
 
-### Via `opad-gui`
-1. Open `opad-gui` and click **Device** in the sidebar. <!-- src: /desktop/gui/src/pages.rs#device -->
-2. Scroll to the **Backup & Restore** card and click **Export backup**. <!-- src: /desktop/gui/src/pages.rs#device -->
-3. Choose where to save the `.json` file.
+**App:**
 
-## Previewing and Restoring a Backup
+1. Open the **Device** page.
+2. In the **Backup & Restore** card, click **Export backup**.
+3. Choose where to save the file.
+<!-- src: /desktop/gui/src/pages.rs#device -->
 
-### Via `opadctl`
-Run `opadctl import` with the backup file: <!-- src: /desktop/cli/src/main.rs#Commands::Import -->
+## Restore a backup
+
+Restoring always shows you what will change before it changes anything.
+
+**Terminal:**
+
 ```bash
 opadctl import opad-backup.json
 ```
-Before modifying anything, `opadctl` sends `IpcRequest::PreviewImport` to validate the file and prints a comparison showing:
-- Current vs incoming lifetime counts (`Key 1`, `Key 2`, and `Key 3` if present).
-- Whether `device_id` matches the connected pad.
-- Warnings if importing would roll counters backward.
 
-Type `y` at the confirmation prompt to apply (or pass `--yes` to skip the prompt: `opadctl import --yes opad-backup.json`). <!-- src: /desktop/cli/src/main.rs#Commands::Import -->
+`opadctl` first asks the daemon to check the file and prints a comparison: current against incoming counts (Key 1, Key 2, and Key 3 if present), whether the backup's `device_id` matches the connected pad, and a warning if any count would go down. Answer `y` to apply it. To skip the question in a script, add `--yes`: `opadctl import --yes opad-backup.json`. <!-- src: /desktop/cli/src/main.rs#Commands::Import -->
 
-### Via `opad-gui`
-1. Open `opad-gui` and click **Device** in the sidebar. <!-- src: /desktop/gui/src/pages.rs#device -->
-2. In the **Backup & Restore** card, click **Import backup** and choose your `.json` file.
-3. Review the preview modal (current vs incoming counters, device ID check, and any rollback warning checkbox) and confirm the import. <!-- src: /desktop/gui/src/main.rs#ImportModalState -->
+**App:**
 
-When confirmed, the daemon increments `counter_generation`, updates SQLite, pushes the configuration and counters to the pad, and commits to NVS once idle. <!-- src: /desktop/daemon/src/ipc_handlers.rs -->
+1. On the **Device** page, in **Backup & Restore**, click **Import backup** and choose the file.
+2. Check the preview: current against incoming counts and whether the pad matches. If any count would go down, tick **I understand this replaces my counters with lower values**.
+3. Click **Apply Backup**.
+<!-- src: /desktop/gui/src/main.rs#App -->
 
-## How to check
+When you apply it, the daemon raises the counter generation so the restored counts win over older copies, saves everything to its database, and sends the settings and counts to the pad, which saves them once it is idle. Your local tosu address is kept. See [Recovery §5](../recovery.md#5-backup-restore-and-reset) for the exact rules. <!-- src: /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
 
-- Run `opadctl status` (or check the **Device** page in `opad-gui`) and verify **Counter Reconciliation State** shows **✓ SYNCHRONIZED** with the expected `lifetime_key1`, `lifetime_key2`, and configuration values. <!-- src: /desktop/gui/src/pages.rs#device -->
+## Automatic backups
 
-## What to do if it did not work
+You do not have to do anything for these: <!-- src: /desktop/daemon/src/backup.rs --> <!-- src: /desktop/daemon/src/runtime.rs#AUTO_BACKUP_DELAY -->
 
-- **Buttons are disabled or daemon rejects import**: Exit the current osu! map and wait 5 seconds for post-map cooldown to end so the pad returns to `Idle`. <!-- src: /desktop/gui/src/pages.rs#device -->
-- **Validation error on import**: Check that the JSON file has `"format_version": 1` and `"board_profile": "waveshare_esp32s3_touch_lcd_2"` and valid setting ranges. <!-- src: /desktop/crates/opad-model/src/lib.rs#JsonBackup -->
+- **When:** 20 seconds after a play session ends and the pad is idle again. Disk writes never happen during play. Starting another map within those 20 seconds cancels that backup; the next session makes a new one.
+- **Where:** `~/.local/share/opad/backups/` on Linux (or `$XDG_DATA_HOME/opad/backups/`), `%APPDATA%\opad\backups\` on Windows, named `opad-backup-<YYYYMMDDTHHMMSSZ>.json`. <!-- src: /desktop/daemon/src/backup.rs#backup_dir --> <!-- src: /desktop/crates/opad-model/src/paths.rs#data_dir -->
+- **How many:** the 10 newest. Older ones are deleted; files with any other name in that folder are left alone. <!-- src: /desktop/daemon/src/backup.rs#KEEP -->
+- **Last one:** `Last Backup:` in `opadctl status`. <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
+
+Restore one like any other backup.
+
+> [!WARNING]
+> Uninstalling the desktop app deletes this folder, automatic backups included. Copy a backup somewhere else first if you want to keep it. See [Uninstalling](uninstall.md). <!-- src: /packaging/linux/uninstall-cleanup.sh --> <!-- src: /packaging/windows/installer.iss -->
+
+## Check that it worked
+
+- Run `opadctl status` and check the key counts and settings. <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
+- In the app, the **Device** page's **Counter Reconciliation State** shows **✓ SYNCHRONIZED** when the PC and the pad agree. <!-- src: /desktop/gui/src/pages.rs#device -->
+
+## If it did not work
+
+- **The buttons are greyed out, or the daemon refuses:** leave the map and wait 5 seconds for the cooldown to end. A pending "this pad belongs to another install" or "new pad" question also blocks restoring until you answer it. <!-- src: /desktop/gui/src/pages.rs#device --> <!-- src: /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
+- **The file is rejected:** a valid backup has `"format_version": 1`, `"board_profile": "waveshare_esp32s3_touch_lcd_2"`, settings within their ranges, and an `exported_at` no more than a day in the future. <!-- src: /desktop/crates/opad-model/src/lib.rs#JsonBackup -->

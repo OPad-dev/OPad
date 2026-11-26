@@ -1,14 +1,31 @@
 ---
 title: "Hardware & Release Verification Checklist"
-description: "Manual quality assurance checklist for firmware, desktop software, and hardware before release."
+description: "Manual hardware and release verification rows for the pad and the desktop suite: which rows a change needs, how to run them, and the recorded results."
 sidebar:
   order: 4
 ---
 
 This checklist documents the manual hardware release verification procedure
 (§34, §35) required prior to tagged releases. Every row is run by a person with
-the pad in front of them; nothing here can be automated, and nothing here may be
-marked from the other platform's result.
+the pad in front of them, and nothing here may be marked from the other
+platform's result. Rows marked "Automated" point at the test that covers them;
+those run in `make check` ([Testing](develop/testing.md)).
+
+**Which rows to run.** A change that touches input, USB, touch or the screen
+needs a run on a real pad before it is called done ([/AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §4):
+
+| The change touches | Run at least |
+|---|---|
+| `firmware/main/input/` (keys, debounce, HE) | §1 (HW-01 to HW-05, HW-08, HW-14), latency with `opadctl latency` ([Latency Measurement](develop/latency-testing.md)) |
+| `firmware/main/usb/` or the descriptors | §1, §2, SWP-11, ID-05, FAIL-05 to FAIL-08 |
+| Touch (`touch_retry.c`, `gesture.c`) | §14 (SWP-01 to SWP-15) |
+| The screen or LVGL | HW-05, FAIL-01, SWP-09 |
+| HE calibration or the lock | §15 |
+| Flashing, recovery, updates | FAIL-05 to FAIL-08, §7 |
+| The serial protocol | §2, §16, and old app / new firmware both ways (SWP-12, ID-01) |
+
+A pad that does not come back is recovered with `opadctl recover` and a replug
+([Recovery](recovery.md) §7.6–7.7), never with the BOOT or RESET buttons.
 
 **Target Hardware:** Waveshare ESP32-S3-Touch-LCD-2.0  
 **Tester:** GFerreiroS  
@@ -20,12 +37,14 @@ marked from the other platform's result.
 | Windows (§W4-2) | 2026-09-18 | Windows 11 x86_64 (bare metal) | v1.0.0 (`OSUPAD-3CDC75701678`) | Complete — 100% PASS (§12) |
 | Linux, V3 modules | 2026-11-20 | Linux x86_64, kernel 7.3 | 1.0.0-rc, branch `feat/v3-modules`, on the V3 carrier with the HE V3 and MX V3 modules | Partial — HW-06 to HW-15, BAK-01 |
 
+> [!WARNING]
 > **The 2026-09-13 Linux column is stale for the counter rows.** It predates
 > both the NVS config blob v2 → v3 change (§W3-2) and the two-slot partition
 > table (§U-3a), so **HW-01, HW-02, FAIL-03 and STR-02 are no longer evidence**
 > for the shipping firmware and are re-opened in §9. The rest of the Linux
 > column is unaffected: nothing in those rows touches NVS layout or partitioning.
 
+> [!NOTE]
 > **The Windows column below is empty on purpose.** It is filled in by running
 > the tests on Windows hardware, not by reasoning from the Linux column.
 > **HW-05** (HID-first on display wake) and **STR-02** (zero storage writes) are
@@ -45,6 +64,7 @@ platform by §W4-2.
 | HW-02 | Key 2 Press & Release | Tap Key 2 cleanly 20 times. | Exact 1:1 keystroke emission in `evtest`, 0 sticky keys, lifetime counter increments by 20. | **RE-OPENED** (§9) | **PASS** (2026-09-18) — Verified 20 taps, 1:1 discrete keystrokes, counter incremented by exactly 20 |
 | HW-03 | Simultaneous Key Press | Press Key 1 + Key 2 concurrently within 1 ms window. | Both keys reported down and up without key ghosting or lockups. | **PASS** | **PASS** (2026-09-18) — Verified via `test_hw_input`; 27 simultaneous press events registered concurrently with 0 ghosting |
 | HW-04 | Rapid Alternating Stream | Stream alternating K1/K2 at > 20 presses/sec for 60 seconds. | 0 missed presses, 0 chatter/double-taps, p99.9 latency delta < 0.1 ms over baseline. | **PASS** | **PASS** (2026-09-18) — 566 presses over 68.1s stream test via `test_hw_input`; 0 missed presses, hardware latency p50 200µs / p99.9 870µs |
+| HW-05 | Display Asleep -> Wake on Press | Allow display to sleep (10 min idle), then press Key 1. | **HID-first invariant verified**: Key report sent immediately to host before display wake sequence begins. No input delay. | **PASS** | **PASS** (2026-09-18) — Keystroke emitted to PC host immediately on press before display wake sequence begins |
 | HW-06 | Board Test (carrier + MX module) | With the MX module on the carrier and both keys released, run `opadctl board-test` (or Diagnostics → PCB Test). Repeat with the cable unplugged, with a pin 1 ↔ 8 reversed cable, and holding Key 1. | Healthy board: every check passes. Unplugged: "No input module answers". Reversed: the Cable check fails naming the reversal. Key held: Key 1 line fails "reads low". Keys work normally right after each run: no key is held and no press is counted (`opadctl status` before and after). | **FAIL**, fixed: until `1fab1fe` every board test left Key 2 (GPIO7) held on an MX pad, because opening the module-ID ADC configured GPIO7's channel too and turned the pin analog. Re-run 2026-11-20 on MX V3, three board tests in a row: **PASS**, Key 2's count and the latency samples unchanged | n/r |
 | HW-07 | Board Test (V3 carrier + HE V3 module) | With the HE V3 module on the V3 carrier, no keys fitted, run `opadctl board-test --magnet` (or Diagnostics → PCB Test, then Start Magnet Test) and hold a magnet over key 1, 2, then 3. | Module "Hall Effect V3" at ~1.65 V; ADC answers 0x81, 20/20 register writes, signal margin clean to at least 20 MHz, supply holds; each sensor rests near 1.65 V with under 3 codes rms noise; each magnet check passes on its own key only. | **PASS** 2026-11-20 straight cable, no keys (ID 1.66 V, clean to 40 MHz, 0.8 codes rms). Magnet: NOT RUN | n/r |
 | HW-08 | Key 3 (HE V3) | With switches fitted, tap key 3 cleanly 20 times, watched in `evtest`. Set Key 3 to empty in Settings and tap it again. | Exact 1:1 keystrokes of the Key 3 setting (default C, `DEFAULT_KEY3_HID_USAGE` in `opad-model`); its own lifetime counter (`Key 3 (K3)` in `opadctl status`) goes up by 20 and Key 1/Key 2's do not. Empty: nothing is sent. | **PARTIAL** 2026-11-20 — types C and its counter counts. The 20-tap `evtest` run and the empty setting: NOT RUN | n/r |
@@ -55,7 +75,6 @@ platform by §W4-2.
 | HW-13 | Board Test (V3 carrier + MX V3 module) | With the MX V3 module on the V3 carrier on its 14-way type B FFC and every key released, run `opadctl board-test` (or Diagnostics → PCB Test). | Module "MX V3" at ~2.24 V; Cable: the ID came on GPIO8 (contact 1 to contact 1); Key pins GPIO10 / GPIO7; Key 1, 2 and 3 lines each see the module's 10 kΩ pull-up (R1, R2, R3) on GPIO10, GPIO7 and GPIO6 (`opad-model/src/board_test.rs`). No Spare lines check on a V3 module. | **PASS** 2026-11-20 (ID 2.26-2.27 V, 856-860 mV loaded) | n/r |
 | HW-14 | Key 3 (MX V3) and three MX keys | On the MX V3 pad, tap key 1, 2 and 3, hold each, then play a map with keys 1 and 2 as game keys. | Key 3 types its setting (default C) and repeats while held, with its own counter (`Key 3 (K3)` in `opadctl status`); keys 1 and 2 as before. Latency over the map no worse than the two-key firmware's. | **PASS** 2026-11-20 — Z, X and C type and hold. Map: 792 samples, p50 30 µs, p99 40 µs, p99.9 50 µs, max 46 µs, 0 deferred (two-key firmware: 1920 samples, p50 30 µs, p99 60 µs, max 54 µs) | n/r |
 | HW-15 | Key pin settings only on a hand-wired pad | Open Settings → Keys with a module on the carrier, then on a pad with no module (switches wired to the header). | With a module (MX, MX V3, HE, HE V3) there are no KEY 1 PIN / KEY 2 PIN pickers or Auto-Detect; with none they are there. Firmware that does not send `HelloAck.input_module` keeps them (`DeviceInfo::key_pins_configurable` in `opad-model`). | **PARTIAL** 2026-11-20 — MX V3: no pickers. Hand-wired pad: NOT RUN | n/r |
-| HW-05 | Display Asleep -> Wake on Press | Allow display to sleep (10 min idle), then press Key 1. | **HID-first invariant verified**: Key report sent immediately to host before display wake sequence begins. No input delay. | **PASS** | **PASS** (2026-09-18) — Keystroke emitted to PC host immediately on press before display wake sequence begins |
 
 ---
 
@@ -82,6 +101,7 @@ platform by §W4-2.
 | FAIL-05 | Update goes to the other slot | On a working pad, `opadctl flash firmware/build/opad-firmware.bin`. | Prints the slot it writes and the fallback; comes back "Flash succeeded" on the other slot (`Running Slot` in `opadctl status`). | **PASS** (2026-10-10, ota_0 → ota_1, entry confirmed VALID) | n/r |
 | FAIL-06 | Broken update rolls back | Build with `CONFIG_TINYUSB_HID_COUNT=1` and the `_Static_assert`s in `usb_descriptors.c` removed (a scratch copy, never committed), then `opadctl flash` it. | `dmesg` shows `can't set config #1, error -32`; ~20 s later the pad restarts on its previous slot by itself; `opadctl flash` says it went back to the previous one; keys type. | **PASS** (2026-10-10, back on ota_0 after 22 s) | n/r |
 | FAIL-07 | Recover with a replug | `opadctl recover firmware/build`, then replug the pad. | "Caught the pad booting", all four images written, "Recovered". No button touched. | **PASS** (2026-10-10, boot window from a watchdog reset; also from download mode) | n/r |
+| FAIL-08 | Into the bootloader and back, no button | `opadctl bootloader`, check `lsusb` (or Device Manager), then `opadctl flash firmware/build/opad-firmware.bin`. | The pad leaves the bus and comes back as `303a:1001` (ROM download mode) within a few seconds, with no button and no replug; the flash writes the other slot and the pad returns as `303a:8415` with the new image (`reboot_to_rom_download()` in `firmware/main/usb/usb_cdc.c`, `enter_bootloader` / `reset_to_app` in `desktop/crates/opad-device/src/flash.rs`). | NOT RUN | NOT RUN |
 | BAK-01 | JSON backup with key 3 | On a three-key pad, export a backup; edit its `config.key3` and `config.game_keys`, tap key 3 a few times, then import it (Device → Backup & Restore, or `opadctl import`). Import the original export afterwards. | The export has `stats.lifetime_key3`, `config.key3` and `config.game_keys` (`JsonBackup` in `opad-model`). The preview shows Key 3 and Game keys, and key 3's count going down as a rollback. After the import key 3 types the backup's key, counts from the backup's value, and the game keys are the backup's. A backup without those fields leaves them as they are. | **PASS** 2026-11-20 | n/r |
 
 ---
@@ -147,29 +167,26 @@ On Linux (§L-3), verified in clean Docker containers (`debian:latest` and `fedo
 These are the paths that can break a working install, so each is run
 deliberately rather than assumed from a successful update.
 
-Prerequisite, **settled 2026-09-17**: §U-0.3's signing keypair exists and
-`opad_update::verify::MANIFEST_PUBLIC_KEY` holds its public half. The secret
-key lives at `~/.config/opad/opad-manifest.key`, outside the repository.
-
-Build the manifest and its detached signature with the signing tool, which
-re-verifies its own output against the key compiled into the build:
+Build a local release and serve it as a signed feed (signing and the feed
+format: `scripts/release/feed_local.sh`, `desktop/crates/opad-update/src/verify.rs`):
 
 ```bash
-cargo run -p opad-update --bin opad-manifest -- \
-    --dist dist --base-url https://example.invalid/download \
-    --firmware-version 1.0.0
+make release-local     # builds the packages and firmware into dist-local/
+make feed-local        # signs feeds with the committed test key, serves http://127.0.0.1:8000
+systemctl --user stop opad-daemon
+OPAD_TRUST_TEST_KEY=1 OPAD_MANIFEST_URL=http://127.0.0.1:8000/updates/beta.json opad-daemon
 ```
 
-Serve `dist/` over HTTP and point the daemon at it with
-`OPAD_MANIFEST_URL=http://…/opad-manifest.json`. For UPD-01, re-sign the
-same manifest with a second throwaway keypair (`minisign -G -W`) and serve that
+The test key is trusted only where asked to (`OPAD_TRUST_TEST_KEY=1`, or
+`/etc/opad/trust-test-key` for the root update helper), and plain HTTP is
+accepted only on loopback (`desktop/crates/opad-update/src/http.rs`). For UPD-01,
+re-sign the same feed with a throwaway keypair (`minisign -G -W`) and serve that
 `.minisig` instead.
 
-> **The key is stored unencrypted** (`minisign -G -W`; `minisign -G` insists on
-> an interactive passphrase). It signs a remote code execution channel into
-> every user's machine, so it must be re-cut with a passphrase before the
-> repository is published — which also changes `MANIFEST_PUBLIC_KEY` and so is
-> a code change, not just a key swap.
+> [!NOTE]
+> Earlier runs (§9.3) used the since-removed `opad-manifest` tool and the
+> `MANIFEST_PUBLIC_KEY` constant; the keys are now `RELEASE_KEY` and `TEST_KEY`
+> in `verify.rs`, and release feeds are signed in CI.
 
 | ID | Test Item | Procedure | Acceptance Criteria | Status |
 |---|---|---|---|---|
@@ -231,7 +248,11 @@ verified.
 | UPD-06 | Firmware update preserves the counters | **PASS** | Built a 1.0.1 image, signed a manifest with the §U-0.3 key, served it, `opadctl firmware-update --yes` → `Firmware updated from 1.0.0 to 1.0.1`, `Running Slot: ota_0`, counters still **3745 / 20594**. The pad was then flashed back to the committed 1.0.0. |
 | UPD-07 | Consent is required | **PASS (first half)** | `opadctl firmware-update` without `--yes` printed the full offer and refused: "A firmware update needs confirmation." The "asks again the second time" half is not yet run. |
 
-**How to reproduce the update rows.** The updater requires HTTPS and pins
+> [!NOTE]
+> This paragraph records the 2026-09-17 run. The updater now also accepts plain
+> HTTP on loopback, so §7's `make feed-local` recipe replaces the local CA.
+
+**How to reproduce the update rows (as run then).** The updater requires HTTPS and pins
 bundled Mozilla roots, so a plain local server is refused — correctly. This run
 used a throwaway local CA, an HTTPS server on `127.0.0.1:8443`, and a daemon
 built with `rustls-tls-native-roots` plus `SSL_CERT_FILE` pointing at the CA.
@@ -350,6 +371,10 @@ real test of the §0 invariant rather than a formality.
 
 ### 11.2 The pad reached the VM by USB passthrough
 
+> [!NOTE]
+> `303a:4001` was the release-candidate application ID; the pad is now
+> `303a:8415` (ID-05).
+
 Two `<hostdev>` entries with `startupPolicy='optional'`, one for `303a:4001`
 (application) and one for `303a:1001` (ROM bootloader), attached live.
 
@@ -457,8 +482,11 @@ what every number should read. Play it with the pad, hitting every note once.
 ## 14. Touchscreen swipes
 
 Each direction runs its configured action (default: up/down volume, left/right
-previous / next track). During a map a resting finger is Quick Retry (after 60 ms
-still); outside one a tap sends nothing. Firmware: `firmware/main/input/touch_retry.c`,
+previous / next track). During a map a resting finger is Quick Retry: it is
+pressed after the finger stays within 12 px for 60 ms, or 250 ms after touch-down
+if no swipe started, and held until the finger lifts; a quick tap still sends a
+press and release. Outside a map a tap sends nothing. With no daemon or no tosu
+every touch is Quick Retry ([firmware touch](develop/firmware/touch.md)). Firmware: `firmware/main/input/touch_retry.c`,
 `firmware/main/input/gesture.c`; the media controls are a second HID interface
 (`firmware/main/usb/usb_descriptors.c`). Run with the daemon and tosu up unless a
 row says otherwise.
@@ -471,27 +499,32 @@ row says otherwise.
 | SWP-04 | osu! volume in menus | osu! (lazer on Linux) open and in front, in song select. Swipe up and down. | osu!'s volume overlay moves; the beatmap list does not scroll; daemon log: "osu! active". On Windows: no window menu or lost key after the swipe. | n/r | n/r |
 | SWP-05 | osu! volume during a map | Start a map, swipe up/down mid-map. | osu!'s volume changes (needs "disable mouse wheel in play mode" off); nothing is drawn on the pad; the map does not restart. | n/r | n/r |
 | SWP-06 | A swipe never sends ` | Mid-map, swipe in every direction, fast and slow. | The map continues; the daemon/pad log shows no "Quick Retry pressed" for any swipe. | n/r | n/r |
-| SWP-07 | Quick Retry still works | Mid-map, hold a finger still on the screen. | The map restarts as before swipes, about 60 ms later at most (the still-finger wait). | n/r | n/r |
+| SWP-07 | Quick Retry still works | Mid-map, hold a finger still on the screen. | The map restarts as before swipes, about 60 ms later at most (the still-finger wait; 250 ms for a finger that keeps moving without swiping). | n/r | n/r |
 | SWP-08 | No daemon, no tosu | Stop tosu (then the daemon). Tap and swipe. | Every touch is Quick Retry, as before swipes; swipes do nothing. | n/r | n/r |
 | SWP-09 | No key latency cost | `opadctl latency` reset, play a map without swiping; reset, play it again swiping several times mid-map. | p50/p99.9/max unchanged within noise; no extra deferred reports. | n/r | n/r |
 | SWP-10 | Configurable actions | Set each direction in Settings → Keypad: swapped volume on up/down, "osu!: Random beatmap (F2)" and "osu!: Settings (Ctrl+O)" in song select, an "Other key" (F15) bound to something in osu!. | Each does what its name says; volume repeats along a long drag, other actions fire once; a key swipe mid-map sends nothing. `opadctl status` names the osu! shortcuts. | n/r | n/r |
 | SWP-11 | Re-enumeration after the update | Flash the swipe firmware over the previous one. | Keyboard, COM port and the new "OPad Media Controls" interface all work without unplugging; Windows keeps the "OPad (COMx)" name. | n/r | n/r |
 | SWP-12 | Old app, new firmware / new app, old firmware | Run the previous app with this firmware, then this app with the previous firmware. | Keys, display and config work both ways. Old app: swipes set the system volume only. Old firmware: the swipe settings are ignored, nothing else changes. | n/r | n/r |
+| SWP-13 | Nothing but Quick Retry in the keyboard report mid-map | osu! in front, a map running. Swipe up/down (volume), and left/right with a keyboard-key action configured, while watching `evtest` (Linux) or a keyboard tester on the keyboard interface. | No Alt, no F24 and no swipe key appears on the keyboard interface during the map; the volume swipe sends only wheel reports on the media interface; nothing is drawn on the pad (`step_volume` and `SWIPE_ACTION_KEY` in `firmware/main/input/touch_retry.c`). | NOT RUN | NOT RUN |
+| SWP-14 | Quick Retry is a held key | Mid-map, rest a finger for 2 s and lift; then tap quickly. Watch `evtest`. | Resting: exactly one `` ` `` down while the finger stays on, one clean up at lift (two empty reads, ~20 ms), no repeats or chatter. Quick tap: one down and one up. | NOT RUN | NOT RUN |
+| SWP-15 | Touch idles on the interrupt | With the `CONFIG_OPAD_HE_DEBUG` firmware, leave the pad untouched for a minute, then touch it. | When the debug log starts, `he.touch` says `controller INT wake`, not `polled at 100 Hz`; the `i2c` count in the periodic `he.ctx` line does not grow while no finger is down, and grows only while one is (`firmware/main/input/he_debug.c`, `firmware/main/input/touch_retry.c`). | NOT RUN | NOT RUN |
 
 ## 15. Hall Effect calibration lock screen, on-pad flow and app flow
 
-Applies when the firmware is built with `CONFIG_OPAD_HE_BACKEND=y` and a Hall
-Effect module is detected at boot (`he_backend_running()`). Firmware:
+Applies whenever a Hall Effect input runs (`he_backend_running()`): always for
+an HE V3 module, and for an HE V1 module only with firmware built with
+`CONFIG_OPAD_HE_BACKEND=y`. This is decision D7 of
+[/docs/specs/v2-hall-effect-decisions.md](specs/v2-hall-effect-decisions.md). Firmware:
 `firmware/main/input/he_backend.c`, `he_cal_runner.c`, `he_cal_button.c`,
 `firmware/main/ui/he_cal_ui.c`, `firmware/main/protocol/protocol.c`. Desktop:
 `desktop/daemon/src/runtime.rs`, `desktop/gui/src/pages.rs`.
 
 | ID | Test Item | Procedure | Acceptance Criteria | Linux | Windows |
 |---|---|---|---|---|---|
-| HE-CAL-01 | Lock on first boot (no app) | Boot an HE pad with no saved calibration in the `opad_cal` NVS namespace (`firmware/main/input/he_cal.c`) and no OPad daemon running. | After the 5 s host-wait window, a red lock screen shows `KEYS NOT CALIBRATED`, `https://opad.dev/download`, and a **Calibrate** button. | **NOT RUN** | **NOT RUN** |
-| HE-CAL-02 | No keys or swipes while locked | While locked, press Key 1 and Key 2 repeatedly, tap/hold the touchscreen, and swipe in all 4 directions while osu! is playing a map. | Zero Z/X keystrokes and zero `` ` `` Quick Retry or swipe reports reach the PC (`evtest` / Keyboard Tester); pad screen stays on the lock overlay and never loads `UI_SCREEN_PLAYING`. | **NOT RUN** | **NOT RUN** |
-| HE-CAL-03 | Calibrate button tap vs swipe | On the no-app lock screen, tap outside the button, drag ≥ 30 px across the button, drag out before lifting, then tap cleanly inside the **Calibrate** button. | Outside tap, swipe, and drag-out do nothing; clean tap inside starts `CALIBRATING: REST`. | **NOT RUN** | **NOT RUN** |
-| HE-CAL-04 | Full on-pad calibration flow | With no daemon running, tap **Calibrate**, keep both keys released during Rest, press Key 1 fully 5 times, then press Key 2 fully 5 times. | 5 indicator boxes fill per key; `Calibrated!` shows for ~1 s; calibration is saved as a v1 record (`firmware/main/input/he_cal_record.h`) and the lock lifts after saving, without waiting for the success overlay to disappear (`firmware/main/ui/he_cal_ui.c`). | **NOT RUN** | **NOT RUN** |
+| HE-CAL-01 | Lock on first boot (no app) | Boot an HE pad with no saved calibration in the `opad_cal` (V1) or `opad_cal3` (V3) NVS namespace (`firmware/main/input/he_cal.c`) and no OPad daemon running. | "Looking for the OPad app..." for the first 5 s, then the lock screen shows **Keys not calibrated**, "For the best setup, get the app:", `https://opad.dev/download`, and a **Calibrate here** button (`firmware/main/ui/he_cal_ui.c`). | **NOT RUN** | **NOT RUN** |
+| HE-CAL-02 | No keys or swipes while locked | While locked, press Key 1 and Key 2 (and Key 3 on V3) repeatedly, tap/hold the touchscreen, and swipe in all 4 directions while osu! is playing a map. | Zero Z/X keystrokes and zero `` ` `` Quick Retry or swipe reports reach the PC (`evtest` / Keyboard Tester); pad screen stays on the lock overlay and never loads `UI_SCREEN_PLAYING`. | **NOT RUN** | **NOT RUN** |
+| HE-CAL-03 | Calibrate button tap vs swipe | On the no-app lock screen, tap outside the button, drag ≥ 30 px across the button, drag out before lifting, then tap cleanly inside the **Calibrate here** button. | Outside tap, swipe, and drag-out do nothing; clean tap inside starts calibration: **Calibrating** / "Take your fingers off both keys" ("all keys" on V3). | **NOT RUN** | **NOT RUN** |
+| HE-CAL-04 | Full on-pad calibration flow | With no daemon running, tap **Calibrate here**, keep the keys released during Rest, press Key 1 fully 5 times, then Key 2 (then Key 3 on V3). | 5 indicator boxes fill per key ("Press key N all the way, 5 times"); **Done!** / "Your keys are ready" shows for ~1 s; calibration is saved as a v1 record (`firmware/main/input/he_cal_record.h`) and the lock lifts after saving, without waiting for the success overlay to disappear (`firmware/main/ui/he_cal_ui.c`). | **NOT RUN** | **NOT RUN** |
 | HE-CAL-05 | App-driven flow & auto-open | Connect an uncalibrated HE pad with `opad-daemon` running. Click **Start Calibration** in the GUI and complete Rest + 5 presses per key. | Pad shows `Calibrate in the OPad app` (no on-pad button); daemon auto-launches `opad-gui --page calibrate` once; GUI shows live stage, 0–5 boxes, and rest/full counts on completion; Settings → Keypad shows **Recalibrate Keys** afterward. | **NOT RUN** | **NOT RUN** |
 | HE-CAL-06 | CDC disconnect / cancel mid-flow | Start calibration from the app (both on an uncalibrated pad and when recalibrating a calibrated pad), then cancel or stop the daemon mid-flow. Closing just the GUI leaves CDC connected. | Active app-started calibration stops and previous calibration remains. Cancel returns a locked pad to the lock screen; CDC disconnect shows failure for ~2 s first. A calibrated pad resumes with its previous calibration and offers no on-pad recalibration (`firmware/main/ui/he_cal_ui.c`). | **NOT RUN** | **NOT RUN** |
 | HE-CAL-07 | MX module unaffected | Boot the `CONFIG_OPAD_HE_BACKEND=y` firmware with an MX module fitted. | `he_backend_running()` is false; pad is not locked, `HelloAck.he_calibration` is false, `DeviceStatus.he_calibration` is absent, daemon does not open the calibration page, and MX keys work as normal. | **NOT RUN** | **NOT RUN** |
@@ -514,6 +547,7 @@ frames). App: `canonical_device_id` in `opad-model`, storage v19,
 | ID-02 | Upgrade keeps everything | `opadctl status` before and after flashing this firmware over 1.0.0-rc. | Only the slot and the sync time change; USB serial `OPAD-<MAC>`; the screen layouts and (HE) calibration are the same. | **PASS** 2026-11-21 (MX V3) for counters, keys, game keys, swipes, brightness, sleep, debounce, key 3 count and the serial. Layouts and HE calibration: NOT RUN | NOT RUN |
 | ID-03 | Rollback finds the old data | After ID-02, flash a broken image (FAIL-06) so the pad rolls back to 1.0.0-rc. | The old firmware boots with the state it had at the upgrade (it reads the untouched `osupad*` namespaces). | NOT RUN | n/r |
 | ID-04 | Windows sees the new serial once | Plug the upgraded pad into Windows. | A new device instance, maybe a new COM number, no prompt; the app connects. | n/r | NOT RUN |
+| ID-05 | The pad is `303a:8415` | Flash this firmware over release-candidate firmware (`303a:4001`), then check `lsusb` / Device Manager, `opadctl flash`, `opadctl recover`, and the previous app. | Enumerates as `303a:8415` (`usb_descriptors.c`); the daemon finds it by its strings, not the PID (`desktop/crates/opad-device/src/lib.rs`), so old and new apps connect; flash and recover work; the udev rule (`70-opad.rules`, which keeps `4001` for old pads) gives the user access. | **PASS** on an HE pad (flash, recover, old daemon, udev ACL), per `docs/launch-checklist.md` row 0.9 | NOT RUN |
 | CRC-01 | Checked frames negotiated | Daemon log after connecting this app to this firmware. | "uses checked frames (CRC-16)"; board test, status, sync work. | **PASS** 2026-11-21 | NOT RUN |
 | CRC-02 | Old firmware stays on marked frames | This app with 1.0.0-rc firmware. | Connects on marked frames, no "checked frames" line (ID-01). | **PASS** 2026-11-21 | NOT RUN |
 | CRC-03 | A cut frame costs only itself | Covered by `test_a_cut_short_frame_does_not_take_the_next_one` (firmware host tests and `opad-protocol`). On a pad: an 8-hour soak with `opadctl monitor`, counting "bad CRC" and "decode failed". | No decode failure; any drop is a single CRC drop. | Automated: PASS. Soak: NOT RUN | NOT RUN |

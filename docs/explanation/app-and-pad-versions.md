@@ -1,55 +1,76 @@
 ---
-title: App and Pad Versions Interoperability
-description: Protocol negotiation, backward and forward compatibility rules, framing auto-detection, and version mismatch handling between desktop software and pad firmware.
+title: App and Pad Versions
+description: Why the desktop app and the pad firmware can be updated independently, and the mechanisms that make it work - framing negotiation, capability flags, protobuf field rules and the major protocol version.
 sidebar:
   order: 4
 ---
 
-OPad's desktop suite and pad firmware update independently (AGENTS.md §1.3). Users are never required to update both together. Wire framing, capability flags, and protobuf fields are designed to interoperate in both directions: a new desktop app works with older firmware, and new firmware works with older desktop builds. <!-- src: /desktop/crates/opad-protocol/src/lib.rs#DEVICE_PROTOCOL_VERSION -->
+The desktop app and the pad's firmware update on their own schedules ([AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §1.3). A user may update the app and not the pad for months, or flash a newer pad and keep an old app. Every combination has to work, and the user is never told to "update both together".
 
-## Compatibility Dimensions
+That works in layers, each of which degrades on its own:
 
-Interoperability operates across three layers:
+```mermaid
+flowchart TB
+    L1["1. USB HID keyboard<br/>(no host software involved)"]
+    L2["2. Serial framing<br/>(legacy / marked / checked, negotiated)"]
+    L3["3. Protobuf messages<br/>(unknown fields skipped, capability flags)"]
+    L4["4. Major protocol version<br/>(mismatch: app leaves the pad alone)"]
+    L1 --- L2 --- L3 --- L4
+```
 
-1. **Physical HID Keyboard Layer**: Independent of host software. The pad enumerates as a standard 1000 Hz USB HID keyboard requiring no daemon, GUI, or driver on Linux or Windows (AGENTS.md §1.2). <!-- src: /firmware/main/usb/usb_descriptors.c -->
-2. **Serial Transport & Framing Layer**: Dynamic negotiation across legacy (unmarked), marked (`0xAA, 0x55`), and checked (`0xAA, 0x5A` + CRC-16) frame formats ([`Framing`](/desktop/crates/opad-protocol/src/lib.rs), [`frame_parser_feed()`](/firmware/main/protocol/frame_parser.c)).
-3. **Application & Protobuf Layer**: Major protocol version check (`DEVICE_PROTOCOL_VERSION`), handshake capability flags in [`Hello`](/protocol/opad.proto) and [`HelloAck`](/protocol/opad.proto), and proto3 unknown-field skipping.
+1. **The keyboard needs no software.** The pad enumerates as a standard 1000 Hz USB HID keyboard ([usb_descriptors.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/usb/usb_descriptors.c)). No version of the app can break typing ([AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §1.2).
+2. **Framing is negotiated**, so an old peer is never sent bytes it cannot parse.
+3. **Messages evolve additively**, and features are announced, not assumed.
+4. **A real break is detected**, and the app then stays out of the pad's way.
 
-## Protocol Version & Framing Negotiation
+## Framing: the pad answers in the host's framing
 
-Every USB CDC session begins with a `Hello` / `HelloAck` handshake ([`Handshake`](/desktop/crates/opad-device/src/lib.rs), [`protocol_send_hello_ack()`](/firmware/main/protocol/protocol.c)):
+The serial link has used three framings over time ([`Framing`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-protocol/src/lib.rs), [frame_parser.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/protocol/frame_parser.c)): legacy (unmarked, length then payload), marked (`0xAA 0x55`, length, payload) and checked (`0xAA 0x5A`, length, payload, CRC-16/CCITT-FALSE). The byte layouts are in the [Serial Wire Protocol](../reference/serial-protocol.md) reference.
 
-- **Host Probe (`Hello`)**:
-  While the pad's framing is unknown, the host sends a `Hello` every 400 ms (`HELLO_RETRY`), alternating between marked framing (`0xAA, 0x55`) on even attempts and legacy framing on odd attempts ([`hello_framing()`](/desktop/crates/opad-device/src/lib.rs)). The `Hello` payload sets `protocol_version = 1`, `client_version`, `he_calibration = true`, and `frame_crc = true` ([`hello_message()`](/desktop/crates/opad-device/src/lib.rs)).
-- **Pad Framing Latch & Reply (`HelloAck`)**:
-  Until the first valid frame decodes, the firmware sends nothing (`s_host_framing_known = false`) so unsolicited frames cannot desynchronize an older host ([`protocol.c`](/firmware/main/protocol/protocol.c)). On the first decoded message, the firmware latches `s_host_framing` and locks its parser to that family:
-  - If the host sent a **legacy** frame, the pad answers in legacy framing and ignores marked/checked headers for the rest of the connection.
-  - If the host sent a **marked** frame with `Hello.frame_crc = true`, the pad replies with `HelloAck` (`frame_crc = true`) in a **marked** frame, then enables checked framing (`s_tx_crc = true`, `0xAA, 0x5A` + CRC-16) for every subsequent frame. Both sides' marked parsers accept both marked and checked frames.
-  - If the host sent `Hello.frame_crc = false` (or the pad is older firmware that ignores `Hello.frame_crc` and answers `frame_crc = false`), both sides stay on marked framing (`0xAA, 0x55`).
-- **Capability Negotiation**:
-  [`HelloAck`](/protocol/opad.proto) advertises optional firmware features (such as `running_partition`, `key_press_times`, `board_test`, `builtin_animations`, `restart`, `he_input`, `he_calibration`, `he_live`, `tap_rate_per_second`, `key_count`, `input_module`, and `frame_crc`). Older firmware omits newer fields, which decode to `false`/`0`/empty on the host so the app gracefully degrades (for example, falling back to tosu for tap-rate timing when `key_press_times` is false).
+Neither side knows the other's age when it connects, so neither may assume a framing. The rule is that **the host speaks first and the pad answers in kind**:
 
-## Protobuf Forward & Backward Compatibility
+```mermaid
+sequenceDiagram
+    participant H as Host (opad-device)
+    participant P as Pad (protocol.c)
+    Note over P: sends nothing until a valid frame decodes
+    H->>P: Hello (marked), frame_crc = true
+    Note over H: no answer within 400 ms
+    H->>P: Hello (legacy)
+    Note over H: ...alternating every 400 ms (hello_framing)
+    P-->>H: HelloAck in the host's framing (marked here), frame_crc = true
+    Note over H,P: from the next message on, both send checked frames
+```
 
-The wire schema uses Protocol Buffers v3 ([`protocol/opad.proto`](/protocol/opad.proto)):
+- **The host probes.** While the pad's framing is unknown, the host sends a `Hello` every 400 ms (`HELLO_RETRY`), marked on even attempts and legacy on odd ones ([`hello_framing()`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-device/src/lib.rs)). The `Hello` carries `protocol_version = 1`, `client_version`, `he_calibration = true` and `frame_crc = true` ([`hello_message()`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-device/src/lib.rs)).
+- **The pad stays silent until it hears one.** Until a recognised message decodes, the firmware sends nothing (`s_host_framing_known = false` in [protocol.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/protocol/protocol.c)); an unsolicited frame could confuse an older host. The first recognised message latches `s_host_framing`, and from then on the parser only accepts that family.
+- **Legacy host:** the pad answers in legacy framing for the rest of the connection.
+- **Marked host that asks for CRC** (`Hello.frame_crc = true`): the `HelloAck` itself goes out as a marked frame with `frame_crc = true`, and every frame after it is checked. Both sides' marked parsers read marked and checked frames alike.
+- **Marked host that does not ask, or firmware that predates CRC** (it ignores the field and its `HelloAck.frame_crc` decodes as `false`): both stay on marked framing.
 
-- **New Desktop with Old Firmware**:
-  When a newer app sends fields that older firmware does not recognize (for example Hall Effect settings or swipe modifiers), nanopb skips unknown wire tags during `pb_decode` and applies the fields it understands.
-- **Old Desktop with New Firmware**:
-  When an older app connects to newer firmware, prost ignores unknown fields in `DeviceToHost` messages and extracts the fields it knows.
-- **Static Bounds in Firmware**:
-  [`protocol/opad.options`](/protocol/opad.options) sets fixed `max_size` and `max_count` bounds for nanopb so firmware decodes into static buffers with zero heap allocation. Frames longer than `FRAME_MAX_PAYLOAD` (8186 bytes) are skipped by [`frame_parser_feed()`](/firmware/main/protocol/frame_parser.c); payloads that overflow a field limit fail cleanly inside [`protocol_decode_host_message()`](/firmware/main/protocol/protocol.c) and record `DIAG_EVENT_DECODE_FAILED`.
+The host is always the one that moves forward, and only after the pad said it can follow. An old pad simply never says so.
 
-## Incompatible Devices & Version Mismatch Handling
+## Messages: additive fields and capability flags
 
-The major wire protocol version is [`DEVICE_PROTOCOL_VERSION`](/desktop/crates/opad-protocol/src/lib.rs) (`1`):
+The schema is [protocol/opad.proto](https://github.com/OPad-dev/OPad/blob/main/protocol/opad.proto) (proto3). Two properties of protobuf do most of the work:
 
-- If `HelloAck.protocol_version` does not equal `DEVICE_PROTOCOL_VERSION`, the daemon records [`IncompatibleDevice`](/desktop/crates/opad-model/src/lib.rs) in [`RuntimeController::on_event()`](/desktop/daemon/src/runtime.rs), restores its pre-handshake counter state, and leaves `device_connected = false`:
-  ```rust
-  pub struct IncompatibleDevice {
-      pub firmware_version: String,
-      pub protocol_version: u32,
-  }
-  ```
-- **Safe Fallback**:
-  An incompatible pad keeps working as a 1000 Hz USB HID keyboard. The daemon does not sync counters, overwrite configuration, or stream telemetry to it. `opadctl status` prints an `Incompatible:` warning line ([`desktop/cli/src/main.rs`](/desktop/cli/src/main.rs)), and `opad-gui` displays a warning banner ([`desktop/gui/src/main.rs`](/desktop/gui/src/main.rs)). Both name the pad's protocol and the one required, `DEVICE_PROTOCOL_VERSION`; the GUI-daemon IPC version (`IPC_PROTOCOL_VERSION`) plays no part. <!-- src: /desktop/gui/src/main.rs#incompatible_banner, /desktop/cli/src/main.rs#Commands, /desktop/crates/opad-protocol/src/lib.rs#DEVICE_PROTOCOL_VERSION -->
+- **Unknown fields are skipped.** Newer app, older firmware: nanopb ignores tags it does not know and applies the rest. Older app, newer firmware: prost does the same with `DeviceToHost` messages.
+- **Missing fields read as zero.** A field the sender does not know about decodes as `0`, `false` or empty. Every new field is therefore designed so that zero means "the old behaviour", and `optional` is used where zero is a meaningful value (for example `ConfigPayload.key3_hid_usage`).
+
+That second property is what makes **capability flags** in `HelloAck` work. The pad announces what it can do: `running_partition`, `key_press_times`, `board_test`, `builtin_animations`, `restart`, `he_input`, `he_calibration`, `he_live`, `tap_rate_per_second`, `key_count`, `input_module`, `frame_crc`. Firmware that predates a flag sends nothing, the host reads `false`, and it falls back: for example, without `key_press_times` the tap rate is measured from tosu instead of the pad's own press times, and without `tap_rate_per_second` the host refuses layouts that rely on it.
+
+The firmware decodes into fixed-size buffers: [protocol/opad.options](https://github.com/OPad-dev/OPad/blob/main/protocol/opad.options) bounds every string and repeated field, frames longer than `FRAME_MAX_PAYLOAD` (8186 bytes) are skipped by `frame_parser_feed()`, and a payload that overflows a field fails cleanly in `protocol_decode_host_message()` and records `DIAG_EVENT_DECODE_FAILED`. An over-long field from a newer app is rejected, not written past a buffer.
+
+The procedure for adding a field or message is in [Protocol Changes](../develop/protocol-changes.md).
+
+## A real break: the major protocol version
+
+If a change ever cannot be made additively, the major version [`DEVICE_PROTOCOL_VERSION`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-protocol/src/lib.rs) (currently `1`) changes. When `HelloAck.protocol_version` differs from it, [`RuntimeController::on_event()`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/runtime.rs) records an [`IncompatibleDevice`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-model/src/lib.rs) (`firmware_version`, `protocol_version`) and treats the pad as not connected:
+
+- the pad keeps working as a 1000 Hz keyboard, since layer 1 does not depend on any of this;
+- the daemon does not sync counters, write configuration or stream telemetry to it;
+- `opadctl status` prints an `Incompatible:` line ([cli/src/main.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/cli/src/main.rs)) and the GUI shows a banner (`incompatible_banner` in [gui/src/main.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/main.rs)), both naming the pad's protocol and the one required.
+
+The GUI-to-daemon IPC has its own, separate version (`IPC_PROTOCOL_VERSION`, see [Desktop IPC Protocol](../reference/ipc.md)); it plays no part in this check.
+
+<!-- src: /desktop/gui/src/main.rs#incompatible_banner, /desktop/cli/src/main.rs#Commands, /desktop/crates/opad-protocol/src/lib.rs#DEVICE_PROTOCOL_VERSION -->

@@ -9,7 +9,7 @@ statement cites a datasheet section. They are plain text, so anyone, AI tools
 included, can search them without opening a PDF.
 
 The vendor PDFs are copyrighted, so the repository does not hold them (it is
-REUSE compliant, see AGENTS.md §5). `scripts/fetch_datasheets.sh` downloads
+REUSE compliant, see [AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §5). [scripts/fetch_datasheets.sh](https://github.com/OPad-dev/OPad/blob/main/scripts/fetch_datasheets.sh) downloads
 them into `docs/hardware/components/.datasheets/`, which git ignores. The
 script checks each file against the sha256 recorded here when there is one.
 

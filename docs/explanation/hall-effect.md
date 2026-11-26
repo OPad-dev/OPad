@@ -1,81 +1,78 @@
 ---
 title: Hall Effect and Rapid Trigger
-description: How OPad senses Hall Effect magnetic switches across V1 and V3 hardware, runs the 3-state Rapid Trigger engine, enforces noise floors, and stores calibration.
+description: How OPad reads Hall Effect switches on the V1 and V3 modules, how the three-state Rapid Trigger engine decides presses, why settings are in percent of a calibrated span with noise floors, and how a fault can never hold a key down.
 sidebar:
   order: 7
 ---
 
-Hall Effect (HE) magnetic switches replace physical metallic contact leaves with a magnet in the switch stem and a linear Hall sensor on the PCB. Instead of a fixed contact point, firmware reads continuous magnetic strength for each key, allowing configurable actuation depth and **Rapid Trigger (RT)**—releasing as soon as the stem moves upward and re-pressing as soon as downward motion resumes.
+A Hall Effect (HE) switch has no contacts. A magnet in the stem moves over a linear Hall sensor, so the firmware reads *how far* the key is down, continuously, instead of *whether* a contact closed. That makes two things possible: an actuation point the user chooses, and **Rapid Trigger**, which releases a key as soon as it starts moving up and presses it again as soon as it moves down, wherever in the travel that happens.
 
-## Sensing Pipelines: V1 Internal ADC vs V3 External SPI ADC
+It also moves the hard problems into firmware: reading an analog signal fast enough, telling movement from noise, and making sure a bad reading can never hold a key down.
 
-OPad supports two Hall Effect hardware generations in [/firmware/main/input/he_backend.c](/firmware/main/input/he_backend.c):
+## Two ways to read the sensors
 
-| Aspect | Hall Effect V1 (2 keys) | Hall Effect V3 (3 keys) |
+[he_backend.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/he_backend.c) supports two module generations:
+
+| | HE V1 (2 keys) | HE V3 (3 keys) |
 |---|---|---|
-| Sensor readout | ESP32-S3 internal ADC1 continuous DMA (`HE_SOURCE_ESP_ADC`) | External TI ADS7028 12-bit ADC over SPI3 (`HE_SOURCE_ADS7028`) |
-| Channels | Key 1 on `ADC_CHANNEL_9`, Key 2 on `ADC_CHANNEL_6` | Key 1 on `AIN5`, Key 2 on `AIN4`, Key 3 on `AIN3` (auto-sequence) |
-| Sampling cadence | `HE_SAMPLE_HZ = 64000` Hz, `HE_FRAME_CONVS = 16` -> **250 µs** frames (**4 kHz**) | Hardware `gptimer` every `HE_SPI_FRAME_US = 50` µs -> **20 kHz** frames |
-| Bus / filtering | Median of valid conversions per 250 µs DMA frame inside IRAM ISR `on_frame` | 40 MHz SPI3 with per-frame CRC (`ads7028_read16_again` direct register loop); 4 reads per frame (1 stale + 3 keys), bad-CRC words dropped |
-| Decision & wakeup | `on_frame` ISR runs `he_rt_step` in IRAM on Core 0 and notifies `he_task` only on key edge | Core 0 `he_spi` task (`configMAX_PRIORITIES - 1`) runs `he_rt_step` and publishes key events directly via `publish()` / `key_event_report` |
-| Calibration capture | Every 250 µs frame (4 kHz) | Decimated 5:1 (`HE_CAL_EVERY_V3 = 5`) to match the 4 kHz calibration capture |
-| NVS store | `NVS_NS_CAL` (`opad_cal`), keys `cal_a`/`cal_b` | `NVS_NS_CAL3` (`opad_cal3`), keys `cal_a`/`cal_b` (Keys 1–2) + `cal3_a`/`cal3_b` (Key 3) |
+| Source | ESP32-S3 ADC1 in continuous DMA mode (`HE_SOURCE_ESP_ADC`), sensors on GPIO10 and GPIO7 | TI ADS7028 12-bit ADC on the module, over SPI3 (`HE_SOURCE_ADS7028`) |
+| Channels | Key 1 `ADC_CHANNEL_9`, Key 2 `ADC_CHANNEL_6` | Key 1 `AIN5`, Key 2 `AIN4`, Key 3 `AIN3`, auto-sequenced |
+| Rate | 64 000 conversions/s (`HE_SAMPLE_HZ`), 16 per DMA frame: one frame every **250 µs** (4 kHz) | A `gptimer` alarm every `HE_SPI_FRAME_US = 50` µs: **20 kHz** |
+| Per frame | Median of each key's valid conversions, in the frame interrupt (`on_frame`, IRAM) | 4 reads at 40 MHz (one stale from the last frame, then one per key), each with its CRC; a word with a bad CRC is dropped and that key keeps its last reading |
+| Who decides | `on_frame` runs the decision engine and wakes `he_task` only when a key changes | The Core 0 `he_spi` task decodes the frame, runs the engine and reports a change itself (`publish()`), without a hand-off to `he_task` |
+| Calibration sees | Every frame (4 kHz) | One frame in five (`HE_CAL_EVERY_V3 = 5`), the same 4 kHz |
+| Calibration store | NVS namespace `opad_cal`, keys `cal_a` / `cal_b` | `opad_cal3`: `cal_a` / `cal_b` for keys 1–2, `cal3_a` / `cal3_b` for key 3 |
 
-Details are in [/firmware/main/input/he_backend.c](/firmware/main/input/he_backend.c), [/firmware/main/input/he_spi_source.c](/firmware/main/input/he_spi_source.c), [/firmware/main/input/ads7028.c](/firmware/main/input/ads7028.c), and [/firmware/main/input/he_cal.c](/firmware/main/input/he_cal.c).
+V1 sent analog voltages through the module cable to the ESP32's own ADC, which picked up noise on the way. V3 converts on the module and sends only digital SPI, with a CRC on every word ([hardware/pcb/V2/README.md](https://github.com/OPad-dev/OPad/blob/main/hardware/pcb/V2/README.md) records the noise that drove the change).
 
-On V1, the ADC continuous driver is configured with `ADC_CONTINUOUS_ISR_IRAM_SAFE` so `on_frame` keeps running in internal RAM without cache stalls. On V3, `he_spi_source.c` acquires SPI3 exclusively, runs the first transfer via the driver, and performs subsequent 32-bit CRC-protected reads directly on `GPSPI3` hardware registers (`ads7028_read16_again`), avoiding ~10 µs of driver overhead per word. If an FFC cable is inserted upside down, `ads7028_carrier_pins(cable_reversed, ...)` swaps the SPI pin mapping automatically.
+Two details keep the V3 path fast enough for 20 kHz. [he_spi_source.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/he_spi_source.c) sets SPI3 up once through the ESP-IDF driver and then starts each transfer directly on the `GPSPI3` registers (`ads7028_read16_again`), saving the driver's ~10 µs per word; the measurements are in [the ADS7028 notes](../hardware/components/ads7028.md). And a module cable plugged in upside down is detected at boot (`board_boot_cable_reversed()`), and `ads7028_carrier_pins()` swaps the SPI pins to match.
 
-## Rapid Trigger Decision Engine (`he_rt.c`)
+On V1, Kconfig selects `ADC_CONTINUOUS_ISR_IRAM_SAFE`, so the frame interrupt keeps running from IRAM even while flash is written.
 
-Each key's state machine in [/firmware/main/input/he_rt.c](/firmware/main/input/he_rt.c) (`he_rt_step`) has **three** operational states (`he_rt_state_t`):
+## The Rapid Trigger engine
 
-```text
-                        raw >= actuation
-            +----------------------------------------+
-            |                                        v
-   +---------------+     raw <= region_exit(p)       +---------------+
-   |  HE_RT_ARMED  | <-----------------------------  | HE_RT_PRESSED |
-   +---------------+    (plain/Normal: <= release;   +---------------+
-            ^            Continuous: <= top_reset)     |           ^
-            |                                          | RT on:    | RT on:
-            | raw <= region_exit(p)                    | raw <=    | raw >=
-            |                                          | extreme - | extreme +
-            |                                          | rt_release| rt_press
-            |                                          v           |
-            +----------------------------------- +--------------------+
-                                                 | HE_RT_RT_RELEASED  |
-                                                 +--------------------+
+Each key is a small state machine in [he_rt.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/he_rt.c) (`he_rt_step`), fed one reading per frame. `raw` grows as the key goes down. `extreme` is the deepest point reached while pressed, or the shallowest point reached while rapid-trigger-released.
+
+```mermaid
+stateDiagram-v2
+    [*] --> ARMED
+    ARMED --> PRESSED: raw >= actuation (DOWN)
+    PRESSED --> ARMED: raw <= region_exit (UP)
+    PRESSED --> RT_RELEASED: RT on and raw <= extreme - rt_release (UP)
+    RT_RELEASED --> PRESSED: raw >= extreme + rt_press (DOWN)
+    RT_RELEASED --> ARMED: raw <= region_exit (no event, already up)
 ```
 
-### State Transitions
+- **`HE_RT_ARMED`**: released, waiting for a first press at the actuation point. After boot, a settings change or a fault (`need_release`), the key must first be seen back above the release threshold before it may press at all.
+- **`HE_RT_PRESSED`**: held. Without Rapid Trigger it is released at the fixed release threshold, below actuation, which gives hysteresis. With Rapid Trigger, `extreme` follows the key down and the key is released as soon as it rises `rt_release` above that point.
+- **`HE_RT_RT_RELEASED`**: released mid-stroke. `extreme` now follows the key *up*, and as soon as it goes down `rt_press` again, it is pressed, without returning to the actuation point.
 
-1. **`HE_RT_ARMED`**: The key is released and waiting for an initial press.
-   - If `k->need_release` is set (after boot, parameter change, or a sensor fault), the key ignores presses until `raw <= p->release`.
-   - Once armed and `raw >= p->actuation`, the key transitions to `HE_RT_PRESSED`, emits `HE_RT_DOWN`, and initializes `k->extreme` to `cap_peak(p, raw)`.
-2. **`HE_RT_PRESSED`**: The key is held down.
-   - If `raw <= region_exit(p)`, the key returns to `HE_RT_ARMED` and emits `HE_RT_UP` (without rapid trigger, `region_exit(p)` is `p->release`).
-   - With rapid trigger:
-     - `k->extreme` tracks the deepest raw reading reached, capped at `p->peak_cap` (which implements the optional **BOTTOM DEAD ZONE** so pushing harder into the housing damper does not shift the release point).
-     - Otherwise, if `raw <= k->extreme - p->rt_release`, the key transitions to `HE_RT_RT_RELEASED`, emits `HE_RT_UP`, and sets `k->extreme = raw` to track the shallowest point reached.
-3. **`HE_RT_RT_RELEASED`**: The key was released mid-stroke by rapid trigger and is ready to re-press immediately.
-   - `k->extreme` tracks the lowest (most released) reading seen while rising.
-   - If `raw <= region_exit(p)`, rapid trigger ends and the key returns to `HE_RT_ARMED` (requiring a full crossing of `p->actuation` next time).
-   - If `raw >= k->extreme + p->rt_press`, the key immediately re-actuates (`HE_RT_DOWN`), transitions back to `HE_RT_PRESSED`, and resets `k->extreme = cap_peak(p, raw)`.
+`region_exit()` is where Rapid Trigger's region ends. In **Normal** mode it is the release threshold: come up past it and the next press needs a full crossing of actuation again. In **Continuous** mode it is `top_reset`, near the top of travel, so Rapid Trigger stays active almost all the way to rest.
 
-The difference between **Normal** and **Continuous** rapid trigger is `region_exit(p)`: in Normal mode it returns `p->release` (the release threshold below actuation), whereas in Continuous mode it returns `p->top_reset` so rapid trigger stays active almost all the way back to rest.
+`extreme` is capped at `peak_cap` (`cap_peak()`), the optional **bottom dead zone**: pressing harder into the switch's bottom damper does not move the point the key has to come back up from.
 
-## Travel Units, Noise Floors, and Calibration
+New thresholds never change a key mid-press. `he_rt_set_params()` keeps them pending until the key is up.
 
-Per [/docs/specs/v2-hall-effect-decisions.md](/docs/specs/v2-hall-effect-decisions.md) (D3 and D7) and [/firmware/main/input/he_params.h](/firmware/main/input/he_params.h):
+## Percent of a calibrated span, with noise floors
 
-- **Percentage of magnetic span (`HE_PCT_FULL = 1000`)**: Settings are stored in `0.1 %` increments of `full - rest` (magnetic counts, not millimeters), because magnet strength and sensor response vary nonlinearly across switches.
-- **Noise floors (`he_params_build`)**: Movement thresholds (`rt_press`, `rt_release`, `release_hyst`) and top-reset clearance are clamped above configured raw-count noise floors (`he_limits_t`), and `he_params_build` returns explicit `HE_PARAMS_*_RAISED` flags whenever a setting is raised—never silently. Users can opt out per key via **Allow below the noise floor** (`no_floor`, dropping floors to 1 count).
-- **Five-press calibration (`he_cal_capture.h`)**: Rest is averaged over 64 frames (16 ms at 4 kHz after a 64-frame settle) and checked for spread and absolute bounds. Full press records 5 full strokes per key and takes the **median** peak so a single extra-hard bottom-out does not skew the span; it also checks whether the key released below the measured rest (`HE_CAL_ERR_REST_PRESSED`).
-- **A/B NVS persistence (`he_cal.c`)**: Calibration alternates between `cal_a`/`cal_b` (and `cal3_a`/`cal3_b` for Key 3 on V3) with sequence numbers and CRC32 validation. V1 (`opad_cal`) and V3 (`opad_cal3`) use separate NVS namespaces so calibrations from one hardware generation never drive the other. NVS writes are deferred while playing (`PLAYING` / `COOLDOWN`) and flushed in `IDLE`.
+Magnet strength and sensor response vary from switch to switch and are not linear in travel, so a setting in millimetres would mean something different on every key. Settings are instead stored in 0.1 % of each key's calibrated magnetic span, `full - rest` (`HE_PCT_FULL = 1000` in [he_params.h](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/he_params.h)); [v2-hall-effect-decisions.md](../specs/v2-hall-effect-decisions.md) D3 records the decision.
 
-## Safety, Uncalibrated Lockout, and Stall Recovery
+A percentage can ask for less movement than the sensor's noise. `he_params_build()` therefore raises movement thresholds (`rt_press`, `rt_release`, the release hysteresis) and the top-reset clearance to measured noise floors, and **says so**: each raised value sets a `HE_PARAMS_*_RAISED` flag the app shows, never a silent change. **Allow below the noise floor** (`no_floor`) lowers the floors to 1 count for users who want to accept the risk of phantom presses.
 
-- **Uncalibrated lockout (D7)**: Until every active key has a valid calibration (`he_cal_is_locked_decision`), `he_cal_suppress_input` suppresses all key output, touchscreen swipes are disabled, and the display locks to the calibration screen ([/firmware/main/ui/he_cal_ui.c](/firmware/main/ui/he_cal_ui.c), [/firmware/main/input/he_cal_runner.c](/firmware/main/input/he_cal_runner.c)).
-- **ADC stall watchdog (`he_health`)**: If a key stops producing valid conversions for `HE_STALL_US`, `he_backend.c` forces the key released (`he_rt_fault`) so a sensor or cable fault never leaves a key stuck down.
-- **Safe fault recovery**: `he_rt_fault` sets `need_release = true`, so when valid readings return the key must be observed back at rest before any new press is emitted.
-- **Paused hardware access (`he_backend_run_paused`)**: Releases keys and cleanly pauses the active HE source whenever exclusive hardware access is needed—on V1, `he_backend_probe_module` pauses ADC1 DMA for ~8 ms to read the module ID after keys go absent; on V3 (where ADC1 stays free for module-ID monitoring), `he_adc_test_run` pauses SPI3 streaming during `opadctl board-test`—and resumes streaming afterward without leaving keys stuck.
+## Calibration
+
+The guided calibration ([he_cal_capture.h](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/he_cal_capture.h), [he_cal_runner.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/he_cal_runner.c)) measures the two ends of the span:
+
+- **Rest**: after 64 frames to settle, the average of 64 frames (16 ms at 4 kHz), checked for spread and absolute bounds.
+- **Full press**: five full strokes per key; the **median** peak is used, so one unusually hard bottom-out does not stretch the span. A key that released below its measured rest fails (`HE_CAL_ERR_REST_PRESSED`).
+
+[he_cal.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/he_cal.c) keeps two copies (A/B) with sequence numbers and a CRC-32, writing the older one, so a write cut short by unplugging leaves the other intact. V1 and V3 use separate namespaces so one generation's calibration never drives the other. Like every NVS write, saving waits for `IDLE`. The user procedure is [Calibrating Hall Effect](../guides/calibrate-hall-effect.md).
+
+## A fault can never hold a key down
+
+- **Uncalibrated lockout (D7).** Until every active key has a valid calibration (`he_cal_is_locked_decision`), `he_cal_suppress_input` suppresses all key output, the screen is locked to the calibration screen, touch only operates its button and swipes are off ([he_cal_ui.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/ui/he_cal_ui.c)).
+- **Stalls.** `he_task` checks health regularly ([he_health.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/he_health.c)): a key with no valid reading for `HE_STALL_US` (5 ms) is released and ignored until readings return; no frames at all for that long releases every key and restarts the source, with a growing back-off.
+- **Recovery never presses.** A key released this way goes through `he_rt_fault()`, which sets `need_release`: when readings come back, the key must be seen up before it can press again.
+- **Pausing the source.** Work that needs the ADC or SPI3 to itself goes through `he_backend_run_paused()`, which releases the keys first and resumes the stream afterwards: on V1, `he_backend_probe_module` pausing ADC1 to read the module ID once both keys read absent; on V3, the board test's ADC checks (`he_adc_test_run`).
+
+How these pieces fit into the firmware is in [Input (firmware)](../develop/firmware/input.md).

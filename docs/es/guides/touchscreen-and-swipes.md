@@ -1,58 +1,68 @@
 ---
-title: Uso de la pantalla táctil y deslizamientos
-description: Cómo usar la pantalla táctil como tercer botón para Quick Retry en partida y configurar acciones por deslizamiento direccional para volumen, multimedia y atajos.
+title: Usar la pantalla táctil y los deslizamientos
+description: La pantalla táctil es el cuarto botón de OPad, después de sus tres teclas. Un dedo apoyado es Quick Retry durante un mapa, y los deslizamientos ejecutan acciones que tú eliges, como el volumen y las teclas multimedia.
 sidebar:
   order: 2
 ---
 
-La pantalla táctil capacitiva de 2.0 pulgadas de OPad actúa como **el tercer botón** (AGENTS.md §1.4). Durante un mapa de osu!, un dedo apoyado envía Quick Retry (`` ` ``) mientras que los deslizamientos nunca disparan Quick Retry; fuera de un mapa, los toques no hacen nada y los deslizamientos direccionales ejecutan acciones configurables. Sin anfitrión o sin `tosu`, cualquier toque es Quick Retry. <!-- src: /firmware/main/input/touch_retry.c#touch_mode_now -->
+La pantalla táctil es el cuarto botón de OPad, después de sus tres teclas. Durante un mapa de osu!, un dedo apoyado en ella mantiene pulsado Quick Retry (`` ` ``) mientras siga ahí. Los deslizamientos ejecutan acciones que tú eliges, de forma predeterminada controles de volumen y de pista. <!-- src: /AGENTS.md#1. Product rules --> <!-- src: /firmware/main/input/touch_retry.c#touch_retry_task -->
 
-## Qué necesitas
+Para distinguir un mapa de un menú, el teclado necesita la app de escritorio con tosu conectado. Sin ellos, cada toque es Quick Retry y no hay deslizamientos. <!-- src: /firmware/main/input/touch_retry.c#touch_mode_now --> <!-- src: /firmware/main/input/touch_retry.c#touch_retry_set_host_status -->
 
-- Tu OPad conectado al PC. Para los deslizamientos sensibles al contexto (detección dentro/fuera de mapa y control del volumen de osu!), `opad-daemon` y `tosu` deben estar en ejecución; sin ellos, cualquier toque envía Quick Retry y los deslizamientos quedan desactivados. <!-- src: /firmware/main/input/touch_retry.c#touch_mode_now -->
-- `opad-gui` instalado si deseas personalizar las acciones de deslizamiento. <!-- src: /desktop/gui/src/pages.rs#settings -->
+## Cómo se comporta un toque
 
-## Comportamiento en partida: Quick Retry
-
-Mientras juegas un mapa de osu! (`TOUCH_MODE_PLAY`): <!-- src: /firmware/main/input/touch_retry.c#TOUCH_MODE_PLAY -->
-
-- **Dedo apoyado**: Apoya y mantén el dedo sobre la pantalla táctil. El teclado observa el movimiento durante 60 ms (`PLAY_RETRY_STILL_US`); si el dedo permanece dentro de 12 píxeles (`PLAY_RETRY_STILL_PX`), o permanece apoyado 250 ms (`PLAY_SWIPE_WINDOW_US`) sin convertirse en deslizamiento, el teclado mantiene pulsado Quick Retry (`` ` ``) hasta que levantes el dedo. Un toque breve que se levanta sin deslizar también envía una pulsación y liberación de Quick Retry. <!-- src: /firmware/main/input/touch_retry.c#PLAY_RETRY_STILL_US, /firmware/main/input/touch_retry.c#tap_retry -->
-- **Protección frente a deslizamientos**: Iniciar un deslizamiento cancela Quick Retry para ese toque, de modo que deslizar para ajustar el volumen o pasar de pista nunca reinicia tu mapa. <!-- src: /firmware/main/input/touch_retry.c#touch_retry_task -->
-- **Sin modificadores de teclado ni superposiciones en partida**: Durante un mapa, no se envían deslizamientos de teclas (`osu!` shortcuts ni `Other key`), los deslizamientos de volumen nunca pulsan Alt y no se dibuja ninguna superposición de deslizamiento en la LCD del teclado. <!-- src: /firmware/main/input/touch_retry.c#run_swipe_action, /firmware/main/input/touch_retry.c#handle_swipe -->
-
-## Comportamiento fuera de partida: deslizamientos direccionales
-
-Fuera de un mapa (`TOUCH_MODE_MENU`), los toques no envían nada y los deslizamientos direccionales disparan las acciones configuradas: <!-- src: /firmware/main/input/touch_retry.c#TOUCH_MODE_MENU, /desktop/crates/opad-model/src/lib.rs#DEFAULT_SWIPE_UP -->
-
-| Dirección del deslizamiento | Acción predeterminada | Comportamiento |
+| Situación | Un dedo apoyado | Un deslizamiento |
 |---|---|---|
-| **Deslizar arriba** (`↑ SWIPE UP`) | `Volume up` | Sube el volumen de osu! cuando osu! está activo (ventana en primer plano en Windows, u osu!lazer en ejecución en Linux); sube el volumen del sistema en caso contrario. Se repite cada 30 píxeles en un arrastre largo. <!-- src: /firmware/main/input/touch_retry.c#step_volume, /firmware/main/input/gesture.h#GESTURE_SWIPE_PX --> |
-| **Deslizar abajo** (`↓ SWIPE DOWN`) | `Volume down` | Baja el volumen de osu! cuando osu! está activo; baja el volumen del sistema en caso contrario. Se repite cada 30 píxeles en un arrastre largo. <!-- src: /firmware/main/input/touch_retry.c#step_volume, /firmware/main/input/gesture.h#GESTURE_SWIPE_PX --> |
-| **Deslizar izquierda** (`← SWIPE LEFT`) | `Previous track` | Envía USB HID Consumer Control Previous Track una vez por deslizamiento. <!-- src: /firmware/main/input/touch_retry.c#run_swipe_action --> |
-| **Deslizar derecha** (`SWIPE RIGHT →`) | `Next track` | Envía USB HID Consumer Control Next Track una vez por deslizamiento. <!-- src: /firmware/main/input/touch_retry.c#run_swipe_action --> |
+| **Sin app, o tosu no conectado** | Quick Retry, al instante, mantenido hasta que levantes el dedo | Nada: sigue siendo Quick Retry |
+| **Durante un mapa** | Quick Retry, mantenido hasta que levantes el dedo | Su acción de volumen o multimedia. Nunca Quick Retry, nunca una tecla del teclado |
+| **Fuera de un mapa** | Nada | Su acción |
+<!-- src: /firmware/main/input/touch_retry.c#touch_mode_now --> <!-- src: /firmware/main/input/touch_retry.c#touch_retry_task --> <!-- src: /firmware/main/input/touch_retry.c#run_swipe_action -->
 
-Un deslizamiento requiere desplazarse al menos **30 píxeles** (`GESTURE_SWIPE_PX = 30`) con un eje dominante en proporción mínima de 1.5:1 (`2 * |dy| >= 3 * |dx|` para vertical, `2 * |dx| >= 3 * |dy|` para horizontal). <!-- src: /firmware/main/input/gesture.h#GESTURE_SWIPE_PX, /firmware/main/input/gesture.c#gesture_feed -->
+### Durante un mapa
+
+- **Quick Retry espera a que el dedo se asiente.** El teclado pulsa Quick Retry cuando el dedo se ha mantenido dentro de 12 píxeles durante 60 ms, o lleva 250 ms apoyado sin convertirse en deslizamiento. Un toque más corto que eso sigue enviando una pulsación y liberación de Quick Retry. El retry de osu! es de todas formas una pulsación mantenida, así que la espera no se nota. <!-- src: /firmware/main/input/touch_retry.c#PLAY_RETRY_STILL_US --> <!-- src: /firmware/main/input/touch_retry.c#PLAY_RETRY_STILL_PX --> <!-- src: /firmware/main/input/touch_retry.c#PLAY_SWIPE_WINDOW_US --> <!-- src: /firmware/main/input/touch_retry.c#tap_retry -->
+- **Un deslizamiento nunca reinicia el mapa.** En cuanto un toque se convierte en deslizamiento, ya no puede enviar Quick Retry. <!-- src: /firmware/main/input/touch_retry.c#touch_retry_task -->
+- **Solo se ejecutan las acciones de volumen y multimedia.** Los atajos de osu! y las demás teclas del teclado se omiten, los deslizamientos de volumen envían una rueda del ratón simple sin Alt y no se dibuja nada en la pantalla del teclado. <!-- src: /firmware/main/input/touch_retry.c#step_volume --> <!-- src: /firmware/main/input/touch_retry.c#handle_swipe -->
+
+### Qué cuenta como deslizamiento
+
+Un deslizamiento recorre al menos 30 píxeles, principalmente a lo largo de un eje: una dirección tiene que superar a la otra al menos en proporción 1,5 a 1. Un deslizamiento vertical sigue avanzando un paso por cada 30 píxeles más mientras arrastras, así que un solo arrastre largo cambia el volumen varios pasos. Cualquier otra acción se dispara una vez por toque. <!-- src: /firmware/main/input/gesture.h#GESTURE_SWIPE_PX --> <!-- src: /firmware/main/input/gesture.c#gesture_feed --> <!-- src: /firmware/main/input/touch_retry.c#handle_swipe -->
+
+## Deslizamientos predeterminados
+
+| Deslizamiento | Acción predeterminada | Qué hace |
+|---|---|---|
+| Arriba | `Volume up` | El volumen de osu! cuando osu! está activo; si no, el volumen del sistema. Se repite a lo largo de un arrastre largo. |
+| Abajo | `Volume down` | Lo mismo, hacia abajo. |
+| Izquierda | `Previous track` | La tecla multimedia Previous Track. |
+| Derecha | `Next track` | La tecla multimedia Next Track. |
+<!-- src: /desktop/crates/opad-model/src/lib.rs#DEFAULT_SWIPE_UP --> <!-- src: /firmware/main/input/touch_retry.c#s_swipe_actions --> <!-- src: /firmware/main/input/touch_retry.c#run_swipe_action -->
+
+"osu! está activo" significa: <!-- src: /desktop/daemon/src/osu_window.rs -->
+
+- **Windows:** osu! (stable o lazer) es la ventana en primer plano.
+- **Linux:** osu!lazer está en ejecución. Linux no tiene una forma portable de preguntar qué ventana tiene el foco, así que mientras lazer se ejecuta, un deslizamiento de volumen envía el control de volumen de osu! (Alt+rueda) a la ventana que esté en primer plano.
+
+## Elige tus acciones de deslizamiento
+
+1. Conecta el teclado y abre la app de OPad.
+2. Abre **Settings** → **⌨ Keypad** y desplázate hasta **Touchscreen swipes**.
+3. Cada dirección tiene una lista: **↑ SWIPE UP**, **↓ SWIPE DOWN**, **← SWIPE LEFT** y **SWIPE RIGHT →**. Elige una acción: <!-- src: /desktop/gui/src/pages.rs#settings --> <!-- src: /desktop/crates/opad-model/src/swipe.rs#swipe_choices -->
+   - **Multimedia y volumen:** `Nothing`, `Volume up`, `Volume down`, `Previous track`, `Next track`, `Play / pause`, `Mute`.
+   - **Un atajo de osu!**, como `osu!: Random beatmap (F2)`, `osu!: Mod select (F1)`, `osu!: Chat (F8)`, `osu!: Settings (Ctrl+O)` u `osu!: Screenshot (F12)`. Los atajos exclusivos de osu!lazer empiezan por `osu!lazer:`; en Windows la lista también incluye `Boss key (hide osu!) (Insert)` y `Reload skin (Ctrl+Alt+Shift+S)` de osu! stable. <!-- src: /desktop/crates/opad-model/src/swipe.rs#OSU_SHORTCUTS -->
+   - **`Other key (F13-F24)…`:** una segunda lista, **Choose a key**, ofrece teclas de función que no usa nada más, para asignarlas en OBS, Discord o el propio osu!. En Linux son F14–F19 (el escritorio da a F13 y F20–F23 sus propios significados); en Windows, F13–F23. F24 nunca se ofrece, porque el teclado la usa internamente tras un paso de volumen con Alt+rueda. <!-- src: /desktop/crates/opad-model/src/swipe.rs#free_keys -->
+4. Haz clic en **Save settings**. El teclado guarda las acciones, así que funcionan igual en cualquier PC con OPad. <!-- src: /desktop/gui/src/pages.rs#settings --> <!-- src: /firmware/main/config/device_config.c -->
 
 > [!NOTE]
-> En un teclado Hall Effect sin calibrar, la pantalla táctil está bloqueada al botón de calibración en pantalla, los deslizamientos están desactivados y no se envía ninguna tecla hasta completar la calibración. <!-- src: /firmware/main/input/touch_retry.c#touch_retry_task -->
+> Un teclado Hall Effect sin calibrar está bloqueado en su pantalla de calibración. Ahí, un toque solo pulsa el botón de esa pantalla: los deslizamientos están desactivados y no se envía ninguna tecla. Consulta [Calibrar interruptores Hall Effect](calibrate-hall-effect.md). <!-- src: /firmware/main/input/touch_retry.c#touch_retry_task --> <!-- src: /docs/specs/v2-hall-effect-decisions.md -->
 
-## Configurar acciones de deslizamiento personalizadas
+## Comprueba que ha funcionado
 
-Las acciones de deslizamiento se configuran en `opad-gui`: <!-- src: /desktop/gui/src/pages.rs#settings -->
+1. Ejecuta `opadctl status`. La línea `Swipes:` muestra la acción de cada dirección (`up`, `down`, `left`, `right`). <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
+2. Fuera de un mapa, desliza el dedo sobre el teclado. Muestra una breve insignia en la dirección del deslizamiento y la acción ocurre en tu PC. <!-- src: /firmware/main/input/touch_retry.c#handle_swipe -->
 
-1. Conecta tu OPad, abre `opad-gui`, selecciona **Settings** en la barra lateral y asegúrate de estar en la pestaña **⌨ Keypad**. <!-- src: /desktop/gui/src/pages.rs#settings -->
-2. Desplázate hasta la tarjeta **Touchscreen swipes**. Cada dirección tiene su propio desplegable: **↑ SWIPE UP**, **↓ SWIPE DOWN**, **← SWIPE LEFT** y **SWIPE RIGHT →**. <!-- src: /desktop/gui/src/pages.rs#settings -->
-3. Elige una acción del desplegable: <!-- src: /desktop/crates/opad-model/src/swipe.rs#swipe_choices, /desktop/crates/opad-model/src/lib.rs#SwipeAction -->
-   - **Multimedia / Volumen / Desactivado**: `Nothing`, `Volume up`, `Volume down`, `Previous track`, `Next track`, `Play / pause`, `Mute`.
-   - **Atajos nombrados de osu!**: Atajos integrados de osu! y osu!lazer (como `osu!: Random beatmap (F2)`, `osu!: Mod select (F1)`, `osu!: Chat (F8)`, `osu!: Social / extended chat (F9)`, `osu!: Settings (Ctrl+O)`, `osu!: Screenshot (F12)`, y en Windows también `osu! stable: Boss key (hide osu!) (Insert)` y `osu! stable: Reload skin (Ctrl+Alt+Shift+S)`).
-   - **`Other key (F13-F24)…`**: Muestra un segundo desplegable (`Choose a key`) con teclas de función libres que no chocan con atajos de osu! ni del sistema — **F14–F19 en Linux** (omitiendo F13, F20–F23 y F24) y **F13–F23 en Windows** (omitiendo F24, que el teclado reserva para suprimir el menú Alt de Windows). <!-- src: /desktop/crates/opad-model/src/swipe.rs#free_keys -->
-4. Haz clic en **Save settings**. El daemon guarda la configuración y envía `SetConfig` al teclado. <!-- src: /desktop/gui/src/pages.rs#settings, /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
+## Si no ha funcionado
 
-## Cómo comprobar que funcionó
-
-Ejecuta `opadctl status` y revisa la línea `Swipes:`, que imprime la acción configurada para las cuatro direcciones (`up`, `down`, `left`, `right`). Después desliza sobre el teclado fuera de un mapa y comprueba el distintivo visual en la LCD y la acción en tu PC. <!-- src: /desktop/cli/src/main.rs#Commands, /firmware/main/input/touch_retry.c#handle_swipe -->
-
-## Qué hacer si no funcionó
-
-- Si cada toque actúa como Quick Retry y los deslizamientos no se ejecutan, comprueba que `opad-daemon` y `tosu` estén conectados (`opadctl status` muestra `tosu (osu!): Active`). Consulta [Uso con tosu](use-with-tosu.md) y [Solución de problemas](../troubleshooting.md).
-- Si los deslizamientos de volumen cambian el volumen del sistema en lugar del de osu!, verifica que osu! sea la ventana en primer plano (Windows) o que osu!lazer esté ejecutándose (Linux). <!-- src: /desktop/gui/src/pages.rs#settings -->
+- **Cada toque es Quick Retry y los deslizamientos no hacen nada:** el teclado no recibe noticias de tosu. Comprueba que `opadctl status` muestra `tosu (osu!): Active`; consulta [Usar OPad con tosu](use-with-tosu.md). <!-- src: /firmware/main/input/touch_retry.c#touch_mode_now -->
+- **Los deslizamientos de volumen cambian el volumen del sistema en lugar del de osu!:** en Windows, pon osu! en primer plano; en Linux, inicia osu!lazer. <!-- src: /desktop/daemon/src/osu_window.rs -->
+- **Un deslizamiento con un atajo de osu! no hace nada en un mapa:** es así por diseño. Durante un mapa nunca se envían teclas del teclado. <!-- src: /firmware/main/input/touch_retry.c#run_swipe_action -->

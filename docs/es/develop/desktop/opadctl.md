@@ -1,52 +1,50 @@
 ---
 title: Arquitectura de la herramienta CLI opadctl
-description: Referencia de implementación de la utilidad de línea de comandos opadctl, análisis con clap, despacho de cliente IPC y flasheo/recuperación serie autónomo.
+description: Referencia de implementación de la utilidad de línea de comandos opadctl, el parseo con clap, el despacho como cliente IPC y el flasheo/recuperación serie autónomos.
 sidebar:
   order: 4
 ---
 
-`opadctl` ([/desktop/cli/src/main.rs](/desktop/cli/src/main.rs)) es la CLI de OPad basada en Clap para consultas de estado, sincronización/reinicio de contadores, copias de seguridad JSON, monitorización de registros, inspección de latencia/ritmo de pulsación, pruebas de placa, configuración del entorno y flasheo/recuperación USB sin botones.
+`opadctl` ([/desktop/cli/src/main.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/cli/src/main.rs)) es la CLI de OPad basada en Clap para consultar el estado, sincronizar/reiniciar contadores, hacer copias de seguridad JSON, monitorizar logs, inspeccionar la latencia y la frecuencia de toques, lanzar pruebas de placa, preparar el entorno y flashear/recuperar por USB sin tocar botones.
 
 ## Modos de ejecución
 
-```text
-+-------------------------------------------------------------+
-|                      opadctl invocation                     |
-+-------------------------------------------------------------+
-                               |
-        +----------------------+----------------------+----------------------+
-        |                                             |                      |
-        v                                             v                      v
-[IPC Client Mode]                             [Direct Hardware Mode]  [Local Setup]
-(status, sync, reset, export, import,         (flash, recover,        (setup)
- monitor, firmware-update, update, latency,    bootloader)
- stats, board-test, animation, restart)               |
-        |                                             |
-        v                                             v
-Connects to opad-daemon via                   Asks daemon to release port
-Unix socket / Windows named pipe              if running; flashes via espflash
+```mermaid
+flowchart TD
+    A["opadctl COMMAND"] --> B{command}
+    B -->|"status, sync, reset, export, import, monitor,<br/>firmware-update, update, latency, stats,<br/>board-test, animation, restart"| IPC["Cliente IPC:<br/>connect_and_handshake, IpcRequest / IpcResponse"]
+    IPC --> D["opad-daemon"]
+    B -->|"flash, recover, bootloader"| P{"¿daemon en marcha?"}
+    P -->|sí| PF["PrepareFlash: el daemon libera el puerto CDC"]
+    P -->|no| HW
+    PF --> HW["opad_device::flash<br/>(espflash 4.6.0)"]
+    HW -->|"flash / recover terminado"| FF["FinishFlash: el daemon reconecta y verifica"]
+    HW -->|"bootloader, o un fallo"| RD["ResumeDevice: se devuelve el puerto, sin verificación"]
+    B -->|setup| L["Solo comprobaciones locales, sin daemon"]
 ```
 
-1. **Modo cliente IPC**: Se conecta mediante `opad_ipc::connect_and_handshake`, envía tramas tipadas `IpcRequest` y formatea la salida de `IpcResponse`.
-2. **Modo hardware directo (`flash`, `recover`, `bootloader`)**: Si `opad-daemon` está en ejecución, envía `IpcRequest::PrepareFlash` para que el daemon libere el puerto CDC, y luego ejecuta las rutinas `opad_device::flash` sobre el teclado (`303a:8415`) o el bootloader ROM del ESP32-S3 (`303a:1001`) usando `espflash` **4.6.0** fijado. Después envía `FinishFlash` (o `ResumeDevice` tras `bootloader`/fallo). Funciona de forma autónoma si el daemon está detenido.
-3. **Modo configuración local (`setup`)**: Comprueba localmente `70-opad.rules` y `ptrace_scope` / `cap_sys_ptrace` de Yama en Linux sin necesitar `opad-daemon` (o informa de los controladores integrados en Windows).
+1. **Cliente IPC**: `opad_ipc::connect_and_handshake()`, tramas `IpcRequest` tipadas, salida formateada de `IpcResponse` ([Referencia de IPC](../../reference/ipc.md)).
+2. **Hardware directo (`flash`, `recover`, `bootloader`)**: con el daemon en marcha, `PrepareFlash` hace que libere el puerto serie; después, las rutinas de `opad_device::flash` hablan con el pad y con su bootloader de la ROM (`303a:1001`) ([crates](crates.md#5-opad-device)). Al terminar, `FinishFlash` reanuda el daemon y verifica el nuevo firmware, o `ResumeDevice` devuelve el puerto sin esperar a la app (tras `bootloader`, o cuando el flasheo falló). Un daemon antiguo que no conoce `ResumeDevice` recibe `FinishFlash` en su lugar. Sin daemon, estos comandos funcionan por sí solos.
+3. **Preparación local (`setup`)**: comprueba sin daemon la regla udev de Linux (`/etc/udev/rules.d/70-opad.rules` o `/usr/lib/udev/rules.d/70-opad.rules`) y `ptrace_scope` de Yama / `cap_sys_ptrace`, o informa de los drivers integrados en Windows.
 
 ## Subcomandos (enum `Commands`)
 
-Los 17 subcomandos en [/desktop/cli/src/main.rs](/desktop/cli/src/main.rs):
-- `status`: Imprime el modo del daemon, info del teclado, ranura OTA activa, módulo de entrada y calibración HE, contadores, propiedad, estado de `tosu`, latencia (`p50`/`p99.9`/`max`) y configuración.
-- `sync`: Envía `IpcRequest::ForceSync`.
-- `reset [--yes]`: Reinicio destructivo de contadores con incremento de generación (aborta sin `--yes`).
-- `export <FILE>` / `import [--yes] <FILE>`: Exporta o previsualiza e importa archivos `JsonBackup`.
-- `monitor [-l <LIMIT>] [-f] [--level <LEVEL>] [--source <SOURCE>]`: Transmite registros de daemon/teclado/programa/`tosu` (sondea cada 500 ms con `-f`).
-- `flash [--port <PORT>] [--full] <FIRMWARE>`: Actualización OTA en la ranura inactiva o flasheo completo de recuperación `--full`.
-- `recover [--timeout <SECONDS>] <FIRMWARE>`: Captura el bootloader ROM del ESP32-S3 al reconectar el cable y escribe el conjunto completo de flash (sin botones BOOT ni RESET).
-- `bootloader [--port <PORT>]`: Reinicia el teclado en modo descarga ROM (`303a:1001`) y lo deja ahí.
-- `firmware-update [--yes]`: Comprueba el manifiesto firmado de lanzamiento e instala la actualización de firmware con consentimiento explícito.
-- `update [--channel <CHANNEL>] [--check] [--install]`: Muestra el estado de actualización de la aplicación, cambia el canal (`stable`/`beta`), comprueba el feed (esperando hasta 120 s) o inicia la instalación de una actualización disponible mediante `IpcRequest::InstallUpdate`.
-- `latency [--reset]`: Imprime o reinicia la latencia tecla-a-HID medida en el dispositivo (`p50`, `p99`, `p99.9`, `max`, conteo diferido).
-- `stats [--period <DAYS>]`: Imprime ritmos de pulsación KPM de intentos e historial (y opcionalmente actualiza el periodo histórico, `0` = todo el tiempo, máximo `3650`).
-- `board-test [--fix-pins] [--magnet]`: Ejecuta pruebas de PCB del carrier/módulo (ID de módulo, orientación FFC, líneas de teclas, cortocircuitos, ADS7028/sensores de HE V3).
-- `animation <NAME> [GRADE]`: Previsualiza una animación de resultado (`pop`, `drop`, `burst`, ID o `none`) para calificación `SS`/`S`/`A`/`B`/`C`/`D`.
-- `restart`: Vuelca contadores y reinicia el teclado en cuanto quede en reposo.
-- `setup`: Verifica permisos de plataforma (`udev` + `ptrace` en Linux).
+Los 17 subcomandos públicos de [/desktop/cli/src/main.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/cli/src/main.rs):
+- `status`: muestra el modo del daemon, la información del pad, la ranura OTA en ejecución, el módulo de entrada y la calibración HE, los contadores, la propiedad, el estado de `tosu`, la latencia (`p50`/`p99.9`/`max`) y la configuración.
+- `sync`: envía `IpcRequest::ForceSync`.
+- `reset [--yes]`: reinicio destructivo de los contadores que incrementa la generación (se cancela sin `--yes`).
+- `export <FILE>` / `import [--yes] <FILE>`: exporta, o previsualiza e importa, archivos `JsonBackup`.
+- `monitor [-l <LIMIT>] [-f] [--level <LEVEL>] [--source <SOURCE>]`: muestra las últimas `LIMIT` (por defecto 50) entradas de log del daemon, del pad, del programa y de `tosu`; `-f` las sigue, sondeando cada 500 ms.
+- `flash [--port <PORT>] [--full] <FIRMWARE>`: actualización OTA a la ranura inactiva, o flasheo de recuperación con `--full`.
+- `recover [--timeout <SECONDS>] <FIRMWARE>`: espera (por defecto 300 s) a que aparezca el bootloader de la ROM tras volver a enchufar el cable y escribe el conjunto completo de imágenes; sin botones BOOT ni RESET ([Recuperación](../../recovery.md) §7.6–7.7).
+- `bootloader [--port <PORT>]`: reinicia el pad en el modo de descarga de la ROM (`303a:1001`) y lo deja ahí.
+- `firmware-update [--yes]`: comprueba el manifiesto de release firmado e instala la actualización de firmware con consentimiento explícito.
+- `update [--channel <CHANNEL>] [--check] [--install]`: muestra el estado de actualización de la app, cambia de canal (`stable`/`beta`), comprueba el feed (esperando hasta 120 s) o empieza a instalar una actualización de la app disponible mediante `IpcRequest::InstallUpdate`.
+- `latency [--reset]`: muestra o reinicia la latencia de pulsación a HID medida en el dispositivo (`p50`, `p99`, `p99.9`, `max`, número de diferidos).
+- `stats [--period <DAYS>]`: muestra la frecuencia de toques en KPM del intento y del historial (y, opcionalmente, cambia el periodo del historial; `0` = todo, máximo `3650`).
+- `board-test [--fix-pins] [--magnet]`: ejecuta la prueba de PCB de la placa portadora y del módulo (ID del módulo, orientación del FFC, líneas de tecla, cortos, ADS7028/sensores de HE V3).
+- `animation <NAME> [GRADE]`: previsualiza una animación de resultado (`pop`, `drop`, `burst`, un ID o `none`) para la nota `SS`/`S`/`A`/`B`/`C`/`D`.
+- `restart`: escribe los contadores y reinicia el pad cuando está en reposo.
+- `setup`: verifica los permisos de la plataforma (`udev` + `ptrace` en Linux).
+
+Dos alias ocultos, `freaky67` y `easter-egg`, envían `IpcRequest::TriggerEasterEgg`. Uso y ejemplos de cara al usuario: [Referencia de opadctl](../../reference/opadctl.md).

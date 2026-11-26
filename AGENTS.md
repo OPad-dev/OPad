@@ -4,7 +4,8 @@ Rules for anyone working on this repository with the help of an AI tool
 (Claude Code, Codex, Copilot, Cursor, Gemini, Aider, ...), and for the AI
 itself. Human contributors are welcome to follow it too.
 
-OPad is a low-latency two-key osu! keypad on the Waveshare ESP32-S3-Touch-LCD-2,
+OPad is a low-latency three-key osu! keypad (osu! plays with two; the third is
+for play style) on the Waveshare ESP32-S3-Touch-LCD-2,
 with a Rust desktop suite (daemon, GUI, `opadctl`) for Linux and Windows 10/11.
 See [README.md](README.md) for the overview and [docs/](docs/README.md) for
 details.
@@ -27,7 +28,7 @@ details.
    firmware. Detect and negotiate instead of switching formats (for example,
    the pad answers in the framing the host used). Never tell a user to "update
    both together". State the result in the commit (see §3).
-4. **The touchscreen is the third button.** It must give a clean press, a held
+4. **The touchscreen is the fourth button.** It must give a clean press, a held
    state while the finger stays down, and a clean release, not just tap
    detection. During a map a resting finger is Quick Retry (`` ` ``), and a
    swipe never sends it; outside a map a tap sends nothing. Each swipe
