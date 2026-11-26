@@ -1,12 +1,15 @@
 ---
 title: opadctl CLI Reference
-description: Command-line reference and options for the opadctl pad and daemon management utility.
+description: Every opadctl subcommand with its verbatim --help output, what it asks the daemon for, and what it prints.
 sidebar:
   order: 1
 ---
 
-`opadctl` is the command-line management tool for OPad. It communicates with the background service (`opad-daemon`) over local IPC to query status, synchronize lifetime press counters, export and import backups, stream diagnostic logs, and control pad functions. Flashing commands (`flash`, `recover`, `bootloader`) can also operate directly over USB serial when the daemon is stopped.
+`opadctl` is OPad's command-line tool. Most subcommands are requests to `opad-daemon` over local IPC (see [IPC Protocol Reference](ipc.md)); the flashing subcommands also work with no daemon running.
 <!-- src: /desktop/cli/src/main.rs#main -->
+
+The help texts on this page are the verbatim `--help` output of `opadctl` built from `desktop/cli` (`cargo build -p opadctl`).
+<!-- src: /desktop/cli/src/main.rs#Commands -->
 
 ```text
 OPad CLI management tool
@@ -37,15 +40,21 @@ Options:
   -h, --help  Print help
 ```
 
-Most subcommands require `opad-daemon` to be running. `flash`, `recover`, and `bootloader` work even if the daemon is not running (when the daemon is running, they ask it to release the serial port first). `setup` runs locally without requiring the daemon.
+## Daemon requirement
+
+| Subcommands | Needs `opad-daemon` |
+|---|---|
+| `setup` | No. It runs locally and never connects. |
+| `flash`, `recover`, `bootloader` | No. If the daemon answers, `opadctl` asks it to release the serial port first; if not, it prints `Could not reach opad-daemon (...); flashing without it.` and goes on. |
+| Every other subcommand | Yes. Without it, `opadctl` exits with `Failed to connect to opad-daemon. Is the daemon running?` |
 <!-- src: /desktop/cli/src/main.rs#main -->
+
+A daemon that rejects the IPC handshake (for example a daemon of another app version after an update) counts as unreachable.
+<!-- src: /desktop/crates/opad-ipc/src/lib.rs#connect_and_handshake, /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
 
 ---
 
 ## opadctl status
-
-Queries and prints the current status of the daemon, connected hardware, counter reconciliation, game telemetry, and pad configuration.
-<!-- src: /desktop/cli/src/main.rs#Commands::Status -->
 
 ```text
 Show device and daemon status
@@ -56,34 +65,38 @@ Options:
   -h, --help  Print help
 ```
 
-The output includes:
-- **Daemon Mode**: The operating state of the daemon runtime.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-- **ESP32 Device**: Connection status (`Connected` or `Disconnected`).
-  <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-- **Device ID & Board Profile**: Hardware identifier derived from the ESP32-S3 MAC address (format `OPAD-XXXXXXXXXXXX`, 12 hex digits) and board profile.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Status --> <!-- src: /firmware/main/usb/usb_descriptors.c#usb_descriptors_init -->
-- **Firmware Version & Running Slot**: Firmware version and active OTA partition slot (`ota_0` or `ota_1`).
-  <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-- **Input Module & Calibration**: Detected module type (e.g., Mechanical or Hall Effect) and per-key calibration state.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-- **Key Press Counters**: Lifetime press totals for Key 1, Key 2, and Key 3 (when present), plus the counter generation number.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-- **Ownership State**: Warns if the pad belongs to another installation and counter sync is paused awaiting user takeover.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-- **tosu (osu!)**: Connection status of the local `tosu` telemetry WebSocket.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-- **Key Latency**: 50th percentile (`p50`), 99.9th percentile (`p99.9`), and maximum edge-to-HID report latency in microseconds.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-- **Configuration Values**: Active GPIO pin mappings, debounce lockout time in microseconds, swipe actions, display brightness, and sleep timeout.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
+Sends `GetStatus` and prints one line per field:
+<!-- src: /desktop/cli/src/main.rs#Commands::Status -->
+
+| Line | Content |
+|---|---|
+| `Daemon Mode` | `Idle`, `Playing`, `Cooldown` or `Sync`. |
+| `ESP32 Device` | `Connected` or `Disconnected`. |
+| `Counters Source` | `Device` or `Pc`: where the shown counters came from. |
+| `Device ID`, `Board Profile`, `Firmware Version` | From the pad's `HelloAck`. The device ID is `OPAD-` followed by 12 hex digits of the chip's MAC address. |
+| `Running Slot` | `ota_0`, `ota_1`, or `unknown (firmware predates the OTA layout)`. |
+| `Input Module` | `Hall Effect`, printed only when the pad runs a Hall Effect input backend. |
+| `HE Calibrated` | Per-key calibration state (`K1`, `K2`, and `K3` on three-key pads), Hall Effect pads only. |
+| `Key 1 (K1)`, `Key 2 (K2)`, `Key 3 (K3)` | Key character and lifetime press total. `Key 3` only on three-key pads. |
+| `Game Keys` | The game-key selection, three-key pads only. |
+| `Total Presses` | Sum of the game keys' lifetime totals. |
+| `Generation` | Counter generation. |
+| `Last Sync`, `Last Backup` | Timestamps, or `Never`. |
+| `Last Sync Error`, `Database Error` | Only when set. |
+| `Ownership` | Only when the pad belongs to another OPad install: counter sync is paused until you decide in the app. |
+| `Replacement` | Only when a new pad replaced a known one. |
+| `Incompatible` | Only when the pad speaks a protocol version this app does not. |
+| `tosu (osu!)` | `Active` or `Offline`. |
+| `Key Latency` | `p50`, `p99.9` and `max` in µs, with the sample count. Only when the pad reports latency. |
+| `Key Pins` | `K1 GPIO<n>, K2 GPIO<n>`. |
+| `Debounce Lockout` | In µs. |
+| `Swipes` | The action of each swipe direction (up, down, left, right). |
+| `Brightness`, `Sleep Timeout` | Percent and seconds. |
+<!-- src: /desktop/cli/src/main.rs#Commands::Status, /desktop/crates/opad-model/src/lib.rs#RuntimeMode, /firmware/main/usb/usb_descriptors.c#usb_descriptors_init -->
 
 ---
 
 ## opadctl sync
-
-Triggers immediate manual reconciliation of keypress counters and synchronizes wall-clock time with the host PC.
-<!-- src: /desktop/cli/src/main.rs#Commands::Sync -->
 
 ```text
 Trigger manual counter reconciliation & time synchronization
@@ -94,15 +107,12 @@ Options:
   -h, --help  Print help
 ```
 
-Sends `IpcRequest::ForceSync` to the daemon. If the device is idle and counters reconcile cleanly, prints the synchronized lifetime counts.
+Sends `ForceSync`. On success it prints the synchronized `K1` and `K2` lifetime counts; a refusal prints `✗ Operation rejected: <reason>`.
 <!-- src: /desktop/cli/src/main.rs#Commands::Sync -->
 
 ---
 
 ## opadctl reset
-
-Resets lifetime key press counters on both the host database and the connected pad.
-<!-- src: /desktop/cli/src/main.rs#Commands::Reset -->
 
 ```text
 Reset lifetime key counters (requires deliberate confirmation)
@@ -114,15 +124,12 @@ Options:
   -h, --help  Print help
 ```
 
-Because counter reset is irreversible, running without `--yes` aborts execution. When confirmed, a new counter generation is allocated and stored.
+Without `--yes` it exits with an error and sends nothing. With `--yes` it sends `ResetCounters { confirm: true }` and prints the new counter generation.
 <!-- src: /desktop/cli/src/main.rs#Commands::Reset -->
 
 ---
 
 ## opadctl export
-
-Exports pad configuration and lifetime counters to a portable JSON backup file.
-<!-- src: /desktop/cli/src/main.rs#Commands::Export -->
 
 ```text
 Export device configuration and lifetime counters to a JSON file
@@ -136,15 +143,12 @@ Options:
   -h, --help  Print help
 ```
 
-The generated JSON file contains the device ID, counter generation, lifetime counts, and device configuration.
+Sends `ExportBackup` and writes the returned `JsonBackup` to `<FILE>` as pretty-printed JSON.
 <!-- src: /desktop/cli/src/main.rs#Commands::Export -->
 
 ---
 
 ## opadctl import
-
-Imports configuration and lifetime counters from a validated JSON backup file.
-<!-- src: /desktop/cli/src/main.rs#Commands::Import -->
 
 ```text
 Import configuration and counters from a validated JSON backup
@@ -159,15 +163,15 @@ Options:
   -h, --help  Print help
 ```
 
-Before applying, `opadctl` validates the backup structure and displays a preview comparison showing current vs incoming counts, device ID matching, and counter rollback warnings. In interactive mode, explicit confirmation (`y/N`) is required unless `--yes` is specified.
-<!-- src: /desktop/cli/src/main.rs#Commands::Import -->
+1. Parses and validates `<FILE>` locally.
+2. Sends `PreviewImport` and prints current versus incoming device ID, keys and press counts, plus warnings for a different device ID or a counter rollback.
+3. Asks `Proceed with import? [y/N]` unless `--yes` is given. Without a terminal and without `--yes`, it refuses.
+4. Sends `ImportBackup { confirm: true }` and prints the resulting counter generation.
+<!-- src: /desktop/cli/src/main.rs#Commands::Import, /desktop/cli/src/main.rs#confirm -->
 
 ---
 
 ## opadctl monitor
-
-Streams live diagnostic events from the daemon and device log buffers.
-<!-- src: /desktop/cli/src/main.rs#Commands::Monitor -->
 
 ```text
 Stream live device and daemon diagnostic events
@@ -182,21 +186,17 @@ Options:
   -h, --help             Print help
 ```
 
-- `-l, --limit`: Number of historical log entries to display initially (default `50`).
-  <!-- src: /desktop/cli/src/main.rs#Commands::Monitor -->
-- `-f, --follow`: Polls the log hub continuously every 500 ms for new incoming events.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Monitor -->
-- `--level`: Filters messages by minimum severity level (`debug`, `info`, `warn`, `error`).
-  <!-- src: /desktop/cli/src/main.rs#Commands::Monitor -->
-- `--source`: Restricts messages to a single log source (`host`, `esp`, `program`, `tosu`).
-  <!-- src: /desktop/cli/src/main.rs#Commands::Monitor -->
+| Option | Effect |
+|---|---|
+| `-l`, `--limit` | Entries per request (default `50`). |
+| `-f`, `--follow` | Polls `GetLogEntries` every 500 ms from the last entry received. |
+| `--level` | Minimum severity. The daemon filters before `limit` applies; `opadctl` filters again for daemons that ignore the field. |
+| `--source` | One log source, filtered the same way. |
+<!-- src: /desktop/cli/src/main.rs#Commands::Monitor, /desktop/crates/opad-ipc/src/lib.rs#IpcRequest -->
 
 ---
 
 ## opadctl flash
-
-Flashes a new firmware binary onto the ESP32-S3 over USB using `espflash`.
-<!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
 
 ```text
 Flash new firmware binary onto the ESP32-S3 using espflash
@@ -212,19 +212,35 @@ Options:
   -h, --help         Print help
 ```
 
-- In normal mode (without `--full`), `opadctl flash` queries the daemon for the current running OTA slot (`ota_0` or `ota_1`), plans an A/B update into the inactive alternate slot, asks the daemon to release the serial port, reboots the pad into ROM download mode hands-free, flashes the binary, and verifies that the pad re-enumerates as OPad (`303a:8415`).
-  <!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
-- With `--full`, performs a complete recovery flash: writes `bootloader.bin` at `0x0000`, `partition-table.bin` at `0x8000`, `ota_data_initial.bin` at `0xf000`, and the application image at `0x20000`.
-  <!-- src: /desktop/cli/src/main.rs#resolve_flash_set -->
-- `--port <PORT>`: Overrides automatic serial port detection if multiple USB serial devices are connected.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
+`<FIRMWARE>` is a file, or a directory that holds `opad-firmware.bin`. The app image's header is checked for the ESP32-S3 before anything is written.
+<!-- src: /desktop/cli/src/main.rs#resolve_flash_set, /desktop/cli/src/main.rs#Commands::Flash -->
+
+**App update (no `--full`).** `opadctl` asks the daemon which slot the pad runs from and writes the image to the other slot, followed by an `otadata` image that boots it once on trial. The running image stays as the fallback: the firmware confirms the new one only after the host configures USB, otherwise the bootloader returns to the old one.
+<!-- src: /desktop/crates/opad-device/src/flash.rs#plan_app_update -->
+
+| Running slot | Writes |
+|---|---|
+| `ota_0` | App at `0x220000` (`ota_1`), then `otadata` at `0xf000` |
+| `ota_1` | App at `0x20000` (`ota_0`), then `otadata` at `0xf000` |
+| Unknown (no daemon, or firmware that does not report it) | App at `0x20000` in place, with no fallback |
+<!-- src: /desktop/crates/opad-device/src/flash.rs#APP_PARTITION_OFFSET, /desktop/crates/opad-device/src/flash.rs#OTA_1_OFFSET, /desktop/crates/opad-device/src/flash.rs#OTADATA_OFFSET -->
+
+**Recovery flash (`--full`).** Writes the whole set. Each file is looked for in the ESP-IDF build layout first, then flat next to the app image (the layout of an unpacked release):
+<!-- src: /desktop/cli/src/main.rs#resolve_flash_set -->
+
+| Offset | File | Required |
+|---|---|---|
+| `0x0` | `bootloader/bootloader.bin` or `bootloader.bin` | Yes |
+| `0x8000` | `partition_table/partition-table.bin` or `partition-table.bin` | Yes |
+| `0xf000` | `ota_data_initial.bin` | No (written when present) |
+| `0x20000` | `opad-firmware.bin` (or the file given) | Yes |
+
+In both modes `opadctl` reboots the pad into the ROM download bootloader over USB, flashes it with `espflash`, then waits up to 15 s for it to come back as the OPad app (`303a:8415`). A pad that does not come back is reported as a failure that points at `opadctl recover`.
+<!-- src: /desktop/cli/src/main.rs#Commands::Flash, /desktop/daemon/src/ipc_handlers.rs#FinishFlash -->
 
 ---
 
 ## opadctl recover
-
-Recovers a pad that no longer enumerates as OPad on the USB bus without pressing any physical buttons.
-<!-- src: /desktop/cli/src/main.rs#Commands::Recover -->
 
 ```text
 Recover a pad that no longer shows up as OPad: replug it, and its next boot is caught over USB and flashed with the full set. No buttons
@@ -239,15 +255,12 @@ Options:
   -h, --help               Print help
 ```
 
-This command waits for the user to unplug and replug the pad's USB cable (up to `--timeout`, default 300 s). On connection, it catches the ESP32-S3 ROM bootloader (`303a:1001`) during its initial enumeration window, writes the complete flash set (bootloader, partition table, OTA data, and application image), resets the chip via RTC watchdog, and waits up to 15 seconds for the pad to boot into the application (`303a:8415`). Physical BOOT and RESET buttons are never pressed.
-<!-- src: /desktop/cli/src/main.rs#Commands::Recover --> <!-- src: /desktop/crates/opad-device/src/flash.rs#recover -->
+Resolves the same file set as `flash --full`, then asks you to unplug and replug the pad and waits up to `--timeout` seconds. When the pad's ROM USB-Serial-JTAG port (`303a:1001`) appears during boot, `opadctl` holds it in download mode, writes the full set, resets it into the app with an RTC watchdog reset, and waits up to 15 s for the OPad app (`303a:8415`). See [Recovery](../recovery.md) §7.7.
+<!-- src: /desktop/cli/src/main.rs#Commands::Recover, /desktop/crates/opad-device/src/flash.rs#recover -->
 
 ---
 
 ## opadctl bootloader
-
-Reboots the connected pad into ROM download bootloader mode hands-free over USB and leaves it there.
-<!-- src: /desktop/cli/src/main.rs#Commands::Bootloader -->
 
 ```text
 Reboot device into ROM download bootloader mode hands-free over USB
@@ -259,15 +272,12 @@ Options:
   -h, --help         Print help
 ```
 
-Asks `opad-daemon` to release the CDC serial port, initiates software reboot into the ESP32-S3 ROM bootloader (`303a:1001`), and exits. The device remains in download mode ready for low-level development or flashing tools.
+Asks the daemon to release the port, reboots the pad into the ROM download bootloader (`303a:1001`), hands the port back to the daemon and prints the bootloader's port. The pad stays in download mode for other flashing tools.
 <!-- src: /desktop/cli/src/main.rs#Commands::Bootloader -->
 
 ---
 
 ## opadctl firmware-update
-
-Checks for and installs signed firmware updates from the official update feed manifest.
-<!-- src: /desktop/cli/src/main.rs#Commands::FirmwareUpdate -->
 
 ```text
 Update the pad's firmware from the signed release manifest (§U-3b)
@@ -279,15 +289,14 @@ Options:
   -h, --help  Print help
 ```
 
-Queries `opad-daemon` via `IpcRequest::GetFirmwareUpdate` to inspect installed version, available version, release notes, and active blockers. Before flashing, asks for explicit user confirmation unless `--yes` is passed. The daemon synchronizes counters to disk prior to flashing to preserve counter integrity.
-<!-- src: /desktop/cli/src/main.rs#Commands::FirmwareUpdate -->
+1. Sends `GetFirmwareUpdate` and prints the installed version, running slot, any blockers, the available version and its notes. With nothing newer it stops; with blockers it exits with an error.
+2. Prints the consent text and asks `Flash the pad now? [y/N]` unless `--yes` is given.
+3. Sends `InstallFirmwareUpdate { confirm: true }`. The daemon syncs the pad's counters to this PC before it writes anything, then reports the old and new version and the running slot.
+<!-- src: /desktop/cli/src/main.rs#Commands::FirmwareUpdate, /desktop/daemon/src/firmware_update.rs#install -->
 
 ---
 
 ## opadctl update
-
-Shows, checks for, or installs an update of the OPad desktop application from the signed update feed.
-<!-- src: /desktop/cli/src/main.rs#Commands::Update -->
 
 ```text
 Show, check for or install an update of the OPad app from the update feed, as the app's Updates page does
@@ -301,19 +310,21 @@ Options:
   -h, --help               Print help
 ```
 
-- `--channel <CHANNEL>`: Switches the daemon to follow `stable` or `beta` (`IpcRequest::SetUpdateChannel`), which also starts a check of the new channel.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Update -->
-- `--check`: Triggers `IpcRequest::CheckForUpdates` and polls `IpcRequest::GetUpdateStatus` every 500 ms until the check finishes or times out after 120 seconds.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Update -->
-- `--install`: Sends `IpcRequest::InstallUpdate` for the desktop app if an update is ready to install; returns once the updater starts the install (OPad restarts when it finishes). Package-manager installs marked notify-only (such as Arch) print `(update it with your package manager)` instead of installing.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Update -->
+The options run in this order, then the status (channel, installed, available, last check, last error, last install) is printed:
+<!-- src: /desktop/cli/src/main.rs#Commands::Update -->
+
+| Option | Effect |
+|---|---|
+| `--channel <CHANNEL>` | Sends `SetUpdateChannel`. Changing the channel also starts a check of the new one. |
+| `--check` | Sends `CheckForUpdates` and polls `GetUpdateStatus` every 500 ms until the check finishes; gives up after 120 s. |
+| `--install` | Sends `InstallUpdate { component: App }`. Fails with `There is no update ready to install` when none is ready. |
+
+An install whose files belong to a package manager shows the available version as `(this install cannot update itself)`.
+<!-- src: /desktop/cli/src/main.rs#Commands::Update, /desktop/crates/opad-ipc/src/lib.rs#ComponentUpdate -->
 
 ---
 
 ## opadctl latency
-
-Displays device-measured keypress-to-HID-report latency statistics.
-<!-- src: /desktop/cli/src/main.rs#Commands::Latency -->
 
 ```text
 Show key-press-to-HID latency measured on the device
@@ -325,17 +336,12 @@ Options:
   -h, --help   Print help
 ```
 
-- When run without options, displays sample count, `p50`, `p99`, `p99.9`, and maximum latency in microseconds, along with deferred reports that had to wait for the next 1 ms USB frame.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Latency --> <!-- src: /firmware/main/input/latency_stats.c -->
-- With `--reset`, clears sample counters on the device to start a fresh measurement window.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Latency -->
+Without options it prints the pad's key-edge-to-HID-submit statistics from `GetStatus`: sample count, `p50`, `p99`, `p99.9`, `max` (µs), and deferred reports (key changes that waited for the next USB poll). With `--reset` it sends `ResetLatencyStats`.
+<!-- src: /desktop/cli/src/main.rs#Commands::Latency, /protocol/opad.proto#DeviceStatus -->
 
 ---
 
 ## opadctl stats
-
-Displays tap rate statistics in keys per minute (KPM) for live or recent gameplay attempts as well as aggregated historical sessions.
-<!-- src: /desktop/cli/src/main.rs#Commands::Stats -->
 
 ```text
 Show your tap rate in KPM (keys per minute, not the map's BPM): the current or last attempt and the history
@@ -347,17 +353,16 @@ Options:
   -h, --help           Print help
 ```
 
-- Shows tapping average KPM, peak burst KPM (fastest 7 consecutive presses, `WINDOW_INTERVALS = 6` intervals), and song-wide KPM for Key 1, Key 2, and Combined channels.
-  <!-- src: /desktop/cli/src/main.rs#format_tap_stats --> <!-- src: /desktop/crates/opad-model/src/tap_rate.rs -->
-- `--period <DAYS>`: Configures the historical aggregation window in days (`0` represents all-time history; maximum `3650` days). The setting persists across the desktop app and pad.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Stats --> <!-- src: /desktop/crates/opad-model/src/tap_rate.rs#MAX_HISTORY_DAYS -->
+Sends `GetTapStats`, or `SetTapHistoryPeriod` when `--period` is given (`0` to `3650` days). It prints:
+<!-- src: /desktop/cli/src/main.rs#Commands::Stats, /desktop/crates/opad-model/src/tap_rate.rs#MAX_HISTORY_DAYS -->
+
+- **Attempt** (the live one, else the last): map, `AVG` (every press over the song time, breaks included), `PEAK` (fastest 7 presses in a row) with the best 10 s, and a table of `Current`, `Tap avg`, `Peak` and `Presses` for `K1`, `K2` and `Combined`.
+- **History** over the period: attempts, `AVG`, `PEAK` and best 10 s, and `Tap avg`, `Avg peak`, `Best peak` and `Presses` per channel.
+<!-- src: /desktop/cli/src/main.rs#format_tap_stats, /desktop/crates/opad-model/src/tap_rate.rs#WINDOW_INTERVALS -->
 
 ---
 
 ## opadctl board-test
-
-Runs hardware diagnostics on the carrier and swappable input module PCBs.
-<!-- src: /desktop/cli/src/main.rs#Commands::BoardTest -->
 
 ```text
 Test the carrier and input module PCBs: module ID, cable direction, key lines, connector shorts, and a Hall Effect V3 module's ADC and sensors. Release both keys while it runs
@@ -370,20 +375,18 @@ Options:
   -h, --help      Print help
 ```
 
-Verifies module identification voltages, cable orientation (detects reversed FFC cables), key line pull-up integrity, and ADS7028 ADC register communication on Hall Effect V3 modules. Release all switches while the test executes.
+Sends `RunBoardTest` and prints each check. It exits with an error when any check fails.
 <!-- src: /desktop/cli/src/main.rs#Commands::BoardTest -->
 
-- `--fix-pins`: If keys are mapped to default standalone header pins instead of the V3 carrier routing, sets Key 1 to `GPIO10` and Key 2 to `GPIO7`, waits 300 ms, and re-tests.
-  <!-- src: /desktop/cli/src/main.rs#Commands::BoardTest -->
-- `--magnet`: Runs live sensor checks on Hall Effect V3 modules, polling readings while a magnet is moved over each key in turn (up to 60 seconds, `Ctrl-C` to stop).
-  <!-- src: /desktop/cli/src/main.rs#magnet_test -->
+| Option | Effect |
+|---|---|
+| `--fix-pins` | When a check says the key pins are wrong for the carrier, sends `UpdateConfig` with Key 1 = `GPIO10` and Key 2 = `GPIO7`, waits 300 ms and runs the test again. Without it, the failure suggests `opadctl board-test --fix-pins`. |
+| `--magnet` | After the board test, watches a Hall Effect V3 module's sensors while you hold a magnet over each key in turn. |
+<!-- src: /desktop/cli/src/main.rs#Commands::BoardTest, /desktop/cli/src/main.rs#magnet_test -->
 
 ---
 
 ## opadctl animation
-
-Triggers a result screen grade animation on the pad display.
-<!-- src: /desktop/cli/src/main.rs#Commands::Animation -->
 
 ```text
 Play a result animation on the pad, as osu!'s results screen would
@@ -398,17 +401,12 @@ Options:
   -h, --help  Print help
 ```
 
-- `<NAME>`: Built-in animation type (`pop`, `drop`, `burst`, or numerical animation ID). Specifying `none` stops any currently playing animation.
-  <!-- src: /desktop/cli/src/main.rs#Commands::Animation -->
-- `[GRADE]`: Grade letter to render (`SS`, `S`, `A`, `B`, `C`, or `D`; defaults to `S`).
-  <!-- src: /desktop/cli/src/main.rs#Commands::Animation -->
+`<NAME>` and `[GRADE]` are case-insensitive. Sends `PlayAnimation`; the daemon refuses it without a pad, with firmware that has no animations, and during a map.
+<!-- src: /desktop/cli/src/main.rs#Commands::Animation, /desktop/crates/opad-ipc/src/lib.rs#IpcRequest -->
 
 ---
 
 ## opadctl restart
-
-Commands the connected pad to save state and perform a clean reboot.
-<!-- src: /desktop/cli/src/main.rs#Commands::Restart -->
 
 ```text
 Restart the pad, e.g. after swapping its input module. It saves its counters and restarts once no map is being played
@@ -419,15 +417,12 @@ Options:
   -h, --help  Print help
 ```
 
-Sends `IpcRequest::RestartPad` to the daemon. The pad flushes persistent counters to NVS, waits until no map is playing, and restarts cleanly.
-<!-- src: /desktop/cli/src/main.rs#Commands::Restart -->
+Sends `RestartPad`. The pad saves its counters, config, layouts and calibration, restarts once it is idle, and reconnects.
+<!-- src: /desktop/cli/src/main.rs#Commands::Restart, /firmware/main/runtime/runtime.c#restart_now -->
 
 ---
 
 ## opadctl setup
-
-Performs platform environment verification and system configuration checks.
-<!-- src: /desktop/cli/src/main.rs#Commands::Setup -->
 
 ```text
 Perform initial system setup (udev permissions & directories)
@@ -438,12 +433,11 @@ Options:
   -h, --help  Print help
 ```
 
-On Linux:
-- Checks whether the udev rule (`/etc/udev/rules.d/70-opad.rules` or `/usr/lib/udev/rules.d/70-opad.rules`) is installed and matches the embedded rule, printing installation commands if missing or different.
-  <!-- src: /desktop/cli/src/main.rs#run_setup -->
-- Checks Linux kernel Yama `ptrace_scope` and whether `tosu` carries `cap_sys_ptrace` to inspect `osu!` process memory.
-  <!-- src: /desktop/cli/src/main.rs#run_setup -->
+Checks only; it changes nothing.
+<!-- src: /desktop/cli/src/main.rs#run_setup -->
 
-On Windows:
-- Reports that no manual driver setup is needed because OPad uses Windows' built-in USB HID and CDC (`usbser.sys`) drivers.
-  <!-- src: /desktop/cli/src/main.rs#run_setup -->
+| Platform | Checks |
+|---|---|
+| Linux | Whether `/etc/udev/rules.d/70-opad.rules` or `/usr/lib/udev/rules.d/70-opad.rules` matches the rule built into `opadctl`. If missing or different, prints the commands that install it (or the AppImage's `install-udev` command). Then whether tosu can read osu!'s memory: Yama `ptrace_scope` and tosu's `cap_sys_ptrace` (see [Troubleshooting](../troubleshooting.md) §2). |
+| Windows | Nothing to check: the pad uses the inbox HID and CDC drivers. |
+<!-- src: /desktop/cli/src/main.rs#run_setup, /desktop/cli/src/main.rs#UDEV_RULE_PATHS -->

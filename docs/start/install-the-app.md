@@ -1,84 +1,126 @@
 ---
-title: Installing the Desktop Suite
-description: How to install the OPad desktop suite (opad-daemon, opad-gui, opadctl, and bundled tosu) on Linux and Windows.
+title: Installing the Desktop App
+description: Install the optional OPad desktop app (opad-daemon, opad-gui, opadctl and the bundled tosu) on Linux or Windows 10/11.
 sidebar:
   order: 4
 ---
 
-The optional OPad desktop suite adds live osu! gameplay telemetry, a screen layout designer, lifetime key counter sync, interactive diagnostics, firmware updates, and Hall Effect tuning. It consists of: <!-- src: /README.md --> <!-- src: /desktop/crates/opad-model/src/paths.rs -->
+The desktop app is optional: the pad types without it. Install it for live osu! data on the pad's screen, the screen designer, lifetime counters on your PC, swipe actions, Hall Effect tuning and firmware updates. <!-- src: /AGENTS.md#1. Product rules -->
 
-- `opad-daemon`: background service handling USB CDC communication, SQLite persistence, and `tosu` supervision.
-- `opad-gui`: graphical configuration, layout designer, diagnostics, and system tray app (built with `iced`).
-- `opadctl`: command-line management and firmware flashing tool.
-- `tosu`: bundled memory reader providing live osu! telemetry (LGPL-3.0; you can substitute your own via `OPAD_TOSU_PATH` or **Settings** -> **ℹ About & tosu**). <!-- src: /desktop/crates/opad-tosu/src/lib.rs#find_tosu_binary -->
+It has four parts: <!-- src: /packaging/windows/installer.iss --> <!-- src: /desktop/gui/Cargo.toml -->
 
-## Linux Installation
+| Program | What it does |
+|---|---|
+| `opad-daemon` | Runs in the background. Talks to the pad over its serial port, keeps your counters and settings, and runs tosu. |
+| `opad-gui` | The OPad window and tray icon: settings, Designer, Stats, Device and Diagnostics. |
+| `opadctl` | The same features from a terminal, plus flashing and recovery. See the [`opadctl` reference](../reference/opadctl.md). |
+| tosu | Reads osu!'s memory for map and play data. Bundled (LGPL-3.0); you can use your own, see [Using OPad with tosu](../guides/use-with-tosu.md). |
 
-Pre-built Linux packages are published on the [GitHub Releases](https://github.com/OPad-dev/OPad/releases) page; each release's notes start with which file is for your system. <!-- src: /scripts/release/release_notes.sh --> They target glibc 2.28+, covering Ubuntu 22.04/24.04/26.04, Debian 12/13, RHEL/AlmaLinux/Rocky 9–10, Fedora, and Arch. <!-- src: /README.md -->
+## Download
 
-### Debian / Ubuntu / Pop!_OS (`.deb`)
+Every release on the [GitHub Releases](https://github.com/OPad-dev/OPad/releases) page lists, at the top of its notes, which file is for your system: <!-- src: /scripts/release/release_notes.sh -->
+
+| System | File |
+|---|---|
+| Windows 10 or 11 | `OPad-Windows-Setup-<version>.exe` |
+| Ubuntu or Debian | `OPad-Linux-Debian-Ubuntu-<version>.deb` |
+| Fedora, RHEL, AlmaLinux, Rocky | `OPad-Linux-Fedora-<version>.rpm` |
+| Arch Linux | `OPad-Linux-Arch-<version>.pkg.tar.zst` |
+| Any other Linux | `OPad-Linux-<version>.AppImage` |
+
+## Linux
+
+### Debian and Ubuntu
+
 ```bash
 sudo apt install ./OPad-Linux-Debian-Ubuntu-<version>.deb
 ```
-Or with `dpkg`:
-```bash
-sudo dpkg -i OPad-Linux-Debian-Ubuntu-<version>.deb
-sudo apt-get install -f
-```
-The package installs: <!-- src: /packaging/linux/deb/postinst --> <!-- src: /Makefile -->
-- Binaries into `/usr/bin/`, bundled `tosu` into `/usr/lib/opad/tosu/`, and pinned `espflash` into `/usr/lib/opad/bin/`.
-- `udev` rules at `/etc/udev/rules.d/70-opad.rules` (and reloads `udevadm`).
-- `cap_sys_ptrace=eip` on `/usr/lib/opad/tosu/tosu` so `tosu` can read `osu!` memory under Yama `ptrace_scope` 1–2.
-- The `opad-daemon.service` systemd user unit and desktop/tray autostart entry.
 
-### Fedora / RHEL / openSUSE (`.rpm`)
+### Fedora, RHEL, AlmaLinux and Rocky
+
 ```bash
 sudo dnf install ./OPad-Linux-Fedora-<version>.rpm
 ```
-Sets up the same binaries, `udev` rule, `cap_sys_ptrace=eip` capability, and systemd user unit as the `.deb` package. <!-- src: /README.md -->
 
 ### Arch Linux
-Install the release's prebuilt `opad-bin` package, which updates itself like the `.deb` and `.rpm`: <!-- src: /.github/workflows/release-app.yml -->
+
 ```bash
 sudo pacman -U ./OPad-Linux-Arch-<version>.pkg.tar.zst
 ```
-Or build and install from the repository's `packaging/linux/arch/PKGBUILD` (package name `opad`): <!-- src: /packaging/linux/arch/PKGBUILD -->
-```bash
-makepkg -si
-```
-On Arch, `tosu` runs under the system `nodejs` (`TOSU_STANDALONE=0`), so file capabilities are not applied to `node`; see [Troubleshooting §2](../troubleshooting.md) if `ptrace_scope > 0`. <!-- src: /packaging/linux/arch/PKGBUILD -->
 
-### Standalone AppImage
+This installs the `opad-bin` package: the same binaries and bundled tosu as the `.deb`. <!-- src: /packaging/linux/arch/PKGBUILD-bin.in --> <!-- src: /.github/workflows/release-app.yml -->
+
+### What the packages set up
+
+The `.deb`, `.rpm` and Arch packages all install the same things: <!-- src: /desktop/gui/Cargo.toml#package.metadata.deb --> <!-- src: /packaging/linux/deb/postinst --> <!-- src: /packaging/linux/arch/opad-bin.install -->
+
+- `opad-daemon`, `opad-gui` and `opadctl` in `/usr/bin`, with tosu and a pinned `espflash` under `/usr/lib/opad/`;
+- the udev rule `/usr/lib/udev/rules.d/70-opad.rules`, so you can use the pad without root and ModemManager leaves it alone;
+- the `cap_sys_ptrace` capability on `/usr/lib/opad/tosu/tosu`, so tosu can read osu! without you lowering the system-wide `ptrace_scope` (see [Troubleshooting §2](../troubleshooting.md#2-linux-tosu-cannot-read-osu-yama-ptrace_scope));
+- a login autostart entry that starts the OPad tray icon, and an `opad-daemon` systemd user unit.
+
+You do not need to start the daemon yourself: when `opad-gui` starts and finds no daemon running, it starts one (through the systemd user unit when that is available). <!-- src: /desktop/gui/src/platform_linux.rs#start_daemon --> <!-- src: /desktop/gui/src/main.rs#App -->
+
+These packages update themselves from the app's **Settings** → **🔄 Updates & Firmware** tab. <!-- src: /desktop/crates/opad-update/src/origin.rs -->
+
+### AppImage
+
 ```bash
 chmod +x OPad-Linux-<version>.AppImage
 ./OPad-Linux-<version>.AppImage
 ```
-On first run, the AppImage offers to install the `udev` rule, or you can install it explicitly via `pkexec`: <!-- src: /packaging/linux/appimage/AppRun -->
+
+The AppImage installs nothing system-wide, so the first time it runs it offers to install the udev rule (it asks for your password through `pkexec`). You can also install the rule yourself: <!-- src: /desktop/gui/src/platform_linux.rs#appimage_needing_udev_rule --> <!-- src: /packaging/linux/appimage/AppRun -->
+
 ```bash
 ./OPad-Linux-<version>.AppImage install-udev
 ```
-You can also invoke the bundled daemon or CLI through the AppImage: `./OPad-Linux-<version>.AppImage daemon` or `./OPad-Linux-<version>.AppImage ctl <command>`. Because an AppImage mounts `nosuid`, `cap_sys_ptrace` does not apply to its bundled `tosu`; see [Troubleshooting §2](../troubleshooting.md). <!-- src: /packaging/linux/appimage/AppRun --> <!-- src: /desktop/crates/opad-tosu/src/lib.rs#ptrace_access -->
 
-### Manual `udev` Rule (Source Installs)
-If you installed from source with `make && sudo make install` or `make install-user`, install `70-opad.rules` so non-root users can open the CDC port, USB node, and input node and so ModemManager does not probe the pad: <!-- src: /packaging/linux/udev/70-opad.rules -->
+The same file also runs the other programs: `./OPad-Linux-<version>.AppImage daemon` starts the daemon, and `./OPad-Linux-<version>.AppImage ctl <command>` runs `opadctl`. <!-- src: /packaging/linux/appimage/AppRun -->
+
+> [!NOTE]
+> An AppImage cannot give tosu the `cap_sys_ptrace` capability, so on a system with Yama `ptrace_scope` above 0 you have to lower it for live osu! data. See [Troubleshooting §2](../troubleshooting.md#2-linux-tosu-cannot-read-osu-yama-ptrace_scope). <!-- src: /desktop/crates/opad-tosu/src/lib.rs#ptrace_access -->
+
+### Building from source
+
+From a checkout of the repository, the `PKGBUILD` in [`packaging/linux/arch/`](https://github.com/OPad-dev/OPad/blob/main/packaging/linux/arch/PKGBUILD) builds an Arch package named `opad`, and `sudo make install` installs into `/usr/local` (udev rule included). [Building from source](../develop/building.md) covers the details. <!-- src: /packaging/linux/arch/PKGBUILD --> <!-- src: /Makefile#install -->
+
+Two things differ from the release packages:
+
+- The source `PKGBUILD` runs tosu with the system `nodejs`, which cannot carry `cap_sys_ptrace`; with `ptrace_scope` above 0 you have to lower it ([Troubleshooting §2](../troubleshooting.md#2-linux-tosu-cannot-read-osu-yama-ptrace_scope)). <!-- src: /packaging/linux/arch/PKGBUILD -->
+- `make install-user` installs into `~/.local` and does not install the udev rule. Install it once with: <!-- src: /Makefile#install-user -->
+
+  ```bash
+  sudo cp packaging/linux/udev/70-opad.rules /etc/udev/rules.d/
+  sudo udevadm control --reload-rules && sudo udevadm trigger
+  ```
+
+### Check your Linux setup
+
 ```bash
-sudo cp packaging/linux/udev/70-opad.rules /etc/udev/rules.d/
-sudo udevadm control --reload-rules && sudo udevadm trigger
+opadctl setup
 ```
-Run `opadctl setup` to verify `udev` rules and `ptrace` configuration. <!-- src: /desktop/cli/src/main.rs#run_setup -->
 
-## Windows Installation
+It reports whether the udev rule is installed and matches this version, and whether tosu can read osu!'s memory, with the command that fixes it if not. <!-- src: /desktop/cli/src/main.rs#run_setup -->
 
-Download `OPad-Windows-Setup-<version>.exe` from [GitHub Releases](https://github.com/OPad-dev/OPad/releases) and run it. <!-- src: /packaging/windows/installer.iss -->
+## Windows
 
-1. **SmartScreen**: Until code signing is enabled, Windows displays "Windows protected your PC". Click **More info** -> **Run anyway** (you can first check the file against the SHA-256 the release page shows next to it). <!-- src: /README.md -->
-2. **Per-user install**: Installs without administrator rights (`PrivilegesRequired=lowest`) into `%LOCALAPPDATA%\Programs\opad` (`DefaultDirName={localappdata}\Programs\opad`). <!-- src: /packaging/windows/installer.iss -->
-3. **Installed files**: `opad-gui.exe`, `opad-daemon.exe`, `opadctl.exe`, `espflash.exe`, `install-origin`, and `tosu\tosu.exe`. <!-- src: /packaging/windows/installer.iss -->
-4. **Startup**: The optional task **Start OPad when I log in** (checked by default) adds `opad-daemon` and `opad-gui` (`--tray`) under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. <!-- src: /packaging/windows/installer.iss -->
-5. **No third-party drivers**: Windows 10/11 uses built-in `hidclass.sys` and `usbser.sys`. <!-- src: /README.md -->
+1. Download `OPad-Windows-Setup-<version>.exe` and run it.
+2. Windows may show **Windows protected your PC**, because the installer is not code-signed yet. Click **More info**, then **Run anyway**. If you want, first compare the file with the SHA-256 checksum shown next to it on the release page. <!-- src: /README.md -->
+3. Keep **Start OPad when I log in** checked (the default) if you want the daemon and tray icon to start with Windows.
+4. Finish the installer. It starts OPad for you.
+<!-- src: /packaging/windows/installer.iss -->
 
-## Starting the Software
+The installer does not need administrator rights. It installs for your user only, into `%LOCALAPPDATA%\Programs\opad`, with `opad-gui.exe`, `opad-daemon.exe`, `opadctl.exe`, `espflash.exe` and `tosu\tosu.exe`. **Start OPad when I log in** adds `opad-daemon` and `opad-gui --tray` to `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. Windows uses its own `hidclass.sys` and `usbser.sys` drivers for the pad; nothing else is installed. <!-- src: /packaging/windows/installer.iss -->
 
-Launch **OPad** from your application menu or Start Menu:
-- `opad-gui` connects to `opad-daemon` over local IPC (`$XDG_RUNTIME_DIR/opad/daemon.sock` on Linux, `\\.\pipe\opad-ipc-<SID>` on Windows). <!-- src: /desktop/crates/opad-model/src/paths.rs --> <!-- src: /desktop/crates/opad-ipc/src/transport/windows.rs#get_socket_path -->
-- Verify everything is connected with `opadctl status` or on the `opad-gui` **Dashboard**. <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
+## Check that it works
+
+Open **OPad** from your application menu or Start menu, or run:
+
+```bash
+opadctl status
+```
+
+You should see `ESP32 Device:     Connected`, the pad's firmware version, and `tosu (osu!):      Active` once tosu has started. In the app, the **Device** page shows the same. <!-- src: /desktop/cli/src/main.rs#Commands::Status --> <!-- src: /desktop/gui/src/pages.rs#device -->
+
+If the pad is not detected, see [Troubleshooting §3](../troubleshooting.md#3-linux-usb-permissions-and-the-serial-port).

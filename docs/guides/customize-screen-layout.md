@@ -5,15 +5,15 @@ sidebar:
   order: 3
 ---
 
-OPad's `320x240` LCD has two independent layouts: the **Idle screen** (shown outside a map) and the **Playing screen** (shown while a map is running). You edit both in the **Designer** page of `opad-gui` using a 2x pixel-exact preview rendered by the firmware's own LVGL layout engine (`opad-ui-preview`). <!-- src: /desktop/gui/src/designer/mod.rs, /firmware/main/ui/core/ui_core.h, /firmware/main/ui/ui_port.c#pad_timer_cb -->
+The pad's 320×240 screen has two layouts: the **Idle screen**, shown outside a map, and the **Playing screen**, shown during one. You edit both on the app's **Designer** page. Its preview, drawn at twice the size, is rendered by the firmware's own UI code, so what you see is what the pad shows. <!-- src: /desktop/gui/src/designer/mod.rs, /firmware/main/ui/core/ui_core.h, /firmware/main/ui/ui_port.c#pad_timer_cb -->
 
 ## What you need
 
 - `opad-gui` and `opad-daemon` running. You can design, export, and import layouts even while the pad is disconnected; pressing **Apply to pad** saves the layout in the daemon and sends it automatically the next time the pad connects. <!-- src: /desktop/gui/src/designer/mod.rs#update, /desktop/daemon/src/ipc_handlers.rs#IpcRequest::SetLayout -->
-- Your OPad connected over USB to see changes live on the screen. If the pad belongs to another installation, claim ownership first (see [Recovery, Reflashing & Unbinding](../recovery.md)). <!-- src: /desktop/daemon/src/ipc_handlers.rs#IpcRequest::SetLayout -->
+- Your OPad connected over USB to see changes live on the screen. If the app says the pad belongs to another OPad install, settle that first (see [Recovery §7](../recovery.md#7-reflashing-and-unbinding-a-pad)). <!-- src: /desktop/daemon/src/ipc_handlers.rs#IpcRequest::SetLayout -->
 - `tosu` running if you want to preview **Live data from osu!** (otherwise the preview uses built-in sample values). <!-- src: /desktop/gui/src/designer/mod.rs#Message::LiveData -->
 
-## Building a layout
+## Build a layout
 
 1. Open `opad-gui` and select **Designer** in the left navigation bar (or launch `opad-gui --page designer`). <!-- src: /desktop/gui/src/main.rs#Page::ALL, /desktop/gui/src/main.rs#TOKENS -->
 2. Pick the screen to edit at the top of the preview: **Idle screen** or **Playing screen**. Each screen is saved independently. <!-- src: /desktop/gui/src/designer/mod.rs#view, /desktop/crates/opad-layout/src/lib.rs#Screen -->
@@ -43,7 +43,7 @@ OPad's `320x240` LCD has two independent layouts: the **Idle screen** (shown out
 
 To undo unapplied changes, click **Revert**. To restore the firmware's built-in layout for the active screen, click **Reset to default** and then **Apply to pad**. To discard local edits and re-fetch saved layouts from the daemon, click **Reload**. <!-- src: /desktop/gui/src/designer/mod.rs#update -->
 
-## Exporting and importing layouts
+## Export and import a layout
 
 - **Export**: Select either **Idle screen** or **Playing screen** and click **Export**. `opad-gui` opens a save dialog defaulting to `opad-idle.json` or `opad-playing.json` and writes the layout as formatted JSON. <!-- src: /desktop/gui/src/designer/mod.rs#export_layout -->
 - **Import**: Select the target screen (**Idle screen** or **Playing screen**), click **Import**, and pick a `.json` layout file. `opad-gui` parses and validates it against the same rules as the firmware (`ui_layout_validate`), loads it into the editor, and prompts you to click **Apply to pad** to save and send it. <!-- src: /desktop/gui/src/designer/mod.rs#import_layout, /desktop/crates/opad-layout/src/lib.rs#validate -->
@@ -181,7 +181,7 @@ Every widget can bind to one data source ID defined in `ui_source_t` (`firmware/
 
 ## How to check it worked
 
-- After clicking **Apply to pad**, the status line below the preview changes to `Applied to the pad` (or `Layout applied to pad RAM; will be saved after gameplay` during a map) and the `•` marker disappears from the button. <!-- src: /desktop/gui/src/designer/mod.rs#Message::Applied -->
+- After clicking **Apply to pad**, the status line below the preview says `Applied to the pad` (during a map: `Applied: Layout applied to pad RAM; will be saved after gameplay`; with the pad unplugged: `Applied: Saved; it will be applied when the pad connects`) and the `•` marker disappears from the button. <!-- src: /desktop/gui/src/designer/mod.rs#Message::Applied -->
 - The pad's LCD immediately reflects the new **Idle screen** layout (and switches to your **Playing screen** layout when you start a map in osu!). <!-- src: /firmware/main/ui/ui_port.c#pad_timer_cb -->
 - Unplug and replug the pad: the custom layouts reload from NVS (`opad_ui`) automatically. <!-- src: /firmware/main/ui/ui_port.c#ui_init, /firmware/main/ui/ui_store.c -->
 

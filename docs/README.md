@@ -27,17 +27,17 @@ flowchart TD
 * [What You Need](start/what-you-need.md) — Hardware prerequisites and supported host systems.
 * [Wiring the Keys](start/wiring-the-keys.md) — Header P2 pinout, switch wiring, and V3 carrier/module connections.
 * [First Connection](start/first-connection.md) — Direct USB HID plug-and-play verification without software.
-* [Install the Desktop Suite](start/install-the-app.md) — Installing daemon, GUI, `opadctl`, and `tosu` on Linux and Windows.
+* [Installing the Desktop App](start/install-the-app.md) — Installing daemon, GUI, `opadctl`, and `tosu` on Linux and Windows.
 
 ### User Guides (How-To)
-* [Updating Firmware](guides/update-firmware.md) — USB A/B OTA firmware updates via `opad-gui` or `opadctl`.
-* [Touchscreen and Swipes](guides/touchscreen-and-swipes.md) — Third-button Quick Retry in maps and swipe actions outside maps.
+* [Updating the Firmware](guides/update-firmware.md) — USB A/B OTA firmware updates via `opad-gui` or `opadctl`.
+* [Using the Touchscreen and Swipes](guides/touchscreen-and-swipes.md) — Quick Retry in a map and configurable swipe actions.
 * [Customizing the Screen Layout](guides/customize-screen-layout.md) — Building, exporting, and importing `Idle`/`Playing` layouts in Screen Designer, with every `ui_source_t` data source.
-* [Calibrating Hall Effect](guides/calibrate-hall-effect.md) — Guided 5-press calibration and Rapid Trigger tuning.
+* [Calibrating Hall Effect Switches](guides/calibrate-hall-effect.md) — Guided 5-press calibration and Rapid Trigger tuning.
 * [Changing Key Pins](guides/change-key-pins.md) — Reassigning hand-wired GPIO pins and using Auto-Detect.
 * [Using with tosu](guides/use-with-tosu.md) — Live osu! telemetry, Linux `ptrace`, and custom `tosu` paths.
 * [Backup and Restore](guides/backup-and-restore.md) — Automatic and manual JSON backups via `opadctl` or `opad-gui`.
-* [Uninstallation Guide](guides/uninstall.md) — Clean removal on Linux and Windows.
+* [Uninstalling the Software](guides/uninstall.md) — Clean removal on Linux and Windows.
 
 ### Technical Reference
 * [`opadctl` CLI Reference](reference/opadctl.md) — Verbatim `--help` output and option reference.
@@ -60,29 +60,29 @@ flowchart TD
 ### Developer & Contributor Guide
 * [Developer Overview](develop/index.md) — Product invariants, git workflow, and documentation rules.
 * [Building from Source](develop/building.md) — Firmware (ESP-IDF v5.5.2) and Desktop (Rust) builds.
-* [Testing Strategy](develop/testing.md) — `make check`, 28 firmware host tests, CI, and hardware checks.
+* [Testing Strategy](develop/testing.md) — `make check`, firmware host tests, CI jobs, and hardware checks.
 * [Firmware Subsystems](develop/firmware/overview.md) — [input](develop/firmware/input.md), [USB](develop/firmware/usb.md), [touch](develop/firmware/touch.md), [UI](develop/firmware/ui.md), [NVS](develop/firmware/config-and-nvs.md), [counters](develop/firmware/counters.md), and [diagnostics](develop/firmware/diag.md).
 * [Desktop Architecture](develop/desktop/overview.md) — [daemon](develop/desktop/daemon.md), [GUI](develop/desktop/gui.md), [opadctl](develop/desktop/opadctl.md), and [shared crates](develop/desktop/crates.md).
 * [Protocol Changes](develop/protocol-changes.md) — Editing `opad.proto` and regenerating nanopb/prost bindings.
 * [Hardware Ecosystem](develop/hardware.md) — V1/V2/V3 PCB designs, FFC cables, and `opadverify`.
 * [Packaging Mechanics](develop/packaging.md) — Linux (`.deb`, `.rpm`, AppImage, Arch) and Windows Inno Setup.
 * [Release Pipelines](develop/releases.md) — `release-please`, GitHub Actions, and signed update feeds.
-* [Testing Laboratory](develop/lab.md) — Multi-OS VirtualBox VM test harness.
+* [Testing Laboratory](develop/lab.md) — the lab mini PC that runs CI and install tests (`make lab-ci`, `make push`).
 * [Latency Measurement](develop/latency-testing.md) — Stages A–D, `latency_row.py`, and `bench_latency.py`.
 
 ### Recovery & Operations
-* [Recovery, Reflashing & Unbinding](recovery.md) — Hands-free recovery, OTA rollback, counter sync, and unbinding.
+* [Counters, Recovery and Unbinding](recovery.md) — counter reconciliation, recovery over USB without BOOT/RESET, and unbinding.
 * [Troubleshooting Guide](troubleshooting.md) — Keyboard layouts, Linux `ptrace_scope`, `udev` rules, SmartScreen, and recovery.
-* [Testing Checklist](testing-checklist.md) — End-to-end hardware and software QA checklist.
+* [Hardware & Release Verification Checklist](testing-checklist.md) — End-to-end hardware and software QA checklist.
 
 ---
 
 ## 2. Contributor Guidelines and Invariants
 
-Every contributor must uphold the product rules in [/AGENTS.md](/AGENTS.md):
+Every contributor must uphold the product rules in [/AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md):
 
 1. **The code is the single source of truth**: When code and documentation disagree, fix or remove the doc.
-2. **Cite source code**: Use invisible source comments (formatted as `<!--` `src:` `/path#symbol` `-->`) on user/reference pages and repo-root `/path` links on explanation/developer pages. Never use line numbers (`#L120`).
+2. **Cite source code**: Use invisible source comments (formatted as `<!--` `src:` `/path#symbol` `-->`); inside a comment the repo-root `/path` form is fine. Visible links to source files use full GitHub URLs (see below). Never use line numbers (`#L120`).
 3. **Never instruct anyone to press BOOT or RESET buttons**: Flashing, updating, and recovering happen over USB (`opadctl flash`, `opadctl recover`).
 4. **Independent updates**: App and pad update independently; never require updating both together.
 5. **Every key comes from a finger**: No macros, auto-tap, scripted input, or host-to-pad key injection.
@@ -109,6 +109,27 @@ Code, CLI messages, workflows, and scripts print or reference these exact paths 
 - **`docs/history/`**: Historical archive of reviews, incident reports, and snapshots. Do not edit it, and do not publish it on the documentation site.
 - **`docs/specs/`** and **`docs/hardware/components/`**: English-only design records and component datasheet notes (published as reference records, not translated).
 - **`draft: true` pages** (`docs/launch-checklist.md`, `docs/pad-test-sheet.md`): Internal checklists kept hidden on the public documentation site.
+
+### Pages that read the same on GitHub and on the website
+
+Every page is rendered twice: by GitHub when someone browses `docs/`, and by
+the Astro Starlight website, which loads these files as its content. Write
+for both:
+
+- **Frontmatter**: every published page starts with `title` and `description`
+  (and optionally `sidebar.order`). Starlight prints `title` as the page's
+  heading, so the body never has a `# H1`; it starts at `##`.
+- **Links between pages** are relative and keep the `.md` extension
+  (`../guides/update-firmware.md#anchor`). GitHub follows them as they are;
+  the site rewrites them to its own URLs.
+- **Links to code and other repository files** are full GitHub URLs
+  (`https://github.com/OPad-dev/OPad/blob/main/firmware/main/app_main.c`).
+  A `/path` link only works on github.com.
+- **Plain GitHub-flavoured Markdown**: no MDX, JSX or HTML except comments.
+  Callouts use GitHub alerts (`> [!NOTE]`, `> [!TIP]`, `> [!WARNING]`,
+  `> [!CAUTION]`); diagrams are `mermaid` code blocks.
+- **Images and the logo** live in [`assets/`](assets/) and are linked
+  relatively.
 
 ### Adding a new language
 

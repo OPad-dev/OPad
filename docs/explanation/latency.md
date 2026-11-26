@@ -1,71 +1,87 @@
 ---
 title: Latency Engineering
-description: How OPad minimizes keypress latency and jitter using dual USB HID endpoints, eager debouncing, Core 0 isolation, and on-device latency telemetry.
+description: Where keypress latency and jitter come from on a USB keyboard, and how OPad removes each source with split HID endpoints, eager debouncing, Core 0 isolation and on-device measurement.
 sidebar:
   order: 2
 ---
 
-In rhythm games like *osu!*, timing consistency is measured in single-digit milliseconds, and jitter directly increases Unstable Rate (UR). OPad's primary engineering rule is **latency always wins** ([/AGENTS.md](/AGENTS.md) §1.1): the screen, storage, serial telemetry, tray, and `tosu` never join the keypress path.
+In osu!, what hurts is not the average delay but its *variation*: a key that sometimes arrives 1 ms late widens the hit-error spread (Unstable Rate) even if the average is low. OPad's rule is **latency always wins** ([AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §1.1): the screen, storage, serial telemetry, tray and tosu never join the keypress path.
 
-## Dual USB HID Endpoints
+A key press passes four stages before the game sees it. Each one has a design choice behind it:
 
-Full-speed USB HID endpoints are polled by the host at `1 ms` intervals (`1000 Hz`, `bInterval = 1`). On a conventional single-endpoint keyboard:
-
-- When Key 1 changes state, a HID report is queued on the endpoint.
-- If Key 2 changes state `200 µs` later (normal during alternating streams), its report cannot be submitted until the host collects the first report—adding up to `1 ms` of variable jitter.
-
-OPad avoids endpoint contention between the two primary game keys by splitting keyboard reports across two independent 1000 Hz IN endpoints ([/firmware/main/usb/usb_descriptors.c](/firmware/main/usb/usb_descriptors.c), [/firmware/main/usb/usb_hid.c](/firmware/main/usb/usb_hid.c)):
-
-| Key | USB Interface & Endpoint | HID Report | Notes |
-|---|---|---|---|
-| **Key 1** | Interface 0 — `EP 0x81` (`HID_INSTANCE_KEYBOARD`, 1 ms) | Boot keyboard report (report ID `0`) | Shares endpoint with touchscreen Quick Retry (`` ` ``, usage `0x35`) during a map (`LINK_KEY1_TOUCH`). |
-| **Key 2** | Interface 3 — `EP 0x84` (`HID_INSTANCE_MEDIA`, 1 ms) | Keyboard report (`MEDIA_REPORT_ID_KEYBOARD`) | Shares endpoint with outside-gameplay media/wheel swipe reports (`LINK_KEY2`). |
-| **Key 3** (V3) | Dynamically routed (`usb_hid_set_key3`) | Paired onto `LINK_KEY1_TOUCH` or `LINK_KEY2` | Rides on whichever endpoint the other active game key is not using, so two game keys never share an endpoint. |
-
-(Interface 1 & 2 are CDC-ACM using `EP 0x82`, `0x03`, and `0x83`; because the ESP32-S3 allows at most five IN endpoints including `EP0`, Key 2 shares Interface 3's IN endpoint `0x84`.)
-
-### Lockless Sequence Tracking (`hid_link_t`)
-
-Key events come from Core 0 (`keypad_task` or the Hall Effect backend), while touchscreen events come from Core 1 (`touch_retry`). To coordinate submissions without blocking mutexes on the keypress path, each endpoint link (`hid_link_t` in [/firmware/main/usb/usb_hid.c](/firmware/main/usb/usb_hid.c)) maintains atomic counters:
-
-- `change_seq`: incremented atomically after updating key state so any submitter that loaded it before reading keys delivers at least that change.
-- `sent_seq`: advanced with compare-and-swap whenever `tud_hid_n_keyboard_report` succeeds. If an endpoint is busy (`!tud_hid_n_ready`), the change stays pending (`sent_seq < change_seq`) and `tud_hid_report_complete_cb` resends it the moment the in-flight transfer finishes, preventing dropped edges or stuck keys.
-- `pending_edge_us`: stores the microsecond timestamp of the oldest undelivered key edge on that link so deferred delivery latency is accurately measured when the completion callback sends it.
-
-## Mechanical Input: Eager Debouncing
-
-Mechanical switch contacts bounce for a few milliseconds after closing or opening. Deferral debouncing waits for the signal to settle before reporting a press, adding several milliseconds of delay to every tap.
-
-OPad uses **eager debouncing** in [/firmware/main/input/debounce.c](/firmware/main/input/debounce.c) (`debounce_step`) and [/firmware/main/input/keypad.c](/firmware/main/input/keypad.c):
-
-```text
-Physical Switch:  [Close] ~~~bounce~~~ [Held] ~~~bounce~~~ [Open]
-Eager State:      [PRESS immediately] -- lockout (default 5000 us) --> [resample] ... [RELEASE immediately]
-Debounce Delay:   0 us added to first edge
+```mermaid
+flowchart LR
+    A["Switch closes"] -->|"debounce: 0 µs on the first edge"| B["Input task (Core 0)"]
+    B -->|"its own endpoint, no waiting on the other key"| C["HID report queued"]
+    C -->|"host polls every 1 ms"| D["Host / osu!"]
 ```
 
-1. **Immediate edge acceptance**: The GPIO interrupt (`gpio_isr_handler`, in `IRAM_ATTR`) timestamps the edge with `esp_timer_get_time()` and runs `debounce_step(..., DEBOUNCE_SOURCE_EDGE, s_config.debounce_us)`. Outside an active lockout window, the press or release is accepted immediately and `keypad_task` (Core 0, priority `configMAX_PRIORITIES - 1`) is woken via `vTaskNotifyGiveFromISR`.
-2. **Lockout window**: Accepting a transition sets `lockout_end_us = now_us + lockout_us` (`DEBOUNCE_DEFAULT_US = 5000`, configurable from `500` to `20000` µs in [/firmware/main/input/debounce.h](/firmware/main/input/debounce.h)). Further edges during the lockout are suppressed.
-3. **End-of-lockout resample**: Once `lockout_end_us` expires, `keypad_task` reads the physical GPIO once (`DEBOUNCE_SOURCE_RESAMPLE`). If the pin ended up in the opposite state during the lockout (for example, a glitch or a release that happened inside the lockout), it corrects the state and starts a new lockout window.
+The pad measures the part it controls, from the switch edge to the report being queued in TinyUSB, and reports it as a histogram (see [On-device measurement](#on-device-measurement)). The last hop, up to 1 ms of USB polling, belongs to the host.
 
-## Hall Effect Input Latency
+## Debouncing without delay
 
-Hall Effect switches have no metallic contact bounce and bypass mechanical debouncing completely ([/firmware/main/input/he_backend.c](/firmware/main/input/he_backend.c), [/firmware/main/input/he_spi_source.c](/firmware/main/input/he_spi_source.c)):
+Switch contacts bounce for a few milliseconds when they close or open. The usual fix waits until the signal has been stable for a while before reporting it, which adds that wait to *every* press.
 
-- **V1 (internal ADC1 DMA)**: 250 µs frames (`4 kHz`), median-filtered and stepped inside the IRAM frame ISR on Core 0, waking `he_task` only on key transitions.
-- **V3 (external ADS7028 over 40 MHz SPI3)**: 50 µs frames (`20 kHz`) driven by a hardware `gptimer` waking the Core 0 `he_spi` task (`configMAX_PRIORITIES - 1`), which reads all 3 keys directly via `GPSPI3` registers and submits HID reports directly on state change.
+OPad debounces **eagerly** ([debounce.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/debounce.c), `debounce_step`): the first edge is believed immediately, and the bounce that follows is ignored.
 
-## On-Device Latency Telemetry
+```text
+Switch contact:   ___|‾|_|‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾|_|‾|________
+Reported:         ___|‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾|_____________
+                     ^ press, 0 µs added           ^ release, 0 µs added
+                     |-- lockout (5 ms) --| resample
+```
 
-Firmware measures the time from the physical edge timestamp (`edge_us`) until the HID report is accepted by TinyUSB in [/firmware/main/input/latency_stats.c](/firmware/main/input/latency_stats.c):
+1. **The edge is accepted at once.** The GPIO interrupt (`gpio_isr_handler` in [keypad.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/keypad.c), `IRAM_ATTR`) timestamps the edge with `esp_timer_get_time()` and calls `debounce_step` with `DEBOUNCE_SOURCE_EDGE`. Outside a lockout the change is accepted and `keypad_task` is woken with `vTaskNotifyGiveFromISR`.
+2. **A lockout follows.** Accepting a change starts a lockout (`DEBOUNCE_DEFAULT_US = 5000`, configurable from 500 to 20 000 µs, [debounce.h](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/debounce.h)). Edges inside it are bounce and are dropped.
+3. **The pin is read again when it ends.** `keypad_task` reads the pin once (`DEBOUNCE_SOURCE_RESAMPLE`). If it disagrees with the accepted state (a release that happened during the lockout, or a glitch), the state is corrected and a new lockout starts. No change is lost, only delayed by at most one lockout.
 
-- **Histogram**: 500 atomic `10 µs` buckets (`BUCKET_US = 10`, `BUCKET_COUNT = 500`, spanning `0` to `5000 µs`; slower samples land in the last bucket while `s_max_us` records the exact maximum).
-- **Percentiles**: `latency_stats_get` computes `p50`, `p99`, `p99.9`, `max_us`, sample count, and `deferred_reports` (edges that had to wait for an in-flight USB transfer). Inspect them anytime with `opadctl latency` or reset before a map with `opadctl latency --reset`.
-- **Outlier tracking**: Any sample above `1000 µs` increments `s_outlier_count` and updates `s_outlier_max_us`.
+The trade-off is that a noise spike long enough to trigger the interrupt registers as a press, and is corrected (released) one lockout later. Real switches on a short cable make that rare; the lockout is configurable for setups where it is not.
 
-## Core, Memory, and Flash Invariants
+Hall Effect switches have no contacts and skip all of this; see [Hall Effect and Rapid Trigger](hall-effect.md).
 
-- **Core isolation**: Input handling (`keypad_task`, `he_task`, `he_spi`) runs on Core 0 at top priority (`configMAX_PRIORITIES - 1`) and TinyUSB runs on Core 0 one level below (`configMAX_PRIORITIES - 2`); LVGL UI rendering, touchscreen polling, and serial protocol framing run on Core 1 ([/firmware/main/app_main.c](/firmware/main/app_main.c)).
-- **No dynamic allocation on the keypress path**: Debounce states, HID links, and latency histograms are statically allocated.
-- **IRAM placement**: Critical routines (`gpio_isr_handler`, `debounce_step`, `usb_hid_handle_key_event`, `latency_stats_record`, and the V1 ADC `on_frame` ISR) carry `IRAM_ATTR` so flash cache misses do not stall them.
-- **No flash writes during gameplay**: NVS commits (counters, configuration, calibration) are deferred while the runtime state is `PLAYING` or `COOLDOWN` and flushed only in `IDLE` ([/firmware/main/runtime/runtime.c](/firmware/main/runtime/runtime.c)).
+## One endpoint per game key
+
+A full-speed USB HID endpoint is polled by the host once per `bInterval`, here 1 ms (1000 Hz). The device can have only one report waiting on an endpoint: a second report waits until the host has collected the first.
+
+In a stream the two keys change well within 1 ms of each other. On a keyboard with one endpoint, Key 2's change made 200 µs after Key 1's waits for the next poll to collect Key 1's report: up to 1 ms of delay that depends on timing, which is exactly the kind of jitter that hurts.
+
+OPad gives each game key its own endpoint ([usb_descriptors.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/usb/usb_descriptors.c), [usb_hid.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/usb/usb_hid.c)):
+
+| Key | Interface and endpoint | Report | Shares the endpoint with |
+|---|---|---|---|
+| **Key 1** | Interface 0, `EP 0x81`, 1 ms (`HID_INSTANCE_KEYBOARD`) | Boot keyboard report, no report ID | The touchscreen's Quick Retry (`` ` ``) and, outside a map, swipe keys (`LINK_KEY1_TOUCH`) |
+| **Key 2** | Interface 3, `EP 0x84`, 1 ms (`HID_INSTANCE_MEDIA`) | Keyboard report, `MEDIA_REPORT_ID_KEYBOARD` | Swipe media keys and the wheel (`LINK_KEY2`) |
+| **Key 3** (HE V3) | Whichever of the two the other game key is not on (`usb_hid_set_key3`) | Same as that link | Rides with Key 2, unless Key 2 is a game key and Key 1 is not |
+
+Interfaces 1 and 2 are the CDC-ACM serial port (`EP 0x82`, `0x03`, `0x83`). The ESP32-S3 allows five IN endpoints including EP0, so there is no room for a third HID interface: Key 2 shares the media interface's endpoint, where only swipes (never sent during a map) compete with it.
+
+The result is that a key's report only ever waits for *its own* previous report, which is at least one debounce lockout old and has long been collected.
+
+### Lockless sequence tracking (`hid_link_t`)
+
+Key events come from Core 0, but touchscreen events come from Core 1 (`touch_retry`) and land in Key 1's report. A mutex between them would let a Core 1 task delay a key. Instead each report has a `hid_link_t` with three atomics:
+
+- `change_seq` is incremented by whoever changes a key in that report. A submit that loaded it before reading the keys is guaranteed to carry at least that change.
+- `sent_seq` records the newest change a successful submit carried, raised with compare-and-swap by whichever submitter succeeds. A change is pending while `sent_seq` is behind `change_seq`. Unlike a "pending" flag, one submitter can never clear another's change.
+- `pending_edge_us` holds the edge time of the oldest undelivered change, so its latency is measured from the switch edge even when it is sent late.
+
+If the endpoint is busy (`tud_hid_n_ready` false), the change stays pending, and `tud_hid_report_complete_cb` sends it the moment the transfer in flight completes. A change can be late by one report, but never lost, and a key can never stick.
+
+## Keeping Core 0 clear
+
+The two mechanisms above only work if nothing else delays the input task. [System Architecture](architecture.md) covers the core split; the rules on the key path are:
+
+- **Core and priority**: the input tasks run on Core 0 at `configMAX_PRIORITIES - 1`, TinyUSB one level below. LVGL, the serial protocol and touch run on Core 1.
+- **IRAM**: `gpio_isr_handler`, `debounce_step`, `usb_hid_handle_key_event`, `latency_stats_record` and the V1 ADC frame callback carry `IRAM_ATTR`, and [linker.lf](https://github.com/OPad-dev/OPad/blob/main/firmware/main/linker.lf) places `keypad_task`, `usb_hid` and TinyUSB's HID path in IRAM, so a flash cache miss caused by Core 1 cannot stall them.
+- **No allocation**: debounce state, HID links and the latency histogram are static.
+- **No flash writes during a map**: NVS writes wait for `IDLE` ([runtime.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/runtime/runtime.c)).
+
+## On-device measurement
+
+[latency_stats.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/input/latency_stats.c) records, for every key change, the time from the edge timestamp to the moment TinyUSB accepts the report:
+
+- **Histogram**: 500 atomic buckets of 10 µs (`BUCKET_US`, `BUCKET_COUNT`), covering 0 to 5 ms; anything slower lands in the last bucket. `p50`, `p99` and `p99.9` are therefore multiples of 10 µs (the upper edge of a bucket), while `max_us` is exact.
+- **Deferred reports**: how many changes had to wait for a transfer in flight.
+- **Outliers**: any sample above 1000 µs is counted and its maximum kept; the protocol task reports them to the host as `DIAG_EVENT_LATENCY_OUTLIER` diagnostics.
+
+`opadctl latency` reads the numbers and `opadctl latency --reset` clears them before a run. The measurement stops at TinyUSB: what the host does with the report afterwards is not in these numbers. [Latency Measurement](../develop/latency-testing.md) describes the benchmark stages and the release gate built on them.

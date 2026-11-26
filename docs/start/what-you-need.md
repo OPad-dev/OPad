@@ -1,41 +1,44 @@
 ---
 title: What You Need
-description: Hardware prerequisites, board specifications, compatible switches, USB cables, and operating system requirements for building and using OPad.
+description: The board, switches or V3 PCBs, cable and operating system you need to build and use an OPad.
 sidebar:
   order: 1
 ---
 
-OPad is built around an off-the-shelf microcontroller development board paired with either hand-wired switches or custom OPad V3 modular PCBs. <!-- src: /README.md --> <!-- src: /hardware/pcb/V3/README.md -->
+An OPad is a Waveshare development board plus either two hand-wired switches or the OPad V3 PCBs. <!-- src: /README.md --> <!-- src: /hardware/pcb/V3/README.md -->
 
-## Hardware Requirements
+## Hardware
 
-### 1. Main Controller Board
-- **Waveshare ESP32-S3-Touch-LCD-2**: ESP32-S3R8 microcontroller (240 MHz dual-core Xtensa LX7, **16 MB Flash**, **8 MB Octal PSRAM**), integrated 2.0-inch ST7789 IPS LCD (`320x240`), and CST816S capacitive touchscreen. <!-- src: /README.md --> <!-- src: /firmware/sdkconfig.defaults --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
+### The board
 
-### 2. Switches & Input Modules
-You can build an OPad with hand-wired mechanical switches or the OPad V3 modular PCBs: <!-- src: /hardware/pcb/V3/README.md -->
-- **Hand-Wired Mechanical (MX)**: Two standard Cherry MX-compatible mechanical switches (Cherry, Gateron, Kailh, Outemu, etc.) wired between header P2 and `GND`. No external resistors or diodes are needed. <!-- src: /README.md --> <!-- src: /firmware/main/input/keypad.c -->
-- **OPad V3 Modular PCBs**:
-  - **Controller Carrier V3**: Plugs directly onto headers P1 and P2 of the Waveshare board and connects to the input module via a 14-way, 1.0 mm type B FFC cable (80 mm in the V3 case) and to the USB board via an 8-way, 1.0 mm type A FFC cable. <!-- src: /hardware/pcb/V3/README.md -->
-  - **MX Input Module V3**: 3-key mechanical hotswap PCB with Kailh hot-swap sockets (`CPG151101S11`). <!-- src: /hardware/pcb/V3/README.md -->
-  - **HE Input Module V3**: 3-key Hall Effect magnetic switch PCB with TI DRV5055A3 Hall sensors, TI ADS7028 12-bit SPI ADC, and dedicated LP5907 3.3 V LDO. <!-- src: /hardware/pcb/V3/README.md -->
-  - **USB Board V3**: Passive rear USB-C daughterboard with ESD protection, ferrite, and back-feed Schottky diode. <!-- src: /hardware/pcb/V3/README.md -->
+**Waveshare ESP32-S3-Touch-LCD-2.** It has an ESP32-S3 running at 240 MHz with 16 MB of flash and octal PSRAM, a 2.0-inch 320×240 ST7789 screen and a CST816 capacitive touch controller. The firmware needs nothing else on the board. <!-- src: /firmware/sdkconfig.defaults --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
 
-### 3. USB Cable
-- A USB Type-C **data** cable (USB-C to USB-A or USB-C to USB-C). Charge-only cables supply power but cannot enumerate USB HID or CDC interfaces.
+### Switches: pick one way to build it
 
-## Host Computer Requirements
+- **Hand-wired:** two MX-style mechanical switches, each wired between a header pin and GND. You need no resistors or diodes, because the firmware turns on the ESP32-S3's internal pull-ups. See [Wiring the keys](wiring-the-keys.md). <!-- src: /firmware/main/input/keypad.c -->
+- **OPad V3 PCBs** (three keys): <!-- src: /hardware/pcb/V3/README.md -->
+  - **Controller carrier V3:** plugs onto the board's P1 and P2 headers.
+  - **One input module:** the **MX input module V3** (Kailh hot-swap sockets) or the **HE input module V3** (Hall Effect: TI DRV5055 sensors, a TI ADS7028 ADC and its own LP5907 regulator).
+  - **USB board V3:** the case's rear USB-C port, with ESD protection, a ferrite and a Schottky diode.
+  - **Cables:** a 14-way, 1.0 mm type B FFC to the module and an 8-way, 1.0 mm type A FFC to the USB board (80 mm each in the V3 case).
 
-OPad supports **Linux** and **Windows 10/11**: <!-- src: /README.md -->
+### A USB-C data cable
 
-### Linux
-- Standard kernel `usbhid` and `cdc_acm` drivers.
-- Supported release package targets: Ubuntu 22.04 / 24.04 / 26.04, Debian 12 / 13, RHEL / AlmaLinux / Rocky 9 & 10, current Fedora, and Arch Linux (release packages and bundled `tosu` require glibc 2.28 or newer). <!-- src: /README.md -->
-- `udev` rule `70-opad.rules` for non-root serial and input access (installed automatically by `.deb` and `.rpm` packages). <!-- src: /packaging/linux/udev/70-opad.rules -->
+Use a cable that carries data. A charge-only cable powers the pad, but your PC never sees it as a keyboard.
 
-### Windows
-- **Windows 10 or Windows 11 (64-bit / x64)**. <!-- src: /README.md --> <!-- src: /packaging/windows/installer.iss -->
-- Built-in inbox drivers (`hidclass.sys` for HID and `usbser.sys` for CDC serial); no third-party driver or Zadig setup is required. <!-- src: /README.md -->
+## Computer
 
-### Optional Desktop Software
-OPad works immediately as a 1000 Hz USB HID keyboard with no software installed. The optional desktop suite (`opad-daemon`, `opad-gui`, `opadctl`, and bundled `tosu`) adds live osu! telemetry, display layout editing, lifetime counters, Hall Effect tuning, and firmware updates. <!-- src: /AGENTS.md --> <!-- src: /README.md -->
+OPad works on **Linux** and **Windows 10/11 (x64)**. The pad uses the drivers your OS already has: `usbhid` and `cdc_acm` on Linux, `hidclass.sys` and `usbser.sys` on Windows. You never install a driver. <!-- src: /README.md --> <!-- src: /packaging/windows/installer.iss -->
+
+The desktop app's release packages are built for x86-64 and target: <!-- src: /README.md --> <!-- src: /scripts/release/release_notes.sh -->
+
+- Ubuntu 22.04, 24.04 and 26.04; Debian 12 and 13 (`.deb`);
+- Fedora and RHEL / AlmaLinux / Rocky 9 and 10 (`.rpm`);
+- Arch Linux (`.pkg.tar.zst`);
+- any other Linux (AppImage);
+- Windows 10 and 11 (installer).
+
+The Linux binaries are built against glibc 2.31 and the bundled tosu against glibc 2.28, so they run on every distribution above. <!-- src: /.github/workflows/release-app.yml --> <!-- src: /Makefile#TOSU_GLIBC -->
+
+> [!NOTE]
+> The desktop app is optional. Without it the pad is still a complete 1000 Hz keyboard, and its touchscreen sends Quick Retry. See [Installing the desktop app](install-the-app.md) for what the app adds. <!-- src: /AGENTS.md#1. Product rules -->

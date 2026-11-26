@@ -1,44 +1,59 @@
 ---
 title: Developer Guide
-description: Contributor workflow, product invariants, git branch lifecycle, commit conventions, and documentation rules for OPad.
+description: Where to start when changing OPad - the repository layout, the rules every change keeps, the contribution workflow, and a map of the developer pages.
 sidebar:
   order: 1
 ---
 
-Welcome to the OPad developer documentation. This section covers contributor rules, building from source, running automated tests, firmware and desktop internals, protocol evolution, hardware files, packaging, releases, lab testing, and latency benchmarking.
+This section is for people changing OPad: the firmware, the desktop suite, the protocol between them, the hardware files, and the release machinery. The binding rules live in [AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md), which applies to human and AI contributors alike; this page summarises them and points to the details.
 
-## Core Product Invariants
+## Repository layout
 
-Every change in this repository must uphold the six product rules in [/AGENTS.md](/AGENTS.md) §1:
+| Path | What it is |
+|---|---|
+| [`firmware/`](https://github.com/OPad-dev/OPad/tree/main/firmware) | ESP-IDF v5.5.2 project for the ESP32-S3; `main/` holds the subsystems, `test/host/` the host-compiled C tests |
+| [`desktop/`](https://github.com/OPad-dev/OPad/tree/main/desktop) | Rust workspace: `daemon/` (`opad-daemon`), `gui/` (`opad-gui`), `cli/` (`opadctl`) and the shared `crates/` |
+| [`protocol/`](https://github.com/OPad-dev/OPad/tree/main/protocol) | `opad.proto` and `opad.options`, the one schema both sides are generated from |
+| [`packaging/`](https://github.com/OPad-dev/OPad/tree/main/packaging) | Linux packages, AppImage, Arch PKGBUILDs and the Windows Inno Setup script |
+| [`hardware/`](https://github.com/OPad-dev/OPad/tree/main/hardware) | KiCad PCBs (V1–V3), the OpenSCAD case, and the `opadverify` fab-file checker |
+| [`scripts/`](https://github.com/OPad-dev/OPad/tree/main/scripts) | Protobuf generation, CI jobs (`ci/`), the VM lab (`lab/`), release tooling (`release/`), benchmarks |
+| [`docs/`](https://github.com/OPad-dev/OPad/tree/main/docs) | This documentation; `specs/` holds design records, `history/` old reviews |
 
-1. **Latency always wins**: If a feature measurably worsens key latency or latency jitter, reduce, defer, freeze during gameplay, or remove it. Nothing joins the keypress path: screen, storage, tray, and `tosu` stay off it.
-2. **The pad is a keyboard with no software installed**: 1000 Hz USB HID keyboard requiring no driver or desktop software on Linux or Windows 10/11.
-3. **The app and the pad update independently**: Protocol and wire changes must work both ways (new app with old firmware, old app with new firmware) via detection and negotiation.
-4. **The touchscreen is the third button**: Clean press/hold/release; Quick Retry (`` ` ``) during a map (never from swipes); configurable swipes outside a map; never inserts modifiers or extra keys into keyboard reports mid-map; exception: uncalibrated Hall Effect pads lock to their calibration screen (D7).
-5. **Never the BOOT or RESET buttons**: Flashing, updating, and recovering happen over USB/serial with A/B OTA rollback and `opadctl recover`.
-6. **Every key comes from a finger**: No macros, auto-tap, scripted/timed input, or host-to-pad key injection commands.
+## Rules every change keeps
 
-## Git Workflow & Commit Rules
+The six product rules of [AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §1, in short:
 
-Per [/AGENTS.md](/AGENTS.md) §2–§3:
+1. **Latency always wins.** Nothing joins the keypress path. A change to `firmware/main/input/` or `firmware/main/usb/` states how it affects latency and how that was checked. See [Latency Engineering](../explanation/latency.md).
+2. **The pad is a keyboard with no software installed.** Typing never depends on the daemon, the GUI or a driver.
+3. **The app and the pad update independently.** Every protocol change works new-app/old-pad and old-app/new-pad. See [App and Pad Versions](../explanation/app-and-pad-versions.md) and [Protocol Changes](protocol-changes.md).
+4. **The touchscreen is the third button**, with a clean press, hold and release, and no extra keys mid-map. See [Touchscreen as the Third Button](../explanation/touchscreen-third-button.md).
+5. **Never the BOOT or RESET buttons.** Flashing and recovery happen over USB. See [Updates and Automatic Rollback](../explanation/updates-and-rollback.md).
+6. **Every key comes from a finger.** No macros, auto-tap, timed input or host-to-pad key injection, not even as an opt-in.
 
-- **Linear history**: Rebase onto `main`; no merge commits.
-- **Short-lived branches**: Maintainers work in a worktree on a branch, fast-forward merge to `main`, then delete the branch and worktree. External contributors fork, branch, and open a PR against `main`.
-- **Commit authorship & AI disclosure**: Always sign commits with your own name and email (never an AI author). End AI-assisted commits with one trailer (`AI: assisted` or `AI: generated`); omit it when no AI was used. Replace tool-specific `Co-Authored-By` lines with this trailer.
-- **Conventional commits**: `type(scope): plain statement of behaviour (#issue)`. Add a `Compatibility:` trailer whenever protocol or IPC behavior changes.
-- **Licensing (REUSE)**: New files need license headers or an entry in [/REUSE.toml](/REUSE.toml).
+[AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §5 lists the rules that are easy to break: generated protobuf files, the `sdkconfig` trap, pinned versions (espflash 4.6.0, tosu v4.26.2, LVGL as locked), REUSE licensing, and what is never committed.
 
-## Code as Single Source of Truth
+## Contributing
 
-Per [/AGENTS.md](/AGENTS.md) §7:
+- **Branches.** Outside contributors fork, branch and open a pull request against `main`; the maintainer works in a worktree and fast-forwards `main`. History stays linear (rebase, no merge commits), and a branch is deleted once merged.
+- **Commits.** Conventional commits, `type(scope): subject`, with the subject a plain statement of the behaviour and the issue or review finding in it (`(#14)`). Sign as yourself. AI use is disclosed with one trailer, `AI: assisted` or `AI: generated`, in place of tool attribution lines. Protocol or IPC changes add a `Compatibility:` trailer.
+- **Licensing.** New files need licence information, in a header or in [REUSE.toml](https://github.com/OPad-dev/OPad/blob/main/REUSE.toml).
+- **Testing.** Run `make check` before calling a change done, and say plainly what could not be tested (for example, no pad connected). See [Testing](testing.md).
 
-- When documentation and code disagree, the code wins—fix or remove the stale doc.
-- Developer pages (`docs/explanation/*`, `docs/develop/*`) link to source files using repo-root paths (for example, `[/firmware/main/app_main.c](/firmware/main/app_main.c)`).
-- Never invent CLI flags, config fields, or GPIO pins that do not exist in the codebase.
+## Where to go next
 
-## Documentation Structure (Diátaxis)
+| To... | Read |
+|---|---|
+| Build the firmware and the desktop suite | [Building from Source](building.md) |
+| Run the checks CI runs, locally or in the lab | [Testing](testing.md) |
+| Find your way around the firmware | [Firmware Subsystems](firmware/overview.md) |
+| Find your way around the desktop suite | [Desktop Architecture](desktop/overview.md) |
+| Add a field or message to the protocol | [Protocol Changes](protocol-changes.md) |
+| Work on the PCBs, cables or case | [Hardware](hardware.md) |
+| Change a package or installer | [Packaging](packaging.md) |
+| Understand how a release is built and shipped | [Release Pipelines](releases.md) |
+| Use the VM lab | [Testing Lab](lab.md) |
+| Measure key latency | [Latency Measurement](latency-testing.md) |
 
-- **Start (`docs/start/*`)**: Onboarding tutorials (hardware, wiring, first connection, installing the app).
-- **Guides (`docs/guides/*`, `docs/recovery.md`)**: Task-oriented how-to procedures.
-- **Reference (`docs/reference/*`, `docs/troubleshooting.md`, `docs/develop/*`)**: Authoritative catalogs of CLI, GUI, settings, pinout, serial/IPC protocols, paths, and internals.
-- **Explanation (`docs/explanation/*`)**: System architecture and design rationale.
+## Documentation rules
+
+From [AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §7: the code and `git log` are authoritative, and a doc that disagrees with them is wrong and gets fixed or deleted. Every factual claim cites the source file it came from (see the conventions in [docs/README.md](https://github.com/OPad-dev/OPad/blob/main/docs/README.md)). No placeholder pages; old reviews and snapshots go to `docs/history/`.
