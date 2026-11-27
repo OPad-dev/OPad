@@ -4594,3 +4594,94 @@ fn a_screen_asleep_before_the_daemon_connected_is_known_from_the_status() {
         assert_eq!(controller.state.pad_activity.display_asleep, asleep);
     }
 }
+
+// Requests run concurrently, one task per connection. A handler that held the
+// state lock while waiting for the storage lock, against one doing the
+// reverse, stopped the daemon for good.
+#[test]
+fn concurrent_requests_never_hold_the_state_and_storage_locks_together() {
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    let device = Arc::new(MockDeviceLink::new(false));
+    let log_hub = Arc::new(LogHub::new());
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    let daemon_state = Arc::new(Mutex::new(DaemonState {
+        mode: RuntimeMode::Idle,
+        device_connected: false,
+        // A known pad, so the status and the backup both read the storage
+        device_info: Some(pad_info("LOCKS")),
+        counters: counters("LOCKS", 1, 10, 20),
+        counters_source: CounterSource::Pc,
+        pc_counters: None,
+        esp_counters: None,
+        config: DeviceConfig::default(),
+        last_sync_time: None,
+        last_sync_error: None,
+        storage_error: None,
+        tosu_connected: false,
+        osu_active: false,
+        latency: None,
+        pending_replacement: None,
+        install_id: None,
+        pending_takeover: None,
+        foreign_pad: false,
+        nvs_restore_pending: false,
+        tap: Default::default(),
+        incompatible: None,
+        ui_values: Vec::new(),
+        custom_layouts: HashMap::new(),
+        last_backup: None,
+
+        he_calibration: None,
+        latest_he_progress: None,
+        key3: None,
+        pad_activity: Default::default(),
+    }));
+
+    let requests: [fn() -> IpcRequest; 4] = [
+        || IpcRequest::GetStatus,
+        || IpcRequest::SetUpdateEnabled {
+            component: opad_ipc::UpdateComponent::App,
+            enabled: true,
+        },
+        || IpcRequest::ExportBackup,
+        || IpcRequest::ResetCounters { confirm: true },
+    ];
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    for make in requests {
+        let (state, storage, device, log_hub, pending_ops, done_tx) = (
+            daemon_state.clone(),
+            storage.clone(),
+            device.clone(),
+            log_hub.clone(),
+            pending_ops.clone(),
+            done_tx.clone(),
+        );
+        // Plain threads: a deadlock must fail this test, not hang a runtime
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                for _ in 0..3000 {
+                    handle_ipc_request(
+                        make(),
+                        &state,
+                        &storage,
+                        &*device,
+                        &log_hub,
+                        &pending_ops,
+                        None,
+                    )
+                    .await;
+                }
+            });
+            let _ = done_tx.send(());
+        });
+    }
+    for _ in 0..requests.len() {
+        done_rx
+            .recv_timeout(Duration::from_secs(30))
+            .expect("the handlers deadlocked on the state and storage locks");
+    }
+}

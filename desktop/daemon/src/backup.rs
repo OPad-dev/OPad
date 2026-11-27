@@ -41,24 +41,32 @@ pub fn current(
     state: &Arc<Mutex<DaemonState>>,
     storage: &Arc<Mutex<Option<Storage>>>,
 ) -> Option<JsonBackup> {
-    let st = state.lock();
-    if !st.device_connected && st.device_info.is_none() && st.counters.device_id.is_empty() {
-        return None;
-    }
-    let info = st
-        .device_info
-        .clone()
+    // The state is copied out and released before the storage is read: the
+    // two locks are never held together (see `handle_ipc_request`)
+    let (device_info, counters, config, pad_key3) = {
+        let st = state.lock();
+        if !st.device_connected && st.device_info.is_none() && st.counters.device_id.is_empty() {
+            return None;
+        }
+        (
+            st.device_info.clone(),
+            st.counters.clone(),
+            st.config.clone(),
+            st.key3.map(|k| k.lifetime),
+        )
+    };
+    let info = device_info
         .or_else(|| {
             storage.lock().as_ref().and_then(|s| {
                 s.list_device_states()
                     .ok()?
                     .into_iter()
-                    .find(|(i, _)| i.device_id == st.counters.device_id)
+                    .find(|(i, _)| i.device_id == counters.device_id)
                     .map(|(i, _)| i)
             })
         })
         .unwrap_or_else(|| DeviceInfo {
-            device_id: st.counters.device_id.clone(),
+            device_id: counters.device_id.clone(),
             board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
             firmware_version: String::new(),
             protocol_version: 1,
@@ -69,13 +77,13 @@ pub fn current(
             key_count: 2,
         });
     // Key 3's count: the pad's while it is connected, else this PC's record
-    let key3 = st.key3.map(|k| k.lifetime).or_else(|| {
+    let key3 = pad_key3.or_else(|| {
         storage
             .lock()
             .as_ref()
             .and_then(|s| s.load_key3_lifetime(&info.device_id).ok().flatten())
     });
-    Some(JsonBackup::new(&info, &st.counters, &st.config).with_key3_lifetime(key3))
+    Some(JsonBackup::new(&info, &counters, &config).with_key3_lifetime(key3))
 }
 
 /// How many backups to keep. Ten covers a long session's worth of plays

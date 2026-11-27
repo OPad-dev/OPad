@@ -83,6 +83,14 @@ fn refuse_if_pad_guarded(state: &Arc<Mutex<DaemonState>>) -> Option<IpcResponse>
         .map(|reason| IpcResponse::Error(reason.to_string()))
 }
 
+/// Answers one IPC request.
+///
+/// Lock rule for everything in the daemon: the state lock and the storage
+/// lock are never held at the same time. Copy what is needed out of one,
+/// release it, then take the other. Requests run concurrently (one task per
+/// connection), so a handler holding state while waiting for storage and
+/// another holding storage while waiting for state would stop the daemon for
+/// good.
 pub async fn handle_ipc_request<D: DeviceLink>(
     req: IpcRequest,
     state: &Arc<Mutex<DaemonState>>,
@@ -132,16 +140,20 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::GetStatus => {
-            let st = state.lock();
-            let pc_counters = if let Some(info) = &st.device_info {
-                let s_guard = storage.lock();
-                s_guard
-                    .as_ref()
-                    .and_then(|s| s.load_device_state(&info.device_id).unwrap_or(None))
-                    .or_else(|| st.pc_counters.clone())
-            } else {
-                st.pc_counters.clone()
+            // Storage first, then the state: the two locks are never held
+            // together (see `handle_ipc_request`)
+            let device_id = {
+                let st = state.lock();
+                st.device_info.as_ref().map(|i| i.device_id.clone())
             };
+            let stored = device_id.and_then(|id| {
+                storage
+                    .lock()
+                    .as_ref()
+                    .and_then(|s| s.load_device_state(&id).unwrap_or(None))
+            });
+            let st = state.lock();
+            let pc_counters = stored.or_else(|| st.pc_counters.clone());
             let takeover_prompt = st.pending_takeover.as_ref().map(|t| {
                 let pc = pc_counters.clone().unwrap_or_default();
                 Box::new(opad_ipc::TakeoverPrompt {
@@ -379,17 +391,19 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 // Automatic firmware updates, while the pad is unused (§U-3)
                 UpdateComponent::Firmware => updater::FIRMWARE_AUTO_KEY,
             };
-            let guard = storage.lock();
-            match guard.as_ref() {
-                Some(s) => match s.set_app_state(key, if enabled { "1" } else { "0" }) {
-                    Ok(()) => IpcResponse::ConfigUpdated {
-                        config: state.lock().config.clone(),
-                        deferred_persist: false,
-                    },
-                    // Mid-map this is a blocked storage write, not a failure
-                    Err(e) => IpcResponse::OperationDeferred {
-                        reason: format!("Cannot save the update setting right now: {}", e),
-                    },
+            // The storage lock is released before the state is read
+            let saved = storage
+                .lock()
+                .as_ref()
+                .map(|s| s.set_app_state(key, if enabled { "1" } else { "0" }));
+            match saved {
+                Some(Ok(())) => IpcResponse::ConfigUpdated {
+                    config: state.lock().config.clone(),
+                    deferred_persist: false,
+                },
+                // Mid-map this is a blocked storage write, not a failure
+                Some(Err(e)) => IpcResponse::OperationDeferred {
+                    reason: format!("Cannot save the update setting right now: {}", e),
                 },
                 None => IpcResponse::Error("Storage is unavailable".to_string()),
             }
@@ -537,24 +551,21 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 };
             }
 
-            let (updated, target) = {
+            let (updated, info) = {
                 let mut st = state.lock();
                 st.counters.counter_generation = st.counters.counter_generation.saturating_add(1);
                 st.counters.lifetime_key1 = 0;
                 st.counters.lifetime_key2 = 0;
-                let updated = st.counters.clone();
-
-                if let Some(info) = &st.device_info {
-                    if let Some(s) = storage.lock().as_ref() {
-                        let _ = s.save_device_state(info, &updated);
-                        let _ = s.save_key3_lifetime(&info.device_id, 0);
-                    }
-                }
-                (
-                    updated,
-                    st.device_info.as_ref().map(|i| i.device_id.clone()),
-                )
+                (st.counters.clone(), st.device_info.clone())
             };
+            // Saved with the state lock released
+            if let Some(info) = &info {
+                if let Some(s) = storage.lock().as_ref() {
+                    let _ = s.save_device_state(info, &updated);
+                    let _ = s.save_key3_lifetime(&info.device_id, 0);
+                }
+            }
+            let target = info.map(|i| i.device_id);
 
             if state.lock().device_connected {
                 // Key 3 too: the reset reaches the pad as a sync to zeros
@@ -1112,13 +1123,15 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 map_key2: 0,
             };
 
+            // Read before the storage lock is taken, never under it
+            let connected_firmware = state
+                .lock()
+                .device_info
+                .as_ref()
+                .map(|i| i.firmware_version.clone());
             if let Some(s) = storage.lock().as_ref() {
                 let _ = s.save_config(&new_config);
-                let last_firmware_version = state
-                    .lock()
-                    .device_info
-                    .as_ref()
-                    .map(|i| i.firmware_version.clone())
+                let last_firmware_version = connected_firmware
                     .or_else(|| {
                         s.list_device_states()
                             .ok()?
