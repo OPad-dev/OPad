@@ -285,6 +285,9 @@ async fn main() -> Result<()> {
                 if daemon_state.lock().flash.is_some() {
                     continue;
                 }
+                if !firmware_update::may_install_unasked(&daemon_state.lock()) {
+                    continue;
+                }
                 if let Some(reason) = firmware_update::auto_wait(&daemon_state.lock()) {
                     debug!("Firmware {} waits: {}", available, reason);
                     continue;

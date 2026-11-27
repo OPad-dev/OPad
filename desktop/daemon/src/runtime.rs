@@ -784,6 +784,9 @@ impl RuntimeController {
                     self.state.incompatible = Some(IncompatibleDevice {
                         firmware_version: info.firmware_version.clone(),
                         protocol_version: info.protocol_version,
+                        device_id: info.device_id.clone(),
+                        board_profile: info.board_profile.clone(),
+                        running_partition: info.running_partition.clone(),
                     });
                     self.state.device_connected = false;
                     self.state.counters_source = CounterSource::Pc;

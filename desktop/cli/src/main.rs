@@ -473,7 +473,16 @@ async fn main() -> Result<()> {
                     println!("Replacement:      ⚠ New pad detected (previous: {}). Run GUI to restore or adopt.", old_id);
                 }
                 if let Some(incompat) = incompatible {
-                    println!("Incompatible:     ⚠ Device protocol {} incompatible with the protocol this app speaks ({}). Update firmware or host.", incompat.protocol_version, opad_protocol::DEVICE_PROTOCOL_VERSION);
+                    let ours = opad_protocol::DEVICE_PROTOCOL_VERSION;
+                    let fix = if incompat.protocol_version > ours {
+                        "Update OPad (`opadctl update --install`)."
+                    } else {
+                        "Update the pad's firmware (`opadctl firmware-update`)."
+                    };
+                    println!(
+                        "Incompatible:     ⚠ The pad (firmware {}) speaks protocol {}, this app {}. It works as a keyboard and nothing else until then. {}",
+                        incompat.firmware_version, incompat.protocol_version, ours, fix
+                    );
                 }
                 println!(
                     "tosu (osu!):      {}",

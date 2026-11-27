@@ -87,6 +87,51 @@ fn unused_long_enough(
     None
 }
 
+/// The pad a firmware update is for. Normally the adopted one. Otherwise a
+/// pad the daemon left alone because it speaks another pad protocol
+/// ([`DaemonState::incompatible`]): nothing is read from or written to it, but
+/// a flash needs none of that protocol (it goes through the ROM bootloader)
+/// and is the only thing that makes such a pad usable again, so it is the
+/// one thing still offered for it.
+struct Target {
+    connected: bool,
+    installed: Option<String>,
+    board: Option<String>,
+    running_partition: Option<String>,
+    device_id: Option<String>,
+    /// The protocol a left-alone pad speaks; `None` for an adopted pad
+    other_protocol: Option<u32>,
+}
+
+fn target(st: &DaemonState) -> Target {
+    if let Some(pad) = &st.incompatible {
+        return Target {
+            connected: true,
+            installed: Some(pad.firmware_version.clone()),
+            board: Some(pad.board_profile.clone()),
+            running_partition: pad.running_partition.clone(),
+            device_id: Some(pad.device_id.clone()).filter(|id| !id.is_empty()),
+            other_protocol: Some(pad.protocol_version),
+        };
+    }
+    let info = st.device_info.as_ref();
+    Target {
+        connected: st.device_connected,
+        installed: info.map(|i| i.firmware_version.clone()),
+        board: info.map(|i| i.board_profile.clone()),
+        running_partition: info.and_then(|i| i.running_partition.clone()),
+        device_id: info.map(|i| i.device_id.clone()),
+        other_protocol: None,
+    }
+}
+
+/// Whether the daemon would flash a pad by itself. Never one it left alone:
+/// the daemon does not hear its key presses, so it cannot tell that nobody is
+/// using it. That update waits for a person to ask.
+pub fn may_install_unasked(state: &DaemonState) -> bool {
+    state.incompatible.is_none()
+}
+
 /// What a firmware update would do right now, and everything in its way.
 ///
 /// Reads state and writes nothing, so the GUI may poll it.
@@ -96,28 +141,34 @@ pub fn offer(
     storage_available: bool,
     auto: bool,
 ) -> FirmwareOffer {
-    let (mode, device_info, connected, guard, idle) = {
+    let (mode, pad, guard, idle) = {
         let st = state.lock();
         (
             st.mode,
-            st.device_info.clone(),
-            st.device_connected,
+            target(&st),
             st.pad_guard(),
             st.pad_activity.idle_for(),
         )
     };
-    let installed = device_info.as_ref().map(|i| i.firmware_version.clone());
-    let board = device_info.as_ref().map(|i| i.board_profile.clone());
+    let Target {
+        connected,
+        installed,
+        board,
+        running_partition,
+        other_protocol,
+        ..
+    } = pad;
 
     let mut out = FirmwareOffer {
         installed: installed.clone(),
-        running_partition: device_info
-            .as_ref()
-            .and_then(|i| i.running_partition.clone()),
+        running_partition,
         outage_seconds: TYPICAL_OUTAGE_SECONDS,
-        auto,
+        // A pad left alone is never flashed unasked (`may_install_unasked`)
+        auto: auto && other_protocol.is_none(),
         auto_after_minutes: (AUTO_IDLE.as_secs() / 60) as u32,
-        idle_minutes: idle.map(|d| (d.as_secs() / 60) as u32),
+        idle_minutes: idle
+            .filter(|_| other_protocol.is_none())
+            .map(|d| (d.as_secs() / 60) as u32),
         ..Default::default()
     };
 
@@ -228,19 +279,18 @@ pub async fn install<D: DeviceLink>(
     pending_ops: &Arc<Mutex<crate::runtime::PendingOperations>>,
 ) -> Result<FirmwareUpdateOutcome, FirmwareUpdateError> {
     let storage_available = storage.lock().is_some();
-    let (mode, connected, installed, board, running_partition, guard) = {
+    let (mode, pad, guard) = {
         let st = state.lock();
-        (
-            st.mode,
-            st.device_connected,
-            st.device_info.as_ref().map(|i| i.firmware_version.clone()),
-            st.device_info.as_ref().map(|i| i.board_profile.clone()),
-            st.device_info
-                .as_ref()
-                .and_then(|i| i.running_partition.clone()),
-            st.pad_guard(),
-        )
+        (st.mode, target(&st), st.pad_guard())
     };
+    let Target {
+        connected,
+        installed,
+        board,
+        running_partition,
+        device_id,
+        other_protocol,
+    } = pad;
 
     // A pad owned by another install is not ours to sync or flash (§W3-3)
     if let Some(reason) = guard {
@@ -308,10 +358,20 @@ pub async fn install<D: DeviceLink>(
 
     // Step 2. Before a single byte is written to the pad, this PC has its
     // counters. A pad that comes back blank is then recoverable.
-    info!("Syncing counters to this PC before flashing the pad");
-    crate::sync::perform_sync(state, storage, device, pending_ops)
-        .await
-        .map_err(|e| FirmwareUpdateError::Sync(e.to_string()))?;
+    match other_protocol {
+        None => {
+            info!("Syncing counters to this PC before flashing the pad");
+            crate::sync::perform_sync(state, storage, device, pending_ops)
+                .await
+                .map_err(|e| FirmwareUpdateError::Sync(e.to_string()))?;
+        }
+        // Its counters cannot be asked for in a protocol this app does not
+        // speak. They stay in the pad's own storage, which an app update
+        // does not touch, and are synced once it speaks ours.
+        Some(protocol) => {
+            info!("The pad speaks protocol {protocol}: flashing it without a counter sync first")
+        }
+    }
 
     // Step 3. Download, then verify the hash the signed manifest gave, then
     // verify the image is actually for this chip.
@@ -341,7 +401,16 @@ pub async fn install<D: DeviceLink>(
         return Err(FirmwareUpdateError::NoLongerSafe(reason));
     }
 
-    let result = flash_and_verify(&target, &installed, &available, state, device).await;
+    let result = flash_and_verify(
+        &target,
+        &installed,
+        &available,
+        device_id.as_deref(),
+        running_partition.as_deref(),
+        state,
+        device,
+    )
+    .await;
     // The image is a megabyte and has done its job either way; §W2-3 should
     // not inherit it as something to clean up.
     let _ = std::fs::remove_file(&target);
@@ -382,7 +451,7 @@ fn still_safe_to_flash(state: &Arc<Mutex<DaemonState>>) -> Result<(), String> {
     if let Some(reason) = st.pad_guard() {
         return Err(reason.to_string());
     }
-    if !st.device_connected {
+    if !target(&st).connected {
         return Err("The pad disconnected".to_string());
     }
     Ok(())
@@ -392,6 +461,8 @@ async fn flash_and_verify<D: DeviceLink>(
     image: &std::path::Path,
     installed: &str,
     available: &str,
+    device_id: Option<&str>,
+    running: Option<&str>,
     state: &Arc<Mutex<DaemonState>>,
     device: &D,
 ) -> Result<FirmwareUpdateOutcome, FirmwareUpdateError> {
@@ -404,19 +475,11 @@ async fn flash_and_verify<D: DeviceLink>(
     }
     state.lock().device_connected = false;
     let app_port = device.port().or_else(opad_device::find_target_port);
-    let (device_id, running) = {
-        let st = state.lock();
-        let info = st.device_info.as_ref();
-        (
-            info.map(|i| i.device_id.clone()),
-            info.and_then(|i| i.running_partition.clone()),
-        )
-    };
 
     // Step 5. The app image beside the running one, which stays as the
     // fallback (flash::plan_app_update), and nothing else.
     let scratch = image.parent().unwrap_or(std::path::Path::new("."));
-    let plan = match flash::plan_app_update(image, running.as_deref(), scratch) {
+    let plan = match flash::plan_app_update(image, running, scratch) {
         Ok(plan) => plan,
         Err(e) => {
             // Nothing written yet: the pad is still the keyboard it was
@@ -424,12 +487,9 @@ async fn flash_and_verify<D: DeviceLink>(
             return Err(e.into());
         }
     };
-    let flashed = flash::flash(
-        &plan.images,
-        app_port.as_deref(),
-        device_id.as_deref(),
-        &|m| info!("{m}"),
-    )
+    let flashed = flash::flash(&plan.images, app_port.as_deref(), device_id, &|m| {
+        info!("{m}")
+    })
     .await;
 
     // Step 6. Whatever happened, the device loop gets its port back: if the
@@ -652,6 +712,40 @@ mod tests {
             "{:?}",
             offer.blockers
         );
+    }
+
+    #[test]
+    fn a_pad_speaking_another_protocol_is_still_offered_its_firmware_update() {
+        // Nothing connected as far as the rest of the daemon goes, and the
+        // pad it knew before ran something else
+        let st = state_with(RuntimeMode::Idle, false, "1.1.0");
+        st.lock().incompatible = Some(opad_model::IncompatibleDevice {
+            firmware_version: "0.9.0".to_string(),
+            protocol_version: 0,
+            device_id: "OPAD-OLD".to_string(),
+            board_profile: "waveshare_esp32s3_touch_lcd_2".to_string(),
+            running_partition: Some("ota_1".to_string()),
+        });
+
+        let offer = offer(Some(&manifest("1.1.0")), &st, true, true);
+        assert_eq!(offer.installed.as_deref(), Some("0.9.0"));
+        assert_eq!(offer.available.as_deref(), Some("1.1.0"));
+        assert_eq!(offer.running_partition.as_deref(), Some("ota_1"));
+        assert!(offer.blockers.is_empty(), "{:?}", offer.blockers);
+        assert!(offer.consent_text.is_some());
+        // Only when a person asks: the daemon cannot tell whether it is in use
+        assert!(!offer.auto);
+        assert!(!may_install_unasked(&st.lock()));
+        assert!(still_safe_to_flash(&st).is_ok());
+
+        // Not mid-map, like any other pad
+        st.lock().mode = RuntimeMode::Playing;
+        assert!(still_safe_to_flash(&st).is_err());
+        st.lock().mode = RuntimeMode::Idle;
+
+        // Unplugged: back to "not connected"
+        st.lock().incompatible = None;
+        assert!(still_safe_to_flash(&st).is_err());
     }
 
     #[test]

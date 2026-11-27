@@ -50,6 +50,14 @@ pub enum CounterSource {
 pub struct IncompatibleDevice {
     pub firmware_version: String,
     pub protocol_version: u32,
+    /// What its HelloAck said besides, which is all a firmware update needs:
+    /// that is the one thing still done to such a pad
+    #[serde(default)]
+    pub device_id: String,
+    #[serde(default)]
+    pub board_profile: String,
+    #[serde(default)]
+    pub running_partition: Option<String>,
 }
 
 /// Device hardware & firmware metadata

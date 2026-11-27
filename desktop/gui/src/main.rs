@@ -336,6 +336,8 @@ const NO_TRAY_BANNER: &str =
 #[derive(Debug, Clone)]
 pub enum Message {
     Navigate(Page),
+    /// Settings, on its Updates tab
+    OpenUpdates,
     Poll,
     Status(Result<IpcResponse, String>),
     UiValues(Result<IpcResponse, String>),
@@ -664,11 +666,14 @@ impl App {
                 Message::UpdateStatus,
             ));
         }
-        // Settings' firmware card, Device's running slot, the diagnostics bundle
+        // Settings' firmware card, Device's running slot, the diagnostics
+        // bundle; and on every page for a pad that needs its firmware updated
+        // before anything else works
         if matches!(
             page,
             Some(Page::Settings | Page::Device | Page::Diagnostics)
-        ) {
+        ) || (page.is_some() && self.incompatible.is_some())
+        {
             tasks.push(Task::perform(
                 ipc::request(IpcRequest::GetFirmwareUpdate),
                 Message::FirmwareOffer,
@@ -763,6 +768,10 @@ impl App {
                     tasks.push(self.designer.reload().map(Message::Designer));
                 }
                 return Task::batch(tasks);
+            }
+            Message::OpenUpdates => {
+                self.settings_tab = pages::SettingsTab::Updates;
+                return self.update(Message::Navigate(Page::Settings));
             }
             Message::Poll => return self.poll(),
             Message::Status(result) => {
@@ -2329,16 +2338,31 @@ impl App {
             );
         }
         if let Some(incompat) = &self.incompatible {
-            main = main.push(
-                container(
-                    row![text(incompatible_banner(incompat))
-                        .size(14)
-                        .color(theme::YELLOW),]
-                    .align_y(Alignment::Center),
-                )
-                .padding([8, 14])
-                .style(theme::banner),
-            );
+            let (message, fix) = incompatible_banner(incompat, self.firmware_offer.as_ref());
+            let mut line = row![text(message)
+                .size(14)
+                .color(theme::YELLOW)
+                .width(Length::Fill)]
+            .spacing(12)
+            .align_y(Alignment::Center);
+            match fix {
+                IncompatibleFix::UpdatePad => {
+                    line = line.push(
+                        button(text("Update the pad").size(13))
+                            .style(theme::primary)
+                            .on_press(Message::PromptFirmwareConsent),
+                    );
+                }
+                IncompatibleFix::OpenUpdates => {
+                    line = line.push(
+                        button(text("Open Updates").size(13))
+                            .style(theme::secondary)
+                            .on_press(Message::OpenUpdates),
+                    );
+                }
+                IncompatibleFix::Wait => {}
+            }
+            main = main.push(container(line).padding([8, 14]).style(theme::banner));
         }
         if let Some(old_id) = &self.pending_replacement {
             main = main.push(
@@ -3400,15 +3424,60 @@ fn magnet_tick() -> Task<Message> {
     )
 }
 
-/// The banner for a pad the daemon refused. The daemon compares the pad's
-/// protocol with `opad_protocol::DEVICE_PROTOCOL_VERSION` (as `opadctl
-/// status` prints it), not with the GUI-daemon IPC version.
-fn incompatible_banner(incompat: &opad_model::IncompatibleDevice) -> String {
-    format!(
-        "⚠ Incompatible device protocol (device: {}, required: {}). Update firmware.",
-        incompat.protocol_version,
-        opad_protocol::DEVICE_PROTOCOL_VERSION
-    )
+/// The one thing to do about a pad the daemon left alone
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IncompatibleFix {
+    /// Its firmware update is ready: ask for consent and flash it
+    UpdatePad,
+    /// Settings › Updates: the app is the old one, or no update is known yet
+    OpenUpdates,
+    /// Something is in the way right now, and the banner says what
+    Wait,
+}
+
+/// The banner for a pad the daemon left alone because it speaks another pad
+/// protocol than `opad_protocol::DEVICE_PROTOCOL_VERSION` (not the GUI-daemon
+/// IPC version). Whichever side is the old one has to be updated before the
+/// pad does anything here, so the banner says which, and offers it.
+fn incompatible_banner(
+    incompat: &opad_model::IncompatibleDevice,
+    offer: Option<&opad_ipc::FirmwareOffer>,
+) -> (String, IncompatibleFix) {
+    let ours = opad_protocol::DEVICE_PROTOCOL_VERSION;
+    let versions = format!("pad protocol {}, app {}", incompat.protocol_version, ours);
+    if incompat.protocol_version > ours {
+        return (
+            format!(
+                "This pad's firmware ({}) is newer than this OPad app understands ({versions}). \
+                 Update OPad to use the pad here; it stays a working keyboard meanwhile.",
+                incompat.firmware_version
+            ),
+            IncompatibleFix::OpenUpdates,
+        );
+    }
+    let too_old = format!(
+        "This pad's firmware ({}) is too old for this OPad app ({versions}). It stays a \
+         working keyboard, but nothing else works until it is updated.",
+        incompat.firmware_version
+    );
+    match offer {
+        Some(offer) if !offer.blockers.is_empty() => (
+            format!("{too_old} {}", offer.blockers.join(" ")),
+            IncompatibleFix::Wait,
+        ),
+        Some(opad_ipc::FirmwareOffer {
+            available: Some(available),
+            consent_text: Some(_),
+            ..
+        }) => (
+            format!("{too_old} Firmware {available} is ready."),
+            IncompatibleFix::UpdatePad,
+        ),
+        _ => (
+            format!("{too_old} Check for updates to get its firmware."),
+            IncompatibleFix::OpenUpdates,
+        ),
+    }
 }
 
 /// `modal_box` centred over the dimmed window. The dim layer takes every click
@@ -3599,19 +3668,56 @@ mod tests {
     }
 
     #[test]
-    fn the_incompatible_banner_names_the_pad_protocol_the_daemon_requires() {
-        let text = incompatible_banner(&opad_model::IncompatibleDevice {
+    fn the_incompatible_banner_offers_the_update_that_makes_the_pad_work() {
+        let ours = opad_protocol::DEVICE_PROTOCOL_VERSION;
+        let pad = |protocol_version| opad_model::IncompatibleDevice {
             firmware_version: "0.9.0".to_string(),
-            protocol_version: 7,
-        });
-        assert!(text.contains("device: 7"), "{text}");
+            protocol_version,
+            device_id: "OPAD-OLD".to_string(),
+            board_profile: String::new(),
+            running_partition: None,
+        };
+        let offer = |available: Option<&str>, blockers: &[&str]| opad_ipc::FirmwareOffer {
+            installed: Some("0.9.0".to_string()),
+            available: available.map(str::to_string),
+            consent_text: available.map(|_| "Do not unplug".to_string()),
+            blockers: blockers.iter().map(|b| b.to_string()).collect(),
+            ..Default::default()
+        };
+
+        // An old pad whose update is ready: one button flashes it
+        let (text, fix) = incompatible_banner(&pad(ours - 1), Some(&offer(Some("1.1.0"), &[])));
+        assert_eq!(fix, IncompatibleFix::UpdatePad);
+        assert!(text.contains("too old"), "{text}");
+        assert!(text.contains("1.1.0"), "{text}");
+        // The pad's protocol and the one the daemon speaks, not the IPC version
         assert!(
-            text.contains(&format!(
-                "required: {}",
-                opad_protocol::DEVICE_PROTOCOL_VERSION
-            )),
+            text.contains(&format!("pad protocol {}, app {ours}", ours - 1)),
             "{text}"
         );
+
+        // Mid-map: said, not offered
+        let (text, fix) = incompatible_banner(
+            &pad(ours - 1),
+            Some(&offer(Some("1.1.0"), &["Wait until the map ends."])),
+        );
+        assert_eq!(fix, IncompatibleFix::Wait);
+        assert!(text.contains("map ends"), "{text}");
+
+        // No update known yet: Updates is where "Check now" is
+        assert_eq!(
+            incompatible_banner(&pad(ours - 1), None).1,
+            IncompatibleFix::OpenUpdates
+        );
+        assert_eq!(
+            incompatible_banner(&pad(ours - 1), Some(&offer(None, &[]))).1,
+            IncompatibleFix::OpenUpdates
+        );
+
+        // A pad newer than the app: it is the app that is updated, never the pad
+        let (text, fix) = incompatible_banner(&pad(ours + 1), Some(&offer(Some("9.0.0"), &[])));
+        assert_eq!(fix, IncompatibleFix::OpenUpdates);
+        assert!(text.contains("Update OPad"), "{text}");
     }
 
     #[test]
