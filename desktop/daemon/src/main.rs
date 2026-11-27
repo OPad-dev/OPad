@@ -281,6 +281,10 @@ async fn main() -> Result<()> {
                 }) {
                     continue;
                 }
+                // Someone is flashing the pad: not a failure to remember
+                if daemon_state.lock().flash.is_some() {
+                    continue;
+                }
                 if let Some(reason) = firmware_update::auto_wait(&daemon_state.lock()) {
                     debug!("Firmware {} waits: {}", available, reason);
                     continue;
@@ -933,6 +937,7 @@ mod tests {
             latest_he_progress: None,
             key3: None,
             pad_activity: Default::default(),
+            flash: None,
         }));
 
         // 1. GetStatus surfaces storage_error

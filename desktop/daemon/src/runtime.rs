@@ -116,6 +116,31 @@ pub struct DaemonState {
     pub key3: Option<opad_model::Key3Counters>,
     /// When the pad was last used, for the automatic firmware update
     pub pad_activity: PadActivity,
+    /// Who has taken the pad's serial port from the device loop for a flash.
+    /// One holder at a time: a second flash, or an app install that would
+    /// restart OPad, waits or is refused while this is set.
+    pub flash: Option<FlashHolder>,
+}
+
+/// See [`DaemonState::flash`]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FlashHolder {
+    /// `opadctl flash` or `opadctl bootloader`, from PrepareFlash until it
+    /// hands the port back or its connection drops
+    Client,
+    /// The daemon's own firmware update, from its counter sync until the pad
+    /// has come back
+    FirmwareUpdate,
+}
+
+impl FlashHolder {
+    /// Why something else cannot have the pad now, as shown to a person
+    pub fn busy_reason(self) -> &'static str {
+        match self {
+            FlashHolder::Client => "The pad is already being flashed by opadctl",
+            FlashHolder::FirmwareUpdate => "The pad's firmware is being updated right now",
+        }
+    }
 }
 
 /// When the pad was last used: a key press (its counters go up), or its screen
@@ -456,6 +481,7 @@ impl RuntimeController {
             latest_he_progress: None,
             key3: None,
             pad_activity: PadActivity::default(),
+            flash: None,
         };
 
         Self {

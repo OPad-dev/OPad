@@ -14,7 +14,7 @@ use opad_storage::Storage;
 
 use crate::identity;
 use crate::log_hub::LogHub;
-use crate::runtime::{DaemonState, PendingCounterReset, PendingOperations};
+use crate::runtime::{DaemonState, FlashHolder, PendingCounterReset, PendingOperations};
 use crate::sync::{perform_sync, DeviceLink};
 use crate::updater::{self, UpdateService};
 
@@ -1264,9 +1264,20 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     reason: "Cannot flash firmware during gameplay or cooldown".to_string(),
                 };
             }
+            // One flash at a time: claimed here, in one step with the check
+            {
+                let mut st = state.lock();
+                if let Some(holder) = st.flash {
+                    return IpcResponse::OperationRejected {
+                        reason: holder.busy_reason().to_string(),
+                    };
+                }
+                st.flash = Some(FlashHolder::Client);
+            }
             info!("Releasing serial port for firmware flash...");
             if !device.pause_and_release(Duration::from_secs(2)).await {
                 device.resume();
+                state.lock().flash = None;
                 return IpcResponse::OperationRejected {
                     reason: "Timed out waiting for the serial port to be released".to_string(),
                 };
@@ -1280,6 +1291,9 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::FinishFlash => {
+            if let Some(refused) = release_client_flash(state) {
+                return refused;
+            }
             info!("Flash finished, resuming device discovery and waiting for reconnect...");
             let mut events = device.subscribe();
             device.resume();
@@ -1315,6 +1329,9 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::ResumeDevice => {
+            if let Some(refused) = release_client_flash(state) {
+                return refused;
+            }
             info!("Resuming device discovery (no post-flash verification requested)");
             device.resume();
             IpcResponse::DeviceResumed
@@ -1518,6 +1535,25 @@ pub async fn handle_ipc_request<D: DeviceLink>(
     }
 }
 
+/// Ends a client's flash pause before the port is handed back. The daemon's
+/// own firmware update is not a client's to end: resuming the device loop in
+/// the middle of it would reopen the port the flasher is writing through.
+fn release_client_flash(state: &Arc<Mutex<DaemonState>>) -> Option<IpcResponse> {
+    let mut st = state.lock();
+    match st.flash {
+        Some(holder @ FlashHolder::FirmwareUpdate) => Some(IpcResponse::OperationRejected {
+            reason: format!(
+                "{}; the daemon resumes the pad itself when it has finished",
+                holder.busy_reason()
+            ),
+        }),
+        Some(FlashHolder::Client) | None => {
+            st.flash = None;
+            None
+        }
+    }
+}
+
 pub async fn wait_for_layout_ack(
     events: &mut tokio::sync::broadcast::Receiver<DeviceEvent>,
     screen: Screen,
@@ -1586,6 +1622,18 @@ pub fn holds_flash_pause(held: bool, step: FlashStep, resp: &IpcResponse) -> boo
     }
 }
 
+/// Clears a client's flash pause its connection left behind. False when the
+/// pause is no longer a client's, so there is nothing of it to resume.
+fn release_abandoned_client_flash(state: &Arc<Mutex<DaemonState>>) -> bool {
+    let mut st = state.lock();
+    if st.flash == Some(FlashHolder::Client) {
+        st.flash = None;
+        true
+    } else {
+        false
+    }
+}
+
 /// The answer to anything but a Handshake on a connection that has not
 /// completed one. The handshake is where a mismatched client (another IPC
 /// protocol, or a GUI newer than the running daemon after an update) is
@@ -1634,7 +1682,9 @@ pub async fn serve_connection<S: IpcTransport + ?Sized, D: DeviceLink>(
             break;
         }
     }
-    if flash_pause {
+    // Only while the pause is still that client's: once it was handed back,
+    // the port may belong to the daemon's own firmware update
+    if flash_pause && release_abandoned_client_flash(state) {
         warn!(
             "The client that paused the pad for a flash disconnected without resuming it; resuming device discovery"
         );

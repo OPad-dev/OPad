@@ -561,6 +561,7 @@ async fn test_zero_storage_writes_during_gameplay_and_cooldown() {
             latest_he_progress: None,
             key3: None,
             pad_activity: Default::default(),
+            flash: None,
         }));
 
         // Set storage writes blocked guard
@@ -796,6 +797,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             latest_he_progress: None,
             key3: None,
             pad_activity: Default::default(),
+            flash: None,
         }));
 
         let res = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
@@ -860,6 +862,7 @@ async fn test_reconcile_and_replacement_scenarios() {
             latest_he_progress: None,
             key3: None,
             pad_activity: Default::default(),
+            flash: None,
         }));
 
         let res = perform_sync(&daemon_state, &storage, &device, &pending_ops).await;
@@ -979,6 +982,7 @@ async fn test_device_rejects_sync_retries_and_surfaces_error() {
         latest_he_progress: None,
         key3: None,
         pad_activity: Default::default(),
+        flash: None,
     }));
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
@@ -1061,6 +1065,7 @@ async fn a_non_monotonic_rejection_is_retried_with_the_pads_current_counters() {
         latest_he_progress: None,
         key3: None,
         pad_activity: Default::default(),
+        flash: None,
     }));
     let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
 
@@ -1132,6 +1137,7 @@ async fn test_json_validation_preview_and_confirm() {
         latest_he_progress: None,
         key3: None,
         pad_activity: Default::default(),
+        flash: None,
     }));
 
     // 1. Preview with counter rollback & generation bump warnings
@@ -1268,6 +1274,7 @@ async fn test_json_import_restores_key3_and_game_keys() {
             map: 0,
         }),
         pad_activity: Default::default(),
+        flash: None,
     }));
 
     let backup_config = DeviceConfig {
@@ -1385,6 +1392,7 @@ async fn test_ipc_handshake_mismatch_and_protocol_version() {
         latest_he_progress: None,
         key3: None,
         pad_activity: Default::default(),
+        flash: None,
     }));
 
     // Protocol mismatch rejected
@@ -1503,6 +1511,7 @@ async fn test_install_update_is_refused_outside_idle() {
             latest_he_progress: None,
             key3: None,
             pad_activity: Default::default(),
+            flash: None,
         }));
 
         let resp = handle_ipc_request(
@@ -1564,6 +1573,7 @@ async fn test_every_updater_is_a_setting() {
         latest_he_progress: None,
         key3: None,
         pad_activity: Default::default(),
+        flash: None,
     }));
 
     for component in [
@@ -2514,6 +2524,7 @@ fn firmware_update_fixture(mode: RuntimeMode, connected: bool) -> IpcFixture {
         latest_he_progress: None,
         key3: None,
         pad_activity: Default::default(),
+        flash: None,
     }));
 
     (
@@ -3898,6 +3909,7 @@ fn idle_state(
         latest_he_progress: None,
         key3: None,
         pad_activity: Default::default(),
+        flash: None,
     }
 }
 
@@ -4635,6 +4647,7 @@ fn concurrent_requests_never_hold_the_state_and_storage_locks_together() {
         latest_he_progress: None,
         key3: None,
         pad_activity: Default::default(),
+        flash: None,
     }));
 
     let requests: [fn() -> IpcRequest; 4] = [
@@ -4775,4 +4788,88 @@ async fn a_reset_during_a_sync_is_not_undone_by_it() {
         .unwrap()
         .unwrap();
     assert_eq!((saved.lifetime_key1, saved.lifetime_key2), (0, 0));
+}
+
+// One flash at a time. A second `opadctl flash` used to be told the port was
+// ready while the first was still writing through it.
+#[tokio::test]
+async fn a_second_flash_is_refused_while_one_holds_the_pad() {
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    let device = MockDeviceLink::new(true);
+    let log_hub = LogHub::new();
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    let daemon_state = Arc::new(Mutex::new(idle_state(true, None, CounterState::default())));
+    let ask = |req| {
+        handle_ipc_request(
+            req,
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+            None,
+        )
+    };
+
+    assert!(matches!(
+        ask(IpcRequest::PrepareFlash).await,
+        IpcResponse::ReadyForFlash { .. }
+    ));
+    match ask(IpcRequest::PrepareFlash).await {
+        IpcResponse::OperationRejected { reason } => {
+            assert!(reason.contains("already being flashed"), "{reason}")
+        }
+        other => panic!("a second flash was let in: {other:?}"),
+    }
+    // Handing the port back frees the pad for the next one
+    assert!(matches!(
+        ask(IpcRequest::ResumeDevice).await,
+        IpcResponse::DeviceResumed
+    ));
+    assert!(daemon_state.lock().flash.is_none());
+    assert!(matches!(
+        ask(IpcRequest::PrepareFlash).await,
+        IpcResponse::ReadyForFlash { .. }
+    ));
+}
+
+// The daemon's own firmware update owns the port until the pad is back. A
+// client resuming the device loop in the middle of it reopened the port the
+// flasher was writing through.
+#[tokio::test]
+async fn a_client_cannot_resume_or_flash_during_the_daemons_firmware_update() {
+    use opad_daemon::runtime::FlashHolder;
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    // Paused by the firmware update: the mock reports that as not connected
+    let device = MockDeviceLink::new(false);
+    let log_hub = LogHub::new();
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    let daemon_state = Arc::new(Mutex::new(idle_state(false, None, CounterState::default())));
+    daemon_state.lock().flash = Some(FlashHolder::FirmwareUpdate);
+    let ask = |req| {
+        handle_ipc_request(
+            req,
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+            None,
+        )
+    };
+
+    for req in [
+        IpcRequest::ResumeDevice,
+        IpcRequest::FinishFlash,
+        IpcRequest::PrepareFlash,
+    ] {
+        match ask(req.clone()).await {
+            IpcResponse::OperationRejected { reason } => {
+                assert!(reason.contains("firmware is being updated"), "{reason}")
+            }
+            other => panic!("{req:?} was accepted mid-update: {other:?}"),
+        }
+    }
+    assert!(!device.is_connected(), "the device loop stayed paused");
+    assert_eq!(daemon_state.lock().flash, Some(FlashHolder::FirmwareUpdate));
 }

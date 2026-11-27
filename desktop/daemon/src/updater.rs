@@ -540,6 +540,19 @@ async fn install_app(
         UpdateError::Http("No verified update feed yet; check for updates first".to_string())
     })?;
 
+    // Installing can restart or replace this daemon, which would cut off a
+    // flash it is in the middle of
+    if let Some(holder) = daemon_state.lock().flash {
+        if automatic {
+            debug!("App update waits: {}", holder.busy_reason());
+            return Ok(());
+        }
+        return Err(UpdateError::Http(format!(
+            "{}. Install the update once that has finished.",
+            holder.busy_reason()
+        )));
+    }
+
     let mode = daemon_state.lock().mode;
     let origin = InstallOrigin::detect();
     let running = env!("CARGO_PKG_VERSION");

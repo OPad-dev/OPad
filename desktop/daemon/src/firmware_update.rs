@@ -269,6 +269,19 @@ pub async fn install<D: DeviceLink>(
         });
     }
 
+    // From here to the end this install has the pad: a second install, an
+    // `opadctl flash` and an app install all wait or are refused meanwhile
+    let Some(_flash) = FlashClaim::take(state) else {
+        let reason = state
+            .lock()
+            .flash
+            .map(|h| h.busy_reason())
+            .unwrap_or("The pad is already being flashed");
+        return Ok(FirmwareUpdateOutcome::Refused {
+            reasons: vec![reason.to_string()],
+        });
+    };
+
     let manifest = manifest.ok_or_else(|| {
         UpdateError::Http("No verified release manifest yet; check for updates first".to_string())
     })?;
@@ -333,6 +346,27 @@ pub async fn install<D: DeviceLink>(
     // not inherit it as something to clean up.
     let _ = std::fs::remove_file(&target);
     result
+}
+
+/// [`DaemonState::flash`] held by this firmware update, given back on drop so
+/// no early return or error can leave the pad claimed.
+struct FlashClaim<'a>(&'a Arc<Mutex<DaemonState>>);
+
+impl<'a> FlashClaim<'a> {
+    fn take(state: &'a Arc<Mutex<DaemonState>>) -> Option<Self> {
+        let mut st = state.lock();
+        if st.flash.is_some() {
+            return None;
+        }
+        st.flash = Some(crate::runtime::FlashHolder::FirmwareUpdate);
+        Some(Self(state))
+    }
+}
+
+impl Drop for FlashClaim<'_> {
+    fn drop(&mut self) {
+        self.0.lock().flash = None;
+    }
 }
 
 /// The step-1 conditions that can change while the image downloads
