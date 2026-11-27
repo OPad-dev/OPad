@@ -100,11 +100,15 @@ pub enum Message {
     LiveValues(Result<Vec<(u8, SourceValue)>, String>),
     SimulatePress(bool),
     Apply,
-    /// The (screen, layout) that was sent, so the reply marks exactly that
-    /// pair even if the user switched screens or kept editing meanwhile
-    Applied(Screen, Box<Layout>, Result<String, String>),
+    ApplyBoth,
+    /// Each (screen, layout) that was sent with its reply, so a reply marks
+    /// exactly that pair even if the user switched screens or kept editing
+    /// meanwhile
+    Applied(Vec<(Screen, Layout, Result<String, String>)>),
+    Undo,
     Revert,
     ResetDefault,
+    ResetDone(Screen, Result<String, String>),
     Export,
     Exported(Result<String, String>),
     Import,
@@ -131,8 +135,20 @@ pub struct Designer {
     live: bool,
     press: bool,
     busy: bool,
+    /// The last read of the pad's layouts failed, so these are the built-in ones
+    offline: bool,
+    /// Earlier states of each screen, newest last
+    undo: [Vec<Layout>; 2],
+    /// The last edit that changed a layout, so one drag or one typed word is
+    /// one step back and not one per pixel or letter
+    last_edit: Option<(std::mem::Discriminant<Message>, usize)>,
     pub status: String,
 }
+
+/// Steps back kept per screen
+const UNDO_DEPTH: usize = 100;
+
+const LOADING: &str = "Reading the layouts...";
 
 fn idx(screen: Screen) -> usize {
     screen.to_wire() as usize
@@ -178,7 +194,10 @@ impl Designer {
             live: false,
             press: false,
             busy: true,
-            status: "Loading layouts from the daemon...".into(),
+            offline: false,
+            undo: Default::default(),
+            last_edit: None,
+            status: LOADING.into(),
         };
         designer.refresh();
         (designer, Task::perform(load_layouts(), Message::Loaded))
@@ -186,8 +205,13 @@ impl Designer {
 
     pub fn reload(&mut self) -> Task<Message> {
         self.busy = true;
-        self.status = "Loading layouts from the daemon...".into();
+        self.status = LOADING.into();
         Task::perform(load_layouts(), Message::Loaded)
+    }
+
+    /// The layouts could not be read, so the page shows the built-in ones
+    pub fn is_offline(&self) -> bool {
+        self.offline
     }
 
     fn layout(&self) -> &Layout {
@@ -204,7 +228,36 @@ impl Designer {
     }
 
     fn dirty(&self) -> bool {
-        self.working[idx(self.screen)] != self.applied[idx(self.screen)]
+        self.screen_dirty(self.screen)
+    }
+
+    /// This screen has edits the pad does not show yet
+    fn screen_dirty(&self, screen: Screen) -> bool {
+        self.working[idx(screen)] != self.applied[idx(screen)]
+    }
+
+    fn can_undo(&self) -> bool {
+        !self.undo[idx(self.screen)].is_empty()
+    }
+
+    /// Send these screens to the pad, one after the other
+    fn send(&mut self, screens: &[Screen]) -> Task<Message> {
+        for screen in screens {
+            if let Err(e) = self.working[idx(*screen)].validate() {
+                self.status = format!("Can't apply the {} screen: {}", screen, e);
+                return Task::none();
+            }
+        }
+        if screens.is_empty() {
+            return Task::none();
+        }
+        self.busy = true;
+        self.status = "Applying to the pad...".into();
+        let items = screens
+            .iter()
+            .map(|s| (*s, self.working[idx(*s)].clone()))
+            .collect();
+        Task::perform(apply_layouts(items), Message::Applied)
     }
 
     /// Edits on either screen that were not applied yet
@@ -228,12 +281,66 @@ impl Designer {
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
+        let before = self.working.clone();
+        let had_edits = [Screen::Idle, Screen::Playing].map(|s| self.screen_dirty(s));
+        let kind = std::mem::discriminant(&message);
+        // A fresh read of the pad is only a step back where it threw edits away
+        let reload = matches!(message, Message::Loaded(_));
+        let undo = matches!(message, Message::Undo);
+        // What ends a run of small edits: a drag, a word or a held arrow key
+        let boundary = matches!(
+            message,
+            Message::PointerDown { .. }
+                | Message::PointerUp
+                | Message::Select(_)
+                | Message::SelectScreen(_)
+                | Message::Undo
+        );
+        let runs = matches!(
+            message,
+            Message::PointerMove { .. }
+                | Message::Nudge(..)
+                | Message::Label(_)
+                | Message::Suffix(_)
+                | Message::Hex(..)
+                | Message::X(_)
+                | Message::Y(_)
+                | Message::W(_)
+                | Message::H(_)
+                | Message::Radius(_)
+        );
+
+        let task = self.handle(message);
+
+        if boundary {
+            self.last_edit = None;
+        }
+        if !undo {
+            for (i, was) in before.into_iter().enumerate() {
+                if self.working[i] == was || (reload && !had_edits[i]) {
+                    continue;
+                }
+                if !(runs && self.last_edit == Some((kind, i))) {
+                    let steps = &mut self.undo[i];
+                    if steps.len() == UNDO_DEPTH {
+                        steps.remove(0);
+                    }
+                    steps.push(was);
+                }
+                self.last_edit = Some((kind, i));
+            }
+        }
+        task
+    }
+
+    fn handle(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Reload => {
                 return self.reload();
             }
             Message::Loaded(result) => {
                 self.busy = false;
+                self.offline = result.is_err();
                 match result {
                     Ok((idle, playing)) => {
                         for (screen, saved) in [(Screen::Idle, idle), (Screen::Playing, playing)] {
@@ -243,10 +350,12 @@ impl Designer {
                             self.working[idx(screen)] = layout;
                         }
                         self.status =
-                            "Drag widgets to move them, drag the corner handle to resize.".into();
+                            "Drag a widget to move it. Drag its corner to resize it.".into();
                     }
-                    Err(e) => {
-                        self.status = format!("Daemon unavailable ({}); editing the defaults", e)
+                    Err(_) => {
+                        self.status = "The OPad service is not answering, so these are the \
+                                       built-in layouts."
+                            .into()
                     }
                 }
                 self.selected = None;
@@ -267,7 +376,7 @@ impl Designer {
             }
             Message::Add(kind) => {
                 if self.layout().widgets.len() >= MAX_WIDGETS {
-                    self.status = format!("A screen holds at most {} widgets", MAX_WIDGETS);
+                    self.status = format!("A screen holds at most {} widgets.", MAX_WIDGETS);
                 } else {
                     self.layout_mut().widgets.push(Widget::new(kind));
                     self.selected = Some(self.layout().widgets.len() - 1);
@@ -370,9 +479,9 @@ impl Designer {
                 }
                 Ok(_) => {
                     self.status =
-                        "No live data yet (is tosu running?); showing sample values".into()
+                        "No live data yet. Is osu! connected? Showing sample values.".into()
                 }
-                Err(e) => self.status = format!("Live data unavailable: {}", e),
+                Err(e) => self.status = format!("Live data is not available: {}", e),
             },
             Message::SimulatePress(on) => {
                 self.press = on;
@@ -380,42 +489,81 @@ impl Designer {
                 preview::set_values([(ui_source::PAD_K1_DOWN, &v), (ui_source::PAD_K2_DOWN, &v)]);
             }
             Message::Apply => {
-                if let Err(e) = self.layout().validate() {
-                    self.status = format!("Can't apply: {}", e);
-                } else {
-                    self.busy = true;
-                    self.status = "Applying to the pad...".into();
-                    let (screen, layout) = (self.screen, self.layout().clone());
-                    let sent = Box::new(layout.clone());
-                    return Task::perform(apply_layout(screen, layout), move |result| {
-                        Message::Applied(screen, sent, result)
+                let screen = self.screen;
+                return self.send(&[screen]);
+            }
+            Message::ApplyBoth => {
+                let screens: Vec<Screen> = [Screen::Idle, Screen::Playing]
+                    .into_iter()
+                    .filter(|s| self.screen_dirty(*s))
+                    .collect();
+                return self.send(&screens);
+            }
+            Message::Applied(replies) => {
+                self.busy = false;
+                let several = replies.len() > 1;
+                let mut lines = Vec::new();
+                for (screen, layout, result) in replies {
+                    let line = match result {
+                        Ok(note) => {
+                            self.applied[idx(screen)] = layout;
+                            if note.is_empty() {
+                                "Applied to the pad.".to_string()
+                            } else {
+                                note
+                            }
+                        }
+                        Err(e) => e,
+                    };
+                    lines.push(if several {
+                        format!("{} screen: {}", screen, line)
+                    } else {
+                        line
                     });
                 }
+                self.status = lines.join("  ");
             }
-            Message::Applied(screen, layout, result) => {
-                self.busy = false;
-                match result {
-                    Ok(note) => {
-                        self.applied[idx(screen)] = *layout;
-                        self.status = if note.is_empty() {
-                            "Applied to the pad".into()
-                        } else {
-                            format!("Applied: {}", note)
-                        };
-                    }
-                    Err(e) => self.status = e,
+            Message::Undo => {
+                if let Some(earlier) = self.undo[idx(self.screen)].pop() {
+                    let kept = self.selected.filter(|i| *i < earlier.widgets.len());
+                    self.working[idx(self.screen)] = earlier;
+                    self.selected = kept;
+                    self.drag = None;
+                    self.status = "Undone.".into();
                 }
             }
             Message::Revert => {
                 self.working[idx(self.screen)] = self.applied[idx(self.screen)].clone();
                 self.selected = None;
-                self.status = "Reverted to what the pad shows".into();
+                self.status = "Back to what the pad shows.".into();
             }
             Message::ResetDefault => {
-                self.working[idx(self.screen)] = self.defaults[idx(self.screen)].clone();
-                self.selected = None;
-                self.status =
-                    "Loaded the built-in default; press Apply to use it on the pad".into();
+                // The pad forgets its custom layout and draws its own again.
+                // Sending the built-in one with Apply would store a copy of it
+                // as a custom layout, which a later firmware could not change.
+                self.busy = true;
+                self.status = "Going back to the built-in layout...".into();
+                let screen = self.screen;
+                return Task::perform(reset_layout(screen), move |result| {
+                    Message::ResetDone(screen, result)
+                });
+            }
+            Message::ResetDone(screen, result) => {
+                self.busy = false;
+                match result {
+                    Ok(_) => {
+                        let default = self.defaults[idx(screen)].clone();
+                        self.applied[idx(screen)] = default.clone();
+                        self.working[idx(screen)] = default;
+                        if screen == self.screen {
+                            self.selected = None;
+                        }
+                        self.status =
+                            "The pad shows its built-in layout again. Undo brings yours back."
+                                .into();
+                    }
+                    Err(e) => self.status = format!("Could not reset the layout: {}", e),
+                }
             }
             Message::Export => {
                 let (screen, layout) = (self.screen, self.layout().clone());
@@ -430,7 +578,7 @@ impl Designer {
                 Ok(layout) => {
                     *self.layout_mut() = layout;
                     self.selected = None;
-                    self.status = "Imported; press Apply to use it on the pad".into();
+                    self.status = "Imported. Apply to pad puts it on the pad.".into();
                 }
                 Err(e) if e.is_empty() => {}
                 Err(e) => self.status = e,
@@ -504,6 +652,9 @@ impl Designer {
             };
             let step = if modifiers.shift() { 10 } else { 1 };
             match key {
+                keyboard::Key::Character(c) if modifiers.command() && c.as_str() == "z" => {
+                    Some(Message::Undo)
+                }
                 keyboard::Key::Named(keyboard::key::Named::ArrowLeft) => {
                     Some(Message::Nudge(-step, 0))
                 }
@@ -534,14 +685,19 @@ impl Designer {
         let layout = self.layout();
 
         let screens = row(Screen::ALL.iter().map(|s| {
-            button(text(format!("{} screen", s)))
-                .style(if *s == self.screen {
-                    theme::primary
-                } else {
-                    theme::secondary
-                })
-                .on_press(Message::SelectScreen(*s))
-                .into()
+            // The mark says this screen has edits the pad does not show yet
+            button(text(if self.screen_dirty(*s) {
+                format!("{} screen •", s)
+            } else {
+                format!("{} screen", s)
+            }))
+            .style(if *s == self.screen {
+                theme::primary
+            } else {
+                theme::secondary
+            })
+            .on_press(Message::SelectScreen(*s))
+            .into()
         }))
         .spacing(8);
 
@@ -565,29 +721,23 @@ impl Designer {
             canvas(overlay).width(w).height(h),
         ];
 
+        let idle = !self.busy;
         let actions = row![
-            button(text(if self.dirty() {
-                "Apply to pad •"
-            } else {
-                "Apply to pad"
-            }))
-            .style(theme::primary)
-            .on_press_maybe((!self.busy).then_some(Message::Apply)),
+            button("Apply to pad")
+                .style(theme::primary)
+                .on_press_maybe(idle.then_some(Message::Apply)),
+            button("Apply both")
+                .style(theme::secondary)
+                .on_press_maybe((idle && self.has_unapplied_edits()).then_some(Message::ApplyBoth)),
+            button("Undo")
+                .style(theme::secondary)
+                .on_press_maybe(self.can_undo().then_some(Message::Undo)),
             button("Revert")
                 .style(theme::secondary)
-                .on_press(Message::Revert),
+                .on_press_maybe(self.dirty().then_some(Message::Revert)),
             button("Reset to default")
                 .style(theme::secondary)
-                .on_press(Message::ResetDefault),
-            button("Export")
-                .style(theme::secondary)
-                .on_press(Message::Export),
-            button("Import")
-                .style(theme::secondary)
-                .on_press(Message::Import),
-            button("Reload")
-                .style(theme::secondary)
-                .on_press(Message::Reload),
+                .on_press_maybe(idle.then_some(Message::ResetDefault)),
         ]
         .spacing(8);
 
@@ -598,8 +748,19 @@ impl Designer {
             checkbox(self.press)
                 .label("Show keys pressed")
                 .on_toggle(Message::SimulatePress),
+            Space::new().width(Length::Fill),
+            button("Import")
+                .style(theme::secondary)
+                .on_press(Message::Import),
+            button("Export")
+                .style(theme::secondary)
+                .on_press(Message::Export),
+            button("Reload")
+                .style(theme::secondary)
+                .on_press_maybe(idle.then_some(Message::Reload)),
         ]
-        .spacing(20);
+        .spacing(12)
+        .align_y(Alignment::Center);
 
         let left = column![
             row![theme::heading("Designer"), Space::new().width(20), screens]
@@ -609,7 +770,10 @@ impl Designer {
             theme::muted(&self.status).size(13),
             actions,
             toggles,
-            theme::caption("Arrow keys nudge the selection (Shift = 10 px), Delete removes it."),
+            theme::caption(
+                "Arrow keys move the selected widget (Shift moves 10 px), Delete removes it, \
+                 Ctrl+Z undoes."
+            ),
         ]
         .spacing(10)
         .width(Length::Shrink);
@@ -917,13 +1081,35 @@ async fn fetch_values() -> Result<Vec<(u8, SourceValue)>, String> {
     }
 }
 
-async fn apply_layout(screen: Screen, layout: Layout) -> Result<String, String> {
-    match ipc(IpcRequest::SetLayout { screen, layout }).await? {
+fn layout_reply(reply: IpcResponse) -> Result<String, String> {
+    match reply {
         IpcResponse::LayoutApplied { message, .. } => Ok(message),
         IpcResponse::OperationRejected { reason } => Err(reason),
         IpcResponse::Error(e) => Err(e),
         other => Err(format!("unexpected response: {:?}", other)),
     }
+}
+
+/// One after the other, so the pad never has two layout writes in flight
+async fn apply_layouts(
+    items: Vec<(Screen, Layout)>,
+) -> Vec<(Screen, Layout, Result<String, String>)> {
+    let mut replies = Vec::with_capacity(items.len());
+    for (screen, layout) in items {
+        let request = IpcRequest::SetLayout {
+            screen,
+            layout: layout.clone(),
+        };
+        let result = ipc(request).await.and_then(layout_reply);
+        replies.push((screen, layout, result));
+    }
+    replies
+}
+
+async fn reset_layout(screen: Screen) -> Result<String, String> {
+    ipc(IpcRequest::ResetLayout { screen })
+        .await
+        .and_then(layout_reply)
 }
 
 async fn export_layout(screen: Screen, layout: Layout) -> Result<String, String> {
@@ -969,11 +1155,11 @@ mod tests {
         d.screen = Screen::Idle;
         d.working[idx(Screen::Idle)].background ^= 0x20_2020;
 
-        let _ = d.update(Message::Applied(
+        let _ = d.update(Message::Applied(vec![(
             Screen::Playing,
-            Box::new(sent.clone()),
+            sent.clone(),
             Ok(String::new()),
-        ));
+        )]));
 
         assert_eq!(d.applied[idx(Screen::Playing)], sent);
         assert_eq!(
@@ -982,5 +1168,167 @@ mod tests {
             "the unsent Idle edits are not what the pad shows"
         );
         assert!(d.dirty(), "Idle still has unapplied edits");
+    }
+
+    fn loaded() -> Designer {
+        let (mut d, _) = Designer::new();
+        let _ = d.update(Message::Loaded(Ok((None, None))));
+        d
+    }
+
+    #[test]
+    fn each_screen_carries_its_own_unsaved_mark() {
+        let mut d = loaded();
+        assert!(!d.screen_dirty(Screen::Idle) && !d.screen_dirty(Screen::Playing));
+
+        let _ = d.update(Message::SelectScreen(Screen::Idle));
+        let _ = d.update(Message::Add(WidgetKind::Text));
+        let _ = d.update(Message::SelectScreen(Screen::Playing));
+
+        assert!(d.screen_dirty(Screen::Idle), "the screen left behind");
+        assert!(!d.screen_dirty(Screen::Playing), "the screen now open");
+        assert!(d.has_unapplied_edits());
+    }
+
+    #[test]
+    fn undo_brings_back_a_deleted_widget() {
+        let mut d = loaded();
+        let start = d.layout().clone();
+        assert!(!d.can_undo(), "reading the pad's layouts is not an edit");
+
+        let _ = d.update(Message::Select(0));
+        let _ = d.update(Message::Delete);
+        assert_ne!(*d.layout(), start);
+
+        let _ = d.update(Message::Undo);
+        assert_eq!(*d.layout(), start);
+        assert!(!d.can_undo());
+    }
+
+    #[test]
+    fn one_drag_is_one_step_back() {
+        let mut d = loaded();
+        let start = d.layout().clone();
+        // The last widget is the topmost one, so the press lands on it
+        let top = start.widgets.len() - 1;
+
+        for _ in 0..2 {
+            let w = &d.layout().widgets[top];
+            let (x, y) = (w.x as f32 + 1.0, w.y as f32 + 1.0);
+            let _ = d.update(Message::PointerDown { x, y });
+            for step in 1..=5 {
+                let far = step as f32 * 2.0;
+                let _ = d.update(Message::PointerMove {
+                    x: x + far,
+                    y: y + far,
+                });
+            }
+            let _ = d.update(Message::PointerUp);
+        }
+
+        assert_ne!(*d.layout(), start);
+        assert_eq!(d.undo[idx(d.screen)].len(), 2, "two drags, two steps");
+        let _ = d.update(Message::Undo);
+        let _ = d.update(Message::Undo);
+        assert_eq!(*d.layout(), start);
+    }
+
+    #[test]
+    fn undo_keeps_each_screens_history_apart() {
+        let mut d = loaded();
+        let playing = d.working[idx(Screen::Playing)].clone();
+        let _ = d.update(Message::Add(WidgetKind::Text));
+        let _ = d.update(Message::SelectScreen(Screen::Idle));
+
+        assert!(!d.can_undo(), "nothing was edited on Idle");
+        let _ = d.update(Message::Undo);
+        assert_ne!(d.working[idx(Screen::Playing)], playing);
+
+        let _ = d.update(Message::SelectScreen(Screen::Playing));
+        let _ = d.update(Message::Undo);
+        assert_eq!(d.working[idx(Screen::Playing)], playing);
+    }
+
+    #[test]
+    fn revert_and_import_can_be_undone() {
+        let mut d = loaded();
+        let _ = d.update(Message::Add(WidgetKind::Text));
+        let edited = d.layout().clone();
+
+        let _ = d.update(Message::Revert);
+        assert!(!d.dirty());
+        let _ = d.update(Message::Undo);
+        assert_eq!(*d.layout(), edited);
+
+        let other = d.defaults[idx(Screen::Idle)].clone();
+        let _ = d.update(Message::Imported(Ok(other)));
+        let _ = d.update(Message::Undo);
+        assert_eq!(*d.layout(), edited);
+    }
+
+    #[test]
+    fn a_reload_that_throws_edits_away_can_be_undone() {
+        let mut d = loaded();
+        let _ = d.update(Message::Add(WidgetKind::Text));
+        let edited = d.layout().clone();
+
+        let _ = d.update(Message::Loaded(Ok((None, None))));
+        assert!(!d.dirty());
+        let _ = d.update(Message::Undo);
+        assert_eq!(*d.layout(), edited);
+    }
+
+    #[test]
+    fn reset_to_default_leaves_no_custom_layout_to_apply() {
+        let (mut d, _) = Designer::new();
+        let mut custom = d.defaults[idx(Screen::Playing)].clone();
+        custom.background ^= 0x10_1010;
+        let _ = d.update(Message::Loaded(Ok((None, Some(custom.clone())))));
+        assert_eq!(*d.layout(), custom);
+
+        let _ = d.update(Message::ResetDone(Screen::Playing, Ok(String::new())));
+
+        assert_eq!(*d.layout(), d.defaults[idx(Screen::Playing)]);
+        assert!(!d.dirty(), "the pad already shows its own layout");
+        let _ = d.update(Message::Undo);
+        assert_eq!(*d.layout(), custom, "undo brings the custom layout back");
+        assert!(d.dirty(), "as an edit that Apply would send again");
+    }
+
+    #[test]
+    fn a_refused_reset_changes_nothing() {
+        let (mut d, _) = Designer::new();
+        let mut custom = d.defaults[idx(Screen::Playing)].clone();
+        custom.background ^= 0x10_1010;
+        let _ = d.update(Message::Loaded(Ok((None, Some(custom.clone())))));
+
+        let _ = d.update(Message::ResetDone(Screen::Playing, Err("in a map".into())));
+
+        assert_eq!(*d.layout(), custom);
+        assert!(!d.dirty() && !d.can_undo());
+        assert!(d.status.contains("in a map"));
+    }
+
+    #[test]
+    fn apply_both_marks_only_the_screens_the_pad_took() {
+        let mut d = loaded();
+        let mut idle = d.defaults[idx(Screen::Idle)].clone();
+        idle.background ^= 0x10_1010;
+        let mut playing = d.defaults[idx(Screen::Playing)].clone();
+        playing.background ^= 0x20_2020;
+        d.working = [idle.clone(), playing.clone()];
+
+        let _ = d.update(Message::Applied(vec![
+            (Screen::Idle, idle, Ok(String::new())),
+            (
+                Screen::Playing,
+                playing,
+                Err("the pad did not answer".into()),
+            ),
+        ]));
+
+        assert!(!d.screen_dirty(Screen::Idle));
+        assert!(d.screen_dirty(Screen::Playing));
+        assert!(d.status.contains("Playing screen: the pad did not answer"));
     }
 }

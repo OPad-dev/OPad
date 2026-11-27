@@ -968,7 +968,7 @@ impl App {
                         self.adopt_status_config(device_connected, device_just_connected, config);
 
                         self.update_tray();
-                        if was_offline && self.designer.status.contains("Daemon unavailable") {
+                        if was_offline && self.designer.is_offline() {
                             return self.designer.reload().map(Message::Designer);
                         }
                     }
