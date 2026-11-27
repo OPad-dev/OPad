@@ -302,7 +302,11 @@ Usage: opadctl flash [OPTIONS] <FIRMWARE>
 | `0x0` | `bootloader/bootloader.bin` o `bootloader.bin` | Sí |
 | `0x8000` | `partition_table/partition-table.bin` o `partition-table.bin` | Sí |
 | `0xf000` | `ota_data_initial.bin` | No (se escribe si está presente) |
+| `0x430000` | `opad-assets.bin`, el paquete de recursos de OPad | No (se escribe si está presente) |
+| `0x930000` | `opad-user.bin`, el paquete de recursos del dueño | No (se escribe si está presente) |
 | `0x20000` | `opad-firmware.bin` (o el archivo indicado) | Sí |
+
+Un paquete de recursos se genera con `scripts/build_asset_pack.py`, que rechaza uno más grande que su partición; `opadctl` también lo rechaza. <!-- src: /desktop/crates/opad-device/src/flash.rs#ASSETS_PARTITION -->
 
 En ambos modos, `opadctl` reinicia el teclado en el bootloader de descarga de la ROM por USB, lo flashea con `espflash` y espera hasta 15 s a que vuelva como la aplicación OPad (`303a:8415`). Un teclado que no vuelve se notifica como un fallo que remite a `opadctl recover`. <!-- src: /desktop/cli/src/main.rs#run, /desktop/daemon/src/ipc_handlers.rs#FinishFlash -->
 

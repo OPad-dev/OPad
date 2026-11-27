@@ -61,6 +61,7 @@ idf_component_register(
         "diag/he_adc_test.c"
         "diag/hall_bench.c"
         "diag/ui_perf_test.c"
+        "assets/asset_pack.c"
     INCLUDE_DIRS
         "."
         ".."
@@ -86,4 +87,5 @@ idf_component_register(
         esp_app_format
         esp_adc
         esp_driver_tsens
+        esp_partition
 )

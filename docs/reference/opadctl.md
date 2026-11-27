@@ -302,7 +302,11 @@ Usage: opadctl flash [OPTIONS] <FIRMWARE>
 | `0x0` | `bootloader/bootloader.bin` or `bootloader.bin` | Yes |
 | `0x8000` | `partition_table/partition-table.bin` or `partition-table.bin` | Yes |
 | `0xf000` | `ota_data_initial.bin` | No (written when present) |
+| `0x430000` | `opad-assets.bin`, OPad's asset pack | No (written when present) |
+| `0x930000` | `opad-user.bin`, the owner's asset pack | No (written when present) |
 | `0x20000` | `opad-firmware.bin` (or the file given) | Yes |
+
+An asset pack is built with `scripts/build_asset_pack.py`, which refuses one larger than its partition; `opadctl` refuses it too. <!-- src: /desktop/crates/opad-device/src/flash.rs#ASSETS_PARTITION -->
 
 In both modes `opadctl` reboots the pad into the ROM download bootloader over USB, flashes it with `espflash`, then waits up to 15 s for it to come back as the OPad app (`303a:8415`). A pad that does not come back is reported as a failure that points at `opadctl recover`. <!-- src: /desktop/cli/src/main.rs#run, /desktop/daemon/src/ipc_handlers.rs#FinishFlash -->
 

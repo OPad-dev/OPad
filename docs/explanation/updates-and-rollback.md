@@ -23,8 +23,11 @@ A pad is updated, flashed and recovered over USB only. Nobody is ever asked to p
 | `phy_init` | data, phy | `0x11000` | 4 KB | RF calibration data |
 | `ota_0` | app | `0x20000` | 2 MB | App slot 0 (`APP_PARTITION_OFFSET` in [flash.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-device/src/flash.rs)) |
 | `ota_1` | app | `0x220000` | 2 MB | App slot 1 (`OTA_1_OFFSET`) |
+| `coredump` | data, coredump | `0x420000` | 64 KB | The last crash (`CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH`) |
+| `assets` | `0x40`, 0 | `0x430000` | 5 MB | OPad's asset pack: screens and animations (`ASSETS_PARTITION`) |
+| `user` | `0x40`, 1 | `0x930000` | 6.8 MB | The owner's asset pack (`USER_PARTITION`); no firmware update writes it |
 
-`nvs` stayed at its original offset and size when the slots were added: moving it would have lost every pad's counters and owner.
+`nvs` stayed at its original offset and size when the slots were added: moving it would have lost every pad's counters and owner. The slots kept theirs when the last three were added after them, so an app that writes `ota_1` at `0x220000` is right for any of these tables. An asset pack is only written by a full flash (below), which writes the table that has its partition. <!-- src: /firmware/partitions.csv -->
 
 The host plans an update with [`plan_app_update()`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-device/src/flash.rs):
 

@@ -108,7 +108,7 @@ From [/firmware/sdkconfig.defaults](https://github.com/OPad-dev/OPad/blob/main/f
 | `CONFIG_SPIRAM=y`, `CONFIG_SPIRAM_MODE_OCT=y`, `CONFIG_SPIRAM_SPEED_80M=y`, `CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y` | 8 MB PSRAM, and `EXT_RAM_BSS_ATTR` for off-key-path buffers |
 | `CONFIG_LV_MEM_SIZE_KILOBYTES=160`, `CONFIG_LV_DEF_REFR_PERIOD=33` | LVGL's own 160 KB pool (in PSRAM by default) and a 30 fps redraw cap |
 | `CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y`, `CONFIG_ESP32S3_DATA_CACHE_64KB=y`, `CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y` | Largest caches: halved frame time for flash-resident code/fonts and the PSRAM pool |
-| `CONFIG_PARTITION_TABLE_CUSTOM=y`, `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y` | Two 2 MB OTA slots ([/firmware/partitions.csv](https://github.com/OPad-dev/OPad/blob/main/firmware/partitions.csv): `nvs` 0x9000, `otadata` 0xf000, `ota_0` 0x20000, `ota_1` 0x220000) with bootloader rollback |
+| `CONFIG_PARTITION_TABLE_CUSTOM=y`, `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y` | Two 2 MB OTA slots ([/firmware/partitions.csv](https://github.com/OPad-dev/OPad/blob/main/firmware/partitions.csv): `nvs` 0x9000, `otadata` 0xf000, `ota_0` 0x20000, `ota_1` 0x220000, then `coredump`, `assets` and `user`) with bootloader rollback |
 
 Only the LVGL widgets the layouts use are enabled (label, bar, image, observer, GIF); fonts are Montserrat 12/14/16/20/24/32/48.
 

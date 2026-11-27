@@ -23,8 +23,11 @@ Un teclado se actualiza, se flashea y se recupera solo por USB. Nunca se pide a 
 | `phy_init` | data, phy | `0x11000` | 4 KB | Datos de calibración de RF |
 | `ota_0` | app | `0x20000` | 2 MB | Ranura de app 0 (`APP_PARTITION_OFFSET` en [flash.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-device/src/flash.rs)) |
 | `ota_1` | app | `0x220000` | 2 MB | Ranura de app 1 (`OTA_1_OFFSET`) |
+| `coredump` | data, coredump | `0x420000` | 64 KB | El último fallo (`CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH`) |
+| `assets` | `0x40`, 0 | `0x430000` | 5 MB | El paquete de recursos de OPad: pantallas y animaciones (`ASSETS_PARTITION`) |
+| `user` | `0x40`, 1 | `0x930000` | 6,8 MB | El paquete de recursos del dueño (`USER_PARTITION`); ninguna actualización de firmware lo escribe |
 
-`nvs` se quedó en su desplazamiento y tamaño originales cuando se añadieron las ranuras: moverla habría hecho perder los contadores y el dueño de todos los teclados.
+`nvs` se quedó en su desplazamiento y tamaño originales cuando se añadieron las ranuras: moverla habría hecho perder los contadores y el dueño de todos los teclados. Las ranuras conservaron los suyos cuando se añadieron las tres últimas detrás, así que una app que escribe `ota_1` en `0x220000` acierta con cualquiera de estas tablas. Un paquete de recursos solo lo escribe un flasheo completo (abajo), que escribe la tabla que tiene su partición. <!-- src: /firmware/partitions.csv -->
 
 El anfitrión planifica una actualización con [`plan_app_update()`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-device/src/flash.rs):
 

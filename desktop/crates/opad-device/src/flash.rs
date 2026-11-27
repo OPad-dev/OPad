@@ -29,6 +29,28 @@ pub const APP_PARTITION_OFFSET: u32 = 0x20000;
 pub const OTA_1_OFFSET: u32 = 0x220000;
 /// `otadata`: two 4 KB sectors, one boot-selection entry each
 pub const OTADATA_OFFSET: u32 = 0xf000;
+/// The asset partitions in `firmware/partitions.csv`, each holding one asset
+/// pack (`scripts/build_asset_pack.py`): OPad's screens and animations, and
+/// the owner's. A pad on an older table has neither; only a full flash, which
+/// writes the table too, writes them.
+pub const ASSETS_PARTITION: AssetPartition = AssetPartition {
+    file_name: "opad-assets.bin",
+    offset: 0x430000,
+    size: 0x500000,
+};
+pub const USER_PARTITION: AssetPartition = AssetPartition {
+    file_name: "opad-user.bin",
+    offset: 0x930000,
+    size: 0x6D0000,
+};
+
+/// Where an asset pack goes, and the name it has next to the app image
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AssetPartition {
+    pub file_name: &'static str,
+    pub offset: u32,
+    pub size: u32,
+}
 const OTADATA_SIZE: usize = 0x2000;
 const OTADATA_SECTOR: usize = 0x1000;
 // esp_ota_img_states_t (esp_flash_partitions.h)
@@ -925,6 +947,31 @@ mod tests {
             assert_eq!(new_crc, otadata_crc(new_seq));
             // Aborting the new entry leaves the old one to boot
             assert!(new_seq > old_seq);
+        }
+    }
+
+    #[test]
+    fn offsets_match_the_partition_table() {
+        let csv = include_str!("../../../../firmware/partitions.csv");
+        let row = |name: &str| -> (u32, u32) {
+            let line = csv
+                .lines()
+                .filter(|l| !l.trim_start().starts_with('#'))
+                .find(|l| l.split(',').next().map(str::trim) == Some(name))
+                .unwrap_or_else(|| panic!("{name} not in partitions.csv"));
+            let cols: Vec<_> = line.split(',').map(str::trim).collect();
+            let num = |s: &str| u32::from_str_radix(s.trim_start_matches("0x"), 16).unwrap();
+            (num(cols[3]), num(cols[4]))
+        };
+        assert_eq!(row("ota_0").0, APP_PARTITION_OFFSET);
+        assert_eq!(row("ota_1").0, OTA_1_OFFSET);
+        assert_eq!(row("otadata"), (OTADATA_OFFSET, OTADATA_SIZE as u32));
+        for p in [ASSETS_PARTITION, USER_PARTITION] {
+            let name = p
+                .file_name
+                .trim_start_matches("opad-")
+                .trim_end_matches(".bin");
+            assert_eq!(row(name), (p.offset, p.size), "{name}");
         }
     }
 

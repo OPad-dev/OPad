@@ -2272,7 +2272,8 @@ fn release(interrupt: &Option<Arc<AtomicBool>>) {
 
 /// Which images to write, and where. `full` is the recovery flash that
 /// `scripts/flash_board.sh` used to perform: bootloader, partition table and a
-/// fresh `otadata` as well as the app.
+/// fresh `otadata` as well as the app, and the asset packs
+/// (`opad-assets.bin`, `opad-user.bin`) when they are beside it.
 ///
 /// `path` is the app image, or — with `--full` — an ESP-IDF build directory.
 fn resolve_flash_set(path: &Path, full: bool) -> Result<Vec<(u32, PathBuf)>> {
@@ -2326,6 +2327,26 @@ fn resolve_flash_set(path: &Path, full: bool) -> Result<Vec<(u32, PathBuf)>> {
         // Only present on the two-slot layout. Writing it points the bootloader
         // back at ota_0, which is where the app image below is going.
         images.push((0xf000, ota_data));
+    }
+    // Asset packs (scripts/build_asset_pack.py) beside the app image are
+    // written too; the table above is the one that has their partitions
+    for part in [flash::ASSETS_PARTITION, flash::USER_PARTITION] {
+        let pack = build_dir.join(part.file_name);
+        if !pack.exists() {
+            continue;
+        }
+        let size = std::fs::metadata(&pack)
+            .with_context(|| format!("reading {}", pack.display()))?
+            .len();
+        if size > u64::from(part.size) {
+            bail!(
+                "{} is {} bytes; its partition holds {}",
+                pack.display(),
+                size,
+                part.size
+            );
+        }
+        images.push((part.offset, pack));
     }
     images.push((APP_PARTITION_OFFSET, app_image));
     Ok(images)
@@ -2845,6 +2866,30 @@ mod tests {
         assert_eq!(
             set.iter().map(|(o, _)| *o).collect::<Vec<_>>(),
             vec![0x0, 0x8000, 0xf000, 0x20000]
+        );
+    }
+
+    #[test]
+    fn full_flash_writes_asset_packs_found_beside_the_app() {
+        let dir = std::env::temp_dir().join(format!("opadctl-packs-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("bootloader")).unwrap();
+        std::fs::create_dir_all(dir.join("partition_table")).unwrap();
+        for f in [
+            "bootloader/bootloader.bin",
+            "partition_table/partition-table.bin",
+            "ota_data_initial.bin",
+            "opad-firmware.bin",
+            "opad-user.bin",
+        ] {
+            std::fs::write(dir.join(f), [0xE9; 32]).unwrap();
+        }
+
+        let set = resolve_flash_set(&dir, true).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        // No opad-assets.bin here: only the user pack, and the app stays last
+        assert_eq!(
+            set.iter().map(|(o, _)| *o).collect::<Vec<_>>(),
+            vec![0x0, 0x8000, 0xf000, 0x930000, 0x20000]
         );
     }
 

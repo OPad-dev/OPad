@@ -11,9 +11,22 @@
 # v1.0 ships flashed into ota_0 by espflash exactly as before; only the app's
 # offset moves, from 0x10000 to 0x20000.
 #
-# Name,     Type, SubType, Offset,   Size,     Flags
-nvs,        data, nvs,     0x9000,   0x6000,
-otadata,    data, ota,     0xf000,   0x2000,
-phy_init,   data, phy,     0x11000,  0x1000,
-ota_0,      app,  ota_0,   0x20000,  0x200000,
-ota_1,      app,  ota_1,   0x220000, 0x200000,
+# ota_0 and ota_1 keep their offsets and sizes: an app that writes the other
+# slot at a fixed 0x220000 (opad-device/src/flash.rs) must stay right for any
+# firmware. Everything added since goes after them, to the end of the 16 MB:
+#   coredump  the last crash, written by the panic handler
+#   assets    OPad's own screens and animations, replaced with the firmware
+#   user      the owner's animations; no firmware update writes it
+# Both asset partitions hold an asset pack (main/assets/asset_pack.h). Their
+# type 0x40 is OPad's own: ESP-IDF leaves types 0x40-0xFE to the application,
+# and the subtype (0 OPad's, 1 the owner's) is ours to choose under it.
+#
+# Name,     Type, SubType,  Offset,   Size,     Flags
+nvs,        data, nvs,      0x9000,   0x6000,
+otadata,    data, ota,      0xf000,   0x2000,
+phy_init,   data, phy,      0x11000,  0x1000,
+ota_0,      app,  ota_0,    0x20000,  0x200000,
+ota_1,      app,  ota_1,    0x220000, 0x200000,
+coredump,   data, coredump, 0x420000, 0x10000,
+assets,     0x40, 0x00,     0x430000, 0x500000,
+user,       0x40, 0x01,     0x930000, 0x6D0000,

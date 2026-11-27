@@ -108,7 +108,7 @@ De [/firmware/sdkconfig.defaults](https://github.com/OPad-dev/OPad/blob/main/fir
 | `CONFIG_SPIRAM=y`, `CONFIG_SPIRAM_MODE_OCT=y`, `CONFIG_SPIRAM_SPEED_80M=y`, `CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y` | 8 MB de PSRAM, y `EXT_RAM_BSS_ATTR` para los búferes que no están en la ruta de teclas |
 | `CONFIG_LV_MEM_SIZE_KILOBYTES=160`, `CONFIG_LV_DEF_REFR_PERIOD=33` | El pool propio de LVGL de 160 KB (en PSRAM por defecto) y un límite de redibujado de 30 fps |
 | `CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y`, `CONFIG_ESP32S3_DATA_CACHE_64KB=y`, `CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y` | Las cachés más grandes: reducen a la mitad el tiempo de fotograma del código y las fuentes en flash y del pool en PSRAM |
-| `CONFIG_PARTITION_TABLE_CUSTOM=y`, `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y` | Dos ranuras OTA de 2 MB ([/firmware/partitions.csv](https://github.com/OPad-dev/OPad/blob/main/firmware/partitions.csv): `nvs` 0x9000, `otadata` 0xf000, `ota_0` 0x20000, `ota_1` 0x220000) con reversión desde el bootloader |
+| `CONFIG_PARTITION_TABLE_CUSTOM=y`, `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y` | Dos ranuras OTA de 2 MB ([/firmware/partitions.csv](https://github.com/OPad-dev/OPad/blob/main/firmware/partitions.csv): `nvs` 0x9000, `otadata` 0xf000, `ota_0` 0x20000, `ota_1` 0x220000, y después `coredump`, `assets` y `user`) con reversión desde el bootloader |
 
 Solo están activados los widgets de LVGL que usan los layouts (label, bar, image, observer, GIF); las fuentes son Montserrat 12/14/16/20/24/32/48.
 
