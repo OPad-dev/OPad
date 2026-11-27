@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.0.0-rc.7](https://github.com/OPad-dev/OPad/compare/v1.0.0-rc.6...v1.0.0-rc.7) (2026-11-27)
+
+
+### Features
+
+* **case:** V4 puts the V3 case's inside in a faceted outside ([2abf596](https://github.com/OPad-dev/OPad/commit/2abf596d80548ad30b207f5c142f5123f6e3e72d))
+* **config:** a setting from newer firmware is not overwritten by an older app ([0cd9f32](https://github.com/OPad-dev/OPad/commit/0cd9f32ec11f75fdc687c399b53dfdd600c624c9))
+* **designer:** both screens apply at once, edits undo, and reset really returns to the pad's own layout ([0bd91e1](https://github.com/OPad-dev/OPad/commit/0bd91e1228061aa3e0cd9237eb855a176b98fab1))
+* **gui:** results show as notices that go away by themselves ([01c9e3d](https://github.com/OPad-dev/OPad/commit/01c9e3dad21eb2300174549aba3baa9427997a1a))
+* **gui:** Stats names each row by its real key and holds the key speed detail ([a961191](https://github.com/OPad-dev/OPad/commit/a96119147f39b4968e31697fecd2798d1c31856d))
+* **gui:** the app keeps one connection to the service and is sent what changed ([0447047](https://github.com/OPad-dev/OPad/commit/0447047c1bebc4813ce1b7319e1df3ca668e60b7))
+* **gui:** the menus are regrouped into Play, Your pad and App ([bfc19b2](https://github.com/OPad-dev/OPad/commit/bfc19b2eb949f8573516412ea1c73d410438dd0c))
+* **gui:** the window has rounded corners, and its top bar is part of the page ([7bf724a](https://github.com/OPad-dev/OPad/commit/7bf724a09ac24cd9f6aa974631da70ebfdaeef55))
+* **ipc:** a client can stay connected and be sent answers as they change ([fb75e78](https://github.com/OPad-dev/OPad/commit/fb75e788d28e32efbeb59ee9c7b5d65580142e35))
+* **opadctl:** commands are grouped, results come as JSON on request, and each kind of failure has its exit code ([682a0e7](https://github.com/OPad-dev/OPad/commit/682a0e7b7e1c8c7e6f17efcdd0e4e899ce68c4cb))
+* **opadctl:** flash and recover stay at the top level, and the docs use those names ([63f1476](https://github.com/OPad-dev/OPad/commit/63f147671be36346639a8f4257f1934e61cfdf90))
+* **release:** an app release carries only files a user downloads, named for their system ([90f2b7a](https://github.com/OPad-dev/OPad/commit/90f2b7a89fc6340af6b78dc0d0db4761f662cc99))
+* **update:** a pad speaking another protocol can still get its firmware update ([f11a599](https://github.com/OPad-dev/OPad/commit/f11a5998f2cd28ed158705b639a230724f69c3c9))
+* **usb:** the pad enumerates as 303a:8415, OPad's own PID from Espressif (0.9) ([b6c47ad](https://github.com/OPad-dev/OPad/commit/b6c47adf65853fcc0ef226292af42598af953cf9))
+
+
+### Bug Fixes
+
+* **config:** settings are reported as saved only once the pad has confirmed them ([940a1aa](https://github.com/OPad-dev/OPad/commit/940a1aac3908a692c732dae6c5ab899de3c3066b))
+* **daemon:** a counter reset during a sync is no longer undone by it ([fbf1a9f](https://github.com/OPad-dev/OPad/commit/fbf1a9fbf57bb83763e4d61abdce2d2ef7107b10))
+* **daemon:** only one thing flashes the pad at a time ([ec4cb15](https://github.com/OPad-dev/OPad/commit/ec4cb157deaa42520c502ae7e5623cc7665847d6))
+* **daemon:** two requests at once can no longer stop the daemon for good ([2f38dc7](https://github.com/OPad-dev/OPad/commit/2f38dc773764d557f901125d3fc9a21d06dc2c22))
+* **flash:** opadctl flash with the running slot unknown boots what it wrote ([f645d41](https://github.com/OPad-dev/OPad/commit/f645d41e26557d3735ceef1e01232feb447cadca))
+* **gui:** each action reports its own result, and Keys stays unsaved until the pad confirms ([4b8e47a](https://github.com/OPad-dev/OPad/commit/4b8e47aed1cd95872fa8c0a87de29c8e0ce16fcd))
+* **gui:** nothing behind an open dialog can be clicked ([46537d7](https://github.com/OPad-dev/OPad/commit/46537d7116ba466e174738e2384d081d61e4e1df))
+* **gui:** two launches at once no longer both become the instance on Linux ([ce32ed3](https://github.com/OPad-dev/OPad/commit/ce32ed3cd1af70d3468325c97fd6f316a6cfcc8f))
+* **recover:** opadctl recover never writes a board that was already in download mode ([17c0320](https://github.com/OPad-dev/OPad/commit/17c03208cb4662aa2916af865f04f41875d86fc7))
+* **update:** a failed automatic install waits a day, and the feed survives a restart ([c62a2cc](https://github.com/OPad-dev/OPad/commit/c62a2ccc060e9863503a7bb221af0302a52b5f31))
+* **update:** the root update helper reads only the calling user's own files ([bff49d0](https://github.com/OPad-dev/OPad/commit/bff49d0d06bfea4006f7698794305a701b454560))
+
 ## [1.0.0-rc.6](https://github.com/OPad-dev/OPad/compare/v1.0.0-rc.5...v1.0.0-rc.6) (2026-11-23)
 
 
