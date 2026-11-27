@@ -1,43 +1,13 @@
-//! Dashboard, settings, device and monitor pages.
+//! The Dashboard and Pad pages, the log list Troubleshooting shows, and the
+//! Hall Effect calibration that opens inside Keys.
 
 use crate::theme::{self, caption, heading, muted};
-use crate::{App, Message};
-use iced::widget::{
-    button, checkbox, column, container, pick_list, row, rule, scrollable, slider, text,
-    text_input, Space,
-};
+use crate::widgets::{card, help, line, scrolling, section};
+use crate::{App, Message, Target};
+use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Color, Element, Length};
-use opad_model::result_anim::{self, Trigger};
-use opad_model::swipe::{free_keys, swipe_choices, FreeKey, SwipeChoice, SwipeDir};
 use opad_model::ui_source::{self as src, SourceValue};
-use opad_model::{key_pin, KeyPin, KEY_PINS};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum SettingsTab {
-    #[default]
-    Keypad,
-    Display,
-    Updates,
-    AboutTosu,
-    Diagnostics,
-}
-
-/// A result animation as the pickers list it, by id
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AnimChoice(pub u32);
-
-impl std::fmt::Display for AnimChoice {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(result_anim::name(self.0))
-    }
-}
-
-fn anim_choices() -> Vec<AnimChoice> {
-    std::iter::once(result_anim::NONE)
-        .chain(result_anim::BUILTINS.iter().map(|(id, _)| *id))
-        .map(AnimChoice)
-        .collect()
-}
+use opad_model::RuntimeMode;
 
 pub(crate) fn grouped(n: u64) -> String {
     let digits = n.to_string();
@@ -65,40 +35,84 @@ fn number_value(app: &App, source: u8) -> Option<f64> {
     }
 }
 
-fn card<'a>(content: impl Into<Element<'a, Message>>) -> container::Container<'a, Message> {
-    container(content)
-        .padding(20)
-        .width(Length::Fill)
-        .style(theme::card)
+/// What the pad is doing, in the words a player would use
+pub fn mode_words(mode: RuntimeMode) -> &'static str {
+    match mode {
+        RuntimeMode::Idle => "Ready",
+        RuntimeMode::Playing => "In a map",
+        RuntimeMode::Cooldown => "Map just ended",
+        RuntimeMode::Sync => "Syncing",
+    }
 }
 
-fn stat<'a>(label: &'a str, value: String) -> Element<'a, Message> {
-    column![caption(label), text(value).size(20).font(theme::FONT_BOLD)]
-        .spacing(4)
-        .into()
+/// Presses on the keys the player plays with: what "total" means everywhere
+/// it is shown (the Dashboard, the tray)
+pub fn total_presses(app: &App) -> u64 {
+    let c = &app.counters;
+    [
+        c.lifetime_key1,
+        c.lifetime_key2,
+        app.key3.map_or(0, |k| k.lifetime),
+    ]
+    .iter()
+    .enumerate()
+    .filter(|(k, _)| app.config.is_game_key(*k as u8 + 1))
+    .map(|(_, v)| v)
+    .sum()
+}
+
+/// The typical key speed in the unit a player reads: "0.03 ms"
+pub fn key_speed(us: u32) -> String {
+    format!("{:.2} ms", us as f64 / 1000.0)
 }
 
 // ---- dashboard ------------------------------------------------------------------------------
 
 pub fn dashboard(app: &App) -> Element<'_, Message> {
+    let title = row![
+        heading("Dashboard"),
+        Space::new().width(Length::Fill),
+        if app.device_connected {
+            muted(mode_words(app.mode)).size(14)
+        } else {
+            muted("")
+        },
+    ]
+    .align_y(Alignment::Center);
+
+    // No pad: say so, where the counters would be
+    if !app.device_connected {
+        return scrolling(
+            column![
+                title,
+                card(
+                    column![
+                        text("No pad found").size(24).font(theme::FONT_BOLD),
+                        muted("Plug it in with its USB cable.").size(15),
+                    ]
+                    .spacing(8)
+                    .align_x(Alignment::Center)
+                    .width(Length::Fill),
+                )
+                .padding(40),
+                osu_cards(app),
+            ]
+            .spacing(14),
+        )
+        .into();
+    }
+
     let c = &app.counters;
     let dark_70 = Color {
         a: 0.7,
         ..theme::BG
     };
-
-    // The game keys' presses (keys 1 and 2 unless the player picked others)
-    let key3_lifetime = app.key3.map_or(0, |k| k.lifetime);
-    let total_presses: u64 = [c.lifetime_key1, c.lifetime_key2, key3_lifetime]
-        .iter()
-        .enumerate()
-        .filter(|(k, _)| app.config.is_game_key(*k as u8 + 1))
-        .map(|(_, v)| v)
-        .sum();
     let total = card(
         column![
             caption("TOTAL PRESSES"),
-            text(grouped(total_presses)).size(64).font(theme::FONT_BOLD),
+            text(grouped(total_presses(app)))
+                .size(64)
+                .font(theme::FONT_BOLD),
         ]
         .spacing(2)
         .align_x(Alignment::Center)
@@ -107,14 +121,14 @@ pub fn dashboard(app: &App) -> Element<'_, Message> {
 
     let k1 = container(
         column![
-            text(format!("K1 · {}", app.config.key1_char()))
+            text(format!("Key 1 · {}", app.config.key1_char()))
                 .size(14)
                 .color(dark_70),
             text(grouped(c.lifetime_key1))
                 .size(40)
                 .font(theme::FONT_BOLD)
                 .color(theme::BG),
-            text(format!("this map {}", c.map_key1))
+            text(format!("{} this map", grouped(c.map_key1 as u64)))
                 .size(13)
                 .color(dark_70),
         ]
@@ -126,28 +140,12 @@ pub fn dashboard(app: &App) -> Element<'_, Message> {
     .width(Length::Fill)
     .style(theme::pink_card);
 
-    let k2 = container(
-        column![
-            caption(format!("K2 · {}", app.config.key2_char())).size(14),
-            text(grouped(c.lifetime_key2))
-                .size(40)
-                .font(theme::FONT_BOLD),
-            muted(format!("this map {}", c.map_key2)).size(13),
-        ]
-        .spacing(4)
-        .align_x(Alignment::Center)
-        .width(Length::Fill),
-    )
-    .padding(18)
-    .width(Length::Fill)
-    .style(theme::outlined_card);
-
-    let k3 = app.key3.map(|k3| {
+    let plain_key = |label: String, lifetime: u64, map: u64| {
         container(
             column![
-                caption(format!("K3 · {}", app.config.key3_char())).size(14),
-                text(grouped(k3.lifetime)).size(40).font(theme::FONT_BOLD),
-                muted(format!("this map {}", k3.map)).size(13),
+                caption(label).size(14),
+                text(grouped(lifetime)).size(40).font(theme::FONT_BOLD),
+                muted(format!("{} this map", grouped(map))).size(13),
             ]
             .spacing(4)
             .align_x(Alignment::Center)
@@ -156,12 +154,56 @@ pub fn dashboard(app: &App) -> Element<'_, Message> {
         .padding(18)
         .width(Length::Fill)
         .style(theme::outlined_card)
-    });
-    let mut key_cards = row![k1, k2].spacing(14);
-    if let Some(k3) = k3 {
-        key_cards = key_cards.push(k3);
+    };
+    let mut key_cards = row![
+        k1,
+        plain_key(
+            format!("Key 2 · {}", app.config.key2_char()),
+            c.lifetime_key2,
+            c.map_key2 as u64
+        )
+    ]
+    .spacing(14);
+    if let Some(k3) = app.key3 {
+        let letter = if app.config.key3_hid_usage == 0 {
+            "sends nothing".to_string()
+        } else {
+            app.config.key3_char()
+        };
+        key_cards = key_cards.push(plain_key(
+            format!("Key 3 · {letter}"),
+            k3.lifetime,
+            k3.map as u64,
+        ));
     }
 
+    // One figure a player can read; the percentiles are on Stats
+    let speed = match app.latency {
+        Some(l) if l.samples > 0 => row![
+            text("Key speed").size(16).font(theme::FONT_BOLD),
+            text(key_speed(l.p50_us))
+                .size(22)
+                .font(theme::FONT_BOLD)
+                .color(theme::PINK),
+            muted("from the switch to the computer, typically").size(14),
+            Space::new().width(Length::Fill),
+            button(text("Details").size(13))
+                .style(theme::secondary)
+                .on_press(Message::Navigate(crate::Page::Stats)),
+        ],
+        _ => row![
+            text("Key speed").size(16).font(theme::FONT_BOLD),
+            muted("Press a key to measure it.").size(14),
+        ],
+    }
+    .spacing(12)
+    .align_y(Alignment::Center);
+
+    scrolling(column![title, total, key_cards, osu_cards(app), card(speed)].spacing(14)).into()
+}
+
+/// The osu! profile and what is playing, from tosu
+fn osu_cards(app: &App) -> Element<'_, Message> {
     let profile: Element<'_, Message> = match text_value(app, src::PROFILE_NAME) {
         Some(name) => column![
             caption("OSU! PROFILE"),
@@ -197,7 +239,19 @@ pub fn dashboard(app: &App) -> Element<'_, Message> {
         .into(),
         None => column![
             caption("OSU! PROFILE"),
-            muted("Open osu! with tosu running to see your profile.")
+            if app.tosu_connected {
+                Element::from(muted("Open osu! to see your profile.").size(14))
+            } else {
+                row![
+                    muted("osu! is not connected.").size(14),
+                    button(text("osu! connection").size(13))
+                        .style(theme::secondary)
+                        .on_press(Message::Open(Target::OSU)),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .into()
+            },
         ]
         .spacing(6)
         .into(),
@@ -206,13 +260,9 @@ pub fn dashboard(app: &App) -> Element<'_, Message> {
     let now: Element<'_, Message> = match text_value(app, src::MAP_TITLE) {
         Some(title) => {
             let mut info = column![
-                caption(
-                    text_value(app, src::GAME_STATE)
-                        .unwrap_or("NOW")
-                        .to_uppercase()
-                ),
+                caption("NOW PLAYING"),
                 text(title).size(20).font(theme::FONT_BOLD),
-                muted(text_value(app, src::MAP_ARTIST).unwrap_or("")),
+                muted(text_value(app, src::MAP_ARTIST).unwrap_or("")).size(14),
                 row![
                     text(
                         text_value(app, src::MAP_DIFFICULTY)
@@ -222,7 +272,7 @@ pub fn dashboard(app: &App) -> Element<'_, Message> {
                     .color(theme::CYAN),
                     text(
                         number_value(app, src::MAP_STARS)
-                            .map_or(String::new(), |s| format!("{:.2} *", s))
+                            .map_or(String::new(), |s| format!("{:.2} stars", s))
                     )
                     .size(14)
                     .color(theme::YELLOW),
@@ -230,7 +280,7 @@ pub fn dashboard(app: &App) -> Element<'_, Message> {
                 .spacing(10),
             ]
             .spacing(6);
-            if app.mode == opad_model::RuntimeMode::Playing {
+            if app.mode == RuntimeMode::Playing {
                 if let Some(pp) = number_value(app, src::PLAY_PP) {
                     info = info.push(
                         text(format!("{:.0}pp", pp))
@@ -242,1224 +292,262 @@ pub fn dashboard(app: &App) -> Element<'_, Message> {
             }
             info.into()
         }
-        None => column![caption("NOW"), muted("Nothing selected in osu!.")]
-            .spacing(6)
-            .into(),
-    };
-
-    let latency: Element<'_, Message> = match app.latency {
-        Some(l) if l.samples > 0 => row![
-            stat("p50", format!("{} µs", l.p50_us)),
-            stat("p99", format!("{} µs", l.p99_us)),
-            stat("p99.9", format!("{} µs", l.p999_us)),
-            stat("max", format!("{} µs", l.max_us)),
-            stat("deferred", l.deferred_reports.to_string()),
-            stat("presses", grouped(l.samples as u64)),
+        None => column![
+            caption("NOW PLAYING"),
+            muted("Nothing selected in osu!.").size(14)
         ]
-        .spacing(36)
+        .spacing(6)
         .into(),
-        _ => muted("No key presses measured yet.").into(),
     };
-
-    scrollable(
-        column![
-            row![
-                heading("Dashboard"),
-                Space::new().width(Length::Fill),
-                caption(format!("{:?}", app.mode).to_uppercase()),
-            ]
-            .align_y(Alignment::Center),
-            total,
-            key_cards,
-            row![card(profile), card(now)].spacing(14),
-            card(
-                column![
-                    row![
-                        text("Key latency").size(16).font(theme::FONT_BOLD),
-                        Space::new().width(Length::Fill),
-                        button(text("Reset").size(13)).style(theme::secondary).on_press(Message::ResetLatency),
-                    ]
-                    .align_y(Alignment::Center),
-                    muted("Switch press to USB report, measured on the pad. Deferred = waited for the next 1 ms USB poll, then sent.").size(13),
-                    latency,
-                ]
-                .spacing(12),
-            ),
-        ]
-        .spacing(14),
-    )
-    .into()
+    row![card(profile), card(now)].spacing(14).into()
 }
 
-// ---- settings -----------------------------------------------------------------------------
+// ---- pad ------------------------------------------------------------------------------------
 
-pub fn settings(app: &App) -> Element<'_, Message> {
-    let key_input = |label: &'static str, value: &str, on_input: fn(String) -> Message| {
-        let mut input = text_input("Z", value).size(22).width(80).padding(10);
-        if app.device_connected {
-            input = input.on_input(on_input);
-        }
-        column![caption(label), input].spacing(6)
+/// A timestamp from the daemon (RFC 3339) as a person reads it
+fn when(stamp: Option<&str>) -> String {
+    let Some(stamp) = stamp else {
+        return "Never".to_string();
     };
-
-    // Only supported header pins, minus the one the other key uses
-    let pin_select = |label: &'static str,
-                      key_id: u32,
-                      gpio: u32,
-                      other: u32,
-                      on_select: fn(KeyPin) -> Message| {
-        let options: Vec<KeyPin> = KEY_PINS
-            .iter()
-            .copied()
-            .filter(|p| p.gpio != other)
-            .collect();
-
-        let detect_btn = if app.detecting_pin == Some(key_id) {
-            button(text("Detecting... (click to cancel)").size(12))
-                .style(theme::primary)
-                .on_press(Message::CancelDetectPin)
-        } else if app.device_connected {
-            button(text("Auto-Detect").size(12))
-                .style(theme::secondary)
-                .on_press(Message::StartDetectPin(key_id))
-        } else {
-            button(text("Auto-Detect").size(12)).style(theme::secondary)
-        };
-
-        let picker_element: Element<'_, Message> = if app.device_connected {
-            pick_list(options, key_pin(gpio), on_select)
-                .placeholder(format!("GPIO{} (unsupported)", gpio))
-                .width(Length::Fill)
-                .padding(10)
-                .into()
-        } else {
-            text_input(
-                "",
-                &key_pin(gpio).map_or(format!("GPIO{} (disconnected)", gpio), |p| {
-                    format!("{} (disconnected)", p)
-                }),
-            )
-            .size(13)
-            .width(Length::Fill)
-            .padding(10)
-            .into()
-        };
-
-        column![
-            row![caption(label), Space::new().width(Length::Fill), detect_btn,]
-                .align_y(Alignment::Center),
-            picker_element,
-        ]
-        .spacing(6)
-        .width(Length::FillPortion(1))
-    };
-
-    let keys_header = if app.device_connected {
-        row![text("Keys").size(18).font(theme::FONT_BOLD)].align_y(Alignment::Center)
-    } else {
-        row![
-            text("Keys").size(18).font(theme::FONT_BOLD),
-            Space::new().width(8),
-            muted("(device disconnected)").size(12),
-        ]
-        .align_y(Alignment::Center)
-    };
-
-    let keys = card(
-        column![
-            keys_header,
-            {
-                let three = app.device_info.as_ref().is_some_and(|i| i.key_count >= 3);
-                let mut inputs = row![
-                    key_input("KEY 1", &app.k1_input, Message::Key1),
-                    key_input("KEY 2", &app.k2_input, Message::Key2)
-                ]
-                .spacing(24);
-                if three {
-                    inputs = inputs.push(key_input("KEY 3", &app.k3_input, Message::Key3));
-                }
-                let mut col = column![inputs].spacing(10);
-                if three {
-                    let game = |key: u8| app.game_keys & (1 << (key - 1)) != 0;
-                    // osu!standard plays with two keys: with two ticked, the third is off
-                    let full = app.game_keys.count_ones() >= 2;
-                    let game_box = |key: u8, label: &'static str| {
-                        let b = checkbox(game(key)).label(label);
-                        if full && !game(key) {
-                            b
-                        } else {
-                            b.on_toggle(move |on| Message::GameKey(key, on))
-                        }
-                    };
-                    col = col.push(
-                        column![
-                            caption("GAME KEYS"),
-                            row![
-                                game_box(1, "Key 1"),
-                                game_box(2, "Key 2"),
-                                game_box(3, "Key 3"),
-                            ]
-                            .spacing(18),
-                            muted(
-                                "The one or two keys you play with (osu!standard plays with \
-                                 two): only their presses count toward the total, the tap rate \
-                                 and map stats. Every key keeps its own lifetime count. Key 3 \
-                                 left empty sends nothing.",
-                            )
-                            .size(12),
-                        ]
-                        .spacing(6),
-                    );
-                }
-                col
-            },
-            // Only for switches wired to the header by hand: a module's pins
-            // are fixed by the carrier (and older firmware does not say, so
-            // the settings stay)
-            if app
-                .device_info
-                .as_ref()
-                .is_none_or(|i| i.key_pins_configurable())
-            {
-                Element::from(
-                    column![
-                        row![
-                            pin_select("KEY 1 PIN", 1, app.k1_gpio, app.k2_gpio, Message::Key1Pin),
-                            pin_select("KEY 2 PIN", 2, app.k2_gpio, app.k1_gpio, Message::Key2Pin),
-                        ]
-                        .spacing(24),
-                        muted("Header pin each switch is wired to (other leg to GND). Press 'Auto-Detect' and hit the switch to identify the pin automatically.").size(12),
-                    ]
-                    .spacing(8),
-                )
-            } else {
-                Element::from(Space::new().height(0))
-            },
-            column![
-                row![
-                    caption("DEBOUNCE LOCKOUT"),
-                    Space::new().width(Length::Fill),
-                    text(format!("{:.1} ms", app.debounce as f32 / 1000.0)).size(14)
-                ],
-                slider(500..=20000, app.debounce, Message::Debounce).step(500u32),
-                muted("Presses within this window after a switch change are ignored.").size(12),
-            ]
-            .spacing(8),
-            if app.device_info.as_ref().is_some_and(|i| i.he_calibration) {
-                Element::from(
-                    column![
-                        row![
-                            caption("HALL EFFECT CALIBRATION"),
-                            Space::new().width(Length::Fill),
-                            button(text("Recalibrate Keys").size(12))
-                                .style(theme::secondary)
-                                .on_press(Message::Navigate(crate::Page::Calibration)),
-                        ]
-                        .align_y(Alignment::Center),
-                        muted(
-                            "Calibrate magnetic rest position and bottom-out travel for Hall Effect switches.",
-                        )
-                        .size(12),
-                    ]
-                    .spacing(8),
-                )
-            } else {
-                Element::from(Space::new().height(0))
-            },
-        ]
-        .spacing(18),
-    );
-
-    // One direction's choice, and the free key when that choice is "Other key"
-    let swipe_select = |label: &'static str, dir: SwipeDir| {
-        let setting = app.swipes[dir.index()];
-        let choice = setting.choice();
-        let mut col = column![caption(label)]
-            .spacing(6)
-            .width(Length::FillPortion(1));
-        if app.device_connected {
-            col = col.push(
-                pick_list(swipe_choices(), Some(choice), move |c| {
-                    Message::Swipe(dir, c)
-                })
-                .width(Length::Fill)
-                .padding(10),
-            );
-            if choice == SwipeChoice::OtherKey {
-                let current = free_keys().into_iter().find(|k| *k == FreeKey(setting.key));
-                col = col.push(
-                    pick_list(free_keys(), current, move |k| Message::SwipeKey(dir, k))
-                        .placeholder("Choose a key")
-                        .width(Length::Fill)
-                        .padding(10),
-                );
-            }
-        } else {
-            col = col.push(
-                text_input("", &format!("{} (disconnected)", setting.describe()))
-                    .size(13)
-                    .width(Length::Fill)
-                    .padding(10),
-            );
-        }
-        col
-    };
-
-    let swipes = card(
-        column![
-            text("Touchscreen swipes").size(18).font(theme::FONT_BOLD),
-            muted(
-                "Volume goes to osu! when osu! is the window in front (Windows) or osu!lazer \
-                 is running (Linux), to the system otherwise, and steps again every bit of a \
-                 long drag; other actions fire once per swipe. osu! shortcuts and other keys \
-                 are never sent during a map, where a resting finger is Quick Retry. Outside \
-                 a map a tap does nothing. While tosu is not connected the pad cannot tell a \
-                 map from a menu: every touch is Quick Retry, no swipes."
-            )
-            .size(12),
-            // Laid out as the swipes go: up on top, down below, left and right
-            // either side of the pad
-            column![
-                row![
-                    Space::new().width(Length::FillPortion(1)),
-                    swipe_select("↑ SWIPE UP", SwipeDir::Up),
-                    Space::new().width(Length::FillPortion(1)),
-                ]
-                .spacing(16),
-                row![
-                    swipe_select("← SWIPE LEFT", SwipeDir::Left),
-                    container(text("◆").size(28).color(theme::MUTED))
-                        .center_x(Length::FillPortion(1)),
-                    swipe_select("SWIPE RIGHT →", SwipeDir::Right),
-                ]
-                .spacing(16)
-                .align_y(Alignment::Center),
-                row![
-                    Space::new().width(Length::FillPortion(1)),
-                    swipe_select("↓ SWIPE DOWN", SwipeDir::Down),
-                    Space::new().width(Length::FillPortion(1)),
-                ]
-                .spacing(16),
-            ]
-            .spacing(12),
-        ]
-        .spacing(18),
-    );
-
-    let sleep_label = if app.sleep_seconds.is_multiple_of(60) {
-        format!("{} min", app.sleep_seconds / 60)
-    } else {
-        format!("{} s", app.sleep_seconds)
-    };
-
-    let display_header = if app.device_connected {
-        row![text("Display").size(18).font(theme::FONT_BOLD)].align_y(Alignment::Center)
-    } else {
-        row![
-            text("Display").size(18).font(theme::FONT_BOLD),
-            Space::new().width(8),
-            muted("(device disconnected)").size(12),
-        ]
-        .align_y(Alignment::Center)
-    };
-
-    let display = card(
-        column![
-            display_header,
-            column![
-                row![
-                    caption("BRIGHTNESS"),
-                    Space::new().width(Length::Fill),
-                    text(format!("{}%", app.brightness)).size(14)
-                ],
-                slider(10..=100, app.brightness, Message::Brightness),
-            ]
-            .spacing(8),
-            column![
-                row![
-                    caption("SLEEP AFTER"),
-                    Space::new().width(Length::Fill),
-                    text(sleep_label).size(14)
-                ],
-                slider(60..=3600, app.sleep_seconds, Message::SleepSeconds).step(60u32),
-            ]
-            .spacing(8),
-            muted("Screen layouts and colors are edited in the Designer.").size(12),
-        ]
-        .spacing(18),
-    );
-
-    // One grade's animation, and a button that plays it on the pad now
-    let anim_cell = |trigger: Trigger| {
-        let id = app.result_animations.get(trigger);
-        let mut play = button(text("Play").size(13)).style(theme::secondary);
-        if app.device_connected && id != result_anim::NONE {
-            play = play.on_press(Message::PreviewAnimation(trigger));
-        }
-        column![
-            caption(trigger.label()),
-            row![
-                pick_list(anim_choices(), Some(AnimChoice(id)), move |c| {
-                    Message::ResultAnimation(trigger, c)
-                })
-                .width(Length::Fill)
-                .padding(10),
-                play.padding(10),
-            ]
-            .spacing(8)
-            .align_y(Alignment::Center),
-        ]
-        .spacing(6)
-        .width(Length::FillPortion(1))
-    };
-
-    let result_anims = card(
-        column![
-            text("Result animations").size(18).font(theme::FONT_BOLD),
-            muted(
-                "Played on the pad when osu! shows the results of your own play, for the \
-                 grade you got. A replay, or results opened from song select, play nothing, \
-                 and the next map stops the animation at once. Play shows it on the pad now."
-            )
-            .size(12),
-            row![
-                anim_cell(Trigger::SS),
-                anim_cell(Trigger::S),
-                anim_cell(Trigger::A)
-            ]
-            .spacing(16),
-            row![
-                anim_cell(Trigger::B),
-                anim_cell(Trigger::C),
-                anim_cell(Trigger::D)
-            ]
-            .spacing(16),
-        ]
-        .spacing(18),
-    );
-
-    let advanced = card(
-        column![
-            text("Advanced").size(18).font(theme::FONT_BOLD),
-            column![
-                row![
-                    caption("GAMEPLAY REFRESH RATE"),
-                    Space::new().width(Length::Fill),
-                    text(format!("{} Hz", app.gameplay_display_hz)).size(14)
-                ],
-                slider(1..=30, app.gameplay_display_hz, Message::GameplayDisplayHz),
-                muted("Rate at which real-time map statistics (PP, progress, hit counts) are streamed to the pad display during play (1–30 Hz, default: 10 Hz).").size(12),
-            ]
-            .spacing(8),
-            column![
-                checkbox(app.autostart_tray).label("Start in tray at login").on_toggle(Message::ToggleAutostartTray),
-                muted("Automatically start the applet minimized in the system tray when logging into your desktop session.").size(12),
-            ]
-            .spacing(6),
-        ]
-        .spacing(18),
-    );
-
-    let save_btn = if app.device_connected && app.detecting_pin.is_none() {
-        button(text("Save settings").size(15))
-            .padding([10, 22])
-            .style(theme::primary)
-            .on_press(Message::SaveConfig)
-    } else {
-        button(
-            text(if !app.device_connected {
-                "Save settings (device not connected)"
-            } else {
-                "Detecting pin..."
-            })
-            .size(15),
-        )
-        .padding([10, 22])
-        .style(theme::secondary)
-    };
-
-    let tab_btn = |tab: SettingsTab, label: &'static str| {
-        button(text(label).size(13).font(theme::FONT))
-            .padding([8, 16])
-            .style(theme::tab_button(app.settings_tab == tab))
-            .on_press(Message::SelectSettingsTab(tab))
-    };
-
-    let tab_bar = row![
-        tab_btn(SettingsTab::Keypad, "⌨ Keypad"),
-        tab_btn(SettingsTab::Display, "🖥 Display & Game"),
-        tab_btn(SettingsTab::Updates, "🔄 Updates & Firmware"),
-        tab_btn(SettingsTab::AboutTosu, "ℹ About & tosu"),
-        tab_btn(SettingsTab::Diagnostics, "🛠 Diagnostics"),
-    ]
-    .spacing(8);
-
-    let disconnected_warning = if !app.device_connected {
-        Some(
-            card(
-                row![text(
-                    "⚠ Device not connected. Connect your OPad to adjust hardware settings."
-                )
-                .size(14)
-                .font(theme::FONT_BOLD)
-                .color(theme::YELLOW),]
-                .padding([6, 10]),
-            )
-            .width(Length::Fill),
-        )
-    } else {
-        None
-    };
-
-    let mut content = column![
-        heading("Settings"),
-        muted("Configure keypad switches, display brightness, integrations, updates, and testing tools."),
-        tab_bar,
-    ]
-    .spacing(14);
-
-    match app.settings_tab {
-        SettingsTab::Keypad => {
-            if let Some(w) = disconnected_warning {
-                content = content.push(w);
-            }
-            content = content.push(keys);
-            content = content.push(swipes);
-            content = content.push(row![save_btn]);
-        }
-        SettingsTab::Display => {
-            if let Some(w) = disconnected_warning {
-                content = content.push(w);
-            }
-            content = content.push(display);
-            content = content.push(result_anims);
-            content = content.push(advanced);
-            content = content.push(row![save_btn]);
-        }
-        SettingsTab::Updates => {
-            content = content.push(row![updates(app), firmware_updates(app)].spacing(14));
-        }
-        SettingsTab::AboutTosu => {
-            content = content.push(tosu_settings(app));
-            content = content.push(about_section());
-        }
-        SettingsTab::Diagnostics => {
-            let diag_card = card(
-                column![
-                    text("Interactive Diagnostics & Testing Mode").size(16).font(theme::FONT_BOLD),
-                    muted(
-                        "Activate the Diagnostics suite to access interactive test tools built for OPad: \
-                         the switch chatter / contact bounce tester, COM-02 protocol recovery check, \
-                         screen backlight / color verification, the carrier & module PCB test, and one-click \
-                         diagnostic report exporter."
-                    ).size(13),
-                    checkbox(app.diagnostics_enabled)
-                        .label("Enable Diagnostics Menu in Navigation")
-                        .on_toggle(Message::ToggleDiagnostics),
-                    if app.diagnostics_enabled {
-                        row![
-                            button(text("Open Diagnostics Menu →").size(14).font(theme::FONT_BOLD))
-                                .padding([8, 18])
-                                .style(theme::primary)
-                                .on_press(Message::Navigate(crate::Page::Diagnostics)),
-                            Space::new().width(12),
-                            muted("The Diagnostics tab is now accessible from the main left sidebar.").size(12),
-                        ]
-                        .align_y(Alignment::Center)
-                    } else {
-                        row![
-                            muted("Turn on the toggle above to add 'Diagnostics' to your sidebar navigation.").size(12),
-                        ]
-                    }
-                ]
-                .spacing(14),
-            );
-            content = content.push(diag_card);
-        }
-    }
-
-    scrollable(content).into()
-}
-
-/// The update card (docs/specs/release-and-updates.md §15): what is installed
-/// and what is available for OPad and tosu, the automatic-update switches,
-/// the channel, *Check now*, and how the last install went. The firmware has
-/// its own card beside this one.
-fn updates(app: &App) -> Element<'_, Message> {
-    use opad_ipc::UpdateComponent;
-
-    let Some(u) = &app.updates else {
-        return card(
-            column![
-                caption("SOFTWARE UPDATES"),
-                muted("Waiting for the daemon.").size(12),
-            ]
-            .spacing(8),
-        )
-        .width(Length::Fill)
-        .into();
-    };
-
-    // One row per component: name and version, its state underneath, and the
-    // action (if any) on the right, all rows the same shape
-    let component_row = |name: &'static str,
-                         c: &opad_ipc::ComponentUpdate,
-                         component: UpdateComponent,
-                         pending: Option<&String>|
-     -> Element<'_, Message> {
-        let installed = c.installed.clone().unwrap_or_else(|| "unknown".into());
-        let state = match (pending, &c.available) {
-            (Some(v), _) if cfg!(windows) => {
-                format!("{v} downloaded · installs next time OPad starts")
-            }
-            (Some(v), _) => format!("{v} installed · runs next time OPad starts"),
-            (None, Some(v)) if c.with_app => format!("{v} comes with the next OPad update"),
-            (None, Some(v)) => format!("{v} available"),
-            (None, None) if c.with_app => "Up to date · updated together with OPad".to_string(),
-            (None, None) => "Up to date".to_string(),
-        };
-        let mut status_line = row![muted(state).size(11)]
-            .spacing(8)
-            .align_y(Alignment::Center);
-        if let (Some(_), Some(url)) = (&c.available, &c.notes_url) {
-            status_line = status_line.push(
-                button(text("What's new").size(11))
-                    .style(theme::secondary)
-                    .padding([1, 8])
-                    .on_press(Message::OpenUrl(url.clone())),
-            );
-        }
-        let mut r = row![
-            column![text(format!("{name} {installed}")).size(13), status_line].spacing(3),
-            Space::new().width(Length::Fill),
-        ]
-        .align_y(Alignment::Center)
-        .height(Length::Fixed(44.0));
-        if c.ready_to_install && pending.is_none() {
-            r = r.push(
-                button(text("Install now").size(12))
-                    .style(theme::primary)
-                    .padding([5, 14])
-                    .on_press(Message::InstallUpdate(component)),
-            );
-        }
-        r.into()
-    };
-
-    let pending = u.pending_version.as_ref().filter(|_| u.restart_required);
-    let mut switches = column![checkbox(u.app.enabled)
-        .label("Install OPad updates automatically")
-        .text_size(12)
-        .on_toggle(|v| Message::ToggleUpdater(UpdateComponent::App, v))]
-    .spacing(8);
-    // tosu inside a package is updated with OPad: there is nothing to switch
-    if !u.tosu.with_app {
-        switches = switches.push(
-            checkbox(u.tosu.enabled)
-                .label("Install tosu updates automatically")
-                .text_size(12)
-                .on_toggle(|v| Message::ToggleUpdater(UpdateComponent::Tosu, v)),
-        );
-    }
-
-    let channels = vec!["stable".to_string(), "beta".to_string()];
-    let channel_row = row![
-        muted("Channel").size(12),
-        pick_list(channels, Some(u.channel.clone()), Message::SetUpdateChannel)
-            .text_size(12)
-            .padding([4, 8]),
-        muted(if u.channel == "beta" {
-            "Release candidates as soon as they are out"
-        } else {
-            "Final releases only"
+    chrono::DateTime::parse_from_rfc3339(stamp)
+        .map(|t| {
+            t.with_timezone(&chrono::Local)
+                .format("%-d %b %Y, %H:%M")
+                .to_string()
         })
-        .size(11),
+        .unwrap_or_else(|_| stamp.to_string())
+}
+
+pub fn pad(app: &App) -> Element<'_, Message> {
+    let info = app.device_info.as_ref();
+    let known = |value: Option<&str>| value.filter(|s| !s.is_empty()).unwrap_or("-").to_string();
+    let playing = matches!(app.mode, RuntimeMode::Playing | RuntimeMode::Cooldown);
+
+    // ---- this pad ----
+    let firmware = row![
+        muted("Firmware").size(14).width(180),
+        text(known(info.map(|i| i.firmware_version.as_str()))).size(14),
+        match app
+            .firmware_offer
+            .as_ref()
+            .and_then(|o| o.available.as_ref())
+        {
+            Some(v) if app.device_connected => Element::from(
+                button(text(format!("Update to {v}")).size(13))
+                    .padding([3, 10])
+                    .style(theme::primary)
+                    .on_press(Message::OpenUpdates)
+            ),
+            _ => button(text("Updates").size(13))
+                .padding([3, 10])
+                .style(theme::secondary)
+                .on_press(Message::OpenUpdates)
+                .into(),
+        },
     ]
-    .spacing(10)
+    .spacing(8)
     .align_y(Alignment::Center);
 
-    let checked = if u.checking {
-        "Checking for updates…".to_string()
-    } else {
-        u.last_check
-            .as_deref()
-            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
-            .map(|t| {
-                format!(
-                    "Last checked {}",
-                    t.with_timezone(&chrono::Local).format("%-d %b, %H:%M")
-                )
-            })
-            .unwrap_or_else(|| "Not checked yet".to_string())
-    };
-    let mut check_btn = button(text("Check now").size(12))
-        .style(theme::secondary)
-        .padding([5, 14]);
-    if !u.checking {
-        check_btn = check_btn.on_press(Message::CheckForUpdates);
-    }
-
-    let mut content = column![
-        caption("SOFTWARE UPDATES"),
-        component_row("OPad", &u.app, UpdateComponent::App, pending),
-        component_row("tosu", &u.tosu, UpdateComponent::Tosu, None),
-        rule::horizontal(1),
-        switches,
-        channel_row,
-        rule::horizontal(1),
-        row![
-            muted(checked).size(11),
-            Space::new().width(Length::Fill),
-            check_btn
-        ]
-        .align_y(Alignment::Center),
-    ]
-    .spacing(12);
-
-    if let Some(v) = pending {
-        content = content.push(
-            text(if cfg!(windows) {
-                format!("OPad {v} is ready. It installs the next time OPad starts: quit OPad from the tray and open it again, or restart the PC.")
+    let mut this_pad = column![
+        line("Pad ID", known(info.map(|i| i.device_id.as_str()))),
+        line("Board", known(info.map(|i| i.board_profile.as_str()))),
+        firmware,
+        line(
+            "Doing now",
+            if app.device_connected {
+                mode_words(app.mode)
             } else {
-                format!("OPad {v} is installed. It runs the next time OPad starts: quit OPad from the tray and open it again, or restart the PC.")
-            })
-            .size(12)
-            .color(theme::YELLOW),
-        );
-    }
-    if let Some(r) = &u.last_result {
-        content = content.push(muted(format!("Last update: {r}")).size(11));
-    }
-    if let Some(e) = &u.last_error {
-        content = content.push(muted(format!("Last check failed: {e}")).size(11));
-    }
-
-    card(content).width(Length::Fill).into()
-}
-
-/// §U-3b: firmware updates, flashed over USB. Visually separate from the app
-/// and tosu: the pad stops being a keyboard for ~30 s while it happens, so
-/// with automatic updates on it waits until the pad has gone unused
-/// (`FirmwareOffer::auto_after_minutes`), and Update now asks first.
-/// Blockers are shown verbatim, as whole sentences, and disable the button.
-fn firmware_updates(app: &App) -> Element<'_, Message> {
-    use opad_ipc::UpdateComponent;
-
-    let Some(offer) = &app.firmware_offer else {
-        return card(
-            column![
-                caption("FIRMWARE UPDATE"),
-                muted("Waiting for the daemon.").size(12),
-            ]
-            .spacing(8),
-        )
-        .width(Length::Fill)
-        .into();
-    };
-
-    let (title, state_str) = match (&offer.installed, &offer.available) {
-        (None, _) => ("Firmware".to_string(), "No pad connected".to_string()),
-        (Some(i), available) => {
-            let state = match available {
-                Some(v) => format!("{v} available"),
-                None => "Up to date".to_string(),
-            };
-            let slot = offer
-                .running_partition
-                .as_deref()
-                .map(|s| format!(" · running slot {s}"))
-                .unwrap_or_default();
-            (format!("Firmware {i}"), format!("{state}{slot}"))
-        }
-    };
-
-    let can_update = offer.available.is_some() && offer.blockers.is_empty();
-    let mut update_btn = button(text("Update now").size(12)).padding([5, 14]);
-    if can_update {
-        update_btn = update_btn
-            .style(theme::primary)
-            .on_press(Message::PromptFirmwareConsent);
-    } else {
-        update_btn = update_btn.style(theme::secondary);
-    }
-
-    let mut content = column![
-        caption("FIRMWARE UPDATE"),
-        row![
-            column![text(title).size(13), muted(state_str).size(11),].spacing(3),
-            Space::new().width(Length::Fill),
-            update_btn,
-        ]
-        .align_y(Alignment::Center)
-        .height(Length::Fixed(44.0)),
-    ]
-    .spacing(12);
-
-    // With no pad the subtitle says so; its blockers would only repeat it
-    if offer.installed.is_some() {
-        for blocker in &offer.blockers {
-            content = content.push(text(format!("⚠ {blocker}")).size(12).color(theme::YELLOW));
-        }
-    }
-
-    // When it installs by itself, and how close that is
-    if let (Some(v), true) = (&offer.available, offer.auto) {
-        let wait = offer.auto_after_minutes.max(1);
-        let when = match offer.idle_minutes {
-            Some(idle) if idle >= wait => {
-                format!("{v} installs by itself now that the pad has gone {wait} minutes unused.")
+                "Not connected"
             }
-            Some(idle) => format!(
-                "{v} installs by itself once the pad has gone {wait} minutes unused \
-                 (unused for {idle} min so far), or press Update now."
-            ),
-            None => format!(
-                "{v} installs by itself once the pad has gone {wait} minutes unused, \
-                 or press Update now."
-            ),
-        };
-        content = content.push(text(when).size(12).color(theme::YELLOW));
-    }
-    if let Some(notes) = &offer.notes {
-        content = content.push(muted(format!("Release notes: {notes}")).size(11));
-    }
-
-    content = content.push(rule::horizontal(1));
-    content = content.push(
-        checkbox(offer.auto)
-            .label("Install firmware updates automatically")
-            .text_size(12)
-            .on_toggle(|v| Message::ToggleUpdater(UpdateComponent::Firmware, v)),
-    );
-    content = content.push(
-        muted(format!(
-            "Only once the pad has gone {} minutes unused, never during a map: an \
-             update stops the pad being a keyboard for about {} seconds. A pad that \
-             does not start the new firmware goes back to the old one by itself.",
-            offer.auto_after_minutes.max(1),
-            offer.outage_seconds.max(1)
-        ))
-        .size(11),
-    );
-
-    card(content).width(Length::Fill).into()
-}
-
-fn tosu_settings(app: &App) -> Element<'_, Message> {
-    let source_str = crate::tosu_source_status(app.tosu_override_path.as_deref());
-    let conn_str = if app.tosu_connected {
-        "Connected (streaming telemetry)"
-    } else {
-        "Not running / Disconnected"
-    };
-
-    let override_text = app
-        .tosu_override_path
-        .as_ref()
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|| "Using default / bundled tosu".to_string());
-
-    let mut actions = row![button(text("Browse external tosu...").size(12))
-        .padding([6, 12])
-        .style(theme::secondary)
-        .on_press(Message::PickTosuPath),]
-    .spacing(8);
-
-    if app.tosu_override_path.is_some() {
-        actions = actions.push(
-            button(text("Use bundled").size(12))
-                .padding([6, 12])
-                .style(theme::secondary)
-                .on_press(Message::ResetTosuPath),
+        ),
+        line("Last sync", when(app.last_sync_time.as_deref())),
+    ]
+    .spacing(10);
+    if let Some(error) = &app.last_sync_error {
+        this_pad = this_pad.push(
+            text(format!("The last sync did not work: {error}"))
+                .size(13)
+                .color(theme::YELLOW),
         );
     }
-
-    card(
-        column![
-            caption("TOSU INTEGRATION"),
-            row![muted("Binary source:").width(140), text(source_str).size(13)].spacing(8),
-            row![muted("Status:").width(140), text(conn_str).size(13)].spacing(8),
-            row![muted("Custom path:").width(140), text(override_text).size(13)].spacing(8),
-            actions,
-            muted("tosu reads game memory and feeds live map telemetry (PP, accuracy, hit counts) to the pad display.").size(12),
-        ]
-        .spacing(10),
-    )
-    .into()
-}
-
-fn about_section() -> Element<'static, Message> {
-    card(
-        column![
-            caption("ABOUT & THIRD-PARTY SOFTWARE"),
-            row![
-                muted("Application:").width(140),
-                text(format!("OPad v{}", env!("CARGO_PKG_VERSION"))).size(13)
-            ]
-            .spacing(8),
-            row![
-                muted("License:").width(140),
-                text("GPL-3.0-or-later (GFerreiroS)").size(13)
-            ]
-            .spacing(8),
-            Space::new().height(4),
-            column![
-                text("Bundled Component: tosu").size(13).font(theme::FONT_BOLD),
-                muted("Author: Mikhail Babynichev and the tosu contributors").size(12),
-                muted("License: GNU Lesser General Public License v3.0 (LGPL-3.0)").size(12),
-                muted("Repository: https://github.com/KotRikD/tosu").size(12),
-                muted("Under LGPL-3.0, you may replace this bundled component with your own version via the setting above or $OPAD_TOSU_PATH.").size(11),
-            ]
-            .spacing(4),
-        ]
-        .spacing(8),
-    )
-    .into()
-}
-
-// ---- device ---------------------------------------------------------------------------------
-
-pub fn device(app: &App) -> Element<'_, Message> {
-    let info = app.device_info.as_ref();
-    let line = |label: &'static str, value: String| {
-        row![muted(label).width(170), text(value).size(14)].spacing(8)
-    };
-
-    let details = card(
-        column![
-            text("Pad").size(18).font(theme::FONT_BOLD),
-            line(
-                "Device ID",
-                info.map(|i| i.device_id.as_str())
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or("—")
-                    .to_string(),
-            ),
-            line(
-                "Board",
-                info.map(|i| i.board_profile.as_str())
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or("—")
-                    .to_string(),
-            ),
-            line(
-                "Firmware",
-                info.map(|i| i.firmware_version.as_str())
-                    .filter(|s| !s.is_empty())
-                    .unwrap_or("—")
-                    .to_string(),
-            ),
-            line(
+    this_pad = this_pad.push(
+        button(
+            text(if app.pad_details {
+                "Hide details"
+            } else {
+                "Details"
+            })
+            .size(13),
+        )
+        .style(theme::secondary)
+        .on_press(Message::TogglePadDetails),
+    );
+    if app.pad_details {
+        this_pad = this_pad
+            .push(line(
                 "Running slot",
-                info.and_then(|i| i.running_partition.as_deref())
-                    .or_else(|| {
-                        app.firmware_offer
-                            .as_ref()
-                            .and_then(|o| o.running_partition.as_deref())
-                    })
-                    .unwrap_or("—")
-                    .to_string(),
-            ),
-            line("Mode", format!("{:?}", app.mode)),
-            line("Counters source", format!("{:?}", app.counters_source)),
-            line(
-                "tosu",
-                format!(
-                    "{} ({})",
-                    if app.tosu_connected {
-                        "Connected"
-                    } else {
-                        "Disconnected"
-                    },
-                    crate::tosu_source_status(app.tosu_override_path.as_deref())
+                known(
+                    info.and_then(|i| i.running_partition.as_deref())
+                        .or_else(|| {
+                            app.firmware_offer
+                                .as_ref()
+                                .and_then(|o| o.running_partition.as_deref())
+                        }),
                 ),
-            ),
-            line(
+            ))
+            .push(line(
+                "Counters source",
+                format!("{:?}", app.counters_source),
+            ))
+            .push(line(
                 "Counter generation",
-                app.counters.counter_generation.to_string()
+                app.counters.counter_generation.to_string(),
+            ));
+    }
+
+    // ---- counters ----
+    let pc = app.pc_counters.as_ref();
+    let on_pad = app.esp_counters.as_ref().unwrap_or(&app.counters);
+    let pc_gen = pc.map_or(0, |c| c.counter_generation);
+    // Key 3 is counted by the pad and reported as one figure
+    let key3 = app.key3.map(|k| k.lifetime);
+    let rows: Vec<(&str, u64, u64)> = [
+        Some((
+            "Key 1",
+            pc.map_or(0, |c| c.lifetime_key1),
+            on_pad.lifetime_key1,
+        )),
+        Some((
+            "Key 2",
+            pc.map_or(0, |c| c.lifetime_key2),
+            on_pad.lifetime_key2,
+        )),
+        key3.map(|k| ("Key 3", k, k)),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let differ = app.device_connected
+        && (rows.iter().any(|(_, a, b)| a != b) || pc_gen != on_pad.counter_generation);
+
+    let cell = |value: String, warn: bool| {
+        text(value)
+            .size(14)
+            .color(if warn { theme::YELLOW } else { theme::WHITE })
+            .width(Length::FillPortion(3))
+    };
+    let mut table = column![row![
+        muted("").size(13).width(Length::FillPortion(2)),
+        muted("On this PC").size(13).width(Length::FillPortion(3)),
+        muted("On the pad").size(13).width(Length::FillPortion(3)),
+    ]]
+    .spacing(8);
+    for (label, on_pc, on_pad_value) in &rows {
+        let warn = app.device_connected && on_pc != on_pad_value;
+        table = table.push(row![
+            text(*label).size(14).width(Length::FillPortion(2)),
+            cell(grouped(*on_pc), warn),
+            cell(
+                if app.device_connected {
+                    grouped(*on_pad_value)
+                } else {
+                    "-".into()
+                },
+                warn
             ),
-            line(
-                "Last sync",
-                app.last_sync_time.clone().unwrap_or_else(|| "Never".into())
-            ),
-        ]
-        .spacing(10),
-    );
+        ]);
+    }
 
-    let playing_or_cooldown = matches!(
-        app.mode,
-        opad_model::RuntimeMode::Playing | opad_model::RuntimeMode::Cooldown
-    );
-
-    let pc_k1 = app
-        .pc_counters
-        .as_ref()
-        .map(|c| c.lifetime_key1)
-        .unwrap_or(0);
-    let pc_k2 = app
-        .pc_counters
-        .as_ref()
-        .map(|c| c.lifetime_key2)
-        .unwrap_or(0);
-    let pc_total = pc_k1 + pc_k2;
-    let pc_gen = app
-        .pc_counters
-        .as_ref()
-        .map(|c| c.counter_generation)
-        .unwrap_or(0);
-
-    let esp_k1 = app
-        .esp_counters
-        .as_ref()
-        .map(|c| c.lifetime_key1)
-        .unwrap_or(app.counters.lifetime_key1);
-    let esp_k2 = app
-        .esp_counters
-        .as_ref()
-        .map(|c| c.lifetime_key2)
-        .unwrap_or(app.counters.lifetime_key2);
-    let esp_total = esp_k1 + esp_k2;
-    let esp_gen = app
-        .esp_counters
-        .as_ref()
-        .map(|c| c.counter_generation)
-        .unwrap_or(app.counters.counter_generation);
-
-    let has_mismatch =
-        (pc_k1 != esp_k1 || pc_k2 != esp_k2 || pc_gen != esp_gen) && app.device_connected;
-
-    let k1_color = if app.device_connected && pc_k1 != esp_k1 {
-        theme::YELLOW
+    let state = if !app.device_connected {
+        text("No pad connected").size(13).color(theme::MUTED)
+    } else if differ {
+        text("The PC and the pad differ")
+            .size(13)
+            .font(theme::FONT_BOLD)
+            .color(theme::YELLOW)
     } else {
-        theme::WHITE
+        text("The PC and the pad agree")
+            .size(13)
+            .color(theme::GREEN)
     };
-    let k2_color = if app.device_connected && pc_k2 != esp_k2 {
-        theme::YELLOW
-    } else {
-        theme::WHITE
-    };
-    let total_color = if app.device_connected && pc_total != esp_total {
-        theme::YELLOW
-    } else {
-        theme::WHITE
-    };
-    let gen_color = if app.device_connected && pc_gen != esp_gen {
-        theme::YELLOW
-    } else {
-        theme::WHITE
-    };
-
-    let mut counter_col = column![
+    let usable = app.device_connected && !playing;
+    let mut counters = column![
         row![
-            text("Counter Reconciliation State")
-                .size(18)
-                .font(theme::FONT_BOLD),
+            help("Every press is counted on the pad and kept on this PC too."),
             Space::new().width(Length::Fill),
-            if has_mismatch {
-                text("⚠ MISMATCH DETECTED")
-                    .size(12)
-                    .font(theme::FONT_BOLD)
-                    .color(theme::YELLOW)
-            } else if app.device_connected {
-                text("✓ SYNCHRONIZED")
-                    .size(12)
-                    .font(theme::FONT_BOLD)
-                    .color(theme::GREEN)
-            } else {
-                text("PAD DISCONNECTED").size(12).color(theme::MUTED)
-            }
+            state
         ]
         .align_y(Alignment::Center),
-        muted("Hardware pad counters compared against host PC SQLite database."),
-        container(
-            column![
-                row![
-                    text("Metric")
-                        .size(12)
-                        .color(theme::MUTED)
-                        .width(Length::FillPortion(2)),
-                    text("PC Database")
-                        .size(12)
-                        .color(theme::MUTED)
-                        .width(Length::FillPortion(3)),
-                    text("PAD Hardware")
-                        .size(12)
-                        .color(theme::MUTED)
-                        .width(Length::FillPortion(3)),
-                ],
-                row![
-                    text("Generation").size(13).width(Length::FillPortion(2)),
-                    text(pc_gen.to_string())
-                        .size(13)
-                        .color(gen_color)
-                        .width(Length::FillPortion(3)),
-                    text(if app.device_connected {
-                        esp_gen.to_string()
-                    } else {
-                        "-".into()
-                    })
-                    .size(13)
-                    .color(gen_color)
-                    .width(Length::FillPortion(3)),
-                ],
-                row![
-                    text("Key 1 (K1)").size(13).width(Length::FillPortion(2)),
-                    text(format!("{} presses", grouped(pc_k1)))
-                        .size(13)
-                        .color(k1_color)
-                        .width(Length::FillPortion(3)),
-                    text(if app.device_connected {
-                        format!("{} presses", grouped(esp_k1))
-                    } else {
-                        "-".into()
-                    })
-                    .size(13)
-                    .color(k1_color)
-                    .width(Length::FillPortion(3)),
-                ],
-                row![
-                    text("Key 2 (K2)").size(13).width(Length::FillPortion(2)),
-                    text(format!("{} presses", grouped(pc_k2)))
-                        .size(13)
-                        .color(k2_color)
-                        .width(Length::FillPortion(3)),
-                    text(if app.device_connected {
-                        format!("{} presses", grouped(esp_k2))
-                    } else {
-                        "-".into()
-                    })
-                    .size(13)
-                    .color(k2_color)
-                    .width(Length::FillPortion(3)),
-                ],
-                row![
-                    text("Total")
-                        .size(13)
-                        .font(theme::FONT_BOLD)
-                        .width(Length::FillPortion(2)),
-                    text(format!("{} presses", grouped(pc_total)))
-                        .size(13)
-                        .font(theme::FONT_BOLD)
-                        .color(total_color)
-                        .width(Length::FillPortion(3)),
-                    text(if app.device_connected {
-                        format!("{} presses", grouped(esp_total))
-                    } else {
-                        "-".into()
-                    })
-                    .size(13)
-                    .font(theme::FONT_BOLD)
-                    .color(total_color)
-                    .width(Length::FillPortion(3)),
-                ],
-            ]
-            .spacing(8)
-        )
-        .padding(12)
-        .style(theme::card),
+        container(table).padding(14).style(theme::outlined_card),
+        row![
+            button(text("Sync now").size(14))
+                .padding([9, 18])
+                .style(theme::secondary)
+                .on_press_maybe(usable.then_some(Message::Sync)),
+            button(text("Reset lifetime counters").size(14))
+                .padding([9, 18])
+                .style(theme::danger)
+                .on_press_maybe(usable.then_some(Message::PromptResetCounters)),
+        ]
+        .spacing(10),
     ]
     .spacing(12);
-
-    if has_mismatch && !playing_or_cooldown {
-        counter_col = counter_col.push(
+    if differ && !playing {
+        counters = counters.push(
             row![
-                button(text("Restore PAD from PC").size(13))
-                    .padding([8, 14])
+                button(text("Restore pad from PC").size(14))
+                    .padding([9, 18])
                     .style(theme::secondary)
                     .on_press(Message::PromptRestoreDeviceFromPc),
-                button(text("Import PC from PAD").size(13))
-                    .padding([8, 14])
+                button(text("Import PC from pad").size(14))
+                    .padding([9, 18])
                     .style(theme::secondary)
                     .on_press(Message::PromptImportPcFromDevice),
             ]
             .spacing(10),
         );
     }
-
-    let counter_table = card(counter_col);
-
-    let actions = card(
-        column![
-            text("Actions").size(18).font(theme::FONT_BOLD),
-            row![
-                button(text("Sync now").size(14))
-                    .padding([10, 18])
-                    .style(theme::secondary)
-                    .on_press(Message::Sync),
-                muted("Reconcile counters with the database and set the pad's clock.").size(13),
-            ]
-            .spacing(14)
-            .align_y(Alignment::Center),
-            row![
-                button(text("Update firmware").size(14))
-                    .padding([10, 18])
-                    .style(theme::secondary)
-                    .on_press(Message::Navigate(crate::Page::Settings)),
-                muted("Firmware updates are verified and installed on the Settings page.").size(13),
-            ]
-            .spacing(14)
-            .align_y(Alignment::Center),
-            row![
-                button(text("Reset lifetime counters").size(14))
-                    .padding([10, 18])
-                    .style(theme::danger)
-                    .on_press(Message::PromptResetCounters),
-                muted("Sets K1 and K2 back to zero. This cannot be undone.").size(13),
-            ]
-            .spacing(14)
-            .align_y(Alignment::Center),
-        ]
-        .spacing(14),
-    );
-
-    let export_btn = button(text("Export backup").size(14))
-        .padding([10, 18])
-        .style(if playing_or_cooldown {
-            theme::secondary
-        } else {
-            theme::primary
-        });
-    let export_btn = if !playing_or_cooldown {
-        export_btn.on_press(Message::ExportBackup)
-    } else {
-        export_btn
-    };
-
-    let import_btn = button(text("Import backup").size(14))
-        .padding([10, 18])
-        .style(theme::secondary);
-    let import_btn = if !playing_or_cooldown {
-        import_btn.on_press(Message::StartImportBackup)
-    } else {
-        import_btn
-    };
-
-    let mut backup_content = column![
-        text("Backup & Restore").size(18).font(theme::FONT_BOLD),
-        muted("Save your lifetime counters and device configuration to a file, or restore from a previous backup."),
-        row![export_btn, import_btn].spacing(12),
-    ]
-    .spacing(10);
-
-    if playing_or_cooldown {
-        backup_content = backup_content.push(
-            text("⚠ Backup operations are disabled during active gameplay and cooldown.")
-                .size(13)
-                .color(theme::YELLOW),
-        );
+    if app.device_connected && playing {
+        counters = counters.push(help("Not during a map: these wait until it has ended."));
+    } else if !app.device_connected {
+        counters = counters.push(help("Connect your pad to sync or reset its counters."));
     }
 
-    let backup = card(backup_content);
+    // ---- backup ----
+    let backup = column![
+        help("Your lifetime counters and the pad's settings, in a file."),
+        row![
+            button(text("Export backup").size(14))
+                .padding([9, 18])
+                .style(theme::secondary)
+                .on_press_maybe((!playing).then_some(Message::ExportBackup)),
+            button(text("Import backup").size(14))
+                .padding([9, 18])
+                .style(theme::secondary)
+                .on_press_maybe((!playing).then_some(Message::StartImportBackup)),
+        ]
+        .spacing(10),
+        line("Last automatic backup", when(app.last_backup.as_deref())),
+    ]
+    .spacing(12);
 
-    scrollable(column![heading("Device"), details, counter_table, actions, backup].spacing(14))
-        .into()
+    scrolling(
+        column![
+            heading("Pad"),
+            section("This pad", this_pad),
+            section("Counters", counters),
+            section("Backup", backup),
+        ]
+        .spacing(14),
+    )
+    .into()
 }
 
-// ---- monitor --------------------------------------------------------------------------------
+// ---- logs -----------------------------------------------------------------------------------
 
 fn filter_btn<'a>(label: &'a str, selected: bool, msg: Message) -> Element<'a, Message> {
-    button(text(label).size(12))
-        .padding([4, 10])
+    button(text(label).size(13))
+        .padding([5, 10])
         .style(if selected {
             theme::primary
         } else {
@@ -1469,33 +557,34 @@ fn filter_btn<'a>(label: &'a str, selected: bool, msg: Message) -> Element<'a, M
         .into()
 }
 
-pub fn monitor(app: &App) -> Element<'_, Message> {
+/// Troubleshooting's Logs tab: what the service, this app, tosu and the pad wrote
+pub fn logs(app: &App) -> Element<'_, Message> {
     use opad_model::{LogLevel, LogSource};
 
     let severity_filters = row![
-        caption("LEVEL:"),
+        caption("LEVEL"),
         filter_btn(
-            "ALL",
+            "All",
             app.log_filter_level.is_none(),
             Message::FilterLogLevel(None)
         ),
         filter_btn(
-            "DEBUG",
+            "Debug",
             app.log_filter_level == Some(LogLevel::Debug),
             Message::FilterLogLevel(Some(LogLevel::Debug))
         ),
         filter_btn(
-            "INFO",
+            "Info",
             app.log_filter_level == Some(LogLevel::Info),
             Message::FilterLogLevel(Some(LogLevel::Info))
         ),
         filter_btn(
-            "WARN",
+            "Warning",
             app.log_filter_level == Some(LogLevel::Warn),
             Message::FilterLogLevel(Some(LogLevel::Warn))
         ),
         filter_btn(
-            "ERROR",
+            "Error",
             app.log_filter_level == Some(LogLevel::Error),
             Message::FilterLogLevel(Some(LogLevel::Error))
         ),
@@ -1504,29 +593,29 @@ pub fn monitor(app: &App) -> Element<'_, Message> {
     .align_y(Alignment::Center);
 
     let source_filters = row![
-        caption("SOURCE:"),
+        caption("SOURCE"),
         filter_btn(
-            "ALL",
+            "All",
             app.log_filter_source.is_none(),
             Message::FilterLogSource(None)
         ),
         filter_btn(
-            "DAEMON",
+            "Service",
             app.log_filter_source == Some(LogSource::Host),
             Message::FilterLogSource(Some(LogSource::Host))
         ),
         filter_btn(
-            "PROGRAM",
+            "App",
             app.log_filter_source == Some(LogSource::Program),
             Message::FilterLogSource(Some(LogSource::Program))
         ),
         filter_btn(
-            "TOSU",
+            "tosu",
             app.log_filter_source == Some(LogSource::Tosu),
             Message::FilterLogSource(Some(LogSource::Tosu))
         ),
         filter_btn(
-            "DEVICE",
+            "Pad",
             app.log_filter_source == Some(LogSource::Esp),
             Message::FilterLogSource(Some(LogSource::Esp))
         ),
@@ -1545,31 +634,34 @@ pub fn monitor(app: &App) -> Element<'_, Message> {
         .collect();
 
     let action_row = row![
-        button(text("Clear").size(12))
-            .padding([4, 12])
+        button(text("Clear").size(13))
+            .padding([5, 12])
             .style(theme::secondary)
             .on_press(Message::ClearLogs),
-        button(text("Copy").size(12))
-            .padding([4, 12])
+        button(text("Copy").size(13))
+            .padding([5, 12])
             .style(theme::secondary)
             .on_press(Message::CopyLogs),
-        button(text("Save log").size(12))
-            .padding([4, 12])
+        button(text("Save log").size(13))
+            .padding([5, 12])
             .style(theme::secondary)
             .on_press(Message::SaveLogs),
         button(
             text(if app.log_auto_scroll {
-                "Auto-scroll (Newest First)"
+                "Newest first"
             } else {
-                "Order (Oldest First)"
+                "Oldest first"
             })
-            .size(12)
+            .size(13)
         )
-        .padding([4, 12])
+        .padding([5, 12])
         .style(theme::secondary)
         .on_press(Message::ToggleAutoScroll),
         Space::new().width(Length::Fill),
-        caption(format!("{} entries (24h retention)", visible_entries.len())),
+        caption(format!(
+            "{} entries, kept for 24 hours",
+            visible_entries.len()
+        )),
     ]
     .spacing(8)
     .align_y(Alignment::Center);
@@ -1606,155 +698,42 @@ pub fn monitor(app: &App) -> Element<'_, Message> {
     let lines = column(rendered_items).spacing(4);
 
     column![
-        heading("Logs"),
-        muted("Live logs from daemon, program, tosu and device (24h retention)."),
         filter_row,
         action_row,
-        card(scrollable(lines).height(Length::Fill)).height(Length::Fill),
+        card(scrollable(lines).height(Length::Fixed(460.0))),
     ]
     .spacing(12)
     .into()
 }
 
-pub use monitor as logs;
-
-pub fn about<'a>(_app: &'a App) -> Element<'a, Message> {
-    let title_section = column![
-        row![
-            text("OPad")
-                .size(28)
-                .font(theme::FONT_BOLD)
-                .color(theme::PINK),
-            text(format!("v{}", env!("CARGO_PKG_VERSION")))
-                .size(16)
-                .font(theme::FONT_BOLD)
-                .color(theme::MUTED),
-        ]
-        .spacing(12)
-        .align_y(Alignment::Center),
-        muted("Low-latency ESP32-S3 rhythm gaming keypad manager, telemetry HUD, and tray applet for osu!"),
-        text("Developed by GFerreiroS <info@gferreiro.com>").size(13).color(theme::MUTED),
-        text("Repository: https://github.com/OPad-dev/OPad").size(13).color(theme::CYAN),
-    ]
-    .spacing(6);
-
-    let system_info = card(
-        column![
-            text("System & Hardware").size(16).font(theme::FONT_BOLD),
-            row![
-                text("Hardware Target:")
-                    .size(13)
-                    .width(Length::FillPortion(2)),
-                text("ESP32-S3 (Waveshare Touch LCD 2)")
-                    .size(13)
-                    .color(theme::WHITE)
-                    .width(Length::FillPortion(3)),
-            ],
-            row![
-                text("Desktop Architecture:")
-                    .size(13)
-                    .width(Length::FillPortion(2)),
-                text("Rust, iced, tokio, prost")
-                    .size(13)
-                    .color(theme::WHITE)
-                    .width(Length::FillPortion(3)),
-            ],
-            row![
-                text("Bundled tosu:").size(13).width(Length::FillPortion(2)),
-                text("v4.26.2 (reads osu! memory for the HUD)")
-                    .size(13)
-                    .color(theme::WHITE)
-                    .width(Length::FillPortion(3)),
-            ],
-        ]
-        .spacing(8),
-    );
-
-    // Each line is a component actually shipped, attributed as its own
-    // licence file does; the full texts are in the files named at the bottom
-    let credit = |name: &'a str, detail: &'a str| {
-        column![text(name).size(14).font(theme::FONT_BOLD), muted(detail)].spacing(2)
-    };
-    let licenses_section = card(
-        column![
-            text("Open source licences").size(16).font(theme::FONT_BOLD),
-            credit(
-                "OPad (app and firmware)",
-                "GNU GPL v3.0 or later. Copyright (c) 2026 GFerreiroS."
-            ),
-            credit(
-                "tosu (bundled osu! memory reader)",
-                "LGPL-3.0-only. Mikhail Babynichev and the tosu contributors. \
-                 Source: https://github.com/KotRikD/tosu (the exact version is \
-                 published with each OPad release). You may replace it: Settings → tosu."
-            ),
-            credit(
-                "Node.js 24 (inside the bundled tosu)",
-                "MIT License, with the licences of what Node embeds (OpenSSL, ICU, \
-                 libuv, V8, ...)."
-            ),
-            credit(
-                "Rust crates (this app)",
-                "MIT, Apache-2.0, BSD, ISC, MPL-2.0, Zlib and others; one entry per crate \
-                 with its licence text."
-            ),
-            credit(
-                "Montserrat font",
-                "SIL Open Font License 1.1. Copyright 2011 The Montserrat Project Authors."
-            ),
-            credit(
-                "Firmware: ESP-IDF, TinyUSB, FreeRTOS, LVGL, Nanopb",
-                "Apache-2.0 (ESP-IDF, esp_tinyusb, esp_lvgl_port, Espressif Systems); \
-                 MIT (TinyUSB, hathach; FreeRTOS, Amazon; LVGL, LVGL Kft); \
-                 Zlib (Nanopb, Petteri Aimonen)."
-            ),
-            muted(
-                "Full texts: THIRD_PARTY_NOTICES.html next to the app, \
-                 tosu/THIRD_PARTY_NOTICES.txt, and FIRMWARE_THIRD_PARTY_NOTICES.md \
-                 with each release."
-            ),
-        ]
-        .spacing(14),
-    );
-
-    scrollable(
-        column![
-            heading("About & Licenses"),
-            title_section,
-            system_info,
-            licenses_section,
-        ]
-        .spacing(16),
-    )
-    .into()
-}
-
 pub fn calibration(app: &App) -> Element<'_, Message> {
     let mut content = column![
-        heading("Hall Effect Calibration"),
-        muted(
-            "Calibrate magnetic rest baseline and full bottom-out travel for Hall Effect switches."
-        ),
+        row![
+            heading("Calibrate the keys"),
+            Space::new().width(Length::Fill),
+            button(text("Back to Keys").size(13))
+                .style(theme::secondary)
+                .on_press(Message::CloseCalibration),
+        ]
+        .align_y(Alignment::Center),
+        muted("Measures where each Hall Effect key rests and how far it travels.").size(14),
     ]
     .spacing(14);
 
     if !app.device_connected {
         content = content.push(card(
             column![
-                text("OPad is disconnected").size(16).font(theme::FONT_BOLD),
-                muted("Connect your OPad via USB to perform switch calibration.").size(13),
-                row![button(text("Return to Dashboard").size(13))
-                    .style(theme::secondary)
-                    .on_press(Message::Navigate(crate::Page::Dashboard)),],
+                text("No pad connected").size(16).font(theme::FONT_BOLD),
+                muted("Connect your pad to calibrate its keys.").size(14),
             ]
             .spacing(14),
         ));
-        return scrollable(content).into();
+        return scrolling(content).into();
     }
 
     if !app.device_info.as_ref().is_some_and(|i| i.he_calibration) {
-        return scrollable(content.push(card(text(
-            "This pad does not support Hall Effect calibration.",
+        return scrolling(content.push(card(text(
+            "This pad's keys are not Hall Effect: there is nothing to calibrate.",
         ))))
         .into();
     }
@@ -1798,31 +777,28 @@ pub fn calibration(app: &App) -> Element<'_, Message> {
     let body = match stage {
         opad_model::HeCalStage::None => {
             let mut col = column![
-                text("Switch Travel Calibration")
-                    .size(16)
-                    .font(theme::FONT_BOLD),
+                text("Three short steps").size(16).font(theme::FONT_BOLD),
                 muted(
-                    "Calibration measures the rest position and maximum bottom-out depth for each \
-                     Hall Effect key switch. Once saved, switch thresholds adapt automatically to \
-                     your switches and springs.",
+                    "The pad measures each key at rest and fully pressed, and sets where the \
+                     keys press from that.",
                 )
-                .size(13),
+                .size(14),
                 {
                     let three = app.device_info.as_ref().is_some_and(|i| i.key_count >= 3);
                     let mut steps = column![
                         text(if three {
-                            "1. Release all keys (measures rest magnetic baseline)"
+                            "1. Take your fingers off all three keys."
                         } else {
-                            "1. Release both keys (measures rest magnetic baseline)"
+                            "1. Take your fingers off both keys."
                         })
-                        .size(13),
-                        text("2. Press Key 1 down to the bottom 5 times slowly").size(13),
-                        text("3. Press Key 2 down to the bottom 5 times slowly").size(13),
+                        .size(14),
+                        text("2. Press Key 1 all the way down 5 times, slowly.").size(14),
+                        text("3. Press Key 2 all the way down 5 times, slowly.").size(14),
                     ]
                     .spacing(6);
                     if three {
                         steps = steps.push(
-                            text("4. Press Key 3 down to the bottom 5 times slowly").size(13),
+                            text("4. Press Key 3 all the way down 5 times, slowly.").size(14),
                         );
                     }
                     steps
@@ -1836,9 +812,9 @@ pub fn calibration(app: &App) -> Element<'_, Message> {
 
             let start_btn = button(
                 text(if app.cal_starting {
-                    "Starting..."
+                    "Starting…"
                 } else {
-                    "Start Calibration"
+                    "Start"
                 })
                 .size(14)
                 .font(theme::FONT_BOLD),
@@ -1858,7 +834,7 @@ pub fn calibration(app: &App) -> Element<'_, Message> {
                     Space::new().width(12),
                     button(text("Cancel").size(13))
                         .style(theme::secondary)
-                        .on_press(Message::Navigate(crate::Page::Settings)),
+                        .on_press(Message::CloseCalibration),
                 ]
                 .align_y(Alignment::Center),
             );
@@ -1867,14 +843,14 @@ pub fn calibration(app: &App) -> Element<'_, Message> {
         }
         opad_model::HeCalStage::Rest => card(
             column![
-                text("Step 1: Measuring Rest Position")
-                    .size(16)
-                    .font(theme::FONT_BOLD),
-                muted("Please release both keys completely and touch nothing on the pad.").size(13),
-                text("Measuring baseline magnetic field and sensor noise (64 samples)...").size(13),
+                text("Step 1: keys at rest").size(16).font(theme::FONT_BOLD),
+                muted("Take your fingers off the keys and do not touch the pad.").size(14),
+                text("Measuring…").size(14),
                 if let Some(p) = progress {
                     if p.raw_value > 0 {
-                        text(format!("Live ADC: {}", p.raw_value)).size(12)
+                        text(format!("Sensor reading: {}", p.raw_value))
+                            .size(12)
+                            .color(theme::MUTED)
                     } else {
                         text("")
                     }
@@ -1889,20 +865,21 @@ pub fn calibration(app: &App) -> Element<'_, Message> {
         ),
         opad_model::HeCalStage::Key1 => card(
             column![
-                text("Step 2: Press Key 1 (5 Times)")
+                text("Step 2: press Key 1 5 times")
                     .size(16)
                     .font(theme::FONT_BOLD),
-                muted("Press Key 1 firmly down to the bottom and release. Repeat 5 times slowly.")
-                    .size(13),
+                muted("Press Key 1 all the way down and let go, slowly, 5 times.").size(14),
                 progress_boxes(progress.map(|p| p.presses_done).unwrap_or(0)),
                 text(format!(
-                    "Presses recorded: {} of 5",
+                    "{} of 5",
                     progress.map(|p| p.presses_done).unwrap_or(0)
                 ))
-                .size(13),
+                .size(14),
                 if let Some(p) = progress {
                     if p.raw_value > 0 {
-                        text(format!("Live ADC: {}", p.raw_value)).size(12)
+                        text(format!("Sensor reading: {}", p.raw_value))
+                            .size(12)
+                            .color(theme::MUTED)
                     } else {
                         text("")
                     }
@@ -1917,20 +894,21 @@ pub fn calibration(app: &App) -> Element<'_, Message> {
         ),
         opad_model::HeCalStage::Key2 => card(
             column![
-                text("Step 3: Press Key 2 (5 Times)")
+                text("Step 3: press Key 2 5 times")
                     .size(16)
                     .font(theme::FONT_BOLD),
-                muted("Press Key 2 firmly down to the bottom and release. Repeat 5 times slowly.")
-                    .size(13),
+                muted("Press Key 2 all the way down and let go, slowly, 5 times.").size(14),
                 progress_boxes(progress.map(|p| p.presses_done).unwrap_or(0)),
                 text(format!(
-                    "Presses recorded: {} of 5",
+                    "{} of 5",
                     progress.map(|p| p.presses_done).unwrap_or(0)
                 ))
-                .size(13),
+                .size(14),
                 if let Some(p) = progress {
                     if p.raw_value > 0 {
-                        text(format!("Live ADC: {}", p.raw_value)).size(12)
+                        text(format!("Sensor reading: {}", p.raw_value))
+                            .size(12)
+                            .color(theme::MUTED)
                     } else {
                         text("")
                     }
@@ -1945,20 +923,21 @@ pub fn calibration(app: &App) -> Element<'_, Message> {
         ),
         opad_model::HeCalStage::Key3 => card(
             column![
-                text("Step 4: Press Key 3 (5 Times)")
+                text("Step 4: press Key 3 5 times")
                     .size(16)
                     .font(theme::FONT_BOLD),
-                muted("Press Key 3 firmly down to the bottom and release. Repeat 5 times slowly.")
-                    .size(13),
+                muted("Press Key 3 all the way down and let go, slowly, 5 times.").size(14),
                 progress_boxes(progress.map(|p| p.presses_done).unwrap_or(0)),
                 text(format!(
-                    "Presses recorded: {} of 5",
+                    "{} of 5",
                     progress.map(|p| p.presses_done).unwrap_or(0)
                 ))
-                .size(13),
+                .size(14),
                 if let Some(p) = progress {
                     if p.raw_value > 0 {
-                        text(format!("Live ADC: {}", p.raw_value)).size(12)
+                        text(format!("Sensor reading: {}", p.raw_value))
+                            .size(12)
+                            .color(theme::MUTED)
                     } else {
                         text("")
                     }
@@ -1973,15 +952,11 @@ pub fn calibration(app: &App) -> Element<'_, Message> {
         ),
         opad_model::HeCalStage::Success => card(
             column![
-                text("✓ Calibration Complete")
+                text("Calibration done")
                     .size(18)
                     .font(theme::FONT_BOLD)
-                    .color(Color::from_rgb8(80, 220, 100)),
-                muted(
-                    "Every switch is calibrated. The calibration is saved on the pad, and the \
-                     keypad lock has been lifted.",
-                )
-                .size(13),
+                    .color(theme::GREEN),
+                muted("Every key is calibrated and saved on the pad. The keys work now.").size(14),
                 if let Some(p) = progress {
                     if p.key1_full > 0 && p.key2_full > 0 {
                         let key3 = if p.key3_full > 0 {
@@ -2001,12 +976,12 @@ pub fn calibration(app: &App) -> Element<'_, Message> {
                     text("")
                 },
                 row![
-                    button(text("Go to Dashboard").size(14).font(theme::FONT_BOLD))
+                    button(text("Back to Keys").size(14).font(theme::FONT_BOLD))
                         .padding([8, 18])
                         .style(theme::primary)
-                        .on_press(Message::Navigate(crate::Page::Dashboard)),
+                        .on_press(Message::CloseCalibration),
                     Space::new().width(12),
-                    button(text("Recalibrate Again").size(13))
+                    button(text("Calibrate again").size(13))
                         .style(theme::secondary)
                         .on_press(Message::StartCalibration),
                 ]
@@ -2018,54 +993,54 @@ pub fn calibration(app: &App) -> Element<'_, Message> {
             let err_text = if let Some(p) = progress {
                 match p.error {
                     opad_model::HeCalError::RestNotStill => {
-                        "Rest position was not still. Ensure fingers are completely off both keys."
+                        "The keys moved while they were measured at rest. Keep your fingers off them and try again."
                     }
                     opad_model::HeCalError::RestOutOfRange => {
-                        "Rest magnetic reading was outside normal limits. Check switch magnet orientation."
+                        "A key reads far from where a key at rest should. Check that its switch is seated and its magnet is the right way round."
                     }
                     opad_model::HeCalError::RestPressed => {
-                        "A key appeared pressed during the rest measurement."
+                        "A key was pressed while the keys were measured at rest. Let go of them and try again."
                     }
                     opad_model::HeCalError::SignalNotRising => {
-                        "Sensor signal did not increase during press."
+                        "A key did not read as going down when pressed. Check that its switch is seated and its magnet is the right way round."
                     }
                     opad_model::HeCalError::SpanTooSmall => {
-                        "Press travel span was too shallow. Make sure to press switches all the way down."
+                        "A key did not travel far enough. Press it all the way down each time."
                     }
                     opad_model::HeCalError::PeaksInconsistent => {
-                        "Bottom-out peak readings were inconsistent across the 5 presses."
+                        "The 5 presses did not go equally deep. Press the key all the way down each time."
                     }
-                    opad_model::HeCalError::TooFewPeaks => "Fewer than 5 presses were detected.",
-                    opad_model::HeCalError::TooManyPeaks => "Too many extra bounces or presses detected.",
-                    opad_model::HeCalError::Timeout => "Calibration timed out.",
+                    opad_model::HeCalError::TooFewPeaks => "Fewer than 5 presses were seen. Try again, a little slower.",
+                    opad_model::HeCalError::TooManyPeaks => "More than 5 presses were seen. Try again, one clean press at a time.",
+                    opad_model::HeCalError::Timeout => "The pad waited too long for a press. Try again.",
                     _ => {
                         if !p.error_message.is_empty() {
                             &p.error_message
                         } else {
-                            "Calibration did not complete successfully."
+                            "The pad did not say why. Try again."
                         }
                     }
                 }
             } else {
-                "Calibration did not complete successfully."
+                "The pad did not say why. Try again."
             };
 
             card(
                 column![
-                    text("⚠ Calibration Failed")
+                    text("Calibration did not finish")
                         .size(18)
                         .font(theme::FONT_BOLD)
-                        .color(Color::from_rgb8(240, 70, 70)),
-                    muted(err_text).size(13),
+                        .color(theme::RED),
+                    muted(err_text).size(14),
                     row![
-                        button(text("Retry Calibration").size(14).font(theme::FONT_BOLD))
+                        button(text("Try again").size(14).font(theme::FONT_BOLD))
                             .padding([8, 18])
                             .style(theme::primary)
                             .on_press(Message::StartCalibration),
                         Space::new().width(12),
-                        button(text("Cancel").size(13))
+                        button(text("Back to Keys").size(13))
                             .style(theme::secondary)
-                            .on_press(Message::Navigate(crate::Page::Settings)),
+                            .on_press(Message::CloseCalibration),
                     ]
                     .align_y(Alignment::Center),
                 ]
@@ -2075,5 +1050,5 @@ pub fn calibration(app: &App) -> Element<'_, Message> {
     };
 
     content = content.push(body);
-    scrollable(content).into()
+    scrolling(content).into()
 }

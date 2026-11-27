@@ -1,24 +1,29 @@
-//! Keys tab: Hall Effect actuation and rapid trigger settings, with a live
-//! cut-away of each switch. Shown only for a pad whose HE backend is running
-//! (HelloAck.he_calibration). Travel is a share of the key's calibrated
-//! magnetic span, never millimetres (decision record D3), so every value here
-//! is a percentage.
+//! The Keys page: what each key sends (Bindings), how a Hall Effect key
+//! presses (Key feel, with a live cut-away of each switch), which pins
+//! hand-wired switches are on (Wiring), and the settings few people touch
+//! (Advanced). Every pad has the page; the sections follow what the pad is.
+//! Hall Effect travel is a share of the key's calibrated magnetic span, never
+//! millimetres (decision record D3), so every value there is a percentage.
+//! Nothing here is sent as it is changed: the save bar sends it all
+//! (`App::form_config`).
 
 use crate::theme::{self, caption, heading, muted};
+use crate::widgets::{help, pad_section, section, with_save_bar};
 use crate::{ipc, App, Message};
 use iced::mouse;
 use iced::widget::canvas::{self, Frame, Geometry, Path, Stroke};
+use iced::widget::Space;
 use iced::widget::{
-    button, canvas as canvas_widget, column, container, row, slider, text, toggler,
+    button, canvas as canvas_widget, checkbox, column, container, pick_list, row, slider, text,
+    toggler,
 };
-use iced::widget::{scrollable, Space};
 use iced::{
     Alignment, Color, Element, Length, Pixels, Point, Rectangle, Renderer, Size, Task, Theme,
 };
 use opad_ipc::{IpcRequest, IpcResponse};
 use opad_model::{
-    he_effective, he_min_actuation, DeviceConfig, HeCalibrationStatus, HeEffective, HeKeyConfig,
-    HeLiveSample, HeRtMode,
+    he_effective, he_min_actuation, key_pin, DeviceConfig, HeCalibrationStatus, HeEffective,
+    HeKeyConfig, HeLiveSample, HeRtMode, KeyPin, KEY_PINS,
 };
 
 /// One setting of [`HeKeyConfig`], in the pad's 0.1 % units
@@ -44,7 +49,7 @@ pub enum KeysMessage {
     Continuous(usize, bool),
     /// Allow this key below the pad's noise floors
     NoFloor(usize, bool),
-    Save,
+    /// Back to the pad's settings (the save bar's Revert)
     Revert,
     PollLive,
     Live(Box<Result<IpcResponse, String>>),
@@ -59,7 +64,7 @@ pub struct KeysState {
     /// Edited values, not yet saved. `None` until the pad's are adopted.
     edit: Option<[HeKeyConfig; KEYS]>,
     dirty: bool,
-    /// What Save sent and the pad has not answered for yet
+    /// What Save to pad sent and the pad has not answered for yet
     saving: Option<[HeKeyConfig; KEYS]>,
     live: Option<HeLiveSample>,
     /// What the live view draws: each key's reading through a One Euro
@@ -255,33 +260,44 @@ impl OneEuro {
     }
 }
 
+/// The Hall Effect settings as edited, with each press point no lower than
+/// the pad would use anyway; `None` while nothing was edited
+fn edited(app: &App) -> Option<[HeKeyConfig; KEYS]> {
+    if !app.keys.dirty {
+        return None;
+    }
+    let mut edit = app.keys.edit?;
+    for (k, c) in edit.iter_mut().enumerate() {
+        c.actuation = c.actuation.max(slider_min(app, app.keys.separate, k, c));
+    }
+    Some(edit)
+}
+
+/// Put the edited Hall Effect settings into `config`, which Save to pad
+/// sends. Left alone when nothing was edited, so a pad without Hall Effect
+/// keys never gets settings for them.
+pub fn apply_edit(app: &App, config: &mut DeviceConfig) {
+    let Some([k1, k2, k3]) = edited(app) else {
+        return;
+    };
+    config.key1_he = Some(k1);
+    config.key2_he = Some(k2);
+    // Only a pad with key 3 gets its settings
+    config.key3_he = (key_count(app) >= 3).then_some(k3).or(app.config.key3_he);
+}
+
+/// Save to pad was pressed: these edits are on their way, and stay unsaved
+/// until the pad confirms them (`save_finished`)
+pub fn begin_save(app: &mut App) {
+    if let Some(edit) = edited(app) {
+        app.keys.edit = Some(edit);
+        app.keys.saving = Some(edit);
+    }
+}
+
 pub fn update(app: &mut App, msg: KeysMessage) -> Task<Message> {
     let pad = pad_settings(&app.config);
     match msg {
-        KeysMessage::Save => {
-            if !app.device_connected {
-                app.banner = Some("Cannot save: the pad is not connected.".into());
-                return Task::none();
-            }
-            let mut edit = app.keys.edit.unwrap_or(pad);
-            // What the pad would do anyway: never save a press point below it
-            for (k, c) in edit.iter_mut().enumerate() {
-                c.actuation = c.actuation.max(slider_min(app, app.keys.separate, k, c));
-            }
-            let [k1, k2, k3] = edit;
-            let config = DeviceConfig {
-                key1_he: Some(k1),
-                key2_he: Some(k2),
-                // Only a pad with key 3 gets its settings
-                key3_he: (key_count(app) >= 3).then_some(k3).or(app.config.key3_he),
-                ..app.config.clone()
-            };
-            // Still unsaved until the pad confirms it (`save_finished`)
-            app.keys.edit = Some(edit);
-            app.keys.saving = Some(edit);
-            app.banner = Some("Saving key settings...".into());
-            crate::act(crate::Action::SaveKeys, IpcRequest::UpdateConfig(config))
-        }
         KeysMessage::PollLive => {
             if app.keys.live_inflight || !app.device_connected {
                 return Task::none();
@@ -396,10 +412,7 @@ impl KeysState {
                 self.edit = Some(pad);
                 self.separate = differ(&pad, keys);
             }
-            KeysMessage::Save
-            | KeysMessage::PollLive
-            | KeysMessage::Live(_)
-            | KeysMessage::Frame(_) => {}
+            KeysMessage::PollLive | KeysMessage::Live(_) | KeysMessage::Frame(_) => {}
         }
     }
 }
@@ -487,6 +500,7 @@ fn floors_known(app: &App) -> bool {
         .is_some_and(|c| c.noise_floor_rest > 0)
 }
 
+/// What most people set: where the key presses, and rapid trigger
 fn key_controls<'a>(app: &'a App, key: usize, c: HeKeyConfig) -> Element<'a, Message> {
     let set = move |field: Field| move |v| Message::Keys(KeysMessage::Set(key, field, v));
     let rt_on = c.rt_mode != HeRtMode::Off;
@@ -531,7 +545,7 @@ fn key_controls<'a>(app: &'a App, key: usize, c: HeKeyConfig) -> Element<'a, Mes
             column![
                 text("Rapid trigger").size(15),
                 muted("Presses again as soon as the key moves back down, and releases as soon as it moves up.")
-                    .size(12),
+                    .size(13),
             ]
             .spacing(2)
             .width(Length::Fill),
@@ -541,21 +555,23 @@ fn key_controls<'a>(app: &'a App, key: usize, c: HeKeyConfig) -> Element<'a, Mes
     );
 
     if rt_on {
-        if !app.keys.advanced {
-            col = col.push(setting(
-                "SENSITIVITY",
-                "How far the key has to move to press or release again.",
-                c.rt_press,
-                10..=500,
-                set(Field::Sensitivity),
-            ));
-        }
+        col = col.push(setting(
+            "SENSITIVITY",
+            if c.rt_press == c.rt_release {
+                "How far the key has to move to press or release again."
+            } else {
+                "How far the key has to move to press or release again. Press and release differ now (Advanced); moving this sets both."
+            },
+            c.rt_press,
+            10..=500,
+            set(Field::Sensitivity),
+        ));
         col = col.push(
             row![
                 column![
                     text("Continuous").size(15),
                     muted("Rapid trigger keeps working all the way up to the top reset point.")
-                        .size(12),
+                        .size(13),
                 ]
                 .spacing(2)
                 .width(Length::Fill),
@@ -565,63 +581,69 @@ fn key_controls<'a>(app: &'a App, key: usize, c: HeKeyConfig) -> Element<'a, Mes
             .align_y(Alignment::Center),
         );
     }
+    col.into()
+}
 
-    if app.keys.advanced {
-        if rt_on {
-            col = col.push(setting(
-                "PRESS SENSITIVITY",
-                "Movement down that presses again.",
-                c.rt_press,
-                10..=500,
-                set(Field::RtPress),
-            ));
-            col = col.push(setting(
-                "RELEASE SENSITIVITY",
-                "Movement up that releases.",
-                c.rt_release,
-                10..=500,
-                set(Field::RtRelease),
-            ));
-        }
+/// The Advanced section's Hall Effect settings for one key (or all of them,
+/// linked)
+fn key_advanced<'a>(app: &'a App, key: usize, c: HeKeyConfig) -> Element<'a, Message> {
+    let set = move |field: Field| move |v| Message::Keys(KeysMessage::Set(key, field, v));
+    let rt_on = c.rt_mode != HeRtMode::Off;
+    let mut col = column![].spacing(16);
+    if rt_on {
         col = col.push(setting(
-            "RELEASE POINT",
-            "Without rapid trigger, the key releases this far above the actuation point.",
-            c.release_hyst,
+            "PRESS SENSITIVITY",
+            "Movement down that presses again.",
+            c.rt_press,
             10..=500,
-            set(Field::ReleaseHyst),
+            set(Field::RtPress),
         ));
-        if c.rt_mode == HeRtMode::Continuous {
-            col = col.push(setting(
-                "TOP RESET",
-                "Continuous rapid trigger ends when the key comes up above this depth.",
-                c.top_reset,
-                10..=500,
-                set(Field::TopReset),
-            ));
-        }
         col = col.push(setting(
-            "BOTTOM DEAD ZONE",
-            "Movement this close to a full press is ignored, so pressing harder into the bottom never counts. 0 = off.",
-            c.bottom_dead_zone,
-            0..=300,
-            set(Field::BottomDeadZone),
+            "RELEASE SENSITIVITY",
+            "Movement up that releases.",
+            c.rt_release,
+            10..=500,
+            set(Field::RtRelease),
         ));
-        if floors_known(app) {
-            col = col.push(
-                row![
-                    column![
-                        text("Allow below the noise floor").size(15),
-                        muted("Uses every setting as is, down to 1 %. The sensor's own noise can then press this key by itself.")
-                            .size(12),
-                    ]
-                    .spacing(2)
-                    .width(Length::Fill),
-                    toggler(c.allow_below_noise_floor)
-                        .on_toggle(move |on| Message::Keys(KeysMessage::NoFloor(key, on))),
+    }
+    col = col.push(setting(
+        "RELEASE POINT",
+        "Without rapid trigger, the key releases this far above the actuation point.",
+        c.release_hyst,
+        10..=500,
+        set(Field::ReleaseHyst),
+    ));
+    if c.rt_mode == HeRtMode::Continuous {
+        col = col.push(setting(
+            "TOP RESET",
+            "Continuous rapid trigger ends when the key comes up above this depth.",
+            c.top_reset,
+            10..=500,
+            set(Field::TopReset),
+        ));
+    }
+    col = col.push(setting(
+        "BOTTOM DEAD ZONE",
+        "Movement this close to a full press is ignored, so pressing harder into the bottom never counts. 0 = off.",
+        c.bottom_dead_zone,
+        0..=300,
+        set(Field::BottomDeadZone),
+    ));
+    if floors_known(app) {
+        col = col.push(
+            row![
+                column![
+                    text("Allow below the noise floor").size(15),
+                    muted("Uses every setting as is, down to 1 %. The sensor's own noise can then press this key by itself.")
+                        .size(13),
                 ]
-                .align_y(Alignment::Center),
-            );
-        }
+                .spacing(2)
+                .width(Length::Fill),
+                toggler(c.allow_below_noise_floor)
+                    .on_toggle(move |on| Message::Keys(KeysMessage::NoFloor(key, on))),
+            ]
+            .align_y(Alignment::Center),
+        );
     }
     col.into()
 }
@@ -694,79 +716,197 @@ fn live_view<'a>(app: &'a App, key: usize, c: HeKeyConfig) -> Element<'a, Messag
     .into()
 }
 
+const TITLES: [&str; KEYS] = ["Key 1", "Key 2", "Key 3"];
+
+/// A pad whose Hall Effect backend runs: it has key feel to set
+fn hall_effect(app: &App) -> bool {
+    app.device_info.as_ref().is_some_and(|i| i.he_calibration)
+}
+
 pub fn view(app: &App) -> Element<'_, Message> {
+    if app.calibrating {
+        return crate::pages::calibration(app);
+    }
     let mut content = column![
         heading("Keys"),
-        muted("Where the keys press and release, and rapid trigger. Depths are a share of each key's calibrated travel. The moving switches are smoothed for display; the pad presses on raw readings."),
+        muted("What each key sends and how it presses.").size(14),
+        pad_section(app, "Bindings", || bindings(app)),
     ]
     .spacing(14);
-
-    if !app.device_connected {
-        return scrollable(content.push(card(text("Connect your OPad to change its keys."))))
-            .into();
+    if app.device_connected && hall_effect(app) {
+        content = content.push(section("Key feel", key_feel(app)));
     }
+    // Only switches wired to the header by hand: a module's pins are fixed by
+    // the carrier (older firmware does not say, so the pins stay settable)
+    if app
+        .device_info
+        .as_ref()
+        .is_none_or(|i| i.key_pins_configurable())
+    {
+        content = content.push(pad_section(app, "Wiring", || wiring(app)));
+    }
+    if app.device_connected {
+        content = content.push(advanced(app));
+    }
+    with_save_bar(app, content.into())
+}
+
+/// What a key sends, as it is shown on its tile
+fn binding(app: &App, key: u8) -> &str {
+    match key {
+        1 => &app.k1_input,
+        2 => &app.k2_input,
+        _ => &app.k3_input,
+    }
+}
+
+/// Each key's letter, changed by clicking the tile and pressing the letter
+fn bindings(app: &App) -> Element<'_, Message> {
+    let three = key_count(app) >= 3;
+    let tile = |key: u8| {
+        let capturing = app.capturing_key == Some(key);
+        let letter = binding(app, key);
+        let face = if capturing {
+            text("Press a letter").size(13)
+        } else if letter.is_empty() {
+            text("-").size(30).font(theme::FONT_BOLD)
+        } else {
+            text(letter).size(30).font(theme::FONT_BOLD)
+        };
+        let mut col = column![
+            caption(TITLES[key as usize - 1].to_uppercase()),
+            button(
+                container(face)
+                    .center_x(Length::Fill)
+                    .center_y(Length::Fill)
+            )
+            .width(120)
+            .height(72)
+            .style(if capturing {
+                theme::primary
+            } else {
+                theme::secondary
+            })
+            .on_press(if capturing {
+                Message::CancelCapture
+            } else {
+                Message::CaptureKey(key)
+            }),
+        ]
+        .spacing(6)
+        .align_x(Alignment::Center);
+        if key == 3 {
+            col = col.push(if letter.is_empty() {
+                Element::from(muted("Sends nothing").size(13))
+            } else {
+                button(text("Send nothing").size(13))
+                    .padding([4, 10])
+                    .style(theme::secondary)
+                    .on_press(Message::ClearKey3)
+                    .into()
+            });
+        }
+        col
+    };
+    let mut tiles = row![tile(1), tile(2)].spacing(24);
+    if three {
+        tiles = tiles.push(tile(3));
+    }
+    let mut col = column![
+        tiles,
+        match app.capture_hint {
+            Some(hint) => Element::from(text(hint).size(13).color(theme::YELLOW)),
+            None if app.capturing_key.is_some() =>
+                help("Press the letter on your keyboard. Esc keeps the one it has."),
+            None => help("Click a key, then press the letter it should send."),
+        },
+    ]
+    .spacing(12);
+    if three {
+        let game = |key: u8| app.game_keys & (1 << (key - 1)) != 0;
+        // osu!standard plays with two keys: with two ticked, the third is off
+        let full = app.game_keys.count_ones() >= 2;
+        let game_box = |key: u8| {
+            let b = checkbox(game(key)).label(TITLES[key as usize - 1]);
+            if full && !game(key) {
+                b
+            } else {
+                b.on_toggle(move |on| Message::GameKey(key, on))
+            }
+        };
+        col = col.push(
+            column![
+                caption("GAME KEYS"),
+                row![game_box(1), game_box(2), game_box(3)].spacing(18),
+                help(
+                    "The one or two keys you play with: only their presses count toward the \
+                     total, the tap rate and map stats."
+                ),
+            ]
+            .spacing(6),
+        );
+    }
+    col.into()
+}
+
+/// Hall Effect: where the keys press and release, with the live switches
+fn key_feel(app: &App) -> Element<'_, Message> {
     let keys = key_count(app);
     let calibrated = app
         .he_calibration
         .as_ref()
         .is_some_and(|c| c.key1_calibrated && c.key2_calibrated && (keys < 3 || c.key3_calibrated));
     if !calibrated {
-        return scrollable(content.push(card(
-            column![
-                text("The keys are not calibrated").size(16).font(theme::FONT_BOLD),
-                muted("Calibrate them first: the settings and the live view use each key's measured travel.")
-                    .size(13),
-                row![button(text("Calibrate").size(13))
-                    .style(theme::primary)
-                    .on_press(Message::Navigate(crate::Page::Calibration))],
-            ]
-            .spacing(12),
-        )))
+        return column![
+            text("The keys are not calibrated").size(15).font(theme::FONT_BOLD),
+            help("Calibrate them first: the settings and the live view use each key's measured travel."),
+            row![button(text("Calibrate").size(14))
+                .padding([8, 18])
+                .style(theme::primary)
+                .on_press(Message::OpenCalibration)],
+        ]
+        .spacing(12)
         .into();
     }
 
     let edit = app.keys.edit.unwrap_or_else(|| pad_settings(&app.config));
     let separate = app.keys.separate;
-
-    let top = row![
-        toggler(separate)
-            .label("Set keys separately")
-            .on_toggle(|on| Message::Keys(KeysMessage::Separate(on))),
-        Space::new().width(Length::Fill),
-        button(
-            text(if app.keys.advanced {
-                "Hide advanced"
-            } else {
-                "Advanced"
-            })
-            .size(12)
-        )
-        .style(theme::secondary)
-        .on_press(Message::Keys(KeysMessage::ToggleAdvanced)),
-        button(text("Recalibrate").size(12))
-            .style(theme::secondary)
-            .on_press(Message::Navigate(crate::Page::Calibration)),
+    let mut content = column![
+        row![
+            toggler(separate)
+                .label("Set keys separately")
+                .on_toggle(|on| Message::Keys(KeysMessage::Separate(on))),
+            Space::new().width(Length::Fill),
+            button(text("Recalibrate").size(13))
+                .style(theme::secondary)
+                .on_press(Message::OpenCalibration),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center),
+        help(
+            "Depths are a share of each key's calibrated travel. The moving switches are \
+             smoothed for display; the pad presses on raw readings."
+        ),
     ]
-    .spacing(10)
-    .align_y(Alignment::Center);
-    content = content.push(top);
+    .spacing(12);
 
-    // Separate keys: one column each, its switch on top and controls below
-    let key_column = |key: usize, title: &'static str| {
-        card(
-            column![
-                text(title).size(16).font(theme::FONT_BOLD),
-                container(live_view(app, key, edit[key])).center_x(Length::Fill),
-                key_controls(app, key, edit[key]),
-            ]
-            .spacing(12),
-        )
-    };
-    const TITLES: [&str; KEYS] = ["Key 1", "Key 2", "Key 3"];
     if separate {
+        // One column each, its switch on top and controls below
         let mut columns = row![].spacing(14).width(Length::Fill);
         for (k, title) in TITLES.iter().enumerate().take(keys) {
-            columns = columns.push(key_column(k, title));
+            columns = columns.push(
+                container(
+                    column![
+                        text(*title).size(16).font(theme::FONT_BOLD),
+                        container(live_view(app, k, edit[k])).center_x(Length::Fill),
+                        key_controls(app, k, edit[k]),
+                    ]
+                    .spacing(12),
+                )
+                .padding(14)
+                .width(Length::Fill)
+                .style(theme::outlined_card),
+            );
         }
         content = content.push(columns);
     } else {
@@ -776,47 +916,120 @@ pub fn view(app: &App) -> Element<'_, Message> {
         for (k, c) in edit.iter().enumerate().take(keys) {
             views = views.push(live_view(app, k, *c));
         }
-        content = content.push(card(
-            column![
-                text(if keys == 3 { "All keys" } else { "Both keys" })
-                    .size(16)
-                    .font(theme::FONT_BOLD),
-                views,
-            ]
-            .spacing(12),
-        ));
+        content = content.push(views);
     }
-
-    // Pinned under the scrolling part, so Save is never scrolled away;
-    // greyed out until something changes
-    let dirty = app.keys.dirty;
-    let actions = row![
-        muted(
-            "Values are provisional until tested on the pad: the noise floor that limits the smallest sensitivity is not measured yet, and the pad raises any setting below it."
-        )
-        .size(12)
-        .width(Length::Fill),
-        button(text("Revert").size(13))
-            .style(theme::secondary)
-            .on_press_maybe(dirty.then_some(Message::Keys(KeysMessage::Revert))),
-        button(text("Save to pad").size(13))
-            .style(theme::primary)
-            .on_press_maybe(
-                (dirty && app.keys.saving.is_none()).then_some(Message::Keys(KeysMessage::Save)),
-            ),
-    ]
-    .spacing(10)
-    .align_y(Alignment::Center);
-    column![scrollable(content).height(Length::Fill), actions]
-        .spacing(12)
-        .into()
+    content.into()
 }
 
-fn card<'a>(content: impl Into<Element<'a, Message>>) -> container::Container<'a, Message> {
-    container(content)
-        .padding(18)
+/// Which header pin each hand-wired switch is on
+fn wiring(app: &App) -> Element<'_, Message> {
+    // Only supported header pins, minus the one the other key uses
+    let pin_select = |label: &'static str,
+                      key_id: u32,
+                      gpio: u32,
+                      other: u32,
+                      on_select: fn(KeyPin) -> Message| {
+        let options: Vec<KeyPin> = KEY_PINS
+            .iter()
+            .copied()
+            .filter(|p| p.gpio != other)
+            .collect();
+        let detect = if app.detecting_pin == Some(key_id) {
+            button(text("Press the switch… (cancel)").size(13))
+                .style(theme::primary)
+                .on_press(Message::CancelDetectPin)
+        } else {
+            button(text("Auto-detect").size(13))
+                .style(theme::secondary)
+                .on_press_maybe(
+                    app.detecting_pin
+                        .is_none()
+                        .then_some(Message::StartDetectPin(key_id)),
+                )
+        };
+        column![
+            row![caption(label), Space::new().width(Length::Fill), detect]
+                .align_y(Alignment::Center),
+            pick_list(options, key_pin(gpio), on_select)
+                .placeholder(format!("GPIO{gpio} (not a supported pin)"))
+                .width(Length::Fill)
+                .padding(10),
+        ]
+        .spacing(6)
+        .width(Length::FillPortion(1))
+    };
+    column![
+        row![
+            pin_select("KEY 1 PIN", 1, app.k1_gpio, app.k2_gpio, Message::Key1Pin),
+            pin_select("KEY 2 PIN", 2, app.k2_gpio, app.k1_gpio, Message::Key2Pin),
+        ]
+        .spacing(24),
+        help(
+            "The header pin each switch is wired to, its other leg to GND. Auto-detect finds \
+             it when you press the switch."
+        ),
+    ]
+    .spacing(10)
+    .into()
+}
+
+/// The settings few people touch, folded away until asked for
+fn advanced(app: &App) -> Element<'_, Message> {
+    let open = app.keys.advanced;
+    let title = row![
+        text("Advanced").size(18).font(theme::FONT_BOLD),
+        Space::new().width(Length::Fill),
+        button(text(if open { "Hide" } else { "Show" }).size(13))
+            .style(theme::secondary)
+            .on_press(Message::Keys(KeysMessage::ToggleAdvanced)),
+    ]
+    .align_y(Alignment::Center);
+    let mut col = column![title].spacing(16);
+    if open {
+        if hall_effect(app) {
+            let edit = app.keys.edit.unwrap_or_else(|| pad_settings(&app.config));
+            let keys = key_count(app);
+            if app.keys.separate {
+                let mut columns = row![].spacing(14).width(Length::Fill);
+                for (k, title) in TITLES.iter().enumerate().take(keys) {
+                    columns = columns.push(
+                        container(
+                            column![
+                                text(*title).size(16).font(theme::FONT_BOLD),
+                                key_advanced(app, k, edit[k]),
+                            ]
+                            .spacing(12),
+                        )
+                        .padding(14)
+                        .width(Length::Fill)
+                        .style(theme::outlined_card),
+                    );
+                }
+                col = col.push(columns);
+            } else {
+                col = col.push(key_advanced(app, 0, edit[0]));
+            }
+        } else {
+            // Mechanical switches: contacts bounce as they close
+            col = col.push(
+                column![
+                    row![
+                        caption("SWITCH BOUNCE FILTER"),
+                        Space::new().width(Length::Fill),
+                        text(format!("{:.1} ms", app.debounce as f32 / 1000.0)).size(14)
+                    ],
+                    slider(500..=20000, app.debounce, Message::Debounce).step(500u32),
+                    help("A switch's contacts bounce as they close: changes this soon after one are ignored."),
+                ]
+                .spacing(8),
+            );
+        }
+    }
+    container(col)
+        .padding(20)
         .width(Length::Fill)
         .style(theme::card)
+        .into()
 }
 
 /// A magnetic switch cut in half, front view: keycap shell on the cross

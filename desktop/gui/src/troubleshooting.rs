@@ -1,15 +1,18 @@
-//! Interactive diagnostics and hardware testing suite.
+//! The Troubleshooting page: what to open when something is wrong. Always in
+//! the sidebar, last.
 //!
-//! Provides:
-//! 1. Switch Chatter & Input Tester (real-time key visualization, <15ms bounce detection, audio beep, NKRO test,
-//!    and on the HE debug firmware the pad-side phantom and double-press monitor, he_monitor.rs)
-//! 2. Hardware COM & Protocol Test (serial connection, ping latency, COM-02 resilience, latency percentiles)
-//! 3. Display & Screen Self-Test (backlight brightness ramp, test patterns, layout preview)
-//! 4. Carrier & module PCB test (the pad measures, `opad_model::board_test` judges)
-//! 5. One-click Diagnostic Bundle Exporter (system info, USB stats, firmware version, counters, and recent logs)
+//! 1. Logs: what the service, this app, tosu and the pad wrote
+//! 2. Key test: every press as the PC receives it (bounce, repeats, held
+//!    time) and, on debug firmware, the pad's own record (he_monitor.rs)
+//! 3. Board test: the pad checks its wiring (`opad_model::board_test` judges),
+//!    the magnet test, and restarting the pad
+//! 4. Connection: what is connected, measured (ping, key speed) and the Linux
+//!    permission tosu needs
+//! 5. Report: everything above in one file to send with a bug report
 
 use crate::he_monitor::{HeFinding, HeMonitorEvent};
 use crate::theme::{self, caption, heading, muted};
+use crate::widgets::{line, scrolling, tab_bar};
 use crate::{App, Message};
 use iced::widget::{button, checkbox, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Border, Element, Length};
@@ -408,18 +411,26 @@ pub fn char_to_vk(s: &str) -> Option<i32> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum DiagnosticsTab {
+pub enum Tab {
     #[default]
-    InputTester,
-    ComProtocol,
-    DisplayScreen,
+    Logs,
+    KeyTest,
     BoardTest,
-    ExportBundle,
+    Connection,
+    Report,
 }
+
+const TABS: [(Tab, &str); 5] = [
+    (Tab::Logs, "Logs"),
+    (Tab::KeyTest, "Key test"),
+    (Tab::BoardTest, "Board test"),
+    (Tab::Connection, "Connection"),
+    (Tab::Report, "Report"),
+];
 
 #[derive(Debug, Clone)]
 pub enum DiagnosticsMessage {
-    SelectTab(DiagnosticsTab),
+    SelectTab(Tab),
     ToggleSound(bool),
     ResetInputTester,
     /// A key changed state at `at`
@@ -428,8 +439,6 @@ pub enum DiagnosticsMessage {
         is_down: bool,
         at: Instant,
     },
-    SelectDisplayPattern(usize),
-    TestBrightness(u32),
     PingDaemon,
     PingDone(Result<Duration, String>),
     RunBoardTest,
@@ -473,7 +482,7 @@ pub struct KeyTrackerState {
 }
 
 pub struct DiagnosticsState {
-    pub active_tab: DiagnosticsTab,
+    pub active_tab: Tab,
     pub sound_enabled: bool,
     pub k1: KeyTrackerState,
     pub k2: KeyTrackerState,
@@ -481,7 +490,6 @@ pub struct DiagnosticsState {
     pub k3: KeyTrackerState,
     pub simultaneous_press_count: u32,
     pub event_log: VecDeque<String>,
-    pub test_pattern_index: usize,
     pub ping_in_progress: bool,
     pub last_ping_ms: Option<f64>,
     pub board_test_running: bool,
@@ -508,14 +516,13 @@ pub struct DiagnosticsState {
 impl Default for DiagnosticsState {
     fn default() -> Self {
         Self {
-            active_tab: DiagnosticsTab::InputTester,
+            active_tab: Tab::default(),
             sound_enabled: true,
             k1: KeyTrackerState::default(),
             k2: KeyTrackerState::default(),
             k3: KeyTrackerState::default(),
             simultaneous_press_count: 0,
             event_log: VecDeque::with_capacity(30),
-            test_pattern_index: 0,
             ping_in_progress: false,
             last_ping_ms: None,
             board_test_running: false,
@@ -720,55 +727,22 @@ impl DiagnosticsState {
     }
 
     pub fn view<'a>(&'a self, app: &'a App) -> Element<'a, Message> {
-        let title_row = row![
-            heading("Diagnostics & Testing Suite"),
-            Space::new().width(Length::Fill),
-            if app.device_connected {
-                text("● Pad Connected").size(13).color(theme::GREEN)
-            } else {
-                text("○ Pad Disconnected").size(13).color(theme::MUTED)
-            },
-            Space::new().width(12),
-            if app.daemon_online {
-                text("● Daemon Online").size(13).color(theme::GREEN)
-            } else {
-                text("○ Daemon Offline").size(13).color(theme::RED)
-            }
-        ]
-        .align_y(Alignment::Center);
-
-        let tab_btn = |tab: DiagnosticsTab, label: &'static str| {
-            button(text(label).size(13).font(theme::FONT))
-                .padding([8, 16])
-                .style(theme::tab_button(self.active_tab == tab))
-                .on_press(Message::Diagnostics(DiagnosticsMessage::SelectTab(tab)))
-        };
-
-        let tab_bar = row![
-            tab_btn(DiagnosticsTab::InputTester, "⌨ Switch Chatter & Input"),
-            tab_btn(DiagnosticsTab::ComProtocol, "🔌 Hardware COM & Protocol"),
-            tab_btn(DiagnosticsTab::DisplayScreen, "🖥 Screen & Backlight"),
-            tab_btn(DiagnosticsTab::BoardTest, "🔧 PCB Test"),
-            tab_btn(DiagnosticsTab::ExportBundle, "📦 Export Diagnostic Bundle"),
-        ]
-        .spacing(8);
-
         let content: Element<'_, Message> = match self.active_tab {
-            DiagnosticsTab::InputTester => self.view_input_tester(app),
-            DiagnosticsTab::ComProtocol => self.view_com_protocol(app),
-            DiagnosticsTab::DisplayScreen => self.view_display_screen(app),
-            DiagnosticsTab::BoardTest => self.view_board_test(app),
-            DiagnosticsTab::ExportBundle => self.view_export_bundle(app),
+            Tab::Logs => crate::pages::logs(app),
+            Tab::KeyTest => self.view_input_tester(app),
+            Tab::BoardTest => self.view_board_test(app),
+            Tab::Connection => self.view_connection(app),
+            Tab::Report => self.view_export_bundle(app),
         };
 
-        scrollable(
+        scrolling(
             column![
-                title_row,
-                muted(
-                    "Interactive diagnostic and verification tools. Use this to inspect switch chatter, \
-                     serial protocol health, pad screen functions, and export system diagnostic reports."
-                ),
-                tab_bar,
+                heading("Troubleshooting"),
+                muted("For when something is not working: what happened, tests, and a report to send.")
+                    .size(14),
+                tab_bar(&TABS, self.active_tab, |tab| {
+                    Message::Diagnostics(DiagnosticsMessage::SelectTab(tab))
+                }),
                 content
             ]
             .spacing(16),
@@ -1171,83 +1145,63 @@ impl DiagnosticsState {
         .into()
     }
 
-    fn view_com_protocol<'a>(&'a self, app: &'a App) -> Element<'a, Message> {
+    /// What is connected and what was measured. Nothing here is a fixed
+    /// claim: every line is the state now or a number taken on this machine.
+    fn view_connection<'a>(&'a self, app: &'a App) -> Element<'a, Message> {
         let info = app.device_info.as_ref();
+        let known = |v: Option<&str>| v.filter(|s| !s.is_empty()).unwrap_or("-").to_string();
 
         let ping_text = if self.ping_in_progress {
-            "Testing IPC ping...".to_string()
+            "Measuring…".to_string()
         } else if let Some(ms) = self.last_ping_ms {
-            format!("{:.2} ms round-trip", ms)
+            format!("{ms:.2} ms there and back")
         } else {
-            "Not tested yet".to_string()
+            "Not measured yet".to_string()
         };
 
-        let com_status_card = container(
+        let status_card = container(
             column![
-                text("Serial & IPC Connection Status")
-                    .size(16)
-                    .font(theme::FONT_BOLD),
-                row![
-                    muted("Daemon IPC Transport:").width(200),
-                    text(if app.daemon_online {
-                        "Online (Restricted User Pipe)"
+                text("Connection").size(16).font(theme::FONT_BOLD),
+                line(
+                    "OPad service",
+                    if app.daemon_online {
+                        "Running"
                     } else {
-                        "Offline"
-                    })
-                    .size(13),
-                ]
-                .spacing(8),
-                row![
-                    muted("Device USB Connection:").width(200),
-                    text(if app.device_connected {
-                        "Connected (USB CDC ACM 115200 8N1)"
+                        "Not running"
+                    }
+                ),
+                line(
+                    "Pad",
+                    if app.device_connected {
+                        "Connected"
+                    } else if app.incompatible.is_some() {
+                        "Connected, needs an update"
                     } else {
-                        "Disconnected"
-                    })
-                    .size(13),
-                ]
-                .spacing(8),
+                        "Not connected"
+                    }
+                ),
+                line(
+                    "osu! (tosu)",
+                    if app.tosu_connected {
+                        "Connected"
+                    } else {
+                        "Not connected"
+                    }
+                ),
+                line("Pad ID", known(info.map(|i| i.device_id.as_str()))),
+                line("Board", known(info.map(|i| i.board_profile.as_str()))),
+                line("Firmware", known(info.map(|i| i.firmware_version.as_str()))),
                 row![
-                    muted("Device ID / Serial:").width(200),
-                    text(
-                        info.map(|i| i.device_id.as_str())
-                            .filter(|s| !s.is_empty())
-                            .unwrap_or("—")
-                    )
-                    .size(13),
-                ]
-                .spacing(8),
-                row![
-                    muted("Board Profile:").width(200),
-                    text(
-                        info.map(|i| i.board_profile.as_str())
-                            .filter(|s| !s.is_empty())
-                            .unwrap_or("—")
-                    )
-                    .size(13),
-                ]
-                .spacing(8),
-                row![
-                    muted("Firmware Version:").width(200),
-                    text(
-                        info.map(|i| i.firmware_version.as_str())
-                            .filter(|s| !s.is_empty())
-                            .unwrap_or("—")
-                    )
-                    .size(13),
-                ]
-                .spacing(8),
-                row![
-                    muted("Daemon Round-Trip Ping:").width(200),
-                    text(ping_text)
-                        .size(13)
-                        .font(theme::FONT_BOLD)
-                        .color(theme::GREEN),
+                    muted("App to service").size(14).width(180),
+                    text(ping_text).size(14),
                     Space::new().width(12),
-                    button(text("Test Ping").size(12))
-                        .padding([4, 10])
+                    button(text("Measure").size(13))
+                        .padding([4, 12])
                         .style(theme::secondary)
-                        .on_press(Message::Diagnostics(DiagnosticsMessage::PingDaemon)),
+                        .on_press_maybe(
+                            (!self.ping_in_progress)
+                                .then_some(Message::Diagnostics(DiagnosticsMessage::PingDaemon))
+                        ),
                 ]
                 .spacing(8)
                 .align_y(Alignment::Center),
@@ -1258,114 +1212,24 @@ impl DiagnosticsState {
         .width(Length::Fill)
         .style(theme::card);
 
-        let com02_card = container(
-            column![
-                row![
-                    text("COM-02 Protocol Fault Recovery Specification")
-                        .size(15)
-                        .font(theme::FONT_BOLD),
-                    Space::new().width(Length::Fill),
-                    text("✓ ACTIVE").size(12).font(theme::FONT_BOLD).color(theme::GREEN),
-                ]
-                .align_y(Alignment::Center),
-                muted(
-                    "The pad's communication protocol runs over framed protobuf packets with length prefixes. \
-                     COM-02 guarantees the pad rejects 512-byte random garbage noise, oversized frames (0x7FFFFFFF), \
-                     and corrupted envelopes without freezing or desyncing."
-                ).size(12),
-                row![
-                    button(text("Trigger Force Re-Sync").size(12))
-                        .padding([6, 12])
-                        .style(theme::secondary)
-                        .on_press(Message::Sync),
-                    Space::new().width(8),
-                    muted("Verifies protobuf envelope encoding, updates timestamps, and synchronizes counters.").size(12),
-                ]
-                .align_y(Alignment::Center),
-            ]
-            .spacing(10),
-        )
-        .padding(16)
-        .width(Length::Fill)
-        .style(theme::card);
-
-        let latency_card = if let Some(lat) = &app.latency {
-            container(
-                column![
-                    text("Pad Hardware Latency Telemetry")
-                        .size(15)
-                        .font(theme::FONT_BOLD),
-                    row![
-                        column![
-                            caption("P50 LATENCY"),
-                            text(format!("{:.1} µs", lat.p50_us))
-                                .size(16)
-                                .font(theme::FONT_BOLD),
-                        ]
-                        .width(Length::FillPortion(1)),
-                        column![
-                            caption("P99 LATENCY"),
-                            text(format!("{:.1} µs", lat.p99_us))
-                                .size(16)
-                                .font(theme::FONT_BOLD),
-                        ]
-                        .width(Length::FillPortion(1)),
-                        column![
-                            caption("P99.9 LATENCY"),
-                            text(format!("{:.1} µs", lat.p999_us))
-                                .size(16)
-                                .font(theme::FONT_BOLD),
-                        ]
-                        .width(Length::FillPortion(1)),
-                        column![
-                            caption("SAMPLES"),
-                            text(lat.samples.to_string())
-                                .size(16)
-                                .font(theme::FONT_BOLD),
-                        ]
-                        .width(Length::FillPortion(1)),
-                    ]
-                    .spacing(12),
-                    row![button(text("Reset Latency Benchmarks").size(12))
-                        .padding([6, 12])
-                        .style(theme::secondary)
-                        .on_press(Message::ResetLatency),]
-                ]
-                .spacing(10),
-            )
-            .padding(16)
-            .width(Length::Fill)
-            .style(theme::card)
-        } else {
-            container(
-                column![
-                    text("Pad Hardware Latency Telemetry").size(15).font(theme::FONT_BOLD),
-                    muted("No latency telemetry received from the pad yet. Play a map or tap switches while connected to collect hardware response times.").size(12),
-                ]
-                .spacing(8),
-            )
-            .padding(16)
-            .width(Length::Fill)
-            .style(theme::card)
-        };
+        // Linux: tosu can only read osu! if ptrace allows it
         let yama_card: Option<Element<'a, Message>> = match cached_ptrace_access() {
             opad_tosu::PtraceAccess::Blocked { scope, fix }
             | opad_tosu::PtraceAccess::Unknown { scope, fix } => Some(
                 container(
                     column![
+                        text("tosu may not be allowed to read osu!")
+                            .size(15)
+                            .font(theme::FONT_BOLD)
+                            .color(theme::RED),
                         text(format!(
-                            "Linux ptrace_scope is {scope}: tosu may be unable to read osu!"
+                            "This Linux only lets a program read its own children's memory \
+                             (ptrace_scope is {scope}), and osu! is not tosu's child: the pad \
+                             would get no map data."
                         ))
-                        .size(14)
-                        .font(theme::FONT_BOLD)
-                        .color(theme::RED),
-                        text(
-                            "Yama only lets a process read its own children's memory, and osu! \
-                             is not tosu's child, so the pad would get no live gameplay data."
-                        )
-                        .size(12),
-                        text(format!("Fix: {fix}"))
-                            .size(12)
+                        .size(13),
+                        text(format!("To fix it: {fix}"))
+                            .size(13)
                             .font(theme::FONT_BOLD)
                             .color(theme::YELLOW),
                     ]
@@ -1391,173 +1255,18 @@ impl DiagnosticsState {
         if let Some(y) = yama_card {
             cards.push(y);
         }
-        cards.push(com_status_card.into());
-        cards.push(com02_card.into());
-        cards.push(latency_card.into());
-
+        cards.push(status_card.into());
         column(cards).spacing(14).into()
-    }
-
-    fn view_display_screen<'a>(&'a self, app: &'a App) -> Element<'a, Message> {
-        let brightness_btn = |val: u32, label: &'static str| {
-            button(text(label).size(12))
-                .padding([6, 12])
-                .style(if app.brightness == val {
-                    theme::primary
-                } else {
-                    theme::secondary
-                })
-                .on_press(Message::Diagnostics(DiagnosticsMessage::TestBrightness(
-                    val,
-                )))
-        };
-
-        let brightness_card = container(
-            column![
-                text("Backlight & PWM Hardware Test").size(15).font(theme::FONT_BOLD),
-                muted("Adjust the screen backlight directly to verify the ESP32-S3 LEDC PWM backlight driver.").size(12),
-                row![
-                    muted(format!("Current: {}%", app.brightness)).width(140),
-                    brightness_btn(10, "10% Dim"),
-                    brightness_btn(25, "25% Low"),
-                    brightness_btn(50, "50% Medium"),
-                    brightness_btn(75, "75% Bright"),
-                    brightness_btn(100, "100% Full"),
-                ]
-                .spacing(8)
-                .align_y(Alignment::Center),
-            ]
-            .spacing(10),
-        )
-        .padding(16)
-        .width(Length::Fill)
-        .style(theme::card);
-
-        let pattern_colors = [
-            ("Layout Preview", None),
-            ("osu! Pink", Some(theme::PINK)),
-            ("Pure White", Some(theme::WHITE)),
-            ("Pure Green", Some(theme::GREEN)),
-            ("Pure Blue", Some(theme::CYAN)),
-            ("Pure Red", Some(theme::RED)),
-        ];
-
-        let pattern_btns = row(pattern_colors.iter().enumerate().map(|(idx, (name, _))| {
-            button(text(*name).size(12))
-                .padding([6, 12])
-                .style(if self.test_pattern_index == idx {
-                    theme::primary
-                } else {
-                    theme::secondary
-                })
-                .on_press(Message::Diagnostics(
-                    DiagnosticsMessage::SelectDisplayPattern(idx),
-                ))
-                .into()
-        }))
-        .spacing(8);
-
-        let preview_box = if let Some(c) = pattern_colors[self.test_pattern_index].1 {
-            container(
-                column![
-                    text(format!(
-                        "Screen Color: {}",
-                        pattern_colors[self.test_pattern_index].0
-                    ))
-                    .size(14)
-                    .font(theme::FONT_BOLD)
-                    .color(if c == theme::WHITE {
-                        theme::BG
-                    } else {
-                        theme::WHITE
-                    }),
-                    text("Verify that pixels and ST7789 colors are displayed uniformly.")
-                        .size(11)
-                        .color(if c == theme::WHITE {
-                            theme::BG
-                        } else {
-                            theme::MUTED
-                        }),
-                ]
-                .align_x(Alignment::Center)
-                .spacing(6),
-            )
-            .width(280)
-            .height(180)
-            .align_x(Alignment::Center)
-            .align_y(Alignment::Center)
-            .style(move |_: &iced::Theme| container::Style {
-                background: Some(c.into()),
-                border: Border {
-                    color: theme::BORDER,
-                    width: 2.0,
-                    radius: 8.0.into(),
-                },
-                ..Default::default()
-            })
-        } else {
-            container(
-                column![
-                    text("OPad Screen Simulator")
-                        .size(16)
-                        .font(theme::FONT_BOLD)
-                        .color(theme::PINK),
-                    text("320x240 ST7789 IPS Display")
-                        .size(12)
-                        .color(theme::MUTED),
-                    Space::new().height(12),
-                    row![
-                        container(text(format!("K1: {}", app.counters.lifetime_key1)).size(13))
-                            .padding(8)
-                            .style(theme::pink_card),
-                        container(text(format!("K2: {}", app.counters.lifetime_key2)).size(13))
-                            .padding(8)
-                            .style(theme::outlined_card),
-                    ]
-                    .spacing(10),
-                ]
-                .align_x(Alignment::Center)
-                .spacing(4),
-            )
-            .width(280)
-            .height(180)
-            .align_x(Alignment::Center)
-            .align_y(Alignment::Center)
-            .style(move |_: &iced::Theme| container::Style {
-                background: Some(theme::BG.into()),
-                border: Border {
-                    color: theme::BORDER,
-                    width: 2.0,
-                    radius: 8.0.into(),
-                },
-                ..Default::default()
-            })
-        };
-
-        let screen_card = container(
-            column![
-                text("Display Colors & Uniformity Verification").size(15).font(theme::FONT_BOLD),
-                muted("Select test colors to inspect LCD pixel response, backlight bleed, and color calibration.").size(12),
-                pattern_btns,
-                row![preview_box].align_y(Alignment::Center),
-            ]
-            .spacing(12),
-        )
-        .padding(16)
-        .width(Length::Fill)
-        .style(theme::card);
-
-        column![brightness_card, screen_card].spacing(14).into()
     }
 
     fn view_board_test<'a>(&'a self, app: &'a App) -> Element<'a, Message> {
         let can_run = app.device_connected && !self.board_test_running && !self.magnet_running;
         let run_label = if self.board_test_running {
-            "Testing..."
+            "Testing…"
         } else if self.board_test.is_some() {
-            "Run Again"
+            "Run again"
         } else {
-            "Run PCB Test"
+            "Run the board test"
         };
         let run_btn = button(text(run_label).size(13))
             .padding([8, 16])
@@ -1568,9 +1277,7 @@ impl DiagnosticsState {
 
         let intro = container(
             column![
-                text("Carrier & Input Module PCB Test")
-                    .size(16)
-                    .font(theme::FONT_BOLD),
+                text("Board test").size(16).font(theme::FONT_BOLD),
                 muted(
                     "The pad checks its own wiring: which module answers on the carrier's \
                      connector and which way round its cable is, whether each key line reaches \
@@ -1630,8 +1337,8 @@ impl DiagnosticsState {
                      nothing for them."
                 } else {
                     "The test proves the lines are connected, not that the switches work. Press \
-                     each key in the Switch Chatter & Input tab: Key 1 must light the left card \
-                     and Key 2 the right one, each on its own."
+                     each key on the Key test tab: Key 1 must light the left card and Key 2 \
+                     the right one, each on its own."
                 })
                 .size(12),
             ]
@@ -1668,7 +1375,7 @@ impl DiagnosticsState {
         };
 
         let mut body = column![
-            text("Magnet Test").size(15).font(theme::FONT_BOLD),
+            text("Magnet test").size(15).font(theme::FONT_BOLD),
             muted(format!(
                 "Hold a magnet (a key's own, or any small one) over key 1, then key 2, then key \
                  3, a few millimetres above the sensor. Each sensor must move at least {:.0} \
@@ -1712,7 +1419,7 @@ impl DiagnosticsState {
 
     fn view_restart<'a>(&'a self, app: &'a App) -> Element<'a, Message> {
         let can_run = app.device_connected && !self.restart_running;
-        let restart_btn = button(text("Restart Pad").size(13))
+        let restart_btn = button(text("Restart pad").size(13))
             .padding([8, 16])
             .style(theme::secondary)
             .on_press_maybe(
@@ -1728,7 +1435,7 @@ impl DiagnosticsState {
         };
         container(
             column![
-                text("Restart the Pad").size(15).font(theme::FONT_BOLD),
+                text("Restart the pad").size(15).font(theme::FONT_BOLD),
                 muted(
                     "The pad picks its key input (MX or Hall Effect) when it starts. After \
                      swapping the input module, restart it here or replug its USB cable. It \
@@ -1756,33 +1463,31 @@ impl DiagnosticsState {
 
         let export_card = container(
             column![
-                text("One-Click Diagnostic Report Exporter").size(16).font(theme::FONT_BOLD),
+                text("Report").size(16).font(theme::FONT_BOLD),
                 muted(
-                    "Generates a complete diagnostic report containing hardware specifications, firmware versions, \
-                     counter reconciliation state, recent input tester metrics, and daemon logs. \
-                     You can copy this directly to your clipboard to paste into Discord or GitHub when reporting issues."
-                ).size(13),
+                    "One file with the pad's version and board, its counters, the key test's \
+                     numbers and the latest log lines. Send it with a bug report."
+                )
+                .size(14),
                 row![
-                    button(text("📋 Copy Diagnostic Bundle to Clipboard").size(14).font(theme::FONT_BOLD))
+                    button(text("Save report…").size(14).font(theme::FONT_BOLD))
                         .padding([10, 20])
                         .style(theme::primary)
-                        .on_press(Message::CopyDiagnosticBundle),
+                        .on_press(Message::SaveDiagnosticBundle),
                     Space::new().width(12),
-                    button(text("💾 Save Diagnostic File (.json)...").size(14))
+                    button(text("Copy").size(14))
                         .padding([10, 20])
                         .style(theme::secondary)
-                        .on_press(Message::SaveDiagnosticBundle),
+                        .on_press(Message::CopyDiagnosticBundle),
                 ]
                 .align_y(Alignment::Center),
                 Space::new().height(8),
-                caption("DIAGNOSTIC BUNDLE PREVIEW"),
-                container(
-                    scrollable(
-                        text(format!("{}\n...", preview_snippet))
-                            .size(11)
-                            .color(theme::MUTED)
-                    )
-                )
+                caption("WHAT IS IN IT"),
+                container(scrollable(
+                    text(format!("{}\n...", preview_snippet))
+                        .size(11)
+                        .color(theme::MUTED)
+                ))
                 .padding(12)
                 .width(Length::Fill)
                 .height(240)

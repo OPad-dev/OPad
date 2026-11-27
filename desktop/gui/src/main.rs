@@ -2,7 +2,6 @@
 
 mod chrome;
 mod designer;
-mod diagnostics;
 mod he_monitor;
 mod ipc;
 mod keys;
@@ -11,10 +10,16 @@ mod pages;
 mod platform_linux;
 #[cfg(windows)]
 mod platform_windows;
+mod screen;
+mod settings;
 mod single_instance;
 mod stats;
 mod theme;
 mod tray;
+mod troubleshooting;
+mod widgets;
+
+use troubleshooting as diagnostics;
 
 use iced::widget::{
     button, checkbox, column, container, row, scrollable, stack, text, text_input, Space,
@@ -31,26 +36,19 @@ use opad_model::{
 use std::collections::HashMap;
 use std::time::Duration;
 
-pub fn parse_page_arg() -> Option<Page> {
+pub fn parse_page_arg() -> Option<Target> {
     let args: Vec<String> = std::env::args().collect();
     for i in 0..args.len() {
         if (args[i] == "--page" || args[i] == "-p") && i + 1 < args.len() {
-            return Page::from_token(&args[i + 1]);
+            return Target::from_token(&args[i + 1]);
         }
     }
     None
 }
 
-/// `--page updates`: Settings opens on its Updates tab
-fn wants_updates_tab() -> bool {
-    let args: Vec<String> = std::env::args().collect();
-    args.windows(2)
-        .any(|w| (w[0] == "--page" || w[0] == "-p") && w[1].eq_ignore_ascii_case("updates"))
-}
-
 pub fn main() -> iced::Result {
-    let target_page = parse_page_arg();
-    let page_str = target_page.map(Page::token);
+    let target = parse_page_arg();
+    let page_str = target.map(Target::token);
 
     if !single_instance::claim(page_str) {
         // Another instance was asked to show its window
@@ -60,7 +58,7 @@ pub fn main() -> iced::Result {
 
     // A daemon keeps running with no window open, living in the tray (Discord-style)
     iced::daemon(
-        move || App::new(start_hidden, target_page),
+        move || App::new(start_hidden, target),
         App::update,
         App::view,
     )
@@ -74,89 +72,184 @@ pub fn main() -> iced::Result {
     .run()
 }
 
+/// The sidebar's pages. What used to be pages of their own are tabs now:
+/// Logs and the test tools under Troubleshooting, About under Settings, and
+/// the Hall Effect calibration inside Keys.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Dashboard,
     Stats,
-    Designer,
-    Settings,
-    Device,
-    Logs,
-    Diagnostics,
-    About,
-    Calibration,
-    /// Hall Effect actuation and rapid trigger (pads with an HE backend)
+    /// Bindings, key feel (Hall Effect), wiring
     Keys,
+    /// The pad's display, touchscreen and result animations
+    Screen,
+    Designer,
+    /// This pad, its counters and backups
+    Pad,
+    /// The PC app only: startup, updates, the osu! connection, about
+    Settings,
+    Troubleshooting,
+}
+
+/// The part of a page a link or a `--page` name opens
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Section {
+    /// The page as it was left
+    Any,
+    Settings(settings::Tab),
+    Trouble(troubleshooting::Tab),
+    /// Keys, with the Hall Effect calibration open
+    Calibration,
+}
+
+/// Where a link, the tray or a `--page` name goes: a page and, when it
+/// matters, the tab on it
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Target {
+    pub page: Page,
+    pub section: Section,
 }
 
 impl Page {
-    #[allow(non_upper_case_globals)]
-    pub const Monitor: Page = Page::Logs;
-
-    /// `--page` names and their aliases. The first name for each page is the
-    /// token a second launch sends to the running instance, so both ends of
-    /// the single-instance handoff read this one table.
-    const TOKENS: [(&'static str, Page); 20] = [
-        ("dashboard", Page::Dashboard),
-        ("stats", Page::Stats),
-        ("kpm", Page::Stats),
-        // What the tap rate was called before KPM
-        ("ppm", Page::Stats),
-        ("designer", Page::Designer),
-        ("settings", Page::Settings),
-        // Settings, on its Updates tab (wants_updates_tab)
-        ("updates", Page::Settings),
-        ("device", Page::Device),
-        ("logs", Page::Logs),
-        ("monitor", Page::Logs),
-        ("diagnostics", Page::Diagnostics),
-        ("test", Page::Diagnostics),
-        ("testing", Page::Diagnostics),
-        ("about", Page::About),
-        ("license", Page::About),
-        ("licenses", Page::About),
-        ("calibrate", Page::Calibration),
-        ("calibration", Page::Calibration),
-        ("keys", Page::Keys),
-        ("rapid-trigger", Page::Keys),
+    /// The sidebar, top to bottom: what you look at while playing, what you
+    /// set on the pad, and the PC app itself
+    pub const GROUPS: [(&'static str, &'static [(Page, &'static str)]); 3] = [
+        (
+            "Play",
+            &[(Page::Dashboard, "Dashboard"), (Page::Stats, "Stats")],
+        ),
+        (
+            "Your pad",
+            &[
+                (Page::Keys, "Keys"),
+                (Page::Screen, "Screen"),
+                (Page::Designer, "Designer"),
+                (Page::Pad, "Pad"),
+            ],
+        ),
+        (
+            "App",
+            &[
+                (Page::Settings, "Settings"),
+                (Page::Troubleshooting, "Troubleshooting"),
+            ],
+        ),
     ];
 
-    pub fn from_token(token: &str) -> Option<Page> {
+    /// Pages that edit the pad's settings and share the save bar
+    pub fn edits_pad_settings(self) -> bool {
+        matches!(self, Page::Keys | Page::Screen)
+    }
+
+    pub const fn at(self) -> Target {
+        Target {
+            page: self,
+            section: Section::Any,
+        }
+    }
+}
+
+impl Target {
+    pub const UPDATES: Target = Target {
+        page: Page::Settings,
+        section: Section::Settings(settings::Tab::Updates),
+    };
+    pub const OSU: Target = Target {
+        page: Page::Settings,
+        section: Section::Settings(settings::Tab::Osu),
+    };
+    pub const LOGS: Target = Target {
+        page: Page::Troubleshooting,
+        section: Section::Trouble(troubleshooting::Tab::Logs),
+    };
+    pub const CALIBRATION: Target = Target {
+        page: Page::Keys,
+        section: Section::Calibration,
+    };
+
+    /// `--page` names and their aliases. The first name for each target is
+    /// the token a second launch sends to the running instance, so both ends
+    /// of the single-instance handoff read this one table. Names from before
+    /// the pages were regrouped (`device`, `logs`, `about`, `diagnostics`)
+    /// still open where their content went: the daemon and people's shortcuts
+    /// use them.
+    const TOKENS: [(&'static str, Target); 31] = {
+        use settings::Tab as S;
+        use troubleshooting::Tab as T;
+        const fn on(page: Page, section: Section) -> Target {
+            Target { page, section }
+        }
+        [
+            ("dashboard", Page::Dashboard.at()),
+            ("stats", Page::Stats.at()),
+            ("kpm", Page::Stats.at()),
+            // What the tap rate was called before KPM
+            ("ppm", Page::Stats.at()),
+            ("keys", Page::Keys.at()),
+            ("rapid-trigger", Page::Keys.at()),
+            // The daemon opens this for a Hall Effect pad that needs calibrating
+            ("calibrate", Target::CALIBRATION),
+            ("calibration", Target::CALIBRATION),
+            ("screen", Page::Screen.at()),
+            ("display", Page::Screen.at()),
+            ("designer", Page::Designer.at()),
+            ("pad", Page::Pad.at()),
+            ("device", Page::Pad.at()),
+            ("settings", Page::Settings.at()),
+            ("general", on(Page::Settings, Section::Settings(S::General))),
+            ("updates", Target::UPDATES),
+            ("osu", Target::OSU),
+            ("tosu", Target::OSU),
+            ("about", on(Page::Settings, Section::Settings(S::About))),
+            ("license", on(Page::Settings, Section::Settings(S::About))),
+            ("licenses", on(Page::Settings, Section::Settings(S::About))),
+            ("troubleshooting", Page::Troubleshooting.at()),
+            ("diagnostics", Page::Troubleshooting.at()),
+            ("logs", Target::LOGS),
+            ("monitor", Target::LOGS),
+            (
+                "key-test",
+                on(Page::Troubleshooting, Section::Trouble(T::KeyTest)),
+            ),
+            (
+                "test",
+                on(Page::Troubleshooting, Section::Trouble(T::KeyTest)),
+            ),
+            (
+                "testing",
+                on(Page::Troubleshooting, Section::Trouble(T::KeyTest)),
+            ),
+            (
+                "board-test",
+                on(Page::Troubleshooting, Section::Trouble(T::BoardTest)),
+            ),
+            (
+                "connection",
+                on(Page::Troubleshooting, Section::Trouble(T::Connection)),
+            ),
+            (
+                "report",
+                on(Page::Troubleshooting, Section::Trouble(T::Report)),
+            ),
+        ]
+    };
+
+    pub fn from_token(token: &str) -> Option<Target> {
         let token = token.to_lowercase();
         Self::TOKENS
             .iter()
             .find(|(name, _)| *name == token)
-            .map(|(_, page)| *page)
+            .map(|(_, target)| *target)
     }
 
     pub fn token(self) -> &'static str {
         Self::TOKENS
             .iter()
-            .find(|(_, page)| *page == self)
+            .find(|(_, target)| *target == self)
+            .or_else(|| Self::TOKENS.iter().find(|(_, t)| t.page == self.page))
             .map(|(name, _)| *name)
             .expect("every page has a token")
     }
-
-    pub const ALL: [(Page, &'static str); 7] = [
-        (Page::Dashboard, "Dashboard"),
-        (Page::Stats, "Stats"),
-        (Page::Designer, "Designer"),
-        (Page::Settings, "Settings"),
-        (Page::Device, "Device"),
-        (Page::Logs, "Logs"),
-        (Page::About, "About"),
-    ];
-
-    pub const ALL_WITH_DIAGNOSTICS: [(Page, &'static str); 8] = [
-        (Page::Dashboard, "Dashboard"),
-        (Page::Stats, "Stats"),
-        (Page::Designer, "Designer"),
-        (Page::Settings, "Settings"),
-        (Page::Device, "Device"),
-        (Page::Logs, "Logs"),
-        (Page::Diagnostics, "Diagnostics"),
-        (Page::About, "About"),
-    ];
 }
 
 #[derive(Debug, Clone)]
@@ -245,6 +338,8 @@ pub struct App {
     pub config: DeviceConfig,
     pub last_sync_time: Option<String>,
     pub last_sync_error: Option<String>,
+    /// When the daemon last wrote its automatic counter backup, RFC 3339
+    pub last_backup: Option<String>,
     pub storage_error: Option<String>,
     pub latency: Option<LatencyStats>,
     pub pending_replacement: Option<String>,
@@ -283,6 +378,14 @@ pub struct App {
     pub autostart_tray: bool,
     pub detecting_pin: Option<u32>,
     config_loaded: bool,
+    /// What Save to pad sent, until the pad answers
+    pub pad_sent: Option<DeviceConfig>,
+    /// The key (1-3) whose binding waits for a letter to be pressed
+    pub capturing_key: Option<u8>,
+    /// What the last key pressed while capturing was refused for
+    pub capture_hint: Option<&'static str>,
+    /// Where the person was going when the pad's settings had unsaved changes
+    pub leave_prompt: Option<Target>,
 
     pub logs: Vec<LogEntry>,
     /// The daemon fetch cursor: the seq of the last daemon entry received.
@@ -307,9 +410,14 @@ pub struct App {
     pub banner: Option<String>,
     pub tosu_override_path: Option<std::path::PathBuf>,
     pub designer: designer::Designer,
-    pub diagnostics_enabled: bool,
     pub diagnostics: diagnostics::DiagnosticsState,
-    pub settings_tab: pages::SettingsTab,
+    pub settings_tab: settings::Tab,
+    /// The tosu version installed, read from its folder (About)
+    pub tosu_version: Option<String>,
+    /// Keys shows the Hall Effect calibration instead of its sections
+    pub calibrating: bool,
+    /// Pad shows its technical lines (running slot, counter generation)
+    pub pad_details: bool,
     /// The Stats page's tap rate (KPM) statistics
     pub stats: stats::StatsState,
     pub he_calibration: Option<opad_model::HeCalibrationStatus>,
@@ -336,8 +444,13 @@ const NO_TRAY_BANNER: &str =
 #[derive(Debug, Clone)]
 pub enum Message {
     Navigate(Page),
+    /// A page on one of its tabs
+    Open(Target),
     /// Settings, on its Updates tab
     OpenUpdates,
+    /// The answer to "you have unsaved changes": save or discard them and
+    /// go on, or stay (`None`)
+    LeaveAnswer(Option<bool>),
     Poll,
     Status(Result<IpcResponse, String>),
     UiValues(Result<IpcResponse, String>),
@@ -352,9 +465,8 @@ pub enum Message {
     SaveLogs,
     LogsSaved(Result<String, String>),
     ToggleAutoScroll,
-    // Diagnostics & Settings tabs
-    SelectSettingsTab(pages::SettingsTab),
-    ToggleDiagnostics(bool),
+    // Settings and Troubleshooting tabs
+    SelectSettingsTab(settings::Tab),
     Diagnostics(diagnostics::DiagnosticsMessage),
     CopyDiagnosticBundle,
     SaveDiagnosticBundle,
@@ -404,17 +516,21 @@ pub enum Message {
     TosuStarted(Result<(), String>),
     InstallSystemdService,
     SystemdServiceInstalled(Result<(), String>),
-    // Settings
-    Key1(String),
-    Key2(String),
-    Key3(String),
+    // The pad's settings (Keys and Screen)
+    /// Listen for the letter this key (1-3) should send
+    CaptureKey(u8),
+    CancelCapture,
+    /// A key pressed while a binding waits for its letter
+    CaptureKeyPressed(iced::keyboard::Key),
+    /// Key 3 sends nothing
+    ClearKey3,
     /// Count this key (1-3) toward totals and the tap rate, or not
     GameKey(u8, bool),
     Key1Pin(KeyPin),
     Key2Pin(KeyPin),
     Swipe(SwipeDir, SwipeChoice),
     SwipeKey(SwipeDir, FreeKey),
-    ResultAnimation(Trigger, pages::AnimChoice),
+    ResultAnimation(Trigger, screen::AnimChoice),
     /// Play the grade's animation on the pad now
     PreviewAnimation(Trigger),
     Debounce(u32),
@@ -425,7 +541,12 @@ pub enum Message {
     StartDetectPin(u32),
     PinDetected(Result<IpcResponse, String>),
     CancelDetectPin,
-    SaveConfig,
+    /// The save bar: send every unsaved pad setting, or drop them
+    SavePad,
+    RevertPad,
+    OpenCalibration,
+    CloseCalibration,
+    TogglePadDetails,
     // Actions
     Sync,
     PromptResetCounters,
@@ -462,7 +583,7 @@ pub enum Message {
 }
 
 impl App {
-    fn new(start_hidden: bool, initial_page: Option<Page>) -> (Self, Task<Message>) {
+    fn new(start_hidden: bool, initial: Option<Target>) -> (Self, Task<Message>) {
         let (designer, designer_task) = designer::Designer::new();
         let tosu_override_path = opad_model::paths::data_dir()
             .ok()
@@ -480,13 +601,8 @@ impl App {
             std::env::set_var("OPAD_TOSU_PATH", p);
         }
 
-        let diagnostics_enabled = initial_page == Some(Page::Diagnostics)
-            || opad_model::paths::data_dir()
-                .map(|d| d.join("diagnostics.flag").exists())
-                .unwrap_or(false);
-
         let mut app = App {
-            page: initial_page.unwrap_or(Page::Dashboard),
+            page: Page::Dashboard,
             window: None,
             maximized: false,
             tray: None,
@@ -505,6 +621,7 @@ impl App {
             counters_source: CounterSource::Pc,
             config: DeviceConfig::default(),
             last_sync_time: None,
+            last_backup: None,
             last_sync_error: None,
             storage_error: None,
             latency: None,
@@ -544,6 +661,10 @@ impl App {
             autostart_tray: false,
             detecting_pin: None,
             config_loaded: false,
+            pad_sent: None,
+            capturing_key: None,
+            capture_hint: None,
+            leave_prompt: None,
             logs: Vec::new(),
             latest_log_seq: 0,
             update_status_polled_at: None,
@@ -556,13 +677,11 @@ impl App {
             banner: None,
             tosu_override_path,
             designer,
-            diagnostics_enabled,
             diagnostics: diagnostics::DiagnosticsState::default(),
-            settings_tab: if wants_updates_tab() {
-                pages::SettingsTab::Updates
-            } else {
-                pages::SettingsTab::default()
-            },
+            settings_tab: settings::Tab::default(),
+            tosu_version: settings::installed_tosu_version(),
+            calibrating: false,
+            pad_details: false,
             stats: stats::StatsState::default(),
             he_calibration: None,
             key3: None,
@@ -572,6 +691,9 @@ impl App {
             cal_starting: false,
             cal_epoch: 0,
         };
+        if let Some(target) = initial {
+            app.show(target);
+        }
         app.log_event(
             LogSource::Program,
             LogLevel::Info,
@@ -666,12 +788,12 @@ impl App {
                 Message::UpdateStatus,
             ));
         }
-        // Settings' firmware card, Device's running slot, the diagnostics
-        // bundle; and on every page for a pad that needs its firmware updated
+        // Settings' firmware row, Pad's firmware line and running slot, the
+        // report; and on every page for a pad that needs its firmware updated
         // before anything else works
         if matches!(
             page,
-            Some(Page::Settings | Page::Device | Page::Diagnostics)
+            Some(Page::Settings | Page::Pad | Page::Troubleshooting)
         ) || (page.is_some() && self.incompatible.is_some())
         {
             tasks.push(Task::perform(
@@ -683,7 +805,9 @@ impl App {
         if page == Some(Page::Stats) {
             tasks.extend(self.stats.poll());
         }
-        if page == Some(Page::Logs) {
+        if page == Some(Page::Troubleshooting)
+            && self.diagnostics.active_tab == troubleshooting::Tab::Logs
+        {
             let since_seq = if self.latest_log_seq > 0 {
                 Some(self.latest_log_seq)
             } else {
@@ -704,37 +828,20 @@ impl App {
 
     fn update_tray(&self) {
         if let Some(handle) = &self.tray {
-            let is_playing_or_cooldown =
-                matches!(self.mode, RuntimeMode::Playing | RuntimeMode::Cooldown);
-            let k1 = if let Some(pc) = &self.pc_counters {
-                pc.lifetime_key1
-            } else {
-                self.counters.lifetime_key1
-            };
-            let k2 = if let Some(pc) = &self.pc_counters {
-                pc.lifetime_key2
-            } else {
-                self.counters.lifetime_key2
-            };
             tray::update(
                 handle,
                 tray::TrayStatus {
                     daemon_online: self.daemon_online,
                     device_connected: self.device_connected,
                     incompatible: self.incompatible.is_some(),
-                    firmware_version: self
-                        .device_info
-                        .as_ref()
-                        .map(|i| i.firmware_version.clone())
-                        .filter(|v| !v.is_empty()),
-                    key1_presses: k1,
-                    key2_presses: k2,
-                    last_sync_time: self.last_sync_time.clone(),
                     last_sync_error: self.last_sync_error.clone(),
-                    is_playing_or_cooldown,
+                    is_playing_or_cooldown: matches!(
+                        self.mode,
+                        RuntimeMode::Playing | RuntimeMode::Cooldown
+                    ),
                     tosu_connected: self.tosu_connected,
-                    total_presses: self.counters.total_lifetime_presses(),
-                    mode: format!("{:?}", self.mode),
+                    total_presses: pages::total_presses(self),
+                    mode: pages::mode_words(self.mode).to_string(),
                 },
             );
         }
@@ -742,36 +849,26 @@ impl App {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Navigate(page) => {
-                self.page = page;
-                if page != Page::Keys {
-                    self.keys.stop_live();
-                }
-                if page == Page::Settings {
-                    // The Updates panel lives here; show it fresh
-                    self.update_status_polled_at = None;
-                }
-                if page == Page::Stats {
-                    self.stats.reset_backoff();
-                }
-                if page == Page::Calibration {
-                    self.cal_status_msg = None;
-                }
-                let mut tasks = vec![self.poll()];
-                // Layouts change outside the designer too (opadctl, another
-                // GUI, an update adding sources): show what the daemon holds
-                // now, unless that would throw away edits not applied yet
-                if page == Page::Designer
-                    && self.daemon_online
-                    && !self.designer.has_unapplied_edits()
-                {
-                    tasks.push(self.designer.reload().map(Message::Designer));
-                }
-                return Task::batch(tasks);
-            }
-            Message::OpenUpdates => {
-                self.settings_tab = pages::SettingsTab::Updates;
-                return self.update(Message::Navigate(Page::Settings));
+            Message::Navigate(page) => return self.go(page.at()),
+            Message::Open(target) => return self.go(target),
+            Message::OpenUpdates => return self.go(Target::UPDATES),
+            Message::LeaveAnswer(answer) => {
+                let Some(target) = self.leave_prompt.take() else {
+                    return Task::none();
+                };
+                return match answer {
+                    // Save: the result comes back as its own notice, and a
+                    // refused save leaves the settings unsaved on their page
+                    Some(true) => {
+                        let save = self.update(Message::SavePad);
+                        Task::batch([save, self.arrive(target)])
+                    }
+                    Some(false) => {
+                        self.revert_pad_form();
+                        self.arrive(target)
+                    }
+                    None => Task::none(),
+                };
             }
             Message::Poll => return self.poll(),
             Message::Status(result) => {
@@ -793,9 +890,7 @@ impl App {
                         pending_replacement,
                         incompatible,
                         pending_takeover,
-                        // Shown by `opadctl status`; a GUI surface for it is
-                        // B's to add if it is wanted.
-                        last_backup: _,
+                        last_backup,
                         foreign_pad: _,
                         he_calibration,
                         key3,
@@ -829,21 +924,8 @@ impl App {
                         self.he_calibration = he_calibration;
                         self.key3 = key3;
                         self.last_sync_time = last_sync_time;
-                        // Always adopt device config when device connects or config changes
-                        if device_connected
-                            && (!self.config_loaded
-                                || self.config != config
-                                || device_just_connected)
-                        {
-                            self.config_loaded = true;
-                            self.adopt_config(&config);
-                        }
-                        if device_connected {
-                            self.keys.adopt(&config);
-                        } else {
-                            self.keys.stop_live();
-                        }
-                        self.config = config;
+                        self.last_backup = last_backup;
+                        self.adopt_status_config(device_connected, device_just_connected, config);
 
                         self.update_tray();
                         if was_offline && self.designer.status.contains("Daemon unavailable") {
@@ -1383,19 +1465,42 @@ impl App {
                     self.banner = Some(format!("Failed to install service: {}", e));
                 }
             },
-            Message::Key1(s) => {
-                if self.device_connected {
-                    self.k1_input = s.chars().take(1).collect::<String>().to_uppercase();
+            Message::CaptureKey(key) => {
+                if self.device_connected && (1..=3).contains(&key) {
+                    self.capturing_key = Some(key);
+                    self.capture_hint = None;
                 }
             }
-            Message::Key2(s) => {
-                if self.device_connected {
-                    self.k2_input = s.chars().take(1).collect::<String>().to_uppercase();
+            Message::CancelCapture => {
+                self.capturing_key = None;
+                self.capture_hint = None;
+            }
+            Message::CaptureKeyPressed(key) => {
+                let Some(which) = self.capturing_key else {
+                    return Task::none();
+                };
+                match captured_letter(&key) {
+                    Captured::Letter(letter) => {
+                        match which {
+                            1 => self.k1_input = letter,
+                            2 => self.k2_input = letter,
+                            _ => self.k3_input = letter,
+                        }
+                        self.capturing_key = None;
+                        self.capture_hint = None;
+                    }
+                    Captured::Cancel => {
+                        self.capturing_key = None;
+                        self.capture_hint = None;
+                    }
+                    Captured::Refused => {
+                        self.capture_hint = Some("Pick a letter key (A to Z).");
+                    }
                 }
             }
-            Message::Key3(s) => {
+            Message::ClearKey3 => {
                 if self.device_connected {
-                    self.k3_input = s.chars().take(1).collect::<String>().to_uppercase();
+                    self.k3_input.clear();
                 }
             }
             Message::GameKey(key, on) => {
@@ -1538,25 +1643,15 @@ impl App {
             }
             Message::SelectSettingsTab(tab) => {
                 self.settings_tab = tab;
-            }
-            Message::ToggleDiagnostics(enabled) => {
-                self.diagnostics_enabled = enabled;
-                if let Ok(dir) = opad_model::paths::data_dir() {
-                    let _ = std::fs::create_dir_all(&dir);
-                    let flag = dir.join("diagnostics.flag");
-                    if enabled {
-                        let _ = std::fs::write(flag, "1");
-                    } else {
-                        let _ = std::fs::remove_file(flag);
-                    }
+                if tab == settings::Tab::About {
+                    self.tosu_version = settings::installed_tosu_version();
                 }
-                if !enabled && self.page == Page::Diagnostics {
-                    self.page = Page::Settings;
-                }
+                return self.poll();
             }
             Message::Diagnostics(msg) => match msg {
                 diagnostics::DiagnosticsMessage::SelectTab(tab) => {
                     self.diagnostics.active_tab = tab;
+                    return self.poll();
                 }
                 diagnostics::DiagnosticsMessage::ToggleSound(s) => {
                     self.diagnostics.sound_enabled = s;
@@ -1573,19 +1668,6 @@ impl App {
                 }
                 diagnostics::DiagnosticsMessage::He(event) => {
                     self.diagnostics.handle_he_event(event);
-                }
-                diagnostics::DiagnosticsMessage::SelectDisplayPattern(idx) => {
-                    self.diagnostics.test_pattern_index = idx;
-                }
-                diagnostics::DiagnosticsMessage::TestBrightness(b) => {
-                    self.brightness = b;
-                    if self.device_connected {
-                        let cfg = DeviceConfig {
-                            brightness: b,
-                            ..self.config.clone()
-                        };
-                        return act(Action::TestBrightness, IpcRequest::UpdateConfig(cfg));
-                    }
                 }
                 diagnostics::DiagnosticsMessage::PingDaemon => {
                     self.diagnostics.ping_in_progress = true;
@@ -1761,38 +1843,22 @@ impl App {
                 Err(e) if e.is_empty() => {}
                 Err(e) => self.banner = Some(format!("Failed to save diagnostic report: {}", e)),
             },
-            Message::SaveConfig => {
-                if !self.device_connected {
-                    self.banner = Some("Cannot save settings: device is not connected.".into());
+            Message::SavePad => {
+                if !self.device_connected || self.pad_sent.is_some() || !self.pad_dirty() {
                     return Task::none();
                 }
-                let mut config = DeviceConfig {
-                    key1_hid_usage: char_to_hid_usage(&self.k1_input)
-                        .unwrap_or(self.config.key1_hid_usage),
-                    key2_hid_usage: char_to_hid_usage(&self.k2_input)
-                        .unwrap_or(self.config.key2_hid_usage),
-                    // Empty: key 3 sends nothing
-                    key3_hid_usage: if self.k3_input.trim().is_empty() {
-                        0
-                    } else {
-                        char_to_hid_usage(&self.k3_input).unwrap_or(self.config.key3_hid_usage)
-                    },
-                    game_keys: self.game_keys,
-                    debounce_us: self.debounce,
-                    key1_gpio: self.k1_gpio,
-                    key2_gpio: self.k2_gpio,
-                    brightness: self.brightness,
-                    display_sleep_seconds: self.sleep_seconds,
-                    gameplay_display_hz: self.gameplay_display_hz,
-                    result_animations: self.result_animations,
-                    ..self.config.clone()
-                };
-                for dir in SwipeDir::ALL {
-                    config.set_swipe(dir, self.swipes[dir.index()]);
-                }
-                self.banner = Some("Saving settings...".into());
-                return act(Action::SaveSettings, IpcRequest::UpdateConfig(config));
+                keys::begin_save(self);
+                let config = self.form_config();
+                self.pad_sent = Some(config.clone());
+                return act(Action::SavePad, IpcRequest::UpdateConfig(config));
             }
+            Message::RevertPad => self.revert_pad_form(),
+            Message::OpenCalibration => return self.go(Target::CALIBRATION),
+            Message::CloseCalibration => {
+                self.calibrating = false;
+                return self.poll();
+            }
+            Message::TogglePadDetails => self.pad_details = !self.pad_details,
             Message::Sync => {
                 self.banner = Some("Syncing counters and clock with the pad...".into());
                 return act(Action::Sync, IpcRequest::ForceSync);
@@ -1963,9 +2029,23 @@ impl App {
                 self.banner = Some("Reset to bundled tosu".into());
             }
             Message::ActionDone(action, result) => {
-                if action == Action::SaveKeys {
-                    let saved = matches!(result, Ok(IpcResponse::ConfigUpdated { .. }));
-                    self.keys.save_finished(saved);
+                if action == Action::SavePad {
+                    let sent = self.pad_sent.take();
+                    if let Ok(IpcResponse::ConfigUpdated { config, .. }) = &result {
+                        // Edited again while the save was on its way: those
+                        // edits stay, unsaved. Otherwise the pages show what
+                        // the pad now has, which is what was sent unless the
+                        // pad adjusted a value.
+                        let untouched = sent.as_ref() == Some(&self.form_config());
+                        self.keys.save_finished(true);
+                        self.config = config.clone();
+                        if untouched {
+                            self.adopt_config(config);
+                            self.keys.adopt(config);
+                        }
+                    } else {
+                        self.keys.save_finished(false);
+                    }
                 }
                 if let Some(text) = action_banner(action, result) {
                     self.banner = Some(text);
@@ -2009,14 +2089,11 @@ impl App {
                 }
             }
             Message::ShowRequested(target) => {
-                if let Some(page) = target.as_deref().and_then(Page::from_token) {
-                    // As at startup: asking for Diagnostics shows its tab
-                    if page == Page::Diagnostics {
-                        self.diagnostics_enabled = true;
-                    }
-                    self.page = page;
-                }
-                return self.open_window();
+                let open = self.open_window();
+                return match target.as_deref().and_then(Target::from_token) {
+                    Some(target) => Task::batch([open, self.go(target)]),
+                    None => open,
+                };
             }
             Message::Window(action) => {
                 let Some(id) = self.window else {
@@ -2074,9 +2151,9 @@ impl App {
                     }
                 }
                 tray::TrayEvent::Action(tray::TrayAction::ShowWindow) => return self.open_window(),
-                tray::TrayEvent::Action(tray::TrayAction::OpenMonitor) => {
-                    self.page = Page::Monitor;
-                    return self.open_window();
+                tray::TrayEvent::Action(tray::TrayAction::Open(page)) => {
+                    let open = self.open_window();
+                    return Task::batch([open, self.go(page.at())]);
                 }
                 tray::TrayEvent::Action(tray::TrayAction::StartDaemon) => {
                     return self.update(Message::StartDaemon)
@@ -2108,7 +2185,19 @@ impl App {
         if self.window.is_some() && self.page == Page::Designer {
             subscriptions.push(self.designer.subscription().map(Message::Designer));
         }
-        if self.window.is_some() && self.page == Page::Diagnostics {
+        if self.window.is_some() && self.capturing_key.is_some() {
+            subscriptions.push(iced::event::listen().filter_map(|event| match event {
+                iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, .. }) => {
+                    Some(Message::CaptureKeyPressed(key))
+                }
+                _ => None,
+            }));
+        }
+        // The key test listens to the keyboard and the pad's own record
+        if self.window.is_some()
+            && self.page == Page::Troubleshooting
+            && self.diagnostics.active_tab == troubleshooting::Tab::KeyTest
+        {
             subscriptions.push(iced::event::listen().filter_map(|event| {
                 if let iced::Event::Keyboard(key_event) = event {
                     match key_event {
@@ -2141,7 +2230,7 @@ impl App {
                     .map(|e| Message::Diagnostics(diagnostics::DiagnosticsMessage::He(e))),
             );
         }
-        if self.window.is_some() && self.page == Page::Keys {
+        if self.window.is_some() && self.page == Page::Keys && !self.calibrating {
             // The live switch view: the pad sends ~50 samples/s, and the
             // stems are redrawn every display frame so they glide
             subscriptions.push(
@@ -2151,7 +2240,7 @@ impl App {
             subscriptions
                 .push(window::frames().map(|at| Message::Keys(keys::KeysMessage::Frame(at))));
         }
-        if self.window.is_some() && self.page == Page::Calibration {
+        if self.window.is_some() && self.page == Page::Keys && self.calibrating {
             subscriptions.push(
                 iced::time::every(Duration::from_millis(100)).map(|_| Message::PollCalibration),
             );
@@ -2160,98 +2249,66 @@ impl App {
     }
 
     fn view(&self, _window: window::Id) -> Element<'_, Message> {
-        let mut pages_vec: Vec<(Page, &'static str)> = if self.diagnostics_enabled {
-            Page::ALL_WITH_DIAGNOSTICS.to_vec()
-        } else {
-            Page::ALL.to_vec()
-        };
-        // Only a pad whose HE backend runs has keys to tune
-        if self.device_connected && self.device_info.as_ref().is_some_and(|i| i.he_calibration) {
-            let at = pages_vec
-                .iter()
-                .position(|(p, _)| *p == Page::Device)
-                .map_or(pages_vec.len(), |i| i + 1);
-            pages_vec.insert(at, (Page::Keys, "Keys"));
-        }
-        if self.page == Page::Calibration {
-            pages_vec.push((Page::Calibration, "Calibration"));
-        }
-
-        let nav = column(pages_vec.iter().map(|(page, label)| {
-            button(text(*label).size(15))
-                .width(Length::Fill)
-                .padding([10, 14])
-                .style(theme::nav(self.page == *page))
-                .on_press(Message::Navigate(*page))
-                .into()
-        }))
-        .spacing(6);
-
-        let clickable_status = |on: bool,
-                                label: &'static str,
-                                state: &'static str,
-                                msg: Option<Message>|
-         -> Element<'_, Message> {
-            let row_content = row![
-                container(Space::new().width(10).height(10)).style(theme::dot(on)),
-                text(label).size(13),
-                Space::new().width(Length::Fill),
-                theme::caption(state),
-            ]
-            .spacing(8)
-            .align_y(Alignment::Center);
-
-            if let Some(m) = msg {
-                button(row_content)
-                    .width(Length::Fill)
-                    .padding([5, 8])
-                    .style(theme::sidebar_status)
-                    .on_press(m)
-                    .into()
-            } else {
-                container(row_content)
-                    .padding([5, 8])
-                    .width(Length::Fill)
-                    .into()
+        let mut nav = column![].spacing(4);
+        for (group, pages) in Page::GROUPS {
+            nav = nav.push(container(theme::caption(group.to_uppercase())).padding(
+                iced::Padding {
+                    top: 10.0,
+                    left: 14.0,
+                    ..iced::Padding::ZERO
+                },
+            ));
+            for (page, label) in pages {
+                nav = nav.push(
+                    button(text(*label).size(15))
+                        .width(Length::Fill)
+                        .padding([9, 14])
+                        .style(theme::nav(self.page == *page))
+                        .on_press(Message::Navigate(*page)),
+                );
             }
+        }
+
+        // The two things a player asks about. Each row only opens the page
+        // where that thing is looked after; nothing is started from here.
+        let status_row = |on: bool, label: String, target: Target| -> Element<'_, Message> {
+            button(
+                row![
+                    container(Space::new().width(10).height(10)).style(theme::dot(on)),
+                    text(label).size(13),
+                ]
+                .spacing(8)
+                .align_y(Alignment::Center),
+            )
+            .width(Length::Fill)
+            .padding([6, 8])
+            .style(theme::sidebar_status)
+            .on_press(Message::Open(target))
+            .into()
         };
 
         let sidebar = container(
             column![
                 nav,
                 Space::new().height(Length::Fill),
-                clickable_status(
+                status_row(
                     self.device_connected,
-                    "Pad",
                     if self.device_connected {
-                        "connected"
+                        "Pad connected".to_string()
                     } else {
-                        "offline"
+                        "Pad not connected".to_string()
                     },
-                    Some(Message::Navigate(Page::Device)),
+                    Page::Pad.at(),
                 ),
-                clickable_status(
+                status_row(
                     self.tosu_connected,
-                    "tosu",
                     if self.tosu_connected {
-                        "connected"
+                        "osu! connected".to_string()
                     } else {
-                        "offline (click)"
+                        "osu! not connected".to_string()
                     },
-                    Some(Message::StartTosu),
+                    Target::OSU,
                 ),
-                clickable_status(
-                    self.daemon_online,
-                    "Daemon",
-                    if self.daemon_online {
-                        "running"
-                    } else {
-                        "offline (click)"
-                    },
-                    Some(Message::StartDaemon),
-                ),
-                Space::new().height(4),
-                theme::caption("Close the window to keep OPad in the tray"),
             ]
             .spacing(4)
             .padding(18),
@@ -2263,14 +2320,12 @@ impl App {
         let page: Element<'_, Message> = match self.page {
             Page::Dashboard => pages::dashboard(self),
             Page::Stats => stats::view(self),
-            Page::Designer => self.designer.view().map(Message::Designer),
-            Page::Settings => pages::settings(self),
-            Page::Device => pages::device(self),
-            Page::Logs => pages::logs(self),
-            Page::Diagnostics => self.diagnostics.view(self),
-            Page::About => pages::about(self),
-            Page::Calibration => pages::calibration(self),
             Page::Keys => keys::view(self),
+            Page::Screen => screen::view(self),
+            Page::Designer => self.designer.view().map(Message::Designer),
+            Page::Pad => pages::pad(self),
+            Page::Settings => settings::view(self),
+            Page::Troubleshooting => self.diagnostics.view(self),
         };
 
         let mut main = column![]
@@ -2501,6 +2556,40 @@ impl App {
             row![sidebar, main].height(Length::Fill)
         ];
         let framed = container(body).style(chrome::frame);
+
+        if self.leave_prompt.is_some() {
+            let modal_box = container(
+                column![
+                    text("Save your changes?").size(20).font(theme::FONT_BOLD),
+                    text("Some settings on this page are not saved to the pad yet.")
+                        .size(14)
+                        .color(theme::MUTED),
+                    Space::new().height(14),
+                    row![
+                        button(text("Stay").size(14))
+                            .padding([10, 20])
+                            .style(theme::secondary)
+                            .on_press(Message::LeaveAnswer(None)),
+                        Space::new().width(Length::Fill),
+                        button(text("Discard").size(14))
+                            .padding([10, 20])
+                            .style(theme::secondary)
+                            .on_press(Message::LeaveAnswer(Some(false))),
+                        Space::new().width(10),
+                        button(text("Save to pad").size(14))
+                            .padding([10, 20])
+                            .style(theme::primary)
+                            .on_press(Message::LeaveAnswer(Some(true))),
+                    ]
+                    .align_y(Alignment::Center),
+                ]
+                .spacing(8)
+                .padding(24)
+                .width(460),
+            )
+            .style(theme::card);
+            return modal_over(framed.into(), modal_box.into(), self.maximized);
+        }
 
         if let Some(input_text) = &self.reset_modal {
             let modal_box = container(
@@ -3161,6 +3250,134 @@ impl App {
     /// Loads every Settings form field from `config`. The one place that does,
     /// so an import and a pad (re)connect cannot disagree on which fields
     /// exist (an import once left gameplay_display_hz behind).
+    /// Show the page and tab `target` names
+    fn show(&mut self, target: Target) {
+        self.page = target.page;
+        match target.section {
+            Section::Any => {}
+            Section::Settings(tab) => self.settings_tab = tab,
+            Section::Trouble(tab) => self.diagnostics.active_tab = tab,
+            Section::Calibration => {
+                self.calibrating = true;
+                self.cal_status_msg = None;
+            }
+        }
+    }
+
+    /// Go to `target`. Leaving Keys or Screen with settings not saved to the
+    /// pad asks first (Save, Discard or Stay); moving between those two does
+    /// not, since the save bar and what it holds come along.
+    fn go(&mut self, target: Target) -> Task<Message> {
+        if self.page.edits_pad_settings() && !target.page.edits_pad_settings() && self.pad_dirty() {
+            self.leave_prompt = Some(target);
+            return Task::none();
+        }
+        self.arrive(target)
+    }
+
+    fn arrive(&mut self, target: Target) -> Task<Message> {
+        let page = target.page;
+        // A calibration that is not running does not stay open behind the
+        // other pages
+        let calibration_running = self.cal_starting
+            || self.cal_progress.as_ref().is_some_and(|p| {
+                !matches!(
+                    p.stage,
+                    opad_model::HeCalStage::None
+                        | opad_model::HeCalStage::Success
+                        | opad_model::HeCalStage::Failed
+                )
+            });
+        if page != Page::Keys && !calibration_running {
+            self.calibrating = false;
+        }
+        self.show(target);
+        self.capturing_key = None;
+        self.capture_hint = None;
+        if page != Page::Keys || self.calibrating {
+            self.keys.stop_live();
+        }
+        if page == Page::Settings {
+            // The Updates tab lives here; show it fresh
+            self.update_status_polled_at = None;
+            self.tosu_version = settings::installed_tosu_version();
+        }
+        if page == Page::Stats {
+            self.stats.reset_backoff();
+        }
+        let mut tasks = vec![self.poll()];
+        // Layouts change outside the designer too (opadctl, another
+        // GUI, an update adding sources): show what the daemon holds
+        // now, unless that would throw away edits not applied yet
+        if page == Page::Designer && self.daemon_online && !self.designer.has_unapplied_edits() {
+            tasks.push(self.designer.reload().map(Message::Designer));
+        }
+        Task::batch(tasks)
+    }
+
+    /// The pad's settings as the Keys and Screen pages have them now: what
+    /// Save to pad sends, and what "unsaved changes" is measured against
+    pub fn form_config(&self) -> DeviceConfig {
+        let mut config = DeviceConfig {
+            key1_hid_usage: char_to_hid_usage(&self.k1_input).unwrap_or(self.config.key1_hid_usage),
+            key2_hid_usage: char_to_hid_usage(&self.k2_input).unwrap_or(self.config.key2_hid_usage),
+            // Empty: key 3 sends nothing
+            key3_hid_usage: if self.k3_input.trim().is_empty() {
+                0
+            } else {
+                char_to_hid_usage(&self.k3_input).unwrap_or(self.config.key3_hid_usage)
+            },
+            game_keys: self.game_keys,
+            debounce_us: self.debounce,
+            key1_gpio: self.k1_gpio,
+            key2_gpio: self.k2_gpio,
+            brightness: self.brightness,
+            display_sleep_seconds: self.sleep_seconds,
+            gameplay_display_hz: self.gameplay_display_hz,
+            result_animations: self.result_animations,
+            ..self.config.clone()
+        };
+        for dir in SwipeDir::ALL {
+            config.set_swipe(dir, self.swipes[dir.index()]);
+        }
+        keys::apply_edit(self, &mut config);
+        config
+    }
+
+    /// Keys or Screen hold a pad setting that Save to pad has not sent yet
+    pub fn pad_dirty(&self) -> bool {
+        self.device_connected && self.config_loaded && self.form_config() != self.config
+    }
+
+    /// Back to what the pad has
+    fn revert_pad_form(&mut self) {
+        let config = self.config.clone();
+        self.adopt_config(&config);
+        let _ = keys::update(self, keys::KeysMessage::Revert);
+        self.capturing_key = None;
+        self.capture_hint = None;
+    }
+
+    /// The pad's settings from a status poll. The pages follow them when the
+    /// pad connects and when they change elsewhere (opadctl, a backup), but
+    /// never over edits not saved yet: those stay until Save to pad or Revert.
+    fn adopt_status_config(&mut self, connected: bool, just_connected: bool, config: DeviceConfig) {
+        // Against the settings the pad had until now
+        let unsaved = self.pad_dirty();
+        if connected
+            && (!self.config_loaded || just_connected || (self.config != config && !unsaved))
+        {
+            self.config_loaded = true;
+            self.adopt_config(&config);
+        }
+        if connected {
+            self.keys.adopt(&config);
+        } else {
+            self.keys.stop_live();
+        }
+        self.config = config;
+    }
+
     fn adopt_config(&mut self, config: &DeviceConfig) {
         self.k1_input = config.key1_char();
         self.k2_input = config.key2_char();
@@ -3480,6 +3697,36 @@ fn incompatible_banner(
     }
 }
 
+/// What a key pressed while a binding waits for its letter means
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Captured {
+    /// A to Z, upper case
+    Letter(String),
+    /// Escape: keep the binding as it was
+    Cancel,
+    Refused,
+}
+
+/// Bindings are letters only (docs/specs/app-ux-decisions.md §2): osu! binds
+/// its keys to letters, and a pad key sending Enter or F4 by mistake is hard
+/// to undo without a second keyboard.
+fn captured_letter(key: &iced::keyboard::Key) -> Captured {
+    use iced::keyboard::{key::Named, Key};
+    match key {
+        Key::Named(Named::Escape) => Captured::Cancel,
+        Key::Character(c) => {
+            let mut chars = c.chars();
+            match (chars.next(), chars.next()) {
+                (Some(l), None) if l.is_ascii_alphabetic() => {
+                    Captured::Letter(l.to_ascii_uppercase().to_string())
+                }
+                _ => Captured::Refused,
+            }
+        }
+        _ => Captured::Refused,
+    }
+}
+
 /// `modal_box` centred over the dimmed window. The dim layer takes every click
 /// and scroll, so nothing behind an open dialog can be pressed: a plain
 /// container let them through to the page, the sidebar and the title bar.
@@ -3519,10 +3766,8 @@ fn modal_over<'a>(
 /// what was done.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
-    SaveSettings,
-    SaveKeys,
-    /// The Troubleshooting brightness slider: each step is sent as it moves
-    TestBrightness,
+    /// The save bar on Keys and Screen
+    SavePad,
     PreviewAnimation,
     Sync,
     ResetCounters,
@@ -3560,15 +3805,8 @@ fn action_banner(action: Action, result: Result<IpcResponse, String>) -> Option<
         (_, Ok(IpcResponse::OperationRejected { reason })) => {
             Some(format!("Not possible right now: {}", reason))
         }
-        (Action::SaveSettings, Ok(IpcResponse::ConfigUpdated { .. })) => {
-            done("Settings saved and sent to the pad")
-        }
-        (Action::SaveKeys, Ok(IpcResponse::ConfigUpdated { .. })) => {
-            done("Key settings saved on the pad")
-        }
-        (Action::TestBrightness | Action::UpdateToggle, Ok(IpcResponse::ConfigUpdated { .. })) => {
-            None
-        }
+        (Action::SavePad, Ok(IpcResponse::ConfigUpdated { .. })) => done("Saved to the pad"),
+        (Action::UpdateToggle, Ok(IpcResponse::ConfigUpdated { .. })) => None,
         (Action::PreviewAnimation, Ok(IpcResponse::AnimationPlayed)) => done("Playing on the pad"),
         (Action::Sync, Ok(IpcResponse::SyncCompleted { success: true, .. })) => done("Pad synced"),
         (Action::Sync, Ok(IpcResponse::SyncCompleted { success: false, .. })) => {
@@ -3612,22 +3850,13 @@ mod tests {
             })
         };
         let counters = opad_model::CounterState::default;
-        // The same answer, three different things done
+        // The same answer, two different things done: a save announces
+        // itself, a switch that was flipped does not
         assert_eq!(
-            action_banner(Action::SaveSettings, config_updated()).as_deref(),
-            Some("Settings saved and sent to the pad")
+            action_banner(Action::SavePad, config_updated()).as_deref(),
+            Some("Saved to the pad")
         );
-        assert_eq!(
-            action_banner(Action::SaveKeys, config_updated()).as_deref(),
-            Some("Key settings saved on the pad")
-        );
-        // Turning automatic updates on or off sends nothing to the pad, and a
-        // brightness slider does not announce every step
         assert_eq!(action_banner(Action::UpdateToggle, config_updated()), None);
-        assert_eq!(
-            action_banner(Action::TestBrightness, config_updated()),
-            None
-        );
 
         let reset = || {
             Ok(IpcResponse::CountersReset {
@@ -3662,7 +3891,7 @@ mod tests {
 
         // A failure is always shown, whatever was asked
         assert_eq!(
-            action_banner(Action::TestBrightness, Err("daemon unreachable".into())).as_deref(),
+            action_banner(Action::UpdateToggle, Err("daemon unreachable".into())).as_deref(),
             Some("Error: daemon unreachable")
         );
     }
@@ -3722,23 +3951,187 @@ mod tests {
 
     #[test]
     fn every_page_token_round_trips() {
-        for (page, _) in Page::ALL_WITH_DIAGNOSTICS {
-            assert_eq!(Page::from_token(page.token()), Some(page), "{page:?}");
+        for (_, pages) in Page::GROUPS {
+            for (page, _) in pages {
+                let token = page.at().token();
+                assert_eq!(Target::from_token(token), Some(page.at()), "{page:?}");
+            }
         }
-        // Aliases a second launch may be given
-        assert_eq!(Page::from_token("monitor"), Some(Page::Logs));
-        assert_eq!(Page::from_token("LOGS"), Some(Page::Logs));
-        assert_eq!(Page::from_token("testing"), Some(Page::Diagnostics));
-        assert_eq!(Page::from_token("licenses"), Some(Page::About));
-        assert_eq!(Page::from_token("ppm"), Some(Page::Stats));
-        assert_eq!(Page::from_token("kpm"), Some(Page::Stats));
-        assert_eq!(Page::from_token("calibrate"), Some(Page::Calibration));
-        assert_eq!(Page::from_token("calibration"), Some(Page::Calibration));
-        assert_eq!(Page::Calibration.token(), "calibrate");
-        assert_eq!(Page::from_token("keys"), Some(Page::Keys));
-        assert_eq!(Page::from_token("rapid-trigger"), Some(Page::Keys));
-        assert_eq!(Page::Keys.token(), "keys");
-        assert_eq!(Page::from_token("nowhere"), None);
+        for (name, target) in Target::TOKENS {
+            assert_eq!(Target::from_token(name), Some(target), "{name}");
+            // What a second launch sends reaches the same place
+            assert_eq!(Target::from_token(target.token()), Some(target), "{name}");
+        }
+        assert_eq!(Target::from_token("LOGS"), Some(Target::LOGS));
+        assert_eq!(Target::from_token("nowhere"), None);
+    }
+
+    #[test]
+    fn names_from_before_the_regrouping_open_where_their_content_went() {
+        use settings::Tab as S;
+        use troubleshooting::Tab as T;
+        let at = |name: &str| Target::from_token(name).unwrap();
+        assert_eq!(at("device").page, Page::Pad);
+        assert_eq!(at("monitor"), Target::LOGS);
+        assert_eq!(at("logs").section, Section::Trouble(T::Logs));
+        assert_eq!(at("diagnostics").page, Page::Troubleshooting);
+        assert_eq!(at("testing").section, Section::Trouble(T::KeyTest));
+        assert_eq!(at("about").section, Section::Settings(S::About));
+        assert_eq!(at("licenses").section, Section::Settings(S::About));
+        assert_eq!(at("updates"), Target::UPDATES);
+        assert_eq!(at("ppm").page, Page::Stats);
+        assert_eq!(at("rapid-trigger").page, Page::Keys);
+        // What the daemon launches for a pad that needs calibrating
+        assert_eq!(at("calibrate"), Target::CALIBRATION);
+        assert_eq!(at("calibration"), Target::CALIBRATION);
+        assert_eq!(Target::CALIBRATION.token(), "calibrate");
+    }
+
+    #[tokio::test]
+    async fn a_page_name_opens_its_tab() {
+        let (app, _) = App::new(true, Target::from_token("logs"));
+        assert_eq!(app.page, Page::Troubleshooting);
+        assert_eq!(app.diagnostics.active_tab, troubleshooting::Tab::Logs);
+        let (app, _) = App::new(true, Target::from_token("updates"));
+        assert_eq!(app.page, Page::Settings);
+        assert_eq!(app.settings_tab, settings::Tab::Updates);
+        let (app, _) = App::new(true, Target::from_token("calibrate"));
+        assert_eq!(app.page, Page::Keys);
+        assert!(app.calibrating);
+    }
+
+    /// An app with a pad connected and its settings loaded
+    fn app_with_pad() -> App {
+        let (mut app, _) = App::new(true, None);
+        app.device_connected = true;
+        app.config_loaded = true;
+        let config = DeviceConfig::default();
+        app.adopt_config(&config);
+        app.config = config;
+        app
+    }
+
+    #[tokio::test]
+    async fn the_pages_show_the_pads_settings_as_saved() {
+        // What the pages read from the pad's settings and build back is the
+        // same settings: nothing is "unsaved" before the person changes it
+        let app = app_with_pad();
+        assert_eq!(app.form_config(), app.config);
+        assert!(!app.pad_dirty());
+    }
+
+    #[tokio::test]
+    async fn a_change_is_unsaved_until_the_pad_confirms_it() {
+        let mut app = app_with_pad();
+        let _ = app.update(Message::Brightness(40));
+        assert!(app.pad_dirty());
+        let _ = app.update(Message::SavePad);
+        let sent = app
+            .pad_sent
+            .clone()
+            .expect("Save to pad sends the settings");
+        assert_eq!(sent.brightness, 40);
+        assert!(app.pad_dirty(), "not saved before the pad answers");
+
+        // Refused: still unsaved, and Save works again
+        let _ = app.update(Message::ActionDone(
+            Action::SavePad,
+            Ok(IpcResponse::Error("the pad did not answer".into())),
+        ));
+        assert!(app.pad_sent.is_none());
+        assert!(app.pad_dirty());
+
+        let _ = app.update(Message::SavePad);
+        let _ = app.update(Message::ActionDone(
+            Action::SavePad,
+            Ok(IpcResponse::ConfigUpdated {
+                config: sent,
+                deferred_persist: false,
+            }),
+        ));
+        assert!(!app.pad_dirty());
+        assert_eq!(app.config.brightness, 40);
+    }
+
+    #[tokio::test]
+    async fn revert_goes_back_to_what_the_pad_has() {
+        let mut app = app_with_pad();
+        let _ = app.update(Message::Brightness(40));
+        let _ = app.update(Message::CaptureKey(1));
+        let _ = app.update(Message::CaptureKeyPressed(iced::keyboard::Key::Character(
+            "q".into(),
+        )));
+        assert_eq!(app.k1_input, "Q");
+        assert!(app.pad_dirty());
+        let _ = app.update(Message::RevertPad);
+        assert!(!app.pad_dirty());
+        assert_eq!(app.brightness, app.config.brightness);
+        assert_eq!(app.k1_input, app.config.key1_char());
+    }
+
+    #[tokio::test]
+    async fn a_binding_takes_letters_only() {
+        use iced::keyboard::{key::Named, Key};
+        let mut app = app_with_pad();
+        let before = app.k2_input.clone();
+        let _ = app.update(Message::CaptureKey(2));
+        let _ = app.update(Message::CaptureKeyPressed(Key::Character("5".into())));
+        assert_eq!(app.capturing_key, Some(2), "still waiting for a letter");
+        assert_eq!(app.capture_hint, Some("Pick a letter key (A to Z)."));
+        assert_eq!(app.k2_input, before);
+        let _ = app.update(Message::CaptureKeyPressed(Key::Named(Named::Enter)));
+        assert_eq!(app.k2_input, before);
+        let _ = app.update(Message::CaptureKeyPressed(Key::Named(Named::Escape)));
+        assert_eq!(app.capturing_key, None, "Escape keeps the binding");
+        assert_eq!(app.k2_input, before);
+    }
+
+    #[tokio::test]
+    async fn leaving_unsaved_pad_settings_asks_first() {
+        let mut app = app_with_pad();
+        let _ = app.update(Message::Navigate(Page::Keys));
+        let _ = app.update(Message::Brightness(40));
+        // Keys and Screen share the save bar: no question between them
+        let _ = app.update(Message::Navigate(Page::Screen));
+        assert_eq!(app.page, Page::Screen);
+        assert!(app.leave_prompt.is_none());
+
+        let _ = app.update(Message::Navigate(Page::Dashboard));
+        assert_eq!(app.page, Page::Screen, "asked before leaving");
+        assert_eq!(app.leave_prompt, Some(Page::Dashboard.at()));
+        let _ = app.update(Message::LeaveAnswer(None));
+        assert_eq!(app.page, Page::Screen);
+        assert!(app.pad_dirty(), "Stay keeps the changes");
+
+        let _ = app.update(Message::Navigate(Page::Dashboard));
+        let _ = app.update(Message::LeaveAnswer(Some(false)));
+        assert_eq!(app.page, Page::Dashboard);
+        assert!(!app.pad_dirty(), "Discard drops them");
+    }
+
+    #[tokio::test]
+    async fn a_status_poll_never_overwrites_unsaved_settings() {
+        let mut app = app_with_pad();
+        let _ = app.update(Message::Brightness(40));
+        // The pad's settings change elsewhere (opadctl) while the page is edited
+        let elsewhere = DeviceConfig {
+            display_sleep_seconds: 120,
+            ..app.config.clone()
+        };
+        app.adopt_status_config(true, false, elsewhere.clone());
+        assert_eq!(app.brightness, 40, "the edit stays");
+        assert!(app.pad_dirty());
+        let _ = app.update(Message::RevertPad);
+        assert_eq!(app.sleep_seconds, 120, "Revert shows what the pad has now");
+
+        // Nothing unsaved: the pages follow the pad
+        let again = DeviceConfig {
+            brightness: 70,
+            ..elsewhere
+        };
+        app.adopt_status_config(true, false, again);
+        assert_eq!(app.brightness, 70);
+        assert!(!app.pad_dirty());
     }
 
     fn entry(seq: u64) -> LogEntry {
@@ -3749,7 +4142,7 @@ mod tests {
     async fn calibration_ignores_replies_from_before_start_or_cancel() {
         // Construct the app and drive its real update handler. Returned iced
         // tasks are not executed: no window, daemon connection or pad is used.
-        let (mut app, _) = App::new(true, Some(Page::Calibration));
+        let (mut app, _) = App::new(true, Some(Target::CALIBRATION));
         app.device_connected = true;
         let old_epoch = app.cal_epoch;
         let _ = app.update(Message::StartCalibration);

@@ -407,8 +407,8 @@ mod tests {
         stream.read_to_string(&mut msg).unwrap();
         let target = super::show_target(&msg).unwrap();
         assert_eq!(
-            crate::Page::from_token(&target),
-            Some(crate::Page::Calibration)
+            crate::Target::from_token(&target),
+            Some(crate::Target::CALIBRATION)
         );
     }
 

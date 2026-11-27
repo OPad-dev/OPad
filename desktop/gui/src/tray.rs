@@ -6,7 +6,8 @@ use futures_util::SinkExt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayAction {
     ShowWindow,
-    OpenMonitor,
+    /// Open the window on this page
+    Open(crate::Page),
     SyncNow,
     StartDaemon,
     Quit,
@@ -36,20 +37,18 @@ pub enum TrayEvent {
     Action(TrayAction),
 }
 
-/// What the tray status items and tooltip show
+/// What the tray's status lines and tooltip show
 #[derive(Debug, Clone, Default)]
 pub struct TrayStatus {
     pub daemon_online: bool,
     pub device_connected: bool,
     pub incompatible: bool,
-    pub firmware_version: Option<String>,
-    pub key1_presses: u64,
-    pub key2_presses: u64,
-    pub last_sync_time: Option<String>,
     pub last_sync_error: Option<String>,
     pub is_playing_or_cooldown: bool,
     pub tosu_connected: bool,
+    /// Presses on the game keys, as the Dashboard counts them
     pub total_presses: u64,
+    /// What the pad is doing, in words (`pages::mode_words`)
     pub mode: String,
 }
 
@@ -94,112 +93,78 @@ impl TrayViewModel {
             IconState::Disconnected
         };
 
+        // One line that says how things are, the same in the menu and the tooltip
+        let status = if !s.daemon_online {
+            "OPad service stopped".to_string()
+        } else if s.incompatible {
+            "Pad needs an update".to_string()
+        } else if !s.device_connected {
+            "Pad not connected".to_string()
+        } else if s.last_sync_error.is_some() {
+            "Pad connected · last sync failed".to_string()
+        } else {
+            format!("Pad connected · {}", s.mode)
+        };
+        let total = format!("Total presses: {}", crate::pages::grouped(s.total_presses));
+
         let tooltip_description = if !s.daemon_online {
-            "Daemon offline".to_string()
+            status.clone()
         } else {
             format!(
-                "Pad: {}\ntosu: {}\n{} presses · {}",
-                if s.device_connected {
-                    "connected"
-                } else {
-                    "disconnected"
-                },
+                "{status}\nosu! {}\n{total}",
                 if s.tosu_connected {
                     "connected"
                 } else {
-                    "not running"
+                    "not connected"
                 },
-                crate::pages::grouped(s.total_presses),
-                s.mode
             )
         };
 
-        let mut items = Vec::new();
-
-        // 1. Header: OPad
-        items.push(MenuItemModel::Disabled("OPad".to_string()));
-        items.push(MenuItemModel::Separator);
-
-        // 2. Pad status
-        let pad_status_str = if !s.daemon_online {
-            "Pad: Daemon offline"
-        } else if s.incompatible {
-            "Pad: Incompatible firmware"
-        } else if s.device_connected {
-            "Pad: Connected"
-        } else {
-            "Pad: Disconnected"
-        };
-        items.push(MenuItemModel::Disabled(pad_status_str.to_string()));
-
-        // 3. Firmware (hidden when unknown or device disconnected)
-        if s.daemon_online && s.device_connected {
-            if let Some(fw) = &s.firmware_version {
-                if !fw.is_empty() {
-                    items.push(MenuItemModel::Disabled(format!("Firmware: {fw}")));
-                }
-            }
+        let mut items = vec![MenuItemModel::Disabled(status)];
+        if s.daemon_online {
+            items.push(MenuItemModel::Disabled(total));
         }
-
-        // 4. Counters
-        items.push(MenuItemModel::Disabled(format!(
-            "Key 1: {}",
-            crate::pages::grouped(s.key1_presses)
-        )));
-        items.push(MenuItemModel::Disabled(format!(
-            "Key 2: {}",
-            crate::pages::grouped(s.key2_presses)
-        )));
-
-        // 5. Last sync
-        let sync_str = if s.last_sync_error.is_some() {
-            "Last sync: Sync failed".to_string()
-        } else if let Some(sync_time) = &s.last_sync_time {
-            let display_time = if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(sync_time) {
-                parsed.format("%H:%M").to_string()
-            } else {
-                sync_time.clone()
-            };
-            format!("Last sync: {display_time}")
-        } else {
-            "Last sync: Never".to_string()
-        };
-        items.push(MenuItemModel::Disabled(sync_str));
-
         items.push(MenuItemModel::Separator);
 
-        // 6. Navigation and actions
+        // Where people go from the tray
         items.push(MenuItemModel::Action {
             label: "Open OPad".into(),
             action: TrayAction::ShowWindow,
             enabled: true,
         });
         items.push(MenuItemModel::Action {
-            label: "Open Monitor".into(),
-            action: TrayAction::OpenMonitor,
+            label: "Keys".into(),
+            action: TrayAction::Open(crate::Page::Keys),
             enabled: true,
         });
+        items.push(MenuItemModel::Action {
+            label: "Troubleshooting".into(),
+            action: TrayAction::Open(crate::Page::Troubleshooting),
+            enabled: true,
+        });
+        items.push(MenuItemModel::Separator);
 
-        if !s.daemon_online {
-            items.push(MenuItemModel::Action {
-                label: "Start daemon".into(),
-                action: TrayAction::StartDaemon,
-                enabled: true,
-            });
-        } else {
-            let sync_enabled = s.device_connected && !s.is_playing_or_cooldown;
+        // The one thing to do from here: sync, or start the service when it
+        // is what stopped
+        if s.daemon_online {
             items.push(MenuItemModel::Action {
                 label: "Sync pad now".into(),
                 action: TrayAction::SyncNow,
-                enabled: sync_enabled,
+                enabled: s.device_connected && !s.is_playing_or_cooldown,
+            });
+        } else {
+            items.push(MenuItemModel::Action {
+                label: "Start OPad service".into(),
+                action: TrayAction::StartDaemon,
+                enabled: true,
             });
         }
-
         items.push(MenuItemModel::Separator);
 
-        // 7. Quit OPad app (exits GUI only, not daemon)
+        // Quits this app only: the service, and so the pad's counting and
+        // screen, keep running
         items.push(MenuItemModel::Action {
-            label: "Quit OPad app".into(),
+            label: "Quit OPad".into(),
             action: TrayAction::Quit,
             enabled: true,
         });
@@ -643,62 +608,116 @@ mod tests {
     }
 
     #[test]
-    fn test_tray_view_model_offline() {
+    fn the_tray_says_the_service_stopped_and_offers_to_start_it() {
         let status = TrayStatus {
             daemon_online: false,
             ..Default::default()
         };
         let vm = TrayViewModel::from_status(&status);
         assert_eq!(vm.icon_state, IconState::Warning);
-        assert_eq!(vm.tooltip_description, "Daemon offline");
-        assert!(vm
-            .menu_items
-            .contains(&MenuItemModel::Disabled("Pad: Daemon offline".into())));
+        assert_eq!(vm.tooltip_description, "OPad service stopped");
+        assert_eq!(
+            vm.menu_items[0],
+            MenuItemModel::Disabled("OPad service stopped".into())
+        );
         assert!(vm.menu_items.contains(&MenuItemModel::Action {
-            label: "Start daemon".into(),
+            label: "Start OPad service".into(),
             action: TrayAction::StartDaemon,
             enabled: true,
         }));
+        // Nothing to sync with, and no counters to show
+        assert!(!vm.menu_items.iter().any(|i| matches!(
+            i,
+            MenuItemModel::Action {
+                action: TrayAction::SyncNow,
+                ..
+            }
+        )));
+        assert!(!vm
+            .menu_items
+            .iter()
+            .any(|i| matches!(i, MenuItemModel::Disabled(l) if l.starts_with("Total presses"))));
     }
 
     #[test]
-    fn test_tray_view_model_connected() {
+    fn the_tray_shows_the_pad_its_total_and_where_to_go() {
         let status = TrayStatus {
             daemon_online: true,
             device_connected: true,
-            firmware_version: Some("1.2.0".into()),
-            key1_presses: 1_284_391,
-            key2_presses: 987_654,
             total_presses: 2_272_045,
-            mode: "osu!".into(),
+            mode: "Ready".into(),
             tosu_connected: true,
             ..Default::default()
         };
         let vm = TrayViewModel::from_status(&status);
         assert_eq!(vm.icon_state, IconState::Connected);
-        assert!(vm.tooltip_description.contains("Pad: connected"));
-        assert!(vm.tooltip_description.contains("2,272,045 presses · osu!"));
-        assert!(vm
+        assert_eq!(
+            vm.tooltip_description,
+            "Pad connected · Ready\nosu! connected\nTotal presses: 2,272,045"
+        );
+        let labels: Vec<String> = vm
             .menu_items
-            .contains(&MenuItemModel::Disabled("Pad: Connected".into())));
-        assert!(vm
-            .menu_items
-            .contains(&MenuItemModel::Disabled("Firmware: 1.2.0".into())));
-        assert!(vm
-            .menu_items
-            .contains(&MenuItemModel::Disabled("Key 1: 1,284,391".into())));
-        assert!(vm
-            .menu_items
-            .contains(&MenuItemModel::Disabled("Key 2: 987,654".into())));
+            .iter()
+            .map(|i| match i {
+                MenuItemModel::Disabled(l) => format!("({l})"),
+                MenuItemModel::Separator => "-".into(),
+                MenuItemModel::Action { label, .. } => label.clone(),
+            })
+            .collect();
+        assert_eq!(
+            labels,
+            [
+                "(Pad connected · Ready)",
+                "(Total presses: 2,272,045)",
+                "-",
+                "Open OPad",
+                "Keys",
+                "Troubleshooting",
+                "-",
+                "Sync pad now",
+                "-",
+                "Quit OPad",
+            ]
+        );
         assert!(vm.menu_items.contains(&MenuItemModel::Action {
-            label: "Sync pad now".into(),
-            action: TrayAction::SyncNow,
+            label: "Troubleshooting".into(),
+            action: TrayAction::Open(crate::Page::Troubleshooting),
             enabled: true,
         }));
     }
 
     #[test]
-    fn test_tray_view_model_sync_failed() {
+    fn sync_is_greyed_out_during_a_map_and_without_a_pad() {
+        let sync_enabled = |status: &TrayStatus| {
+            TrayViewModel::from_status(status)
+                .menu_items
+                .iter()
+                .find_map(|i| match i {
+                    MenuItemModel::Action {
+                        action: TrayAction::SyncNow,
+                        enabled,
+                        ..
+                    } => Some(*enabled),
+                    _ => None,
+                })
+                .unwrap()
+        };
+        let mut status = TrayStatus {
+            daemon_online: true,
+            device_connected: true,
+            mode: "In a map".into(),
+            is_playing_or_cooldown: true,
+            ..Default::default()
+        };
+        assert!(!sync_enabled(&status));
+        status.is_playing_or_cooldown = false;
+        assert!(sync_enabled(&status));
+        status.device_connected = false;
+        assert!(!sync_enabled(&status));
+    }
+
+    #[test]
+    fn a_failed_sync_shows_in_the_status_line() {
         let status = TrayStatus {
             daemon_online: true,
             device_connected: true,
@@ -706,8 +725,9 @@ mod tests {
             ..Default::default()
         };
         let vm = TrayViewModel::from_status(&status);
-        assert!(vm
-            .menu_items
-            .contains(&MenuItemModel::Disabled("Last sync: Sync failed".into())));
+        assert_eq!(
+            vm.menu_items[0],
+            MenuItemModel::Disabled("Pad connected · last sync failed".into())
+        );
     }
 }

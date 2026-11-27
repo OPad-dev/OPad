@@ -4,7 +4,7 @@
 
 use crate::theme::{self, caption, heading, muted};
 use crate::{ipc, App, Message};
-use iced::widget::{button, column, container, row, scrollable, text, Space};
+use iced::widget::{button, column, container, row, text, Space};
 use iced::{Alignment, Element, Length, Task};
 use opad_ipc::{IpcRequest, IpcResponse, TapStatsSnapshot};
 use opad_model::tap_rate::{
@@ -321,7 +321,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         if s.error.is_none() {
             page = page.push(card(muted("Loading KPM statistics...")));
         }
-        return scrollable(page).into();
+        return crate::widgets::scrolling(page).into();
     };
 
     let attempt: Element<'_, Message> = match (&snapshot.current, &snapshot.last) {
@@ -388,7 +388,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     });
     page = page.push(card(history));
 
-    scrollable(page).into()
+    crate::widgets::scrolling(page).into()
 }
 
 fn empty_history<'a>(msg: &'a str, unsaved: usize) -> Element<'a, Message> {
