@@ -111,7 +111,7 @@ La regla cubre el ID USB de la app `303a:8415`, el `303a:1001` del bootloader de
 
 ### El puerto serie está ocupado
 
-Mientras `opad-daemon` se ejecuta, retiene el puerto serie del teclado (`/dev/ttyACM0` en Linux, un puerto `COM` en Windows). `opadctl pad flash`, `opadctl pad bootloader` y la actualización de firmware de la app piden por ti al daemon que lo suelte. Para cualquier otra herramienta serie, detén antes el daemon. <!-- src: /desktop/cli/src/main.rs#prepare_flash -->
+Mientras `opad-daemon` se ejecuta, retiene el puerto serie del teclado (`/dev/ttyACM0` en Linux, un puerto `COM` en Windows). `opadctl flash`, `opadctl pad bootloader` y la actualización de firmware de la app piden por ti al daemon que lo suelte. Para cualquier otra herramienta serie, detén antes el daemon. <!-- src: /desktop/cli/src/main.rs#prepare_flash -->
 
 ### Una tecla no hace nada tras cambiar un pin
 
@@ -146,7 +146,7 @@ Nunca necesitas los botones BOOT o RESET de la placa.
 1. Ejecuta el comando de recuperación con una carpeta que contenga el firmware: una carpeta de compilación de ESP-IDF o una carpeta con los archivos `.bin` de una versión publicada del firmware: <!-- src: /desktop/cli/src/main.rs#run -->
 
    ```bash
-   opadctl pad recover firmware/build
+   opadctl recover firmware/build
    ```
 
 2. Cuando te lo pida, desconecta el cable USB del teclado y vuelve a conectarlo. `opadctl` atrapa el bootloader integrado del ESP32-S3 en el momento en que aparece al encenderse (`303a:1001`) y escribe el firmware completo por USB. <!-- src: /desktop/crates/opad-device/src/flash.rs#recover -->

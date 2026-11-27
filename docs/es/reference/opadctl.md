@@ -22,7 +22,7 @@ sidebar:
 | Reiniciar los contadores de por vida | `opadctl counters reset --yes` |
 | Comprobar los permisos en Linux (udev, tosu) | `opadctl doctor` |
 | Seguir los registros en directo | `opadctl logs -f` |
-| Recuperar un teclado que ya no aparece como OPad | `opadctl pad recover <carpeta del firmware>` y vuelve a conectarlo |
+| Recuperar un teclado que ya no aparece como OPad | `opadctl recover <carpeta del firmware>` y vuelve a conectarlo |
 <!-- src: /desktop/cli/src/main.rs#Cmd -->
 
 ## Cómo leer esta página
@@ -32,7 +32,7 @@ Los bloques `text` y las columnas **Ayuda** son la salida literal de `--help` de
 | Subcomandos | Necesita `opad-daemon` |
 |---|---|
 | `doctor` | No. Se ejecuta en local y nunca se conecta. |
-| `pad flash`, `pad recover`, `pad bootloader` | No. Si el daemon responde, `opadctl` le pide primero que libere el puerto serie; si no, imprime `Could not reach opad-daemon (...); flashing without it.` y continúa. |
+| `flash`, `recover`, `pad bootloader` | No. Si el daemon responde, `opadctl` le pide primero que libere el puerto serie; si no, imprime `Could not reach opad-daemon (...); flashing without it.` y continúa. |
 | Todos los demás subcomandos | Sí. Sin él, `opadctl` termina con `Failed to connect to opad-daemon. Is the daemon running?` (exit code 3) |
 <!-- src: /desktop/cli/src/main.rs#run -->
 
@@ -89,7 +89,7 @@ Los comandos se reagruparon. Todos los nombres anteriores siguen funcionando y h
 | `firmware-update` | `update install firmware` |
 | `restart` | `pad restart` |
 | `board-test` | `pad test` |
-| `animation`, `flash`, `recover`, `bootloader` | `pad animation`, `pad flash`, `pad recover`, `pad bootloader` |
+| `animation`, `bootloader` | `pad animation`, `pad bootloader` |
 <!-- src: /desktop/cli/src/main.rs#Cmd -->
 
 ## Comandos de uso diario
@@ -266,12 +266,14 @@ Solo comprueba: <!-- src: /desktop/cli/src/main.rs#run_doctor -->
 
 Funcionan con o sin el daemon (consulta [Cómo leer esta página](#cómo-leer-esta-página)). Para los procedimientos paso a paso, consulta [Recuperación](../recovery.md) §7.
 
-### opadctl pad flash
+`flash` y `recover` aparecen dos veces en `--help`: en el primer nivel, con los nombres que conoce cualquier versión de `opadctl`, y como `pad flash` y `pad recover`. Las dos formas ejecutan el mismo comando. Esta documentación usa los nombres cortos, para que los pasos de un teclado que no arranca sirvan con el `opadctl` que haya instalado. <!-- src: /desktop/cli/src/main.rs#Cmd, /desktop/cli/src/main.rs#PadCmd -->
+
+### opadctl flash
 
 ```text
-Flash new firmware binary onto the ESP32-S3 using espflash
+Flash new firmware binary onto the ESP32-S3 using espflash (same as `pad flash`)
 
-Usage: opadctl pad flash [OPTIONS] <FIRMWARE>
+Usage: opadctl flash [OPTIONS] <FIRMWARE>
 ```
 
 | Argumento u opción | Ayuda |
@@ -302,7 +304,7 @@ Usage: opadctl pad flash [OPTIONS] <FIRMWARE>
 | `0xf000` | `ota_data_initial.bin` | No (se escribe si está presente) |
 | `0x20000` | `opad-firmware.bin` (o el archivo indicado) | Sí |
 
-En ambos modos, `opadctl` reinicia el teclado en el bootloader de descarga de la ROM por USB, lo flashea con `espflash` y espera hasta 15 s a que vuelva como la aplicación OPad (`303a:8415`). Un teclado que no vuelve se notifica como un fallo que remite a `opadctl pad recover`. <!-- src: /desktop/cli/src/main.rs#run, /desktop/daemon/src/ipc_handlers.rs#FinishFlash -->
+En ambos modos, `opadctl` reinicia el teclado en el bootloader de descarga de la ROM por USB, lo flashea con `espflash` y espera hasta 15 s a que vuelva como la aplicación OPad (`303a:8415`). Un teclado que no vuelve se notifica como un fallo que remite a `opadctl recover`. <!-- src: /desktop/cli/src/main.rs#run, /desktop/daemon/src/ipc_handlers.rs#FinishFlash -->
 
 ### opadctl pad bootloader
 
@@ -318,12 +320,12 @@ Usage: opadctl pad bootloader [OPTIONS]
 
 Pide al daemon que libere el puerto, reinicia el teclado en el bootloader de descarga de la ROM (`303a:1001`), devuelve el puerto al daemon e imprime el puerto del bootloader. El teclado se queda en modo de descarga para otras herramientas de flasheo. <!-- src: /desktop/cli/src/main.rs#run -->
 
-### opadctl pad recover
+### opadctl recover
 
 ```text
-Recover a pad that no longer shows up as OPad: replug it, and its next boot is caught over USB and flashed with the full set. No buttons
+Recover a pad that no longer shows up as OPad: replug it, and its next boot is caught over USB and flashed with the full set. No buttons (same as `pad recover`)
 
-Usage: opadctl pad recover [OPTIONS] <FIRMWARE>
+Usage: opadctl recover [OPTIONS] <FIRMWARE>
 ```
 
 | Argumento u opción | Ayuda |
@@ -332,7 +334,7 @@ Usage: opadctl pad recover [OPTIONS] <FIRMWARE>
 | `--timeout <TIMEOUT>` | How long to wait for the replug, in seconds [default: 300] |
 <!-- src: /desktop/cli/src/main.rs#run -->
 
-Resuelve el mismo conjunto de archivos que `pad flash --full`, te pide que desconectes y vuelvas a conectar el teclado y espera hasta `--timeout` segundos. Cuando aparece durante el arranque el puerto USB-Serial-JTAG de la ROM del teclado (`303a:1001`), `opadctl` lo retiene en modo de descarga, escribe el conjunto completo, lo reinicia en la aplicación con un reinicio por watchdog RTC y espera hasta 15 s a la aplicación OPad (`303a:8415`). Una placa que ya estaba en el bus como `303a:1001` cuando empezó el comando se deja como está y se nombra en una línea `Leaving ... alone`: solo se escribe un puerto que aparece durante la espera. Consulta [Recuperación](../recovery.md) §7.7. <!-- src: /desktop/cli/src/main.rs#run, /desktop/crates/opad-device/src/flash.rs#recover -->
+Resuelve el mismo conjunto de archivos que `flash --full`, te pide que desconectes y vuelvas a conectar el teclado y espera hasta `--timeout` segundos. Cuando aparece durante el arranque el puerto USB-Serial-JTAG de la ROM del teclado (`303a:1001`), `opadctl` lo retiene en modo de descarga, escribe el conjunto completo, lo reinicia en la aplicación con un reinicio por watchdog RTC y espera hasta 15 s a la aplicación OPad (`303a:8415`). Una placa que ya estaba en el bus como `303a:1001` cuando empezó el comando se deja como está y se nombra en una línea `Leaving ... alone`: solo se escribe un puerto que aparece durante la espera. Consulta [Recuperación](../recovery.md) §7.7. <!-- src: /desktop/cli/src/main.rs#run, /desktop/crates/opad-device/src/flash.rs#recover -->
 
 ## Diagnóstico y pruebas
 

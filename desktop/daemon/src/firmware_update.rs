@@ -260,7 +260,7 @@ pub enum FirmwareUpdateError {
     /// as expected. Never silently swallowed.
     #[error("The firmware was written, but the pad came back as {found}, not {expected}. See docs/recovery.md.")]
     WrongVersionBack { expected: String, found: String },
-    #[error("The firmware was written, but the pad did not come back within {0:?}. It is not damaged: run `opadctl pad recover` and replug it (docs/recovery.md).")]
+    #[error("The firmware was written, but the pad did not come back within {0:?}. It is not damaged: run `opadctl recover` and replug it (docs/recovery.md).")]
     NoReconnect(Duration),
     /// The new image never came up as a working USB device, and the pad went
     /// back to the image it had. Nothing is broken.

@@ -8,7 +8,7 @@ sidebar:
 A pad is updated, flashed and recovered over USB only. Nobody is ever asked to press BOOT or RESET ([AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §1.5). That rules out the usual safety net for a bad flash, so the firmware has to provide its own: **an update must not be able to strand a pad.** Two layers make sure it cannot:
 
 1. **Two app slots with a trial boot.** A new image goes into the slot the pad is *not* running, boots once on trial, and is kept only if a host configures its USB. Otherwise the bootloader goes back to the old one by itself.
-2. **The ROM bootloader as a last resort.** A pad whose app never enumerates is caught by `opadctl pad recover` during its next boot, in the mask ROM's USB loader, which no flash content can break.
+2. **The ROM bootloader as a last resort.** A pad whose app never enumerates is caught by `opadctl recover` during its next boot, in the mask ROM's USB loader, which no flash content can break.
 
 <!-- src: /firmware/main/app_main.c#confirm_image_once_usb_works, /desktop/crates/opad-device/src/flash.rs#recover -->
 
@@ -33,7 +33,7 @@ The host plans an update with [`plan_app_update()`](https://github.com/OPad-dev/
 3. [`otadata_image()`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-device/src/flash.rs) builds a fresh `otadata`: sector 0 keeps the old slot as `OTA_IMG_VALID`, sector 1 selects the new slot with a higher sequence number as `OTA_IMG_NEW`. Each entry carries the CRC-32 the bootloader checks (`otadata_crc`).
 4. The app image is written first and `otadata` second, so an interrupted write leaves the old slot selected and the old image boots.
 
-Two cases fall outside this. A pad that reports no OTA slot (firmware too old to say, or the pre-OTA `factory` layout) cannot take an update from the app's updater, which reports `NeedsFullReflash` and asks for a one-time `opadctl pad flash --full`. And `opadctl pad flash` with no daemon running cannot learn the running slot, so it says so, writes `ota_0` and blanks the boot selection so that `ota_0` is what boots, with no fallback.
+Two cases fall outside this. A pad that reports no OTA slot (firmware too old to say, or the pre-OTA `factory` layout) cannot take an update from the app's updater, which reports `NeedsFullReflash` and asks for a one-time `opadctl flash --full`. And `opadctl flash` with no daemon running cannot learn the running slot, so it says so, writes `ota_0` and blanks the boot selection so that `ota_0` is what boots, with no fallback.
 
 ## The trial boot
 
@@ -79,14 +79,14 @@ sequenceDiagram
     C->>D: FinishFlash
 ```
 
-1. The daemon holds the pad's serial port, so `opadctl pad flash` first asks it to let go (`IpcRequest::PrepareFlash`; the updater calls `pause_and_release()`). On Windows a serial handle is exclusive, so this is required.
+1. The daemon holds the pad's serial port, so `opadctl flash` first asks it to let go (`IpcRequest::PrepareFlash`; the updater calls `pause_and_release()`). On Windows a serial handle is exclusive, so this is required.
 2. `enter_bootloader()` tries two triggers in turn (`BOOT_TRIGGERS`): the text command `BOOTLOADER\n` on the CDC port, then opening the port at 1200 baud.
 3. The firmware flushes CDC, calls `tud_disconnect()`, hands the PHY back to USB-Serial-JTAG, and holds SE0 (both lines pulled down) for 300 ms so the host sees a real detach. It re-attaches, restoring the D+ pull-up *before* dropping the pull override, waits up to 1.5 s for the host's bus reset, sets `RTC_CNTL_FORCE_DOWNLOAD_BOOT` and restarts into the ROM loader. Each of those details fixed a real failure; [AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §6 lists them.
 4. [`write_images()`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-device/src/flash.rs) runs `espflash write-bin --chip esp32s3 --before no-reset --after no-reset-no-stub --non-interactive` once per image, staying in the flasher stub between them.
 5. [`reset_to_app()`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-device/src/flash.rs) leaves download mode itself: it sends SLIP `WRITE_REG` commands that clear `FORCE_DOWNLOAD_BOOT` and trigger an RTC watchdog reset. espflash cannot do this on the S3: its own `--after watchdog-reset` is a silent no-op there, and it refuses to reset a chip with that bit set.
 6. The daemon resumes (`IpcRequest::FinishFlash`) and waits for the pad to come back.
 
-If the new app never enumerates, the trial boot rolls it back. If even that cannot happen (the bootloader or the partition table itself is broken), `opadctl pad recover` waits for the pad's next boot, catches it in the ROM loader as it appears, holds it in download mode and writes the full image set. The procedure is in [Recovery](../recovery.md) §7.6–7.7.
+If the new app never enumerates, the trial boot rolls it back. If even that cannot happen (the bootloader or the partition table itself is broken), `opadctl recover` waits for the pad's next boot, catches it in the ROM loader as it appears, holds it in download mode and writes the full image set. The procedure is in [Recovery](../recovery.md) §7.6–7.7.
 
 ## App and tosu updates
 

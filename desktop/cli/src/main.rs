@@ -203,6 +203,16 @@ enum Cmd {
         #[command(subcommand)]
         action: PadCmd,
     },
+    // These two are also under `pad`. They stay here under the names they
+    // always had, because the instructions for a pad that does not start have
+    // to work with whichever opadctl is installed.
+    /// Flash new firmware binary onto the ESP32-S3 using espflash (same as
+    /// `pad flash`)
+    Flash(FlashArgs),
+    /// Recover a pad that no longer shows up as OPad: replug it, and its next
+    /// boot is caught over USB and flashed with the full set. No buttons
+    /// (same as `pad recover`)
+    Recover(RecoverArgs),
 
     // The names these had before the commands were grouped. They keep working
     // and are left out of --help.
@@ -236,12 +246,6 @@ enum Cmd {
     /// Same as `pad animation`
     #[command(hide = true)]
     Animation(AnimationArgs),
-    /// Same as `pad flash`
-    #[command(hide = true)]
-    Flash(FlashArgs),
-    /// Same as `pad recover`
-    #[command(hide = true)]
-    Recover(RecoverArgs),
     /// Same as `pad bootloader`
     #[command(hide = true)]
     Bootloader(BootloaderArgs),
@@ -1284,7 +1288,7 @@ async fn run(action: Action) -> Result<()> {
                         }
                         None => bail!(
                             "Firmware was written, but the pad did not come back as the OPad app \
-                         within 15s. Run `opadctl pad recover` and replug it; see docs/recovery.md."
+                         within 15s. Run `opadctl recover` and replug it; see docs/recovery.md."
                         ),
                     }
                 }
@@ -2185,7 +2189,7 @@ async fn report_slot_after_flash(
     }
     bail!(
         "Firmware was written, but the pad did not come back within {}s. Run `opadctl \
-         pad recover` and replug it; see docs/recovery.md.",
+         recover` and replug it; see docs/recovery.md.",
         ROLLBACK_WAIT.as_secs()
     )
 }
@@ -2716,13 +2720,21 @@ mod tests {
     fn the_old_names_are_left_out_of_help() {
         use clap::CommandFactory;
         let help = Cli::command().render_help().to_string();
-        for shown in ["doctor", "counters", "backup", "logs", "update", "pad"] {
+        for shown in [
+            "doctor", "counters", "backup", "logs", "update", "pad", "flash", "recover",
+        ] {
             assert!(
                 help.contains(&format!("\n  {shown} ")),
                 "{shown} is missing"
             );
         }
-        for hidden in ["sync", "firmware-update", "board-test", "flash", "monitor"] {
+        for hidden in [
+            "sync",
+            "firmware-update",
+            "board-test",
+            "bootloader",
+            "monitor",
+        ] {
             assert!(!help.contains(&format!("\n  {hidden} ")), "{hidden} shows");
         }
     }

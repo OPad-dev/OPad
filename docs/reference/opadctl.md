@@ -22,7 +22,7 @@ sidebar:
 | Reset lifetime counters | `opadctl counters reset --yes` |
 | Check Linux permissions (udev, tosu) | `opadctl doctor` |
 | Watch the logs live | `opadctl logs -f` |
-| Recover a pad that no longer shows up as OPad | `opadctl pad recover <firmware folder>`, then replug it |
+| Recover a pad that no longer shows up as OPad | `opadctl recover <firmware folder>`, then replug it |
 <!-- src: /desktop/cli/src/main.rs#Cmd -->
 
 ## How to read this page
@@ -32,7 +32,7 @@ The `text` blocks and the **Help** columns are verbatim from the `--help` output
 | Subcommands | Needs `opad-daemon` |
 |---|---|
 | `doctor` | No. It runs locally and never connects. |
-| `pad flash`, `pad recover`, `pad bootloader` | No. If the daemon answers, `opadctl` asks it to release the serial port first; if not, it prints `Could not reach opad-daemon (...); flashing without it.` and goes on. |
+| `flash`, `recover`, `pad bootloader` | No. If the daemon answers, `opadctl` asks it to release the serial port first; if not, it prints `Could not reach opad-daemon (...); flashing without it.` and goes on. |
 | Every other subcommand | Yes. Without it, `opadctl` exits with `Failed to connect to opad-daemon. Is the daemon running?` (exit code 3) |
 <!-- src: /desktop/cli/src/main.rs#run -->
 
@@ -89,7 +89,7 @@ The commands were regrouped. Every earlier name still works and does the same; i
 | `firmware-update` | `update install firmware` |
 | `restart` | `pad restart` |
 | `board-test` | `pad test` |
-| `animation`, `flash`, `recover`, `bootloader` | `pad animation`, `pad flash`, `pad recover`, `pad bootloader` |
+| `animation`, `bootloader` | `pad animation`, `pad bootloader` |
 <!-- src: /desktop/cli/src/main.rs#Cmd -->
 
 ## Everyday commands
@@ -266,12 +266,14 @@ It only checks: <!-- src: /desktop/cli/src/main.rs#run_doctor -->
 
 These work with or without the daemon (see [How to read this page](#how-to-read-this-page)). For the step-by-step procedures, see [Recovery](../recovery.md) §7.
 
-### opadctl pad flash
+`flash` and `recover` are listed twice in `--help`: at the top level, under the names every version of `opadctl` knows, and as `pad flash` and `pad recover`. Both run the same command. This documentation uses the short names, so the steps for a pad that does not start work with whichever `opadctl` is installed. <!-- src: /desktop/cli/src/main.rs#Cmd, /desktop/cli/src/main.rs#PadCmd -->
+
+### opadctl flash
 
 ```text
-Flash new firmware binary onto the ESP32-S3 using espflash
+Flash new firmware binary onto the ESP32-S3 using espflash (same as `pad flash`)
 
-Usage: opadctl pad flash [OPTIONS] <FIRMWARE>
+Usage: opadctl flash [OPTIONS] <FIRMWARE>
 ```
 
 | Argument or option | Help |
@@ -302,7 +304,7 @@ Usage: opadctl pad flash [OPTIONS] <FIRMWARE>
 | `0xf000` | `ota_data_initial.bin` | No (written when present) |
 | `0x20000` | `opad-firmware.bin` (or the file given) | Yes |
 
-In both modes `opadctl` reboots the pad into the ROM download bootloader over USB, flashes it with `espflash`, then waits up to 15 s for it to come back as the OPad app (`303a:8415`). A pad that does not come back is reported as a failure that points at `opadctl pad recover`. <!-- src: /desktop/cli/src/main.rs#run, /desktop/daemon/src/ipc_handlers.rs#FinishFlash -->
+In both modes `opadctl` reboots the pad into the ROM download bootloader over USB, flashes it with `espflash`, then waits up to 15 s for it to come back as the OPad app (`303a:8415`). A pad that does not come back is reported as a failure that points at `opadctl recover`. <!-- src: /desktop/cli/src/main.rs#run, /desktop/daemon/src/ipc_handlers.rs#FinishFlash -->
 
 ### opadctl pad bootloader
 
@@ -318,12 +320,12 @@ Usage: opadctl pad bootloader [OPTIONS]
 
 Asks the daemon to release the port, reboots the pad into the ROM download bootloader (`303a:1001`), hands the port back to the daemon and prints the bootloader's port. The pad stays in download mode for other flashing tools. <!-- src: /desktop/cli/src/main.rs#run -->
 
-### opadctl pad recover
+### opadctl recover
 
 ```text
-Recover a pad that no longer shows up as OPad: replug it, and its next boot is caught over USB and flashed with the full set. No buttons
+Recover a pad that no longer shows up as OPad: replug it, and its next boot is caught over USB and flashed with the full set. No buttons (same as `pad recover`)
 
-Usage: opadctl pad recover [OPTIONS] <FIRMWARE>
+Usage: opadctl recover [OPTIONS] <FIRMWARE>
 ```
 
 | Argument or option | Help |
@@ -332,7 +334,7 @@ Usage: opadctl pad recover [OPTIONS] <FIRMWARE>
 | `--timeout <TIMEOUT>` | How long to wait for the replug, in seconds [default: 300] |
 <!-- src: /desktop/cli/src/main.rs#run -->
 
-Resolves the same file set as `pad flash --full`, then asks you to unplug and replug the pad and waits up to `--timeout` seconds. When the pad's ROM USB-Serial-JTAG port (`303a:1001`) appears during boot, `opadctl` holds it in download mode, writes the full set, resets it into the app with an RTC watchdog reset, and waits up to 15 s for the OPad app (`303a:8415`). A board that was already on the bus as `303a:1001` when the command started is left alone and named in a `Leaving ... alone` line: only a port that appears during the wait is written. See [Recovery](../recovery.md) §7.7. <!-- src: /desktop/cli/src/main.rs#run, /desktop/crates/opad-device/src/flash.rs#recover -->
+Resolves the same file set as `flash --full`, then asks you to unplug and replug the pad and waits up to `--timeout` seconds. When the pad's ROM USB-Serial-JTAG port (`303a:1001`) appears during boot, `opadctl` holds it in download mode, writes the full set, resets it into the app with an RTC watchdog reset, and waits up to 15 s for the OPad app (`303a:8415`). A board that was already on the bus as `303a:1001` when the command started is left alone and named in a `Leaving ... alone` line: only a port that appears during the wait is written. See [Recovery](../recovery.md) §7.7. <!-- src: /desktop/cli/src/main.rs#run, /desktop/crates/opad-device/src/flash.rs#recover -->
 
 ## Diagnostics and testing
 

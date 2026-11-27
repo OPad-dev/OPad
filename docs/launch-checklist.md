@@ -77,7 +77,7 @@ issue templates; V3 hardware and case docs; printing guide.
    (ID-04, CRC-01/02), the 8-hour soak (CRC-03).
 9. [ ] **USB PID** (0.9): the firmware enumerates as `303a:8415`, granted by
    Espressif; app, udev and flasher follow. Tested on Linux 2026-11-25 (owner's
-   HE pad, Arch): `opadctl pad flash` from `4001` firmware, `opadctl pad recover` with a
+   HE pad, Arch): `opadctl flash` from `4001` firmware, `opadctl recover` with a
    replug, the installed rc.6 daemon finding the pad, and the new udev rule
    giving the user an ACL on the tty and the keyboard. Left: Windows, and drop
    `4001` from `70-opad.rules` once no rc pad still runs older firmware.
@@ -199,7 +199,7 @@ In this order (release spec §18.2–§18.3, §19):
 The printable version of this section is `docs/pad-test-sheet.md`.
 
 Run every row on **each SKU you sell** (MX V3 and HE V3), assembled in the V3
-case, on the release firmware, flashed with `opadctl pad flash` from the release.
+case, on the release firmware, flashed with `opadctl flash` from the release.
 IDs in brackets are the rows in `docs/testing-checklist.md`; re-run them, do
 not copy old results.
 
@@ -265,9 +265,9 @@ not copy old results.
 
 ### 3.8 Firmware update and recovery (rule 5)
 
-- [ ] `opadctl pad flash` from the release goes to the other slot (FAIL-05).
+- [ ] `opadctl flash` from the release goes to the other slot (FAIL-05).
 - [ ] A broken image rolls back by itself (FAIL-06).
-- [ ] `opadctl pad recover` + replug, no button (FAIL-07), on Linux and on Windows bare metal.
+- [ ] `opadctl recover` + replug, no button (FAIL-07), on Linux and on Windows bare metal.
 - [ ] In-app firmware update from the real feed: counters and calibration unchanged (UPD-06), consent every time (UPD-07), refused mid-map (UPD-08).
 - [ ] After an update, the pad types on a machine with no OPad software (UPD-09, never run).
 - [ ] Unplug mid-write, then recover (UPD-11, never run deliberately).
@@ -359,7 +359,7 @@ compliance lab or advisor; this list is what to ask about, not legal advice.
 
 - [ ] Bill of materials frozen with a second source for every part that can go out of stock (the ferrite already did, V3 README).
 - [ ] Incoming check of each Waveshare board (screen, touch, flash size, PSRAM).
-- [ ] One documented, scripted procedure per unit: `opadctl pad recover` / full flash of the release image, `opadctl pad test` (and `--magnet` for HE), calibration for HE, 20 taps per key, a touch test, `opadctl status` saved with the serial number.
+- [ ] One documented, scripted procedure per unit: `opadctl recover` / full flash of the release image, `opadctl pad test` (and `--magnet` for HE), calibration for HE, 20 taps per key, a touch test, `opadctl status` saved with the serial number.
 - [ ] Every unit leaves owned by no PC and with zero counters (or a documented factory state).
 - [ ] Serial number / batch label on the unit and box (GPSR).
 - [ ] 30-minute burn-in per unit (display animating, keys untouched, no phantom press).

@@ -3227,7 +3227,7 @@ impl App {
                                 .size(12),
                             text("If the pad does not respond or boot, refer to docs/recovery.md (§7 Disaster Reflash).")
                                 .size(12),
-                            text("You can reflash the pad over USB with opadctl pad flash without loss of lifetime press stats.")
+                            text("You can reflash the pad over USB with opadctl flash without loss of lifetime press stats.")
                                 .size(12)
                                 .color(theme::MUTED),
                         ]

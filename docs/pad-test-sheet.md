@@ -71,7 +71,7 @@ if it was done now, on this pad.
 - [ ] Update the firmware from the app: counters and calibration unchanged; asks every time; refused mid-map (UPD-06, 07, 08).
 - [ ] After the update, on a PC without OPad: still types (UPD-09).
 - [ ] A broken image rolls back by itself (FAIL-06).
-- [ ] `opadctl pad recover` and a replug bring a pad back; no button touched (FAIL-07).
+- [ ] `opadctl recover` and a replug bring a pad back; no button touched (FAIL-07).
 - [ ] Unplug mid-update, then recover (UPD-11).
 
 ## 8. Long run

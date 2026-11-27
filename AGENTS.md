@@ -45,7 +45,7 @@ details.
    pad all happen over USB or serial. Never tell anyone to press them, not even
    as a fallback. An update must not be able to strand a pad: it goes to the
    other OTA slot and rolls back unless the host configures USB, and a pad that
-   does not enumerate at all is recovered with `opadctl pad recover` and a replug
+   does not enumerate at all is recovered with `opadctl recover` and a replug
    (see `docs/recovery.md` §7.6–7.7).
 6. **Every key comes from a finger.** The pad sends a key only when a
    switch is pressed or the touchscreen is touched. No macros, auto-tap,
@@ -105,8 +105,8 @@ AI: assisted
 | Desktop | `cd desktop && cargo build` |
 | Firmware (ESP-IDF **v5.5.2**) | `cd firmware && idf.py set-target esp32s3 build` |
 | Regenerate protobuf | `./scripts/gen_proto.sh` |
-| Flash a pad | `opadctl pad flash firmware/build/opad-firmware.bin` (other OTA slot, rolls back if it never enumerates) |
-| Recover a pad that does not show up as OPad | `opadctl pad recover firmware/build`, then replug it |
+| Flash a pad | `opadctl flash firmware/build/opad-firmware.bin` (other OTA slot, rolls back if it never enumerates) |
+| Recover a pad that does not show up as OPad | `opadctl recover firmware/build`, then replug it |
 
 `make check` runs `cargo fmt --check`, clippy with `-D warnings`, the workspace
 tests and `firmware/test/host/run_tests.sh`. CI additionally:
@@ -159,7 +159,7 @@ to follow.
   suspect the firmware. The GUI dropdown names schematic header positions
   ("GPIO14 (P2 pin 11)"), which is easy to mix up with the silkscreen.
 - **Serial port busy:** the daemon holds the pad's CDC port (`/dev/ttyACM0`,
-  or a COM port on Windows). Stop it, or use `opadctl pad flash`, which asks it to
+  or a COM port on Windows). Stop it, or use `opadctl flash`, which asks it to
   release the port.
 - **USB reboot into download mode** (`reboot_to_rom_download()` in
   `firmware/main/usb/usb_cdc.c`, host side in
@@ -167,7 +167,7 @@ to follow.
   - the host must see a real detach (SE0 about 300 ms) and then a re-attach,
     or it fails with `error -71` and the app comes back;
   - set `dp_pullup` back to 1 *before* dropping the pull override, or the board
-    vanishes from the bus until a replug and `opadctl pad recover`;
+    vanishes from the bus until a replug and `opadctl recover`;
   - call `tud_disconnect()`, never `tinyusb_driver_uninstall()`, which frees
     mutexes other tasks still use;
   - leaving download mode needs an RTC watchdog reset. espflash's own

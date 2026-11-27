@@ -108,7 +108,7 @@ cd desktop && cargo build --release
 cd firmware && idf.py set-target esp32s3 build
 
 # Flash it over USB: the other OTA slot, rolls back if it never enumerates
-opadctl pad flash firmware/build/opad-firmware.bin
+opadctl flash firmware/build/opad-firmware.bin
 ```
 
 System packages, `make install`, tests and CI are covered in

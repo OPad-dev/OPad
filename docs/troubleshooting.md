@@ -111,7 +111,7 @@ The rule covers the app's USB ID `303a:8415`, the ESP32-S3 bootloader's `303a:10
 
 ### The serial port is busy
 
-While `opad-daemon` runs, it holds the pad's serial port (`/dev/ttyACM0` on Linux, a `COM` port on Windows). `opadctl pad flash`, `opadctl pad bootloader` and the app's firmware update ask the daemon to let go of it for you. For any other serial tool, stop the daemon first. <!-- src: /desktop/cli/src/main.rs#prepare_flash -->
+While `opad-daemon` runs, it holds the pad's serial port (`/dev/ttyACM0` on Linux, a `COM` port on Windows). `opadctl flash`, `opadctl pad bootloader` and the app's firmware update ask the daemon to let go of it for you. For any other serial tool, stop the daemon first. <!-- src: /desktop/cli/src/main.rs#prepare_flash -->
 
 ### A key does nothing after a pin change
 
@@ -146,7 +146,7 @@ You never need the board's BOOT or RESET buttons.
 1. Run the recovery command with a folder that holds the firmware: an ESP-IDF build folder, or a folder with a firmware release's `.bin` files: <!-- src: /desktop/cli/src/main.rs#run -->
 
    ```bash
-   opadctl pad recover firmware/build
+   opadctl recover firmware/build
    ```
 
 2. When it asks, unplug the pad's USB cable and plug it back in. `opadctl` catches the ESP32-S3's built-in bootloader in the moment it appears at power-on (`303a:1001`) and writes the full firmware over USB. <!-- src: /desktop/crates/opad-device/src/flash.rs#recover -->

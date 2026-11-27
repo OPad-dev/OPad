@@ -8,7 +8,7 @@ sidebar:
 Un teclado se actualiza, se flashea y se recupera solo por USB. Nunca se pide a nadie que pulse BOOT o RESET ([AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §1.5). Eso descarta la red de seguridad habitual ante un flasheo fallido, así que el firmware tiene que aportar la suya: **una actualización no puede dejar inservible un teclado.** Dos capas lo garantizan:
 
 1. **Dos ranuras de app con arranque de prueba.** Una imagen nueva va a la ranura que el teclado *no* está ejecutando, arranca una vez a prueba y solo se conserva si un anfitrión configura su USB. Si no, el bootloader vuelve por sí solo a la anterior.
-2. **El bootloader de la ROM como último recurso.** Un teclado cuya app nunca se enumera lo captura `opadctl pad recover` durante su siguiente arranque, en el cargador USB de la ROM de máscara, que ningún contenido de la flash puede romper.
+2. **El bootloader de la ROM como último recurso.** Un teclado cuya app nunca se enumera lo captura `opadctl recover` durante su siguiente arranque, en el cargador USB de la ROM de máscara, que ningún contenido de la flash puede romper.
 
 <!-- src: /firmware/main/app_main.c#confirm_image_once_usb_works, /desktop/crates/opad-device/src/flash.rs#recover -->
 
@@ -33,7 +33,7 @@ El anfitrión planifica una actualización con [`plan_app_update()`](https://git
 3. [`otadata_image()`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-device/src/flash.rs) construye un `otadata` nuevo: el sector 0 conserva la ranura antigua como `OTA_IMG_VALID` y el sector 1 selecciona la nueva con un número de secuencia mayor como `OTA_IMG_NEW`. Cada entrada lleva el CRC-32 que comprueba el bootloader (`otadata_crc`).
 4. Primero se escribe la imagen de la app y después `otadata`, así que una escritura interrumpida deja seleccionada la ranura antigua y arranca la imagen antigua.
 
-Dos casos quedan fuera de esto. Un teclado que no informa de ninguna ranura OTA (firmware demasiado antiguo para decirlo, o la disposición `factory` anterior a OTA) no puede recibir una actualización desde el actualizador de la app, que informa `NeedsFullReflash` y pide un `opadctl pad flash --full` por única vez. Y `opadctl pad flash` sin el daemon en marcha no puede saber la ranura en ejecución, así que lo indica, escribe `ota_0` y deja en blanco la selección de arranque para que arranque `ota_0`, sin alternativa.
+Dos casos quedan fuera de esto. Un teclado que no informa de ninguna ranura OTA (firmware demasiado antiguo para decirlo, o la disposición `factory` anterior a OTA) no puede recibir una actualización desde el actualizador de la app, que informa `NeedsFullReflash` y pide un `opadctl flash --full` por única vez. Y `opadctl flash` sin el daemon en marcha no puede saber la ranura en ejecución, así que lo indica, escribe `ota_0` y deja en blanco la selección de arranque para que arranque `ota_0`, sin alternativa.
 
 ## El arranque de prueba
 
@@ -79,14 +79,14 @@ sequenceDiagram
     C->>D: FinishFlash
 ```
 
-1. El daemon tiene abierto el puerto serie del teclado, así que `opadctl pad flash` le pide primero que lo suelte (`IpcRequest::PrepareFlash`; el actualizador llama a `pause_and_release()`). En Windows un manejador serie es exclusivo, así que es imprescindible.
+1. El daemon tiene abierto el puerto serie del teclado, así que `opadctl flash` le pide primero que lo suelte (`IpcRequest::PrepareFlash`; el actualizador llama a `pause_and_release()`). En Windows un manejador serie es exclusivo, así que es imprescindible.
 2. `enter_bootloader()` prueba dos disparadores por turno (`BOOT_TRIGGERS`): la orden de texto `BOOTLOADER\n` en el puerto CDC y, después, abrir el puerto a 1200 baudios.
 3. El firmware vacía el CDC, llama a `tud_disconnect()`, devuelve el PHY al USB-Serial-JTAG y mantiene SE0 (ambas líneas a nivel bajo) durante 300 ms para que el anfitrión vea una desconexión real. Se reconecta, restaurando el pull-up de D+ *antes* de quitar la anulación de pulls, espera hasta 1,5 s el reinicio de bus del anfitrión, activa `RTC_CNTL_FORCE_DOWNLOAD_BOOT` y reinicia en el cargador de la ROM. Cada uno de esos detalles corrigió un fallo real; [AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §6 los enumera.
 4. [`write_images()`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-device/src/flash.rs) ejecuta `espflash write-bin --chip esp32s3 --before no-reset --after no-reset-no-stub --non-interactive` una vez por imagen, sin salir del stub del flasheador entre ellas.
 5. [`reset_to_app()`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-device/src/flash.rs) sale por sí mismo del modo de descarga: envía órdenes SLIP `WRITE_REG` que borran `FORCE_DOWNLOAD_BOOT` y provocan un reinicio por watchdog RTC. espflash no puede hacerlo en el S3: su propio `--after watchdog-reset` no hace nada allí, sin avisar, y se niega a reiniciar un chip con ese bit activo.
 6. El daemon se reanuda (`IpcRequest::FinishFlash`) y espera a que vuelva el teclado.
 
-Si la app nueva nunca se enumera, el arranque de prueba la revierte. Si ni siquiera eso puede ocurrir (el bootloader o la propia tabla de particiones están rotos), `opadctl pad recover` espera al siguiente arranque del teclado, lo captura en el cargador de la ROM en cuanto aparece, lo retiene en modo de descarga y escribe el conjunto completo de imágenes. El procedimiento está en [Recuperación](../recovery.md) §7.6–7.7.
+Si la app nueva nunca se enumera, el arranque de prueba la revierte. Si ni siquiera eso puede ocurrir (el bootloader o la propia tabla de particiones están rotos), `opadctl recover` espera al siguiente arranque del teclado, lo captura en el cargador de la ROM en cuanto aparece, lo retiene en modo de descarga y escribe el conjunto completo de imágenes. El procedimiento está en [Recuperación](../recovery.md) §7.6–7.7.
 
 ## Actualizaciones de la app y de tosu
 

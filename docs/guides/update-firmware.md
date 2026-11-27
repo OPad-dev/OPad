@@ -12,7 +12,7 @@ The app and the pad update independently. You can update the firmware without up
 ## Before you start
 
 - Plug the pad straight into the PC rather than through a hub you might knock. <!-- src: /desktop/crates/opad-update/src/firmware.rs#consent_text -->
-- Have the desktop app installed and running. `opadctl pad flash` also works without the daemon, but then it cannot keep the old firmware as a fallback (see [below](#flash-a-firmware-file-opadctl-flash)). <!-- src: /desktop/cli/src/main.rs#run -->
+- Have the desktop app installed and running. `opadctl flash` also works without the daemon, but then it cannot keep the old firmware as a fallback (see [below](#flash-a-firmware-file-opadctl-flash)). <!-- src: /desktop/cli/src/main.rs#run -->
 - The pad stops working as a keyboard for about 30 seconds while it updates, so do it outside a map. OPad refuses to start an update during a map anyway. <!-- src: /desktop/crates/opad-update/src/firmware.rs#TYPICAL_OUTAGE_SECONDS --> <!-- src: /desktop/crates/opad-update/src/firmware.rs#blockers -->
 
 Your lifetime counters, settings, layouts, Hall Effect calibration and owner record are kept: an update writes only the firmware slot. <!-- src: /desktop/daemon/src/firmware_update.rs --> <!-- src: /firmware/partitions.csv -->
@@ -39,15 +39,15 @@ opadctl update install firmware
 
 It shows the installed and available versions, the release notes and what the update will do, then asks `Flash the pad now? [y/N]:`. Answer `y`. In a script, pass `--yes` to give that answer up front. <!-- src: /desktop/cli/src/main.rs#run -->
 
-## Flash a firmware file (`opadctl pad flash`)
+## Flash a firmware file (`opadctl flash`)
 
 To install a firmware file you built or downloaded yourself:
 
 ```sh
-opadctl pad flash firmware/build/opad-firmware.bin
+opadctl flash firmware/build/opad-firmware.bin
 ```
 
-`opadctl pad flash`: <!-- src: /desktop/cli/src/main.rs#run -->
+`opadctl flash`: <!-- src: /desktop/cli/src/main.rs#run -->
 
 1. checks that the file is an ESP32-S3 firmware image; <!-- src: /desktop/crates/opad-device/src/flash.rs#check_esp32s3_image_file -->
 2. asks the daemon which slot the pad runs from and picks the other one (`ota_0` at `0x20000` or `ota_1` at `0x220000`); <!-- src: /desktop/crates/opad-device/src/flash.rs#plan_app_update -->
@@ -56,7 +56,7 @@ opadctl pad flash firmware/build/opad-firmware.bin
 5. waits up to 45 seconds for the pad to come back, and tells you whether it runs the new slot or rolled back. <!-- src: /desktop/cli/src/main.rs#report_slot_after_flash -->
 
 > [!WARNING]
-> Without the daemon (or with firmware too old to report its slot), `opadctl pad flash` cannot tell which slot is running. It then writes `ota_0`, blanks the boot selection so `ota_0` is what boots, and prints `Running slot unknown: writing ota_0 and making it the slot that boots, with no fallback`. If that flash is interrupted, recover the pad with `opadctl pad recover` ([Recovery §7.7](../recovery.md#77-a-pad-that-does-not-show-up-as-opad-opadctl-recover)). <!-- src: /desktop/cli/src/main.rs#run -->
+> Without the daemon (or with firmware too old to report its slot), `opadctl flash` cannot tell which slot is running. It then writes `ota_0`, blanks the boot selection so `ota_0` is what boots, and prints `Running slot unknown: writing ota_0 and making it the slot that boots, with no fallback`. If that flash is interrupted, recover the pad with `opadctl recover` ([Recovery §7.7](../recovery.md#77-a-pad-that-does-not-show-up-as-opad-opadctl-recover)). <!-- src: /desktop/cli/src/main.rs#run -->
 
 Options: <!-- src: /desktop/cli/src/main.rs#run -->
 
@@ -95,5 +95,5 @@ In the app, the **Pad** page shows **Firmware**, and **Running slot** under **De
 ## If it did not work
 
 - **The pad went back to the old firmware:** it keeps working as before. See [Recovery §7.6](../recovery.md#76-when-flashing-is-interrupted).
-- **The pad does not show up as OPad (`303a:8415`) any more:** run `opadctl pad recover` and replug the pad, as in [Recovery §7.7](../recovery.md#77-a-pad-that-does-not-show-up-as-opad-opadctl-recover).
+- **The pad does not show up as OPad (`303a:8415`) any more:** run `opadctl recover` and replug the pad, as in [Recovery §7.7](../recovery.md#77-a-pad-that-does-not-show-up-as-opad-opadctl-recover).
 - **The serial port is busy, or permission is denied:** see [Troubleshooting §3](../troubleshooting.md#3-linux-usb-permissions-and-the-serial-port).
