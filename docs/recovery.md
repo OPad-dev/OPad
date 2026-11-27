@@ -17,10 +17,10 @@ How OPad keeps your lifetime counters safe, and how to reflash, hand over or rec
 | Sync, reset or import refused, or a setting "deferred" | [§6](#6-what-waits-until-a-map-ends): you are in a map or its cooldown |
 | Presses missing after a power loss during a map | [§2, rule 3](#rules): expected |
 | Give the pad away or unpair it | [§7](#7-reflashing-and-unbinding-a-pad): export, erase, reflash |
-| Pad not back as OPad about 15 s after `opadctl flash --full` | [§7.5](#75-confirm): flash again, do not erase again |
+| Pad not back as OPad about 15 s after `opadctl pad flash --full` | [§7.5](#75-confirm): flash again, do not erase again |
 | Update interrupted, or *went back to the previous one* after a flash | [§7.6](#76-when-flashing-is-interrupted) |
-| Pad never shows up as OPad (`dmesg`: `can't set config #1, error -32`), or `opadctl bootloader` fails | [§7.7](#77-a-pad-that-does-not-show-up-as-opad-opadctl-recover): `opadctl recover`, then replug |
-<!-- src: /desktop/gui/src/main.rs#App --> <!-- src: /desktop/cli/src/main.rs#Commands::Status --> <!-- src: /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request --> <!-- src: /desktop/cli/src/main.rs#report_slot_after_flash --> <!-- src: /desktop/crates/opad-device/src/flash.rs#FlashError -->
+| Pad never shows up as OPad (`dmesg`: `can't set config #1, error -32`), or `opadctl pad bootloader` fails | [§7.7](#77-a-pad-that-does-not-show-up-as-opad-opadctl-recover): `opadctl pad recover`, then replug |
+<!-- src: /desktop/gui/src/main.rs#App --> <!-- src: /desktop/cli/src/main.rs#run --> <!-- src: /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request --> <!-- src: /desktop/cli/src/main.rs#report_slot_after_flash --> <!-- src: /desktop/crates/opad-device/src/flash.rs#FlashError -->
 
 ## 1. Where the counters live
 
@@ -63,7 +63,7 @@ The daemon first checks that the pad speaks the same protocol version (`DEVICE_P
 
 > This looks like a new pad. Restore counters from `<old_id>`?
 
-`opadctl status` shows a `Replacement:` line meanwhile. <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
+`opadctl status` shows a `Replacement:` line meanwhile. <!-- src: /desktop/cli/src/main.rs#run -->
 
 **Why:** it matches the replacement case in §3, so sync is held until you answer. <!-- src: /desktop/daemon/src/runtime.rs#RuntimeController --> <!-- src: /desktop/daemon/src/runtime.rs#pad_guard -->
 
@@ -76,9 +76,9 @@ The daemon first checks that the pad speaks the same protocol version (`DEVICE_P
 
 The daemon refuses all of these during `PLAYING` and `COOLDOWN`, when its database is unavailable, and while an ownership or replacement question is open. <!-- src: /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
 
-- **Reset:** `opadctl reset --yes`, or **Device** → **Reset lifetime counters**, type `RESET`, **Confirm Reset**. Key 1, Key 2 and Key 3 go to `0`, the generation goes up by one, and the pad gets a forced `CounterSync`. With the pad unplugged, the reset is queued and sent at the next sync. <!-- src: /desktop/cli/src/main.rs#Commands::Reset --> <!-- src: /desktop/gui/src/main.rs#App --> <!-- src: /desktop/daemon/src/sync.rs#perform_sync -->
-- **Export:** `opadctl export <file>`, or **Device** → **Export backup**. The JSON file holds `format_version` (`1`), `exported_at`, the pad's `device_id`, `board_profile` and `counter_generation`, the lifetime counts, and the pad's settings (keys, debounce, brightness, sleep, refresh rate, key pins, swipes, result animations, and on a three-key pad `key3` and `game_keys`). <!-- src: /desktop/cli/src/main.rs#Commands::Export --> <!-- src: /desktop/crates/opad-model/src/lib.rs#JsonBackup -->
-- **Import:** `opadctl import <file>` (`--yes` skips the question), or **Device** → **Import backup**. Two steps: <!-- src: /desktop/cli/src/main.rs#Commands::Import -->
+- **Reset:** `opadctl counters reset --yes`, or **Pad** → **Reset lifetime counters**, type `RESET`, **Confirm Reset**. Key 1, Key 2 and Key 3 go to `0`, the generation goes up by one, and the pad gets a forced `CounterSync`. With the pad unplugged, the reset is queued and sent at the next sync. <!-- src: /desktop/cli/src/main.rs#run --> <!-- src: /desktop/gui/src/main.rs#App --> <!-- src: /desktop/daemon/src/sync.rs#perform_sync -->
+- **Export:** `opadctl backup export <file>`, or **Pad** → **Export backup**. The JSON file holds `format_version` (`1`), `exported_at`, the pad's `device_id`, `board_profile` and `counter_generation`, the lifetime counts, and the pad's settings (keys, debounce, brightness, sleep, refresh rate, key pins, swipes, result animations, and on a three-key pad `key3` and `game_keys`). <!-- src: /desktop/cli/src/main.rs#run --> <!-- src: /desktop/crates/opad-model/src/lib.rs#JsonBackup -->
+- **Import:** `opadctl backup import <file>` (`--yes` skips the question), or **Pad** → **Import backup**. Two steps: <!-- src: /desktop/cli/src/main.rs#run -->
   1. **Preview** (`PreviewImport`): the daemon checks the file (`format_version` 1, `board_profile` `waveshare_esp32s3_touch_lcd_2`, key codes, pins, value ranges, and an `exported_at` no more than a day in the future) and shows current against incoming values, with warnings for a different `device_id`, counters going down, or a generation change. Nothing is changed yet. <!-- src: /desktop/crates/opad-model/src/lib.rs#JsonBackup --> <!-- src: /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
   2. **Apply** (`ImportBackup`), only after you confirm. If any count would go down, the app also asks you to tick **I understand this replaces my counters with lower values** before **Apply Backup**. Your local tosu address is kept, the generation becomes one above the higher of the current and backup generations, and the settings and counts are written to the database and the pad. <!-- src: /desktop/gui/src/main.rs#App --> <!-- src: /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
 
@@ -92,7 +92,7 @@ The daemon also writes a backup by itself after every play session, in the same 
 | **When** | 20 seconds after the pad is back in `IDLE` after a map (cooldown, then sync), even if that sync failed. Starting another map in those 20 seconds cancels it; the next session arms a new one. Idle syncs never write one. <!-- src: /desktop/daemon/src/runtime.rs#AUTO_BACKUP_DELAY --> <!-- src: /desktop/daemon/src/runtime.rs#RuntimeController --> |
 | **How many** | The 10 newest `opad-backup-*.json` files. Older ones are deleted; files with other names in the folder are never touched. <!-- src: /desktop/daemon/src/backup.rs#KEEP --> <!-- src: /desktop/daemon/src/backup.rs#prune --> |
 | **Safety** | Written to a temporary file, flushed and renamed into place. A failed write is logged and never interrupts syncing or play. <!-- src: /desktop/daemon/src/backup.rs#write_and_log --> |
-| **Last one** | `Last Backup:` in `opadctl status`. <!-- src: /desktop/cli/src/main.rs#Commands::Status --> |
+| **Last one** | `Last Backup:` in `opadctl status`. <!-- src: /desktop/cli/src/main.rs#run --> |
 
 It holds the latest counts the daemon has, but is no replacement for a working sync. Restore it like any other backup. <!-- src: /desktop/daemon/src/runtime.rs#RuntimeController -->
 
@@ -123,34 +123,34 @@ You cannot brick the pad this way. The ESP32-S3's first bootloader is in ROM, so
 
 ### 7.2 Export first
 
-Export a backup before you erase anything. It is the only copy that survives a reinstall of the desktop app: <!-- src: /desktop/cli/src/main.rs#Commands::Export -->
+Export a backup before you erase anything. It is the only copy that survives a reinstall of the desktop app: <!-- src: /desktop/cli/src/main.rs#run -->
 
 ```sh
-opadctl export ~/opad-backup.json
+opadctl backup export ~/opad-backup.json
 ```
 
-or **Device** → **Export backup** in the app. An automatic backup (§5.1) also works: <!-- src: /desktop/daemon/src/backup.rs#backup_dir -->
+or **Pad** → **Export backup** in the app. An automatic backup (§5.1) also works: <!-- src: /desktop/daemon/src/backup.rs#backup_dir -->
 
 ```sh
 opadctl status | grep 'Last Backup'
 ls -t ~/.local/share/opad/backups/ | head   # Windows: %APPDATA%\opad\backups
 ```
 
-After reflashing, restore it with `opadctl import ~/opad-backup.json` or **Device** → **Import backup**. <!-- src: /desktop/cli/src/main.rs#Commands::Import -->
+After reflashing, restore it with `opadctl backup import ~/opad-backup.json` or **Pad** → **Import backup**. <!-- src: /desktop/cli/src/main.rs#run -->
 
 An erased pad has no owner, and the first OPad install it connects to claims it silently. If that is the PC you erased it from, the daemon also sees the erased flash and puts back its saved counts and settings (§3). If you are giving the pad away, plug it into the new owner's PC first, so their install claims it. <!-- src: /desktop/daemon/src/runtime.rs#RuntimeController -->
 
 ### 7.3 Put the pad in download mode
 
 ```sh
-opadctl bootloader
+opadctl pad bootloader
 ```
 
-It asks the daemon to release the serial port, reboots the pad into the ESP32-S3's ROM download mode over USB, hands the daemon back control, and prints the bootloader's port (`303a:1001`). It works with or without the daemon running. <!-- src: /desktop/cli/src/main.rs#Commands::Bootloader --> <!-- src: /desktop/crates/opad-device/src/flash.rs#enter_bootloader -->
+It asks the daemon to release the serial port, reboots the pad into the ESP32-S3's ROM download mode over USB, hands the daemon back control, and prints the bootloader's port (`303a:1001`). It works with or without the daemon running. <!-- src: /desktop/cli/src/main.rs#run --> <!-- src: /desktop/crates/opad-device/src/flash.rs#enter_bootloader -->
 
 On Windows a serial port can only be open in one program at a time, so close any serial monitor first. To list ports, run `espflash list-ports`, or look in Device Manager under **Ports (COM & LPT)**. <!-- src: /desktop/crates/opad-device/src/flash.rs#FlashError -->
 
-No buttons are needed: `opadctl` sends the pad a `BOOTLOADER` command over its serial port, then tries the 1200-baud "touch" of Arduino-style boards. The firmware holds USB in reset for about 300 ms, so the PC sees a real unplug, and restarts into download mode. If neither works, use `opadctl recover` (§7.7). <!-- src: /desktop/crates/opad-device/src/flash.rs#BOOT_TRIGGERS --> <!-- src: /firmware/main/usb/usb_cdc.c#reboot_to_rom_download -->
+No buttons are needed: `opadctl` sends the pad a `BOOTLOADER` command over its serial port, then tries the 1200-baud "touch" of Arduino-style boards. The firmware holds USB in reset for about 300 ms, so the PC sees a real unplug, and restarts into download mode. If neither works, use `opadctl pad recover` (§7.7). <!-- src: /desktop/crates/opad-device/src/flash.rs#BOOT_TRIGGERS --> <!-- src: /firmware/main/usb/usb_cdc.c#reboot_to_rom_download -->
 
 ### 7.4 Erase, then flash
 
@@ -158,25 +158,25 @@ You need the firmware's four files in one folder: an ESP-IDF `firmware/build` fo
 
 `espflash` comes with the app: `/usr/lib/opad/bin/espflash` from a Linux package, `espflash.exe` in `%LOCALAPPDATA%\Programs\opad` on Windows. Use that path if `espflash` is not on your `PATH`. <!-- src: /desktop/gui/Cargo.toml#package.metadata.deb --> <!-- src: /packaging/windows/installer.iss -->
 
-With the pad in download mode (§7.3), using the port that `opadctl bootloader` printed:
+With the pad in download mode (§7.3), using the port that `opadctl pad bootloader` printed:
 
 **Linux**
 
 ```sh
 espflash erase-flash -p /dev/ttyACM0 --before no-reset --after no-reset-no-stub
-opadctl flash --full ~/Downloads/opad-firmware/   # or firmware/build
+opadctl pad flash --full ~/Downloads/opad-firmware/   # or firmware/build
 ```
 
 **Windows (PowerShell or Command Prompt)**
 
 ```powershell
 espflash erase-flash -p COM3 --before no-reset --after no-reset-no-stub
-opadctl flash --full C:\Users\you\Downloads\opad-firmware\
+opadctl pad flash --full C:\Users\you\Downloads\opad-firmware\
 ```
 
 `--before no-reset --after no-reset-no-stub` keeps the pad in download mode for the next command. Do not unplug the pad while `erase-flash` runs. <!-- src: /desktop/crates/opad-device/src/flash.rs#write_images -->
 
-`--full` is needed after an erase because the bootloader and partition table are gone: it writes them, the OTA data and the app (into `ota_0`), then restarts the pad into the new firmware. The offsets are in the [`opadctl flash` reference](reference/opadctl.md#opadctl-flash). <!-- src: /desktop/cli/src/main.rs#resolve_flash_set --> <!-- src: /desktop/crates/opad-device/src/flash.rs#reset_to_app -->
+`--full` is needed after an erase because the bootloader and partition table are gone: it writes them, the OTA data and the app (into `ota_0`), then restarts the pad into the new firmware. The offsets are in the [`opadctl pad flash` reference](reference/opadctl.md#opadctl-flash). <!-- src: /desktop/cli/src/main.rs#resolve_flash_set --> <!-- src: /desktop/crates/opad-device/src/flash.rs#reset_to_app -->
 
 ### 7.5 Confirm
 
@@ -184,33 +184,33 @@ opadctl flash --full C:\Users\you\Downloads\opad-firmware\
 opadctl status
 ```
 
-A pad that booted cleanly shows `ESP32 Device:     Connected` and `Running Slot:     ota_0`. On a PC that has never seen it, its counts start at 0 with generation 1; on the PC you erased it from, the daemon puts back the stored counts (§7.2). <!-- src: /desktop/cli/src/main.rs#Commands::Status --> <!-- src: /firmware/main/counters/counters.c#counters_init --> <!-- src: /desktop/daemon/src/runtime.rs#RuntimeController -->
+A pad that booted cleanly shows `ESP32 Device:     Connected` and `Running Slot:     ota_0`. On a PC that has never seen it, its counts start at 0 with generation 1; on the PC you erased it from, the daemon puts back the stored counts (§7.2). <!-- src: /desktop/cli/src/main.rs#run --> <!-- src: /firmware/main/counters/counters.c#counters_init --> <!-- src: /desktop/daemon/src/runtime.rs#RuntimeController -->
 
-**If the pad does not come back as OPad** within about 15 seconds of a `--full` flash, `opadctl flash` reports an error. Run the `opadctl flash --full` step again; do not erase again. If the pad has left download mode and does not show up as OPad (`303a:8415`), use `opadctl recover` (§7.7). <!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
+**If the pad does not come back as OPad** within about 15 seconds of a `--full` flash, `opadctl pad flash` reports an error. Run the `opadctl pad flash --full` step again; do not erase again. If the pad has left download mode and does not show up as OPad (`303a:8415`), use `opadctl pad recover` (§7.7). <!-- src: /desktop/cli/src/main.rs#run -->
 
 ### 7.6 When flashing is interrupted
 
-A normal update (from the app, `opadctl firmware-update`, or `opadctl flash <app.bin>` while the daemon knows the running slot) writes the new firmware to the *other* OTA slot first (`ota_1` when running `ota_0`, and the other way round). Only then does it update `otadata`, so the bootloader tries the new slot once and keeps the old one as a fallback. <!-- src: /desktop/crates/opad-device/src/flash.rs#plan_app_update -->
+A normal update (from the app, `opadctl update install firmware`, or `opadctl pad flash <app.bin>` while the daemon knows the running slot) writes the new firmware to the *other* OTA slot first (`ota_1` when running `ota_0`, and the other way round). Only then does it update `otadata`, so the bootloader tries the new slot once and keeps the old one as a fallback. <!-- src: /desktop/crates/opad-device/src/flash.rs#plan_app_update -->
 
 | What happened | Result |
 |---|---|
 | Interrupted before `otadata` was written | Nothing points at the new slot yet; the pad boots its old firmware unchanged. Nothing to do. <!-- src: /desktop/crates/opad-device/src/flash.rs#plan_app_update --> |
-| Written, but the new firmware does not work | It runs on trial and confirms itself only once the PC has set up its USB connection. If a connected PC has not done that within 20 seconds, or the firmware crashes first, the pad restarts into the previous slot (on a charger with no PC, the trial waits for a computer). `opadctl flash` then reports "The pad did not accept the new firmware (it never came up as a working USB device) and went back to the previous one on `<slot>`. It works as before; nothing else is needed." <!-- src: /firmware/main/app_main.c#confirm_image_once_usb_works --> <!-- src: /firmware/main/app_main.c#IMAGE_CONFIRM_TIMEOUT_US --> <!-- src: /desktop/cli/src/main.rs#report_slot_after_flash --> |
-| A flash with no fallback was interrupted: `opadctl flash <app.bin>` with the running slot unknown (no daemon, or firmware too old to report it), or a `--full` flash (§7.4). Both write `ota_0` and a blank `otadata`, so `ota_0` is the slot that boots. | Recover the pad with `opadctl recover` (§7.7). <!-- src: /desktop/cli/src/main.rs#Commands::Flash --> <!-- src: /desktop/crates/opad-device/src/flash.rs#plan_app_update --> |
+| Written, but the new firmware does not work | It runs on trial and confirms itself only once the PC has set up its USB connection. If a connected PC has not done that within 20 seconds, or the firmware crashes first, the pad restarts into the previous slot (on a charger with no PC, the trial waits for a computer). `opadctl pad flash` then reports "The pad did not accept the new firmware (it never came up as a working USB device) and went back to the previous one on `<slot>`. It works as before; nothing else is needed." <!-- src: /firmware/main/app_main.c#confirm_image_once_usb_works --> <!-- src: /firmware/main/app_main.c#IMAGE_CONFIRM_TIMEOUT_US --> <!-- src: /desktop/cli/src/main.rs#report_slot_after_flash --> |
+| A flash with no fallback was interrupted: `opadctl pad flash <app.bin>` with the running slot unknown (no daemon, or firmware too old to report it), or a `--full` flash (§7.4). Both write `ota_0` and a blank `otadata`, so `ota_0` is the slot that boots. | Recover the pad with `opadctl pad recover` (§7.7). <!-- src: /desktop/cli/src/main.rs#run --> <!-- src: /desktop/crates/opad-device/src/flash.rs#plan_app_update --> |
 
-### 7.7 A pad that does not show up as OPad (`opadctl recover`)
+### 7.7 A pad that does not show up as OPad (`opadctl pad recover`)
 
-**What you see:** the firmware boots but never works over USB (on Linux, `dmesg` may show `can't set config #1, error -32`), so nothing can ask it to enter download mode. <!-- src: /desktop/crates/opad-device/src/flash.rs#recover --> <!-- src: /desktop/cli/src/main.rs#Commands::Recover -->
+**What you see:** the firmware boots but never works over USB (on Linux, `dmesg` may show `can't set config #1, error -32`), so nothing can ask it to enter download mode. <!-- src: /desktop/crates/opad-device/src/flash.rs#recover --> <!-- src: /desktop/cli/src/main.rs#run -->
 
-**What to do:** catch the pad at power-on with `opadctl recover`.
+**What to do:** catch the pad at power-on with `opadctl pad recover`.
 
 1. Run it with the firmware folder (as in §7.4):
 
    ```sh
-   opadctl recover firmware/build   # or a folder with a firmware release's .bin files
+   opadctl pad recover firmware/build   # or a folder with a firmware release's .bin files
    ```
 
 2. When it prints `Unplug the pad's USB cable and plug it back in (waiting 300 s)...`, unplug the pad and plug it back in. (`--timeout <seconds>` changes the wait.)
 3. Wait for `✓ Recovered: the pad came back as OPad on <port>`.
 
-**How it works:** at every power-on, before the firmware takes over USB, the ESP32-S3's built-in USB bootloader shows up for a fraction of a second as `303a:1001`. `opadctl recover` catches it, holds the chip in download mode, writes the full firmware set, restarts the pad and waits up to 15 seconds for OPad (`303a:8415`). Only a real power cycle opens that window, not a software restart: hence the replug. <!-- src: /desktop/crates/opad-device/src/flash.rs#recover --> <!-- src: /desktop/crates/opad-device/src/flash.rs#usj_reset_to_download --> <!-- src: /desktop/crates/opad-device/src/flash.rs#disable_watchdogs -->
+**How it works:** at every power-on, before the firmware takes over USB, the ESP32-S3's built-in USB bootloader shows up for a fraction of a second as `303a:1001`. `opadctl pad recover` catches it, holds the chip in download mode, writes the full firmware set, restarts the pad and waits up to 15 seconds for OPad (`303a:8415`). Only a real power cycle opens that window, not a software restart: hence the replug. <!-- src: /desktop/crates/opad-device/src/flash.rs#recover --> <!-- src: /desktop/crates/opad-device/src/flash.rs#usj_reset_to_download --> <!-- src: /desktop/crates/opad-device/src/flash.rs#disable_watchdogs -->

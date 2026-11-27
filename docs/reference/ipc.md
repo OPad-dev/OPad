@@ -108,7 +108,7 @@ Counter resets, restores and replacements are refused during a map or its cooldo
 |---|---|---|
 | `PrepareFlash` | `ReadyForFlash { port }` | The daemon releases the serial port. Refused during a map or cooldown. |
 | `FinishFlash` | `FlashFinished { firmware_version, protocol_version, compatible }` | The daemon looks for the pad again and waits up to 15 s for it. |
-| `ResumeDevice` | `DeviceResumed` | Hands the port back without waiting, after `opadctl bootloader` or a failed flash. |
+| `ResumeDevice` | `DeviceResumed` | Hands the port back without waiting, after `opadctl pad bootloader` or a failed flash. |
 | `GetFirmwareUpdate` | `FirmwareUpdateOffer(FirmwareOffer)` | Reads only; safe to poll. |
 | `InstallFirmwareUpdate { confirm }` | `FirmwareUpdateFinished { from, to, firmware_version, running_partition, protocol_version, compatible }` | Refused with `confirm: false`. Syncs the counters to this PC before writing. |
 | `RestartPad` | `PadRestarting` | `Error` without a pad, with firmware without restart, or during a map. |

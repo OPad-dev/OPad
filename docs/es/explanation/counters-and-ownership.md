@@ -33,7 +33,7 @@ if pc.counter_generation > esp.counter_generation {
 ```
 
 - **Misma generación: el máximo, tecla a tecla.** Dentro de una generación los recuentos solo crecen, así que el número mayor siempre es el más completo. Se conservan las pulsaciones hechas mientras el teclado estaba desconectado de este PC.
-- **La generación más alta gana sin más.** Poner a cero los contadores (`opadctl reset --yes`, o **Reset lifetime counters** en la GUI) o restaurar una copia de seguridad sube la generación. Es la única forma legítima de que un recuento *menor* sustituya a uno mayor, y la generación hace explícita la intención en lugar de adivinarla.
+- **La generación más alta gana sin más.** Poner a cero los contadores (`opadctl counters reset --yes`, o **Reset lifetime counters** en la GUI) o restaurar una copia de seguridad sube la generación. Es la única forma legítima de que un recuento *menor* sustituya a uno mayor, y la generación hace explícita la intención en lugar de adivinarla.
 
 El teclado aplica la misma regla: [counter_sync_rules.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/counters/counter_sync_rules.c) (`counters_validate_sync_acceptance`) rechaza una sincronización de una generación más antigua, o una que bajaría un recuento dentro de la misma generación, salvo que el anfitrión la fuerce.
 

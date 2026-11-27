@@ -5,10 +5,10 @@ sidebar:
   order: 5
 ---
 
-A hand-wired OPad reads Key 1 on GPIO14 (header P2, pin 11) and Key 2 on GPIO9 (P2, pin 12) by default. If you wired your switches to other header pins, set them in the app. You do not need to rebuild the firmware, and the pad remembers the pins. <!-- src: /firmware/main/input/keypad.c#KEYPAD_DEFAULT_KEY1_GPIO --> <!-- src: /desktop/gui/src/pages.rs#settings -->
+A hand-wired OPad reads Key 1 on GPIO14 (header P2, pin 11) and Key 2 on GPIO9 (P2, pin 12) by default. If you wired your switches to other header pins, set them in the app. You do not need to rebuild the firmware, and the pad remembers the pins. <!-- src: /firmware/main/input/keypad.c#KEYPAD_DEFAULT_KEY1_GPIO --> <!-- src: /desktop/gui/src/keys.rs#wiring -->
 
 > [!NOTE]
-> This is only for hand-wired switches. On the OPad V3 PCBs the carrier fixes the pins (MX V3: GPIO10, GPIO7, GPIO6; HE V3: an ADC over SPI), so the app hides the pin settings. <!-- src: /desktop/gui/src/pages.rs#settings --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
+> This is only for hand-wired switches. On the OPad V3 PCBs the carrier fixes the pins (MX V3: GPIO10, GPIO7, GPIO6; HE V3: an ADC over SPI), so the app hides the pin settings. <!-- src: /desktop/gui/src/keys.rs#wiring --> <!-- src: /firmware/boards/waveshare_esp32s3_touch_lcd_2/board_pins.h -->
 
 ## What you need
 
@@ -32,28 +32,28 @@ Key 1 and Key 2 must be on different pins. Every other pin is refused, because s
 - GPIO17: has a 10 kΩ pull-down on the board.
 - GPIO8: the V3 module-ID line, with a resistor divider to GND.
 
-A pad that older firmware left on GPIO8 shows it as `GPIO8 (unsupported)`. It keeps working there while you change other settings; you just cannot move a key *onto* a pin outside the list. <!-- src: /desktop/crates/opad-model/src/lib.rs#validate_update --> <!-- src: /desktop/gui/src/pages.rs#settings -->
+A pad that older firmware left on GPIO8 shows it as `GPIO8 (unsupported)`. It keeps working there while you change other settings; you just cannot move a key *onto* a pin outside the list. <!-- src: /desktop/crates/opad-model/src/lib.rs#validate_update --> <!-- src: /desktop/gui/src/keys.rs#wiring -->
 
 ## Set the pins
 
-1. Open the OPad app and go to **Settings** → **⌨ Keypad**.
-2. In the **Keys** card, find **KEY 1 PIN** and **KEY 2 PIN**. For each, either: <!-- src: /desktop/gui/src/pages.rs#settings -->
+1. Open the OPad app and go to **Keys**.
+2. In **Wiring**, find **KEY 1 PIN** and **KEY 2 PIN**. For each, either: <!-- src: /desktop/gui/src/keys.rs#wiring -->
    - **pick the pin** from the list, for example `GPIO15 (P2 pin 7)`; or
    - click **Auto-Detect** (it changes to **Detecting... (click to cancel)**) and press the switch wired for that key. The pad watches every allowed, unused pin and picks the one that stays low for 15 ms. <!-- src: /firmware/main/input/keypad.c#DETECT_CONFIRM_US -->
-3. Click **Save settings**.
+3. Click **Save to pad** in the bar at the bottom.
 
 The pad switches to the new pins as soon as both keys are released, and saves them once it is idle. <!-- src: /firmware/main/input/keypad.c#keypad_task -->
 
 > [!TIP]
-> A V3 carrier with an MX module whose keys are still set to the hand-wired defaults (GPIO14 / GPIO9) can be fixed from a terminal: `opadctl board-test --fix-pins` sets Key 1 = GPIO10 and Key 2 = GPIO7 and tests again. <!-- src: /desktop/cli/src/main.rs#Commands::BoardTest -->
+> A V3 carrier with an MX module whose keys are still set to the hand-wired defaults (GPIO14 / GPIO9) can be fixed from a terminal: `opadctl pad test --fix-pins` sets Key 1 = GPIO10 and Key 2 = GPIO7 and tests again. <!-- src: /desktop/cli/src/main.rs#run -->
 
 ## Check that it worked
 
-1. Run `opadctl status` and check that **Key Pins** shows your new GPIOs. <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-2. Press both keys in a text editor, or watch them on **Diagnostics** → **⌨ Switch Chatter & Input** in the app (turn on the Diagnostics menu in **Settings** → **🛠 Diagnostics** first). <!-- src: /desktop/gui/src/diagnostics.rs --> <!-- src: /desktop/gui/src/pages.rs#settings -->
+1. Run `opadctl status` and check that **Key Pins** shows your new GPIOs. <!-- src: /desktop/cli/src/main.rs#run -->
+2. Press both keys in a text editor, or watch them on **Troubleshooting** → **Key test** in the app. <!-- src: /desktop/gui/src/troubleshooting.rs#view_input_tester -->
 
 ## If it did not work
 
 - **A key does nothing after the change:** compare the GPIO label printed on the board next to the wire with **Key Pins** in `opadctl status`. Header positions such as `P2 pin 11` are easy to count wrong on the board. <!-- src: /AGENTS.md#6. Hardware and debugging facts -->
-- **There are no pin settings:** the pad reports a module with fixed pins (a V3 carrier with an MX or HE module). <!-- src: /desktop/gui/src/pages.rs#settings -->
+- **There are no pin settings:** the pad reports a module with fixed pins (a V3 carrier with an MX or HE module). <!-- src: /desktop/gui/src/keys.rs#wiring -->
 - **Auto-Detect finds nothing:** check that the switch's other leg goes to GND and that its pin is in the list above.

@@ -89,12 +89,12 @@ Benchmark and debug variants are Kconfig options in [Kconfig.projbuild](https://
 
 ### Flash it
 
-The daemon holds the pad's serial port; `opadctl flash` asks it to let go, so there is no need to stop it.
+The daemon holds the pad's serial port; `opadctl pad flash` asks it to let go, so there is no need to stop it.
 
 ```bash
-opadctl flash firmware/build/opad-firmware.bin    # other OTA slot, rolls back if USB never comes up
-opadctl flash --full firmware/build               # bootloader, partition table, otadata and app
-opadctl recover firmware/build                    # a pad that does not show up as OPad; then replug it
+opadctl pad flash firmware/build/opad-firmware.bin    # other OTA slot, rolls back if USB never comes up
+opadctl pad flash --full firmware/build               # bootloader, partition table, otadata and app
+opadctl pad recover firmware/build                    # a pad that does not show up as OPad; then replug it
 ```
 
 `opadctl` drives `espflash` **4.6.0**. `make espflash` downloads that exact version and checks its SHA-256 (Linux x86_64); the packages bundle it. How the flash works, and why it cannot strand a pad, is in [Updates and Automatic Rollback](../explanation/updates-and-rollback.md); the step-by-step procedures are in [Updating Firmware](../guides/update-firmware.md) and [Recovery](../recovery.md).

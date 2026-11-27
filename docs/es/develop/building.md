@@ -89,12 +89,12 @@ Las variantes de benchmark y de depuración son opciones de Kconfig en [Kconfig.
 
 ### Flashearlo
 
-El daemon tiene abierto el puerto serie del teclado; `opadctl flash` le pide que lo suelte, así que no hace falta pararlo.
+El daemon tiene abierto el puerto serie del teclado; `opadctl pad flash` le pide que lo suelte, así que no hace falta pararlo.
 
 ```bash
-opadctl flash firmware/build/opad-firmware.bin    # other OTA slot, rolls back if USB never comes up
-opadctl flash --full firmware/build               # bootloader, partition table, otadata and app
-opadctl recover firmware/build                    # a pad that does not show up as OPad; then replug it
+opadctl pad flash firmware/build/opad-firmware.bin    # other OTA slot, rolls back if USB never comes up
+opadctl pad flash --full firmware/build               # bootloader, partition table, otadata and app
+opadctl pad recover firmware/build                    # a pad that does not show up as OPad; then replug it
 ```
 
 `opadctl` maneja `espflash` **4.6.0**. `make espflash` descarga esa versión exacta y comprueba su SHA-256 (Linux x86_64); los paquetes lo incluyen. Cómo funciona el flasheo, y por qué no puede dejar inservible un teclado, está en [Actualizaciones y reversión automática](../explanation/updates-and-rollback.md); los procedimientos paso a paso están en [Actualizar el firmware](../guides/update-firmware.md) y [Recuperación](../recovery.md).

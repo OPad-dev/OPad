@@ -12,7 +12,7 @@ It has four parts: <!-- src: /packaging/windows/installer.iss --> <!-- src: /des
 | Program | What it does |
 |---|---|
 | `opad-daemon` | Runs in the background. Talks to the pad over its serial port, keeps your counters and settings, and runs tosu. |
-| `opad-gui` | The OPad window and tray icon: settings, Designer, Stats, Device and Diagnostics. |
+| `opad-gui` | The OPad window and tray icon: Dashboard, Stats, Keys, Screen, Designer, Pad, Settings and Troubleshooting. |
 | `opadctl` | The same features from a terminal, plus flashing and recovery. See the [`opadctl` reference](../reference/opadctl.md). |
 | tosu | Reads osu!'s memory for map and play data. Bundled (LGPL-3.0); you can use your own, see [Using OPad with tosu](../guides/use-with-tosu.md). |
 
@@ -71,7 +71,7 @@ The `.deb`, `.rpm` and Arch packages all install the same things: <!-- src: /des
 
 You do not need to start the daemon yourself: when `opad-gui` starts and finds no daemon running, it starts one (through the systemd user unit when that is available). <!-- src: /desktop/gui/src/platform_linux.rs#start_daemon --> <!-- src: /desktop/gui/src/main.rs#App -->
 
-These packages update themselves from the app's **Settings** → **🔄 Updates & Firmware** tab. <!-- src: /desktop/crates/opad-update/src/origin.rs -->
+These packages update themselves from the app's **Settings** → **Updates** tab. <!-- src: /desktop/crates/opad-update/src/origin.rs -->
 
 ### AppImage
 
@@ -96,10 +96,10 @@ To build the app yourself and install it from a checkout of the repository inste
 ### Check your Linux setup
 
 ```bash
-opadctl setup
+opadctl doctor
 ```
 
-It reports whether the udev rule is installed and matches this version, and whether tosu can read osu!'s memory, with the command that fixes it if not. <!-- src: /desktop/cli/src/main.rs#run_setup -->
+It reports whether the udev rule is installed and matches this version, and whether tosu can read osu!'s memory, with the command that fixes it if not. <!-- src: /desktop/cli/src/main.rs#run_doctor -->
 
 ## Windows
 
@@ -119,6 +119,6 @@ Open **OPad** from your application menu or Start menu, or run:
 opadctl status
 ```
 
-You should see `ESP32 Device:     Connected`, the pad's firmware version, and `tosu (osu!):      Active` once tosu has started. In the app, the **Device** page shows the same. <!-- src: /desktop/cli/src/main.rs#Commands::Status --> <!-- src: /desktop/gui/src/pages.rs#device -->
+You should see `ESP32 Device:     Connected`, the pad's firmware version, and `tosu (osu!):      Active` once tosu has started. In the app, the **Pad** page shows the same. <!-- src: /desktop/cli/src/main.rs#run --> <!-- src: /desktop/gui/src/pages.rs#pad -->
 
 If the pad is not detected, see [Troubleshooting §3](../troubleshooting.md#3-linux-usb-permissions-and-the-serial-port).

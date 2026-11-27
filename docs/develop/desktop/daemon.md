@@ -43,7 +43,7 @@ flowchart LR
 | [`identity.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/identity.rs) | Per-install UUIDv4 in SQLite, recorded by the pad as its owner |
 | [`osu_window.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/osu_window.rs) | `osu_active` for volume swipes: osu! in the foreground on Windows, osu!lazer running on Linux |
 | [`tap_stats.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/tap_stats.rs) | Keeps the tap-rate history in `DaemonState` in step with SQLite |
-| [`log_hub.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/log_hub.rs) | In-memory log ring (2000 entries) for `opadctl monitor` and the Logs page |
+| [`log_hub.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/log_hub.rs) | In-memory log ring (2000 entries) for `opadctl logs` and the Logs page |
 | [`he_debug_log.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/he_debug_log.rs) | Writes HE debug firmware lines to `he-debug.log`, rotated at 50 MB |
 | [`updater.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/updater.rs) | App and `tosu` update worker |
 | [`firmware_update.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/firmware_update.rs) | Firmware offers, consent, install, and the unattended update |

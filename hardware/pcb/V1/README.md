@@ -294,7 +294,7 @@ Order each board as a separate item.
 ## Testing the assembled boards
 
 With the Waveshare on the carrier, the MX module on the cable and the pad
-connected, run `opadctl board-test` or open **Diagnostics → PCB Test** in the
+connected, run `opadctl pad test` or open **Troubleshooting → Board test** in the
 app. Release both keys while it runs. The pad checks
 (`firmware/main/diag/board_test.c`, judged in
 `desktop/crates/opad-model/src/board_test.rs`):
@@ -308,7 +308,7 @@ app. Release both keys while it runs. The pad checks
 | Spare lines | Connector pins 6–8 must follow the pad's pulls, and must not follow a driven neighbour | Solder bridges on J_MOD or J1 |
 
 It does not press the switches for you: afterwards, press each key in
-Diagnostics → Switch Chatter & Input (or watch the counters in `opadctl status`).
+Troubleshooting → Key test (or watch the counters in `opadctl status`).
 Key 1 and Key 2 must each register on their own.
 
 ---

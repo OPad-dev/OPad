@@ -77,7 +77,7 @@ issue templates; V3 hardware and case docs; printing guide.
    (ID-04, CRC-01/02), the 8-hour soak (CRC-03).
 9. [ ] **USB PID** (0.9): the firmware enumerates as `303a:8415`, granted by
    Espressif; app, udev and flasher follow. Tested on Linux 2026-11-25 (owner's
-   HE pad, Arch): `opadctl flash` from `4001` firmware, `opadctl recover` with a
+   HE pad, Arch): `opadctl pad flash` from `4001` firmware, `opadctl pad recover` with a
    replug, the installed rc.6 daemon finding the pad, and the new udev rule
    giving the user an ACL on the tty and the keyboard. Left: Windows, and drop
    `4001` from `70-opad.rules` once no rc pad still runs older firmware.
@@ -112,7 +112,7 @@ Each of these was checked on 2026-11-20 against GitHub or the code.
 | 0.9 | P1 | The USB product ID is not OPad's own. | `firmware/main/usb/usb_descriptors.c:37-38` uses Espressif's VID `0x303A` with PID `0x4001`, the PID esp_tinyusb assigns by default to a CDC device. `packaging/linux/udev/70-opad.rules` gives any `303a:4001` device `uaccess`, and the daemon will try to talk to it. | Ask Espressif for a PID (free for products on their chips, via the `espressif/usb-pids` repository) and move to it **with** compatibility: the app, udev rules and flasher accept both PIDs for as long as old firmware exists. Ask before changing it: it is a USB-visible change. **Done in code** 2026-11-25: Espressif granted `303a:8415` (espressif/usb-pids#491). The owner chose to switch during the release candidates without the two-step rollout: the firmware sends `0x8415`; the app finds the pad by its strings, so any PID works; `70-opad.rules` keeps `4001` so rc pads on older firmware can still be updated on Linux. Tested on Linux on the owner's HE pad (flash, recover, old daemon, udev ACL); Windows not yet. |
 | 0.10 | P1 | Hardware docs contradict the bench. | `hardware/pcb/V3/README.md` says every V3 board is "Not ordered, not built" and "No firmware supports them yet"; `docs/history/2026-11-20-v3-modules-handoff.md` has V3 boards on the bench and their firmware merged. `hardware/3d/README.md` lists only V1 and V1.1 cases. | Update both READMEs to what was built and what was not. **Done** (`911c2c1`). |
 | 0.11 | P1 | User-facing docs still use the old names. | 59 mentions of the old binary names in `README.md` and `docs/*.md` (32 in `docs/testing-checklist.md`, whose §7 recipe also runs a manifest binary that no longer exists). | Rename, and move the old reviews (`docs/software-*review*`, `docs/todo-2026-09-21-evening.md`, `docs/full-repo-…guide.md`) to `docs/history/` (AGENTS.md §7). **Done** (`fd76efd`, `911c2c1`): nothing is named osupad except what pads store (0.15); old reviews in `docs/history/`. |
-| 0.12 | P1 | Open firmware bug: the pad dropped two host messages (231 and 175 bytes) as an HE map ended. | Handoff "Open" item 1; `5715b9f` only adds logging. | Reproduce with `opadctl monitor` during the soak in §3.9, then fix the host or `protocol/opad.options`. Not shippable while unexplained. **Fixed** 2026-11-21: checked frames with a CRC, negotiated (see the note below and `docs/reference/serial-protocol.md`). |
+| 0.12 | P1 | Open firmware bug: the pad dropped two host messages (231 and 175 bytes) as an HE map ended. | Handoff "Open" item 1; `5715b9f` only adds logging. | Reproduce with `opadctl logs` during the soak in §3.9, then fix the host or `protocol/opad.options`. Not shippable while unexplained. **Fixed** 2026-11-21: checked frames with a CRC, negotiated (see the note below and `docs/reference/serial-protocol.md`). |
 | 0.13 | P1 | The V3 case has never been printed. | `hardware/3d/custom_case/V3/README.md:9`: "Not printed or test-fitted yet". HW-12 and HW-14 note "no case yet". | §4. **Done**: printed and fitted (owner); the latest small changes are not printed, accepted. 2026-11-26: the case to ship is now V4 (`hardware/3d/custom_case/V4`), V3 inside a new faceted outside; its fit check passes, it is **not printed yet** (§4 Fit and assembly). |
 | 0.14 | P2 | Repository hygiene for a sold product. | No `SECURITY.md`, `CONTRIBUTING.md`, issue templates or `CHANGELOG.md` (release-please creates the last on its first PR). | Add `SECURITY.md` (where to report, response time) and issue templates (bug, pad info from `opadctl status`). **Done** (`911c2c1`): `SECURITY.md` with GitHub private reporting (enabled), issue templates sending help to Discord. |
 
@@ -199,7 +199,7 @@ In this order (release spec §18.2–§18.3, §19):
 The printable version of this section is `docs/pad-test-sheet.md`.
 
 Run every row on **each SKU you sell** (MX V3 and HE V3), assembled in the V3
-case, on the release firmware, flashed with `opadctl flash` from the release.
+case, on the release firmware, flashed with `opadctl pad flash` from the release.
 IDs in brackets are the rows in `docs/testing-checklist.md`; re-run them, do
 not copy old results.
 
@@ -265,9 +265,9 @@ not copy old results.
 
 ### 3.8 Firmware update and recovery (rule 5)
 
-- [ ] `opadctl flash` from the release goes to the other slot (FAIL-05).
+- [ ] `opadctl pad flash` from the release goes to the other slot (FAIL-05).
 - [ ] A broken image rolls back by itself (FAIL-06).
-- [ ] `opadctl recover` + replug, no button (FAIL-07), on Linux and on Windows bare metal.
+- [ ] `opadctl pad recover` + replug, no button (FAIL-07), on Linux and on Windows bare metal.
 - [ ] In-app firmware update from the real feed: counters and calibration unchanged (UPD-06), consent every time (UPD-07), refused mid-map (UPD-08).
 - [ ] After an update, the pad types on a machine with no OPad software (UPD-09, never run).
 - [ ] Unplug mid-write, then recover (UPD-11, never run deliberately).
@@ -275,7 +275,7 @@ not copy old results.
 
 ### 3.9 Soak and abuse
 
-- [ ] 8 hours of maps (autoplay plus real play) with `opadctl monitor` open: no dropped host message (0.12), no reset, no watchdog, no deferred report.
+- [ ] 8 hours of maps (autoplay plus real play) with `opadctl logs` open: no dropped host message (0.12), no reset, no watchdog, no deferred report.
 - [ ] 48 hours plugged in idle, display sleeping: still responds instantly.
 - [ ] Garbage on the CDC port (COM-02); daemon `kill -9` mid-map (COM-04); tosu killed mid-map (COM-05).
 - [ ] Brown-out: a weak port or a long thin cable; the pad either works or resets cleanly, never sends a stuck key.
@@ -327,7 +327,7 @@ feed) runs in CI; the pad-specific rows run on the hardware runner.
 - [ ] Autostart after login; tray icon appears and its menu works (WIN-04; GNOME needs the AppIndicator extension: say so in the docs).
 - [ ] Hotplug within 2 s (WIN-05); flash with the GUI running (WIN-06); COM port above COM9 (WIN-08); second daemon refused (WIN-02); IPC private to the user (WIN-03).
 - [ ] tosu finds osu! stable (Windows) and lazer (Linux and Windows); stats, PPM/KPM (PPM-01 … PPM-06), results screen.
-- [ ] Every GUI page opens and does what it says: Device, Settings (keys, key 3, game keys, swipe actions), Designer (preview matches the pad), Diagnostics (PCB test, magnet test, key testers), Stats, Monitor, Backup & Restore, Updates.
+- [ ] Every GUI page opens and does what it says: Dashboard, Stats, Keys (bindings, key 3, game keys, key feel, calibration), Screen (display, swipe actions, result animations), Designer (preview matches the pad), Pad (counters, backup), Settings (updates, osu! connection), Troubleshooting (logs, key test, board test, magnet test, report). Rows APP-01 to CLI-04 in `docs/testing-checklist.md` §17.
 - [ ] High-DPI and a second monitor; window restore after a restart.
 - [ ] SQLite read-only: degraded mode (FAIL-04).
 - [ ] App update from the feed: *Check now*, *Install now*, cancelled UAC/polkit changes nothing (UPD-05).
@@ -359,7 +359,7 @@ compliance lab or advisor; this list is what to ask about, not legal advice.
 
 - [ ] Bill of materials frozen with a second source for every part that can go out of stock (the ferrite already did, V3 README).
 - [ ] Incoming check of each Waveshare board (screen, touch, flash size, PSRAM).
-- [ ] One documented, scripted procedure per unit: `opadctl recover` / full flash of the release image, `opadctl board-test` (and `--magnet` for HE), calibration for HE, 20 taps per key, a touch test, `opadctl status` saved with the serial number.
+- [ ] One documented, scripted procedure per unit: `opadctl pad recover` / full flash of the release image, `opadctl pad test` (and `--magnet` for HE), calibration for HE, 20 taps per key, a touch test, `opadctl status` saved with the serial number.
 - [ ] Every unit leaves owned by no PC and with zero counters (or a documented factory state).
 - [ ] Serial number / batch label on the unit and box (GPSR).
 - [ ] 30-minute burn-in per unit (display animating, keys untouched, no phantom press).

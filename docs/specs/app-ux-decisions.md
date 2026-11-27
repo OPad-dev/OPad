@@ -4,7 +4,18 @@ description: "Design decisions and UX review findings for the OPad desktop appli
 ---
 
 **Decided:** 2026-10-22, from the UX review of 2026-10-21 (branch
-`feat/he-night`). Item numbers match that review. Status: not implemented yet.
+`feat/he-night`). Item numbers match that review.
+
+**Status (2026-11-27):** partly implemented, together with the regrouping of
+the menus into Play, Your pad and App ([GUI Reference](../reference/gui.md)).
+Done: §2 (keys are bound by pressing them), §4 (the wording of the "set up on
+another computer" question), §5 (what the pad is doing in words, raw errors
+only in Logs), §7 (names, except the wiring pin labels), §8 (one Keys page),
+§9 (one save bar and the question before leaving), §10 (notices that go away,
+without the slide-in), §14 (sentence case and no emoji on the regrouped pages),
+§15 (links between pages), §19b (the tosu paragraph). Not done: §1 (welcome
+flow), §11 (desktops without a tray), §20 (accessibility). The rest is as the
+review found it.
 
 ## Goal and principles
 

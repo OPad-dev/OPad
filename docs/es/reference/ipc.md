@@ -108,7 +108,7 @@ Los reinicios, restauraciones y sustituciones de contadores se rechazan durante 
 |---|---|---|
 | `PrepareFlash` | `ReadyForFlash { port }` | El daemon libera el puerto serie. Se rechaza durante un mapa o el enfriamiento. |
 | `FinishFlash` | `FlashFinished { firmware_version, protocol_version, compatible }` | El daemon vuelve a buscar el teclado y lo espera hasta 15 s. |
-| `ResumeDevice` | `DeviceResumed` | Devuelve el puerto sin esperar, tras `opadctl bootloader` o un flasheo fallido. |
+| `ResumeDevice` | `DeviceResumed` | Devuelve el puerto sin esperar, tras `opadctl pad bootloader` o un flasheo fallido. |
 | `GetFirmwareUpdate` | `FirmwareUpdateOffer(FirmwareOffer)` | Solo lee; se puede sondear sin riesgo. |
 | `InstallFirmwareUpdate { confirm }` | `FirmwareUpdateFinished { from, to, firmware_version, running_partition, protocol_version, compatible }` | Se rechaza con `confirm: false`. Sincroniza los contadores con este PC antes de escribir. |
 | `RestartPad` | `PadRestarting` | `Error` sin teclado, con un firmware sin reinicio o durante un mapa. |

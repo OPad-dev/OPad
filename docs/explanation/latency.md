@@ -84,4 +84,4 @@ The two mechanisms above only work if nothing else delays the input task. [Syste
 - **Deferred reports**: how many changes had to wait for a transfer in flight.
 - **Outliers**: any sample above 1000 µs is counted and its maximum kept; the protocol task reports them to the host as `DIAG_EVENT_LATENCY_OUTLIER` diagnostics.
 
-`opadctl latency` reads the numbers and `opadctl latency --reset` clears them before a run. The measurement stops at TinyUSB: what the host does with the report afterwards is not in these numbers. [Latency Measurement](../develop/latency-testing.md) describes the benchmark stages and the release gate built on them.
+`opadctl latency` reads the numbers and `opadctl latency reset` clears them before a run. The measurement stops at TinyUSB: what the host does with the report afterwards is not in these numbers. [Latency Measurement](../develop/latency-testing.md) describes the benchmark stages and the release gate built on them.

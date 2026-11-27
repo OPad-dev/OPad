@@ -48,12 +48,12 @@ The firmware reads which module is fitted from the module ID line. A turned-over
 ## Check your wiring
 
 1. Plug the pad into your PC. With no app at all, open a text editor and press each key: you should see `z`, `x` (and `c` for Key 3 on a V3 module). See [First connection](../start/first-connection.md). <!-- src: /firmware/main/usb/usb_hid.c -->
-2. With the desktop app installed, run `opadctl status` and check **Key Pins** and **Input Module**. <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-3. On a V3 carrier, run the board self-test with every key released: <!-- src: /desktop/cli/src/main.rs#Commands::BoardTest -->
+2. With the desktop app installed, run `opadctl status` and check **Key Pins** and **Input Module**. <!-- src: /desktop/cli/src/main.rs#run -->
+3. On a V3 carrier, run the board self-test with every key released: <!-- src: /desktop/cli/src/main.rs#run -->
 
    ```bash
-   opadctl board-test
+   opadctl pad test
    ```
 
    It checks the module ID, cable direction, key lines and connector shorts, and on an HE V3 module the ADC and sensors. Add `--magnet` to then watch the HE sensors live while you hold a magnet over each key, or `--fix-pins` if an MX module's keys are still set to the hand-wired defaults (GPIO14 / GPIO9): it moves them to GPIO10 / GPIO7 and tests again.
-4. To see each press and any switch bounce, turn on **Settings** → **🛠 Diagnostics** → **Enable Diagnostics Menu in Navigation** in `opad-gui`, then open **Diagnostics** → **⌨ Switch Chatter & Input**. <!-- src: /desktop/gui/src/pages.rs#settings --> <!-- src: /desktop/gui/src/diagnostics.rs -->
+4. To see each press and any switch bounce, open **Troubleshooting** → **Key test** in `opad-gui`. <!-- src: /desktop/gui/src/troubleshooting.rs#view_input_tester -->

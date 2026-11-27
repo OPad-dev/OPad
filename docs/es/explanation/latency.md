@@ -84,4 +84,4 @@ Los dos mecanismos anteriores solo funcionan si nada más retrasa la tarea de en
 - **Informes diferidos**: cuántos cambios tuvieron que esperar a una transferencia en curso.
 - **Valores atípicos**: toda muestra por encima de 1000 µs se cuenta y se guarda su máximo; la tarea del protocolo los comunica al anfitrión como diagnósticos `DIAG_EVENT_LATENCY_OUTLIER`.
 
-`opadctl latency` lee las cifras y `opadctl latency --reset` las borra antes de una prueba. La medición se detiene en TinyUSB: lo que el anfitrión haga después con el informe no está en estas cifras. [Medición de latencia](../develop/latency-testing.md) describe las etapas del benchmark y el filtro de publicación construido sobre ellas.
+`opadctl latency` lee las cifras y `opadctl latency reset` las borra antes de una prueba. La medición se detiene en TinyUSB: lo que el anfitrión haga después con el informe no está en estas cifras. [Medición de latencia](../develop/latency-testing.md) describe las etapas del benchmark y el filtro de publicación construido sobre ellas.

@@ -11,7 +11,7 @@ Uninstalling removes the daemon, the app, `opadctl`, the bundled tosu, the autos
 > The pad itself is not affected. It keeps working as a plain USB keyboard, and its lifetime counters, key settings, Hall Effect calibration and owner record stay on the pad. To erase or hand over the pad itself, see [Recovery §7](../recovery.md#7-reflashing-and-unbinding-a-pad). <!-- src: /AGENTS.md#1. Product rules --> <!-- src: /packaging/linux/uninstall-cleanup.sh --> <!-- src: /packaging/windows/installer.iss -->
 
 > [!WARNING]
-> The uninstaller deletes OPad's data folder without asking: the database with your settings, layouts and play statistics, the automatic backups, and the logs. If you want to keep a copy, export a backup first (`opadctl export ~/opad-backup.json`, or **Device** → **Export backup**) and save it outside that folder. <!-- src: /packaging/linux/uninstall-cleanup.sh --> <!-- src: /packaging/windows/installer.iss -->
+> The uninstaller deletes OPad's data folder without asking: the database with your settings, layouts and play statistics, the automatic backups, and the logs. If you want to keep a copy, export a backup first (`opadctl backup export ~/opad-backup.json`, or **Pad** → **Export backup**) and save it outside that folder. <!-- src: /packaging/linux/uninstall-cleanup.sh --> <!-- src: /packaging/windows/installer.iss -->
 
 ## Linux
 

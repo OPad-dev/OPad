@@ -43,7 +43,7 @@ flowchart LR
 | [`identity.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/identity.rs) | UUIDv4 por instalación en SQLite, que el pad guarda como su propietario |
 | [`osu_window.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/osu_window.rs) | `osu_active` para los deslizamientos de volumen: osu! en primer plano en Windows, osu!lazer en ejecución en Linux |
 | [`tap_stats.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/tap_stats.rs) | Mantiene el historial de frecuencia de toques de `DaemonState` al día con SQLite |
-| [`log_hub.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/log_hub.rs) | Anillo de logs en memoria (2000 entradas) para `opadctl monitor` y la página Logs |
+| [`log_hub.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/log_hub.rs) | Anillo de logs en memoria (2000 entradas) para `opadctl logs` y la página Logs |
 | [`he_debug_log.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/he_debug_log.rs) | Escribe las líneas del firmware de depuración HE en `he-debug.log`, rotado a los 50 MB |
 | [`updater.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/updater.rs) | Worker de actualizaciones de la app y de `tosu` |
 | [`firmware_update.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/firmware_update.rs) | Ofertas de firmware, consentimiento, instalación y la actualización desatendida |

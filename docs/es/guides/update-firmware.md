@@ -12,16 +12,16 @@ La app y el teclado se actualizan por separado. Puedes actualizar el firmware si
 ## Antes de empezar
 
 - Conecta el teclado directamente al PC y no a través de un hub que puedas golpear. <!-- src: /desktop/crates/opad-update/src/firmware.rs#consent_text -->
-- Ten la app de escritorio instalada y en marcha. `opadctl flash` también funciona sin el daemon, pero entonces no puede conservar el firmware antiguo como respaldo (consulta [más abajo](#flashear-un-archivo-de-firmware-opadctl-flash)). <!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
+- Ten la app de escritorio instalada y en marcha. `opadctl pad flash` también funciona sin el daemon, pero entonces no puede conservar el firmware antiguo como respaldo (consulta [más abajo](#flashear-un-archivo-de-firmware-opadctl-flash)). <!-- src: /desktop/cli/src/main.rs#run -->
 - El teclado deja de funcionar como teclado durante unos 30 segundos mientras se actualiza, así que hazlo fuera de un mapa. De todas formas, OPad se niega a empezar una actualización durante un mapa. <!-- src: /desktop/crates/opad-update/src/firmware.rs#TYPICAL_OUTAGE_SECONDS --> <!-- src: /desktop/crates/opad-update/src/firmware.rs#blockers -->
 
 Se conservan tus contadores de por vida, ajustes, diseños, calibración Hall Effect y registro del propietario: una actualización solo escribe la ranura del firmware. <!-- src: /desktop/daemon/src/firmware_update.rs --> <!-- src: /firmware/partitions.csv -->
 
 ## Actualizar desde la app
 
-1. Abre **Settings** → **🔄 Updates & Firmware**. (El botón **Update firmware** de la página **Device** te lleva a **Settings**.) <!-- src: /desktop/gui/src/pages.rs#settings --> <!-- src: /desktop/gui/src/pages.rs#device -->
-2. La tarjeta **FIRMWARE UPDATE** muestra la versión instalada, la ranura desde la que se ejecuta y la versión más reciente si la hay, con sus notas de la versión. Todo lo que impide ahora mismo una actualización (sin teclado, un mapa en curso, una pregunta de propiedad abierta) aparece con un `⚠`. <!-- src: /desktop/gui/src/pages.rs#firmware_updates -->
-3. Haz clic en **Update now**. Solo está habilitado cuando hay una actualización disponible y nada lo impide. <!-- src: /desktop/gui/src/pages.rs#firmware_updates -->
+1. Abre **Settings** → **Updates**. (Cuando hay un firmware más nuevo, **Update to …** en la página **Pad** te lleva ahí.) <!-- src: /desktop/gui/src/settings.rs#updates --> <!-- src: /desktop/gui/src/pages.rs#pad -->
+2. La fila **Pad firmware** muestra la versión instalada, la ranura desde la que se ejecuta y la versión más reciente si la hay, con sus notas de la versión. Todo lo que impide ahora mismo una actualización (sin teclado, un mapa en curso, una pregunta de propiedad abierta) aparece con un `⚠`. <!-- src: /desktop/gui/src/settings.rs#firmware_row -->
+3. Haz clic en **Update now**. Solo está habilitado cuando hay una actualización disponible y nada lo impide. <!-- src: /desktop/gui/src/settings.rs#firmware_row -->
 4. Lee el diálogo **Confirm Firmware Update** y haz clic en **Confirm & Flash Pad**. <!-- src: /desktop/gui/src/main.rs#App -->
 5. Deja el teclado conectado hasta que aparezca **✓ Firmware Update Complete** y luego haz clic en **Close**. <!-- src: /desktop/gui/src/main.rs#App -->
 
@@ -29,25 +29,25 @@ Se conservan tus contadores de por vida, ajustes, diseños, calibración Hall Ef
 
 **Install firmware updates automatically** está activado de forma predeterminada. Con él activado, el daemon instala por su cuenta una nueva versión del firmware cuando el teclado lleva 30 minutos sin usarse: ninguna pulsación en 30 minutos y, salvo que hayas configurado la pantalla para no suspenderse nunca, la pantalla suspendida. Nunca actualiza durante un mapa. Si falla una actualización automática de una versión, no vuelve a intentar esa versión durante un día. Desmarca la casilla para actualizar solo cuando hagas clic en **Update now**. <!-- src: /desktop/daemon/src/firmware_update.rs#AUTO_IDLE --> <!-- src: /desktop/daemon/src/firmware_update.rs#auto_wait --> <!-- src: /desktop/daemon/src/main.rs --> <!-- src: /desktop/daemon/src/updater.rs#read_flag -->
 
-## Actualizar desde un terminal (`opadctl firmware-update`)
+## Actualizar desde un terminal (`opadctl update install firmware`)
 
 Esto instala la misma versión que la app, de la misma manera:
 
 ```sh
-opadctl firmware-update
+opadctl update install firmware
 ```
 
-Muestra las versiones instalada y disponible, las notas de la versión y lo que hará la actualización, y luego pregunta `Flash the pad now? [y/N]:`. Responde `y`. En un script, pasa `--yes` para dar esa respuesta de antemano. <!-- src: /desktop/cli/src/main.rs#Commands::FirmwareUpdate -->
+Muestra las versiones instalada y disponible, las notas de la versión y lo que hará la actualización, y luego pregunta `Flash the pad now? [y/N]:`. Responde `y`. En un script, pasa `--yes` para dar esa respuesta de antemano. <!-- src: /desktop/cli/src/main.rs#run -->
 
-## Flashear un archivo de firmware (`opadctl flash`)
+## Flashear un archivo de firmware (`opadctl pad flash`)
 
 Para instalar un archivo de firmware que hayas compilado o descargado tú:
 
 ```sh
-opadctl flash firmware/build/opad-firmware.bin
+opadctl pad flash firmware/build/opad-firmware.bin
 ```
 
-`opadctl flash`: <!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
+`opadctl pad flash`: <!-- src: /desktop/cli/src/main.rs#run -->
 
 1. comprueba que el archivo es una imagen de firmware para ESP32-S3; <!-- src: /desktop/crates/opad-device/src/flash.rs#check_esp32s3_image_file -->
 2. pregunta al daemon desde qué ranura se ejecuta el teclado y elige la otra (`ota_0` en `0x20000` u `ota_1` en `0x220000`); <!-- src: /desktop/crates/opad-device/src/flash.rs#plan_app_update -->
@@ -56,9 +56,9 @@ opadctl flash firmware/build/opad-firmware.bin
 5. espera hasta 45 segundos a que vuelva el teclado y te dice si se ejecuta desde la ranura nueva o si se ha revertido. <!-- src: /desktop/cli/src/main.rs#report_slot_after_flash -->
 
 > [!WARNING]
-> Sin el daemon (o con un firmware demasiado antiguo para comunicar su ranura), `opadctl flash` no puede saber qué ranura se está ejecutando. Entonces escribe `ota_0`, deja en blanco la selección de arranque para que arranque `ota_0`, y muestra `Running slot unknown: writing ota_0 and making it the slot that boots, with no fallback`. Si ese flasheo se interrumpe, recupera el teclado con `opadctl recover` ([Recuperación §7.7](../recovery.md#77-un-teclado-que-no-aparece-como-opad-opadctl-recover)). <!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
+> Sin el daemon (o con un firmware demasiado antiguo para comunicar su ranura), `opadctl pad flash` no puede saber qué ranura se está ejecutando. Entonces escribe `ota_0`, deja en blanco la selección de arranque para que arranque `ota_0`, y muestra `Running slot unknown: writing ota_0 and making it the slot that boots, with no fallback`. Si ese flasheo se interrumpe, recupera el teclado con `opadctl pad recover` ([Recuperación §7.7](../recovery.md#77-un-teclado-que-no-aparece-como-opad-opadctl-recover)). <!-- src: /desktop/cli/src/main.rs#run -->
 
-Opciones: <!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
+Opciones: <!-- src: /desktop/cli/src/main.rs#run -->
 
 - `--port <port>`: el puerto del teclado, cuando no quieres la detección automática (o hay varios teclados conectados).
 - `--full`: un flasheo de recuperación. Pásale una carpeta (una carpeta de compilación de ESP-IDF o los archivos `.bin` de una versión publicada del firmware) y también escribe el bootloader, la tabla de particiones y los datos OTA. Escribe `ota_0` en su sitio, así que úsalo solo para recuperar; consulta [Recuperación §7.4](../recovery.md#74-borra-y-luego-flashea).
@@ -84,16 +84,16 @@ El firmware nuevo arranca a prueba. Solo se confirma a sí mismo cuando tu PC ha
 opadctl status
 ```
 
-Busca: <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
+Busca: <!-- src: /desktop/cli/src/main.rs#run -->
 
 - `ESP32 Device:     Connected`
 - `Firmware Version:` la versión que has instalado
 - `Running Slot:` `ota_0` u `ota_1`
 
-En la app, la página **Device** muestra **Firmware** y **Running slot**. <!-- src: /desktop/gui/src/pages.rs#device -->
+En la app, la página **Pad** muestra **Firmware**, y **Running slot** dentro de **Details**. <!-- src: /desktop/gui/src/pages.rs#pad -->
 
 ## Si no ha funcionado
 
 - **El teclado ha vuelto al firmware antiguo:** sigue funcionando como antes. Consulta [Recuperación §7.6](../recovery.md#76-cuando-se-interrumpe-el-flasheo).
-- **El teclado ya no aparece como OPad (`303a:8415`):** ejecuta `opadctl recover` y vuelve a conectar el teclado, como en [Recuperación §7.7](../recovery.md#77-un-teclado-que-no-aparece-como-opad-opadctl-recover).
+- **El teclado ya no aparece como OPad (`303a:8415`):** ejecuta `opadctl pad recover` y vuelve a conectar el teclado, como en [Recuperación §7.7](../recovery.md#77-un-teclado-que-no-aparece-como-opad-opadctl-recover).
 - **El puerto serie está ocupado o se deniega el permiso:** consulta [Solución de problemas §3](../troubleshooting.md#3-linux-permisos-usb-y-el-puerto-serie).

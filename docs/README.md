@@ -45,7 +45,7 @@ flowchart TD
 
 ### Technical Reference
 * [`opadctl` CLI Reference](reference/opadctl.md) — Verbatim `--help` output and option reference.
-* [GUI Reference](reference/gui.md) — `opad-gui` pages, Settings tabs, Screen Designer, Diagnostics, and Stats.
+* [GUI Reference](reference/gui.md) — `opad-gui` pages, how each one saves, Designer, Troubleshooting, and the tray menu.
 * [Device Settings Catalog](reference/device-settings.md) — Configuration fields, types, ranges, defaults, and NVS keys.
 * [Pinout Reference](reference/pinout.md) — Header P1/P2 mappings, onboard peripherals, and V3 FFC pinouts.
 * [Serial Wire Protocol](reference/serial-protocol.md) — Marked/Checked framing, CRC-16/CCITT-FALSE, and protobuf catalog.
@@ -87,7 +87,7 @@ Every contributor must uphold the product rules in [/AGENTS.md](https://github.c
 
 1. **The code is the single source of truth**: When code and documentation disagree, fix or remove the doc.
 2. **Cite source code**: Use invisible source comments (formatted as `<!--` `src:` `/path#symbol` `-->`); inside a comment the repo-root `/path` form is fine. Visible links to source files use full GitHub URLs (see below). Never use line numbers (`#L120`).
-3. **Never instruct anyone to press BOOT or RESET buttons**: Flashing, updating, and recovering happen over USB (`opadctl flash`, `opadctl recover`).
+3. **Never instruct anyone to press BOOT or RESET buttons**: Flashing, updating, and recovering happen over USB (`opadctl pad flash`, `opadctl pad recover`).
 4. **Independent updates**: App and pad update independently; never require updating both together.
 5. **Every key comes from a finger**: No macros, auto-tap, scripted input, or host-to-pad key injection.
 6. **No placeholder pages**: Never commit empty or speculative placeholder documents.

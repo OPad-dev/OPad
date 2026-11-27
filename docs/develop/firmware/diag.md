@@ -14,7 +14,7 @@ Implemented in [/firmware/main/diag/diag.c](https://github.com/OPad-dev/OPad/blo
 - Fixed circular buffer `s_entries[DIAG_RING_SIZE]` (`DIAG_RING_SIZE = 64`) of `diag_entry_t` (`timestamp_ms`, `event_id`, `level`, `arg0`, `arg1`), guarded by a FreeRTOS spinlock (`taskENTER_CRITICAL(&s_mux)`).
 - `diag_record(uint16_t event_id, uint8_t level, uint32_t arg0, uint32_t arg1)` performs no heap allocation and no string formatting; when full, it drops the oldest entry and increments `s_dropped`.
 - `diag_drain(out_entries, max_entries, out_dropped)` drains queued entries and resets `s_dropped` so the protocol task can ship them to the host in `LogEventBatch`.
-- Event IDs are wire format (append only), defined in [/firmware/main/diag/diag.h](https://github.com/OPad-dev/OPad/blob/main/firmware/main/diag/diag.h) and formatted for `opadctl monitor` in [/desktop/crates/opad-model/src/diag.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-model/src/diag.rs):
+- Event IDs are wire format (append only), defined in [/firmware/main/diag/diag.h](https://github.com/OPad-dev/OPad/blob/main/firmware/main/diag/diag.h) and formatted for `opadctl logs` in [/desktop/crates/opad-model/src/diag.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-model/src/diag.rs):
 
 | ID | Event | ID | Event |
 |---|---|---|---|
@@ -32,12 +32,12 @@ Implemented in [/firmware/main/diag/diag.c](https://github.com/OPad-dev/OPad/blo
 | 12 | `CONFIG_REJECTED` | 24 | `UI_PERF` |
 
 Two of them need more detail:
-  - `DIAG_EVENT_MEMORY = 23`: Recorded once after boot in [/firmware/main/app_main.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/app_main.c) with `arg0 =` free internal RAM (bytes) and `arg1 =` largest free internal DMA-capable block (bytes), visible in `opadctl monitor`.
+  - `DIAG_EVENT_MEMORY = 23`: Recorded once after boot in [/firmware/main/app_main.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/app_main.c) with `arg0 =` free internal RAM (bytes) and `arg1 =` largest free internal DMA-capable block (bytes), visible in `opadctl logs`.
   - `DIAG_EVENT_UI_PERF = 24`: Recorded in `CONFIG_OPAD_UI_PERF_TEST` builds by [/firmware/main/diag/ui_perf_test.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/diag/ui_perf_test.c) at the end of each phase (`DIAG_UI_PERF_IDLE = 0`, `DIAG_UI_PERF_SONG = 1`, `DIAG_UI_PERF_RESULT = 2`) with frame count, average frame time, and longest frame time (in 0.1 ms units).
 
 ## Carrier & Input Module PCB Self-Test (`board_test.c`)
 
-Implemented in [/firmware/main/diag/board_test.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/diag/board_test.c) and invoked by the `run_board_test` host message (`opadctl board-test`, or the GUI's **Diagnostics** page). The protocol task refuses it outside `IDLE` (`"not while a map is played"`) and while pin detection runs (`"pin detection is running"`), because the test reconfigures key pins ([/firmware/main/protocol/protocol.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/protocol/protocol.c)). Steps:
+Implemented in [/firmware/main/diag/board_test.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/diag/board_test.c) and invoked by the `run_board_test` host message (`opadctl pad test`, or the GUI's **Troubleshooting** → **Board test**). The protocol task refuses it outside `IDLE` (`"not while a map is played"`) and while pin detection runs (`"pin detection is running"`), because the test reconfigures key pins ([/firmware/main/protocol/protocol.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/protocol/protocol.c)). Steps:
 
 1. **Key line pull test (`keypad_line_test`)**: Temporarily switches each armed key GPIO between internal pull-up and pull-down (`LINE_TEST_SETTLE_US = 300` µs) to verify whether an MX module's external 10 kΩ pull-ups hold the line high against pull-down, or whether a switch is held / shorted to `GND`.
 2. **Module ID read (`board_read_module_id`)**: Samples open and loaded voltages on the module ID ADC pin (`GPIO 8`) to classify `MX`, `HE`, `HE_V3`, `MX_V3`, or `NONE` (skipped on V1 HE where ADC1 continuous DMA owns ADC1, using boot module instead).

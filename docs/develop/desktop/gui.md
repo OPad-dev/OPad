@@ -11,11 +11,14 @@ sidebar:
 
 | Module | Role |
 |---|---|
-| [`main.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/main.rs) | `App` (`new`, `update`, `view`, `subscription`), the `Page` enum and its `--page` tokens, daemon start and version matching |
-| [`pages.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/pages.rs) | Dashboard, Settings, Device and Logs pages |
-| [`stats.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/stats.rs) | Stats page: tap rate in KPM for the attempt and the history period |
-| [`keys.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/keys.rs) | Keys page: HE actuation and Rapid Trigger with a live cut-away of each switch; shown only when the pad's HE backend runs |
-| [`diagnostics.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/diagnostics.rs), [`he_monitor.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/he_monitor.rs) | Diagnostics page: hardware tests, the PCB test (graded by `opad_model::board_test`), and the HE phantom / double-press monitor that follows `he-debug.log` |
+| [`main.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/main.rs) | `App` (`new`, `update`, `view`, `subscription`); `Page`, `Section` and `Target` with the `--page` tokens; the one save model of the pad's settings (`form_config`, `pad_dirty`); notices; daemon start and version matching |
+| [`pages.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/pages.rs) | Dashboard, Pad, the Logs tab and the calibration view |
+| [`keys.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/keys.rs) | Keys page: bindings, wiring, and HE actuation and Rapid Trigger with a live cut-away of each switch |
+| [`screen.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/screen.rs) | Screen page: display, touchscreen swipes, result animations |
+| [`settings.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/settings.rs) | Settings page and its tabs: General, Updates, osu! connection, About |
+| [`stats.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/stats.rs) | Stats page: key speed, and tap rate in KPM for the attempt and the history period |
+| [`troubleshooting.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/troubleshooting.rs), [`he_monitor.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/he_monitor.rs) | Troubleshooting page: key test, board test (graded by `opad_model::board_test`), connection, report, and the HE phantom / double-press monitor that follows `he-debug.log` |
+| [`widgets.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/widgets.rs) | What the pages share: cards, sections, the tab bar and the save bar |
 | [`designer/`](https://github.com/OPad-dev/OPad/tree/main/desktop/gui/src/designer) | Screen Designer (`mod.rs`, `overlay.rs`) |
 | [`chrome.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/chrome.rs) | Custom title bar and resize edges replacing system decorations |
 | [`theme.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/theme.rs) | Colours and fonts |
@@ -31,14 +34,14 @@ sidebar:
 |---|---|
 | Status (`Message::Poll`) | 2 s while the daemon is offline, 1 s with the window open, 3 s hidden in the tray |
 | HE live samples (Keys page) | 20 ms, plus animation frames |
-| Calibration progress (Calibration page) | 100 ms |
+| Calibration progress (the calibration inside Keys) | 100 ms |
 | Update status | 60 s, 2 s while an update is in progress |
 
 If the daemon is offline the GUI starts it once. If the daemon answers with a different version (one of the two was updated), whichever is older restarts as the new version, once per run.
 
 ## CLI Flags and Single Instance
 
-- `--tray` starts hidden in the tray; `--page <token>` / `-p <token>` opens a page. Tokens (`Page::TOKENS`): `dashboard`, `stats` (`kpm`, `ppm`), `designer`, `settings` (`updates`), `device`, `logs` (`monitor`), `diagnostics` (`test`, `testing`), `about` (`license`, `licenses`), `calibrate` (`calibration`), `keys` (`rapid-trigger`).
+- `--tray` starts hidden in the tray; `--page <token>` / `-p <token>` opens a page or one of its tabs. The tokens are `Target::TOKENS`; the names pages had before still open where their content went (`device` opens Pad, `monitor` the Logs tab, `diagnostics` Troubleshooting). The full list: [GUI Reference](../../reference/gui.md#pages).
 - A second launch asks the running instance to show its window (and open its `--page`), then exits. On Unix the instance binds `gui.sock` next to the IPC socket; of two launches racing, exactly one wins the bind and the other connects. A leftover socket is removed only when connecting to it fails with `ECONNREFUSED`. On Windows a named mutex decides and the request goes over the pipe `\\.\pipe\opad-gui`.
 
 ## Theme and Typography (`theme.rs`)
@@ -51,4 +54,4 @@ The palette mirrors the pad's ([/firmware/main/ui/core/ui_defaults.c](https://gi
 
 ## System Tray (`tray.rs`)
 
-A backend-agnostic view model (`IconState`: `Warning`, `Connected`, `Disconnected`; `TrayAction`: `ShowWindow`, `OpenMonitor`, `SyncNow`, `StartDaemon`, `Quit`) backed by `ksni` (StatusNotifierItem) on Linux and `tray-icon` on Windows.
+A backend-agnostic view model (`IconState`: `Warning`, `Connected`, `Disconnected`; `TrayAction`: `ShowWindow`, `Open(Page)`, `SyncNow`, `StartDaemon`, `Quit`) backed by `ksni` (StatusNotifierItem) on Linux and `tray-icon` on Windows.

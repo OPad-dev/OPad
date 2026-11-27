@@ -48,12 +48,12 @@ El firmware lee qué módulo está montado a través de la línea de ID de módu
 ## Comprueba el cableado
 
 1. Conecta el teclado a tu PC. Sin ninguna app, abre un editor de texto y pulsa cada tecla: deberías ver `z`, `x` (y `c` para Key 3 en un módulo V3). Consulta [Primera conexión](../start/first-connection.md). <!-- src: /firmware/main/usb/usb_hid.c -->
-2. Con la app de escritorio instalada, ejecuta `opadctl status` y revisa **Key Pins** e **Input Module**. <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
-3. En un carrier V3, ejecuta la autoprueba de la placa con todas las teclas sueltas: <!-- src: /desktop/cli/src/main.rs#Commands::BoardTest -->
+2. Con la app de escritorio instalada, ejecuta `opadctl status` y revisa **Key Pins** e **Input Module**. <!-- src: /desktop/cli/src/main.rs#run -->
+3. En un carrier V3, ejecuta la autoprueba de la placa con todas las teclas sueltas: <!-- src: /desktop/cli/src/main.rs#run -->
 
    ```bash
-   opadctl board-test
+   opadctl pad test
    ```
 
    Comprueba el ID de módulo, la orientación del cable, las líneas de las teclas y los cortocircuitos del conector y, en un módulo HE V3, el ADC y los sensores. Añade `--magnet` para ver después los sensores HE en vivo mientras sostienes un imán sobre cada tecla, o `--fix-pins` si las teclas de un módulo MX siguen con los valores predeterminados del cableado a mano (GPIO14 / GPIO9): las mueve a GPIO10 / GPIO7 y vuelve a probar.
-4. Para ver cada pulsación y cualquier rebote del interruptor, activa **Settings** → **🛠 Diagnostics** → **Enable Diagnostics Menu in Navigation** en `opad-gui` y abre **Diagnostics** → **⌨ Switch Chatter & Input**. <!-- src: /desktop/gui/src/pages.rs#settings --> <!-- src: /desktop/gui/src/diagnostics.rs -->
+4. Para ver cada pulsación y cualquier rebote del interruptor, abre **Troubleshooting** → **Key test** en `opad-gui`. <!-- src: /desktop/gui/src/troubleshooting.rs#view_input_tester -->

@@ -14,7 +14,7 @@ Implementado en [/firmware/main/diag/diag.c](https://github.com/OPad-dev/OPad/bl
 - Búfer circular fijo `s_entries[DIAG_RING_SIZE]` (`DIAG_RING_SIZE = 64`) de `diag_entry_t` (`timestamp_ms`, `event_id`, `level`, `arg0`, `arg1`), protegido por un spinlock de FreeRTOS (`taskENTER_CRITICAL(&s_mux)`).
 - `diag_record(uint16_t event_id, uint8_t level, uint32_t arg0, uint32_t arg1)` no reserva memoria del heap ni formatea cadenas; cuando está lleno, descarta la entrada más antigua e incrementa `s_dropped`.
 - `diag_drain(out_entries, max_entries, out_dropped)` saca las entradas en cola y pone a cero `s_dropped` para que la tarea del protocolo las envíe al host en `LogEventBatch`.
-- Los IDs de evento son formato de protocolo (solo se añaden), definidos en [/firmware/main/diag/diag.h](https://github.com/OPad-dev/OPad/blob/main/firmware/main/diag/diag.h) y formateados para `opadctl monitor` en [/desktop/crates/opad-model/src/diag.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-model/src/diag.rs):
+- Los IDs de evento son formato de protocolo (solo se añaden), definidos en [/firmware/main/diag/diag.h](https://github.com/OPad-dev/OPad/blob/main/firmware/main/diag/diag.h) y formateados para `opadctl logs` en [/desktop/crates/opad-model/src/diag.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-model/src/diag.rs):
 
 | ID | Evento | ID | Evento |
 |---|---|---|---|
@@ -32,12 +32,12 @@ Implementado en [/firmware/main/diag/diag.c](https://github.com/OPad-dev/OPad/bl
 | 12 | `CONFIG_REJECTED` | 24 | `UI_PERF` |
 
 Dos de ellos necesitan más detalle:
-  - `DIAG_EVENT_MEMORY = 23`: se registra una vez tras el arranque en [/firmware/main/app_main.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/app_main.c) con `arg0 =` RAM interna libre (bytes) y `arg1 =` mayor bloque interno libre apto para DMA (bytes); se ve en `opadctl monitor`.
+  - `DIAG_EVENT_MEMORY = 23`: se registra una vez tras el arranque en [/firmware/main/app_main.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/app_main.c) con `arg0 =` RAM interna libre (bytes) y `arg1 =` mayor bloque interno libre apto para DMA (bytes); se ve en `opadctl logs`.
   - `DIAG_EVENT_UI_PERF = 24`: se registra en las compilaciones con `CONFIG_OPAD_UI_PERF_TEST` desde [/firmware/main/diag/ui_perf_test.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/diag/ui_perf_test.c) al final de cada fase (`DIAG_UI_PERF_IDLE = 0`, `DIAG_UI_PERF_SONG = 1`, `DIAG_UI_PERF_RESULT = 2`) con el número de fotogramas, el tiempo medio de fotograma y el fotograma más largo (en unidades de 0,1 ms).
 
 ## Autoprueba de las PCB de la placa portadora y del módulo de entrada (`board_test.c`)
 
-Implementada en [/firmware/main/diag/board_test.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/diag/board_test.c) y lanzada con el mensaje del host `run_board_test` (`opadctl board-test`, o la página **Diagnostics** de la GUI). La tarea del protocolo la rechaza fuera de `IDLE` (`"not while a map is played"`) y mientras se ejecuta la detección de pines (`"pin detection is running"`), porque la prueba reconfigura los pines de tecla ([/firmware/main/protocol/protocol.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/protocol/protocol.c)). Pasos:
+Implementada en [/firmware/main/diag/board_test.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/diag/board_test.c) y lanzada con el mensaje del host `run_board_test` (`opadctl pad test`, o **Troubleshooting** → **Board test** en la GUI). La tarea del protocolo la rechaza fuera de `IDLE` (`"not while a map is played"`) y mientras se ejecuta la detección de pines (`"pin detection is running"`), porque la prueba reconfigura los pines de tecla ([/firmware/main/protocol/protocol.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/protocol/protocol.c)). Pasos:
 
 1. **Prueba de pull de las líneas de tecla (`keypad_line_test`)**: cambia temporalmente cada GPIO de tecla armado entre pull-up y pull-down internos (`LINE_TEST_SETTLE_US = 300` µs) para comprobar si los pull-ups externos de 10 kΩ de un módulo MX mantienen la línea alta frente al pull-down, o si un interruptor está mantenido o cortocircuitado a `GND`.
 2. **Lectura del ID del módulo (`board_read_module_id`)**: muestrea las tensiones en abierto y con carga en el pin ADC del ID del módulo (`GPIO 8`) para clasificarlo como `MX`, `HE`, `HE_V3`, `MX_V3` o `NONE` (se omite en HE V1, donde el DMA continuo del ADC1 es dueño del ADC1, y se usa en su lugar el módulo del arranque).

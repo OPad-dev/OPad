@@ -55,7 +55,7 @@ if it was done now, on this pad.
 
 ## 5. Board test and modules
 
-- [ ] `opadctl board-test` passes (HE: `--magnet`), and keys work right after (HW-06 / 07 / 13).
+- [ ] `opadctl pad test` passes (HE: `--magnet`), and keys work right after (HW-06 / 07 / 13).
 - [ ] Swap MX ↔ HE with USB out, five times: the pad finds the right one each time.
 - [ ] Unplug the module cable while running: no crash, no stuck key.
 
@@ -71,13 +71,13 @@ if it was done now, on this pad.
 - [ ] Update the firmware from the app: counters and calibration unchanged; asks every time; refused mid-map (UPD-06, 07, 08).
 - [ ] After the update, on a PC without OPad: still types (UPD-09).
 - [ ] A broken image rolls back by itself (FAIL-06).
-- [ ] `opadctl recover` and a replug bring a pad back; no button touched (FAIL-07).
+- [ ] `opadctl pad recover` and a replug bring a pad back; no button touched (FAIL-07).
 - [ ] Unplug mid-update, then recover (UPD-11).
 
 ## 8. Long run
 
 - [ ] 2 hours of maps with tosu and the screen on: no freeze, no reset (STR-01).
-- [ ] 8 hours of maps with `opadctl monitor` open: note any dropped message ______.
+- [ ] 8 hours of maps with `opadctl logs` open: note any dropped message ______.
 - [ ] 48 hours plugged in idle: answers at once.
 
 Result: PASS / FAIL Notes: ________________________________________________

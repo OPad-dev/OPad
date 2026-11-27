@@ -46,19 +46,19 @@ Un deslizamiento recorre al menos 30 píxeles, principalmente a lo largo de un e
 ## Elige tus acciones de deslizamiento
 
 1. Conecta el teclado y abre la app de OPad.
-2. Abre **Settings** → **⌨ Keypad** y desplázate hasta **Touchscreen swipes**.
-3. Cada dirección tiene una lista: **↑ SWIPE UP**, **↓ SWIPE DOWN**, **← SWIPE LEFT** y **SWIPE RIGHT →**. Elige una acción: <!-- src: /desktop/gui/src/pages.rs#settings --> <!-- src: /desktop/crates/opad-model/src/swipe.rs#swipe_choices -->
+2. Abre **Screen** y busca **Touchscreen**.
+3. Cada dirección tiene una lista: **SWIPE UP**, **SWIPE DOWN**, **SWIPE LEFT** y **SWIPE RIGHT**. Elige una acción: <!-- src: /desktop/gui/src/screen.rs#touchscreen --> <!-- src: /desktop/crates/opad-model/src/swipe.rs#swipe_choices -->
    - **Multimedia y volumen:** `Nothing`, `Volume up`, `Volume down`, `Previous track`, `Next track`, `Play / pause`, `Mute`.
    - **Un atajo de osu!**, como `osu!: Random beatmap (F2)`, `osu!: Mod select (F1)`, `osu!: Chat (F8)`, `osu!: Settings (Ctrl+O)` u `osu!: Screenshot (F12)`. Los atajos exclusivos de osu!lazer empiezan por `osu!lazer:`; en Windows la lista también incluye `Boss key (hide osu!) (Insert)` y `Reload skin (Ctrl+Alt+Shift+S)` de osu! stable. <!-- src: /desktop/crates/opad-model/src/swipe.rs#OSU_SHORTCUTS -->
    - **`Other key (F13-F24)…`:** una segunda lista, **Choose a key**, ofrece teclas de función que no usa nada más, para asignarlas en OBS, Discord o el propio osu!. En Linux son F14–F19 (el escritorio da a F13 y F20–F23 sus propios significados); en Windows, F13–F23. F24 nunca se ofrece, porque el teclado la usa internamente tras un paso de volumen con Alt+rueda. <!-- src: /desktop/crates/opad-model/src/swipe.rs#free_keys -->
-4. Haz clic en **Save settings**. El teclado guarda las acciones, así que funcionan igual en cualquier PC con OPad. <!-- src: /desktop/gui/src/pages.rs#settings --> <!-- src: /firmware/main/config/device_config.c -->
+4. Haz clic en **Save to pad** en la barra de abajo. El teclado guarda las acciones, así que funcionan igual en cualquier PC con OPad. <!-- src: /desktop/gui/src/widgets.rs#save_bar --> <!-- src: /firmware/main/config/device_config.c -->
 
 > [!NOTE]
 > Un teclado Hall Effect sin calibrar está bloqueado en su pantalla de calibración. Ahí, un toque solo pulsa el botón de esa pantalla: los deslizamientos están desactivados y no se envía ninguna tecla. Consulta [Calibrar interruptores Hall Effect](calibrate-hall-effect.md). <!-- src: /firmware/main/input/touch_retry.c#touch_retry_task --> <!-- src: /docs/specs/v2-hall-effect-decisions.md -->
 
 ## Comprueba que ha funcionado
 
-1. Ejecuta `opadctl status`. La línea `Swipes:` muestra la acción de cada dirección (`up`, `down`, `left`, `right`). <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
+1. Ejecuta `opadctl status`. La línea `Swipes:` muestra la acción de cada dirección (`up`, `down`, `left`, `right`). <!-- src: /desktop/cli/src/main.rs#run -->
 2. Fuera de un mapa, desliza el dedo sobre el teclado. Muestra una breve insignia en la dirección del deslizamiento y la acción ocurre en tu PC. <!-- src: /firmware/main/input/touch_retry.c#handle_swipe -->
 
 ## Si no ha funcionado

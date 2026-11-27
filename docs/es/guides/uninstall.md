@@ -11,7 +11,7 @@ Desinstalar elimina el daemon, la app, `opadctl`, el tosu incluido, las entradas
 > El teclado en sí no se ve afectado. Sigue funcionando como un teclado USB normal, y sus contadores de por vida, ajustes de teclas, calibración Hall Effect y registro del propietario se quedan en el teclado. Para borrar o ceder el propio teclado, consulta [Recuperación §7](../recovery.md#7-reflashear-y-desvincular-un-teclado). <!-- src: /AGENTS.md#1. Product rules --> <!-- src: /packaging/linux/uninstall-cleanup.sh --> <!-- src: /packaging/windows/installer.iss -->
 
 > [!WARNING]
-> El desinstalador borra la carpeta de datos de OPad sin preguntar: la base de datos con tus ajustes, diseños y estadísticas de juego, las copias de seguridad automáticas y los registros. Si quieres conservar una copia, exporta antes una copia de seguridad (`opadctl export ~/opad-backup.json` o **Device** → **Export backup**) y guárdala fuera de esa carpeta. <!-- src: /packaging/linux/uninstall-cleanup.sh --> <!-- src: /packaging/windows/installer.iss -->
+> El desinstalador borra la carpeta de datos de OPad sin preguntar: la base de datos con tus ajustes, diseños y estadísticas de juego, las copias de seguridad automáticas y los registros. Si quieres conservar una copia, exporta antes una copia de seguridad (`opadctl backup export ~/opad-backup.json` o **Pad** → **Export backup**) y guárdala fuera de esa carpeta. <!-- src: /packaging/linux/uninstall-cleanup.sh --> <!-- src: /packaging/windows/installer.iss -->
 
 ## Linux
 

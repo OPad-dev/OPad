@@ -11,7 +11,7 @@ La pantalla de 320×240 del teclado tiene dos diseños: la **Idle screen**, que 
 
 Necesitas `opad-gui` y `opad-daemon` en ejecución. El teclado puede estar desconectado: **Apply to pad** guarda el diseño en el daemon y lo envía la próxima vez que se conecte el teclado. Si la app dice que el teclado pertenece a otra instalación de OPad, resuélvelo primero (consulta [Recuperación §7](../recovery.md#7-reflashear-y-desvincular-un-teclado)). <!-- src: /desktop/gui/src/designer/mod.rs#update, /desktop/daemon/src/ipc_handlers.rs#IpcRequest::SetLayout -->
 
-1. Abre `opad-gui` y selecciona **Designer** en la barra de navegación izquierda (o lanza `opad-gui --page designer`). <!-- src: /desktop/gui/src/main.rs#Page::ALL, /desktop/gui/src/main.rs#TOKENS -->
+1. Abre `opad-gui` y selecciona **Designer** en la barra de navegación izquierda (o lanza `opad-gui --page designer`). <!-- src: /desktop/gui/src/main.rs#Page::GROUPS, /desktop/gui/src/main.rs#Target::TOKENS -->
 2. Encima de la previsualización, elige **Idle screen** o **Playing screen**. Cada una se guarda por separado. <!-- src: /desktop/gui/src/designer/mod.rs#view, /desktop/crates/opad-layout/src/lib.rs#Screen -->
 3. Haz clic en un tipo en **Add widget**, arrástralo a su sitio en la previsualización y ajusta su fuente de datos, su texto y sus colores en **Properties** ([Widgets](#widgets), [Propiedades](#propiedades)). <!-- src: /desktop/gui/src/designer/mod.rs#palette, /desktop/gui/src/designer/mod.rs#properties -->
 4. Compruébalo con las casillas de previsualización: **Live data from osu!** sondea `opad-daemon` cada segundo para mostrar valores reales de `tosu` y de ritmo de pulsación (con `tosu` en marcha; si no, se usan valores de ejemplo integrados), y **Show keys pressed** simula ambas teclas pulsadas para comprobar los colores de resaltado de las Key card. <!-- src: /desktop/gui/src/designer/mod.rs#subscription, /desktop/gui/src/designer/mod.rs#Message::LiveData, /desktop/gui/src/designer/mod.rs#Message::SimulatePress -->
@@ -61,10 +61,12 @@ Los ajustes del widget seleccionado, en **Properties**: <!-- src: /desktop/gui/s
 | Botón | Efecto |
 |---|---|
 | **Apply to pad** | Fuera de un mapa (`Idle`): el daemon guarda el diseño en SQLite y lo envía al teclado, que lo almacena en NVS (`opad_ui`). Durante un mapa o el cooldown: va a la RAM del teclado al momento y se guarda en disco y NVS cuando el teclado vuelve a `Idle`. <!-- src: /desktop/daemon/src/ipc_handlers.rs#IpcRequest::SetLayout, /firmware/main/ui/ui_store.c#ui_store_save --> |
-| **Revert** | Deshace los cambios sin aplicar. |
-| **Reset to default** | Carga el diseño integrado del firmware para esta pantalla; haz clic en **Apply to pad** para usarlo. |
-| **Reload** | Descarta los cambios locales y vuelve a pedir al daemon los diseños guardados. |
-<!-- src: /desktop/gui/src/designer/mod.rs#update -->
+| **Apply both** | Envía todas las pantallas con cambios, una detrás de otra. Un `•` en **Idle screen** o **Playing screen** marca una pantalla con cambios que el teclado todavía no muestra. |
+| **Undo** (Ctrl+Z) | Retrocede por los cambios de esta pantalla, hasta 100. Un arrastre o una palabra escrita es un paso. También recupera lo que **Revert**, **Import**, **Reload** o **Reset to default** sustituyeron. |
+| **Revert** | Vuelve a lo que muestra el teclado. |
+| **Reset to default** | El teclado olvida el diseño personalizado de esta pantalla y dibuja de nuevo el suyo, al momento. **Undo** recupera tu diseño como un cambio por aplicar. |
+| **Reload** | Vuelve a pedir al daemon los diseños guardados, en lugar de los cambios locales. |
+<!-- src: /desktop/gui/src/designer/mod.rs#handle, /desktop/gui/src/designer/mod.rs#update, /desktop/daemon/src/ipc_handlers.rs#IpcRequest::ResetLayout -->
 
 ## Exportar e importar un diseño
 

@@ -12,7 +12,7 @@ Tiene cuatro partes: <!-- src: /packaging/windows/installer.iss --> <!-- src: /d
 | Programa | Qué hace |
 |---|---|
 | `opad-daemon` | Se ejecuta en segundo plano. Habla con el teclado por su puerto serie, guarda tus contadores y ajustes y ejecuta tosu. |
-| `opad-gui` | La ventana de OPad y el icono de la bandeja: ajustes, Designer, Stats, Device y Diagnostics. |
+| `opad-gui` | La ventana de OPad y el icono de la bandeja: Dashboard, Stats, Keys, Screen, Designer, Pad, Settings y Troubleshooting. |
 | `opadctl` | Las mismas funciones desde un terminal, además del flasheo y la recuperación. Consulta la [referencia de `opadctl`](../reference/opadctl.md). |
 | tosu | Lee la memoria de osu! para obtener datos del mapa y de la partida. Viene incluido (LGPL-3.0); puedes usar el tuyo, consulta [Usar OPad con tosu](../guides/use-with-tosu.md). |
 
@@ -71,7 +71,7 @@ Los paquetes `.deb`, `.rpm` y de Arch instalan todos lo mismo: <!-- src: /deskto
 
 No necesitas arrancar el daemon tú mismo: cuando `opad-gui` se inicia y no encuentra ningún daemon en marcha, arranca uno (mediante la unidad de usuario de systemd cuando está disponible). <!-- src: /desktop/gui/src/platform_linux.rs#start_daemon --> <!-- src: /desktop/gui/src/main.rs#App -->
 
-Estos paquetes se actualizan solos desde la pestaña **Settings** → **🔄 Updates & Firmware** de la app. <!-- src: /desktop/crates/opad-update/src/origin.rs -->
+Estos paquetes se actualizan solos desde la pestaña **Settings** → **Updates** de la app. <!-- src: /desktop/crates/opad-update/src/origin.rs -->
 
 ### AppImage
 
@@ -96,10 +96,10 @@ Si prefieres compilar la app tú mismo e instalarla desde una copia del reposito
 ### Comprueba tu configuración en Linux
 
 ```bash
-opadctl setup
+opadctl doctor
 ```
 
-Indica si la regla udev está instalada y corresponde a esta versión, y si tosu puede leer la memoria de osu!, con el comando que lo arregla si no es así. <!-- src: /desktop/cli/src/main.rs#run_setup -->
+Indica si la regla udev está instalada y corresponde a esta versión, y si tosu puede leer la memoria de osu!, con el comando que lo arregla si no es así. <!-- src: /desktop/cli/src/main.rs#run_doctor -->
 
 ## Windows
 
@@ -119,6 +119,6 @@ Abre **OPad** desde el menú de aplicaciones o el menú Inicio, o ejecuta:
 opadctl status
 ```
 
-Deberías ver `ESP32 Device:     Connected`, la versión de firmware del teclado y `tosu (osu!):      Active` en cuanto tosu se haya iniciado. En la app, la página **Device** muestra lo mismo. <!-- src: /desktop/cli/src/main.rs#Commands::Status --> <!-- src: /desktop/gui/src/pages.rs#device -->
+Deberías ver `ESP32 Device:     Connected`, la versión de firmware del teclado y `tosu (osu!):      Active` en cuanto tosu se haya iniciado. En la app, la página **Pad** muestra lo mismo. <!-- src: /desktop/cli/src/main.rs#run --> <!-- src: /desktop/gui/src/pages.rs#pad -->
 
 Si no se detecta el teclado, consulta [Solución de problemas §3](../troubleshooting.md#3-linux-permisos-usb-y-el-puerto-serie).

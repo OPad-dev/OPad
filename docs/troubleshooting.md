@@ -23,7 +23,7 @@ A USB keyboard sends key *positions* (HID usage IDs), not letters, and your OS k
 Nothing is broken. Fix it in either place:
 
 - **In osu!** (quickest): open the key binding settings and press each OPad key to bind whatever character your layout gives.
-- **In the OPad app:** open **Settings** → **⌨ Keypad**, type the keys you want in **KEY 1** and **KEY 2** (and **KEY 3** on a V3 module), and click **Save settings**. The pad stores them, so they follow it to any PC. <!-- src: /desktop/gui/src/pages.rs#settings --> <!-- src: /firmware/main/config/device_config.c -->
+- **In the OPad app:** open **Keys**, click a key under **Bindings** and press the letter it should send (Key 1, Key 2, and Key 3 on a V3 module), then click **Save to pad**. The pad stores them, so they follow it to any PC. <!-- src: /desktop/gui/src/keys.rs#bindings --> <!-- src: /firmware/main/config/device_config.c -->
 
 ## 2. Linux: tosu cannot read osu! (Yama ptrace_scope)
 
@@ -34,10 +34,10 @@ tosu reads osu!'s memory. On Linux, the Yama security module (`/proc/sys/kernel/
 First, find out which case you are in:
 
 ```bash
-opadctl setup
+opadctl doctor
 ```
 
-It prints your `ptrace_scope`, whether tosu has the capability, and the exact command to run. The Diagnostics page in `opad-gui` says the same. <!-- src: /desktop/cli/src/main.rs#run_setup -->
+It prints your `ptrace_scope`, whether tosu has the capability, and the exact command to run. **Troubleshooting** → **Connection** in `opad-gui` says the same. <!-- src: /desktop/cli/src/main.rs#run_doctor, /desktop/gui/src/troubleshooting.rs#view_connection -->
 
 ### Fix A: give tosu the capability (packages and `~/.local` installs)
 
@@ -55,7 +55,7 @@ This keeps the system-wide protection on and exempts only tosu.
 
 ### Fix B: lower ptrace_scope (AppImage and source-built Arch package)
 
-The capability cannot work in two cases, and `opadctl setup` tells you so: <!-- src: /desktop/crates/opad-tosu/src/lib.rs#ptrace_access --> <!-- src: /packaging/linux/arch/PKGBUILD -->
+The capability cannot work in two cases, and `opadctl doctor` tells you so: <!-- src: /desktop/crates/opad-tosu/src/lib.rs#ptrace_access --> <!-- src: /packaging/linux/arch/PKGBUILD -->
 
 - the **AppImage**, because its files are mounted `nosuid`, which ignores file capabilities;
 - the Arch package built from the repository's **source `PKGBUILD`**, which runs tosu with the system `node`; giving `node` the capability would give it to every Node program.
@@ -85,15 +85,15 @@ The tosu that OPad bundles is rebuilt to run on glibc 2.28 and newer, so it star
 
 ### The daemon does not find the pad, or reports `Permission denied`
 
-Your user needs the udev rule `70-opad.rules` to open the pad's serial port (`/dev/ttyACM*`), its USB device and its input device (used by the app's switch tester). The rule also stops ModemManager probing the pad. <!-- src: /packaging/linux/udev/70-opad.rules --> <!-- src: /desktop/gui/src/diagnostics.rs#open_opad_evdev -->
+Your user needs the udev rule `70-opad.rules` to open the pad's serial port (`/dev/ttyACM*`), its USB device and its input device (used by the app's switch tester). The rule also stops ModemManager probing the pad. <!-- src: /packaging/linux/udev/70-opad.rules --> <!-- src: /desktop/gui/src/troubleshooting.rs#open_opad_evdev -->
 
 1. Check it:
 
    ```bash
-   opadctl setup
+   opadctl doctor
    ```
 
-   It says whether the rule is installed (in `/etc/udev/rules.d/` or `/usr/lib/udev/rules.d/`) and whether it matches this version. <!-- src: /desktop/cli/src/main.rs#run_setup -->
+   It says whether the rule is installed (in `/etc/udev/rules.d/` or `/usr/lib/udev/rules.d/`) and whether it matches this version. <!-- src: /desktop/cli/src/main.rs#run_doctor -->
 2. If it is missing:
    - **`.deb`, `.rpm` or Arch package:** reinstall the package; it ships the rule in `/usr/lib/udev/rules.d/`. <!-- src: /desktop/gui/Cargo.toml#package.metadata.deb -->
    - **AppImage:** accept the prompt when the app starts, or run `./OPad-Linux-<version>.AppImage install-udev`. <!-- src: /packaging/linux/appimage/AppRun -->
@@ -111,7 +111,7 @@ The rule covers the app's USB ID `303a:8415`, the ESP32-S3 bootloader's `303a:10
 
 ### The serial port is busy
 
-While `opad-daemon` runs, it holds the pad's serial port (`/dev/ttyACM0` on Linux, a `COM` port on Windows). `opadctl flash`, `opadctl bootloader` and the app's firmware update ask the daemon to let go of it for you. For any other serial tool, stop the daemon first. <!-- src: /desktop/cli/src/main.rs#prepare_flash -->
+While `opad-daemon` runs, it holds the pad's serial port (`/dev/ttyACM0` on Linux, a `COM` port on Windows). `opadctl pad flash`, `opadctl pad bootloader` and the app's firmware update ask the daemon to let go of it for you. For any other serial tool, stop the daemon first. <!-- src: /desktop/cli/src/main.rs#prepare_flash -->
 
 ### A key does nothing after a pin change
 
@@ -143,10 +143,10 @@ tosu reads osu!'s memory, and some antivirus products flag or quarantine it for 
 
 You never need the board's BOOT or RESET buttons.
 
-1. Run the recovery command with a folder that holds the firmware: an ESP-IDF build folder, or a folder with a firmware release's `.bin` files: <!-- src: /desktop/cli/src/main.rs#Commands::Recover -->
+1. Run the recovery command with a folder that holds the firmware: an ESP-IDF build folder, or a folder with a firmware release's `.bin` files: <!-- src: /desktop/cli/src/main.rs#run -->
 
    ```bash
-   opadctl recover firmware/build
+   opadctl pad recover firmware/build
    ```
 
 2. When it asks, unplug the pad's USB cable and plug it back in. `opadctl` catches the ESP32-S3's built-in bootloader in the moment it appears at power-on (`303a:1001`) and writes the full firmware over USB. <!-- src: /desktop/crates/opad-device/src/flash.rs#recover -->

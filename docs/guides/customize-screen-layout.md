@@ -11,7 +11,7 @@ The pad's 320×240 screen has two layouts: the **Idle screen**, shown outside a 
 
 You need `opad-gui` and `opad-daemon` running. The pad can be unplugged: **Apply to pad** saves the layout in the daemon and sends it the next time the pad connects. If the app says the pad belongs to another OPad install, settle that first (see [Recovery §7](../recovery.md#7-reflashing-and-unbinding-a-pad)). <!-- src: /desktop/gui/src/designer/mod.rs#update, /desktop/daemon/src/ipc_handlers.rs#IpcRequest::SetLayout -->
 
-1. Open `opad-gui` and select **Designer** in the left navigation bar (or launch `opad-gui --page designer`). <!-- src: /desktop/gui/src/main.rs#Page::ALL, /desktop/gui/src/main.rs#TOKENS -->
+1. Open `opad-gui` and select **Designer** in the left navigation bar (or launch `opad-gui --page designer`). <!-- src: /desktop/gui/src/main.rs#Page::GROUPS, /desktop/gui/src/main.rs#Target::TOKENS -->
 2. At the top of the preview, pick **Idle screen** or **Playing screen**. Each is saved on its own. <!-- src: /desktop/gui/src/designer/mod.rs#view, /desktop/crates/opad-layout/src/lib.rs#Screen -->
 3. Click a type under **Add widget**, drag it into place on the preview, and set its data source, text and colors under **Properties** ([Widgets](#widgets), [Properties](#properties)). <!-- src: /desktop/gui/src/designer/mod.rs#palette, /desktop/gui/src/designer/mod.rs#properties -->
 4. Check it with the preview checkboxes: **Live data from osu!** polls `opad-daemon` every second for real `tosu` and tap-rate values (with `tosu` running; otherwise built-in sample values are shown), and **Show keys pressed** simulates both keys held so you can check Key card highlight colors. <!-- src: /desktop/gui/src/designer/mod.rs#subscription, /desktop/gui/src/designer/mod.rs#Message::LiveData, /desktop/gui/src/designer/mod.rs#Message::SimulatePress -->
@@ -61,10 +61,12 @@ The selected widget's settings, under **Properties**: <!-- src: /desktop/gui/src
 | Button | Effect |
 |---|---|
 | **Apply to pad** | Outside a map (`Idle`): the daemon saves the layout to SQLite and sends it to the pad, which stores it in NVS (`opad_ui`). During a map or cooldown: it goes to the pad's RAM at once and is saved to disk and NVS when the pad is back in `Idle`. <!-- src: /desktop/daemon/src/ipc_handlers.rs#IpcRequest::SetLayout, /firmware/main/ui/ui_store.c#ui_store_save --> |
-| **Revert** | Undoes edits that were not applied. |
-| **Reset to default** | Loads the firmware's built-in layout for this screen; click **Apply to pad** to use it. |
-| **Reload** | Discards local edits and fetches the saved layouts from the daemon again. |
-<!-- src: /desktop/gui/src/designer/mod.rs#update -->
+| **Apply both** | Sends every screen that has edits, one after the other. A `•` on **Idle screen** or **Playing screen** marks a screen with edits the pad does not show yet. |
+| **Undo** (Ctrl+Z) | Steps back through this screen's edits, up to 100. One drag or one typed word is one step. It also brings back what **Revert**, **Import**, **Reload** or **Reset to default** replaced. |
+| **Revert** | Goes back to what the pad shows. |
+| **Reset to default** | The pad forgets this screen's custom layout and draws its built-in one again, at once. **Undo** brings your layout back as an edit to apply. |
+| **Reload** | Fetches the saved layouts from the daemon again, in place of local edits. |
+<!-- src: /desktop/gui/src/designer/mod.rs#handle, /desktop/gui/src/designer/mod.rs#update, /desktop/daemon/src/ipc_handlers.rs#IpcRequest::ResetLayout -->
 
 ## Export and import a layout
 

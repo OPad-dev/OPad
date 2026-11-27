@@ -46,19 +46,19 @@ A swipe moves at least 30 pixels, mostly along one axis: one direction has to le
 ## Choose your swipe actions
 
 1. Connect the pad and open the OPad app.
-2. Open **Settings** → **⌨ Keypad** and scroll to **Touchscreen swipes**.
-3. Each direction has a list: **↑ SWIPE UP**, **↓ SWIPE DOWN**, **← SWIPE LEFT** and **SWIPE RIGHT →**. Pick an action: <!-- src: /desktop/gui/src/pages.rs#settings --> <!-- src: /desktop/crates/opad-model/src/swipe.rs#swipe_choices -->
+2. Open **Screen** and find **Touchscreen**.
+3. Each direction has a list: **SWIPE UP**, **SWIPE DOWN**, **SWIPE LEFT** and **SWIPE RIGHT**. Pick an action: <!-- src: /desktop/gui/src/screen.rs#touchscreen --> <!-- src: /desktop/crates/opad-model/src/swipe.rs#swipe_choices -->
    - **Media and volume:** `Nothing`, `Volume up`, `Volume down`, `Previous track`, `Next track`, `Play / pause`, `Mute`.
    - **An osu! shortcut**, such as `osu!: Random beatmap (F2)`, `osu!: Mod select (F1)`, `osu!: Chat (F8)`, `osu!: Settings (Ctrl+O)` or `osu!: Screenshot (F12)`. Shortcuts only in osu!lazer start with `osu!lazer:`; on Windows the list also has osu! stable's `Boss key (hide osu!) (Insert)` and `Reload skin (Ctrl+Alt+Shift+S)`. <!-- src: /desktop/crates/opad-model/src/swipe.rs#OSU_SHORTCUTS -->
    - **`Other key (F13-F24)…`:** a second list, **Choose a key**, offers function keys that nothing else uses, for binding in OBS, Discord or osu! itself. On Linux that is F14–F19 (the desktop gives F13 and F20–F23 their own meanings); on Windows F13–F23. F24 is never offered, because the pad uses it internally after an Alt+wheel volume step. <!-- src: /desktop/crates/opad-model/src/swipe.rs#free_keys -->
-4. Click **Save settings**. The pad stores the actions, so they work the same on any PC with OPad. <!-- src: /desktop/gui/src/pages.rs#settings --> <!-- src: /firmware/main/config/device_config.c -->
+4. Click **Save to pad** in the bar at the bottom. The pad stores the actions, so they work the same on any PC with OPad. <!-- src: /desktop/gui/src/widgets.rs#save_bar --> <!-- src: /firmware/main/config/device_config.c -->
 
 > [!NOTE]
 > An uncalibrated Hall Effect pad is locked to its calibration screen. There, a touch only presses that screen's button: swipes are off and no key is sent. See [Calibrating Hall Effect switches](calibrate-hall-effect.md). <!-- src: /firmware/main/input/touch_retry.c#touch_retry_task --> <!-- src: /docs/specs/v2-hall-effect-decisions.md -->
 
 ## Check that it worked
 
-1. Run `opadctl status`. The `Swipes:` line shows the action for each direction (`up`, `down`, `left`, `right`). <!-- src: /desktop/cli/src/main.rs#Commands::Status -->
+1. Run `opadctl status`. The `Swipes:` line shows the action for each direction (`up`, `down`, `left`, `right`). <!-- src: /desktop/cli/src/main.rs#run -->
 2. Outside a map, swipe on the pad. It shows a short badge in the direction of your swipe, and the action happens on your PC. <!-- src: /firmware/main/input/touch_retry.c#handle_swipe -->
 
 ## If it did not work

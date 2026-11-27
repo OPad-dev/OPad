@@ -33,7 +33,7 @@ if pc.counter_generation > esp.counter_generation {
 ```
 
 - **Same generation: take the maximum, key by key.** Counts only grow within a generation, so the larger number is always the more complete one. Presses made while the pad was unplugged from this PC are kept.
-- **Higher generation wins outright.** Resetting counters (`opadctl reset --yes`, or **Reset lifetime counters** in the GUI) or restoring a backup raises the generation. That is the only way a *smaller* count can legitimately replace a larger one, and the generation makes the intent explicit instead of guessing.
+- **Higher generation wins outright.** Resetting counters (`opadctl counters reset --yes`, or **Reset lifetime counters** in the GUI) or restoring a backup raises the generation. That is the only way a *smaller* count can legitimately replace a larger one, and the generation makes the intent explicit instead of guessing.
 
 The pad enforces the same rule: [counter_sync_rules.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/counters/counter_sync_rules.c) (`counters_validate_sync_acceptance`) refuses a sync from an older generation, or one that would lower a count within the same generation, unless the host forces it.
 
