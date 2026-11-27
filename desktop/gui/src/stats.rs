@@ -161,26 +161,107 @@ fn table_row<'a>(cells: Vec<String>, header: bool, bold: bool) -> Element<'a, Me
     r.into()
 }
 
-fn attempt_card<'a>(attempt: &AttemptStats, live: bool) -> Element<'a, Message> {
+/// What a tap-rate row is called: the key it really is and its letter. The
+/// two channels are the game keys in order, so with Key 3 as a game key the
+/// second row is not "K2".
+fn channel_names(config: &opad_model::DeviceConfig) -> [String; 3] {
+    let key = |slot: usize| {
+        (1..=3u8)
+            .find(|&k| config.game_key_slot(k) == Some(slot))
+            .map(|k| {
+                let letter = match k {
+                    1 => config.key1_char(),
+                    2 => config.key2_char(),
+                    _ => config.key3_char(),
+                };
+                format!("Key {k} · {letter}")
+            })
+            // One game key only: nothing is counted here
+            .unwrap_or_else(|| "No second game key".to_string())
+    };
+    [key(0), key(1), "Both keys".to_string()]
+}
+
+fn channel_name(names: &[String; 3], channel: TapChannel) -> String {
+    match channel {
+        TapChannel::K1 => names[0].clone(),
+        TapChannel::K2 => names[1].clone(),
+        TapChannel::Combined => names[2].clone(),
+    }
+}
+
+/// How fast a press reaches the computer, measured on the pad. The Dashboard
+/// shows the typical figure; the rest is here.
+fn key_speed_card(app: &App) -> Element<'_, Message> {
+    let ms = crate::pages::key_speed;
+    let body: Element<'_, Message> = match app.latency {
+        Some(l) if l.samples > 0 => row![
+            stat("TYPICAL", ms(l.p50_us)),
+            stat("99% UNDER", ms(l.p99_us)),
+            stat("99.9% UNDER", ms(l.p999_us)),
+            stat("SLOWEST", ms(l.max_us)),
+            stat(
+                "PRESSES MEASURED",
+                crate::pages::grouped(u64::from(l.samples))
+            ),
+            stat(
+                "WAITED ONE USB POLL",
+                crate::pages::grouped(u64::from(l.deferred_reports))
+            ),
+        ]
+        .spacing(36)
+        .into(),
+        _ if app.device_connected => muted("Press a key to measure it.").into(),
+        _ => muted("Connect your pad to measure it.").into(),
+    };
+    column![
+        row![
+            text("Key speed").size(16).font(theme::FONT_BOLD),
+            Space::new().width(Length::Fill),
+            button(text("Reset").size(13))
+                .style(theme::secondary)
+                .on_press_maybe(app.device_connected.then_some(Message::ResetLatency)),
+        ]
+        .align_y(Alignment::Center),
+        body,
+        caption(
+            "From the switch closing to the pad handing the press to USB, measured on the \
+             pad. The computer asks for presses once a millisecond; a press that just \
+             missed one waits for the next."
+        ),
+    ]
+    .spacing(12)
+    .into()
+}
+
+fn attempt_card<'a>(
+    attempt: &AttemptStats,
+    live: bool,
+    names: &[String; 3],
+) -> Element<'a, Message> {
     let (title, badge, badge_color) = if attempt.replay {
         // Not your presses: shown so you can watch the rate, never saved
         (
             if live {
-                "Current attempt"
+                "Tap rate (KPM) · current attempt"
             } else {
-                "Last attempt"
+                "Tap rate (KPM) · last attempt"
             },
             "REPLAY · NOT SAVED".to_string(),
             theme::MUTED,
         )
     } else if live {
-        ("Current attempt", "LIVE".to_string(), theme::GREEN)
+        (
+            "Tap rate (KPM) · current attempt",
+            "LIVE".to_string(),
+            theme::GREEN,
+        )
     } else {
         let ended = attempt
             .ended_at
             .map(|t| format!("ENDED {}", t.with_timezone(&chrono::Local).format("%H:%M")))
             .unwrap_or_else(|| "ENDED".into());
-        ("Last attempt", ended, theme::MUTED)
+        ("Tap rate (KPM) · last attempt", ended, theme::MUTED)
     };
     let mut header = vec!["".into()];
     if live {
@@ -190,7 +271,7 @@ fn attempt_card<'a>(attempt: &AttemptStats, live: bool) -> Element<'a, Message> 
     let mut rows = column![table_row(header, true, false)].spacing(8);
     for channel in TapChannel::ALL {
         let c = attempt.channel(channel);
-        let mut cells = vec![channel.label().to_string()];
+        let mut cells = vec![channel_name(names, channel)];
         if live {
             cells.push(fmt_ppm(c.current_ppm));
         }
@@ -234,7 +315,11 @@ fn attempt_card<'a>(attempt: &AttemptStats, live: bool) -> Element<'a, Message> 
     .into()
 }
 
-fn history_body<'a>(history: &TapHistory, unsaved: usize) -> Element<'a, Message> {
+fn history_body<'a>(
+    history: &TapHistory,
+    unsaved: usize,
+    names: &[String; 3],
+) -> Element<'a, Message> {
     let all = &history.combined;
     let mut body = column![
         row![
@@ -263,7 +348,7 @@ fn history_body<'a>(history: &TapHistory, unsaved: usize) -> Element<'a, Message
         let c = history.channel(channel);
         body = body.push(table_row(
             vec![
-                channel.label().to_string(),
+                channel_name(names, channel),
                 fmt_ppm(c.average_ppm),
                 fmt_ppm(c.average_peak_ppm),
                 fmt_ppm(c.best_peak_ppm),
@@ -290,24 +375,16 @@ fn unsaved_note<'a>(unsaved: usize) -> Element<'a, Message> {
 
 pub fn view(app: &App) -> Element<'_, Message> {
     let s = &app.stats;
-    let mut page = column![row![
-        heading("Stats"),
-        Space::new().width(Length::Fill),
-        caption("TAP RATE · KPM"),
-    ]
-    .align_y(Alignment::Center)]
-    .spacing(14);
+    let names = channel_names(&app.config);
+    let mut page = column![heading("Stats")].spacing(14);
 
     if let Some(e) = &s.error {
         let msg = if !app.daemon_online {
-            "The daemon is not running. KPM statistics appear once it is.".to_string()
+            "OPad's service is not running. Your tap rate appears once it is.".to_string()
         } else if s.snapshot.is_none() {
-            format!(
-                "KPM statistics are not available from this daemon (it may be an older \
-                 version). {e}"
-            )
+            format!("Your tap rate is not available yet. Update OPad if this stays. ({e})")
         } else {
-            format!("Could not refresh KPM statistics: {e}")
+            format!("Your tap rate could not be refreshed. ({e})")
         };
         page = page.push(
             container(text(msg).size(13).color(theme::YELLOW))
@@ -319,20 +396,18 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     let Some(snapshot) = &s.snapshot else {
         if s.error.is_none() {
-            page = page.push(card(muted("Loading KPM statistics...")));
+            page = page.push(card(muted("Loading your tap rate…")));
         }
+        page = page.push(card(key_speed_card(app)));
         return crate::widgets::scrolling(page).into();
     };
 
     let attempt: Element<'_, Message> = match (&snapshot.current, &snapshot.last) {
-        (Some(current), _) => attempt_card(current, true),
-        (None, Some(last)) => attempt_card(last, false),
+        (Some(current), _) => attempt_card(current, true, &names),
+        (None, Some(last)) => attempt_card(last, false, &names),
         (None, None) => column![
-            text("Current attempt").size(16).font(theme::FONT_BOLD),
-            muted(
-                "Play a map with tosu running and your tap rate (KPM) shows up here, \
-                 per key and combined."
-            ),
+            text("Tap rate (KPM)").size(16).font(theme::FONT_BOLD),
+            muted("Play a map with osu! connected and your tap rate shows up here, per key and for both."),
         ]
         .spacing(10)
         .into(),
@@ -376,7 +451,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         );
     }
     history = history.push(match &snapshot.history {
-        Some(h) if h.attempts > 0 => history_body(h, snapshot.unsaved_attempts),
+        Some(h) if h.attempts > 0 => history_body(h, snapshot.unsaved_attempts, &names),
         Some(_) => empty_history(
             "No attempts in this period yet. Finished attempts are saved here.",
             snapshot.unsaved_attempts,
@@ -387,6 +462,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         ),
     });
     page = page.push(card(history));
+    page = page.push(card(key_speed_card(app)));
 
     crate::widgets::scrolling(page).into()
 }
@@ -402,6 +478,29 @@ fn empty_history<'a>(msg: &'a str, unsaved: usize) -> Element<'a, Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_tap_rate_row_is_named_after_the_key_it_counts() {
+        let default = opad_model::DeviceConfig::default();
+        assert_eq!(
+            channel_names(&default),
+            ["Key 1 · Z", "Key 2 · X", "Both keys"].map(String::from)
+        );
+        // Keys 1 and 3 are the game keys: the second row is Key 3, not "K2"
+        let with_key3 = opad_model::DeviceConfig {
+            game_keys: 0b101,
+            key3_hid_usage: opad_model::char_to_hid_usage("C").unwrap(),
+            ..default.clone()
+        };
+        assert_eq!(channel_names(&with_key3)[1], "Key 3 · C");
+        // One game key: the second row counts nothing, and says so
+        let one = opad_model::DeviceConfig {
+            game_keys: 0b010,
+            ..default
+        };
+        assert_eq!(channel_names(&one)[0], "Key 2 · X");
+        assert_eq!(channel_names(&one)[1], "No second game key");
+    }
 
     #[test]
     fn ppm_is_a_whole_number_or_a_dash() {
