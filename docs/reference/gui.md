@@ -97,7 +97,7 @@ Every Hall Effect setting is a percentage of the key's calibrated magnetic span,
 | **Allow below the noise floor** | Advanced, firmware that reports its noise floors | Toggle |
 <!-- src: /desktop/gui/src/keys.rs#key_controls, /desktop/gui/src/keys.rs#key_advanced, /desktop/gui/src/keys.rs#min_actuation -->
 
-The live switch view polls `GetHeLive` every 20 ms, smooths the drawing with a One Euro filter and snaps it to the real depth when the pad presses; the pad itself decides on raw readings. It shows `Waiting for the pad (paused during a map)` during a map.
+The live switch view is sent the pad's samples by the daemon as they arrive (it looks every 20 ms), smooths the drawing with a One Euro filter and snaps it to the real depth when the pad presses; the pad itself decides on raw readings. It shows `Waiting for the pad (paused during a map)` during a map.
 <!-- src: /desktop/gui/src/main.rs#subscription, /desktop/gui/src/keys.rs -->
 
 ### Calibration

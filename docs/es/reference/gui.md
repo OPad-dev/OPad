@@ -97,7 +97,7 @@ Cada ajuste Hall Effect es un porcentaje del recorrido magnético calibrado de l
 | **Allow below the noise floor** | Advanced, firmware que informa de sus suelos de ruido | Interruptor |
 <!-- src: /desktop/gui/src/keys.rs#key_controls, /desktop/gui/src/keys.rs#key_advanced, /desktop/gui/src/keys.rs#min_actuation -->
 
-La vista en vivo del interruptor consulta `GetHeLive` cada 20 ms, suaviza el dibujo con un filtro One Euro y lo ajusta a la profundidad real cuando el teclado pulsa; el teclado decide con las lecturas en bruto. Durante un mapa muestra `Waiting for the pad (paused during a map)`.
+La vista en vivo del interruptor recibe del daemon las muestras del teclado según llegan (mira cada 20 ms), suaviza el dibujo con un filtro One Euro y lo ajusta a la profundidad real cuando el teclado pulsa; el teclado decide con las lecturas en bruto. Durante un mapa muestra `Waiting for the pad (paused during a map)`.
 <!-- src: /desktop/gui/src/main.rs#subscription, /desktop/gui/src/keys.rs -->
 
 ### Calibración

@@ -20,7 +20,7 @@ sidebar:
 
 ## Framing
 
-Each message is a 4-byte little-endian `u32` length followed by that many bytes of UTF-8 JSON (`serde_json`, externally tagged enums). A client sends one request and reads one response.
+Each message is a 4-byte little-endian `u32` length followed by that many bytes of UTF-8 JSON (`serde_json`, externally tagged enums). A client sends one request and reads one response; a [subscribed](#subscriptions) connection is the exception.
 <!-- src: /desktop/crates/opad-ipc/src/lib.rs#send_request, /desktop/crates/opad-ipc/src/lib.rs#read_request -->
 
 | Limit | Value |
@@ -50,7 +50,7 @@ It answers `HandshakeRejected { daemon_protocol, reason }` and closes the connec
 - `client_version` differs from the daemon's version. The GUI, daemon and CLI ship together, so this means the app was updated on disk while the old daemon still runs; the reason tells the user to restart `opad-daemon`.
 <!-- src: /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
 
-Requests added after IPC v1 shipped (`ResumeDevice`, `CheckForUpdates`, `SetUpdateChannel`, `GetTapStats`, `RunBoardTest`, `PlayAnimation`, `RestartPad`) came without a version bump. An older daemon cannot parse them and closes the connection, which clients treat as "not available".
+Requests added after IPC v1 shipped (`ResumeDevice`, `CheckForUpdates`, `SetUpdateChannel`, `GetTapStats`, `RunBoardTest`, `PlayAnimation`, `RestartPad`, `Subscribe`) came without a version bump. An older daemon cannot parse them and closes the connection, which clients treat as "not available".
 <!-- src: /desktop/crates/opad-ipc/src/lib.rs#IpcRequest -->
 
 ## Requests
@@ -149,3 +149,26 @@ If a connection that paused the pad for a flash closes without handing it back, 
 | `SetUpdateEnabled { component, enabled }` | `ConfigUpdated { .. }` | `component` is `app`, `tosu` or `firmware` (automatic firmware updates while the pad is unused). Each switch is separate; there is no global one. |
 | `InstallUpdate { component }` | `UpdateStarted { component }` | Only sent because a person pressed Install. Deferred unless the daemon is `Idle`. |
 <!-- src: /desktop/crates/opad-ipc/src/lib.rs#UpdateComponent, /desktop/crates/opad-ipc/src/lib.rs#ComponentUpdate, /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
+
+## Subscriptions
+
+`Subscribe { watches }` keeps the connection open: the daemon answers `Subscribed` and from then on sends the answer to each watched request by itself, once at the start and again whenever it differs from the last one it sent. A client that shows live state uses this in place of asking on a timer.
+<!-- src: /desktop/crates/opad-ipc/src/lib.rs#IpcRequest::Subscribe, /desktop/crates/opad-ipc/src/lib.rs#can_be_watched, /desktop/daemon/src/ipc_handlers.rs#serve_connection, /desktop/daemon/src/ipc_handlers.rs#ActiveWatch -->
+
+```json
+{ "Subscribe": { "watches": [ { "request": "GetStatus", "every_ms": 100 }, { "request": "GetHeLive", "every_ms": 20 } ] } }
+```
+
+| Rule | Detail |
+|---|---|
+| What can be watched | Requests that only read: `GetStatus`, `GetLayouts`, `GetUiValues`, `GetUpdateStatus`, `GetFirmwareUpdate`, `GetTapStats`, `GetLogEntries`, `GetHeCalibrationProgress`, `GetHeLive`. Any other request in the list refuses the whole `Subscribe` with `Error`, and the connection goes on as before. |
+| `every_ms` | How often the daemon looks for a change; never more often than every 20 ms (`MIN_WATCH_INTERVAL_MS`). At most 16 watches (`MAX_WATCHES`). |
+| What is sent | The same response the request gets when asked directly, so a client tells the answers apart by their type. Nothing is sent while an answer stays the same. |
+| `GetLogEntries` | Each entry is sent once: every answer carries the entries after the last one sent (up to `limit`), and an answer with no entries is only sent first. |
+| `GetHeLive` | Keeps the pad streaming for as long as it is watched. |
+| Other requests | A subscribed connection takes only another `Subscribe`, which replaces the watches (an empty list stops them). Anything else is answered with `Error` and not run; send it on a connection of its own. |
+| A daemon without `Subscribe` | It closes the connection instead of answering. `opad_ipc::subscribe` reports that as `Ok(false)` and the client asks on a timer. |
+<!-- src: /desktop/crates/opad-ipc/src/lib.rs#IpcRequest::Subscribe, /desktop/crates/opad-ipc/src/lib.rs#can_be_watched, /desktop/daemon/src/ipc_handlers.rs#serve_connection, /desktop/daemon/src/ipc_handlers.rs#ActiveWatch -->
+
+`opad-gui` subscribes to what its open page shows ([opad-gui](../develop/desktop/gui.md#update-loop-and-the-feed)); `opadctl` asks request by request.
+<!-- src: /desktop/gui/src/main.rs#watches, /desktop/cli/src/main.rs#run -->

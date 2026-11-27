@@ -20,7 +20,7 @@ sidebar:
 
 ## Entramado
 
-Cada mensaje es una longitud `u32` little-endian de 4 bytes seguida de esa misma cantidad de bytes de JSON en UTF-8 (`serde_json`, enums con etiqueta externa). Un cliente envía una petición y lee una respuesta.
+Cada mensaje es una longitud `u32` little-endian de 4 bytes seguida de esa misma cantidad de bytes de JSON en UTF-8 (`serde_json`, enums con etiqueta externa). Un cliente envía una petición y lee una respuesta; una conexión [suscrita](#suscripciones) es la excepción.
 <!-- src: /desktop/crates/opad-ipc/src/lib.rs#send_request, /desktop/crates/opad-ipc/src/lib.rs#read_request -->
 
 | Límite | Valor |
@@ -50,7 +50,7 @@ Responde `HandshakeRejected { daemon_protocol, reason }` y cierra la conexión c
 - `client_version` difiere de la versión del daemon. La GUI, el daemon y la CLI se publican juntos, así que esto significa que la aplicación se actualizó en disco mientras el daemon antiguo sigue en marcha; el motivo indica al usuario que reinicie `opad-daemon`.
 <!-- src: /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
 
-Las peticiones añadidas después de publicar IPC v1 (`ResumeDevice`, `CheckForUpdates`, `SetUpdateChannel`, `GetTapStats`, `RunBoardTest`, `PlayAnimation`, `RestartPad`) llegaron sin subir la versión. Un daemon más antiguo no puede interpretarlas y cierra la conexión, lo que los clientes tratan como «no disponible».
+Las peticiones añadidas después de publicar IPC v1 (`ResumeDevice`, `CheckForUpdates`, `SetUpdateChannel`, `GetTapStats`, `RunBoardTest`, `PlayAnimation`, `RestartPad`, `Subscribe`) llegaron sin subir la versión. Un daemon más antiguo no puede interpretarlas y cierra la conexión, lo que los clientes tratan como «no disponible».
 <!-- src: /desktop/crates/opad-ipc/src/lib.rs#IpcRequest -->
 
 ## Peticiones
@@ -149,3 +149,26 @@ Si una conexión que pausó el teclado para un flasheo se cierra sin devolverlo,
 | `SetUpdateEnabled { component, enabled }` | `ConfigUpdated { .. }` | `component` es `app`, `tosu` o `firmware` (actualizaciones automáticas del firmware mientras no se usa el teclado). Cada interruptor es independiente; no hay uno global. |
 | `InstallUpdate { component }` | `UpdateStarted { component }` | Solo se envía porque una persona pulsó Install. Se aplaza salvo que el daemon esté en `Idle`. |
 <!-- src: /desktop/crates/opad-ipc/src/lib.rs#UpdateComponent, /desktop/crates/opad-ipc/src/lib.rs#ComponentUpdate, /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
+
+## Suscripciones
+
+`Subscribe { watches }` mantiene la conexión abierta: el daemon responde `Subscribed` y a partir de ahí envía por su cuenta la respuesta a cada petición vigilada, una vez al empezar y de nuevo cada vez que difiere de la última que envió. Un cliente que muestra estado en vivo lo usa en lugar de preguntar con un temporizador.
+<!-- src: /desktop/crates/opad-ipc/src/lib.rs#IpcRequest::Subscribe, /desktop/crates/opad-ipc/src/lib.rs#can_be_watched, /desktop/daemon/src/ipc_handlers.rs#serve_connection, /desktop/daemon/src/ipc_handlers.rs#ActiveWatch -->
+
+```json
+{ "Subscribe": { "watches": [ { "request": "GetStatus", "every_ms": 100 }, { "request": "GetHeLive", "every_ms": 20 } ] } }
+```
+
+| Regla | Detalle |
+|---|---|
+| Qué se puede vigilar | Peticiones que solo leen: `GetStatus`, `GetLayouts`, `GetUiValues`, `GetUpdateStatus`, `GetFirmwareUpdate`, `GetTapStats`, `GetLogEntries`, `GetHeCalibrationProgress`, `GetHeLive`. Cualquier otra petición en la lista hace que se rechace todo el `Subscribe` con `Error`, y la conexión sigue como antes. |
+| `every_ms` | Cada cuánto mira el daemon si hay un cambio; nunca más a menudo que cada 20 ms (`MIN_WATCH_INTERVAL_MS`). Como máximo 16 vigilancias (`MAX_WATCHES`). |
+| Qué se envía | La misma respuesta que recibe la petición cuando se hace directamente, así que el cliente distingue las respuestas por su tipo. No se envía nada mientras una respuesta sigue igual. |
+| `GetLogEntries` | Cada entrada se envía una vez: cada respuesta lleva las entradas posteriores a la última enviada (hasta `limit`), y una respuesta sin entradas solo se envía la primera vez. |
+| `GetHeLive` | Mantiene el teclado transmitiendo mientras se vigila. |
+| Otras peticiones | Una conexión suscrita solo acepta otro `Subscribe`, que sustituye las vigilancias (una lista vacía las detiene). Cualquier otra cosa se responde con `Error` y no se ejecuta; envíala por una conexión propia. |
+| Un daemon sin `Subscribe` | Cierra la conexión en vez de responder. `opad_ipc::subscribe` lo indica con `Ok(false)` y el cliente pregunta con un temporizador. |
+<!-- src: /desktop/crates/opad-ipc/src/lib.rs#IpcRequest::Subscribe, /desktop/crates/opad-ipc/src/lib.rs#can_be_watched, /desktop/daemon/src/ipc_handlers.rs#serve_connection, /desktop/daemon/src/ipc_handlers.rs#ActiveWatch -->
+
+`opad-gui` se suscribe a lo que muestra su página abierta ([opad-gui](../develop/desktop/gui.md#bucle-de-actualización-y-el-flujo)); `opadctl` pregunta petición a petición.
+<!-- src: /desktop/gui/src/main.rs#watches, /desktop/cli/src/main.rs#run -->

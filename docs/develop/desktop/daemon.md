@@ -27,7 +27,7 @@ flowchart LR
 
 - **Main loop** (`main.rs`): one `tokio::select!` over `device_rx`, `tosu_rx`, `tosu_keys_rx`, `tosu_connected_rx`, `osu_active_rx`, `sync_done_rx` and a 50 ms tick. Each event becomes a `RuntimeEvent` for the `RuntimeController`, whose `RuntimeAction`s go to the device actor. The tick also retries opening SQLite every 60 s if it failed. A lagging device-event receiver triggers a re-handshake instead of guessing what was missed.
 - **Syncs** run in their own task (they can take ~10 s) and report back on `sync_done_rx` ([/desktop/daemon/src/sync.rs](https://github.com/OPad-dev/OPad/blob/main/desktop/daemon/src/sync.rs)).
-- **IPC server**: one `ipc_handlers::serve_connection` task per client, sharing `DaemonState`, `Storage`, the log hub and pending operations; it reaches the pad through the `DeviceLink` trait.
+- **IPC server**: one `ipc_handlers::serve_connection` task per client, sharing `DaemonState`, `Storage`, the log hub and pending operations; it reaches the pad through the `DeviceLink` trait. A client that sent `Subscribe` is sent the answers to its watched requests as they change, from the same task ([IPC subscriptions](../../reference/ipc.md#subscriptions)).
 - Shared state lives in `DaemonState` behind a mutex; `DaemonState::pad_guard()` reports why the pad may not be written (a foreign pad, a pending takeover or replacement).
 
 ## Modules

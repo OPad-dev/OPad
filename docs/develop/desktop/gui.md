@@ -1,6 +1,6 @@
 ---
 title: GUI Subsystem Architecture
-description: Implementation reference for opad-gui, its iced update loop and polling, daemon start and version matching, single-instance handoff, theme tokens, the Screen Designer preview, and the system tray.
+description: Implementation reference for opad-gui, its iced update loop and the daemon's feed, daemon start and version matching, single-instance handoff, theme tokens, the Screen Designer preview, and the system tray.
 sidebar:
   order: 3
 ---
@@ -22,20 +22,35 @@ sidebar:
 | [`designer/`](https://github.com/OPad-dev/OPad/tree/main/desktop/gui/src/designer) | Screen Designer (`mod.rs`, `overlay.rs`) |
 | [`chrome.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/chrome.rs) | The window's own frame in place of the system decorations: rounded corners, the logo and the window buttons (both drag the window), resize edges |
 | [`theme.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/theme.rs) | Colours and fonts |
+| [`feed.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/feed.rs) | The connection the daemon sends its answers on |
 | [`tray.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/tray.rs) | Tray icon and menu |
 | [`single_instance.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/single_instance.rs) | One GUI at a time |
 | [`platform_linux.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/platform_linux.rs), [`platform_windows.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/platform_windows.rs) | Autostart (systemd user units on Linux, the per-user mechanism on Windows) and other OS glue |
 
-## Update Loop and Polling
+## Update Loop and the Feed
 
-`App::subscription` drives all traffic to the daemon:
+The GUI keeps one connection to the daemon open and subscribes to what the open page shows (`App::watches`, [`feed.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/feed.rs), [IPC subscriptions](../../reference/ipc.md#subscriptions)). The daemon sends each answer when it changes, and `App::watched` turns it into the message the same answer to a request becomes:
 
-| Poll | Interval |
+| Watched | On | The daemon looks every |
+|---|---|---|
+| `GetStatus` | Always | 100 ms; 1 s with the window hidden in the tray |
+| `GetUpdateStatus` | Any page | 500 ms |
+| `GetUiValues` | Dashboard, Designer | 250 ms |
+| `GetFirmwareUpdate` | Settings, Pad, Troubleshooting; any page while the pad is incompatible | 1 s |
+| `GetTapStats` | Stats | 500 ms |
+| `GetLogEntries` | Troubleshooting → Logs | 250 ms |
+| `GetHeLive` | Keys, outside calibration | 20 ms; the stems are redrawn on animation frames |
+
+"Fetch now" (`App::poll`, after an action or on opening a page) makes a new subscription, on which the daemon sends every answer afresh; a request sent beside the feed could arrive after a newer answer.
+
+The timers are the fallback (`FeedState`): they ask as the table below says until the subscription is live, again when its connection ends, and for good with a daemon that does not know `Subscribe`. A lost feed is tried again once the daemon answers a request.
+
+| Timer | Interval |
 |---|---|
 | Status (`Message::Poll`) | 2 s while the daemon is offline, 1 s with the window open, 3 s hidden in the tray |
-| HE live samples (Keys page) | 20 ms, plus animation frames |
-| Calibration progress (the calibration inside Keys) | 100 ms |
+| HE live samples (Keys page) | 20 ms |
 | Update status | 60 s, 2 s while an update is in progress |
+| Calibration progress (the calibration inside Keys) | 100 ms; this one runs with the feed too |
 
 If the daemon is offline the GUI starts it once. If the daemon answers with a different version (one of the two was updated), whichever is older restarts as the new version, once per run.
 

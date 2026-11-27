@@ -1,6 +1,6 @@
 ---
 title: Arquitectura del subsistema de la GUI
-description: Referencia de implementación de opad-gui, su bucle de actualización iced y sus sondeos, el arranque del daemon y la comprobación de versión, el traspaso a la instancia única, los tokens del tema, la vista previa del Screen Designer y la bandeja del sistema.
+description: Referencia de implementación de opad-gui, su bucle de actualización iced y el flujo del daemon, el arranque del daemon y la comprobación de versión, el traspaso a la instancia única, los tokens del tema, la vista previa del Screen Designer y la bandeja del sistema.
 sidebar:
   order: 3
 ---
@@ -22,20 +22,35 @@ sidebar:
 | [`designer/`](https://github.com/OPad-dev/OPad/tree/main/desktop/gui/src/designer) | Screen Designer (`mod.rs`, `overlay.rs`) |
 | [`chrome.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/chrome.rs) | El marco propio de la ventana en lugar de las decoraciones del sistema: esquinas redondeadas, el logo y los botones de ventana (ambos arrastran la ventana), bordes de redimensionado |
 | [`theme.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/theme.rs) | Colores y fuentes |
+| [`feed.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/feed.rs) | La conexión por la que el daemon envía sus respuestas |
 | [`tray.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/tray.rs) | Icono y menú de la bandeja |
 | [`single_instance.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/single_instance.rs) | Una sola GUI a la vez |
 | [`platform_linux.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/platform_linux.rs), [`platform_windows.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/platform_windows.rs) | Arranque automático (unidades de usuario de systemd en Linux, el mecanismo por usuario en Windows) y otras piezas de integración con el sistema operativo |
 
-## Bucle de actualización y sondeos
+## Bucle de actualización y el flujo
 
-`App::subscription` gobierna todo el tráfico hacia el daemon:
+La GUI mantiene abierta una conexión con el daemon y se suscribe a lo que muestra la página abierta (`App::watches`, [`feed.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/feed.rs), [suscripciones IPC](../../reference/ipc.md#suscripciones)). El daemon envía cada respuesta cuando cambia, y `App::watched` la convierte en el mensaje en que se convierte la misma respuesta a una petición:
 
-| Sondeo | Intervalo |
+| Vigilado | Cuándo | El daemon mira cada |
+|---|---|---|
+| `GetStatus` | Siempre | 100 ms; 1 s con la ventana oculta en la bandeja |
+| `GetUpdateStatus` | Cualquier página | 500 ms |
+| `GetUiValues` | Dashboard, Designer | 250 ms |
+| `GetFirmwareUpdate` | Settings, Pad, Troubleshooting; cualquier página mientras el pad es incompatible | 1 s |
+| `GetTapStats` | Stats | 500 ms |
+| `GetLogEntries` | Troubleshooting → Logs | 250 ms |
+| `GetHeLive` | Keys, fuera de la calibración | 20 ms; los vástagos se redibujan en los fotogramas de animación |
+
+«Traer ahora» (`App::poll`, tras una acción o al abrir una página) hace una suscripción nueva, por la que el daemon envía de nuevo todas las respuestas; una petición enviada al margen del flujo podría llegar después de una respuesta más reciente.
+
+Los temporizadores son el respaldo (`FeedState`): preguntan como dice la tabla siguiente hasta que la suscripción está activa, de nuevo cuando su conexión termina, y siempre con un daemon que no conoce `Subscribe`. Un flujo perdido se vuelve a intentar cuando el daemon responde a una petición.
+
+| Temporizador | Intervalo |
 |---|---|
 | Estado (`Message::Poll`) | 2 s con el daemon desconectado, 1 s con la ventana abierta, 3 s oculta en la bandeja |
-| Muestras HE en vivo (página Keys) | 20 ms, más los fotogramas de animación |
-| Progreso de la calibración (la calibración dentro de Keys) | 100 ms |
+| Muestras HE en vivo (página Keys) | 20 ms |
 | Estado de las actualizaciones | 60 s, 2 s mientras hay una actualización en curso |
+| Progreso de la calibración (la calibración dentro de Keys) | 100 ms; este también funciona con el flujo |
 
 Si el daemon no está en marcha, la GUI lo arranca una vez. Si el daemon responde con otra versión (se actualizó uno de los dos), el más antiguo se reinicia como la versión nueva, una vez por ejecución.
 
