@@ -59,6 +59,87 @@ pub const LAST_RESULT_KEY: &str = "update.last_result";
 pub const IN_PROGRESS_KEY: &str = "update.in_progress";
 /// Windows: a verified installer waiting for the next start ([`Staged`])
 pub const STAGED_KEY: &str = "update.staged";
+/// The automatic app install that last failed ([`AutoFailure`])
+pub const APP_AUTO_FAILED_KEY: &str = "update.app.auto_failed";
+
+/// How long a version whose automatic install failed is left alone. Each try
+/// downloads the whole package, so retrying on every tick cost tens of
+/// megabytes a quarter of an hour for as long as it kept failing.
+const AUTO_RETRY_AFTER: Duration = Duration::from_secs(24 * 3600);
+
+/// An automatic app install that failed: which version, and when (Unix
+/// seconds). Kept in storage so a restart does not forget it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AutoFailure {
+    pub version: String,
+    pub at: u64,
+}
+
+/// Whether the automatic install of `available` may be tried now. Another
+/// version is a new attempt; the one that failed waits [`AUTO_RETRY_AFTER`].
+pub fn auto_install_due(failed: Option<&AutoFailure>, available: &str, now: u64) -> bool {
+    match failed {
+        Some(f) if f.version == available => now.saturating_sub(f.at) >= AUTO_RETRY_AFTER.as_secs(),
+        _ => true,
+    }
+}
+
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Where the last verified feed of a channel is kept between runs, with its
+/// signature. Not under `updates/`, which is cleared after an install.
+fn saved_feed_paths(channel: &str) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+    let dir = opad_model::paths::state_dir().ok()?.join("feed");
+    Some((
+        dir.join(format!("{channel}.json")),
+        dir.join(format!("{channel}.json.minisig")),
+    ))
+}
+
+/// Keeps a freshly verified feed for the next start. The daemon used to hold
+/// it in memory only, so after every restart there was no firmware offer and
+/// nothing to install until the next daily check came due.
+fn save_feed(feed: &ReleaseManifest) {
+    let (Some(signed), Some((json, signature))) =
+        (feed.signed.as_ref(), saved_feed_paths(&feed.channel))
+    else {
+        return;
+    };
+    let written = json
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| std::fs::write(&json, &signed.bytes))
+        .and_then(|()| std::fs::write(&signature, &signed.signature));
+    if let Err(e) = written {
+        debug!("Could not keep the update feed for the next start: {}", e);
+    }
+}
+
+/// The feed kept by [`save_feed`], verified again from its bytes exactly as
+/// one from the network is. `None` when there is none, or it no longer passes
+/// (wrong signature, expired, older than one already seen).
+fn load_saved_feed(
+    storage: &Arc<Mutex<Option<Storage>>>,
+    channel: &str,
+) -> Option<ReleaseManifest> {
+    let (json, signature) = saved_feed_paths(channel)?;
+    let bytes = std::fs::read(&json).ok()?;
+    let signature = std::fs::read_to_string(&signature).ok()?;
+    let schedule: CheckSchedule = read_json(storage, SCHEDULE_KEY).unwrap_or_default();
+    let seen = schedule.serials.get(channel).copied();
+    match opad_update::client::reload_manifest(bytes, signature, channel, SystemTime::now(), seen) {
+        Ok(feed) => Some(feed),
+        Err(e) => {
+            info!("The update feed kept from the last run is not used: {}", e);
+            None
+        }
+    }
+}
 
 /// What the GUI shows for each updater (§U-0.4)
 #[derive(Debug, Clone, Default)]
@@ -260,8 +341,22 @@ pub fn spawn_update_worker(
         // Spread the first check out a little: a machine that just booted is
         // busy, and every install checking at login is the pattern §U-0.6
         // warns about.
+        // The feed verified in the last run, so the firmware offer and
+        // Install work from the start instead of after the next daily check
+        let mut manifest: Option<ReleaseManifest> =
+            load_saved_feed(&storage, &read_channel(&storage)).map(|feed| {
+                let install_id = daemon_state.lock().install_id.clone();
+                rollout::for_install(&feed, install_id.as_deref())
+            });
+        if let Some(m) = &manifest {
+            shared_manifest.lock().replace(m.clone());
+            if let Err(e) = check_app(m, &daemon_state, &storage, &status) {
+                debug!("App update check on the kept feed failed: {}", e);
+            }
+        }
+        let mut auto_failed: Option<AutoFailure> = read_json(&storage, APP_AUTO_FAILED_KEY);
+
         tokio::time::sleep(Duration::from_secs(90)).await;
-        let mut manifest: Option<ReleaseManifest> = None;
         let mut last_manual: Option<Instant> = None;
 
         // An interval, not a sleep inside the loop: `tick()` fires immediately
@@ -342,16 +437,44 @@ pub fn spawn_update_worker(
                     status.lock().last_error = Some(e.to_string());
                 }
             }
+            // A feed held since an earlier check may have expired meanwhile:
+            // a server answering 304 for ever must not keep it usable
+            if let Some(expired) = manifest.as_ref().and_then(|m| {
+                opad_update::manifest::check_feed(m, &m.channel, SystemTime::now().into(), None)
+                    .err()
+            }) {
+                warn!("Dropping the update feed held in memory: {}", expired);
+                manifest = None;
+                shared_manifest.lock().take();
+            }
+
             // Automatic updates: install what the check found, while no map
-            // is being played. A failure is reported and tried again at the
-            // next check, never in a loop.
-            let ready = status.lock().app.ready_to_install;
-            if ready && read_flag(&storage, APP_ENABLED_KEY) {
-                if let Err(e) =
-                    install_app(manifest.as_ref(), &daemon_state, &storage, &status, true).await
+            // is being played. A version that failed waits a day before it
+            // is downloaded and tried again; a map in the way is not a
+            // failure and is simply tried on the next tick.
+            let (ready, available) = {
+                let s = status.lock();
+                (s.app.ready_to_install, s.app.available.clone())
+            };
+            if let (true, Some(available)) = (ready, available) {
+                if read_flag(&storage, APP_ENABLED_KEY)
+                    && auto_install_due(auto_failed.as_ref(), &available, unix_now())
                 {
-                    warn!("Automatic update failed: {}", e);
-                    status.lock().last_error = Some(e.to_string());
+                    if let Err(e) =
+                        install_app(manifest.as_ref(), &daemon_state, &storage, &status, true).await
+                    {
+                        warn!(
+                            "Automatic update to {} failed; not tried again for a day: {}",
+                            available, e
+                        );
+                        status.lock().last_error = Some(e.to_string());
+                        let failure = AutoFailure {
+                            version: available,
+                            at: unix_now(),
+                        };
+                        write_json(&storage, APP_AUTO_FAILED_KEY, &failure);
+                        auto_failed = Some(failure);
+                    }
                 }
             }
         }
@@ -423,6 +546,7 @@ async fn check(
         debug!("Update feed unchanged since the last check");
         return Ok(None);
     };
+    save_feed(&feed);
 
     // What this install is offered: components still rolling out to others
     // are left out (§9.2)
@@ -565,20 +689,58 @@ async fn install_app(
         may_update_now(mode, true),
     )?;
 
-    let AppAction::Available {
-        available,
-        artifact,
-        policy,
-        ..
-    } = action
-    else {
-        return Err(UpdateError::Http(format!(
-            "There is nothing to install right now ({action:?})"
-        )));
+    let (available, artifact, policy) = match action {
+        AppAction::Available {
+            available,
+            artifact,
+            policy,
+            ..
+        } => (available, artifact, policy),
+        // A map in the way, or nothing newer after all: for the automatic
+        // install that is "not now", not a failure to report or remember
+        AppAction::Defer { reason } if automatic => {
+            debug!("App update waits: {}", reason);
+            return Ok(());
+        }
+        AppAction::UpToDate { .. } if automatic => return Ok(()),
+        AppAction::Defer { reason } => {
+            return Err(UpdateError::Http(format!(
+                "The update cannot be installed right now: {reason}"
+            )))
+        }
+        AppAction::UpToDate { version } => {
+            return Err(UpdateError::Http(format!(
+                "OPad {version} is already the newest version"
+            )))
+        }
+        AppAction::NotifyOnly { available, .. } => {
+            return Err(UpdateError::Http(format!(
+                "OPad {available} is available, but this install cannot update itself"
+            )))
+        }
     };
 
     let client = UpdateClient::for_artifacts()?;
     let bytes = client.fetch_artifact(&artifact).await?;
+
+    // The download took time. A map may have started in it, or a flash: the
+    // checks made before it are made again before anything is applied (§U-0.1)
+    let blocked = {
+        let st = daemon_state.lock();
+        may_update_now(st.mode, true)
+            .err()
+            .map(|reason| reason.to_string())
+            .or(st.flash.map(|h| h.busy_reason().to_string()))
+    };
+    if let Some(reason) = blocked {
+        if automatic {
+            debug!("App update downloaded but not applied: {}", reason);
+            return Ok(());
+        }
+        return Err(UpdateError::Http(format!(
+            "The update was downloaded but not installed ({reason}). Try again in a moment."
+        )));
+    }
 
     // The verified bytes go to a file the apply step can hand to the helper
     // or run. It lives in the state directory, not /tmp, so a hardened /tmp
@@ -976,6 +1138,18 @@ async fn update_tosu(
             let client = UpdateClient::for_artifacts()?;
             let bytes = client.fetch_artifact(&artifact).await?;
 
+            // The download took time and a map may have started in it;
+            // stopping tosu now would blank the pad's screen mid-map (§U-0.1)
+            if let Err(reason) = may_update_now(daemon_state.lock().mode, true) {
+                if force {
+                    return Err(UpdateError::Http(format!(
+                        "tosu was downloaded but not updated ({reason}). Try again in a moment."
+                    )));
+                }
+                debug!("tosu update downloaded but not applied: {}", reason);
+                return Ok(());
+            }
+
             // Hold tosu down for the swap. Windows will not replace a running
             // binary at all, and on any platform a tosu still running from the
             // old inode would hide the update until the next restart.
@@ -1112,7 +1286,33 @@ fn write_json<T: serde::Serialize>(storage: &Arc<Mutex<Option<Storage>>>, key: &
 
 #[cfg(test)]
 mod tests {
-    use super::{copy_replace, replace_file, resolve_interrupted, InProgress};
+    use super::{
+        auto_install_due, copy_replace, replace_file, resolve_interrupted, AutoFailure, InProgress,
+        AUTO_RETRY_AFTER,
+    };
+
+    #[test]
+    fn a_version_whose_automatic_install_failed_waits_a_day() {
+        let failed = AutoFailure {
+            version: "1.1.0".to_string(),
+            at: 1_000_000,
+        };
+        let day = AUTO_RETRY_AFTER.as_secs();
+        // Nothing failed yet
+        assert!(auto_install_due(None, "1.1.0", 1_000_000));
+        // The next tick, 15 minutes later: not again
+        assert!(!auto_install_due(Some(&failed), "1.1.0", 1_000_000 + 900));
+        assert!(!auto_install_due(
+            Some(&failed),
+            "1.1.0",
+            1_000_000 + day - 1
+        ));
+        assert!(auto_install_due(Some(&failed), "1.1.0", 1_000_000 + day));
+        // A newer release is a new attempt
+        assert!(auto_install_due(Some(&failed), "1.1.1", 1_000_000 + 900));
+        // A clock set back must not block it for ever
+        assert!(!auto_install_due(Some(&failed), "1.1.0", 0));
+    }
 
     fn in_progress(component: &str) -> InProgress {
         InProgress {

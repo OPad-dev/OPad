@@ -144,18 +144,7 @@ impl UpdateClient {
             }
         };
 
-        verify_manifest_signature(&bytes, &signature)?;
-
-        // Only now are these bytes trustworthy enough to parse.
-        let mut manifest: ReleaseManifest = serde_json::from_slice(&bytes)?;
-        if manifest.schema != SUPPORTED_SCHEMA {
-            return Err(UpdateError::UnsupportedSchema {
-                found: manifest.schema,
-                supported: SUPPORTED_SCHEMA,
-            });
-        }
-        manifest.signed = Some(std::sync::Arc::new(SignedBytes { bytes, signature }));
-        Ok(Some((manifest, etag)))
+        Ok(Some((verified_manifest(bytes, signature)?, etag)))
     }
 
     /// Downloads one artifact and checks it against the hash in the verified
@@ -191,6 +180,45 @@ impl UpdateClient {
     }
 }
 
+/// Turns feed bytes and their detached signature into a manifest: the
+/// signature over the raw bytes first, and only then the parse and the schema
+/// check. The bytes are kept with it for the update helper.
+pub fn verified_manifest(
+    bytes: Vec<u8>,
+    signature: String,
+) -> Result<ReleaseManifest, UpdateError> {
+    verify_manifest_signature(&bytes, &signature)?;
+
+    // Only now are these bytes trustworthy enough to parse.
+    let mut manifest: ReleaseManifest = serde_json::from_slice(&bytes)?;
+    if manifest.schema != SUPPORTED_SCHEMA {
+        return Err(UpdateError::UnsupportedSchema {
+            found: manifest.schema,
+            supported: SUPPORTED_SCHEMA,
+        });
+    }
+    manifest.signed = Some(std::sync::Arc::new(SignedBytes { bytes, signature }));
+    Ok(manifest)
+}
+
+/// Reads back a feed this install kept from an earlier check, with every
+/// check a freshly served one gets: signature, schema, channel, expiry and
+/// serial. A copy on disk is trusted no more than one from the network.
+pub fn reload_manifest(
+    bytes: Vec<u8>,
+    signature: String,
+    channel: &str,
+    now: SystemTime,
+    highest_serial_seen: Option<u64>,
+) -> Result<ReleaseManifest, UpdateError> {
+    if !signing_configured() {
+        return Err(UpdateError::NoPublicKey);
+    }
+    let feed = verified_manifest(bytes, signature)?;
+    check_feed(&feed, channel, now.into(), highest_serial_seen)?;
+    Ok(feed)
+}
+
 /// The ETag to send as `If-None-Match`, if the request should be conditional
 fn conditional_etag<'a>(
     schedule: &'a CheckSchedule,
@@ -214,6 +242,27 @@ mod tests {
         assert_eq!(
             client.signature_url(),
             "https://example.invalid/m.json.release.minisig"
+        );
+    }
+
+    #[test]
+    fn a_kept_feed_is_verified_like_a_served_one() {
+        // A file on disk is trusted no more than the network: without a
+        // signature from a trusted key it is refused before it is parsed
+        let unsigned = br#"{"schema":1,"channel":"stable","components":{}}"#.to_vec();
+        let refused = reload_manifest(
+            unsigned,
+            "not a signature".to_string(),
+            "stable",
+            SystemTime::now(),
+            None,
+        );
+        assert!(
+            matches!(
+                refused,
+                Err(UpdateError::BadSignature(_) | UpdateError::NoPublicKey)
+            ),
+            "{refused:?}"
         );
     }
 
