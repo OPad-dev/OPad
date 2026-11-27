@@ -3845,7 +3845,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "opad-daemon"
-version = "1.0.0-rc.7"
+version = "1.0.0-rc.8"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3871,7 +3871,7 @@ dependencies = [
 
 [[package]]
 name = "opad-device"
-version = "1.0.0-rc.7"
+version = "1.0.0-rc.8"
 dependencies = [
  "bytes",
  "chrono",
@@ -3886,7 +3886,7 @@ dependencies = [
 
 [[package]]
 name = "opad-gui"
-version = "1.0.0-rc.7"
+version = "1.0.0-rc.8"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -3916,7 +3916,7 @@ dependencies = [
 
 [[package]]
 name = "opad-ipc"
-version = "1.0.0-rc.7"
+version = "1.0.0-rc.8"
 dependencies = [
  "opad-layout",
  "opad-model",
@@ -3931,7 +3931,7 @@ dependencies = [
 
 [[package]]
 name = "opad-layout"
-version = "1.0.0-rc.7"
+version = "1.0.0-rc.8"
 dependencies = [
  "opad-model",
  "serde",
@@ -3941,7 +3941,7 @@ dependencies = [
 
 [[package]]
 name = "opad-model"
-version = "1.0.0-rc.7"
+version = "1.0.0-rc.8"
 dependencies = [
  "chrono",
  "clap",
@@ -3953,7 +3953,7 @@ dependencies = [
 
 [[package]]
 name = "opad-protocol"
-version = "1.0.0-rc.7"
+version = "1.0.0-rc.8"
 dependencies = [
  "bytes",
  "opad-model",
@@ -3965,7 +3965,7 @@ dependencies = [
 
 [[package]]
 name = "opad-storage"
-version = "1.0.0-rc.7"
+version = "1.0.0-rc.8"
 dependencies = [
  "chrono",
  "opad-model",
@@ -3977,7 +3977,7 @@ dependencies = [
 
 [[package]]
 name = "opad-tosu"
-version = "1.0.0-rc.7"
+version = "1.0.0-rc.8"
 dependencies = [
  "dirs 5.0.1",
  "futures-util",
@@ -3993,7 +3993,7 @@ dependencies = [
 
 [[package]]
 name = "opad-ui-preview"
-version = "1.0.0-rc.7"
+version = "1.0.0-rc.8"
 dependencies = [
  "cc",
  "opad-layout",
@@ -4004,7 +4004,7 @@ dependencies = [
 
 [[package]]
 name = "opad-update"
-version = "1.0.0-rc.7"
+version = "1.0.0-rc.8"
 dependencies = [
  "chrono",
  "futures-util",
@@ -4023,7 +4023,7 @@ dependencies = [
 
 [[package]]
 name = "opadctl"
-version = "1.0.0-rc.7"
+version = "1.0.0-rc.8"
 dependencies = [
  "anyhow",
  "clap",
