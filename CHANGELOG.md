@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-rc.8](https://github.com/OPad-dev/OPad/compare/v1.0.0-rc.7...v1.0.0-rc.8) (2026-11-27)
+
+
+### Bug Fixes
+
+* **windows:** uninstalling leaves no daemon behind: the app waits before starting one again, and is stopped first ([a0a70fd](https://github.com/OPad-dev/OPad/commit/a0a70fd7976b9d56fc33672730af5a3abfa35c17))
+
 ## [1.0.0-rc.7](https://github.com/OPad-dev/OPad/compare/v1.0.0-rc.6...v1.0.0-rc.7) (2026-11-27)
 
 
