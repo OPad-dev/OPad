@@ -43,7 +43,7 @@ The GUI keeps one connection to the daemon open and subscribes to what the open 
 
 "Fetch now" (`App::poll`, after an action or on opening a page) makes a new subscription, on which the daemon sends every answer afresh; a request sent beside the feed could arrive after a newer answer.
 
-The timers are the fallback (`FeedState`): they ask as the table below says until the subscription is live, again when its connection ends, and for good with a daemon that does not know `Subscribe`. A lost feed is tried again once the daemon answers a request.
+The timers are the fallback (`FeedState`): they ask as the table below says until the subscription is live, again when its connection ends, and for good with a daemon that does not know `Subscribe`. A lost feed is tried again once the daemon answers a request. When a live feed ends, the status is asked for at once, so a daemon that went away shows as offline; the app starts it again only at the timer's next status, about 2 s later (`daemon_start_held`), because an installer or the uninstaller that stopped the daemon stops the app next, and a daemon started in between would outlive both.
 
 | Timer | Interval |
 |---|---|

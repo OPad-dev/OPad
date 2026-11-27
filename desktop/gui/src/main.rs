@@ -331,6 +331,11 @@ pub struct App {
     // Daemon state
     pub daemon_online: bool,
     pub daemon_spawn_attempted: bool,
+    /// The daemon was sending and its connection ended: the status asked for
+    /// at once shows it gone, and the timer's next one starts it. Whatever
+    /// stops the daemon on purpose (an installer, the uninstaller) stops this
+    /// app next, and a daemon started in between would outlive both
+    daemon_start_held: bool,
     /// The GUI and the daemon were different versions after an update, and
     /// this run already restarted one of them to match
     version_fix_attempted: bool,
@@ -695,6 +700,7 @@ impl App {
             fallback_window: false,
             daemon_online: false,
             daemon_spawn_attempted: false,
+            daemon_start_held: false,
             version_fix_attempted: false,
             device_connected: false,
             tosu_connected: false,
@@ -1067,6 +1073,7 @@ impl App {
                         }
                         self.daemon_online = true;
                         self.daemon_spawn_attempted = false;
+                        self.daemon_start_held = false;
                         self.mode = mode;
                         self.device_connected = device_connected;
                         self.device_info = device_info;
@@ -1118,7 +1125,8 @@ impl App {
                         self.cal_progress = None;
                         self.cal_starting = false;
                         self.tosu_connected = false;
-                        if !self.daemon_spawn_attempted {
+                        let held = std::mem::take(&mut self.daemon_start_held);
+                        if !held && !self.daemon_spawn_attempted {
                             self.daemon_spawn_attempted = true;
                             return Task::perform(start_daemon_process(), Message::DaemonStarted);
                         }
@@ -2100,8 +2108,10 @@ impl App {
                 }
                 feed::Event::Lost(reason) => {
                     tracing::debug!("The daemon's feed ended: {reason}");
+                    // Ask at once: this is how a daemon that went away shows.
+                    // Starting it again waits for the timer
+                    self.daemon_start_held = self.feed == FeedState::Live;
                     self.feed = FeedState::Lost;
-                    // Ask at once: this is how a daemon that went away shows
                     return self.poll();
                 }
                 feed::Event::Unsupported => {
@@ -4422,6 +4432,32 @@ mod tests {
         assert_eq!(app.feed, FeedState::Unsupported);
         let _ = app.update(Message::Status(Err("daemon unreachable".into())));
         assert_eq!(app.feed, FeedState::Lost);
+    }
+
+    #[tokio::test]
+    async fn a_daemon_that_stops_sending_is_not_started_at_once() {
+        let (mut app, _) = App::new(true, None);
+        let gone = || Message::Status(Err("daemon unreachable".into()));
+
+        // Stopped while it was sending, as an uninstaller does just before
+        // it stops this app: shown as gone, and left alone
+        let _ = app.update(Message::Feed(feed::Event::Live));
+        app.daemon_online = true;
+        let _ = app.update(Message::Feed(feed::Event::Lost("gone".into())));
+        let _ = app.update(gone());
+        assert!(!app.daemon_online);
+        assert!(!app.daemon_spawn_attempted);
+
+        // Still gone at the timer's next status: started, once
+        let _ = app.update(gone());
+        assert!(app.daemon_spawn_attempted);
+
+        // No daemon when the app starts: the feed never was live, so the
+        // first status that fails starts one
+        let (mut app, _) = App::new(true, None);
+        let _ = app.update(Message::Feed(feed::Event::Lost("no daemon".into())));
+        let _ = app.update(gone());
+        assert!(app.daemon_spawn_attempted);
     }
 
     #[test]

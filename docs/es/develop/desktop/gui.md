@@ -43,7 +43,7 @@ La GUI mantiene abierta una conexión con el daemon y se suscribe a lo que muest
 
 «Traer ahora» (`App::poll`, tras una acción o al abrir una página) hace una suscripción nueva, por la que el daemon envía de nuevo todas las respuestas; una petición enviada al margen del flujo podría llegar después de una respuesta más reciente.
 
-Los temporizadores son el respaldo (`FeedState`): preguntan como dice la tabla siguiente hasta que la suscripción está activa, de nuevo cuando su conexión termina, y siempre con un daemon que no conoce `Subscribe`. Un flujo perdido se vuelve a intentar cuando el daemon responde a una petición.
+Los temporizadores son el respaldo (`FeedState`): preguntan como dice la tabla siguiente hasta que la suscripción está activa, de nuevo cuando su conexión termina, y siempre con un daemon que no conoce `Subscribe`. Un flujo perdido se vuelve a intentar cuando el daemon responde a una petición. Cuando un flujo activo termina, el estado se pide en el acto, así que un daemon que ha desaparecido se muestra como desconectado; la app lo vuelve a arrancar solo en el siguiente estado del temporizador, unos 2 s después (`daemon_start_held`), porque un instalador o el desinstalador que ha parado el daemon para la app a continuación, y un daemon arrancado entre medias sobreviviría a ambos.
 
 | Temporizador | Intervalo |
 |---|---|

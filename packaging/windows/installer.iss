@@ -155,11 +155,18 @@ end;
 // alone leaves it orphaned and still holding its own exe file open, and the
 // GUI's "Start tosu" button can also launch it detached from the GUI entirely.
 // /T additionally tree-kills anything else still parented to the processes below.
+//
+// The app goes first, in a taskkill of its own: it starts the daemon again
+// when the daemon goes away. Stopped in one taskkill with the daemon first, an
+// app of 1.0.0-rc.7 started a new daemon before it was stopped itself, and
+// that daemon kept its exe and wrote %APPDATA%\opad again (windows-10 in the
+// lab). No /T on this one: it would stop a daemon the app started before the app.
 procedure StopRunningProcesses;
 var
   ResultCode: Integer;
 begin
-  Exec('taskkill.exe', '/F /T /IM opad-daemon.exe /IM opad-gui.exe /IM opadctl.exe /IM opad-daemon.exe /IM opad-gui.exe /IM opadctl.exe /IM tosu.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /IM opad-gui.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('taskkill.exe', '/F /T /IM opad-daemon.exe /IM opadctl.exe /IM tosu.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
 function InitializeUninstall(): Boolean;
