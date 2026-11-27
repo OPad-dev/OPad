@@ -42,7 +42,8 @@ pub struct AppUpdatePlan {
     /// interrupted flash still boots the old image
     pub images: Vec<(u32, PathBuf)>,
     /// The slot the new image boots from (`ota_0`/`ota_1`). `None` for the
-    /// old in-place write, where a rollback has nothing to go back to.
+    /// write over `ota_0` with the running slot unknown, where a rollback
+    /// has nothing known to go back to.
     pub target_slot: Option<&'static str>,
 }
 
@@ -57,23 +58,35 @@ pub struct AppUpdatePlan {
 /// runs again. No button, no recovery flash.
 ///
 /// With the running slot unknown (no daemon, or firmware too old to report
-/// it) this falls back to writing `ota_0` in place, as before.
+/// it) the image goes to `ota_0` and `otadata` is written blank, which makes
+/// the bootloader boot `ota_0`: the same pair a `--full` flash writes. The
+/// image alone was not enough: a pad running `ota_1` kept booting its old
+/// firmware from there while the flash reported success.
+///
+/// A slot that is neither (`factory`, the old single-app table) is refused:
+/// both offsets lie inside that table's app, so the write would break the
+/// firmware it is running.
 pub fn plan_app_update(
     app_image: &Path,
     running_slot: Option<&str>,
     scratch_dir: &Path,
 ) -> Result<AppUpdatePlan, FlashError> {
+    let otadata = scratch_dir.join("opad-otadata.bin");
     let (old, new) = match running_slot {
         Some("ota_0") => (0u8, 1u8),
         Some("ota_1") => (1, 0),
-        _ => {
+        Some(other) => return Err(FlashError::NotAnOtaSlot(other.to_string())),
+        None => {
+            std::fs::write(&otadata, blank_otadata())?;
             return Ok(AppUpdatePlan {
-                images: vec![(APP_PARTITION_OFFSET, app_image.to_path_buf())],
+                images: vec![
+                    (APP_PARTITION_OFFSET, app_image.to_path_buf()),
+                    (OTADATA_OFFSET, otadata),
+                ],
                 target_slot: None,
-            })
+            });
         }
     };
-    let otadata = scratch_dir.join("opad-otadata.bin");
     std::fs::write(&otadata, otadata_image(old, new))?;
     let offset = if new == 0 {
         APP_PARTITION_OFFSET
@@ -108,6 +121,13 @@ pub fn otadata_image(old_slot: u8, new_slot: u8) -> Vec<u8> {
         entry[28..32].copy_from_slice(&otadata_crc(seq).to_le_bytes());
     }
     out
+}
+
+/// An erased `otadata`: no valid entry, so the bootloader boots the first OTA
+/// slot, `ota_0`. It is what ESP-IDF's `ota_data_initial.bin` holds, which a
+/// `--full` flash writes to the same place.
+pub fn blank_otadata() -> Vec<u8> {
+    vec![0xFFu8; OTADATA_SIZE]
 }
 
 /// `esp_rom_crc32_le(UINT32_MAX, &ota_seq, 4)`, which is zlib's
@@ -147,6 +167,8 @@ pub enum FlashError {
     },
     #[error("The firmware was written, but rebooting the pad into it failed: {0}. See docs/recovery.md.")]
     ResetFailed(String),
+    #[error("The pad runs from `{0}`, not from an OTA slot: it has the old partition layout, and an app update would overwrite the firmware it is running. Flash the full set instead: `opadctl flash --full <folder>`.")]
+    NotAnOtaSlot(String),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -857,10 +879,24 @@ mod tests {
         assert_eq!(plan.target_slot, Some("ota_0"));
         assert_eq!(plan.images[0], (APP_PARTITION_OFFSET, app.to_path_buf()));
 
-        // Unknown slot: the old in-place write, nothing to roll back to
+        // Unknown slot: ota_0, and a blank otadata so that is what boots. The
+        // image alone left a pad on ota_1 booting its old firmware.
         let plan = plan_app_update(app, None, &dir).unwrap();
         assert_eq!(plan.target_slot, None);
-        assert_eq!(plan.images, vec![(APP_PARTITION_OFFSET, app.to_path_buf())]);
+        assert_eq!(plan.images[0], (APP_PARTITION_OFFSET, app.to_path_buf()));
+        assert_eq!(plan.images[1].0, OTADATA_OFFSET);
+        let otadata = std::fs::read(&plan.images[1].1).unwrap();
+        assert_eq!(otadata.len(), OTADATA_SIZE);
+        assert!(
+            otadata.iter().all(|b| *b == 0xFF),
+            "no entry selects a slot"
+        );
+
+        // The old single-app table: both writes would land in its running app
+        match plan_app_update(app, Some("factory"), &dir) {
+            Err(FlashError::NotAnOtaSlot(slot)) => assert_eq!(slot, "factory"),
+            other => panic!("an app update onto the old layout was planned: {other:?}"),
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 

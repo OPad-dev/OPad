@@ -763,7 +763,9 @@ async fn main() -> Result<()> {
                         "Writing slot {slot}; {} stays as the fallback if the new firmware never comes up on USB",
                         running.as_deref().unwrap_or("?")
                     ),
-                    None => println!("Running slot unknown: writing ota_0 in place, with no fallback"),
+                    None => println!(
+                        "Running slot unknown: writing ota_0 and making it the slot that boots, with no fallback"
+                    ),
                 }
             }
 

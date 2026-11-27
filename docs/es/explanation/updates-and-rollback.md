@@ -33,7 +33,7 @@ El anfitrión planifica una actualización con [`plan_app_update()`](https://git
 3. [`otadata_image()`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-device/src/flash.rs) construye un `otadata` nuevo: el sector 0 conserva la ranura antigua como `OTA_IMG_VALID` y el sector 1 selecciona la nueva con un número de secuencia mayor como `OTA_IMG_NEW`. Cada entrada lleva el CRC-32 que comprueba el bootloader (`otadata_crc`).
 4. Primero se escribe la imagen de la app y después `otadata`, así que una escritura interrumpida deja seleccionada la ranura antigua y arranca la imagen antigua.
 
-Dos casos quedan fuera de esto. Un teclado que no informa de ninguna ranura OTA (firmware demasiado antiguo para decirlo, o la disposición `factory` anterior a OTA) no puede recibir una actualización desde el actualizador de la app, que informa `NeedsFullReflash` y pide un `opadctl flash --full` por única vez. Y `opadctl flash` sin el daemon en marcha no puede saber la ranura en ejecución, así que lo indica y escribe `ota_0` en su sitio, sin alternativa.
+Dos casos quedan fuera de esto. Un teclado que no informa de ninguna ranura OTA (firmware demasiado antiguo para decirlo, o la disposición `factory` anterior a OTA) no puede recibir una actualización desde el actualizador de la app, que informa `NeedsFullReflash` y pide un `opadctl flash --full` por única vez. Y `opadctl flash` sin el daemon en marcha no puede saber la ranura en ejecución, así que lo indica, escribe `ota_0` y deja en blanco la selección de arranque para que arranque `ota_0`, sin alternativa.
 
 ## El arranque de prueba
 

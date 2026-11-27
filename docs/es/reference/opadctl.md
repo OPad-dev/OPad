@@ -238,7 +238,8 @@ Usage: opadctl flash [OPTIONS] <FIRMWARE>
 |---|---|
 | `ota_0` | Aplicación en `0x220000` (`ota_1`), después `otadata` en `0xf000` |
 | `ota_1` | Aplicación en `0x20000` (`ota_0`), después `otadata` en `0xf000` |
-| Desconocida (sin daemon, o firmware que no la comunica) | Aplicación en `0x20000` en el mismo sitio, sin respaldo |
+| Desconocida (sin daemon, o firmware que no la comunica) | Aplicación en `0x20000` (`ota_0`) y un `otadata` en blanco, así que arranca `ota_0`; sin respaldo |
+| Cualquier otra (`factory`, la disposición de particiones antigua) | Rechazado: usa `--full` |
 <!-- src: /desktop/crates/opad-device/src/flash.rs#APP_PARTITION_OFFSET, /desktop/crates/opad-device/src/flash.rs#OTA_1_OFFSET, /desktop/crates/opad-device/src/flash.rs#OTADATA_OFFSET -->
 
 **Flasheo de recuperación (`--full`).** Escribe el conjunto completo. Cada archivo se busca primero en la estructura de compilación de ESP-IDF y después junto a la imagen de la aplicación (la estructura de una versión publicada descomprimida): <!-- src: /desktop/cli/src/main.rs#resolve_flash_set -->

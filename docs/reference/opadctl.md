@@ -238,7 +238,8 @@ Usage: opadctl flash [OPTIONS] <FIRMWARE>
 |---|---|
 | `ota_0` | App at `0x220000` (`ota_1`), then `otadata` at `0xf000` |
 | `ota_1` | App at `0x20000` (`ota_0`), then `otadata` at `0xf000` |
-| Unknown (no daemon, or firmware that does not report it) | App at `0x20000` in place, with no fallback |
+| Unknown (no daemon, or firmware that does not report it) | App at `0x20000` (`ota_0`) and a blank `otadata`, so `ota_0` is what boots; no fallback |
+| Anything else (`factory`, the old partition layout) | Refused: use `--full` |
 <!-- src: /desktop/crates/opad-device/src/flash.rs#APP_PARTITION_OFFSET, /desktop/crates/opad-device/src/flash.rs#OTA_1_OFFSET, /desktop/crates/opad-device/src/flash.rs#OTADATA_OFFSET -->
 
 **Recovery flash (`--full`).** Writes the whole set. Each file is looked for in the ESP-IDF build layout first, then flat next to the app image (the layout of an unpacked release): <!-- src: /desktop/cli/src/main.rs#resolve_flash_set -->

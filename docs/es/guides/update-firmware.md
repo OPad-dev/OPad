@@ -56,7 +56,7 @@ opadctl flash firmware/build/opad-firmware.bin
 5. espera hasta 45 segundos a que vuelva el teclado y te dice si se ejecuta desde la ranura nueva o si se ha revertido. <!-- src: /desktop/cli/src/main.rs#report_slot_after_flash -->
 
 > [!WARNING]
-> Sin el daemon (o con un firmware demasiado antiguo para comunicar su ranura), `opadctl flash` no puede saber qué ranura se está ejecutando. Entonces escribe `ota_0` en su sitio y muestra `Running slot unknown: writing ota_0 in place, with no fallback`. Si ese flasheo se interrumpe, recupera el teclado con `opadctl recover` ([Recuperación §7.7](../recovery.md#77-un-teclado-que-no-aparece-como-opad-opadctl-recover)). <!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
+> Sin el daemon (o con un firmware demasiado antiguo para comunicar su ranura), `opadctl flash` no puede saber qué ranura se está ejecutando. Entonces escribe `ota_0`, deja en blanco la selección de arranque para que arranque `ota_0`, y muestra `Running slot unknown: writing ota_0 and making it the slot that boots, with no fallback`. Si ese flasheo se interrumpe, recupera el teclado con `opadctl recover` ([Recuperación §7.7](../recovery.md#77-un-teclado-que-no-aparece-como-opad-opadctl-recover)). <!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
 
 Opciones: <!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
 

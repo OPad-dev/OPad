@@ -56,7 +56,7 @@ opadctl flash firmware/build/opad-firmware.bin
 5. waits up to 45 seconds for the pad to come back, and tells you whether it runs the new slot or rolled back. <!-- src: /desktop/cli/src/main.rs#report_slot_after_flash -->
 
 > [!WARNING]
-> Without the daemon (or with firmware too old to report its slot), `opadctl flash` cannot tell which slot is running. It then writes `ota_0` in place and prints `Running slot unknown: writing ota_0 in place, with no fallback`. If that flash is interrupted, recover the pad with `opadctl recover` ([Recovery §7.7](../recovery.md#77-a-pad-that-does-not-show-up-as-opad-opadctl-recover)). <!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
+> Without the daemon (or with firmware too old to report its slot), `opadctl flash` cannot tell which slot is running. It then writes `ota_0`, blanks the boot selection so `ota_0` is what boots, and prints `Running slot unknown: writing ota_0 and making it the slot that boots, with no fallback`. If that flash is interrupted, recover the pad with `opadctl recover` ([Recovery §7.7](../recovery.md#77-a-pad-that-does-not-show-up-as-opad-opadctl-recover)). <!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
 
 Options: <!-- src: /desktop/cli/src/main.rs#Commands::Flash -->
 

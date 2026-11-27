@@ -33,7 +33,7 @@ The host plans an update with [`plan_app_update()`](https://github.com/OPad-dev/
 3. [`otadata_image()`](https://github.com/OPad-dev/OPad/blob/main/desktop/crates/opad-device/src/flash.rs) builds a fresh `otadata`: sector 0 keeps the old slot as `OTA_IMG_VALID`, sector 1 selects the new slot with a higher sequence number as `OTA_IMG_NEW`. Each entry carries the CRC-32 the bootloader checks (`otadata_crc`).
 4. The app image is written first and `otadata` second, so an interrupted write leaves the old slot selected and the old image boots.
 
-Two cases fall outside this. A pad that reports no OTA slot (firmware too old to say, or the pre-OTA `factory` layout) cannot take an update from the app's updater, which reports `NeedsFullReflash` and asks for a one-time `opadctl flash --full`. And `opadctl flash` with no daemon running cannot learn the running slot, so it says so and writes `ota_0` in place, with no fallback.
+Two cases fall outside this. A pad that reports no OTA slot (firmware too old to say, or the pre-OTA `factory` layout) cannot take an update from the app's updater, which reports `NeedsFullReflash` and asks for a one-time `opadctl flash --full`. And `opadctl flash` with no daemon running cannot learn the running slot, so it says so, writes `ota_0` and blanks the boot selection so that `ota_0` is what boots, with no fallback.
 
 ## The trial boot
 
