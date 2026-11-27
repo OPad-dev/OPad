@@ -47,6 +47,8 @@ CONFIG_LV_FONT_MONTSERRAT_32=y
 CONFIG_LV_FONT_MONTSERRAT_48=y
 CONFIG_LV_USE_OBSERVER=y
 CONFIG_LV_USE_GIF=y
+# TJpgDec, for the MJPEG animations in the asset packs (ui/flash_anim.c)
+CONFIG_LV_USE_TJPGD=y
 # LVGL's own fixed pool: never contends with the heap used on the key/USB core.
 # It lives in PSRAM (OPAD_LVGL_PSRAM, on by default): internal RAM is for the keys
 CONFIG_LV_MEM_SIZE_KILOBYTES=160

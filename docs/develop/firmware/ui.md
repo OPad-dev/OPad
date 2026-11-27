@@ -17,6 +17,8 @@ The screen is optional: if `ui_init()` fails the pad logs `DIAG_EVENT_LCD_INIT_F
 | [/firmware/main/ui/ui_store.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/ui/ui_store.c) | Layout persistence in NVS, deferred outside `IDLE` |
 | [/firmware/main/ui/he_cal_ui.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/ui/he_cal_ui.c) | HE lock screen and calibration flow overlay |
 | [/firmware/main/ui/easter_egg.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/ui/easter_egg.c) | The "67" GIF (`FREAKY67`, or a map ending on a PP ending in 67) |
+| [/firmware/main/ui/flash_anim.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/ui/flash_anim.c) | The `updating` animation before the restart into the ROM bootloader |
+| [/firmware/main/assets/asset_pack.c](https://github.com/OPad-dev/OPad/blob/main/firmware/main/assets/asset_pack.c) | Reads the asset packs in the `assets` and `user` partitions |
 | [/firmware/main/ui/core/](https://github.com/OPad-dev/OPad/tree/main/firmware/main/ui/core) | Portable engine: layout model (`ui_core.h`), data subjects (`ui_data.c`), screen builder (`ui_screen.c`), result animations (`ui_anim.c`), default layouts and palette (`ui_defaults.c`), wire IDs (`ui_ids.h`). Depends only on LVGL, so `opad-ui-preview` compiles the same code for the desktop Screen Designer ([crates](../desktop/crates.md#7-opad-ui-preview)) |
 | [/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c](https://github.com/OPad-dev/OPad/blob/main/firmware/boards/waveshare_esp32s3_touch_lcd_2/board_display.c) | ST7789 panel bring-up, sleep/wake, brightness |
 
@@ -68,3 +70,13 @@ Built on `lv_layer_top()` with its own 20 ms LVGL timer, and only when `he_backe
 | Failure | Capture error, save error, or the app disconnected | **Calibration failed** with the reason, red, 2 s; a **Try again** button only on a locked pad with no app |
 
 The button uses `he_cal_button.c` (down and up inside it, excursion under 30 px), so a swipe across it does nothing. The lock lifts as soon as the new calibration is saved; no reboot.
+
+## Asset Packs and the Flash Animation (`asset_pack.c`, `flash_anim.c`)
+
+The `assets` (OPad's, 5 MB) and `user` (the owner's, 6.8 MB) partitions each hold one asset pack: a 64-byte header with a CRC32 of the rest, a table of 64-byte entries (name, GIF or MJPEG, size, frame count, time per frame) and their data. `scripts/build_asset_pack.py` writes a pack and checks each asset on the PC first: an MJPEG must be baseline JPEG (SOF0), which TJpgDec decodes; a 4:4:4 one it refuses (`JDR_FMT3`) shows black. `opadctl flash --full` writes `opad-assets.bin` and `opad-user.bin` when they are next to the app image. <!-- src: /firmware/main/assets/asset_pack.h, /scripts/build_asset_pack.py, /desktop/cli/src/main.rs#resolve_flash_set -->
+
+`asset_pack_open()` maps a pack with `esp_partition_mmap()` and reads it through the flash cache, never with `esp_flash_read()`, which turns the cache off on both cores and would stall the keys. A missing, erased or unreadable pack is reported as absent, and everything that uses one carries on without it. <!-- src: /firmware/main/assets/asset_pack.c -->
+
+When the host asks for the ROM bootloader, `reboot_to_rom_download()` first calls `flash_anim_play(FLASH_ANIM_MS)` (1.2 s): the MJPEG named `updating` plays straight to the panel, one row of JPEG blocks at a time from a 10 KB DMA buffer, without LVGL, whose lock it takes and never gives back. The backlight is then latched on (`board_backlight_hold_on()`, full brightness: GPIO1's hold survives the restart), and the panel keeps the last frame in its own memory (its reset pin is not connected) while the ROM writes the flash. The RTC reset at the end of the flash clears the latch; `board_backlight_init()` releases it too. The host waits 3 s for the bootloader before its next trigger, so the animation stays well under that. <!-- src: /firmware/main/ui/flash_anim.c, /firmware/main/usb/usb_cdc.c#reboot_to_rom_download, /firmware/boards/waveshare_esp32s3_touch_lcd_2/board.c#board_backlight_hold_on, /desktop/crates/opad-device/src/flash.rs#enter_bootloader -->
+
+An `lv_image` redrawn from a decoded frame at 12 fps hung the pad within 4–30 s in a test build (interrupt watchdog, no coredump), while the grade animations redrawn as often for 90 s did not; the cause was not found, which is why the flash animation bypasses LVGL. <!-- src: docs/history/2026-11-28-asset-demo-hang.md -->

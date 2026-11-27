@@ -45,6 +45,7 @@ idf_component_register(
         "ui/ui_store.c"
         "ui/he_cal_ui.c"
         "ui/easter_egg.c"
+        "ui/flash_anim.c"
         "ui/core/ui_data.c"
         "ui/core/ui_screen.c"
         "ui/core/ui_defaults.c"

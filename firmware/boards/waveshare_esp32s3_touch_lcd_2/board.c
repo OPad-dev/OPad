@@ -146,6 +146,9 @@ static uint32_t backlight_duty(uint8_t percent)
 esp_err_t board_backlight_init(void)
 {
     ESP_LOGI(TAG, "Initializing Backlight PWM (LEDC)...");
+    // board_backlight_hold_on() before a restart into the ROM bootloader may
+    // have left the pin latched; LEDC cannot drive it until it is released
+    gpio_hold_dis(BOARD_LCD_BL_GPIO);
 
     // Configure Backlight PWM (LEDC)
     ledc_timer_config_t ledc_timer = {
@@ -292,6 +295,17 @@ bool IRAM_ATTR board_key2_read(void)
 {
     gpio_num_t gpio = s_key2_gpio;
     return gpio != GPIO_NUM_NC && gpio_get_level(gpio) == 0;
+}
+
+// GPIO1 is an RTC pin: its hold survives esp_restart() and the ROM bootloader,
+// so the panel stays lit (at full brightness: a hold latches a level, not the
+// PWM) until the next RTC reset or board_backlight_init
+void board_backlight_hold_on(void)
+{
+    ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 1);
+    gpio_set_direction(BOARD_LCD_BL_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_level(BOARD_LCD_BL_GPIO, 1);
+    gpio_hold_en(BOARD_LCD_BL_GPIO);
 }
 
 void board_backlight_set(uint8_t percent)

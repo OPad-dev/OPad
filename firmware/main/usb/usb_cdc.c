@@ -2,6 +2,7 @@
 #include "protocol/protocol.h"
 #include "diag/diag.h"
 #include "ui/ui.h"
+#include "ui/flash_anim.h"
 #include "tusb.h"
 #include "tinyusb.h"
 #include "esp_log.h"
@@ -41,6 +42,8 @@ bool usb_cdc_is_connected(void)
 
 // How long a sender (the protocol task on core 1) may wait for FIFO room
 #define CDC_TX_WAIT_MS 20
+// How long the "updating" animation plays before the restart into the ROM
+#define FLASH_ANIM_MS 1200
 
 /*
  * All-or-nothing: a frame is queued only once the TX FIFO has room for the whole
@@ -93,6 +96,11 @@ static void reboot_to_rom_download(void)
 {
     ESP_LOGI(TAG, "Rebooting into ROM Download Bootloader...");
     tud_cdc_n_write_flush(0);
+    // The "updating" animation, then its last frame stays up while the ROM
+    // writes the flash. The host waits 3 s for the bootloader to enumerate
+    // before it tries its next trigger (opad-device flash.rs, enter_bootloader),
+    // and the detach below takes up to ~0.5 s more
+    flash_anim_play(FLASH_ANIM_MS);
     vTaskDelay(pdMS_TO_TICKS(50));
 
     // Soft-detach USB-OTG. Deliberately not tinyusb_driver_uninstall(): it frees

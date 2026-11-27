@@ -79,6 +79,13 @@ int board_get_key3_gpio(void);
 void board_backlight_set(uint8_t percent);
 
 /**
+ * @brief Light the backlight fully and latch the pin, so it stays on through
+ * a restart into the ROM bootloader (flashing). Released by
+ * board_backlight_init.
+ */
+void board_backlight_hold_on(void);
+
+/**
  * @brief Get current LCD backlight brightness percentage.
  */
 uint8_t board_backlight_get(void);
