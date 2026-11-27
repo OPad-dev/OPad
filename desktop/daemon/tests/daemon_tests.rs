@@ -4685,3 +4685,94 @@ fn concurrent_requests_never_hold_the_state_and_storage_locks_together() {
             .expect("the handlers deadlocked on the state and storage locks");
     }
 }
+
+// A sync reads the counters, waits on the pad and writes them back. A reset
+// answered while it waited was undone by that write.
+#[tokio::test]
+async fn a_reset_during_a_sync_is_not_undone_by_it() {
+    let dev = pad_info("OPAD-RACE");
+    let storage = Storage::open_in_memory().unwrap();
+    storage
+        .save_device_state(&dev, &counters("OPAD-RACE", 1, 10, 20))
+        .unwrap();
+    let storage = Arc::new(Mutex::new(Some(storage)));
+    let mut state = RuntimeController::new(
+        DeviceConfig::default(),
+        Some(dev.clone()),
+        counters("OPAD-RACE", 1, 10, 20),
+        HashMap::new(),
+        None,
+        vec!["OPAD-RACE".to_string()],
+        Instant::now(),
+    )
+    .state;
+    state.device_connected = true;
+    let daemon_state = Arc::new(Mutex::new(state));
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    let log_hub = Arc::new(LogHub::new());
+    // The pad answers the sync only when the test says so
+    let device = MockDeviceLink::new(true);
+    *device.sync_response.lock() = None;
+    let device = Arc::new(device);
+
+    let sync = {
+        let (st, stg, dev, po) = (
+            daemon_state.clone(),
+            storage.clone(),
+            device.clone(),
+            pending_ops.clone(),
+        );
+        tokio::spawn(async move { perform_sync(&st, &stg, &*dev, &po).await })
+    };
+    // The sync has read the counters and is waiting for the pad
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while device.sent_syncs.lock().is_empty() {
+        assert!(Instant::now() < deadline, "the sync never reached the pad");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    let reset = {
+        let (st, stg, dev, po, hub) = (
+            daemon_state.clone(),
+            storage.clone(),
+            device.clone(),
+            pending_ops.clone(),
+            log_hub.clone(),
+        );
+        tokio::spawn(async move {
+            handle_ipc_request(
+                IpcRequest::ResetCounters { confirm: true },
+                &st,
+                &stg,
+                &*dev,
+                &hub,
+                &po,
+                None,
+            )
+            .await
+        })
+    };
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let _ = device.event_tx.send(DeviceEvent::CounterSyncResult {
+        seq: 1,
+        success: true,
+        message: String::new(),
+        state: None,
+    });
+
+    assert!(sync.await.unwrap().is_ok());
+    assert!(matches!(
+        reset.await.unwrap(),
+        IpcResponse::CountersReset { .. }
+    ));
+    let now = daemon_state.lock().counters.clone();
+    assert_eq!((now.lifetime_key1, now.lifetime_key2), (0, 0));
+    let saved = storage
+        .lock()
+        .as_ref()
+        .unwrap()
+        .load_device_state("OPAD-RACE")
+        .unwrap()
+        .unwrap();
+    assert_eq!((saved.lifetime_key1, saved.lifetime_key2), (0, 0));
+}

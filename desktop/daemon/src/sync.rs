@@ -267,6 +267,18 @@ pub fn key3_sync_target(
     }
 }
 
+/// Held by everything that rewrites the counters: a sync, and every request
+/// that resets, restores or imports them.
+///
+/// A sync reads the counters, talks to the pad for up to several seconds and
+/// writes the result back. A reset that ran in between was undone by that
+/// write, in memory and in SQLite, so those requests wait for the running
+/// sync and a sync waits for them.
+pub fn counters_lock() -> &'static tokio::sync::Mutex<()> {
+    static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+}
+
 pub async fn perform_sync<D: DeviceLink>(
     state: &Arc<Mutex<DaemonState>>,
     storage: &Arc<Mutex<Option<Storage>>>,
@@ -274,11 +286,7 @@ pub async fn perform_sync<D: DeviceLink>(
     pending_ops: &Arc<Mutex<PendingOperations>>,
 ) -> Result<CounterState, String> {
     // The runtime (post-cooldown, connect, periodic) and ForceSync can overlap; run one at a time
-    static SYNC_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
-    let _sync_guard = SYNC_LOCK
-        .get_or_init(|| tokio::sync::Mutex::new(()))
-        .lock()
-        .await;
+    let _sync_guard = counters_lock().lock().await;
 
     // Mode and the storage write guard belong to the RuntimeController: a map can start
     // while this runs, and storage writes must then stay blocked

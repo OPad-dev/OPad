@@ -527,6 +527,10 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::ResetCounters { confirm } => {
+            // Not while a sync is rewriting the counters, and the mode is
+            // read again after the wait (see `sync::counters_lock`)
+            let _counters = crate::sync::counters_lock().lock().await;
+            let mode = state.lock().mode;
             if let Some(refused) = refuse_if_pad_guarded(state) {
                 return refused;
             }
@@ -580,6 +584,10 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::RestoreDeviceFromPc { confirm } => {
+            // Not while a sync is rewriting the counters, and the mode is
+            // read again after the wait (see `sync::counters_lock`)
+            let _counters = crate::sync::counters_lock().lock().await;
+            let mode = state.lock().mode;
             if let Some(refused) = refuse_if_pad_guarded(state) {
                 return refused;
             }
@@ -670,6 +678,10 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::ImportPcFromDevice { confirm } => {
+            // Not while a sync is rewriting the counters, and the mode is
+            // read again after the wait (see `sync::counters_lock`)
+            let _counters = crate::sync::counters_lock().lock().await;
+            let mode = state.lock().mode;
             if let Some(refused) = refuse_if_pad_guarded(state) {
                 return refused;
             }
@@ -754,6 +766,10 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             take_over,
             keep_device_counters,
         } => {
+            // Not while a sync is rewriting the counters, and the mode is
+            // read again after the wait (see `sync::counters_lock`)
+            let _counters = crate::sync::counters_lock().lock().await;
+            let mode = state.lock().mode;
             // P1-3: taking over writes NVS on the pad and SQLite here.
             if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
                 return IpcResponse::OperationDeferred {
@@ -887,6 +903,10 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::ResolveReplacement { restore } => {
+            // Not while a sync is rewriting the counters, and the mode is
+            // read again after the wait (see `sync::counters_lock`)
+            let _counters = crate::sync::counters_lock().lock().await;
+            let mode = state.lock().mode;
             if mode == RuntimeMode::Playing || mode == RuntimeMode::Cooldown {
                 return IpcResponse::OperationRejected {
                     reason: "Cannot resolve replacement during gameplay or cooldown".to_string(),
@@ -1035,6 +1055,10 @@ pub async fn handle_ipc_request<D: DeviceLink>(
         }
 
         IpcRequest::ImportBackup { backup, confirm } => {
+            // Not while a sync is rewriting the counters, and the mode is
+            // read again after the wait (see `sync::counters_lock`)
+            let _counters = crate::sync::counters_lock().lock().await;
+            let mode = state.lock().mode;
             if let Some(refused) = refuse_if_pad_guarded(state) {
                 return refused;
             }
