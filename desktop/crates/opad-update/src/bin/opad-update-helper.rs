@@ -9,7 +9,9 @@
 //! says exactly what is checked). The daemon downloads the package and
 //! passes it with the feed it verified; the helper reads all three as root,
 //! checks them itself, copies the package where only root can write, and
-//! hands that copy to apt, dnf or pacman. The running OPad keeps running;
+//! hands that copy to apt, dnf or pacman. It reads only files that belong to
+//! the user who called it (`read_callers_file`), so it cannot be pointed at
+//! one of root's. The running OPad keeps running;
 //! the package's files are the ones that start next time.
 //!
 //! Exit status: 0 installed, 2 bad arguments or not root, 3 refused (the
@@ -34,8 +36,8 @@ mod unix {
     };
     use opad_update::manifest::current_target;
     use opad_update::InstallOrigin;
-    use std::io::Write;
-    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+    use std::io::{Read, Write};
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
     use std::path::{Path, PathBuf};
 
     /// Written by the package itself, so root-owned: how OPad was installed
@@ -67,18 +69,14 @@ mod unix {
             ));
             return 3;
         };
-        let read = |path: &Path, max: u64| -> Result<Vec<u8>, String> {
-            // A regular file, not a link or a device, and not unreasonably big
-            let meta =
-                std::fs::symlink_metadata(path).map_err(|e| format!("{}: {e}", path.display()))?;
-            if !meta.file_type().is_file() {
-                return Err(format!("{} is not a regular file", path.display()));
+        let owner = match caller_uid(std::env::var("PKEXEC_UID").ok().as_deref()) {
+            Ok(owner) => owner,
+            Err(e) => {
+                say(e);
+                return 2;
             }
-            if meta.len() > max {
-                return Err(format!("{} is larger than {max} bytes", path.display()));
-            }
-            std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))
         };
+        let read = |path: &Path, max: u64| read_callers_file(path, max, owner);
         let inputs = read(&feed, MAX_FEED_BYTES).and_then(|f| {
             let s = read(&signature, MAX_SIGNATURE_BYTES)?;
             let p = read(&package, MAX_PACKAGE_BYTES)?;
@@ -153,6 +151,62 @@ mod unix {
         }
     }
 
+    /// Whose files the helper may read: the user pkexec ran it for
+    /// (`PKEXEC_UID`, which pkexec sets itself after clearing the caller's
+    /// environment). `None` when root started the helper directly: nothing is
+    /// lent to anyone then.
+    fn caller_uid(pkexec_uid: Option<&str>) -> Result<Option<u32>, String> {
+        match pkexec_uid {
+            None => Ok(None),
+            Some(uid) => uid
+                .parse()
+                .map(Some)
+                .map_err(|_| format!("PKEXEC_UID is not a user id: {uid:?}")),
+        }
+    }
+
+    /// One of the files the caller named, read as root without lending the
+    /// caller root's eyes.
+    ///
+    /// The helper used to check the path and then read it: any path, so a
+    /// caller could name one of root's files and learn whether it exists, its
+    /// size (the "larger than" refusal) and whether its SHA-256 is a given
+    /// one, and could swap a link in between the check and the read. Now the
+    /// file is opened once, never through a link, and everything is checked
+    /// on that open file: it must be a regular file owned by `owner`, which
+    /// the caller could read anyway. Every refusal up to that point is the
+    /// same sentence, so it says nothing about a file that is someone else's.
+    fn read_callers_file(path: &Path, max: u64, owner: Option<u32>) -> Result<Vec<u8>, String> {
+        use rustix::fs::OFlags;
+        let refused = || {
+            format!(
+                "{} is not a regular file that belongs to the calling user",
+                path.display()
+            )
+        };
+        // NONBLOCK: opening a FIFO or a device must not hang the helper
+        let flags = OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::NOCTTY;
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(flags.bits() as i32)
+            .open(path)
+            .map_err(|_| refused())?;
+        let meta = file.metadata().map_err(|_| refused())?;
+        if !meta.file_type().is_file() || owner.is_some_and(|uid| meta.uid() != uid) {
+            return Err(refused());
+        }
+        // The caller's own file from here on. The size is checked on what is
+        // read, not on what the file said a moment ago.
+        let mut bytes = Vec::new();
+        file.take(max + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+        if bytes.len() as u64 > max {
+            return Err(format!("{} is larger than {max} bytes", path.display()));
+        }
+        Ok(bytes)
+    }
+
     /// `--feed F --signature S --package P`, each exactly once, nothing else
     fn parse(args: &[String]) -> Option<(PathBuf, PathBuf, PathBuf)> {
         if args.len() != 6 {
@@ -198,7 +252,57 @@ mod unix {
 
     #[cfg(test)]
     mod tests {
-        use super::parse;
+        use super::{caller_uid, parse, read_callers_file};
+
+        #[test]
+        fn only_the_callers_own_regular_files_are_read() {
+            let me = rustix::process::getuid().as_raw();
+            let dir = tempfile::tempdir().unwrap();
+            let mine = dir.path().join("feed.json");
+            std::fs::write(&mine, b"12345").unwrap();
+            assert_eq!(read_callers_file(&mine, 5, Some(me)).unwrap(), b"12345");
+            // Root starting the helper itself reads what it names
+            assert_eq!(read_callers_file(&mine, 5, None).unwrap(), b"12345");
+
+            // Someone else's file, a link, a directory and a missing file are
+            // all refused in the same words: nothing is learnt about them
+            let link = dir.path().join("link");
+            std::os::unix::fs::symlink(&mine, &link).unwrap();
+            let refusals = [
+                read_callers_file(&mine, 5, Some(me + 1)),
+                read_callers_file(&link, 5, Some(me)),
+                read_callers_file(dir.path(), 5, Some(me)),
+                read_callers_file(&dir.path().join("missing"), 5, Some(me)),
+            ];
+            for (refusal, path) in refusals.iter().zip([
+                &mine,
+                &link,
+                &dir.path().to_path_buf(),
+                &dir.path().join("missing"),
+            ]) {
+                assert_eq!(
+                    refusal.as_ref().unwrap_err(),
+                    &format!(
+                        "{} is not a regular file that belongs to the calling user",
+                        path.display()
+                    )
+                );
+            }
+
+            // Too big is said only of a file that is the caller's
+            let e = read_callers_file(&mine, 4, Some(me)).unwrap_err();
+            assert!(e.contains("larger than 4 bytes"), "{e}");
+            let e = read_callers_file(&mine, 4, Some(me + 1)).unwrap_err();
+            assert!(!e.contains("larger"), "{e}");
+        }
+
+        #[test]
+        fn the_caller_is_the_user_pkexec_ran_the_helper_for() {
+            assert_eq!(caller_uid(Some("1000")), Ok(Some(1000)));
+            assert_eq!(caller_uid(None), Ok(None));
+            assert!(caller_uid(Some("")).is_err());
+            assert!(caller_uid(Some("root")).is_err());
+        }
 
         fn a(v: &[&str]) -> Vec<String> {
             v.iter().map(|s| s.to_string()).collect()

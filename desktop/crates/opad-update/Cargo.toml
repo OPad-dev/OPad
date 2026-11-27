@@ -19,9 +19,9 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 minisign-verify = "0.2"
 sha2 = "0.10"
 
-# opad-update-helper's root check
+# opad-update-helper's root check, and the flags it opens the caller's files with
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "0.38", features = ["process"] }
+rustix = { version = "0.38", features = ["process", "fs"] }
 
 [features]
 default = ["net"]
