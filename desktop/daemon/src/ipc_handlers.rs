@@ -6,7 +6,7 @@ use tracing::{info, warn};
 use opad_device::DeviceEvent;
 use opad_ipc::{
     read_request, send_response, CurrentBackupState, IpcRequest, IpcResponse, IpcTransport,
-    UpdateComponent, IPC_PROTOCOL_VERSION,
+    UpdateComponent, Watch, IPC_PROTOCOL_VERSION, MAX_WATCHES, MIN_WATCH_INTERVAL_MS,
 };
 use opad_layout::Screen;
 use opad_model::{char_to_hid_usage, CounterState, DeviceConfig, DeviceInfo, RuntimeMode};
@@ -1558,6 +1558,12 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 .await;
             IpcResponse::EasterEggTriggered
         }
+
+        // The connection loop answers it (`serve_connection`): the watches
+        // belong to the connection, which this function never sees
+        IpcRequest::Subscribe { .. } => {
+            IpcResponse::Error("Subscribe is only served on a connection".to_string())
+        }
     }
 }
 
@@ -1728,12 +1734,82 @@ pub fn refuse_before_handshake(handshaken: bool, req: &IpcRequest) -> Option<Ipc
     })
 }
 
+/// One request a subscribed connection is sent the answers to
+/// (`IpcRequest::Subscribe`)
+struct ActiveWatch {
+    request: IpcRequest,
+    every: Duration,
+    due: tokio::time::Instant,
+    /// The answer last sent, as JSON. `None` until the first one went out.
+    sent: Option<Vec<u8>>,
+}
+
+/// The watches a `Subscribe` asks for, or why it is refused
+fn accept_watches(asked: Vec<Watch>) -> Result<Vec<ActiveWatch>, String> {
+    if asked.len() > MAX_WATCHES {
+        return Err(format!(
+            "A subscription takes at most {MAX_WATCHES} watches, not {}",
+            asked.len()
+        ));
+    }
+    if asked.iter().any(|w| !w.request.can_be_watched()) {
+        return Err("Only requests that read can be watched".to_string());
+    }
+    // All due at once: the client gets every answer as it subscribes
+    let now = tokio::time::Instant::now();
+    Ok(asked
+        .into_iter()
+        .map(|w| ActiveWatch {
+            request: w.request,
+            every: Duration::from_millis(w.every_ms.max(MIN_WATCH_INTERVAL_MS).into()),
+            due: now,
+            sent: None,
+        })
+        .collect())
+}
+
+impl ActiveWatch {
+    /// The answer to send, or `None` when the client already has it.
+    ///
+    /// The log moves on rather than changing: each answer carries the entries
+    /// after the last one sent, and an answer with none is only sent first.
+    /// The cursor follows the last entry sent, never `latest_seq`, which would
+    /// skip the rest of an answer cut at its limit.
+    fn unsent(&mut self, resp: IpcResponse) -> Option<IpcResponse> {
+        if let (
+            IpcRequest::GetLogEntries { since_seq, .. },
+            IpcResponse::LogEntries {
+                entries,
+                latest_seq,
+            },
+        ) = (&mut self.request, &resp)
+        {
+            match entries.last() {
+                Some(last) => *since_seq = Some(last.seq),
+                None if *latest_seq > 0 => *since_seq = Some(*latest_seq),
+                None => {}
+            }
+            let first = self.sent.replace(Vec::new()).is_none();
+            return (first || !entries.is_empty()).then_some(resp);
+        }
+        let json = serde_json::to_vec(&resp).ok()?;
+        if self.sent.as_ref() == Some(&json) {
+            return None;
+        }
+        self.sent = Some(json);
+        Some(resp)
+    }
+}
+
 /// Serves one IPC connection until the client leaves.
 ///
 /// Nothing but a Handshake is served until one succeeds; a request before
 /// that is refused and a rejected Handshake is answered, and in both cases
 /// the connection is then closed. A pad paused for a flash by this connection
 /// is resumed if the client leaves without handing it back.
+///
+/// After a `Subscribe` the connection is sent the answers to its watches as
+/// they change, and takes no request but another `Subscribe`.
 pub async fn serve_connection<S: IpcTransport + ?Sized, D: DeviceLink>(
     stream: &mut S,
     state: &Arc<Mutex<DaemonState>>,
@@ -1746,19 +1822,97 @@ pub async fn serve_connection<S: IpcTransport + ?Sized, D: DeviceLink>(
     let mut handshaken = false;
     // Set while this client has the pad paused for a flash
     let mut flash_pause = false;
-    while let Ok(req) = read_request(stream).await {
+    // Set by the first Subscribe that was accepted
+    let mut subscribed = false;
+    let mut watches: Vec<ActiveWatch> = Vec::new();
+
+    // Requests are read by a future of their own that lives as long as the
+    // connection. Reading one inside the `select!` below would drop a
+    // half-read frame whenever a watch came due first.
+    let (mut reader, mut writer) = tokio::io::split(stream);
+    let (queue, mut requests) = tokio::sync::mpsc::channel::<IpcRequest>(1);
+    let read_requests = async move {
+        while let Ok(req) = read_request(&mut reader).await {
+            if queue.send(req).await.is_err() {
+                break;
+            }
+        }
+    };
+    tokio::pin!(read_requests);
+    let mut reading = true;
+
+    'serve: loop {
+        let due = watches.iter().map(|w| w.due).min();
+        let req = tokio::select! {
+            biased;
+            // Ends when the client leaves or sends something unreadable; the
+            // queue then closes, which is what ends the connection below
+            _ = &mut read_requests, if reading => {
+                reading = false;
+                continue;
+            }
+            req = requests.recv() => match req {
+                Some(req) => req,
+                None => break,
+            },
+            _ = tokio::time::sleep_until(due.unwrap_or_else(tokio::time::Instant::now)),
+                if due.is_some() =>
+            {
+                let now = tokio::time::Instant::now();
+                for watch in watches.iter_mut().filter(|w| w.due <= now) {
+                    watch.due = now + watch.every;
+                    let resp = handle_ipc_request(
+                        watch.request.clone(),
+                        state,
+                        storage,
+                        device,
+                        log_hub,
+                        pending_ops,
+                        updates,
+                    )
+                    .await;
+                    if let Some(resp) = watch.unsent(resp) {
+                        if send_response(&mut writer, &resp).await.is_err() {
+                            break 'serve;
+                        }
+                    }
+                }
+                continue;
+            }
+        };
+
         if let Some(refused) = refuse_before_handshake(handshaken, &req) {
             warn!("IPC request before a successful handshake; closing the connection");
-            let _ = send_response(stream, &refused).await;
+            let _ = send_response(&mut writer, &refused).await;
             break;
         }
-        let step = FlashStep::of(&req);
-        let resp =
-            handle_ipc_request(req, state, storage, device, log_hub, pending_ops, updates).await;
-        flash_pause = holds_flash_pause(flash_pause, step, &resp);
+        let resp = match req {
+            IpcRequest::Subscribe { watches: asked } => match accept_watches(asked) {
+                Ok(accepted) => {
+                    watches = accepted;
+                    subscribed = true;
+                    IpcResponse::Subscribed
+                }
+                Err(reason) => IpcResponse::Error(reason),
+            },
+            // The client could not tell this answer from a watch's
+            _ if subscribed => IpcResponse::Error(
+                "This connection is subscribed and takes no other request; \
+                 ask on a connection of its own"
+                    .to_string(),
+            ),
+            req => {
+                let step = FlashStep::of(&req);
+                let resp =
+                    handle_ipc_request(req, state, storage, device, log_hub, pending_ops, updates)
+                        .await;
+                flash_pause = holds_flash_pause(flash_pause, step, &resp);
+                resp
+            }
+        };
         let rejected = matches!(resp, IpcResponse::HandshakeRejected { .. });
         handshaken |= matches!(resp, IpcResponse::HandshakeAck { .. });
-        if send_response(stream, &resp).await.is_err() || rejected {
+        if send_response(&mut writer, &resp).await.is_err() || rejected {
             break;
         }
     }

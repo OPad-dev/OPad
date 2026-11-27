@@ -4971,3 +4971,291 @@ async fn without_the_pad_only_this_pcs_own_settings_can_change() {
     assert_eq!(daemon_state.lock().config, elsewhere);
     assert!(device.sent_configs.lock().is_empty());
 }
+
+/// A connection served like `serve`, with the state and the log in the
+/// test's hands
+struct Served {
+    client: tokio::io::DuplexStream,
+    task: tokio::task::JoinHandle<()>,
+    state: Arc<Mutex<DaemonState>>,
+    log: LogHub,
+}
+
+/// A handshaken connection to the real connection loop
+async fn serve_handshaken() -> Served {
+    let (mut client, mut server) = tokio::io::duplex(64 * 1024);
+    let state = Arc::new(Mutex::new(idle_state(true, None, CounterState::default())));
+    let log = LogHub::new();
+    let task = tokio::spawn({
+        let (state, log) = (state.clone(), log.clone());
+        async move {
+            let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+            let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+            let device = MockDeviceLink::new(true);
+            opad_daemon::ipc_handlers::serve_connection(
+                &mut server,
+                &state,
+                &storage,
+                &device,
+                &log,
+                &pending_ops,
+                None,
+            )
+            .await;
+        }
+    });
+    let resp = opad_ipc::send_request(&mut client, &handshake(env!("CARGO_PKG_VERSION")))
+        .await
+        .unwrap();
+    assert!(matches!(resp, IpcResponse::HandshakeAck { .. }), "{resp:?}");
+    Served {
+        client,
+        task,
+        state,
+        log,
+    }
+}
+
+fn watch(request: IpcRequest) -> opad_ipc::Watch {
+    opad_ipc::Watch {
+        request,
+        every_ms: 20,
+    }
+}
+
+/// The next answer a subscribed connection is sent, or `None` when none
+/// comes for a while
+async fn pushed(client: &mut tokio::io::DuplexStream) -> Option<IpcResponse> {
+    tokio::time::timeout(Duration::from_millis(300), opad_ipc::read_response(client))
+        .await
+        .ok()
+        .map(|r| r.unwrap())
+}
+
+/// A watched answer is sent once, and again only when it changes
+#[tokio::test]
+async fn a_watch_sends_its_answer_once_and_again_when_it_changes() {
+    let mut served = serve_handshaken().await;
+    assert!(
+        opad_ipc::subscribe(&mut served.client, vec![watch(IpcRequest::GetStatus)])
+            .await
+            .unwrap()
+    );
+    let first = pushed(&mut served.client).await;
+    assert!(
+        matches!(
+            first,
+            Some(IpcResponse::Status {
+                tosu_connected: false,
+                ..
+            })
+        ),
+        "{first:?}"
+    );
+    // Many looks later nothing changed, so nothing was sent
+    assert!(pushed(&mut served.client).await.is_none());
+
+    served.state.lock().tosu_connected = true;
+    let changed = pushed(&mut served.client).await;
+    assert!(
+        matches!(
+            changed,
+            Some(IpcResponse::Status {
+                tosu_connected: true,
+                ..
+            })
+        ),
+        "{changed:?}"
+    );
+    assert!(pushed(&mut served.client).await.is_none());
+
+    // The client leaving ends the connection, though nothing is being sent
+    drop(served.client);
+    tokio::time::timeout(Duration::from_secs(2), served.task)
+        .await
+        .expect("the connection ends when the client leaves")
+        .unwrap();
+}
+
+/// A watched log sends each entry once, in order, and nothing in between
+#[tokio::test]
+async fn a_watched_log_sends_every_entry_once() {
+    let mut served = serve_handshaken().await;
+    served
+        .log
+        .push(LogSource::Program, LogLevel::Info, "test", "one");
+    let logs = IpcRequest::GetLogEntries {
+        since_seq: None,
+        // Two at a time, so a burst has to arrive over several answers
+        limit: 2,
+        level: None,
+        source: None,
+    };
+    assert!(opad_ipc::subscribe(&mut served.client, vec![watch(logs)])
+        .await
+        .unwrap());
+    let messages = |resp: Option<IpcResponse>| match resp {
+        Some(IpcResponse::LogEntries { entries, .. }) => {
+            entries.into_iter().map(|e| e.message).collect::<Vec<_>>()
+        }
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(messages(pushed(&mut served.client).await), ["one"]);
+    assert!(pushed(&mut served.client).await.is_none());
+
+    for message in ["two", "three", "four"] {
+        served
+            .log
+            .push(LogSource::Program, LogLevel::Info, "test", message);
+    }
+    let mut seen = messages(pushed(&mut served.client).await);
+    seen.extend(messages(pushed(&mut served.client).await));
+    assert_eq!(seen, ["two", "three", "four"]);
+    assert!(pushed(&mut served.client).await.is_none());
+}
+
+/// An empty log still answers once, so the client knows it is subscribed
+/// to it
+#[tokio::test]
+async fn a_watched_empty_log_answers_once() {
+    let mut served = serve_handshaken().await;
+    let logs = IpcRequest::GetLogEntries {
+        since_seq: None,
+        limit: 200,
+        level: None,
+        source: None,
+    };
+    assert!(opad_ipc::subscribe(&mut served.client, vec![watch(logs)])
+        .await
+        .unwrap());
+    let first = pushed(&mut served.client).await;
+    assert!(
+        matches!(&first, Some(IpcResponse::LogEntries { entries, .. }) if entries.is_empty()),
+        "{first:?}"
+    );
+    assert!(pushed(&mut served.client).await.is_none());
+}
+
+/// Only requests that read can be watched; a refused Subscribe leaves the
+/// connection serving requests as before
+#[tokio::test]
+async fn a_request_that_changes_something_cannot_be_watched() {
+    let mut served = serve_handshaken().await;
+    for refused in [
+        IpcRequest::ForceSync,
+        IpcRequest::RestartPad,
+        IpcRequest::PrepareFlash,
+        IpcRequest::Subscribe { watches: vec![] },
+    ] {
+        let asked = vec![watch(IpcRequest::GetStatus), watch(refused)];
+        let result = opad_ipc::subscribe(&mut served.client, asked).await;
+        assert!(
+            matches!(&result, Err(opad_ipc::IpcError::Protocol(e)) if e.contains("read")),
+            "{result:?}"
+        );
+    }
+    let too_many = vec![watch(IpcRequest::GetStatus); opad_ipc::MAX_WATCHES + 1];
+    assert!(opad_ipc::subscribe(&mut served.client, too_many)
+        .await
+        .is_err());
+
+    assert!(pushed(&mut served.client).await.is_none());
+    let resp = opad_ipc::send_request(&mut served.client, &IpcRequest::GetStatus)
+        .await
+        .unwrap();
+    assert!(matches!(resp, IpcResponse::Status { .. }), "{resp:?}");
+}
+
+/// A subscribed connection takes no request but another Subscribe, which
+/// replaces its watches
+#[tokio::test]
+async fn a_subscribed_connection_only_takes_another_subscribe() {
+    let mut served = serve_handshaken().await;
+    assert!(
+        opad_ipc::subscribe(&mut served.client, vec![watch(IpcRequest::GetStatus)])
+            .await
+            .unwrap()
+    );
+    assert!(matches!(
+        pushed(&mut served.client).await,
+        Some(IpcResponse::Status { .. })
+    ));
+
+    // A request that would pause the pad is not run
+    let resp = opad_ipc::send_request(&mut served.client, &IpcRequest::PrepareFlash)
+        .await
+        .unwrap();
+    assert!(
+        matches!(&resp, IpcResponse::Error(e) if e.contains("subscribed")),
+        "{resp:?}"
+    );
+    assert!(served.state.lock().flash.is_none());
+
+    // Other watches: their answers come, the old one's no longer do
+    assert!(
+        opad_ipc::subscribe(&mut served.client, vec![watch(IpcRequest::GetLayouts)])
+            .await
+            .unwrap()
+    );
+    assert!(matches!(
+        pushed(&mut served.client).await,
+        Some(IpcResponse::Layouts { .. })
+    ));
+    served.state.lock().tosu_connected = true;
+    assert!(pushed(&mut served.client).await.is_none());
+
+    // None at all: the connection goes quiet
+    assert!(opad_ipc::subscribe(&mut served.client, vec![])
+        .await
+        .unwrap());
+    served.state.lock().custom_layouts.insert(
+        Screen::Idle,
+        Layout {
+            background: 0,
+            widgets: vec![],
+        },
+    );
+    assert!(pushed(&mut served.client).await.is_none());
+}
+
+/// A request that arrives in two pieces is still read whole, however many
+/// watches come due in between
+#[tokio::test]
+async fn a_watch_coming_due_does_not_break_a_request_being_read() {
+    use tokio::io::AsyncWriteExt;
+    let mut served = serve_handshaken().await;
+    assert!(
+        opad_ipc::subscribe(&mut served.client, vec![watch(IpcRequest::GetStatus)])
+            .await
+            .unwrap()
+    );
+    assert!(matches!(
+        pushed(&mut served.client).await,
+        Some(IpcResponse::Status { .. })
+    ));
+
+    let payload = serde_json::to_vec(&IpcRequest::Subscribe {
+        watches: vec![watch(IpcRequest::GetLayouts)],
+    })
+    .unwrap();
+    let mut frame = (payload.len() as u32).to_le_bytes().to_vec();
+    frame.extend(&payload);
+    let (head, tail) = frame.split_at(7);
+    served.client.write_all(head).await.unwrap();
+    // The Status watch comes due several times, and sends, meanwhile
+    for connected in [true, false, true] {
+        served.state.lock().tosu_connected = connected;
+        assert!(matches!(
+            pushed(&mut served.client).await,
+            Some(IpcResponse::Status { .. })
+        ));
+    }
+    served.client.write_all(tail).await.unwrap();
+
+    let ack = pushed(&mut served.client).await;
+    assert!(matches!(ack, Some(IpcResponse::Subscribed)), "{ack:?}");
+    assert!(matches!(
+        pushed(&mut served.client).await,
+        Some(IpcResponse::Layouts { .. })
+    ));
+}

@@ -529,3 +529,81 @@ fn flash_requests_keep_their_wire_form() {
         IpcResponse::DeviceResumed
     ));
 }
+
+/// A daemon that predates `Subscribe` cannot read it and closes the
+/// connection: the client is told to ask on a timer, not handed an error
+#[tokio::test]
+async fn subscribe_reports_a_daemon_that_predates_it() {
+    let (mut client, mut server) = tokio::io::duplex(4096);
+    let older_daemon = tokio::spawn(async move {
+        // Reads the frame, finds it unreadable, and leaves without a word
+        let mut header = [0u8; 4];
+        tokio::io::AsyncReadExt::read_exact(&mut server, &mut header)
+            .await
+            .unwrap();
+        let mut frame = vec![0u8; u32::from_le_bytes(header) as usize];
+        tokio::io::AsyncReadExt::read_exact(&mut server, &mut frame)
+            .await
+            .unwrap();
+    });
+    let watches = vec![opad_ipc::Watch {
+        request: IpcRequest::GetStatus,
+        every_ms: 100,
+    }];
+    assert!(!opad_ipc::subscribe(&mut client, watches).await.unwrap());
+    older_daemon.await.unwrap();
+}
+
+/// What a watch may ask for: the requests that only read
+#[test]
+fn only_requests_that_read_can_be_watched() {
+    for read in [
+        IpcRequest::GetStatus,
+        IpcRequest::GetLayouts,
+        IpcRequest::GetUiValues,
+        IpcRequest::GetUpdateStatus,
+        IpcRequest::GetFirmwareUpdate,
+        IpcRequest::GetTapStats,
+        IpcRequest::GetHeCalibrationProgress,
+        IpcRequest::GetHeLive,
+        IpcRequest::GetLogEntries {
+            since_seq: None,
+            limit: 10,
+            level: None,
+            source: None,
+        },
+    ] {
+        assert!(read.can_be_watched(), "{read:?}");
+    }
+    for other in [
+        IpcRequest::ForceSync,
+        IpcRequest::PrepareFlash,
+        IpcRequest::CheckForUpdates,
+        IpcRequest::StartHeCalibration,
+        IpcRequest::RunBoardTest,
+        IpcRequest::SetTapHistoryPeriod { days: 7 },
+        IpcRequest::Subscribe { watches: vec![] },
+    ] {
+        assert!(!other.can_be_watched(), "{other:?}");
+    }
+}
+
+/// `Subscribe` on the wire, as an older client or daemon would have to
+/// read it
+#[test]
+fn subscribe_keeps_its_wire_form() {
+    let request = IpcRequest::Subscribe {
+        watches: vec![opad_ipc::Watch {
+            request: IpcRequest::GetStatus,
+            every_ms: 100,
+        }],
+    };
+    assert_eq!(
+        serde_json::to_string(&request).unwrap(),
+        r#"{"Subscribe":{"watches":[{"request":"GetStatus","every_ms":100}]}}"#
+    );
+    assert_eq!(
+        serde_json::to_string(&IpcResponse::Subscribed).unwrap(),
+        r#""Subscribed""#
+    );
+}

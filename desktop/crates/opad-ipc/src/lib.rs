@@ -228,6 +228,58 @@ pub enum IpcRequest {
     /// last request) and answers with `HeLive`. Poll it only while the view
     /// is on screen.
     GetHeLive,
+    /// Keep this connection open and be sent the answers to `watches` as they
+    /// change, instead of asking again and again. Answered with `Subscribed`;
+    /// from then on the daemon sends the answer to each watched request once
+    /// at the start and again whenever it differs from the last one it sent,
+    /// looking every `every_ms`. Only requests that read can be watched
+    /// (`IpcRequest::can_be_watched`); anything else is refused with `Error`
+    /// and the connection goes on as before.
+    ///
+    /// A subscribed connection carries those answers only: the one request
+    /// it still takes is another `Subscribe`, which replaces the watches (an
+    /// empty list stops them).
+    ///
+    /// Added after IPC v1 shipped, with no version bump: an older daemon
+    /// cannot parse it and closes the connection, and the client goes back to
+    /// asking on a timer (`subscribe` reports that as `Ok(false)`).
+    Subscribe {
+        watches: Vec<Watch>,
+    },
+}
+
+/// One request the daemon answers again whenever its answer changes
+/// (`IpcRequest::Subscribe`)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Watch {
+    pub request: IpcRequest,
+    /// How often the daemon looks for a change, in milliseconds. It never
+    /// looks more often than every `MIN_WATCH_INTERVAL_MS`.
+    pub every_ms: u32,
+}
+
+/// The shortest interval a watch is looked at, whatever it asks for
+pub const MIN_WATCH_INTERVAL_MS: u32 = 20;
+/// The most watches one `Subscribe` may carry
+pub const MAX_WATCHES: usize = 16;
+
+impl IpcRequest {
+    /// Whether `Subscribe` accepts this request as a watch: the ones that
+    /// only read, and so can be repeated without anyone having asked
+    pub fn can_be_watched(&self) -> bool {
+        matches!(
+            self,
+            IpcRequest::GetStatus
+                | IpcRequest::GetLogEntries { .. }
+                | IpcRequest::GetLayouts
+                | IpcRequest::GetUiValues
+                | IpcRequest::GetUpdateStatus
+                | IpcRequest::GetFirmwareUpdate
+                | IpcRequest::GetTapStats
+                | IpcRequest::GetHeCalibrationProgress
+                | IpcRequest::GetHeLive
+        )
+    }
 }
 
 /// The daemon's tap rate statistics (answer to `GetTapStats`)
@@ -493,6 +545,9 @@ pub enum IpcResponse {
         supported: bool,
         sample: Option<opad_model::HeLiveSample>,
     },
+    /// Answer to `Subscribe`: the watches are running, and their answers
+    /// follow on this connection
+    Subscribed,
     Error(String),
 }
 
@@ -541,6 +596,35 @@ pub async fn send_request<S: IpcTransport + ?Sized>(
     stream: &mut S,
     req: &IpcRequest,
 ) -> Result<IpcResponse, IpcError> {
+    write_request(stream, req).await?;
+    read_response(stream).await
+}
+
+/// Asks the daemon to send the answers to `watches` as they change
+/// (`IpcRequest::Subscribe`). `Ok(true)`: read them with `read_response`.
+/// `Ok(false)`: the daemon closed the connection instead of answering, which
+/// is what one that predates `Subscribe` does; ask on a timer instead.
+pub async fn subscribe<S: IpcTransport + ?Sized>(
+    stream: &mut S,
+    watches: Vec<Watch>,
+) -> Result<bool, IpcError> {
+    match send_request(stream, &IpcRequest::Subscribe { watches }).await {
+        Ok(IpcResponse::Subscribed) => Ok(true),
+        Ok(IpcResponse::Error(reason)) => Err(IpcError::Protocol(reason)),
+        Ok(other) => Err(IpcError::Protocol(format!(
+            "Unexpected answer to Subscribe: {:?}",
+            other
+        ))),
+        Err(IpcError::Io(_)) => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
+/// Writes one request frame without waiting for its answer
+pub async fn write_request<S: AsyncWrite + Unpin + ?Sized>(
+    stream: &mut S,
+    req: &IpcRequest,
+) -> Result<(), IpcError> {
     let payload = serde_json::to_vec(req)?;
     if payload.len() > MAX_REQUEST_FRAME_SIZE {
         return Err(IpcError::Protocol(format!(
@@ -554,7 +638,14 @@ pub async fn send_request<S: IpcTransport + ?Sized>(
     stream.write_all(&header).await?;
     stream.write_all(&payload).await?;
     stream.flush().await?;
+    Ok(())
+}
 
+/// Reads one response frame: the answer to a request, or the next answer a
+/// subscribed connection is sent
+pub async fn read_response<S: AsyncRead + Unpin + ?Sized>(
+    stream: &mut S,
+) -> Result<IpcResponse, IpcError> {
     let mut resp_header = [0u8; 4];
     stream.read_exact(&mut resp_header).await?;
     let resp_len = u32::from_le_bytes(resp_header) as usize;
@@ -573,7 +664,7 @@ pub async fn send_request<S: IpcTransport + ?Sized>(
 }
 
 /// Reads a request from an active client stream
-pub async fn read_request<S: IpcTransport + ?Sized>(
+pub async fn read_request<S: AsyncRead + Unpin + ?Sized>(
     stream: &mut S,
 ) -> Result<IpcRequest, IpcError> {
     let mut header = [0u8; 4];
@@ -594,7 +685,7 @@ pub async fn read_request<S: IpcTransport + ?Sized>(
 }
 
 /// Sends a response to a client stream
-pub async fn send_response<S: IpcTransport + ?Sized>(
+pub async fn send_response<S: AsyncWrite + Unpin + ?Sized>(
     stream: &mut S,
     resp: &IpcResponse,
 ) -> Result<(), IpcError> {
