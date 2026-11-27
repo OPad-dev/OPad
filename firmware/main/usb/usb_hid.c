@@ -227,6 +227,11 @@ bool IRAM_ATTR usb_hid_handle_key_event(uint8_t key_index, bool pressed, int64_t
         record_pending_latency(link);
         return true;
     }
+    if (!tud_ready()) {
+        // Unconfigured or suspended: the wait is the host's, not the pad's, so
+        // no latency sample. usb_hid_resync sends it once the host is back.
+        return false;
+    }
     int64_t none = 0;
     if (atomic_compare_exchange_strong(&link->pending_edge_us, &none, edge_us) &&
         seq_reached(atomic_load(&link->sent_seq), seq)) {
@@ -239,6 +244,21 @@ bool IRAM_ATTR usb_hid_handle_key_event(uint8_t key_index, bool pressed, int64_t
         }
     }
     return false;
+}
+
+// Runs in the TinyUSB task when the host configures the device or resumes it.
+// A change made while it read nothing had no transfer in flight whose
+// completion would resend it, so it waited for that key's next event: a key
+// released then stayed down on the host. Every link resends its state now.
+void usb_hid_resync(void)
+{
+    for (int i = 0; i < LINK_COUNT; i++) {
+        hid_link_t *link = &s_links[i];
+        // Armed before the host left, for a change it never read: not a latency
+        atomic_store(&link->pending_edge_us, 0);
+        atomic_fetch_add(&link->change_seq, 1);
+        try_submit(link);
+    }
 }
 
 // Runs in the TinyUSB task when the previous report reached the host. A change that

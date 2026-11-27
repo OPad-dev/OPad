@@ -16,7 +16,7 @@ trap cleanup EXIT
 echo "=== Building and Running Firmware Host Unit Tests ==="
 
 # 1. Debounce tests (P0-2)
-echo "[1/28] Running test_debounce..."
+echo "[1/29] Running test_debounce..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/debounce.c" \
     "${HOST_TEST_DIR}/test_debounce.c" \
@@ -24,7 +24,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_debounce"
 
 # 2. Counter sync rules tests (P1-1 / §13)
-echo "[2/28] Running test_counters..."
+echo "[2/29] Running test_counters..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}/counters" \
     "${FW_MAIN}/counters/counter_sync_rules.c" \
     "${HOST_TEST_DIR}/test_counters.c" \
@@ -32,7 +32,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}/counters" \
 "${BIN_DIR}/test_counters"
 
 # 3. Config validation tests (P0-3)
-echo "[3/28] Running test_config..."
+echo "[3/29] Running test_config..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" -I "${FW_MAIN}/config" \
     "${FW_MAIN}/config/config_validate.c" \
     "${FW_MAIN}/config/he_config_record.c" \
@@ -49,7 +49,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" -I "${FW_MAIN}/config" \
 "${BIN_DIR}/test_config"
 
 # 4. Diag ring buffer tests (P2-1)
-echo "[4/28] Running test_diag..."
+echo "[4/29] Running test_diag..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/diag/diag.c" \
     "${HOST_TEST_DIR}/test_diag.c" \
@@ -57,7 +57,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_diag"
 
 # 5. Protocol frame parser tests
-echo "[5/28] Running test_frame_parser..."
+echo "[5/29] Running test_frame_parser..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" -I "${FW_MAIN}/protocol" \
     "${FW_MAIN}/protocol/frame_parser.c" \
     "${HOST_TEST_DIR}/test_frame_parser.c" \
@@ -65,7 +65,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" -I "${FW_MAIN}/protocol" \
 "${BIN_DIR}/test_frame_parser"
 
 # 6. Pad ownership decision tests (W3-2)
-echo "[6/28] Running test_owner..."
+echo "[6/29] Running test_owner..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/config/owner.c" \
     "${HOST_TEST_DIR}/test_owner.c" \
@@ -73,7 +73,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_owner"
 
 # 7. Key press log (tap rate, issue #2)
-echo "[7/28] Running test_press_log..."
+echo "[7/29] Running test_press_log..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/press_log.c" \
     "${HOST_TEST_DIR}/test_press_log.c" \
@@ -81,7 +81,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_press_log"
 
 # 8. Touchscreen swipe classifier
-echo "[8/28] Running test_gesture..."
+echo "[8/29] Running test_gesture..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/gesture.c" \
     "${HOST_TEST_DIR}/test_gesture.c" \
@@ -89,7 +89,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_gesture"
 
 # 9. Swipe feedback labels
-echo "[9/28] Running test_swipe_labels..."
+echo "[9/29] Running test_swipe_labels..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/swipe_labels.c" \
     "${HOST_TEST_DIR}/test_swipe_labels.c" \
@@ -97,7 +97,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_swipe_labels"
 
 # 10. Hall Effect decision engine and settings builder
-echo "[10/28] Running test_he_rt..."
+echo "[10/29] Running test_he_rt..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/he_rt.c" \
     "${FW_MAIN}/input/he_params.c" \
@@ -106,7 +106,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_he_rt"
 
 # 11. Input module swapped while powered
-echo "[11/28] Running test_module_watch..."
+echo "[11/29] Running test_module_watch..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/module_watch.c" \
     "${HOST_TEST_DIR}/test_module_watch.c" \
@@ -114,7 +114,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_module_watch"
 
 # 12. Hall Effect DMA frame parser
-echo "[12/28] Running test_he_frame..."
+echo "[12/29] Running test_he_frame..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/he_frame.c" \
     "${HOST_TEST_DIR}/test_he_frame.c" \
@@ -122,7 +122,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_he_frame"
 
 # 13. Hall Effect calibration record tests
-echo "[13/28] Running test_he_cal..."
+echo "[13/29] Running test_he_cal..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/he_cal_record.c" \
     "${HOST_TEST_DIR}/test_he_cal.c" \
@@ -130,7 +130,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_he_cal"
 
 # 14. Hall Effect calibration capture algorithm tests
-echo "[14/28] Running test_he_cal_capture..."
+echo "[14/29] Running test_he_cal_capture..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/he_cal_capture.c" \
     "${HOST_TEST_DIR}/test_he_cal_capture.c" \
@@ -138,14 +138,14 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_he_cal_capture"
 
 # 15. Keypad config staging rule tests
-echo "[15/28] Running test_keypad_staged..."
+echo "[15/29] Running test_keypad_staged..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${HOST_TEST_DIR}/test_keypad_staged.c" \
     -o "${BIN_DIR}/test_keypad_staged"
 "${BIN_DIR}/test_keypad_staged"
 
 # 16. Hall Effect health state machine tests
-echo "[16/28] Running test_he_health..."
+echo "[16/29] Running test_he_health..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/he_health.c" \
     "${FW_MAIN}/input/he_rt.c" \
@@ -155,7 +155,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_he_health"
 
 # 17. Hall Effect calibration button hit tests
-echo "[17/28] Running test_he_cal_button..."
+echo "[17/29] Running test_he_cal_button..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/he_cal_button.c" \
     "${HOST_TEST_DIR}/test_he_cal_button.c" \
@@ -163,7 +163,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_he_cal_button"
 
 # 18. Hall Effect calibration runner tests
-echo "[18/28] Running test_he_cal_runner..."
+echo "[18/29] Running test_he_cal_runner..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/he_cal_capture.c" \
     "${FW_MAIN}/input/he_cal_runner.c" \
@@ -172,7 +172,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_he_cal_runner"
 
 # 19. The ISR accumulator and its 20 ms consumer keep the 4 kHz stream
-echo "[19/28] Running test_he_cal_sampling..."
+echo "[19/29] Running test_he_cal_sampling..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/he_cal_capture.c" \
     "${FW_MAIN}/input/he_cal_runner.c" \
@@ -181,7 +181,7 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_he_cal_sampling"
 
 # 20. Real calibration storage transactions with injected NVS failures
-echo "[20/28] Running test_he_cal_storage..."
+echo "[20/29] Running test_he_cal_storage..."
 gcc -Wall -Wextra -Werror -pthread -I "${HOST_TEST_DIR}/cal_stubs" -I "${FW_MAIN}" \
     "${FW_MAIN}/input/he_cal_record.c" \
     "${FW_MAIN}/input/he_cal.c" \
@@ -190,21 +190,21 @@ gcc -Wall -Wextra -Werror -pthread -I "${HOST_TEST_DIR}/cal_stubs" -I "${FW_MAIN
 "${BIN_DIR}/test_he_cal_storage"
 
 # 21. Calibration start and contact/release-cleanup interleavings
-echo "[21/28] Running test_he_cal_touch_guard..."
+echo "[21/29] Running test_he_cal_touch_guard..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${HOST_TEST_DIR}/test_he_cal_touch_guard.c" \
     -o "${BIN_DIR}/test_he_cal_touch_guard"
 "${BIN_DIR}/test_he_cal_touch_guard"
 
 # 22. HE reporting completes before calibration acknowledgement
-echo "[22/28] Running test_he_cal_barrier..."
+echo "[22/29] Running test_he_cal_barrier..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${HOST_TEST_DIR}/test_he_cal_barrier.c" \
     -o "${BIN_DIR}/test_he_cal_barrier"
 "${BIN_DIR}/test_he_cal_barrier"
 
 # 23. Real USB fence with a controllable TinyUSB callback FIFO
-echo "[23/28] Running test_usb_report_barrier..."
+echo "[23/29] Running test_usb_report_barrier..."
 gcc -Wall -Wextra -Werror -I "${HOST_TEST_DIR}/barrier_stubs" -I "${FW_MAIN}" \
     "${FW_MAIN}/usb/usb_report_barrier.c" \
     "${HOST_TEST_DIR}/test_usb_report_barrier.c" \
@@ -212,7 +212,7 @@ gcc -Wall -Wextra -Werror -I "${HOST_TEST_DIR}/barrier_stubs" -I "${FW_MAIN}" \
 "${BIN_DIR}/test_usb_report_barrier"
 
 # 24. Which input module an ID reading names (V1 and V3)
-echo "[24/28] Running test_module_id..."
+echo "[24/29] Running test_module_id..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/module_id.c" \
     "${HOST_TEST_DIR}/test_module_id.c" \
@@ -220,14 +220,14 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_module_id"
 
 # 25. ADS7028 SPI frame layout
-echo "[25/28] Running test_ads7028..."
+echo "[25/29] Running test_ads7028..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${HOST_TEST_DIR}/test_ads7028.c" \
     -o "${BIN_DIR}/test_ads7028"
 "${BIN_DIR}/test_ads7028"
 
 # 26. Hall Effect V3 frame decode (ADS7028 conversions tagged with their AIN)
-echo "[26/28] Running test_he_spi_frame..."
+echo "[26/29] Running test_he_spi_frame..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${FW_MAIN}/input/he_spi_frame.c" \
     "${HOST_TEST_DIR}/test_he_spi_frame.c" \
@@ -235,18 +235,26 @@ gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
 "${BIN_DIR}/test_he_spi_frame"
 
 # 27. Game keys: the key cards, totals and labels
-echo "[27/28] Running test_game_keys..."
+echo "[27/29] Running test_game_keys..."
 gcc -Wall -Wextra -Werror -I "${FW_MAIN}" \
     "${HOST_TEST_DIR}/test_game_keys.c" \
     -o "${BIN_DIR}/test_game_keys"
 "${BIN_DIR}/test_game_keys"
 
 # 28. The osupad* -> opad* NVS namespace copy at boot
-echo "[28/28] Running test_nvs_ns..."
+echo "[28/29] Running test_nvs_ns..."
 gcc -Wall -Wextra -Werror -I "${HOST_TEST_DIR}/nvs_stubs" -I "${FW_MAIN}" \
     "${FW_MAIN}/config/nvs_ns.c" \
     "${HOST_TEST_DIR}/test_nvs_ns.c" \
     -o "${BIN_DIR}/test_nvs_ns"
 "${BIN_DIR}/test_nvs_ns"
+
+# 29. A key change while the host reads nothing is resent when it is back
+echo "[29/29] Running test_usb_hid..."
+gcc -Wall -Wextra -Werror -I "${HOST_TEST_DIR}/hid_stubs" -I "${FW_MAIN}" -I "${FW_MAIN}/usb" \
+    "${FW_MAIN}/usb/usb_hid.c" \
+    "${HOST_TEST_DIR}/test_usb_hid.c" \
+    -o "${BIN_DIR}/test_usb_hid"
+"${BIN_DIR}/test_usb_hid"
 
 echo "=== All firmware host unit tests passed! ==="

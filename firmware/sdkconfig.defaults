@@ -26,6 +26,8 @@ CONFIG_TINYUSB_CDC_COUNT=1
 CONFIG_TINYUSB_CDC_TX_BUFSIZE=2048
 # TINYUSB_EVENT_SUSPENDED reaches usb_event_handler (checkpoints counters)
 CONFIG_TINYUSB_SUSPEND_CALLBACK=y
+# A key changed while suspended is resent on resume (usb_hid_resync)
+CONFIG_TINYUSB_RESUME_CALLBACK=y
 
 # High stack sizes for tasks
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

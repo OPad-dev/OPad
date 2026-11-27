@@ -58,6 +58,12 @@ bool usb_hid_touch_key_delivered(void);
  */
 bool usb_hid_handle_key_event(uint8_t key_index, bool pressed, int64_t edge_us);
 
+/**
+ * @brief Resend every report's current state. Call from the TinyUSB task when
+ * the host configures the device or resumes it from suspend.
+ */
+void usb_hid_resync(void);
+
 #ifdef __cplusplus
 }
 #endif

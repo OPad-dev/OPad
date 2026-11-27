@@ -77,7 +77,13 @@ static void usb_event_handler(tinyusb_event_t *event, void *arg)
     switch (event->id) {
     case TINYUSB_EVENT_ATTACHED:
         diag_record(DIAG_EVENT_HID_MOUNTED, 1 /* INFO */, 0, 0);
+        usb_hid_resync();
         break;
+#ifdef CONFIG_TINYUSB_RESUME_CALLBACK
+    case TINYUSB_EVENT_RESUMED:
+        usb_hid_resync();
+        break;
+#endif
     case TINYUSB_EVENT_DETACHED:
         diag_record(DIAG_EVENT_HID_UNMOUNTED, 1 /* INFO */, 0, 0);
         break;
