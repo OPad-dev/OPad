@@ -2538,27 +2538,7 @@ impl App {
             )
             .style(theme::card);
 
-            let modal_overlay = container(modal_box)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill)
-                .style(|_| container::Style {
-                    background: Some(
-                        iced::Color {
-                            a: 0.75,
-                            ..theme::BG
-                        }
-                        .into(),
-                    ),
-                    ..Default::default()
-                });
-
-            return if self.maximized {
-                stack![framed, modal_overlay].into()
-            } else {
-                stack![framed, chrome::resize_edges(), modal_overlay].into()
-            };
+            return modal_over(framed.into(), modal_box.into(), self.maximized);
         }
 
         if let Some(modal) = &self.import_modal {
@@ -2813,27 +2793,7 @@ impl App {
                 .width(480)
                 .style(theme::card);
 
-            let modal_overlay = container(modal_box)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill)
-                .style(|_| container::Style {
-                    background: Some(
-                        iced::Color {
-                            a: 0.75,
-                            ..theme::BG
-                        }
-                        .into(),
-                    ),
-                    ..Default::default()
-                });
-
-            return if self.maximized {
-                stack![framed, modal_overlay].into()
-            } else {
-                stack![framed, chrome::resize_edges(), modal_overlay].into()
-            };
+            return modal_over(framed.into(), modal_box.into(), self.maximized);
         }
 
         if let Some(action) = self.recovery_modal {
@@ -2945,27 +2905,7 @@ impl App {
             )
             .style(theme::card);
 
-            let modal_overlay = container(modal_box)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill)
-                .style(|_| container::Style {
-                    background: Some(
-                        iced::Color {
-                            a: 0.75,
-                            ..theme::BG
-                        }
-                        .into(),
-                    ),
-                    ..Default::default()
-                });
-
-            return if self.maximized {
-                stack![framed, modal_overlay].into()
-            } else {
-                stack![framed, chrome::resize_edges(), modal_overlay].into()
-            };
+            return modal_over(framed.into(), modal_box.into(), self.maximized);
         }
 
         if let Some(modal) = &self.firmware_modal {
@@ -3171,27 +3111,7 @@ impl App {
                 }
             };
 
-            let modal_overlay = container(modal_box)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .center_x(Length::Fill)
-                .center_y(Length::Fill)
-                .style(|_| container::Style {
-                    background: Some(
-                        iced::Color {
-                            a: 0.75,
-                            ..theme::BG
-                        }
-                        .into(),
-                    ),
-                    ..Default::default()
-                });
-
-            return if self.maximized {
-                stack![framed, modal_overlay].into()
-            } else {
-                stack![framed, chrome::resize_edges(), modal_overlay].into()
-            };
+            return modal_over(framed.into(), modal_box.into(), self.maximized);
         }
 
         if self.maximized {
@@ -3489,6 +3409,39 @@ fn incompatible_banner(incompat: &opad_model::IncompatibleDevice) -> String {
         incompat.protocol_version,
         opad_protocol::DEVICE_PROTOCOL_VERSION
     )
+}
+
+/// `modal_box` centred over the dimmed window. The dim layer takes every click
+/// and scroll, so nothing behind an open dialog can be pressed: a plain
+/// container let them through to the page, the sidebar and the title bar.
+/// The resize edges go on top, so the window can still be resized.
+fn modal_over<'a>(
+    framed: Element<'a, Message>,
+    modal_box: Element<'a, Message>,
+    maximized: bool,
+) -> Element<'a, Message> {
+    let dimmed = iced::widget::opaque(
+        container(modal_box)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .style(|_| container::Style {
+                background: Some(
+                    iced::Color {
+                        a: 0.75,
+                        ..theme::BG
+                    }
+                    .into(),
+                ),
+                ..Default::default()
+            }),
+    );
+    if maximized {
+        stack![framed, dimmed].into()
+    } else {
+        stack![framed, dimmed, chrome::resize_edges()].into()
+    }
 }
 
 /// What the person asked for, kept with the request so that the daemon's
