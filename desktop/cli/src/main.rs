@@ -12,118 +12,158 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+/// How a command ended, as the process exit code. 0 is success and 2 is
+/// clap's own, for a command line it could not read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Fault {
+    /// Anything that went wrong and is not one of the others
+    Failed = 1,
+    /// The OPad service (opad-daemon) is not running or did not answer
+    ServiceUnavailable = 3,
+    /// The service or the pad said no: mid-map, an invalid value, a pad that
+    /// is waiting for a decision
+    Rejected = 4,
+    /// The command needs a pad and none is connected
+    NoPad = 5,
+}
+
+impl Fault {
+    /// The `kind` of a `--json` error
+    fn name(self) -> &'static str {
+        match self {
+            Fault::Failed => "failed",
+            Fault::ServiceUnavailable => "service_unavailable",
+            Fault::Rejected => "rejected",
+            Fault::NoPad => "no_pad",
+        }
+    }
+}
+
+/// An error that carries its exit code
+#[derive(Debug)]
+struct Failure {
+    fault: Fault,
+    message: String,
+}
+
+impl std::fmt::Display for Failure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for Failure {}
+
+fn rejected(message: impl Into<String>) -> anyhow::Error {
+    Failure {
+        fault: Fault::Rejected,
+        message: message.into(),
+    }
+    .into()
+}
+
+fn fault_of(error: &anyhow::Error) -> Fault {
+    error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<Failure>())
+        .map_or(Fault::Failed, |f| f.fault)
+}
+
+/// Why a command that needs the pad was refused. Without a pad that is the
+/// reason whatever words the service used, so the service is asked instead
+/// of its message being read.
+async fn refusal(stream: &mut IpcStream, fault: Fault, message: String) -> anyhow::Error {
+    let no_pad = matches!(
+        send_request(stream, &IpcRequest::GetStatus).await,
+        Ok(IpcResponse::Status {
+            device_connected: false,
+            ..
+        })
+    );
+    Failure {
+        fault: if no_pad { Fault::NoPad } else { fault },
+        message,
+    }
+    .into()
+}
+
+/// `--json`: stdout carries one JSON result and nothing else
+static JSON: AtomicBool = AtomicBool::new(false);
+
+fn json_mode() -> bool {
+    JSON.load(Ordering::Relaxed)
+}
+
+/// A line for a person. With `--json` it goes to stderr, so stdout stays JSON.
+macro_rules! say {
+    ($($arg:tt)*) => {
+        if json_mode() {
+            eprintln!($($arg)*)
+        } else {
+            println!($($arg)*)
+        }
+    };
+}
+
+/// `say!` without the line end
+macro_rules! say_inline {
+    ($($arg:tt)*) => {
+        if json_mode() {
+            eprint!($($arg)*)
+        } else {
+            print!($($arg)*)
+        }
+    };
+}
+
+/// The result of a command, for `--json`. Says nothing without it.
+fn emit(value: serde_json::Value) {
+    if json_mode() {
+        println!("{}", value);
+    }
+}
+
+/// A reply as JSON without the wrapper that names its kind
+fn unwrapped(reply: &impl serde::Serialize) -> serde_json::Value {
+    match serde_json::to_value(reply) {
+        Ok(serde_json::Value::Object(map)) if map.len() == 1 => {
+            map.into_iter().next().map(|(_, v)| v).unwrap_or_default()
+        }
+        Ok(value) => value,
+        Err(_) => serde_json::Value::Null,
+    }
+}
+
 #[derive(Parser)]
-#[command(name = "opadctl", about = "OPad CLI management tool")]
+#[command(name = "opadctl", about = "OPad from the command line")]
 struct Cli {
+    #[arg(
+        long,
+        global = true,
+        help = "Print the result as JSON on stdout; progress and questions go to stderr"
+    )]
+    json: bool,
     #[command(subcommand)]
-    command: Commands,
+    command: Cmd,
 }
 
 #[derive(Subcommand)]
-enum Commands {
-    /// Show device and daemon status
+enum Cmd {
+    /// Show the pad, its counters and the OPad service at a glance
     Status,
-    /// Trigger manual counter reconciliation & time synchronization
-    Sync,
-    /// Reset lifetime key counters (requires deliberate confirmation)
-    Reset {
-        #[arg(long, help = "Confirm destructive reset of lifetime key counters")]
-        yes: bool,
+    /// Check this computer's setup (USB permissions, osu! memory access) and
+    /// say how to fix what is missing. It changes nothing.
+    #[command(alias = "setup")]
+    Doctor,
+    /// The lifetime press counters
+    Counters {
+        #[command(subcommand)]
+        action: CountersCmd,
     },
-    /// Export device configuration and lifetime counters to a JSON file
-    Export {
-        #[arg(help = "Path to write backup JSON file")]
-        file: PathBuf,
-    },
-    /// Import configuration and counters from a validated JSON backup
-    Import {
-        #[arg(help = "Path to JSON backup file")]
-        file: PathBuf,
-        #[arg(long, help = "Skip preview and confirmation prompt")]
-        yes: bool,
-    },
-    /// Stream live device and daemon diagnostic events
-    Monitor {
-        #[arg(short, long, default_value_t = 50)]
-        limit: usize,
-        #[arg(short, long, help = "Follow log stream in real time")]
-        follow: bool,
-        #[arg(
-            long,
-            value_enum,
-            ignore_case = true,
-            help = "Only this severity and above"
-        )]
-        level: Option<opad_model::LogLevel>,
-        #[arg(long, value_enum, ignore_case = true, help = "Only this source")]
-        source: Option<opad_model::LogSource>,
-    },
-    /// Flash new firmware binary onto the ESP32-S3 using espflash
-    Flash {
-        #[arg(help = "Path to the app image (.bin), or an ESP-IDF build directory with --full")]
-        firmware: PathBuf,
-        #[arg(
-            long,
-            help = "The pad's app port, or its ROM bootloader port when several are connected (default: auto-detect)"
-        )]
-        port: Option<String>,
-        #[arg(
-            long,
-            help = "Recovery flash: also write the bootloader, partition table and OTA data"
-        )]
-        full: bool,
-    },
-    /// Recover a pad that no longer shows up as OPad: replug it, and its next
-    /// boot is caught over USB and flashed with the full set. No buttons.
-    Recover {
-        #[arg(help = "An ESP-IDF build directory or an unpacked release (as for flash --full)")]
-        firmware: PathBuf,
-        #[arg(
-            long,
-            default_value_t = 300,
-            help = "How long to wait for the replug, in seconds"
-        )]
-        timeout: u64,
-    },
-    /// Reboot device into ROM download bootloader mode hands-free over USB
-    Bootloader {
-        #[arg(long, help = "Explicit serial port (default: auto-detect)")]
-        port: Option<String>,
-    },
-    /// Update the pad's firmware from the signed release manifest (§U-3b)
-    FirmwareUpdate {
-        #[arg(
-            long,
-            help = "Consent without the interactive prompt. The firmware is still only flashed \
-                    because you said so."
-        )]
-        yes: bool,
-    },
-    /// Show, check for or install an update of the OPad app from the update
-    /// feed, as the app's Updates page does
-    Update {
-        #[arg(
-            long,
-            value_name = "CHANNEL",
-            help = "Follow this channel from now on: stable, or beta for release candidates"
-        )]
-        channel: Option<String>,
-        #[arg(long, help = "Check the feed now and wait for the answer")]
-        check: bool,
-        #[arg(
-            long,
-            help = "Download, verify and install the available update. The installer \
-                    restarts OPad, so this returns once it has started."
-        )]
-        install: bool,
-    },
-    /// Show key-press-to-HID latency measured on the device
-    Latency {
-        #[arg(
-            long,
-            help = "Clear the collected samples (e.g. right before playing a map)"
-        )]
-        reset: bool,
+    /// Save the pad's settings and counters to a file, or put them back
+    Backup {
+        #[command(subcommand)]
+        action: BackupCmd,
     },
     /// Show your tap rate in KPM (keys per minute, not the map's BPM):
     /// the current or last attempt and the history
@@ -136,41 +176,406 @@ enum Commands {
         )]
         period: Option<u32>,
     },
-    /// Test the carrier and input module PCBs: module ID, cable direction,
-    /// key lines, connector shorts, and a Hall Effect V3 module's ADC and
-    /// sensors. Release both keys while it runs.
-    BoardTest {
-        #[arg(
-            long,
-            help = "If the keys are on the wrong pins for the carrier, set Key 1 = GPIO10 and \
-                    Key 2 = GPIO7, then test again"
-        )]
-        fix_pins: bool,
-        #[arg(
-            long,
-            help = "Hall Effect V3: then watch the sensors live while you hold a magnet over \
-                    each key in turn (up to 60 s, Ctrl-C to stop)"
-        )]
-        magnet: bool,
+    /// Show key-press-to-HID latency measured on the device
+    Latency {
+        #[command(subcommand)]
+        action: Option<LatencyCmd>,
+        #[arg(long, hide = true)]
+        reset: bool,
     },
-    /// Play a result animation on the pad, as osu!'s results screen would
-    Animation {
-        #[arg(help = "pop, drop or burst (or an animation id); none stops the one playing")]
-        name: String,
-        #[arg(default_value = "S", help = "The grade it shows: SS, S, A, B, C or D")]
-        grade: String,
+    /// Show the log of the pad, the OPad service and tosu
+    #[command(alias = "monitor")]
+    Logs(LogsArgs),
+    /// Updates of OPad, tosu and the pad's firmware. With nothing after it,
+    /// shows their status.
+    Update {
+        #[command(subcommand)]
+        action: Option<UpdateCmd>,
+        #[arg(long, hide = true, value_name = "CHANNEL")]
+        channel: Option<String>,
+        #[arg(long, hide = true)]
+        check: bool,
+        #[arg(long, hide = true)]
+        install: bool,
     },
-    /// Restart the pad, e.g. after swapping its input module. It saves its
-    /// counters and restarts once no map is being played
+    /// The pad itself: restart it, test its boards, flash or recover it
+    Pad {
+        #[command(subcommand)]
+        action: PadCmd,
+    },
+
+    // The names these had before the commands were grouped. They keep working
+    // and are left out of --help.
+    /// Same as `counters sync`
+    #[command(hide = true)]
+    Sync,
+    /// Same as `counters reset`
+    #[command(hide = true)]
+    Reset {
+        #[arg(long, help = "Confirm destructive reset of lifetime key counters")]
+        yes: bool,
+    },
+    /// Same as `backup export`
+    #[command(hide = true)]
+    Export(ExportArgs),
+    /// Same as `backup import`
+    #[command(hide = true)]
+    Import(ImportArgs),
+    /// Same as `update install firmware`
+    #[command(hide = true)]
+    FirmwareUpdate {
+        #[arg(long, help = "Consent without the interactive prompt")]
+        yes: bool,
+    },
+    /// Same as `pad restart`
+    #[command(hide = true)]
     Restart,
-    /// Perform initial system setup (udev permissions & directories)
-    Setup,
+    /// Same as `pad test`
+    #[command(hide = true)]
+    BoardTest(TestArgs),
+    /// Same as `pad animation`
+    #[command(hide = true)]
+    Animation(AnimationArgs),
+    /// Same as `pad flash`
+    #[command(hide = true)]
+    Flash(FlashArgs),
+    /// Same as `pad recover`
+    #[command(hide = true)]
+    Recover(RecoverArgs),
+    /// Same as `pad bootloader`
+    #[command(hide = true)]
+    Bootloader(BootloaderArgs),
     /// Hidden command: trigger freaky 67 easter egg on the pad
     #[command(hide = true)]
     Freaky67,
     /// Hidden command: trigger freaky 67 easter egg on the pad
     #[command(hide = true)]
     EasterEgg,
+}
+
+#[derive(Subcommand)]
+enum CountersCmd {
+    /// Bring the pad's counters, this PC's counters and the pad's clock into line now
+    Sync,
+    /// Set the lifetime key counters back to zero, for good
+    Reset {
+        #[arg(long, help = "Confirm destructive reset of lifetime key counters")]
+        yes: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum BackupCmd {
+    /// Export device configuration and lifetime counters to a JSON file
+    Export(ExportArgs),
+    /// Import configuration and counters from a validated JSON backup
+    Import(ImportArgs),
+}
+
+#[derive(Subcommand)]
+enum LatencyCmd {
+    /// Clear the collected samples (e.g. right before playing a map)
+    Reset,
+}
+
+#[derive(Subcommand)]
+enum UpdateCmd {
+    /// Show what is installed and what is available, as the app's Updates
+    /// tab does
+    Status,
+    /// Check the update feed now, wait for the answer and show it
+    Check,
+    /// Install the available update of one part
+    Install {
+        #[arg(value_enum, help = "What to update")]
+        part: Part,
+        #[arg(
+            long,
+            help = "Firmware only: consent without the interactive prompt. The firmware is \
+                    still only flashed because you said so."
+        )]
+        yes: bool,
+    },
+    /// Show the update channel, or follow another one from now on
+    Channel {
+        #[arg(help = "stable, or beta for release candidates")]
+        channel: Option<String>,
+    },
+    /// Turn one part's automatic updates on or off
+    Auto {
+        #[arg(value_enum, help = "Whose automatic updates")]
+        part: Part,
+        #[arg(value_enum)]
+        state: Switch,
+    },
+}
+
+/// The three things that update on their own
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum Part {
+    /// OPad itself: the app, the service and opadctl
+    App,
+    /// tosu, the program that reads osu!
+    Tosu,
+    /// The firmware on the pad
+    Firmware,
+}
+
+impl Part {
+    fn component(self) -> opad_ipc::UpdateComponent {
+        match self {
+            Part::App => opad_ipc::UpdateComponent::App,
+            Part::Tosu => opad_ipc::UpdateComponent::Tosu,
+            Part::Firmware => opad_ipc::UpdateComponent::Firmware,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Part::App => "OPad",
+            Part::Tosu => "tosu",
+            Part::Firmware => "the pad's firmware",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum Switch {
+    On,
+    Off,
+}
+
+#[derive(Subcommand)]
+enum PadCmd {
+    /// Restart the pad, e.g. after swapping its input module. It saves its
+    /// counters and restarts once no map is being played
+    Restart,
+    /// Test the carrier and input module PCBs: module ID, cable direction,
+    /// key lines, connector shorts, and a Hall Effect V3 module's ADC and
+    /// sensors. Release both keys while it runs.
+    Test(TestArgs),
+    /// Play a result animation on the pad, as osu!'s results screen would
+    Animation(AnimationArgs),
+    /// Flash new firmware binary onto the ESP32-S3 using espflash
+    Flash(FlashArgs),
+    /// Recover a pad that no longer shows up as OPad: replug it, and its next
+    /// boot is caught over USB and flashed with the full set. No buttons.
+    Recover(RecoverArgs),
+    /// Reboot device into ROM download bootloader mode hands-free over USB
+    Bootloader(BootloaderArgs),
+}
+
+#[derive(clap::Args, Debug, Clone, PartialEq, Eq)]
+struct ExportArgs {
+    #[arg(help = "Path to write backup JSON file")]
+    file: PathBuf,
+}
+
+#[derive(clap::Args, Debug, Clone, PartialEq, Eq)]
+struct ImportArgs {
+    #[arg(help = "Path to JSON backup file")]
+    file: PathBuf,
+    #[arg(long, help = "Skip preview and confirmation prompt")]
+    yes: bool,
+}
+
+#[derive(clap::Args, Debug, Clone, PartialEq, Eq)]
+struct LogsArgs {
+    #[arg(short, long, default_value_t = 50)]
+    limit: usize,
+    #[arg(short, long, help = "Follow log stream in real time")]
+    follow: bool,
+    #[arg(
+        long,
+        value_enum,
+        ignore_case = true,
+        help = "Only this severity and above"
+    )]
+    level: Option<opad_model::LogLevel>,
+    #[arg(long, value_enum, ignore_case = true, help = "Only this source")]
+    source: Option<opad_model::LogSource>,
+}
+
+#[derive(clap::Args, Debug, Clone, PartialEq, Eq)]
+struct TestArgs {
+    #[arg(
+        long,
+        help = "If the keys are on the wrong pins for the carrier, set Key 1 = GPIO10 and \
+                Key 2 = GPIO7, then test again"
+    )]
+    fix_pins: bool,
+    #[arg(
+        long,
+        help = "Hall Effect V3: then watch the sensors live while you hold a magnet over \
+                each key in turn (up to 60 s, Ctrl-C to stop)"
+    )]
+    magnet: bool,
+}
+
+#[derive(clap::Args, Debug, Clone, PartialEq, Eq)]
+struct AnimationArgs {
+    #[arg(help = "pop, drop or burst (or an animation id); none stops the one playing")]
+    name: String,
+    #[arg(default_value = "S", help = "The grade it shows: SS, S, A, B, C or D")]
+    grade: String,
+}
+
+#[derive(clap::Args, Debug, Clone, PartialEq, Eq)]
+struct FlashArgs {
+    #[arg(help = "Path to the app image (.bin), or an ESP-IDF build directory with --full")]
+    firmware: PathBuf,
+    #[arg(
+        long,
+        help = "The pad's app port, or its ROM bootloader port when several are connected (default: auto-detect)"
+    )]
+    port: Option<String>,
+    #[arg(
+        long,
+        help = "Recovery flash: also write the bootloader, partition table and OTA data"
+    )]
+    full: bool,
+}
+
+#[derive(clap::Args, Debug, Clone, PartialEq, Eq)]
+struct RecoverArgs {
+    #[arg(help = "An ESP-IDF build directory or an unpacked release (as for flash --full)")]
+    firmware: PathBuf,
+    #[arg(
+        long,
+        default_value_t = 300,
+        help = "How long to wait for the replug, in seconds"
+    )]
+    timeout: u64,
+}
+
+#[derive(clap::Args, Debug, Clone, PartialEq, Eq)]
+struct BootloaderArgs {
+    #[arg(long, help = "Explicit serial port (default: auto-detect)")]
+    port: Option<String>,
+}
+
+/// What a command line asks for, whichever of its names was typed
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Action {
+    Status,
+    Doctor,
+    Sync,
+    Reset {
+        yes: bool,
+    },
+    Export(ExportArgs),
+    Import(ImportArgs),
+    Stats {
+        period: Option<u32>,
+    },
+    Latency {
+        reset: bool,
+    },
+    Logs(LogsArgs),
+    UpdateStatus,
+    UpdateCheck,
+    UpdateInstall {
+        part: Part,
+        yes: bool,
+    },
+    UpdateChannel {
+        channel: Option<String>,
+    },
+    UpdateAuto {
+        part: Part,
+        on: bool,
+    },
+    /// `update --channel --check --install`, in that order, then the status
+    UpdateFlags {
+        channel: Option<String>,
+        check: bool,
+        install: bool,
+    },
+    Restart,
+    BoardTest(TestArgs),
+    Animation(AnimationArgs),
+    Flash(FlashArgs),
+    Recover(RecoverArgs),
+    Bootloader(BootloaderArgs),
+    EasterEgg,
+}
+
+impl From<Cmd> for Action {
+    fn from(cmd: Cmd) -> Self {
+        match cmd {
+            Cmd::Status => Action::Status,
+            Cmd::Doctor => Action::Doctor,
+            Cmd::Counters {
+                action: CountersCmd::Sync,
+            }
+            | Cmd::Sync => Action::Sync,
+            Cmd::Counters {
+                action: CountersCmd::Reset { yes },
+            }
+            | Cmd::Reset { yes } => Action::Reset { yes },
+            Cmd::Backup {
+                action: BackupCmd::Export(args),
+            }
+            | Cmd::Export(args) => Action::Export(args),
+            Cmd::Backup {
+                action: BackupCmd::Import(args),
+            }
+            | Cmd::Import(args) => Action::Import(args),
+            Cmd::Stats { period } => Action::Stats { period },
+            Cmd::Latency { action, reset } => Action::Latency {
+                reset: reset || action.is_some(),
+            },
+            Cmd::Logs(args) => Action::Logs(args),
+            Cmd::Update {
+                action: Some(action),
+                ..
+            } => match action {
+                UpdateCmd::Status => Action::UpdateStatus,
+                UpdateCmd::Check => Action::UpdateCheck,
+                UpdateCmd::Install { part, yes } => Action::UpdateInstall { part, yes },
+                UpdateCmd::Channel { channel } => Action::UpdateChannel { channel },
+                UpdateCmd::Auto { part, state } => Action::UpdateAuto {
+                    part,
+                    on: state == Switch::On,
+                },
+            },
+            Cmd::Update {
+                action: None,
+                channel: None,
+                check: false,
+                install: false,
+            } => Action::UpdateStatus,
+            Cmd::Update {
+                action: None,
+                channel,
+                check,
+                install,
+            } => Action::UpdateFlags {
+                channel,
+                check,
+                install,
+            },
+            Cmd::FirmwareUpdate { yes } => Action::UpdateInstall {
+                part: Part::Firmware,
+                yes,
+            },
+            Cmd::Pad { action } => match action {
+                PadCmd::Restart => Action::Restart,
+                PadCmd::Test(args) => Action::BoardTest(args),
+                PadCmd::Animation(args) => Action::Animation(args),
+                PadCmd::Flash(args) => Action::Flash(args),
+                PadCmd::Recover(args) => Action::Recover(args),
+                PadCmd::Bootloader(args) => Action::Bootloader(args),
+            },
+            Cmd::Restart => Action::Restart,
+            Cmd::BoardTest(args) => Action::BoardTest(args),
+            Cmd::Animation(args) => Action::Animation(args),
+            Cmd::Flash(args) => Action::Flash(args),
+            Cmd::Recover(args) => Action::Recover(args),
+            Cmd::Bootloader(args) => Action::Bootloader(args),
+            Cmd::Freaky67 | Cmd::EasterEgg => Action::EasterEgg,
+        }
+    }
 }
 
 async fn run_board_test(stream: &mut IpcStream) -> Result<board_test::BoardTestReport> {
@@ -180,7 +585,7 @@ async fn run_board_test(stream: &mut IpcStream) -> Result<board_test::BoardTestR
         .context("The daemon did not answer; it may predate the board test")?;
     match resp {
         IpcResponse::BoardTest(report) => Ok(report),
-        IpcResponse::Error(e) => bail!("{}", e),
+        IpcResponse::Error(e) => Err(refusal(stream, Fault::Failed, e).await),
         other => bail!("Unexpected response from daemon: {:?}", other),
     }
 }
@@ -256,7 +661,7 @@ fn format_board_test(
 async fn magnet_test(stream: &mut IpcStream) -> Result<board_test::MagnetTest> {
     use std::io::Write;
     let mut test = board_test::MagnetTest::new();
-    println!(
+    say!(
         "\nMagnet test: hold a magnet over key 1, then key 2, then key 3 (a key's own magnet \
          or any small magnet). Each sensor must move {:.0} codes on its own.",
         board_test::MAGNET_MOVE_CODES
@@ -287,22 +692,44 @@ async fn magnet_test(stream: &mut IpcStream) -> Result<board_test::MagnetTest> {
                 format!("{mark} K{} {:.3} V ({:+5.0})", i + 1, c.volts(), d)
             })
             .collect();
-        print!("\r{}   ", line.join("   "));
+        say_inline!("\r{}   ", line.join("   "));
         std::io::stdout().flush().ok();
         if test.done() {
             break;
         }
     }
-    println!("\n");
+    say!("\n");
     Ok(test)
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> std::process::ExitCode {
     let cli = Cli::parse();
+    JSON.store(cli.json, Ordering::Relaxed);
+    match run(cli.command.into()).await {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            let fault = fault_of(&error);
+            if json_mode() {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "ok": false,
+                        "kind": fault.name(),
+                        "error": format!("{error:#}"),
+                    })
+                );
+            } else {
+                eprintln!("Error: {error:#}");
+            }
+            std::process::ExitCode::from(fault as u8)
+        }
+    }
+}
 
-    if let Commands::Setup = cli.command {
-        return run_setup();
+async fn run(action: Action) -> Result<()> {
+    if action == Action::Doctor {
+        return run_doctor();
     }
 
     // Flashing has to work on a machine where the daemon will not start: that is
@@ -310,28 +737,38 @@ async fn main() -> Result<()> {
     // scripts/flash_board.sh used to handle by stopping the systemd unit. Every
     // other command is meaningless without the daemon and still fails loudly.
     let flashing = matches!(
-        cli.command,
-        Commands::Flash { .. } | Commands::Bootloader { .. } | Commands::Recover { .. }
+        action,
+        Action::Flash(_) | Action::Bootloader(_) | Action::Recover(_)
     );
     let mut stream = match opad_ipc::connect_and_handshake().await {
         Ok((s, _)) => Some(s),
         Err(e) => {
             if !flashing {
-                return Err(e).context("Failed to connect to opad-daemon. Is the daemon running?");
+                return Err(Failure {
+                    fault: Fault::ServiceUnavailable,
+                    message: format!(
+                        "Failed to connect to opad-daemon. Is the daemon running? ({e:#})"
+                    ),
+                }
+                .into());
             }
             // Not necessarily "not running": a version-mismatched handshake
             // fails here too, and that daemon still holds the port. Say what
             // actually happened so a Windows sharing-violation later reads as
             // a consequence rather than a mystery.
-            println!("Could not reach opad-daemon ({e:#}); flashing without it.");
-            println!("If a daemon is in fact running, stop it before flashing on Windows.");
+            say!("Could not reach opad-daemon ({e:#}); flashing without it.");
+            say!("If a daemon is in fact running, stop it before flashing on Windows.");
             None
         }
     };
 
-    match cli.command {
-        Commands::Status => {
+    match action {
+        Action::Status => {
             let resp = send_request(daemon(&mut stream)?, &IpcRequest::GetStatus).await?;
+            if json_mode() {
+                emit(unwrapped(&resp));
+                return Ok(());
+            }
             if let IpcResponse::Status {
                 mode,
                 device_connected,
@@ -353,9 +790,9 @@ async fn main() -> Result<()> {
                 ..
             } = resp
             {
-                println!("=== OPad Status ===");
-                println!("Daemon Mode:      {:?}", mode);
-                println!(
+                say!("=== OPad Status ===");
+                say!("Daemon Mode:      {:?}", mode);
+                say!(
                     "ESP32 Device:     {}",
                     if device_connected {
                         "Connected"
@@ -363,15 +800,15 @@ async fn main() -> Result<()> {
                         "Disconnected"
                     }
                 );
-                println!("Counters Source:  {:?}", counters_source);
+                say!("Counters Source:  {:?}", counters_source);
                 if let Some(info) = &device_info {
-                    println!("Device ID:        {}", info.device_id);
-                    println!("Board Profile:    {}", info.board_profile);
-                    println!("Firmware Version: {}", info.firmware_version);
+                    say!("Device ID:        {}", info.device_id);
+                    say!("Board Profile:    {}", info.board_profile);
+                    say!("Firmware Version: {}", info.firmware_version);
                     // §U-3a. Old firmware does not report it at all, and that
                     // is worth seeing: it means the pad is still on the
                     // single-app table and needs a serial reflash.
-                    println!(
+                    say!(
                         "Running Slot:     {}",
                         info.running_partition
                             .as_deref()
@@ -380,44 +817,44 @@ async fn main() -> Result<()> {
                     // HE lines only for a pad running an HE module; an MX
                     // pad's firmware is merely able to (he_input)
                     if info.he_calibration {
-                        println!("Input Module:     Hall Effect");
+                        say!("Input Module:     Hall Effect");
                     }
                 }
                 let he_active = device_info.as_ref().is_some_and(|i| i.he_calibration);
                 if let Some(cal) = he_calibration.as_ref().filter(|_| he_active) {
                     let yes = |b: bool| if b { "yes" } else { "no" };
                     if key3.is_some() {
-                        println!(
+                        say!(
                             "HE Calibrated:    K1: {}, K2: {}, K3: {}",
                             yes(cal.key1_calibrated),
                             yes(cal.key2_calibrated),
                             yes(cal.key3_calibrated)
                         );
                     } else {
-                        println!(
+                        say!(
                             "HE Calibrated:    K1: {}, K2: {}",
                             yes(cal.key1_calibrated),
                             yes(cal.key2_calibrated)
                         );
                     }
                 }
-                println!(
+                say!(
                     "Key 1 (K1):       {} (Total: {} presses)",
                     config.key1_char(),
                     counters.lifetime_key1
                 );
-                println!(
+                say!(
                     "Key 2 (K2):       {} (Total: {} presses)",
                     config.key2_char(),
                     counters.lifetime_key2
                 );
                 if let Some(k3) = key3 {
-                    println!(
+                    say!(
                         "Key 3 (K3):       {} (Total: {} presses)",
                         config.key3_char(),
                         k3.lifetime
                     );
-                    println!(
+                    say!(
                         "Game Keys:        {}",
                         opad_model::game_keys_names(config.game_keys)
                     );
@@ -433,108 +870,118 @@ async fn main() -> Result<()> {
                 .filter(|(k, _)| config.is_game_key(*k as u8 + 1))
                 .map(|(_, v)| v)
                 .sum();
-                println!("Total Presses:    {}", total);
-                println!("Generation:       {}", counters.counter_generation);
-                println!(
+                say!("Total Presses:    {}", total);
+                say!("Generation:       {}", counters.counter_generation);
+                say!(
                     "Last Sync:        {}",
                     last_sync_time.as_deref().unwrap_or("Never")
                 );
                 // Written automatically 20 s after a session settles into
                 // IDLE; see docs/recovery.md §5.
-                println!(
+                say!(
                     "Last Backup:      {}",
                     last_backup.as_deref().unwrap_or("Never")
                 );
                 if let Some(err) = last_sync_error {
-                    println!("Last Sync Error:  ⚠ {}", err);
+                    say!("Last Sync Error:  ⚠ {}", err);
                 }
                 if let Some(err) = storage_error {
-                    println!("Database Error:   ⚠ {}", err);
+                    say!("Database Error:   ⚠ {}", err);
                 }
                 // §W3-3. Without this the CLI shows a connected pad that
                 // simply never syncs, with nothing saying why — the prompt
                 // used to exist only in the GUI, so a headless install had no
                 // way to even see that a pad belonged to someone else.
                 if let Some(t) = &pending_takeover {
-                    println!(
+                    say!(
                         "Ownership:        ⚠ This pad belongs to another OPad install. \
                          Counter sync is paused until you decide."
                     );
-                    println!(
+                    say!(
                         "                    pad: {} / {}   this PC: {} / {}",
-                        t.device_key1, t.device_key2, t.pc_key1, t.pc_key2
+                        t.device_key1,
+                        t.device_key2,
+                        t.pc_key1,
+                        t.pc_key2
                     );
-                    println!(
+                    say!(
                         "                    Take it over or leave it alone in the app; \
                          see docs/recovery.md §7 to unbind it entirely."
                     );
                 }
                 if let Some(old_id) = pending_replacement {
-                    println!("Replacement:      ⚠ New pad detected (previous: {}). Run GUI to restore or adopt.", old_id);
+                    say!("Replacement:      ⚠ New pad detected (previous: {}). Run GUI to restore or adopt.", old_id);
                 }
                 if let Some(incompat) = incompatible {
                     let ours = opad_protocol::DEVICE_PROTOCOL_VERSION;
                     let fix = if incompat.protocol_version > ours {
-                        "Update OPad (`opadctl update --install`)."
+                        "Update OPad (`opadctl update install app`)."
                     } else {
-                        "Update the pad's firmware (`opadctl firmware-update`)."
+                        "Update the pad's firmware (`opadctl update install firmware`)."
                     };
-                    println!(
+                    say!(
                         "Incompatible:     ⚠ The pad (firmware {}) speaks protocol {}, this app {}. It works as a keyboard and nothing else until then. {}",
                         incompat.firmware_version, incompat.protocol_version, ours, fix
                     );
                 }
-                println!(
+                say!(
                     "tosu (osu!):      {}",
                     if tosu_connected { "Active" } else { "Offline" }
                 );
                 if let Some(l) = latency {
-                    println!(
+                    say!(
                         "Key Latency:      p50 {}µs, p99.9 {}µs, max {}µs ({} samples)",
-                        l.p50_us, l.p999_us, l.max_us, l.samples
+                        l.p50_us,
+                        l.p999_us,
+                        l.max_us,
+                        l.samples
                     );
                 }
-                println!(
+                say!(
                     "Key Pins:         K1 GPIO{}, K2 GPIO{}",
-                    config.key1_gpio, config.key2_gpio
+                    config.key1_gpio,
+                    config.key2_gpio
                 );
-                println!("Debounce Lockout: {} µs", config.debounce_us);
+                say!("Debounce Lockout: {} µs", config.debounce_us);
                 use opad_model::swipe::SwipeDir;
-                println!(
+                say!(
                     "Swipes:           up {}, down {}, left {}, right {}",
                     config.swipe(SwipeDir::Up).describe(),
                     config.swipe(SwipeDir::Down).describe(),
                     config.swipe(SwipeDir::Left).describe(),
                     config.swipe(SwipeDir::Right).describe()
                 );
-                println!("Brightness:       {}%", config.brightness);
-                println!("Sleep Timeout:    {}s", config.display_sleep_seconds);
+                say!("Brightness:       {}%", config.brightness);
+                say!("Sleep Timeout:    {}s", config.display_sleep_seconds);
             }
         }
 
-        Commands::Sync => {
-            println!("Requesting safe counter & clock synchronization...");
-            let resp = send_request(daemon(&mut stream)?, &IpcRequest::ForceSync).await?;
-            match resp {
+        Action::Sync => {
+            say!("Requesting safe counter & clock synchronization...");
+            let conn = daemon(&mut stream)?;
+            match send_request(conn, &IpcRequest::ForceSync).await? {
                 IpcResponse::SyncCompleted {
                     success: true,
                     counters,
                 } => {
-                    println!("✓ Sync succeeded!");
-                    println!("  K1: {}", counters.lifetime_key1);
-                    println!("  K2: {}", counters.lifetime_key2);
+                    say!("✓ Sync succeeded!");
+                    say!("  K1: {}", counters.lifetime_key1);
+                    say!("  K2: {}", counters.lifetime_key2);
+                    emit(serde_json::json!({ "ok": true, "counters": counters }));
                 }
                 IpcResponse::OperationRejected { reason } => {
-                    println!("✗ Operation rejected: {}", reason);
+                    return Err(refusal(conn, Fault::Rejected, reason).await);
                 }
-                _ => println!("✗ Sync failed: {:?}", resp),
+                IpcResponse::Error(e) => return Err(refusal(conn, Fault::Failed, e).await),
+                other => bail!("Sync failed: {:?}", other),
             }
         }
 
-        Commands::Reset { yes } => {
+        Action::Reset { yes } => {
             if !yes {
                 bail!(
-                    "Resetting counters is permanent! Pass --yes to confirm: opadctl reset --yes"
+                    "Resetting counters is permanent! Pass --yes to confirm: \
+                     opadctl counters reset --yes"
                 );
             }
             let resp = send_request(
@@ -544,31 +991,32 @@ async fn main() -> Result<()> {
             .await?;
             match resp {
                 IpcResponse::CountersReset { counters } => {
-                    println!(
+                    say!(
                         "✓ Counters reset successfully (new generation: {})",
                         counters.counter_generation
                     );
+                    emit(serde_json::json!({ "ok": true, "counters": counters }));
                 }
-                IpcResponse::OperationRejected { reason } => {
-                    println!("✗ Rejected: {}", reason);
-                }
-                _ => println!("✗ Failed: {:?}", resp),
+                IpcResponse::OperationRejected { reason } => return Err(rejected(reason)),
+                IpcResponse::Error(e) => bail!("{}", e),
+                other => bail!("Unexpected response from daemon: {:?}", other),
             }
         }
 
-        Commands::Export { file } => {
+        Action::Export(ExportArgs { file }) => {
             let resp = send_request(daemon(&mut stream)?, &IpcRequest::ExportBackup).await?;
             if let IpcResponse::BackupExported(backup) = resp {
                 let json_data = serde_json::to_string_pretty(&backup)?;
                 std::fs::write(&file, json_data)
                     .with_context(|| format!("Failed to write to file {}", file.display()))?;
-                println!("✓ Backup exported to {}", file.display());
+                say!("✓ Backup exported to {}", file.display());
+                emit(serde_json::json!({ "ok": true, "file": file }));
             } else {
                 bail!("Unexpected response from daemon: {:?}", resp);
             }
         }
 
-        Commands::Import { file, yes } => {
+        Action::Import(ImportArgs { file, yes }) => {
             let text = std::fs::read_to_string(&file)
                 .with_context(|| format!("Failed to read file {}", file.display()))?;
             let backup: JsonBackup =
@@ -592,60 +1040,62 @@ async fn main() -> Result<()> {
                     is_counter_rollback,
                     warnings,
                 } => {
-                    println!("=== Import Preview ===");
+                    say!("=== Import Preview ===");
                     if let Some(cur) = current {
-                        println!("Current:  Device ID: {}", cur.device_id);
-                        println!(
+                        say!("Current:  Device ID: {}", cur.device_id);
+                        say!(
                             "          Key 1: {} ({} presses)",
                             cur.config.key1_char(),
                             cur.lifetime_key1
                         );
-                        println!(
+                        say!(
                             "          Key 2: {} ({} presses)",
                             cur.config.key2_char(),
                             cur.lifetime_key2
                         );
                         if let Some(k3) = cur.lifetime_key3 {
-                            println!(
+                            say!(
                                 "          Key 3: {} ({} presses)",
                                 cur.config.key3_char(),
                                 k3
                             );
-                            println!(
+                            say!(
                                 "          Game keys: {}",
                                 opad_model::game_keys_names(cur.config.game_keys)
                             );
                         }
                     }
-                    println!("Incoming: Device ID: {}", incoming.device.device_id);
-                    println!(
+                    say!("Incoming: Device ID: {}", incoming.device.device_id);
+                    say!(
                         "          Key 1: {} ({} presses)",
-                        incoming.config.key1, incoming.stats.lifetime_key1
+                        incoming.config.key1,
+                        incoming.stats.lifetime_key1
                     );
-                    println!(
+                    say!(
                         "          Key 2: {} ({} presses)",
-                        incoming.config.key2, incoming.stats.lifetime_key2
+                        incoming.config.key2,
+                        incoming.stats.lifetime_key2
                     );
                     if let Some(k3) = &incoming.config.key3 {
                         match incoming.stats.lifetime_key3 {
-                            Some(n) => println!("          Key 3: {} ({} presses)", k3, n),
-                            None => println!("          Key 3: {} (count kept)", k3),
+                            Some(n) => say!("          Key 3: {} ({} presses)", k3, n),
+                            None => say!("          Key 3: {} (count kept)", k3),
                         }
                     }
                     if let Some(game) = incoming.config.game_keys {
-                        println!("          Game keys: {}", opad_model::game_keys_names(game));
+                        say!("          Game keys: {}", opad_model::game_keys_names(game));
                     }
 
                     if !device_id_matches {
-                        println!("\n  ⚠ Note: Backup device ID does not match current pad.");
+                        say!("\n  ⚠ Note: Backup device ID does not match current pad.");
                     }
                     if is_counter_rollback {
-                        println!("  ⚠ Warning: Counter rollback detected.");
+                        say!("  ⚠ Warning: Counter rollback detected.");
                     }
                     if !warnings.is_empty() {
-                        println!("\nWarnings:");
+                        say!("\nWarnings:");
                         for w in &warnings {
-                            println!("  ⚠ {}", w);
+                            say!("  ⚠ {}", w);
                         }
                     }
 
@@ -655,7 +1105,8 @@ async fn main() -> Result<()> {
                             "Confirmation required to import backup. Run with --yes in non-interactive mode.",
                         )?
                     {
-                        println!("Import cancelled.");
+                        say!("Import cancelled.");
+                        emit(serde_json::json!({ "ok": true, "imported": false }));
                         return Ok(());
                     }
 
@@ -673,38 +1124,35 @@ async fn main() -> Result<()> {
                             counters,
                             ..
                         } => {
-                            println!(
+                            say!(
                                 "✓ Backup imported and synchronized successfully (generation: {})!",
                                 counters.counter_generation
                             );
+                            emit(serde_json::json!({ "ok": true, "counters": counters }));
                         }
                         IpcResponse::OperationRejected { reason } => {
-                            println!("✗ Rejected: {}", reason);
+                            return Err(rejected(reason));
                         }
-                        IpcResponse::Error(e) => {
-                            println!("✗ Error: {}", e);
-                        }
-                        _ => println!("✗ Failed: {:?}", resp),
+                        IpcResponse::Error(e) => bail!("{}", e),
+                        other => bail!("Unexpected response from daemon: {:?}", other),
                     }
                 }
                 IpcResponse::OperationRejected { reason } => {
-                    println!("✗ Preview rejected: {}", reason);
+                    return Err(rejected(format!("Preview rejected: {reason}")));
                 }
-                IpcResponse::Error(e) => {
-                    println!("✗ Preview error: {}", e);
-                }
+                IpcResponse::Error(e) => bail!("Preview error: {}", e),
                 other => {
                     bail!("Unexpected preview response: {:?}", other);
                 }
             }
         }
 
-        Commands::Monitor {
+        Action::Logs(LogsArgs {
             limit,
             follow,
             level,
             source,
-        } => {
+        }) => {
             let mut since_seq = None;
             let mut first_batch = true;
 
@@ -730,11 +1178,16 @@ async fn main() -> Result<()> {
                         .filter(|e| level.is_none_or(|l| e.level >= l))
                         .filter(|e| source.is_none_or(|s| e.source == s))
                         .collect();
-                    if first_batch && !follow {
+                    if first_batch && !follow && !json_mode() {
                         println!("=== OPad Monitor (Last {} entries) ===", shown.len());
                     }
                     for entry in shown {
-                        println!("{}", entry.format_line());
+                        if json_mode() {
+                            // One entry a line, so a follow can be read as it comes
+                            println!("{}", serde_json::to_string(entry)?);
+                        } else {
+                            println!("{}", entry.format_line());
+                        }
                     }
                 }
                 first_batch = false;
@@ -746,11 +1199,11 @@ async fn main() -> Result<()> {
             }
         }
 
-        Commands::Flash {
+        Action::Flash(FlashArgs {
             firmware,
             port,
             full,
-        } => {
+        }) => {
             let mut images = resolve_flash_set(&firmware, full)?;
             // The app image is always the last of the set, and it is the one
             // whose header has to match this board
@@ -768,24 +1221,23 @@ async fn main() -> Result<()> {
                 images = plan.images;
                 target_slot = plan.target_slot;
                 match target_slot {
-                    Some(slot) => println!(
+                    Some(slot) => say!(
                         "Writing slot {slot}; {} stays as the fallback if the new firmware never comes up on USB",
                         running.as_deref().unwrap_or("?")
                     ),
-                    None => println!(
+                    None => say!(
                         "Running slot unknown: writing ota_0 and making it the slot that boots, with no fallback"
                     ),
                 }
             }
 
             for (offset, path) in &images {
-                println!("  {:#08x}  {}", offset, path.display());
+                say!("  {:#08x}  {}", offset, path.display());
             }
 
             let app_port = prepare_flash(stream.as_mut(), port).await?;
             let interrupt = resume_on_interrupt(stream.is_some());
-            let result =
-                flash::flash(&images, app_port.as_deref(), None, &|m| println!("{m}")).await;
+            let result = flash::flash(&images, app_port.as_deref(), None, &|m| say!("{m}")).await;
             // Always hand the port back to the daemon. After a failure the pad
             // is not coming back as the app, so resume without the 15 s
             // verification wait and show the real error straight away.
@@ -826,10 +1278,13 @@ async fn main() -> Result<()> {
                     )
                     .await
                     {
-                        Some(p) => println!("✓ Flash succeeded! The pad came back on {}", p),
+                        Some(p) => {
+                            say!("✓ Flash succeeded! The pad came back on {}", p);
+                            emit(serde_json::json!({ "ok": true, "port": p }));
+                        }
                         None => bail!(
                             "Firmware was written, but the pad did not come back as the OPad app \
-                         within 15s. Run `opadctl recover` and replug it; see docs/recovery.md."
+                         within 15s. Run `opadctl pad recover` and replug it; see docs/recovery.md."
                         ),
                     }
                 }
@@ -837,27 +1292,30 @@ async fn main() -> Result<()> {
             }
         }
 
-        Commands::Recover { firmware, timeout } => {
+        Action::Recover(RecoverArgs { firmware, timeout }) => {
             let images = resolve_flash_set(&firmware, true)?;
             let (_, app_image) = images.last().expect("flash set is never empty");
             flash::check_esp32s3_image_file(app_image)
                 .map_err(|e| anyhow::anyhow!("{}: {}", app_image.display(), e))?;
             for (offset, path) in &images {
-                println!("  {:#08x}  {}", offset, path.display());
+                say!("  {:#08x}  {}", offset, path.display());
             }
-            println!("Unplug the pad's USB cable and plug it back in (waiting {timeout} s)...");
+            say!("Unplug the pad's USB cable and plug it back in (waiting {timeout} s)...");
             let result = tokio::task::spawn_blocking(move || {
-                flash::recover(&images, Duration::from_secs(timeout), &|m| println!("{m}"))
+                flash::recover(&images, Duration::from_secs(timeout), &|m| say!("{m}"))
             })
             .await?;
             result?;
             match flash::wait_for_port(opad_device::find_target_port, Duration::from_secs(15)).await {
-                Some(p) => println!("✓ Recovered: the pad came back as OPad on {p}"),
+                Some(p) => {
+                    say!("✓ Recovered: the pad came back as OPad on {p}");
+                    emit(serde_json::json!({ "ok": true, "port": p }));
+                }
                 None => bail!("The firmware was written, but the pad did not come back as the OPad app within 15 s"),
             }
         }
 
-        Commands::Bootloader { port } => {
+        Action::Bootloader(BootloaderArgs { port }) => {
             let app_port = prepare_flash(stream.as_mut(), port).await?;
             let interrupt = resume_on_interrupt(stream.is_some());
             let result = flash::enter_bootloader(app_port.as_deref(), None).await;
@@ -868,239 +1326,144 @@ async fn main() -> Result<()> {
             resume_device(stream.as_mut()).await;
             release(&interrupt);
             let boot_port = result?;
-            println!("✓ Device is in ROM download mode on {}", boot_port);
+            say!("✓ Device is in ROM download mode on {}", boot_port);
+            emit(serde_json::json!({ "ok": true, "port": boot_port }));
         }
 
-        Commands::FirmwareUpdate { yes } => {
-            let offer =
-                match send_request(daemon(&mut stream)?, &IpcRequest::GetFirmwareUpdate).await? {
-                    IpcResponse::FirmwareUpdateOffer(o) => o,
-                    IpcResponse::Error(e) => bail!("{}", e),
-                    other => bail!("Unexpected response from daemon: {:?}", other),
-                };
+        Action::UpdateStatus => {
+            let conn = daemon(&mut stream)?;
+            show_update_status(conn).await?;
+        }
 
-            println!("=== OPad Firmware ===");
-            println!(
-                "Installed:        {}",
-                offer.installed.as_deref().unwrap_or("unknown (no pad?)")
-            );
-            println!(
-                "Running Slot:     {}",
-                offer
-                    .running_partition
-                    .as_deref()
-                    .unwrap_or("unknown (firmware predates the OTA layout)")
-            );
+        Action::UpdateCheck => {
+            let conn = daemon(&mut stream)?;
+            check_for_updates(conn).await?;
+            show_update_status(conn).await?;
+        }
 
-            for blocker in &offer.blockers {
-                println!("  ⚠ {}", blocker);
+        Action::UpdateChannel { channel } => {
+            let conn = daemon(&mut stream)?;
+            match channel {
+                Some(channel) => {
+                    set_update_channel(conn, channel.clone()).await?;
+                    say!("✓ Following the {channel} channel; checking it now");
+                    emit(serde_json::json!({ "ok": true, "channel": channel }));
+                }
+                None => {
+                    let channel = match send_request(conn, &IpcRequest::GetUpdateStatus).await? {
+                        IpcResponse::UpdateStatus { channel, .. } => channel,
+                        IpcResponse::Error(e) => bail!("{}", e),
+                        other => bail!("Unexpected response from daemon: {:?}", other),
+                    };
+                    say!("Channel:          {channel}");
+                    emit(serde_json::json!({ "channel": channel }));
+                }
             }
+        }
 
-            let Some(available) = offer.available.as_deref() else {
-                println!("Available:        nothing newer");
-                return Ok(());
+        Action::UpdateAuto { part, on } => {
+            let request = IpcRequest::SetUpdateEnabled {
+                component: part.component(),
+                enabled: on,
             };
-            println!("Available:        {}", available);
-            if let Some(notes) = &offer.notes {
-                println!("Notes:            {}", notes);
-            }
-            if !offer.blockers.is_empty() {
-                bail!("The pad cannot be flashed right now; see the warnings above.");
-            }
-
-            // §U-3b: explicit consent every time. --yes is the person saying so
-            // in a script; it is not a way of skipping the decision.
-            if let Some(text) = &offer.consent_text {
-                println!();
-                println!("{}", text);
-            }
-            if !yes
-                && !confirm(
-                    "\nFlash the pad now? [y/N]: ",
-                    "A firmware update needs confirmation. Re-run with --yes.",
-                )?
-            {
-                println!("Cancelled. Nothing was written to the pad.");
-                return Ok(());
-            }
-
-            println!("Flashing. Do not unplug the pad.");
-            match send_request(
-                daemon(&mut stream)?,
-                &IpcRequest::InstallFirmwareUpdate { confirm: true },
-            )
-            .await?
-            {
-                IpcResponse::FirmwareUpdateFinished {
-                    from,
-                    to,
-                    running_partition,
-                    protocol_version,
-                    compatible,
-                    ..
-                } => {
-                    println!("✓ Firmware updated from {} to {}", from, to);
-                    println!(
-                        "  Running Slot:     {}",
-                        running_partition.as_deref().unwrap_or("unknown")
+            match send_request(daemon(&mut stream)?, &request).await? {
+                IpcResponse::ConfigUpdated { .. } => {
+                    say!(
+                        "✓ Automatic updates of {} are {}",
+                        part.label(),
+                        if on { "on" } else { "off" }
                     );
-                    if !compatible {
-                        println!("  ⚠ WARNING: the pad reports protocol version {} which this host does not speak!", protocol_version);
-                    }
+                    emit(serde_json::json!({ "ok": true, "automatic": on }));
                 }
-                IpcResponse::OperationRejected { reason } => {
-                    bail!("Rejected: {}", reason);
-                }
+                IpcResponse::OperationRejected { reason }
+                | IpcResponse::OperationDeferred { reason } => return Err(rejected(reason)),
                 IpcResponse::Error(e) => bail!("{}", e),
                 other => bail!("Unexpected response from daemon: {:?}", other),
             }
         }
 
-        Commands::Update {
+        Action::UpdateInstall { part, yes } => {
+            let conn = daemon(&mut stream)?;
+            match part {
+                Part::Firmware => install_firmware(conn, yes).await?,
+                Part::App | Part::Tosu => install_update(conn, part).await?,
+            }
+        }
+
+        Action::UpdateFlags {
             channel,
             check,
             install,
         } => {
             let conn = daemon(&mut stream)?;
             if let Some(channel) = channel {
-                match send_request(conn, &IpcRequest::SetUpdateChannel { channel }).await? {
-                    // Changing the channel starts a check of the new one
-                    IpcResponse::UpdateCheckStarted => {}
-                    IpcResponse::OperationRejected { reason }
-                    | IpcResponse::OperationDeferred { reason } => bail!("{}", reason),
-                    IpcResponse::Error(e) => bail!("{}", e),
-                    other => bail!("Unexpected response from daemon: {:?}", other),
-                }
+                set_update_channel(conn, channel).await?;
             }
             if check {
-                let before = match send_request(conn, &IpcRequest::GetUpdateStatus).await? {
-                    IpcResponse::UpdateStatus { last_check, .. } => last_check,
-                    IpcResponse::Error(e) => bail!("{}", e),
-                    other => bail!("Unexpected response from daemon: {:?}", other),
-                };
-                match send_request(conn, &IpcRequest::CheckForUpdates).await? {
-                    IpcResponse::UpdateCheckStarted => {}
-                    IpcResponse::OperationDeferred { reason } => bail!("{}", reason),
-                    IpcResponse::Error(e) => bail!("{}", e),
-                    other => bail!("Unexpected response from daemon: {:?}", other),
-                }
-                // The check runs in the daemon's update worker: done once it
-                // is not running and has a newer answer or an error
-                let deadline = std::time::Instant::now() + Duration::from_secs(120);
-                loop {
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                    if let IpcResponse::UpdateStatus {
-                        last_check,
-                        last_error,
-                        checking,
-                        ..
-                    } = send_request(conn, &IpcRequest::GetUpdateStatus).await?
-                    {
-                        if !checking && (last_check != before || last_error.is_some()) {
-                            break;
-                        }
-                    }
-                    if std::time::Instant::now() > deadline {
-                        bail!("The update check did not finish within 120 s");
-                    }
-                }
-            }
-            let status = send_request(conn, &IpcRequest::GetUpdateStatus).await?;
-            let IpcResponse::UpdateStatus {
-                app,
-                last_check,
-                last_error,
-                restart_required,
-                pending_version,
-                channel,
-                last_result,
-                ..
-            } = status
-            else {
-                bail!("Unexpected response from daemon: {:?}", status);
-            };
-            println!("=== OPad Updates ===");
-            println!("Channel:          {}", channel);
-            println!(
-                "Installed:        {}",
-                app.installed.as_deref().unwrap_or("unknown")
-            );
-            let offer = match (&app.available, app.notify_only) {
-                (None, _) => "none, up to date".to_string(),
-                (Some(v), true) => format!("{} (this install cannot update itself)", v),
-                (Some(v), false) => format!("{} (ready to install)", v),
-            };
-            println!("Available:        {}", offer);
-            println!(
-                "Last check:       {}",
-                last_check.as_deref().unwrap_or("never")
-            );
-            if let Some(e) = &last_error {
-                println!("Last error:       {}", e);
-            }
-            if let Some(r) = &last_result {
-                println!("Last install:     {}", r);
-            }
-            if restart_required {
-                match &pending_version {
-                    Some(v) => println!("Installed:        {v}, runs the next time OPad starts"),
-                    None => println!("Restart OPad to run the installed version."),
-                }
+                check_for_updates(conn).await?;
             }
             if install {
-                if !app.ready_to_install {
-                    bail!("There is no update ready to install (run opadctl update --check)");
+                // The status is for a person here; with --json the install's
+                // own result is the one answer
+                if !json_mode() {
+                    show_update_status(conn).await?;
                 }
-                match send_request(
-                    conn,
-                    &IpcRequest::InstallUpdate {
-                        component: opad_ipc::UpdateComponent::App,
-                    },
-                )
-                .await?
-                {
-                    IpcResponse::UpdateStarted { .. } => println!(
-                        "✓ Installing OPad {}; OPad restarts when it is done",
-                        app.available.as_deref().unwrap_or("?")
-                    ),
-                    IpcResponse::OperationDeferred { reason } => bail!("{}", reason),
-                    IpcResponse::Error(e) => bail!("{}", e),
-                    other => bail!("Unexpected response from daemon: {:?}", other),
-                }
+                install_update(conn, Part::App).await?;
+            } else {
+                show_update_status(conn).await?;
             }
         }
 
-        Commands::Latency { reset } => {
+        Action::Latency { reset } => {
+            let conn = daemon(&mut stream)?;
             if reset {
-                match send_request(daemon(&mut stream)?, &IpcRequest::ResetLatencyStats).await? {
-                    IpcResponse::Error(e) => bail!("{}", e),
-                    _ => println!("✓ Latency statistics reset"),
+                match send_request(conn, &IpcRequest::ResetLatencyStats).await? {
+                    IpcResponse::Error(e) => return Err(refusal(conn, Fault::Failed, e).await),
+                    _ => {
+                        say!("✓ Latency statistics reset");
+                        emit(serde_json::json!({ "ok": true }));
+                    }
                 }
             } else {
-                match send_request(daemon(&mut stream)?, &IpcRequest::GetStatus).await? {
+                match send_request(conn, &IpcRequest::GetStatus).await? {
+                    IpcResponse::Status {
+                        latency: Some(l), ..
+                    } if json_mode() => emit(serde_json::to_value(l)?),
                     IpcResponse::Status {
                         latency: Some(l), ..
                     } => {
-                        println!("=== Key edge -> HID submit latency (device-side) ===");
-                        println!("Samples:          {}", l.samples);
-                        println!("p50:              {} µs", l.p50_us);
-                        println!("p99:              {} µs", l.p99_us);
-                        println!("p99.9:            {} µs", l.p999_us);
-                        println!("max:              {} µs", l.max_us);
-                        println!(
+                        say!("=== Key edge -> HID submit latency (device-side) ===");
+                        say!("Samples:          {}", l.samples);
+                        say!("p50:              {} µs", l.p50_us);
+                        say!("p99:              {} µs", l.p99_us);
+                        say!("p99.9:            {} µs", l.p999_us);
+                        say!("max:              {} µs", l.max_us);
+                        say!(
                             "Deferred reports: {} (waited for the next USB poll, then sent)",
                             l.deferred_reports
                         );
                     }
+                    IpcResponse::Status {
+                        latency: None,
+                        device_connected: false,
+                        ..
+                    } => {
+                        return Err(Failure {
+                            fault: Fault::NoPad,
+                            message: "No latency data: the pad is not connected".into(),
+                        }
+                        .into());
+                    }
                     IpcResponse::Status { latency: None, .. } => {
-                        println!("No latency data yet (device not connected, or old firmware)");
+                        say!("No latency data yet (device not connected, or old firmware)");
+                        emit(serde_json::Value::Null);
                     }
                     other => bail!("Unexpected response from daemon: {:?}", other),
                 }
             }
         }
 
-        Commands::Stats { period } => {
+        Action::Stats { period } => {
             let request = match period {
                 Some(days) => {
                     tap_rate::validate_history_days(days).map_err(anyhow::Error::msg)?;
@@ -1113,13 +1476,16 @@ async fn main() -> Result<()> {
                 .await
                 .context("The daemon did not answer; it may predate KPM statistics")?;
             match resp {
+                IpcResponse::TapStats(snapshot) if json_mode() => {
+                    emit(serde_json::to_value(&snapshot)?)
+                }
                 IpcResponse::TapStats(snapshot) => print!("{}", format_tap_stats(&snapshot)),
                 IpcResponse::Error(e) => bail!("{}", e),
                 other => bail!("Unexpected response from daemon: {:?}", other),
             }
         }
 
-        Commands::BoardTest { fix_pins, magnet } => {
+        Action::BoardTest(TestArgs { fix_pins, magnet }) => {
             let stream = daemon(&mut stream)?;
             let mut report = run_board_test(stream).await?;
             let mut checks = board_test::evaluate(&report);
@@ -1135,7 +1501,10 @@ async fn main() -> Result<()> {
                 config.key2_gpio = board_test::CARRIER_KEY2_GPIO;
                 match send_request(stream, &IpcRequest::UpdateConfig(config)).await? {
                     IpcResponse::ConfigUpdated { .. } => {
-                        println!("✓ Keys moved to GPIO10 / GPIO7; testing again\n")
+                        say!("✓ Keys moved to GPIO10 / GPIO7; testing again\n")
+                    }
+                    IpcResponse::OperationRejected { reason } => {
+                        return Err(rejected(format!("Could not set the key pins: {reason}")));
                     }
                     IpcResponse::Error(e) => bail!("Could not set the key pins: {}", e),
                     other => bail!("Unexpected response from daemon: {:?}", other),
@@ -1145,11 +1514,11 @@ async fn main() -> Result<()> {
                 report = run_board_test(stream).await?;
                 checks = board_test::evaluate(&report);
             }
-            print!("{}", format_board_test(&report, &checks));
+            say_inline!("{}", format_board_test(&report, &checks));
             if magnet {
                 let test = magnet_test(stream).await?;
                 for c in test.checks() {
-                    println!(
+                    say!(
                         "{} {:<18} {}",
                         c.status.label().to_uppercase(),
                         c.name,
@@ -1158,15 +1527,26 @@ async fn main() -> Result<()> {
                 }
                 checks.extend(test.checks());
             }
-            if board_test::overall(&checks) == board_test::CheckStatus::Fail {
+            let result = board_test::overall(&checks);
+            emit(serde_json::json!({
+                "ok": result != board_test::CheckStatus::Fail,
+                "result": result,
+                "report": report,
+                "checks": checks,
+            }));
+            if result == board_test::CheckStatus::Fail {
                 if !fix_pins && needs_pins {
-                    println!("Run `opadctl board-test --fix-pins` to set the key pins.");
+                    say!("Run `opadctl pad test --fix-pins` to set the key pins.");
+                }
+                // The result above already says so
+                if json_mode() {
+                    std::process::exit(Fault::Failed as i32);
                 }
                 bail!("the board test found problems")
             }
         }
 
-        Commands::Animation { name, grade } => {
+        Action::Animation(AnimationArgs { name, grade }) => {
             let animation = match name.to_ascii_lowercase().as_str() {
                 "none" => result_anim::NONE,
                 other => match result_anim::BUILTINS
@@ -1183,39 +1563,360 @@ async fn main() -> Result<()> {
                 animation,
                 grade: grade.to_ascii_uppercase(),
             };
-            match send_request(daemon(&mut stream)?, &req).await? {
+            let conn = daemon(&mut stream)?;
+            match send_request(conn, &req).await? {
                 IpcResponse::AnimationPlayed => {
-                    println!("Playing {} on the pad", result_anim::name(animation));
+                    say!("Playing {} on the pad", result_anim::name(animation));
+                    emit(serde_json::json!({ "ok": true }));
                 }
-                IpcResponse::Error(e) => bail!("{}", e),
+                IpcResponse::Error(e) => return Err(refusal(conn, Fault::Failed, e).await),
                 other => bail!("Unexpected response from daemon: {:?}", other),
             }
         }
 
-        Commands::Restart => {
-            match send_request(daemon(&mut stream)?, &IpcRequest::RestartPad).await? {
+        Action::Restart => {
+            let conn = daemon(&mut stream)?;
+            match send_request(conn, &IpcRequest::RestartPad).await? {
                 IpcResponse::PadRestarting => {
-                    println!("The pad is restarting; it reconnects in a few seconds");
+                    say!("The pad is restarting; it reconnects in a few seconds");
+                    emit(serde_json::json!({ "ok": true }));
                 }
-                IpcResponse::Error(e) => bail!("{}", e),
+                IpcResponse::Error(e) => return Err(refusal(conn, Fault::Failed, e).await),
                 other => bail!("Unexpected response from daemon: {:?}", other),
             }
         }
 
-        Commands::Setup => unreachable!(),
-        Commands::Freaky67 | Commands::EasterEgg => {
-            let resp = send_request(daemon(&mut stream)?, &IpcRequest::TriggerEasterEgg).await?;
-            match resp {
+        Action::Doctor => unreachable!(),
+        Action::EasterEgg => {
+            let conn = daemon(&mut stream)?;
+            match send_request(conn, &IpcRequest::TriggerEasterEgg).await? {
                 IpcResponse::EasterEggTriggered => {
-                    println!("🐱👅 Freaky 67 easter egg triggered on device!");
+                    say!("🐱👅 Freaky 67 easter egg triggered on device!");
+                    emit(serde_json::json!({ "ok": true }));
                 }
-                IpcResponse::Error(e) => bail!("{}", e),
+                IpcResponse::Error(e) => return Err(refusal(conn, Fault::Failed, e).await),
                 other => bail!("Unexpected response from daemon: {:?}", other),
             }
         }
     }
 
     Ok(())
+}
+
+/// `update channel <name>`. Changing the channel starts a check of the new one.
+async fn set_update_channel(conn: &mut IpcStream, channel: String) -> Result<()> {
+    match send_request(conn, &IpcRequest::SetUpdateChannel { channel }).await? {
+        IpcResponse::UpdateCheckStarted => Ok(()),
+        IpcResponse::OperationRejected { reason } | IpcResponse::OperationDeferred { reason } => {
+            Err(rejected(reason))
+        }
+        IpcResponse::Error(e) => bail!("{}", e),
+        other => bail!("Unexpected response from daemon: {:?}", other),
+    }
+}
+
+/// `update check`: ask for a check of the feed and wait until it has an answer
+async fn check_for_updates(conn: &mut IpcStream) -> Result<()> {
+    let before = match send_request(conn, &IpcRequest::GetUpdateStatus).await? {
+        IpcResponse::UpdateStatus { last_check, .. } => last_check,
+        IpcResponse::Error(e) => bail!("{}", e),
+        other => bail!("Unexpected response from daemon: {:?}", other),
+    };
+    match send_request(conn, &IpcRequest::CheckForUpdates).await? {
+        IpcResponse::UpdateCheckStarted => {}
+        IpcResponse::OperationDeferred { reason } => return Err(rejected(reason)),
+        IpcResponse::Error(e) => bail!("{}", e),
+        other => bail!("Unexpected response from daemon: {:?}", other),
+    }
+    // The check runs in the daemon's update worker: done once it
+    // is not running and has a newer answer or an error
+    let deadline = std::time::Instant::now() + Duration::from_secs(120);
+    loop {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        if let IpcResponse::UpdateStatus {
+            last_check,
+            last_error,
+            checking,
+            ..
+        } = send_request(conn, &IpcRequest::GetUpdateStatus).await?
+        {
+            if !checking && (last_check != before || last_error.is_some()) {
+                return Ok(());
+            }
+        }
+        if std::time::Instant::now() > deadline {
+            bail!("The update check did not finish within 120 s");
+        }
+    }
+}
+
+/// What the three updaters know: the service's update status and the pad's
+/// firmware offer, which is None when the service could not give one
+async fn update_status(
+    conn: &mut IpcStream,
+) -> Result<(IpcResponse, Option<opad_ipc::FirmwareOffer>)> {
+    let status = send_request(conn, &IpcRequest::GetUpdateStatus).await?;
+    if !matches!(status, IpcResponse::UpdateStatus { .. }) {
+        bail!("Unexpected response from daemon: {:?}", status);
+    }
+    let offer = match send_request(conn, &IpcRequest::GetFirmwareUpdate).await {
+        Ok(IpcResponse::FirmwareUpdateOffer(offer)) => Some(offer),
+        _ => None,
+    };
+    Ok((status, offer))
+}
+
+/// `update status --json`: the update status with the offer under `firmware`
+fn update_json(status: &IpcResponse, offer: &Option<opad_ipc::FirmwareOffer>) -> serde_json::Value {
+    let mut value = unwrapped(status);
+    if let Some(fields) = value.as_object_mut() {
+        fields.insert(
+            "firmware".into(),
+            serde_json::to_value(offer).unwrap_or_default(),
+        );
+    }
+    value
+}
+
+/// One updater's lines in `update status`
+fn say_component(update: &opad_ipc::ComponentUpdate) {
+    say!(
+        "Installed:        {}",
+        update.installed.as_deref().unwrap_or("unknown")
+    );
+    let offer = match (&update.available, update.notify_only, update.with_app) {
+        (None, _, _) => "none, up to date".to_string(),
+        (Some(v), _, true) => format!("{} (comes with OPad's own update)", v),
+        (Some(v), true, _) => format!("{} (this install cannot update itself)", v),
+        (Some(v), false, _) if update.ready_to_install => format!("{} (ready to install)", v),
+        (Some(v), false, _) => v.clone(),
+    };
+    say!("Available:        {}", offer);
+    say!(
+        "Automatic:        {}",
+        if update.enabled { "on" } else { "off" }
+    );
+}
+
+/// `update status`: OPad, tosu and the pad's firmware, as the app's Updates
+/// tab shows them
+async fn show_update_status(conn: &mut IpcStream) -> Result<()> {
+    let (status, offer) = update_status(conn).await?;
+    if json_mode() {
+        emit(update_json(&status, &offer));
+        return Ok(());
+    }
+    let IpcResponse::UpdateStatus {
+        app,
+        tosu,
+        last_check,
+        last_error,
+        restart_required,
+        pending_version,
+        channel,
+        last_result,
+        ..
+    } = status
+    else {
+        bail!("Unexpected response from daemon: {:?}", status);
+    };
+    println!("=== OPad Updates ===");
+    println!("Channel:          {}", channel);
+    say_component(&app);
+    println!(
+        "Last check:       {}",
+        last_check.as_deref().unwrap_or("never")
+    );
+    if let Some(e) = &last_error {
+        println!("Last error:       {}", e);
+    }
+    if let Some(r) = &last_result {
+        println!("Last install:     {}", r);
+    }
+    if restart_required {
+        match &pending_version {
+            Some(v) => println!("Installed:        {v}, runs the next time OPad starts"),
+            None => println!("Restart OPad to run the installed version."),
+        }
+    }
+
+    println!("\n=== tosu ===");
+    say_component(&tosu);
+
+    println!("\n=== Pad firmware ===");
+    match offer {
+        Some(offer) => {
+            println!(
+                "Installed:        {}",
+                offer.installed.as_deref().unwrap_or("unknown (no pad?)")
+            );
+            println!(
+                "Available:        {}",
+                offer.available.as_deref().unwrap_or("nothing newer")
+            );
+            println!(
+                "Automatic:        {}",
+                if offer.auto {
+                    format!(
+                        "on, once the pad has gone {} min unused",
+                        offer.auto_after_minutes
+                    )
+                } else {
+                    "off".to_string()
+                }
+            );
+            if offer.available.is_some() {
+                for blocker in &offer.blockers {
+                    println!("  ⚠ {}", blocker);
+                }
+            }
+        }
+        None => println!("Installed:        unknown (the service gave no answer)"),
+    }
+    Ok(())
+}
+
+/// `update install app` or `tosu`
+async fn install_update(conn: &mut IpcStream, part: Part) -> Result<()> {
+    let update = match send_request(conn, &IpcRequest::GetUpdateStatus).await? {
+        IpcResponse::UpdateStatus { app, tosu, .. } => {
+            if part == Part::App {
+                app
+            } else {
+                tosu
+            }
+        }
+        IpcResponse::Error(e) => bail!("{}", e),
+        other => bail!("Unexpected response from daemon: {:?}", other),
+    };
+    // OPad's own update is downloaded first and installed from disk. tosu's
+    // is fetched by the install itself, so it only needs to exist.
+    let ready = match part {
+        Part::App => update.ready_to_install,
+        _ => update.available.is_some() && !update.with_app,
+    };
+    if !ready {
+        return Err(rejected(format!(
+            "There is no update of {} ready to install (run opadctl update check)",
+            part.label()
+        )));
+    }
+    let request = IpcRequest::InstallUpdate {
+        component: part.component(),
+    };
+    match send_request(conn, &request).await? {
+        IpcResponse::UpdateStarted { .. } => {
+            let version = update.available.as_deref().unwrap_or("?");
+            match part {
+                Part::App => say!("✓ Installing OPad {version}; OPad restarts when it is done"),
+                _ => say!("✓ Updating {} to {version}", part.label()),
+            }
+            emit(serde_json::json!({ "ok": true, "version": update.available }));
+            Ok(())
+        }
+        IpcResponse::OperationRejected { reason } | IpcResponse::OperationDeferred { reason } => {
+            Err(rejected(reason))
+        }
+        IpcResponse::Error(e) => bail!("{}", e),
+        other => bail!("Unexpected response from daemon: {:?}", other),
+    }
+}
+
+/// `update install firmware`: flash the pad from the signed release manifest
+/// (§U-3b)
+async fn install_firmware(conn: &mut IpcStream, yes: bool) -> Result<()> {
+    let offer = match send_request(conn, &IpcRequest::GetFirmwareUpdate).await? {
+        IpcResponse::FirmwareUpdateOffer(o) => o,
+        IpcResponse::Error(e) => bail!("{}", e),
+        other => bail!("Unexpected response from daemon: {:?}", other),
+    };
+
+    say!("=== OPad Firmware ===");
+    say!(
+        "Installed:        {}",
+        offer.installed.as_deref().unwrap_or("unknown (no pad?)")
+    );
+    say!(
+        "Running Slot:     {}",
+        offer
+            .running_partition
+            .as_deref()
+            .unwrap_or("unknown (firmware predates the OTA layout)")
+    );
+
+    for blocker in &offer.blockers {
+        say!("  ⚠ {}", blocker);
+    }
+
+    let Some(available) = offer.available.as_deref() else {
+        say!("Available:        nothing newer");
+        emit(serde_json::json!({ "ok": true, "updated": false, "installed": offer.installed }));
+        return Ok(());
+    };
+    say!("Available:        {}", available);
+    if let Some(notes) = &offer.notes {
+        say!("Notes:            {}", notes);
+    }
+    if !offer.blockers.is_empty() {
+        let message = format!(
+            "The pad cannot be flashed right now: {}",
+            offer.blockers.join(" ")
+        );
+        return Err(refusal(conn, Fault::Rejected, message).await);
+    }
+
+    // §U-3b: explicit consent every time. --yes is the person saying so
+    // in a script; it is not a way of skipping the decision.
+    if let Some(text) = &offer.consent_text {
+        say!();
+        say!("{}", text);
+    }
+    if !yes
+        && !confirm(
+            "\nFlash the pad now? [y/N]: ",
+            "A firmware update needs confirmation. Re-run with --yes.",
+        )?
+    {
+        say!("Cancelled. Nothing was written to the pad.");
+        emit(serde_json::json!({ "ok": true, "updated": false, "installed": offer.installed }));
+        return Ok(());
+    }
+
+    say!("Flashing. Do not unplug the pad.");
+    let request = IpcRequest::InstallFirmwareUpdate { confirm: true };
+    match send_request(conn, &request).await? {
+        IpcResponse::FirmwareUpdateFinished {
+            from,
+            to,
+            running_partition,
+            protocol_version,
+            compatible,
+            ..
+        } => {
+            say!("✓ Firmware updated from {} to {}", from, to);
+            say!(
+                "  Running Slot:     {}",
+                running_partition.as_deref().unwrap_or("unknown")
+            );
+            if !compatible {
+                say!("  ⚠ WARNING: the pad reports protocol version {} which this host does not speak!", protocol_version);
+            }
+            emit(serde_json::json!({
+                "ok": true,
+                "updated": true,
+                "from": from,
+                "to": to,
+                "running_slot": running_partition,
+                "compatible": compatible,
+            }));
+            Ok(())
+        }
+        IpcResponse::OperationRejected { reason } => {
+            Err(refusal(conn, Fault::Rejected, format!("Rejected: {reason}")).await)
+        }
+        IpcResponse::Error(e) => bail!("{}", e),
+        other => bail!("Unexpected response from daemon: {:?}", other),
+    }
 }
 
 fn fmt_ppm(ppm: Option<f64>) -> String {
@@ -1366,7 +2067,7 @@ fn confirm(prompt: &str, non_tty_msg: &str) -> Result<bool> {
     if !std::io::stdin().is_terminal() {
         bail!("{}", non_tty_msg);
     }
-    print!("{}", prompt);
+    say_inline!("{}", prompt);
     std::io::stdout().flush()?;
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
@@ -1375,9 +2076,13 @@ fn confirm(prompt: &str, non_tty_msg: &str) -> Result<bool> {
 }
 
 fn daemon(stream: &mut Option<IpcStream>) -> Result<&mut IpcStream> {
-    stream
-        .as_mut()
-        .context("Failed to connect to opad-daemon. Is the daemon running?")
+    stream.as_mut().ok_or_else(|| {
+        Failure {
+            fault: Fault::ServiceUnavailable,
+            message: "Failed to connect to opad-daemon. Is the daemon running?".into(),
+        }
+        .into()
+    })
 }
 
 /// Ask the daemon to release the serial port. Returns the app port to trigger,
@@ -1395,12 +2100,14 @@ async fn prepare_flash(
     let Some(stream) = stream else {
         return Ok(explicit_port.or_else(opad_device::find_target_port));
     };
-    println!("Asking opad-daemon to release the serial port...");
+    say!("Asking opad-daemon to release the serial port...");
     match send_request(stream, &IpcRequest::PrepareFlash).await? {
         IpcResponse::ReadyForFlash { port } => Ok(explicit_port
             .or(port)
             .or_else(opad_device::find_target_port)),
-        IpcResponse::OperationRejected { reason } => bail!("Rejected by daemon: {}", reason),
+        IpcResponse::OperationRejected { reason } => {
+            Err(rejected(format!("Rejected by daemon: {reason}")))
+        }
         other => bail!("Unexpected response from daemon: {:?}", other),
     }
 }
@@ -1419,11 +2126,17 @@ async fn running_slot(stream: Option<&mut IpcStream>) -> Option<String> {
 }
 
 fn print_flash_success(firmware_version: &str, protocol_version: u32, compatible: bool) {
-    println!("✓ Flash succeeded!");
-    println!("  Firmware Version: {}", firmware_version);
-    println!("  Protocol Version: {}", protocol_version);
+    say!("✓ Flash succeeded!");
+    say!("  Firmware Version: {}", firmware_version);
+    say!("  Protocol Version: {}", protocol_version);
+    emit(serde_json::json!({
+        "ok": true,
+        "firmware_version": firmware_version,
+        "protocol_version": protocol_version,
+        "compatible": compatible,
+    }));
     if !compatible {
-        println!(
+        say!(
             "  ⚠ WARNING: Device reported protocol version {} which is incompatible with host!",
             protocol_version
         );
@@ -1449,16 +2162,17 @@ async fn report_slot_after_flash(
     {
         if running_slot(stream.as_deref_mut()).await.as_deref() == Some(target) {
             print_flash_success(firmware_version, *protocol_version, *compatible);
-            println!("  Running Slot:     {target}");
+            say!("  Running Slot:     {target}");
             return Ok(());
         }
     }
-    println!("Waiting to see which image the pad settles on...");
+    say!("Waiting to see which image the pad settles on...");
     let deadline = tokio::time::Instant::now() + ROLLBACK_WAIT;
     while tokio::time::Instant::now() < deadline {
         match running_slot(stream.as_deref_mut()).await {
             Some(slot) if slot == target => {
-                println!("✓ Flash succeeded! Running Slot: {target}");
+                say!("✓ Flash succeeded! Running Slot: {target}");
+                emit(serde_json::json!({ "ok": true, "running_slot": target }));
                 return Ok(());
             }
             Some(slot) => bail!(
@@ -1471,7 +2185,7 @@ async fn report_slot_after_flash(
     }
     bail!(
         "Firmware was written, but the pad did not come back within {}s. Run `opadctl \
-         recover` and replug it; see docs/recovery.md.",
+         pad recover` and replug it; see docs/recovery.md.",
         ROLLBACK_WAIT.as_secs()
     )
 }
@@ -1480,7 +2194,7 @@ async fn report_slot_after_flash(
 /// `None` means there was no daemon to hand it back to.
 async fn finish_flash(stream: Option<&mut IpcStream>) -> Option<IpcResponse> {
     let stream = stream?;
-    println!("Resuming daemon device communication and verifying new firmware...");
+    say!("Resuming daemon device communication and verifying new firmware...");
     send_request(stream, &IpcRequest::FinishFlash).await.ok()
 }
 
@@ -1494,7 +2208,7 @@ async fn resume_device(stream: Option<&mut IpcStream>) {
     };
     match send_request(stream, &IpcRequest::ResumeDevice).await {
         Ok(IpcResponse::DeviceResumed) => {}
-        Ok(other) => println!("⚠ Unexpected response from daemon to ResumeDevice: {other:?}"),
+        Ok(other) => say!("⚠ Unexpected response from daemon to ResumeDevice: {other:?}"),
         Err(_) => resume_with_finish_flash().await,
     }
 }
@@ -1510,7 +2224,7 @@ async fn resume_with_finish_flash() {
             )
             .await;
         }
-        Err(e) => println!(
+        Err(e) => say!(
             "⚠ Could not hand the pad back to opad-daemon ({e}); restart the daemon if the pad stays disconnected"
         ),
     }
@@ -1658,80 +2372,114 @@ fn udev_rule_state(
 /// directory — the packaged binary has no `packaging/` tree next to it.
 fn print_udev_install_hint(udev_rule: &str, lead: &str) {
     if let Some(appimage) = std::env::var_os("APPIMAGE") {
-        println!("This is the AppImage; it can install the rule itself:");
-        println!(
+        say!("This is the AppImage; it can install the rule itself:");
+        say!(
             "  \"{}\" install-udev",
             std::path::Path::new(&appimage).display()
         );
         return;
     }
-    println!("{lead}");
-    println!("  sudo tee {UDEV_RULE_PATH} >/dev/null <<'EOF'");
-    print!("{}", udev_rule);
+    say!("{lead}");
+    say!("  sudo tee {UDEV_RULE_PATH} >/dev/null <<'EOF'");
+    say_inline!("{}", udev_rule);
     if !udev_rule.ends_with('\n') {
-        println!();
+        say!();
     }
-    println!("EOF");
-    println!("  sudo udevadm control --reload-rules && sudo udevadm trigger");
+    say!("EOF");
+    say!("  sudo udevadm control --reload-rules && sudo udevadm trigger");
 }
 
-fn run_setup() -> Result<()> {
+/// `doctor`: what this computer still needs for the pad's serial port and for
+/// tosu to read osu!. It reports and changes nothing, so it always succeeds;
+/// `--json` carries `ok: false` when something is missing.
+fn run_doctor() -> Result<()> {
     // udev is Linux's; on Windows the pad binds to inbox drivers with no setup
     // step at all, so saying nothing would read as "something is missing".
     if !cfg!(target_os = "linux") {
-        println!("=== OPad Setup ===");
-        println!("Nothing to do on this platform: the pad uses the inbox USB");
-        println!("drivers, so HID and the CDC port work with no setup step.");
+        say!("=== OPad Setup ===");
+        say!("Nothing to do on this platform: the pad uses the inbox USB");
+        say!("drivers, so HID and the CDC port work with no setup step.");
+        emit(serde_json::json!({ "ok": true, "checks": [] }));
         return Ok(());
     }
 
-    println!("=== OPad Linux Setup ===");
+    say!("=== OPad Linux Setup ===");
     // The same file the packages install, so the two cannot drift apart
     let udev_rule = include_str!("../../../packaging/linux/udev/70-opad.rules");
 
     let installed = UDEV_RULE_PATHS
         .iter()
         .map(|p| (*p, std::fs::read_to_string(p).ok()));
-    match udev_rule_state(installed, udev_rule) {
+    let udev = udev_rule_state(installed, udev_rule);
+    let udev_json = match &udev {
+        UdevRuleState::Installed(path) => serde_json::json!({
+            "name": "udev_rule", "ok": true, "state": "installed", "path": path,
+        }),
+        UdevRuleState::Differs => serde_json::json!({
+            "name": "udev_rule", "ok": false, "state": "differs",
+        }),
+        UdevRuleState::Missing => serde_json::json!({
+            "name": "udev_rule", "ok": false, "state": "missing",
+        }),
+    };
+    match udev {
         UdevRuleState::Installed(path) => {
-            println!("✓ udev rule for non-root CDC access is installed ({path})");
+            say!("✓ udev rule for non-root CDC access is installed ({path})");
         }
         UdevRuleState::Differs => {
-            println!("⚠ an installed udev rule differs from the rule this build ships.");
+            say!("⚠ an installed udev rule differs from the rule this build ships.");
             print_udev_install_hint(udev_rule, "To update it, run:");
         }
         UdevRuleState::Missing => {
             // Packages and `make install` ship the rule; only a source build
             // installed per-user (make install-user) lands here.
-            println!("udev rule for non-root CDC access is not installed.");
+            say!("udev rule for non-root CDC access is not installed.");
             print_udev_install_hint(udev_rule, "To install it, run:");
         }
     }
 
     // Yama: can tosu read osu!'s memory at all?
-    match opad_tosu::ptrace_access() {
+    let ptrace = opad_tosu::ptrace_access();
+    let ptrace_json = match &ptrace {
+        opad_tosu::PtraceAccess::Blocked { scope, fix } => serde_json::json!({
+            "name": "osu_memory_access", "ok": false, "state": "blocked",
+            "ptrace_scope": scope.to_string(), "fix": fix.to_string(),
+        }),
+        opad_tosu::PtraceAccess::Unknown { scope, fix } => serde_json::json!({
+            "name": "osu_memory_access", "ok": true, "state": "unknown",
+            "ptrace_scope": scope.to_string(), "fix": fix.to_string(),
+        }),
+        opad_tosu::PtraceAccess::Capable { scope } => serde_json::json!({
+            "name": "osu_memory_access", "ok": true, "state": "capable",
+            "ptrace_scope": scope.to_string(),
+        }),
+        opad_tosu::PtraceAccess::Unrestricted => serde_json::json!({
+            "name": "osu_memory_access", "ok": true, "state": "unrestricted",
+        }),
+    };
+    match ptrace {
         opad_tosu::PtraceAccess::Blocked { scope, fix } => {
-            println!();
-            println!("⚠ kernel.yama.ptrace_scope is {scope}: tosu cannot read osu!'s memory,");
-            println!("  so the pad shows no live gameplay data. To fix:");
-            println!("    {fix}");
-            println!("  See docs/troubleshooting.md §2.");
+            say!();
+            say!("⚠ kernel.yama.ptrace_scope is {scope}: tosu cannot read osu!'s memory,");
+            say!("  so the pad shows no live gameplay data. To fix:");
+            say!("    {fix}");
+            say!("  See docs/troubleshooting.md §2.");
         }
         opad_tosu::PtraceAccess::Unknown { scope, fix } => {
-            println!();
-            println!("kernel.yama.ptrace_scope is {scope} and `getcap` is not installed, so");
-            println!(
-                "whether tosu may read osu!'s memory is unknown. If the pad shows no live data:"
-            );
-            println!("    {fix}");
+            say!();
+            say!("kernel.yama.ptrace_scope is {scope} and `getcap` is not installed, so");
+            say!("whether tosu may read osu!'s memory is unknown. If the pad shows no live data:");
+            say!("    {fix}");
         }
         opad_tosu::PtraceAccess::Capable { scope } => {
-            println!("✓ Yama ptrace_scope {scope}, and tosu has cap_sys_ptrace");
+            say!("✓ Yama ptrace_scope {scope}, and tosu has cap_sys_ptrace");
         }
         opad_tosu::PtraceAccess::Unrestricted => {}
     }
 
-    println!("Setup check completed.");
+    say!("Setup check completed.");
+    let ok = udev_json["ok"] == true && ptrace_json["ok"] == true;
+    emit(serde_json::json!({ "ok": ok, "checks": [udev_json, ptrace_json] }));
     Ok(())
 }
 
@@ -1863,6 +2611,148 @@ mod tests {
         );
         assert!(out.contains("2 attempt(s) will be saved"), "{out}");
         assert!(!out.to_lowercase().contains("bpm"), "{out}");
+    }
+
+    fn action(args: &[&str]) -> Action {
+        use clap::Parser;
+        let line = [&["opadctl"], args].concat();
+        match Cli::try_parse_from(&line) {
+            Ok(cli) => cli.command.into(),
+            Err(e) => panic!("{line:?}: {e}"),
+        }
+    }
+
+    #[test]
+    fn every_old_command_name_still_means_the_same() {
+        for (old, new) in [
+            (&["setup"][..], &["doctor"][..]),
+            (&["sync"], &["counters", "sync"]),
+            (&["reset", "--yes"], &["counters", "reset", "--yes"]),
+            (&["reset"], &["counters", "reset"]),
+            (&["export", "b.json"], &["backup", "export", "b.json"]),
+            (
+                &["import", "b.json", "--yes"],
+                &["backup", "import", "b.json", "--yes"],
+            ),
+            (&["latency", "--reset"], &["latency", "reset"]),
+            (
+                &["monitor", "--follow", "--level", "warning"],
+                &["logs", "--follow", "--level", "warning"],
+            ),
+            (&["update"], &["update", "status"]),
+            (
+                &["firmware-update", "--yes"],
+                &["update", "install", "firmware", "--yes"],
+            ),
+            (&["restart"], &["pad", "restart"]),
+            (
+                &["board-test", "--fix-pins", "--magnet"],
+                &["pad", "test", "--fix-pins", "--magnet"],
+            ),
+            (
+                &["animation", "pop", "SS"],
+                &["pad", "animation", "pop", "SS"],
+            ),
+            (
+                &["flash", "build", "--full", "--port", "/dev/ttyACM1"],
+                &["pad", "flash", "build", "--full", "--port", "/dev/ttyACM1"],
+            ),
+            (
+                &["recover", "build", "--timeout", "60"],
+                &["pad", "recover", "build", "--timeout", "60"],
+            ),
+            (&["bootloader"], &["pad", "bootloader"]),
+        ] {
+            assert_eq!(action(old), action(new), "{old:?}");
+        }
+    }
+
+    #[test]
+    fn the_old_update_flags_still_run_in_their_order() {
+        assert_eq!(
+            action(&["update", "--channel", "beta", "--check", "--install"]),
+            Action::UpdateFlags {
+                channel: Some("beta".into()),
+                check: true,
+                install: true,
+            }
+        );
+        assert_eq!(action(&["update", "check"]), Action::UpdateCheck);
+        assert_eq!(
+            action(&["update", "channel"]),
+            Action::UpdateChannel { channel: None }
+        );
+        assert_eq!(
+            action(&["update", "auto", "tosu", "off"]),
+            Action::UpdateAuto {
+                part: Part::Tosu,
+                on: false,
+            }
+        );
+        assert_eq!(
+            action(&["update", "install", "app"]),
+            Action::UpdateInstall {
+                part: Part::App,
+                yes: false,
+            }
+        );
+    }
+
+    #[test]
+    fn json_is_accepted_before_and_after_the_command() {
+        use clap::Parser;
+        for line in [
+            &["opadctl", "--json", "status"][..],
+            &["opadctl", "status", "--json"],
+            &["opadctl", "pad", "restart", "--json"],
+            &["opadctl", "sync", "--json"],
+        ] {
+            assert!(Cli::try_parse_from(line).unwrap().json, "{line:?}");
+        }
+        assert!(!Cli::try_parse_from(["opadctl", "status"]).unwrap().json);
+    }
+
+    #[test]
+    fn the_old_names_are_left_out_of_help() {
+        use clap::CommandFactory;
+        let help = Cli::command().render_help().to_string();
+        for shown in ["doctor", "counters", "backup", "logs", "update", "pad"] {
+            assert!(
+                help.contains(&format!("\n  {shown} ")),
+                "{shown} is missing"
+            );
+        }
+        for hidden in ["sync", "firmware-update", "board-test", "flash", "monitor"] {
+            assert!(!help.contains(&format!("\n  {hidden} ")), "{hidden} shows");
+        }
+    }
+
+    #[test]
+    fn each_kind_of_failure_has_its_own_exit_code() {
+        let plain = anyhow::anyhow!("the pad said something odd");
+        assert_eq!(fault_of(&plain) as u8, 1);
+        assert_eq!(fault_of(&rejected("mid-map")) as u8, 4);
+        // The code survives the context a caller adds on top
+        let wrapped = rejected("mid-map").context("could not sync");
+        assert_eq!(fault_of(&wrapped), Fault::Rejected);
+        let mut none = None;
+        let Err(unavailable) = daemon(&mut none) else {
+            panic!("there is no connection");
+        };
+        assert_eq!(fault_of(&unavailable) as u8, 3);
+        assert_eq!(Fault::NoPad as u8, 5);
+        assert_eq!(Fault::NoPad.name(), "no_pad");
+    }
+
+    #[test]
+    fn a_json_reply_loses_the_wrapper_that_names_its_kind() {
+        let reply = IpcResponse::OperationRejected {
+            reason: "mid-map".into(),
+        };
+        assert_eq!(
+            unwrapped(&reply),
+            serde_json::json!({ "reason": "mid-map" })
+        );
     }
 
     #[test]

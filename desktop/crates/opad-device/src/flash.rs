@@ -153,7 +153,7 @@ pub enum FlashError {
     NoDevice,
     #[error("{0} could not be opened. On Windows the port is exclusive: close anything else using it (a serial monitor, another opad-daemon) first. ({1})")]
     PortBusy(String, String),
-    #[error("The pad did not re-enumerate as the ROM bootloader (303a:1001). Run `opadctl recover` and replug the pad's USB cable; see docs/recovery.md.")]
+    #[error("The pad did not re-enumerate as the ROM bootloader (303a:1001). Run `opadctl pad recover` and replug the pad's USB cable; see docs/recovery.md.")]
     NoBootloader,
     #[error("Several ESP32 ROM bootloader ports could be this pad ({0:?}); pass the right one with --port")]
     AmbiguousBootloader(Vec<String>),
@@ -167,7 +167,7 @@ pub enum FlashError {
     },
     #[error("The firmware was written, but rebooting the pad into it failed: {0}. See docs/recovery.md.")]
     ResetFailed(String),
-    #[error("The pad runs from `{0}`, not from an OTA slot: it has the old partition layout, and an app update would overwrite the firmware it is running. Flash the full set instead: `opadctl flash --full <folder>`.")]
+    #[error("The pad runs from `{0}`, not from an OTA slot: it has the old partition layout, and an app update would overwrite the firmware it is running. Flash the full set instead: `opadctl pad flash --full <folder>`.")]
     NotAnOtaSlot(String),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),

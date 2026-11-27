@@ -114,7 +114,7 @@ impl std::fmt::Display for Blocker {
             Blocker::NeedsFullReflash => f.write_str(
                 "the pad's partition layout does not match this update (it is not running \
                  from ota_0 or ota_1); it needs a one-time full reflash with \
-                 `opadctl flash --full`, see docs/recovery.md",
+                 `opadctl pad flash --full`, see docs/recovery.md",
             ),
         }
     }
