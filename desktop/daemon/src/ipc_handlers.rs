@@ -443,11 +443,25 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             if let Some(refused) = refuse_if_pad_guarded(state) {
                 return refused;
             }
-            let current_cfg = { state.lock().config.clone() };
+            let (current_cfg, pad_connected) = {
+                let st = state.lock();
+                (st.config.clone(), st.device_connected)
+            };
             // A key may keep a pin older firmware allowed; a new one must be listed
             if let Err(e) = new_config.validate_update(&current_cfg) {
                 return IpcResponse::OperationRejected {
                     reason: format!("Invalid configuration: {}", e),
+                };
+            }
+
+            // The pad keeps its own settings, and its copy replaces this PC's
+            // the next time it connects. Saving them here without the pad
+            // looked like success and was undone on that connect.
+            if !pad_connected && pad_settings_differ(&current_cfg, &new_config) {
+                return IpcResponse::OperationRejected {
+                    reason: "The pad is not connected. Its settings are stored on the pad, \
+                             so connect it to change them."
+                        .to_string(),
                 };
             }
 
@@ -469,7 +483,11 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 }
 
                 // Brightness / sleep / hz changes are applied to RAM immediately (§P1-3)
-                let _ = device.send_config(&new_config).await;
+                if pad_connected {
+                    if let Some(refused) = push_config_to_pad(device, &new_config).await {
+                        return refused;
+                    }
+                }
                 {
                     let mut st = state.lock();
                     st.config = new_config.clone();
@@ -480,6 +498,15 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                     config: new_config,
                     deferred_persist: true,
                 };
+            }
+
+            // The pad first: nothing is recorded as applied until it has
+            // confirmed, so a full queue, a pulled cable or a refusal is
+            // reported instead of being answered with "updated"
+            if pad_connected {
+                if let Some(refused) = push_config_to_pad(device, &new_config).await {
+                    return refused;
+                }
             }
 
             if let Some(s) = storage.lock().as_ref() {
@@ -493,7 +520,6 @@ pub async fn handle_ipc_request<D: DeviceLink>(
                 st.config = new_config.clone();
             }
 
-            let _ = device.send_config(&new_config).await;
             info!("Configuration updated");
             IpcResponse::ConfigUpdated {
                 config: new_config,
@@ -1533,6 +1559,60 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             IpcResponse::EasterEggTriggered
         }
     }
+}
+
+/// How long the pad has to confirm a SetConfig. It answers within one
+/// protocol task turn; this covers a busy USB link.
+const CONFIG_ACK_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Whether two configs differ in something the pad stores. The tosu endpoint
+/// and the result animations are this PC's own and never reach the pad's NVS.
+fn pad_settings_differ(current: &DeviceConfig, new: &DeviceConfig) -> bool {
+    let mut on_pad = new.clone();
+    on_pad.tosu_endpoint = current.tosu_endpoint.clone();
+    on_pad.result_animations = current.result_animations;
+    on_pad != *current
+}
+
+/// Sends a config to the pad and waits for its ConfigAck. `Some` is the
+/// answer for the client when the pad was not reached, did not confirm, or
+/// refused; `None` means the pad has it.
+async fn push_config_to_pad<D: DeviceLink>(
+    device: &D,
+    config: &DeviceConfig,
+) -> Option<IpcResponse> {
+    let mut events = device.subscribe();
+    if let Err(e) = device.send_config(config).await {
+        return Some(IpcResponse::Error(format!(
+            "The pad did not take the settings ({e}). Nothing was changed; try again."
+        )));
+    }
+    let wait = async {
+        loop {
+            match events.recv().await {
+                Ok(DeviceEvent::ConfigAck {
+                    success, message, ..
+                }) => {
+                    return (!success).then(|| IpcResponse::OperationRejected {
+                        reason: format!("The pad rejected the settings: {message}"),
+                    });
+                }
+                Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(_) => {
+                    return Some(IpcResponse::Error("Device event stream closed".to_string()))
+                }
+            }
+        }
+    };
+    tokio::time::timeout(CONFIG_ACK_TIMEOUT, wait)
+        .await
+        .unwrap_or_else(|_| {
+            Some(IpcResponse::Error(
+                "The pad did not confirm the settings within 3 s. Nothing was saved; \
+                 check its USB cable and try again."
+                    .to_string(),
+            ))
+        })
 }
 
 /// Ends a client's flash pause before the port is handed back. The daemon's

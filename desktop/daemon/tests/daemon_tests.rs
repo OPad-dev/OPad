@@ -42,6 +42,8 @@ struct MockDeviceLink {
     per_second: bool,
     cal_requests: Mutex<Vec<&'static str>>,
     progress_on_start: Option<Arc<Mutex<DaemonState>>>,
+    /// The pad's answer to a SetConfig; `None` is a pad that never answers
+    config_ack: Mutex<Option<Result<(), String>>>,
 }
 
 impl MockDeviceLink {
@@ -62,6 +64,7 @@ impl MockDeviceLink {
             per_second: false,
             cal_requests: Mutex::new(Vec::new()),
             progress_on_start: None,
+            config_ack: Mutex::new(Some(Ok(()))),
         }
     }
 }
@@ -97,6 +100,14 @@ impl DeviceLink for MockDeviceLink {
 
     async fn send_config(&self, config: &DeviceConfig) -> Result<(), DeviceError> {
         self.sent_configs.lock().push(config.clone());
+        if let Some(answer) = self.config_ack.lock().clone() {
+            let _ = self.event_tx.send(DeviceEvent::ConfigAck {
+                seq: 0,
+                success: answer.is_ok(),
+                message: answer.err().unwrap_or_default(),
+                current_config: Some(config.clone()),
+            });
+        }
         Ok(())
     }
 
@@ -4872,4 +4883,91 @@ async fn a_client_cannot_resume_or_flash_during_the_daemons_firmware_update() {
     }
     assert!(!device.is_connected(), "the device loop stayed paused");
     assert_eq!(daemon_state.lock().flash, Some(FlashHolder::FirmwareUpdate));
+}
+
+// "Settings saved" used to be answered whatever the pad did with them: the
+// send result was thrown away and its ConfigAck never read.
+#[tokio::test]
+async fn a_config_the_pad_refuses_or_never_confirms_is_not_reported_as_saved() {
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    let log_hub = LogHub::new();
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    let before = DeviceConfig::default();
+    let mut dimmer = before.clone();
+    dimmer.brightness = before.brightness.saturating_sub(10).max(1);
+
+    for (answer, expected) in [
+        (Some(Err("brightness out of range".to_string())), "rejected"),
+        (None, "did not confirm"),
+    ] {
+        let device = MockDeviceLink::new(true);
+        *device.config_ack.lock() = answer;
+        let daemon_state = Arc::new(Mutex::new(idle_state(true, None, CounterState::default())));
+        let resp = handle_ipc_request(
+            IpcRequest::UpdateConfig(dimmer.clone()),
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+            None,
+        )
+        .await;
+        let said = match resp {
+            IpcResponse::OperationRejected { reason } => reason,
+            IpcResponse::Error(e) => e,
+            other => panic!("reported as saved: {other:?}"),
+        };
+        assert!(said.contains(expected), "{said}");
+        assert_eq!(daemon_state.lock().config, before, "the PC kept its config");
+        assert_eq!(
+            storage.lock().as_ref().unwrap().load_config().unwrap(),
+            before,
+            "nothing was saved"
+        );
+    }
+}
+
+// The pad keeps its own settings and they replace this PC's on connect, so
+// one saved without the pad was silently undone. Only what this PC keeps for
+// itself can change while the pad is away.
+#[tokio::test]
+async fn without_the_pad_only_this_pcs_own_settings_can_change() {
+    let storage = Arc::new(Mutex::new(Some(Storage::open_in_memory().unwrap())));
+    let device = MockDeviceLink::new(false);
+    let log_hub = LogHub::new();
+    let pending_ops = Arc::new(Mutex::new(PendingOperations::default()));
+    let daemon_state = Arc::new(Mutex::new(idle_state(false, None, CounterState::default())));
+    let ask = |cfg| {
+        handle_ipc_request(
+            IpcRequest::UpdateConfig(cfg),
+            &daemon_state,
+            &storage,
+            &device,
+            &log_hub,
+            &pending_ops,
+            None,
+        )
+    };
+    let before = DeviceConfig::default();
+
+    let mut dimmer = before.clone();
+    dimmer.brightness = before.brightness.saturating_sub(10).max(1);
+    match ask(dimmer).await {
+        IpcResponse::OperationRejected { reason } => {
+            assert!(reason.contains("not connected"), "{reason}")
+        }
+        other => panic!("a pad setting was accepted without the pad: {other:?}"),
+    }
+    assert_eq!(daemon_state.lock().config, before);
+
+    let mut elsewhere = before.clone();
+    elsewhere.tosu_endpoint = "ws://127.0.0.1:24051/websocket/v2".to_string();
+    let resp = ask(elsewhere.clone()).await;
+    assert!(
+        matches!(resp, IpcResponse::ConfigUpdated { .. }),
+        "{resp:?}"
+    );
+    assert_eq!(daemon_state.lock().config, elsewhere);
+    assert!(device.sent_configs.lock().is_empty());
 }
