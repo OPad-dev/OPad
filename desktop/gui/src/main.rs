@@ -64,6 +64,12 @@ pub fn main() -> iced::Result {
     )
     .title(App::title)
     .theme(|_: &App, _| theme::theme())
+    // Nothing behind the frame chrome.rs draws: that is what rounds the
+    // window's corners
+    .style(|_: &App, _| iced::theme::Style {
+        background_color: iced::Color::TRANSPARENT,
+        text_color: theme::WHITE,
+    })
     .subscription(App::subscription)
     .font(iced_aw::ICED_AW_FONT_BYTES)
     .font(theme::FONT_MEDIUM_BYTES)
@@ -781,8 +787,9 @@ impl App {
             min_size: Some(Size::new(1100.0, 700.0)),
             position: window::Position::Centered,
             exit_on_close_request: false,
-            // Our own title bar and resize edges (chrome.rs)
+            // Our own frame, title bar and resize edges (chrome.rs)
             decorations: false,
+            transparent: true,
             #[cfg(target_os = "linux")]
             platform_specific: window::settings::PlatformSpecific {
                 application_id: "opad".to_string(),
@@ -2328,7 +2335,8 @@ impl App {
             .into()
         };
 
-        let sidebar = container(
+        let sidebar = container(column![
+            chrome::logo(),
             column![
                 nav,
                 Space::new().height(Length::Fill),
@@ -2362,11 +2370,14 @@ impl App {
                 ),
             ]
             .spacing(4)
-            .padding(18),
-        )
+            .padding(iced::Padding {
+                top: 0.0,
+                ..iced::Padding::new(18.0)
+            }),
+        ])
         .width(220)
         .height(Length::Fill)
-        .style(theme::sidebar);
+        .style(chrome::sidebar(self.maximized));
 
         let page: Element<'_, Message> = match self.page {
             Page::Dashboard => pages::dashboard(self),
@@ -2379,9 +2390,13 @@ impl App {
             Page::Troubleshooting => self.diagnostics.view(self),
         };
 
+        // The window buttons' strip is above it, in the same colour
         let mut main = column![]
             .spacing(14)
-            .padding(24)
+            .padding(iced::Padding {
+                top: 6.0,
+                ..iced::Padding::new(24.0)
+            })
             .width(Length::Fill)
             .height(Length::Fill);
 
@@ -2583,11 +2598,14 @@ impl App {
         }
         main = main.push(page);
 
-        let body = column![
-            chrome::title_bar(self.maximized),
-            row![sidebar, main].height(Length::Fill)
+        let body = row![
+            sidebar,
+            chrome::divider(),
+            column![chrome::title_bar(self.maximized), main].width(Length::Fill)
         ];
-        let framed = container(body).style(chrome::frame);
+        let framed = container(body)
+            .padding(chrome::frame_width(self.maximized))
+            .style(chrome::frame(self.maximized));
         let framed: Element<'_, Message> = if self.notices.is_empty() {
             framed.into()
         } else {
@@ -3806,16 +3824,7 @@ fn modal_over<'a>(
             .height(Length::Fill)
             .center_x(Length::Fill)
             .center_y(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(
-                    iced::Color {
-                        a: 0.75,
-                        ..theme::BG
-                    }
-                    .into(),
-                ),
-                ..Default::default()
-            }),
+            .style(chrome::dim(maximized)),
     );
     if maximized {
         stack![framed, dimmed].into()

@@ -20,7 +20,7 @@ sidebar:
 | [`troubleshooting.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/troubleshooting.rs), [`he_monitor.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/he_monitor.rs) | Página Troubleshooting: prueba de teclas, prueba de placa (evaluada por `opad_model::board_test`), conexión, informe, y el monitor de pulsaciones fantasma / dobles HE que sigue `he-debug.log` |
 | [`widgets.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/widgets.rs) | Lo que comparten las páginas: tarjetas, secciones, la barra de pestañas y la barra de guardado |
 | [`designer/`](https://github.com/OPad-dev/OPad/tree/main/desktop/gui/src/designer) | Screen Designer (`mod.rs`, `overlay.rs`) |
-| [`chrome.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/chrome.rs) | Barra de título propia y bordes de redimensionado en lugar de las decoraciones del sistema |
+| [`chrome.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/chrome.rs) | El marco propio de la ventana en lugar de las decoraciones del sistema: esquinas redondeadas, el logo y los botones de ventana (ambos arrastran la ventana), bordes de redimensionado |
 | [`theme.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/theme.rs) | Colores y fuentes |
 | [`tray.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/tray.rs) | Icono y menú de la bandeja |
 | [`single_instance.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/single_instance.rs) | Una sola GUI a la vez |

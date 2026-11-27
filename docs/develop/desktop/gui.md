@@ -20,7 +20,7 @@ sidebar:
 | [`troubleshooting.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/troubleshooting.rs), [`he_monitor.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/he_monitor.rs) | Troubleshooting page: key test, board test (graded by `opad_model::board_test`), connection, report, and the HE phantom / double-press monitor that follows `he-debug.log` |
 | [`widgets.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/widgets.rs) | What the pages share: cards, sections, the tab bar and the save bar |
 | [`designer/`](https://github.com/OPad-dev/OPad/tree/main/desktop/gui/src/designer) | Screen Designer (`mod.rs`, `overlay.rs`) |
-| [`chrome.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/chrome.rs) | Custom title bar and resize edges replacing system decorations |
+| [`chrome.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/chrome.rs) | The window's own frame in place of the system decorations: rounded corners, the logo and the window buttons (both drag the window), resize edges |
 | [`theme.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/theme.rs) | Colours and fonts |
 | [`tray.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/tray.rs) | Tray icon and menu |
 | [`single_instance.rs`](https://github.com/OPad-dev/OPad/blob/main/desktop/gui/src/single_instance.rs) | One GUI at a time |

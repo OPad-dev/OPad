@@ -1,5 +1,7 @@
-//! Window chrome replacing the system decorations: title bar (drag, double-click to
-//! maximize, minimize/maximize/close) and invisible edges for resizing.
+//! Window chrome replacing the system decorations: a rounded frame, the logo
+//! over the sidebar and a strip over the page (both drag the window, a
+//! double-click maximizes it), minimize/maximize/close, and invisible edges
+//! for resizing.
 
 use crate::theme;
 use crate::Message;
@@ -10,6 +12,20 @@ use iced::{mouse, Alignment, Border, Color, Element, Length, Theme};
 pub const TITLE_BAR_HEIGHT: f32 = 40.0;
 const EDGE: f32 = 6.0;
 const CORNER: f32 = 12.0;
+/// How round the window's corners are. The window itself is transparent
+/// (`open_window`), so what is drawn decides its shape.
+const RADIUS: f32 = 12.0;
+const FRAME: f32 = 1.0;
+
+/// The radius of what sits in a corner of the window, just inside the frame.
+/// A maximized window fills the screen and has square corners.
+fn inner_radius(maximized: bool) -> f32 {
+    if maximized {
+        0.0
+    } else {
+        RADIUS - FRAME
+    }
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum WindowAction {
@@ -20,7 +36,12 @@ pub enum WindowAction {
     Resize(Direction),
 }
 
-fn caption_button_style(close: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+/// `corner` rounds the button's top right corner: the close button sits in
+/// the window's, and its highlight must not stick out of it
+fn caption_button_style(
+    close: bool,
+    corner: f32,
+) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |_, status| {
         let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
         button::Style {
@@ -31,7 +52,10 @@ fn caption_button_style(close: bool) -> impl Fn(&Theme, button::Status) -> butto
             } else {
                 theme::MUTED
             },
-            border: Border::default(),
+            border: Border {
+                radius: iced::border::top_right(corner),
+                ..Border::default()
+            },
             shadow: Default::default(),
             snap: true,
         }
@@ -42,13 +66,65 @@ fn caption_button<'a>(
     icon: Element<'a, Message>,
     action: WindowAction,
     close: bool,
+    corner: f32,
 ) -> Element<'a, Message> {
     button(container(icon).center(Length::Fill))
         .width(46)
         .height(TITLE_BAR_HEIGHT)
         .padding(0)
-        .style(caption_button_style(close))
+        .style(caption_button_style(close, corner))
         .on_press(Message::Window(action))
+        .into()
+}
+
+/// Dragging `content` moves the window, a double-click maximizes it
+fn drags_window<'a>(content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
+    mouse_area(content)
+        .on_press(Message::Window(WindowAction::Drag))
+        .on_double_click(Message::Window(WindowAction::ToggleMaximize))
+        .into()
+}
+
+/// The logo at the top of the sidebar, lined up with the page names under it
+pub fn logo<'a>() -> Element<'a, Message> {
+    drags_window(
+        container(
+            row![
+                text("O").size(18).font(theme::FONT_BOLD).color(theme::PINK),
+                text("Pad").size(18).font(theme::FONT_BOLD),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .padding(iced::Padding {
+            left: 32.0,
+            top: 6.0,
+            ..iced::Padding::ZERO
+        })
+        .height(TITLE_BAR_HEIGHT + 12.0)
+        .width(Length::Fill)
+        .align_y(Alignment::Center),
+    )
+}
+
+/// The sidebar: one surface from the top of the window to the bottom
+pub fn sidebar(maximized: bool) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
+        background: Some(theme::SURFACE.into()),
+        border: Border {
+            radius: iced::border::left(inner_radius(maximized)),
+            ..Border::default()
+        },
+        ..Default::default()
+    }
+}
+
+/// The line between the sidebar and the page
+pub fn divider<'a>() -> Element<'a, Message> {
+    container(Space::new().width(1).height(Length::Fill))
+        .style(|_: &Theme| container::Style {
+            background: Some(theme::BORDER.into()),
+            ..Default::default()
+        })
         .into()
 }
 
@@ -67,22 +143,11 @@ fn line_icon<'a>(width: f32, height: f32, filled: bool) -> Element<'a, Message> 
         .into()
 }
 
+/// The strip over the page: it has the page's own background, so the window
+/// buttons sit on the page rather than on a bar of another colour
 pub fn title_bar<'a>(maximized: bool) -> Element<'a, Message> {
-    let drag_area = mouse_area(
-        container(
-            row![
-                text("O").size(15).font(theme::FONT_BOLD).color(theme::PINK),
-                text("Pad").size(15).font(theme::FONT_BOLD),
-            ]
-            .align_y(Alignment::Center),
-        )
-        .padding([0, 16])
-        .height(Length::Fill)
-        .width(Length::Fill)
-        .align_y(Alignment::Center),
-    )
-    .on_press(Message::Window(WindowAction::Drag))
-    .on_double_click(Message::Window(WindowAction::ToggleMaximize));
+    let drag_area = drags_window(Space::new().width(Length::Fill).height(Length::Fill));
+    let corner = inner_radius(maximized);
 
     let maximize_icon = if maximized {
         // Restore: two overlapping squares
@@ -105,28 +170,23 @@ pub fn title_bar<'a>(maximized: bool) -> Element<'a, Message> {
         line_icon(10.0, 10.0, false)
     };
 
-    container(
-        row![
-            drag_area,
-            caption_button(line_icon(10.0, 1.5, true), WindowAction::Minimize, false),
-            caption_button(maximize_icon, WindowAction::ToggleMaximize, false),
-            caption_button(
-                text("×").size(22).line_height(1.0).into(),
-                WindowAction::Close,
-                true
-            ),
-        ]
-        .height(TITLE_BAR_HEIGHT),
-    )
-    .style(|_: &Theme| container::Style {
-        background: Some(theme::SURFACE.into()),
-        border: Border {
-            color: theme::BORDER,
-            width: 0.0,
-            radius: 0.0.into(),
-        },
-        ..Default::default()
-    })
+    row![
+        drag_area,
+        caption_button(
+            line_icon(10.0, 1.5, true),
+            WindowAction::Minimize,
+            false,
+            0.0
+        ),
+        caption_button(maximize_icon, WindowAction::ToggleMaximize, false, 0.0),
+        caption_button(
+            text("×").size(22).line_height(1.0).into(),
+            WindowAction::Close,
+            true,
+            corner
+        ),
+    ]
+    .height(TITLE_BAR_HEIGHT)
     .into()
 }
 
@@ -170,17 +230,42 @@ pub fn resize_edges<'a>() -> Element<'a, Message> {
     .into()
 }
 
-/// Thin frame so the undecorated window stands out from what is behind it
-pub fn frame(_: &Theme) -> container::Style {
-    container::Style {
+/// The window's own shape: rounded corners and a thin line, so that it
+/// stands out from what is behind it. What is inside is inset by
+/// `frame_width`, or it would be drawn over the line.
+pub fn frame(maximized: bool) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
         background: Some(theme::BG.into()),
         border: Border {
-            color: Color {
-                a: 0.35,
-                ..theme::PINK
-            },
-            width: 1.0,
-            radius: 0.0.into(),
+            color: theme::BORDER,
+            width: frame_width(maximized),
+            radius: if maximized { 0.0 } else { RADIUS }.into(),
+        },
+        ..Default::default()
+    }
+}
+
+pub fn frame_width(maximized: bool) -> f32 {
+    if maximized {
+        0.0
+    } else {
+        FRAME
+    }
+}
+
+/// The layer that dims the window under a dialog, in the window's shape
+pub fn dim(maximized: bool) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
+        background: Some(
+            Color {
+                a: 0.75,
+                ..theme::BG
+            }
+            .into(),
+        ),
+        border: Border {
+            radius: if maximized { 0.0 } else { RADIUS }.into(),
+            ..Border::default()
         },
         ..Default::default()
     }

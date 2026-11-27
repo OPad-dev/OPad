@@ -104,18 +104,6 @@ pub fn outlined_card(_theme: &Theme) -> container::Style {
     }
 }
 
-pub fn sidebar(_theme: &Theme) -> container::Style {
-    container::Style {
-        background: Some(SURFACE.into()),
-        border: Border {
-            color: BORDER,
-            width: 1.0,
-            radius: 0.0.into(),
-        },
-        ..Default::default()
-    }
-}
-
 pub fn banner(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(CARD.into()),
