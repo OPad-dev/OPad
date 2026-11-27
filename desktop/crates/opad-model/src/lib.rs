@@ -289,6 +289,10 @@ pub enum SwipeAction {
     Mute,
     /// The configured keyboard key (`swipe_*_key`). Never sent during a map.
     Key,
+    /// An action from firmware newer than this app, by its wire value. It is
+    /// shown as such and left as it is: saving sends "keep current" for it,
+    /// never this app's default in its place.
+    Unknown(u32),
 }
 
 impl SwipeAction {
@@ -303,7 +307,17 @@ impl SwipeAction {
         SwipeAction::Key,
     ];
 
+    /// What a SetConfig carries: 0, "keep current", for an action this app
+    /// does not know
     pub fn to_wire(self) -> u32 {
+        match self {
+            SwipeAction::Unknown(_) => 0,
+            known => known.stored(),
+        }
+    }
+
+    /// The pad's own value, as the PC keeps it
+    pub fn stored(self) -> u32 {
         match self {
             SwipeAction::None => 1,
             SwipeAction::PrevTrack => 2,
@@ -313,12 +327,22 @@ impl SwipeAction {
             SwipeAction::Key => 6,
             SwipeAction::VolumeUp => 7,
             SwipeAction::VolumeDown => 8,
+            SwipeAction::Unknown(value) => value,
         }
     }
 
-    /// `None` for 0 (keep current, or firmware without swipes) and unknown values
+    /// `None` for 0 (keep current, or firmware without swipes). A value this
+    /// app has no name for is kept as [`SwipeAction::Unknown`].
     pub fn from_wire(value: u32) -> Option<SwipeAction> {
-        SwipeAction::ALL.into_iter().find(|a| a.to_wire() == value)
+        if value == 0 {
+            return None;
+        }
+        Some(
+            SwipeAction::ALL
+                .into_iter()
+                .find(|a| a.stored() == value)
+                .unwrap_or(SwipeAction::Unknown(value)),
+        )
     }
 
     pub fn label(self) -> &'static str {
@@ -331,6 +355,7 @@ impl SwipeAction {
             SwipeAction::PlayPause => "Play / pause",
             SwipeAction::Mute => "Mute",
             SwipeAction::Key => "Keyboard key",
+            SwipeAction::Unknown(_) => "Set by newer pad firmware",
         }
     }
 }
@@ -440,23 +465,31 @@ pub enum HeRtMode {
     Off,
     Normal,
     Continuous,
+    /// A mode from firmware newer than this app, by its wire value. Left as
+    /// it is: saving sends "keep current" for it.
+    Unknown(u32),
 }
 
 impl HeRtMode {
+    /// What a SetConfig carries: 0, "keep current", for a mode this app does
+    /// not know
     pub fn to_wire(self) -> u32 {
         match self {
             HeRtMode::Off => 1,
             HeRtMode::Normal => 2,
             HeRtMode::Continuous => 3,
+            HeRtMode::Unknown(_) => 0,
         }
     }
 
+    /// `None` for 0 (keep current, or firmware without rapid trigger)
     pub fn from_wire(value: u32) -> Option<Self> {
         match value {
+            0 => None,
             1 => Some(HeRtMode::Off),
             2 => Some(HeRtMode::Normal),
             3 => Some(HeRtMode::Continuous),
-            _ => None,
+            other => Some(HeRtMode::Unknown(other)),
         }
     }
 }
@@ -1493,7 +1526,16 @@ mod tests {
         }
         // 0 is "keep current" on the wire
         assert_eq!(SwipeAction::from_wire(0), None);
-        assert_eq!(SwipeAction::from_wire(9), None);
+        // An action from newer firmware is kept, never replaced by a default:
+        // it goes back to the pad as "keep current" and to storage as itself
+        let newer = SwipeAction::from_wire(9).unwrap();
+        assert_eq!(newer, SwipeAction::Unknown(9));
+        assert_eq!(newer.to_wire(), 0);
+        assert_eq!(newer.stored(), 9);
+        assert!(
+            !SwipeAction::ALL.contains(&newer),
+            "never offered as a choice"
+        );
 
         let mut c = DeviceConfig {
             swipe_right_action: SwipeAction::Key,
@@ -1629,7 +1671,9 @@ mod tests {
         assert_eq!(HeRtMode::from_wire(2), Some(HeRtMode::Normal));
         assert_eq!(HeRtMode::from_wire(3), Some(HeRtMode::Continuous));
         assert_eq!(HeRtMode::from_wire(0), None);
-        assert_eq!(HeRtMode::from_wire(4), None);
+        // A mode from newer firmware goes back as "keep current"
+        assert_eq!(HeRtMode::from_wire(4), Some(HeRtMode::Unknown(4)));
+        assert_eq!(HeRtMode::Unknown(4).to_wire(), 0);
     }
 
     #[test]

@@ -38,6 +38,15 @@ message Hello {
     // A pad that answers with HelloAck.frame_crc switches to them; firmware
     // predating it ignores the field and both keep the marked framing.
     bool frame_crc = 4;
+    // The newest ConfigPayload revision this host knows (CONFIG_REVISION in
+    // opad-protocol; the revisions are listed in the firmware's
+    // device_config.h). A host shows and sends only the setting values its
+    // revision has: one it does not know reads as that host's default, and
+    // comes back in the next SetConfig as if it had been chosen. So the pad
+    // keeps every setting whose stored value is newer than the host,
+    // whatever the host sent for it. 0 from a host predating the field,
+    // which the pad reads as revision 1; firmware predating it ignores it.
+    uint32 config_revision = 5;
 }
 
 message HelloAck {

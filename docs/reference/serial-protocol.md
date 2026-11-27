@@ -76,7 +76,7 @@ sequenceDiagram
     Note over H,P: marked host + frame_crc: both send checked frames from now on
 ```
 
-1. While the pad's framing is unknown, the host sends `Hello` every 400 ms (`HELLO_RETRY`), alternating marked and legacy framing. `Hello` carries `protocol_version = 1`, `he_calibration = true` and `frame_crc = true`.
+1. While the pad's framing is unknown, the host sends `Hello` every 400 ms (`HELLO_RETRY`), alternating marked and legacy framing. `Hello` carries `protocol_version = 1`, `he_calibration = true`, `frame_crc = true` and `config_revision = 1` (`CONFIG_REVISION`: the newest set of setting values the app knows; the pad keeps any setting whose stored value is newer, whatever the app sends for it).
 2. The pad sends nothing until it has decoded a message it recognises. The framing of that frame becomes the host's framing for the connection (a checked frame counts as marked), and the parser is locked to it.
 3. The pad answers `Hello` with `HelloAck` in that framing. `HelloAck.frame_crc` is true when the `Hello` asked for checked frames and the framing is marked; the `HelloAck` itself is still a marked frame, and every frame after it is checked.
 4. On `HelloAck.frame_crc = true` the host also sends checked frames. Firmware that predates `frame_crc` ignores the field, and both ends stay on marked frames.

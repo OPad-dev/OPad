@@ -29,7 +29,7 @@ const BUSY_BACKOFF: Duration = Duration::from_millis(20);
 pub enum DeviceCommand {
     TimeSync,
     ClaimOwnership(Vec<u8>),
-    Config(DeviceConfig),
+    Config(Box<DeviceConfig>),
     HostStatus {
         tosu_connected: bool,
         is_playing: bool,
@@ -214,7 +214,7 @@ mod tests {
         let dm = Recorder::default();
         let resend = AtomicBool::new(false);
         for cmd in [
-            DeviceCommand::Config(DeviceConfig::default()),
+            DeviceCommand::Config(Box::default()),
             DeviceCommand::DataUpdate(vec![(1, SourceValue::Number(1.0))]),
             DeviceCommand::DataUpdate(vec![(1, SourceValue::Number(2.0))]),
             DeviceCommand::RequestStatus,

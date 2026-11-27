@@ -22,6 +22,12 @@ pub const CRC_BYTES: usize = 2;
 /// The pad protocol version (HelloAck `protocol_version`) this host speaks.
 /// A pad reporting another one is left alone as incompatible.
 pub const DEVICE_PROTOCOL_VERSION: u32 = 1;
+/// The newest set of setting values this app knows (`Hello.config_revision`):
+/// the swipe actions and rapid trigger modes it has a name for. The pad keeps
+/// any setting whose stored value is from a later revision, whatever this
+/// app sends for it (`CONFIG_REVISION_*` in the firmware's device_config.h).
+/// Raised in the app release that learns a value the firmware added.
+pub const CONFIG_REVISION: u32 = 1;
 pub const HEADER_BYTES: usize = 4;
 /// Matches FRAME_MAX_PAYLOAD on the device: its 8192-byte buffer minus the
 /// header and a checked frame's CRC
@@ -268,6 +274,7 @@ mod tests {
                 client_version: "1.0.0".to_string(),
                 he_calibration: true,
                 frame_crc: false,
+                config_revision: CONFIG_REVISION,
             })),
         };
 

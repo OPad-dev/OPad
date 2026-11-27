@@ -309,6 +309,68 @@ static void test_swipe_actions(void)
     printf("✓ test_swipe_actions passed\n");
 }
 
+// A swipe action table from a later firmware: 9 came in with revision 2
+static uint8_t later_revision_of(uint8_t action)
+{
+    return action == 9 ? 2 : swipe_action_revision(action);
+}
+
+static void test_host_cannot_overwrite_what_it_does_not_know(void)
+{
+    // Every action that exists is revision 1, and nothing else is an action
+    for (uint8_t a = SWIPE_ACTION_NONE; a <= SWIPE_ACTION_VOLUME_DOWN; a++) {
+        assert(swipe_action_revision(a) == CONFIG_REVISION_BASE);
+    }
+    assert(swipe_action_revision(0) == 0);
+    assert(swipe_action_revision(SWIPE_ACTION_VOLUME_DOWN + 1) == 0);
+    assert(CONFIG_REVISION_CURRENT == CONFIG_REVISION_BASE);
+
+    // The pad stores an action from revision 2 on swipe down, with its key
+    // and modifiers; an app from before it shows "Volume down" there and
+    // sends that back with every save
+    device_config_data_t stored = {
+        .swipe_up_action = SWIPE_ACTION_VOLUME_UP,
+        .swipe_down_action = 9,
+        .swipe_down_key = 0x3A,
+        .swipe_left_action = SWIPE_ACTION_PREV_TRACK,
+        .swipe_right_action = SWIPE_ACTION_NEXT_TRACK,
+        .swipe_mods = {0, 0x01, 0, 0},
+        .brightness = 80,
+    };
+    device_config_data_t from_host = stored;
+    from_host.swipe_down_action = SWIPE_ACTION_VOLUME_DOWN;
+    from_host.swipe_down_key = 0;
+    from_host.swipe_mods[1] = 0;
+    from_host.swipe_left_action = SWIPE_ACTION_MUTE; // a real choice
+    from_host.brightness = 40;                       // and another
+
+    // No revision in its Hello (0), or revision 1: swipe down is kept whole,
+    // everything it does know goes through
+    for (uint32_t host = 0; host <= 1; host++) {
+        device_config_data_t incoming = from_host;
+        assert(device_config_keep_newer_than_host(&incoming, &stored, host, later_revision_of) == 1);
+        assert(incoming.swipe_down_action == 9);
+        assert(incoming.swipe_down_key == 0x3A);
+        assert(incoming.swipe_mods[1] == 0x01);
+        assert(incoming.swipe_left_action == SWIPE_ACTION_MUTE);
+        assert(incoming.brightness == 40);
+    }
+
+    // An app that knows revision 2 chose what it sent
+    device_config_data_t incoming = from_host;
+    assert(device_config_keep_newer_than_host(&incoming, &stored, 2, later_revision_of) == 0);
+    assert(incoming.swipe_down_action == SWIPE_ACTION_VOLUME_DOWN);
+    assert(incoming.swipe_mods[1] == 0);
+
+    // With today's actions there is nothing to keep, for any host
+    incoming = from_host;
+    stored.swipe_down_action = SWIPE_ACTION_MUTE;
+    assert(device_config_keep_newer_than_host(&incoming, &stored, 0, swipe_action_revision) == 0);
+    assert(incoming.swipe_down_action == SWIPE_ACTION_VOLUME_DOWN);
+
+    printf("✓ test_host_cannot_overwrite_what_it_does_not_know passed\n");
+}
+
 static void test_v7_blob_with_no_he_key(void)
 {
     // Firmware from before the HE work stores and reads exactly this 64-byte
@@ -533,6 +595,7 @@ int main(void)
     test_gameplay_display_hz_bounds();
     test_key_gpio_allow_list();
     test_swipe_actions();
+    test_host_cannot_overwrite_what_it_does_not_know();
     test_v7_blob_with_no_he_key();
     test_he_settings_equal();
     test_corrupt_or_short_he_record();

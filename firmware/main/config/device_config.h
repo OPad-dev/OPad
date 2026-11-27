@@ -56,6 +56,26 @@ typedef enum {
     SWIPE_ACTION_VOLUME_DOWN = 8,
 } swipe_action_t;
 
+// Which hosts know which setting values (opad.proto Hello.config_revision).
+// The app and the pad update independently, so an app can be older than a
+// value the pad stores. Such an app shows its own default in its place and
+// sends that default back with the next SetConfig, as if it had been chosen.
+// The pad does not let it: a setting whose stored value is newer than the
+// host is kept, whatever the host sent for it
+// (device_config_keep_newer_than_host). A host that names no revision
+// predates the field and knows revision 1, which is every value below.
+//
+// Adding a value to a stored enum: give it the next revision in
+// swipe_action_revision() (or a function like it), raise
+// CONFIG_REVISION_CURRENT, and raise CONFIG_REVISION in the desktop's
+// opad-protocol in the app release that knows the value
+// (docs/develop/protocol-changes.md).
+#define CONFIG_REVISION_BASE    1
+#define CONFIG_REVISION_CURRENT 1
+
+// The revision a swipe action came in with; 0 for a value that is no action
+uint8_t swipe_action_revision(uint8_t action);
+
 #define DEVICE_CONFIG_DEFAULT_SWIPE_LEFT    SWIPE_ACTION_PREV_TRACK
 #define DEVICE_CONFIG_DEFAULT_SWIPE_RIGHT   SWIPE_ACTION_NEXT_TRACK
 #define DEVICE_CONFIG_DEFAULT_SWIPE_UP      SWIPE_ACTION_VOLUME_UP
@@ -113,6 +133,16 @@ esp_err_t device_config_init(void);
  * @brief Validate configuration parameters.
  */
 bool device_config_validate(const device_config_data_t *cfg, char *err_msg, size_t err_msg_len);
+
+// Puts back, in `incoming`, every setting whose stored value a host of
+// `host_revision` cannot know: for a swipe, its action, key and modifiers
+// together. Returns how many settings were kept. `revision_of` is
+// swipe_action_revision; a parameter so the rule is tested with values newer
+// than any that exist yet.
+int device_config_keep_newer_than_host(device_config_data_t *incoming,
+                                       const device_config_data_t *stored,
+                                       uint32_t host_revision,
+                                       uint8_t (*revision_of)(uint8_t action));
 
 /**
  * @brief True if an NVS blob of `len` bytes claiming `version` is a layout

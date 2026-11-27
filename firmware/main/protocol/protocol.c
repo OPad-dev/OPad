@@ -742,11 +742,18 @@ static struct {
     uint32_t key_id;
 } s_detect;
 
+// The newest ConfigPayload revision the connected host knows (its Hello).
+// A host that never says knows the first one.
+static uint32_t s_host_config_revision = CONFIG_REVISION_BASE;
+
 static void handle_host_message(const opad_HostToDevice *msg)
 {
     switch (msg->which_payload) {
     case opad_HostToDevice_hello_tag:
         he_cal_ui_set_app_capable(msg->payload.hello.he_calibration);
+        s_host_config_revision = msg->payload.hello.config_revision > 0
+                                     ? msg->payload.hello.config_revision
+                                     : CONFIG_REVISION_BASE;
         // Checked frames only on the marked framing. The HelloAck goes out as
         // a marked frame; everything after it is checked.
         s_crc_answer = msg->payload.hello.frame_crc && s_host_framing != FRAME_FORMAT_LEGACY;
@@ -806,6 +813,12 @@ static void handle_host_message(const opad_HostToDevice *msg)
             for (int i = 0; i < 4; i++) {
                 dcfg.swipe_mods[i] = (uint8_t)mods[i]; // HID modifiers are 8 bits
             }
+            // A host older than a stored value cannot have chosen what it
+            // sent in its place (device_config.h, CONFIG_REVISION_*)
+            device_config_data_t stored;
+            device_config_get(&stored);
+            device_config_keep_newer_than_host(&dcfg, &stored, s_host_config_revision,
+                                               swipe_action_revision);
 
             device_config_ext_t ext;
             device_config_get_ext(&ext);

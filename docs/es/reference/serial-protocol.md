@@ -76,7 +76,7 @@ sequenceDiagram
     Note over H,P: anfitrión marcado + frame_crc: a partir de aquí ambos envían tramas comprobadas
 ```
 
-1. Mientras desconoce el entramado del teclado, el anfitrión envía `Hello` cada 400 ms (`HELLO_RETRY`), alternando entramado marcado y heredado. `Hello` lleva `protocol_version = 1`, `he_calibration = true` y `frame_crc = true`.
+1. Mientras desconoce el entramado del teclado, el anfitrión envía `Hello` cada 400 ms (`HELLO_RETRY`), alternando entramado marcado y heredado. `Hello` lleva `config_revision = 1` (`CONFIG_REVISION`: el conjunto más nuevo de valores de ajustes que conoce la app; el teclado conserva cualquier ajuste cuyo valor guardado sea más nuevo, envíe lo que envíe la app), `protocol_version = 1`, `he_calibration = true` y `frame_crc = true`.
 2. El teclado no envía nada hasta haber decodificado un mensaje que reconoce. El entramado de esa trama pasa a ser el entramado del anfitrión durante la conexión (una trama comprobada cuenta como marcada), y el analizador queda fijado a él.
 3. El teclado responde a `Hello` con `HelloAck` en ese entramado. `HelloAck.frame_crc` es verdadero cuando el `Hello` pidió tramas comprobadas y el entramado es marcado; el propio `HelloAck` sigue siendo una trama marcada, y todas las tramas posteriores son comprobadas.
 4. Con `HelloAck.frame_crc = true`, el anfitrión también envía tramas comprobadas. El firmware anterior a `frame_crc` ignora el campo, y ambos extremos se quedan en tramas marcadas.

@@ -672,7 +672,7 @@ async fn main() -> Result<()> {
                         }
                     }
                     RuntimeAction::SendConfig(cfg) => {
-                        let _ = device_cmd.send(DeviceCommand::Config(cfg)).await;
+                        let _ = device_cmd.send(DeviceCommand::Config(Box::new(cfg))).await;
                     }
                     RuntimeAction::SaveDeviceConfig(cfg) => {
                         let s_guard = storage.lock();

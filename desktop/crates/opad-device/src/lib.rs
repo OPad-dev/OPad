@@ -862,64 +862,7 @@ impl DeviceManager {
         let msg = HostToDevice {
             sequence_number: self.next_seq(),
             payload: Some(host_to_device::Payload::SetConfig(proto::SetConfig {
-                config: Some(proto::ConfigPayload {
-                    key1_hid_usage: config.key1_hid_usage,
-                    key2_hid_usage: config.key2_hid_usage,
-                    debounce_us: config.debounce_us,
-                    brightness: config.brightness,
-                    display_sleep_seconds: config.display_sleep_seconds,
-                    gameplay_display_hz: config.gameplay_display_hz,
-                    #[allow(deprecated)]
-                    press_color_rgb: 0,
-                    key1_gpio: config.key1_gpio,
-                    key2_gpio: config.key2_gpio,
-                    // Firmware without swipes skips these fields
-                    swipe_left_action: config.swipe_left_action.to_wire() as i32,
-                    swipe_right_action: config.swipe_right_action.to_wire() as i32,
-                    swipe_left_key: config.swipe_left_key,
-                    swipe_right_key: config.swipe_right_key,
-                    swipe_up_action: config.swipe_up_action.to_wire() as i32,
-                    swipe_down_action: config.swipe_down_action.to_wire() as i32,
-                    swipe_up_key: config.swipe_up_key,
-                    swipe_down_key: config.swipe_down_key,
-                    swipe_up_modifiers: config.swipe_up_modifiers,
-                    swipe_down_modifiers: config.swipe_down_modifiers,
-                    swipe_left_modifiers: config.swipe_left_modifiers,
-                    swipe_right_modifiers: config.swipe_right_modifiers,
-                    key1_he: config.key1_he.map(|k| proto::HeKeySettings {
-                        actuation: k.actuation,
-                        release_hyst: k.release_hyst,
-                        top_reset: k.top_reset,
-                        rt_press: k.rt_press,
-                        rt_release: k.rt_release,
-                        bottom_dead_zone: Some(k.bottom_dead_zone),
-                        rt_mode: k.rt_mode.to_wire() as i32,
-                        allow_below_noise_floor: Some(k.allow_below_noise_floor),
-                    }),
-                    key2_he: config.key2_he.map(|k| proto::HeKeySettings {
-                        actuation: k.actuation,
-                        release_hyst: k.release_hyst,
-                        top_reset: k.top_reset,
-                        rt_press: k.rt_press,
-                        rt_release: k.rt_release,
-                        bottom_dead_zone: Some(k.bottom_dead_zone),
-                        rt_mode: k.rt_mode.to_wire() as i32,
-                        allow_below_noise_floor: Some(k.allow_below_noise_floor),
-                    }),
-                    // Firmware predating key 3 ignores these three
-                    key3_hid_usage: Some(config.key3_hid_usage),
-                    key3_he: config.key3_he.map(|k| proto::HeKeySettings {
-                        actuation: k.actuation,
-                        release_hyst: k.release_hyst,
-                        top_reset: k.top_reset,
-                        rt_press: k.rt_press,
-                        rt_release: k.rt_release,
-                        bottom_dead_zone: Some(k.bottom_dead_zone),
-                        rt_mode: k.rt_mode.to_wire() as i32,
-                        allow_below_noise_floor: Some(k.allow_below_noise_floor),
-                    }),
-                    game_keys: Some(config.game_keys),
-                }),
+                config: Some(config_payload(config)),
             })),
         };
         self.send_msg(msg)
@@ -1282,6 +1225,70 @@ fn device_config_from(c: &proto::ConfigPayload) -> DeviceConfig {
             rt_mode: opad_model::HeRtMode::from_wire(k.rt_mode as u32).unwrap_or_default(),
             allow_below_noise_floor: k.allow_below_noise_floor.unwrap_or(false),
         }),
+    }
+}
+
+/// The ConfigPayload a SetConfig carries for `config`. A swipe action or
+/// rapid trigger mode this app does not know (set by newer firmware) goes as
+/// 0, "keep current", so saving never replaces it with this app's default.
+fn config_payload(config: &DeviceConfig) -> proto::ConfigPayload {
+    proto::ConfigPayload {
+        key1_hid_usage: config.key1_hid_usage,
+        key2_hid_usage: config.key2_hid_usage,
+        debounce_us: config.debounce_us,
+        brightness: config.brightness,
+        display_sleep_seconds: config.display_sleep_seconds,
+        gameplay_display_hz: config.gameplay_display_hz,
+        #[allow(deprecated)]
+        press_color_rgb: 0,
+        key1_gpio: config.key1_gpio,
+        key2_gpio: config.key2_gpio,
+        // Firmware without swipes skips these fields
+        swipe_left_action: config.swipe_left_action.to_wire() as i32,
+        swipe_right_action: config.swipe_right_action.to_wire() as i32,
+        swipe_left_key: config.swipe_left_key,
+        swipe_right_key: config.swipe_right_key,
+        swipe_up_action: config.swipe_up_action.to_wire() as i32,
+        swipe_down_action: config.swipe_down_action.to_wire() as i32,
+        swipe_up_key: config.swipe_up_key,
+        swipe_down_key: config.swipe_down_key,
+        swipe_up_modifiers: config.swipe_up_modifiers,
+        swipe_down_modifiers: config.swipe_down_modifiers,
+        swipe_left_modifiers: config.swipe_left_modifiers,
+        swipe_right_modifiers: config.swipe_right_modifiers,
+        key1_he: config.key1_he.map(|k| proto::HeKeySettings {
+            actuation: k.actuation,
+            release_hyst: k.release_hyst,
+            top_reset: k.top_reset,
+            rt_press: k.rt_press,
+            rt_release: k.rt_release,
+            bottom_dead_zone: Some(k.bottom_dead_zone),
+            rt_mode: k.rt_mode.to_wire() as i32,
+            allow_below_noise_floor: Some(k.allow_below_noise_floor),
+        }),
+        key2_he: config.key2_he.map(|k| proto::HeKeySettings {
+            actuation: k.actuation,
+            release_hyst: k.release_hyst,
+            top_reset: k.top_reset,
+            rt_press: k.rt_press,
+            rt_release: k.rt_release,
+            bottom_dead_zone: Some(k.bottom_dead_zone),
+            rt_mode: k.rt_mode.to_wire() as i32,
+            allow_below_noise_floor: Some(k.allow_below_noise_floor),
+        }),
+        // Firmware predating key 3 ignores these three
+        key3_hid_usage: Some(config.key3_hid_usage),
+        key3_he: config.key3_he.map(|k| proto::HeKeySettings {
+            actuation: k.actuation,
+            release_hyst: k.release_hyst,
+            top_reset: k.top_reset,
+            rt_press: k.rt_press,
+            rt_release: k.rt_release,
+            bottom_dead_zone: Some(k.bottom_dead_zone),
+            rt_mode: k.rt_mode.to_wire() as i32,
+            allow_below_noise_floor: Some(k.allow_below_noise_floor),
+        }),
+        game_keys: Some(config.game_keys),
     }
 }
 
@@ -1703,6 +1710,7 @@ fn hello_message() -> HostToDevice {
             he_calibration: true,
             // Answered with HelloAck.frame_crc by firmware that reads them
             frame_crc: true,
+            config_revision: opad_protocol::CONFIG_REVISION,
         })),
     }
 }
@@ -2382,6 +2390,47 @@ mod tests {
         assert_eq!(
             (cfg.swipe_up_action, cfg.swipe_down_action),
             (SwipeAction::VolumeDown, SwipeAction::Mute)
+        );
+    }
+
+    #[test]
+    fn a_setting_from_newer_firmware_is_kept_not_replaced_by_a_default() {
+        // The pad reports a swipe action and a rapid trigger mode that this
+        // app has no name for
+        let mut c = proto::ConfigPayload {
+            swipe_up_action: 9,
+            swipe_up_key: 0x3A,
+            swipe_up_modifiers: 0x01,
+            swipe_down_action: SwipeAction::Mute.to_wire() as i32,
+            key1_he: Some(proto::HeKeySettings {
+                actuation: 500,
+                rt_mode: 4,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        c.key1_hid_usage = 0x1D;
+        let cfg = device_config_from(&c);
+        assert_eq!(cfg.swipe_up_action, SwipeAction::Unknown(9));
+        assert_eq!(
+            cfg.key1_he.unwrap().rt_mode,
+            opad_model::HeRtMode::Unknown(4)
+        );
+
+        // Saving anything sends them back as "keep current", with the key
+        // and modifiers the pad reported, and the rest as it is
+        let sent = crate::config_payload(&cfg);
+        assert_eq!(sent.swipe_up_action, 0);
+        assert_eq!((sent.swipe_up_key, sent.swipe_up_modifiers), (0x3A, 0x01));
+        assert_eq!(sent.key1_he.unwrap().rt_mode, 0);
+        assert_eq!(sent.swipe_down_action, SwipeAction::Mute.to_wire() as i32);
+
+        // Until the person picks something else for it
+        let mut changed = cfg.clone();
+        changed.swipe_up_action = SwipeAction::VolumeUp;
+        assert_eq!(
+            crate::config_payload(&changed).swipe_up_action,
+            SwipeAction::VolumeUp.to_wire() as i32
         );
     }
 

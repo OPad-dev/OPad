@@ -29,10 +29,59 @@ bool device_config_key_gpio_supported(uint32_t gpio)
     return false;
 }
 
+uint8_t swipe_action_revision(uint8_t action)
+{
+    // No default: a new action does not build until it is given a revision
+    switch ((swipe_action_t)action) {
+    case SWIPE_ACTION_NONE:
+    case SWIPE_ACTION_PREV_TRACK:
+    case SWIPE_ACTION_NEXT_TRACK:
+    case SWIPE_ACTION_PLAY_PAUSE:
+    case SWIPE_ACTION_MUTE:
+    case SWIPE_ACTION_KEY:
+    case SWIPE_ACTION_VOLUME_UP:
+    case SWIPE_ACTION_VOLUME_DOWN:
+        return CONFIG_REVISION_BASE;
+    }
+    return 0;
+}
+
+int device_config_keep_newer_than_host(device_config_data_t *incoming,
+                                       const device_config_data_t *stored,
+                                       uint32_t host_revision,
+                                       uint8_t (*revision_of)(uint8_t action))
+{
+    if (!incoming || !stored || !revision_of) {
+        return 0;
+    }
+    if (host_revision < CONFIG_REVISION_BASE) {
+        host_revision = CONFIG_REVISION_BASE;
+    }
+    // In swipe_mods order: up, down, left, right
+    uint8_t *const action[4] = {&incoming->swipe_up_action, &incoming->swipe_down_action,
+                                &incoming->swipe_left_action, &incoming->swipe_right_action};
+    uint8_t *const key[4] = {&incoming->swipe_up_key, &incoming->swipe_down_key,
+                             &incoming->swipe_left_key, &incoming->swipe_right_key};
+    const uint8_t was_action[4] = {stored->swipe_up_action, stored->swipe_down_action,
+                                   stored->swipe_left_action, stored->swipe_right_action};
+    const uint8_t was_key[4] = {stored->swipe_up_key, stored->swipe_down_key,
+                                stored->swipe_left_key, stored->swipe_right_key};
+    int kept = 0;
+    for (int i = 0; i < 4; i++) {
+        if (revision_of(was_action[i]) > host_revision) {
+            *action[i] = was_action[i];
+            *key[i] = was_key[i];
+            incoming->swipe_mods[i] = stored->swipe_mods[i];
+            kept++;
+        }
+    }
+    return kept;
+}
+
 // A key is optional (0) unless the action sends it
 static bool swipe_valid(uint8_t action, uint8_t key)
 {
-    if (action < SWIPE_ACTION_NONE || action > SWIPE_ACTION_VOLUME_DOWN) {
+    if (swipe_action_revision(action) == 0) {
         return false;
     }
     if (key != 0 && (key < 0x04 || key > 0xE7)) {
