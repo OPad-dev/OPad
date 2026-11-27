@@ -59,6 +59,8 @@ pub struct KeysState {
     /// Edited values, not yet saved. `None` until the pad's are adopted.
     edit: Option<[HeKeyConfig; KEYS]>,
     dirty: bool,
+    /// What Save sent and the pad has not answered for yet
+    saving: Option<[HeKeyConfig; KEYS]>,
     live: Option<HeLiveSample>,
     /// What the live view draws: each key's reading through a One Euro
     /// filter. Display only; the pad decides presses from raw readings.
@@ -110,6 +112,17 @@ impl KeysState {
             self.separate = pad[0] != pad[1] || (config.key3_he.is_some() && pad[2] != pad[0]);
         }
         self.edit = Some(pad);
+    }
+
+    /// The answer to Save. Only settings the pad confirmed stop being unsaved:
+    /// a refused or lost save keeps them, and Save, on the page. Anything
+    /// edited while the save was on its way is still unsaved either way.
+    pub fn save_finished(&mut self, saved: bool) {
+        if let Some(sent) = self.saving.take() {
+            if saved {
+                self.dirty = self.edit != Some(sent);
+            }
+        }
     }
 
     /// Leaving the page or losing the pad: the next live view starts fresh
@@ -263,12 +276,11 @@ pub fn update(app: &mut App, msg: KeysMessage) -> Task<Message> {
                 key3_he: (key_count(app) >= 3).then_some(k3).or(app.config.key3_he),
                 ..app.config.clone()
             };
-            app.keys.dirty = false;
+            // Still unsaved until the pad confirms it (`save_finished`)
+            app.keys.edit = Some(edit);
+            app.keys.saving = Some(edit);
             app.banner = Some("Saving key settings...".into());
-            Task::perform(
-                ipc::request(IpcRequest::UpdateConfig(config)),
-                Message::ActionDone,
-            )
+            crate::act(crate::Action::SaveKeys, IpcRequest::UpdateConfig(config))
         }
         KeysMessage::PollLive => {
             if app.keys.live_inflight || !app.device_connected {
@@ -789,7 +801,9 @@ pub fn view(app: &App) -> Element<'_, Message> {
             .on_press_maybe(dirty.then_some(Message::Keys(KeysMessage::Revert))),
         button(text("Save to pad").size(13))
             .style(theme::primary)
-            .on_press_maybe(dirty.then_some(Message::Keys(KeysMessage::Save))),
+            .on_press_maybe(
+                (dirty && app.keys.saving.is_none()).then_some(Message::Keys(KeysMessage::Save)),
+            ),
     ]
     .spacing(10)
     .align_y(Alignment::Center);
@@ -1251,6 +1265,32 @@ mod tests {
         s.edit_settings(KeysMessage::Revert, pad(500, 500), 2);
         assert!(!s.dirty);
         assert_eq!(s.edit.unwrap()[0].actuation, 500);
+    }
+
+    #[test]
+    fn settings_stay_unsaved_until_the_pad_confirms_them() {
+        let mut s = KeysState::default();
+        s.adopt(&config(pad(500, 500)));
+        s.edit_settings(KeysMessage::Set(0, Field::Actuation, 200), pad(500, 500), 2);
+
+        // Refused, or the daemon went away: the edit and Save are still there
+        s.saving = s.edit;
+        s.save_finished(false);
+        assert!(s.dirty);
+        s.adopt(&config(pad(500, 500)));
+        assert_eq!(s.edit.unwrap()[0].actuation, 200);
+
+        // Confirmed: nothing left to save
+        s.saving = s.edit;
+        s.save_finished(true);
+        assert!(!s.dirty);
+
+        // An edit made while the save was on its way is not covered by it
+        s.edit_settings(KeysMessage::Set(0, Field::Actuation, 300), pad(200, 200), 2);
+        s.saving = s.edit;
+        s.edit_settings(KeysMessage::Set(0, Field::Actuation, 350), pad(200, 200), 2);
+        s.save_finished(true);
+        assert!(s.dirty);
     }
 
     /// Deterministic noise with sd ~5.6 counts, like the V1.1 bench at rest

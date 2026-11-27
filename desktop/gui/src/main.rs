@@ -441,7 +441,7 @@ pub enum Message {
     CheckForUpdates,
     SetUpdateChannel(String),
     ResetLatency,
-    ActionDone(Result<IpcResponse, String>),
+    ActionDone(Action, Result<IpcResponse, String>),
     DismissBanner,
     // tosu configuration (§T-4)
     PickTosuPath,
@@ -1434,7 +1434,7 @@ impl App {
                     animation: self.result_animations.get(trigger),
                     grade: trigger.label().to_string(),
                 };
-                return Task::perform(ipc::request(request), Message::ActionDone);
+                return act(Action::PreviewAnimation, request);
             }
             Message::Debounce(v) => {
                 if self.device_connected {
@@ -1575,10 +1575,7 @@ impl App {
                             brightness: b,
                             ..self.config.clone()
                         };
-                        return Task::perform(
-                            ipc::request(IpcRequest::UpdateConfig(cfg)),
-                            Message::ActionDone,
-                        );
+                        return act(Action::TestBrightness, IpcRequest::UpdateConfig(cfg));
                     }
                 }
                 diagnostics::DiagnosticsMessage::PingDaemon => {
@@ -1785,14 +1782,11 @@ impl App {
                     config.set_swipe(dir, self.swipes[dir.index()]);
                 }
                 self.banner = Some("Saving settings...".into());
-                return Task::perform(
-                    ipc::request(IpcRequest::UpdateConfig(config)),
-                    Message::ActionDone,
-                );
+                return act(Action::SaveSettings, IpcRequest::UpdateConfig(config));
             }
             Message::Sync => {
                 self.banner = Some("Syncing counters and clock with the pad...".into());
-                return Task::perform(ipc::request(IpcRequest::ForceSync), Message::ActionDone);
+                return act(Action::Sync, IpcRequest::ForceSync);
             }
             Message::PromptResetCounters => {
                 self.reset_modal = Some(String::new());
@@ -1806,9 +1800,9 @@ impl App {
             Message::ConfirmResetCounters => {
                 self.reset_modal = None;
                 self.banner = Some("Resetting lifetime counters...".into());
-                return Task::perform(
-                    ipc::request(IpcRequest::ResetCounters { confirm: true }),
-                    Message::ActionDone,
+                return act(
+                    Action::ResetCounters,
+                    IpcRequest::ResetCounters { confirm: true },
                 );
             }
             Message::ResolveReplacement(restore) => {
@@ -1817,9 +1811,9 @@ impl App {
                 } else {
                     "Adopting new pad...".into()
                 });
-                return Task::perform(
-                    ipc::request(IpcRequest::ResolveReplacement { restore }),
-                    Message::ActionDone,
+                return act(
+                    Action::Replacement { restore },
+                    IpcRequest::ResolveReplacement { restore },
                 );
             }
             Message::ResolveTakeover(take_over, keep_device_counters) => {
@@ -1830,12 +1824,12 @@ impl App {
                 } else {
                     "Taking over the pad, using this PC's counters...".into()
                 });
-                return Task::perform(
-                    ipc::request(IpcRequest::ResolveTakeover {
+                return act(
+                    Action::Takeover { take_over },
+                    IpcRequest::ResolveTakeover {
                         take_over,
                         keep_device_counters,
-                    }),
-                    Message::ActionDone,
+                    },
                 );
             }
             Message::UpdateStatus(res) => {
@@ -1893,17 +1887,17 @@ impl App {
                         o.auto = enabled;
                     }
                 }
-                return Task::perform(
-                    ipc::request(IpcRequest::SetUpdateEnabled { component, enabled }),
-                    Message::ActionDone,
+                return act(
+                    Action::UpdateToggle,
+                    IpcRequest::SetUpdateEnabled { component, enabled },
                 );
             }
             Message::InstallUpdate(component) => {
                 self.banner = Some("Installing the update...".into());
                 self.update_busy = true;
-                return Task::perform(
-                    ipc::request(IpcRequest::InstallUpdate { component }),
-                    Message::ActionDone,
+                return act(
+                    Action::InstallUpdate,
+                    IpcRequest::InstallUpdate { component },
                 );
             }
             Message::CheckForUpdates => {
@@ -1911,10 +1905,7 @@ impl App {
                     u.checking = true;
                 }
                 self.update_busy = true;
-                return Task::perform(
-                    ipc::request(IpcRequest::CheckForUpdates),
-                    Message::ActionDone,
-                );
+                return act(Action::CheckUpdates, IpcRequest::CheckForUpdates);
             }
             Message::SetUpdateChannel(channel) => {
                 if let Some(u) = &mut self.updates {
@@ -1922,16 +1913,13 @@ impl App {
                     u.checking = true;
                 }
                 self.update_busy = true;
-                return Task::perform(
-                    ipc::request(IpcRequest::SetUpdateChannel { channel }),
-                    Message::ActionDone,
+                return act(
+                    Action::CheckUpdates,
+                    IpcRequest::SetUpdateChannel { channel },
                 );
             }
             Message::ResetLatency => {
-                return Task::perform(
-                    ipc::request(IpcRequest::ResetLatencyStats),
-                    Message::ActionDone,
-                );
+                return act(Action::ResetLatency, IpcRequest::ResetLatencyStats);
             }
             Message::PickTosuPath => {
                 return Task::perform(
@@ -1965,24 +1953,14 @@ impl App {
                 self.tosu_override_path = None;
                 self.banner = Some("Reset to bundled tosu".into());
             }
-            Message::ActionDone(result) => {
-                self.banner = Some(match result {
-                    Ok(IpcResponse::ConfigUpdated { .. }) => {
-                        "Settings saved and sent to the pad".into()
-                    }
-                    Ok(IpcResponse::SyncCompleted { success: true, .. }) => "Pad synced".into(),
-                    Ok(IpcResponse::CountersReset { .. }) => "Lifetime counters reset".into(),
-                    Ok(IpcResponse::HandshakeAck { .. }) => "Latency statistics reset".into(),
-                    Ok(IpcResponse::AnimationPlayed) => "Playing on the pad".into(),
-                    Ok(IpcResponse::UpdateCheckStarted) => "Checking for updates...".into(),
-                    Ok(IpcResponse::UpdateStarted { .. }) => "Installing the update...".into(),
-                    Ok(IpcResponse::OperationDeferred { reason }) => reason,
-                    Ok(IpcResponse::OperationRejected { reason }) => {
-                        format!("Not possible right now: {}", reason)
-                    }
-                    Ok(IpcResponse::Error(e)) | Err(e) => format!("Error: {}", e),
-                    Ok(other) => format!("Unexpected response: {:?}", other),
-                });
+            Message::ActionDone(action, result) => {
+                if action == Action::SaveKeys {
+                    let saved = matches!(result, Ok(IpcResponse::ConfigUpdated { .. }));
+                    self.keys.save_finished(saved);
+                }
+                if let Some(text) = action_banner(action, result) {
+                    self.banner = Some(text);
+                }
                 // An install may just have changed the update state
                 self.update_status_polled_at = None;
                 return self.poll();
@@ -3513,9 +3491,159 @@ fn incompatible_banner(incompat: &opad_model::IncompatibleDevice) -> String {
     )
 }
 
+/// What the person asked for, kept with the request so that the daemon's
+/// answer is reported as the result of that action. Several requests share an
+/// answer (`ConfigUpdated`, `CountersReset`), so the answer alone cannot say
+/// what was done.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    SaveSettings,
+    SaveKeys,
+    /// The Troubleshooting brightness slider: each step is sent as it moves
+    TestBrightness,
+    PreviewAnimation,
+    Sync,
+    ResetCounters,
+    Replacement {
+        restore: bool,
+    },
+    Takeover {
+        take_over: bool,
+    },
+    UpdateToggle,
+    InstallUpdate,
+    CheckUpdates,
+    ResetLatency,
+}
+
+/// Send `request` and report its answer as the result of `action`.
+pub fn act(action: Action, request: IpcRequest) -> Task<Message> {
+    Task::perform(ipc::request(request), move |result| {
+        Message::ActionDone(action, result)
+    })
+}
+
+/// The banner for the daemon's answer to `action`, or `None` when the control
+/// that was used already shows the result (a slider, a switch).
+fn action_banner(action: Action, result: Result<IpcResponse, String>) -> Option<String> {
+    let done = |text: &str| Some(text.to_string());
+    match (action, result) {
+        (_, Err(e)) | (_, Ok(IpcResponse::Error(e))) => Some(format!("Error: {}", e)),
+        // Declining a takeover is answered as a refusal, but it is what was asked
+        (
+            Action::Takeover { take_over: false },
+            Ok(IpcResponse::OperationRejected { .. } | IpcResponse::CountersRestored { .. }),
+        ) => done("The pad stays paired with its other installation"),
+        (_, Ok(IpcResponse::OperationDeferred { reason })) => Some(reason),
+        (_, Ok(IpcResponse::OperationRejected { reason })) => {
+            Some(format!("Not possible right now: {}", reason))
+        }
+        (Action::SaveSettings, Ok(IpcResponse::ConfigUpdated { .. })) => {
+            done("Settings saved and sent to the pad")
+        }
+        (Action::SaveKeys, Ok(IpcResponse::ConfigUpdated { .. })) => {
+            done("Key settings saved on the pad")
+        }
+        (Action::TestBrightness | Action::UpdateToggle, Ok(IpcResponse::ConfigUpdated { .. })) => {
+            None
+        }
+        (Action::PreviewAnimation, Ok(IpcResponse::AnimationPlayed)) => done("Playing on the pad"),
+        (Action::Sync, Ok(IpcResponse::SyncCompleted { success: true, .. })) => done("Pad synced"),
+        (Action::Sync, Ok(IpcResponse::SyncCompleted { success: false, .. })) => {
+            done("The sync did not finish")
+        }
+        (Action::ResetCounters, Ok(IpcResponse::CountersReset { .. })) => {
+            done("Lifetime counters reset")
+        }
+        (Action::Replacement { restore: true }, Ok(IpcResponse::CountersReset { .. })) => {
+            done("The previous pad's lifetime counters are now on this pad")
+        }
+        (Action::Replacement { restore: false }, Ok(IpcResponse::CountersReset { .. })) => {
+            done("New pad adopted")
+        }
+        (Action::Takeover { take_over: true }, Ok(IpcResponse::CountersRestored { .. })) => {
+            done("The pad is now paired with this installation")
+        }
+        (Action::InstallUpdate, Ok(IpcResponse::UpdateStarted { .. })) => {
+            done("Installing the update...")
+        }
+        (Action::CheckUpdates, Ok(IpcResponse::UpdateCheckStarted)) => {
+            done("Checking for updates...")
+        }
+        (Action::ResetLatency, Ok(IpcResponse::HandshakeAck { .. })) => {
+            done("Latency statistics reset")
+        }
+        (_, Ok(other)) => Some(format!("Unexpected response: {:?}", other)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_answer_is_reported_as_the_result_of_the_action_that_asked() {
+        let config_updated = || {
+            Ok(IpcResponse::ConfigUpdated {
+                config: DeviceConfig::default(),
+                deferred_persist: false,
+            })
+        };
+        let counters = opad_model::CounterState::default;
+        // The same answer, three different things done
+        assert_eq!(
+            action_banner(Action::SaveSettings, config_updated()).as_deref(),
+            Some("Settings saved and sent to the pad")
+        );
+        assert_eq!(
+            action_banner(Action::SaveKeys, config_updated()).as_deref(),
+            Some("Key settings saved on the pad")
+        );
+        // Turning automatic updates on or off sends nothing to the pad, and a
+        // brightness slider does not announce every step
+        assert_eq!(action_banner(Action::UpdateToggle, config_updated()), None);
+        assert_eq!(
+            action_banner(Action::TestBrightness, config_updated()),
+            None
+        );
+
+        let reset = || {
+            Ok(IpcResponse::CountersReset {
+                counters: counters(),
+            })
+        };
+        assert_eq!(
+            action_banner(Action::ResetCounters, reset()).as_deref(),
+            Some("Lifetime counters reset")
+        );
+        let restored = action_banner(Action::Replacement { restore: true }, reset()).unwrap();
+        assert!(!restored.contains("reset"), "{restored}");
+
+        // A takeover used to end in "Unexpected response", and leaving the pad
+        // alone in "Not possible right now"
+        let taken = action_banner(
+            Action::Takeover { take_over: true },
+            Ok(IpcResponse::CountersRestored {
+                counters: counters(),
+            }),
+        )
+        .unwrap();
+        assert!(!taken.contains("Unexpected"), "{taken}");
+        let left = action_banner(
+            Action::Takeover { take_over: false },
+            Ok(IpcResponse::OperationRejected {
+                reason: "Left the pad paired with its other installation".into(),
+            }),
+        )
+        .unwrap();
+        assert!(!left.contains("Not possible"), "{left}");
+
+        // A failure is always shown, whatever was asked
+        assert_eq!(
+            action_banner(Action::TestBrightness, Err("daemon unreachable".into())).as_deref(),
+            Some("Error: daemon unreachable")
+        );
+    }
 
     #[test]
     fn the_incompatible_banner_names_the_pad_protocol_the_daemon_requires() {
