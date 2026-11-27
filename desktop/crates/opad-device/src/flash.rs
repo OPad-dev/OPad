@@ -499,16 +499,31 @@ fn rom_port_names() -> Vec<String> {
         .collect()
 }
 
-/// The first 303a:1001 port to appear (or one already there), polled fast
+/// The 303a:1001 port that appeared, out of the ones on the bus now. A port in
+/// `ignored` was there before the wait began, so it is some other board; it
+/// stops being ignored once it has left the bus, because the same name coming
+/// back is a boot like any other (a replugged pad gets its old name again).
+fn newly_booted(
+    mut ports: Vec<String>,
+    ignored: &mut Vec<String>,
+) -> Result<Option<String>, FlashError> {
+    ignored.retain(|p| ports.contains(p));
+    ports.retain(|p| !ignored.contains(p));
+    match ports.len() {
+        0 => Ok(None),
+        1 => Ok(ports.pop()),
+        _ => Err(FlashError::AmbiguousBootloader(ports)),
+    }
+}
+
+/// The first 303a:1001 port to appear that is not in `ignored`, polled fast
 /// enough to catch the boot window.
-fn wait_for_rom_port(timeout: Duration) -> Result<String, FlashError> {
+fn wait_for_rom_port(timeout: Duration, ignored: &mut Vec<String>) -> Result<String, FlashError> {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
-        let mut ports = rom_port_names();
-        match ports.len() {
-            0 => std::thread::sleep(Duration::from_millis(5)),
-            1 => return Ok(ports.remove(0)),
-            _ => return Err(FlashError::AmbiguousBootloader(ports)),
+        match newly_booted(rom_port_names(), ignored)? {
+            Some(port) => return Ok(port),
+            None => std::thread::sleep(Duration::from_millis(5)),
         }
     }
     Err(FlashError::NoBootloader)
@@ -566,12 +581,23 @@ fn rom_sync(port: &mut dyn serialport::SerialPort) -> Result<(), String> {
 /// Catch the pad's next boot, hold it in download mode, write `images` (the
 /// full recovery set) and boot it. `progress` hears each step; the caller has
 /// already told the person to replug the cable.
+///
+/// A board that is already in the ROM bootloader when this starts is not the
+/// pad being replugged (another ESP32-S3 left in download mode, say), and it
+/// is never written: only a port that appears during the wait is.
 pub fn recover(
     images: &[(u32, PathBuf)],
     timeout: Duration,
     progress: &(dyn Fn(&str) + Sync),
 ) -> Result<(), FlashError> {
-    let caught = wait_for_rom_port(timeout)?;
+    let mut ignored = rom_port_names();
+    if !ignored.is_empty() {
+        progress(&format!(
+            "Leaving {} alone: already in the ROM bootloader before the replug",
+            ignored.join(", ")
+        ));
+    }
+    let caught = wait_for_rom_port(timeout, &mut ignored)?;
     usj_reset_to_download(&caught).map_err(|e| FlashError::PortBusy(caught.clone(), e))?;
     progress(&format!(
         "Caught the pad booting on {caught}, holding it in download mode..."
@@ -579,7 +605,7 @@ pub fn recover(
     // A USB-Serial-JTAG reset keeps the port on the bus: the same port is now
     // the ROM in download mode, once it has restarted
     std::thread::sleep(Duration::from_millis(300));
-    let boot_port = wait_for_rom_port(Duration::from_secs(5))?;
+    let boot_port = wait_for_rom_port(Duration::from_secs(5), &mut ignored)?;
     disable_watchdogs(&boot_port)?;
     write_images(images, &boot_port, progress)?;
     progress("Firmware written, rebooting into the application...");
@@ -836,6 +862,44 @@ mod tests {
         let (a, b) = (entry(img, 0), entry(img, 1));
         let seq = if a.0 > b.0 { a.0 } else { b.0 };
         (seq - 1) % 2
+    }
+
+    #[test]
+    fn recover_only_takes_a_port_that_appeared_during_the_wait() {
+        let names = |ports: &[&str]| ports.iter().map(|p| p.to_string()).collect::<Vec<_>>();
+
+        // Another board was already in the ROM bootloader: it is not the pad
+        let mut ignored = names(&["/dev/ttyACM3"]);
+        assert_eq!(
+            newly_booted(names(&["/dev/ttyACM3"]), &mut ignored).unwrap(),
+            None
+        );
+        // The pad boots next to it
+        assert_eq!(
+            newly_booted(names(&["/dev/ttyACM3", "/dev/ttyACM0"]), &mut ignored).unwrap(),
+            Some("/dev/ttyACM0".to_string())
+        );
+        assert_eq!(ignored, names(&["/dev/ttyACM3"]));
+
+        // The pad itself was in download mode: unplugging it frees the name,
+        // and the replug that reuses it is the boot being waited for
+        let mut ignored = names(&["/dev/ttyACM0"]);
+        assert_eq!(
+            newly_booted(names(&["/dev/ttyACM0"]), &mut ignored).unwrap(),
+            None
+        );
+        assert_eq!(newly_booted(Vec::new(), &mut ignored).unwrap(), None);
+        assert_eq!(
+            newly_booted(names(&["/dev/ttyACM0"]), &mut ignored).unwrap(),
+            Some("/dev/ttyACM0".to_string())
+        );
+
+        // Two boards booting at once cannot be told apart
+        let mut ignored = Vec::new();
+        assert!(matches!(
+            newly_booted(names(&["/dev/ttyACM0", "/dev/ttyACM1"]), &mut ignored),
+            Err(FlashError::AmbiguousBootloader(_))
+        ));
     }
 
     #[test]

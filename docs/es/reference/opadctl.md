@@ -281,7 +281,7 @@ Usage: opadctl recover [OPTIONS] <FIRMWARE>
 | `--timeout <TIMEOUT>` | How long to wait for the replug, in seconds [default: 300] |
 <!-- src: /desktop/cli/src/main.rs#Commands::Recover -->
 
-Resuelve el mismo conjunto de archivos que `flash --full`, te pide que desconectes y vuelvas a conectar el teclado y espera hasta `--timeout` segundos. Cuando aparece durante el arranque el puerto USB-Serial-JTAG de la ROM del teclado (`303a:1001`), `opadctl` lo retiene en modo de descarga, escribe el conjunto completo, lo reinicia en la aplicación con un reinicio por watchdog RTC y espera hasta 15 s a la aplicación OPad (`303a:8415`). Consulta [Recuperación](../recovery.md) §7.7. <!-- src: /desktop/cli/src/main.rs#Commands::Recover, /desktop/crates/opad-device/src/flash.rs#recover -->
+Resuelve el mismo conjunto de archivos que `flash --full`, te pide que desconectes y vuelvas a conectar el teclado y espera hasta `--timeout` segundos. Cuando aparece durante el arranque el puerto USB-Serial-JTAG de la ROM del teclado (`303a:1001`), `opadctl` lo retiene en modo de descarga, escribe el conjunto completo, lo reinicia en la aplicación con un reinicio por watchdog RTC y espera hasta 15 s a la aplicación OPad (`303a:8415`). Una placa que ya estaba en el bus como `303a:1001` cuando empezó el comando se deja como está y se nombra en una línea `Leaving ... alone`: solo se escribe un puerto que aparece durante la espera. Consulta [Recuperación](../recovery.md) §7.7. <!-- src: /desktop/cli/src/main.rs#Commands::Recover, /desktop/crates/opad-device/src/flash.rs#recover -->
 
 ## Diagnóstico y pruebas
 

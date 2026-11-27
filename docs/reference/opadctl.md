@@ -281,7 +281,7 @@ Usage: opadctl recover [OPTIONS] <FIRMWARE>
 | `--timeout <TIMEOUT>` | How long to wait for the replug, in seconds [default: 300] |
 <!-- src: /desktop/cli/src/main.rs#Commands::Recover -->
 
-Resolves the same file set as `flash --full`, then asks you to unplug and replug the pad and waits up to `--timeout` seconds. When the pad's ROM USB-Serial-JTAG port (`303a:1001`) appears during boot, `opadctl` holds it in download mode, writes the full set, resets it into the app with an RTC watchdog reset, and waits up to 15 s for the OPad app (`303a:8415`). See [Recovery](../recovery.md) §7.7. <!-- src: /desktop/cli/src/main.rs#Commands::Recover, /desktop/crates/opad-device/src/flash.rs#recover -->
+Resolves the same file set as `flash --full`, then asks you to unplug and replug the pad and waits up to `--timeout` seconds. When the pad's ROM USB-Serial-JTAG port (`303a:1001`) appears during boot, `opadctl` holds it in download mode, writes the full set, resets it into the app with an RTC watchdog reset, and waits up to 15 s for the OPad app (`303a:8415`). A board that was already on the bus as `303a:1001` when the command started is left alone and named in a `Leaving ... alone` line: only a port that appears during the wait is written. See [Recovery](../recovery.md) §7.7. <!-- src: /desktop/cli/src/main.rs#Commands::Recover, /desktop/crates/opad-device/src/flash.rs#recover -->
 
 ## Diagnostics and testing
 
