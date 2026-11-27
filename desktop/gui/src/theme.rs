@@ -129,6 +129,31 @@ pub fn banner(_theme: &Theme) -> container::Style {
 }
 
 /// Colored status dot
+/// A floating notice: a card edged in the colour of how it went
+pub fn notice(tone: crate::Tone) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
+        background: Some(CARD.into()),
+        border: Border {
+            color: match tone {
+                crate::Tone::Info => MUTED,
+                crate::Tone::Good => GREEN,
+                crate::Tone::Bad => RED,
+            },
+            width: 1.0,
+            radius: 10.0.into(),
+        },
+        shadow: iced::Shadow {
+            color: Color {
+                a: 0.5,
+                ..Color::BLACK
+            },
+            offset: iced::Vector::new(0.0, 4.0),
+            blur_radius: 16.0,
+        },
+        ..Default::default()
+    }
+}
+
 pub fn dot(on: bool) -> impl Fn(&Theme) -> container::Style {
     move |_| container::Style {
         background: Some((if on { GREEN } else { OFF }).into()),

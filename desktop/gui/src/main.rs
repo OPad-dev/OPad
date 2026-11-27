@@ -407,7 +407,14 @@ pub struct App {
     pub log_filter_level: Option<LogLevel>,
     pub log_filter_source: Option<LogSource>,
     pub log_auto_scroll: bool,
-    pub banner: Option<String>,
+    /// Results of what was just done, floating over the page until they
+    /// expire; newest last
+    pub notices: Vec<Notice>,
+    next_notice: u64,
+    /// The notice under the pointer keeps its time
+    hovered_notice: Option<u64>,
+    /// No tray host was found: closing the window quits the app
+    pub no_tray: bool,
     pub tosu_override_path: Option<std::path::PathBuf>,
     pub designer: designer::Designer,
     pub diagnostics: diagnostics::DiagnosticsState,
@@ -438,8 +445,38 @@ const UPDATE_STATUS_POLL: Duration = Duration::from_secs(60);
 /// While a check or an install is running the answer is seconds away
 const UPDATE_STATUS_POLL_BUSY: Duration = Duration::from_secs(2);
 
-const NO_TRAY_BANNER: &str =
-    "No system tray found; the app will quit when closed. The pad keeps working.";
+/// How a notice reads at a glance, and how long it stays
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tone {
+    /// Something started and its result follows
+    Info,
+    Good,
+    Bad,
+}
+
+impl Tone {
+    /// Long enough to read: twice as long when something went wrong
+    fn stays(self) -> Duration {
+        match self {
+            Tone::Info | Tone::Good => Duration::from_secs(4),
+            Tone::Bad => Duration::from_secs(8),
+        }
+    }
+}
+
+/// One floating notice (docs/specs/app-ux-decisions.md §10)
+#[derive(Debug, Clone)]
+pub struct Notice {
+    pub id: u64,
+    pub tone: Tone,
+    pub text: String,
+    until: std::time::Instant,
+}
+
+/// At most this many notices show at once; an older one makes room
+const MAX_NOTICES: usize = 3;
+/// How often notices are checked for having had their time
+const NOTICE_TICK: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -565,7 +602,10 @@ pub enum Message {
     SetUpdateChannel(String),
     ResetLatency,
     ActionDone(Action, Result<IpcResponse, String>),
-    DismissBanner,
+    DismissNotice(u64),
+    /// The pointer is over this notice (or none)
+    HoverNotice(Option<u64>),
+    NoticeTick,
     // tosu configuration (§T-4)
     PickTosuPath,
     TosuPathPicked(Option<std::path::PathBuf>),
@@ -674,7 +714,10 @@ impl App {
             log_filter_level: None,
             log_filter_source: None,
             log_auto_scroll: true,
-            banner: None,
+            notices: Vec::new(),
+            next_notice: 0,
+            hovered_notice: None,
+            no_tray: false,
             tosu_override_path,
             designer,
             diagnostics: diagnostics::DiagnosticsState::default(),
@@ -904,9 +947,6 @@ impl App {
                         }
                         self.daemon_online = true;
                         self.daemon_spawn_attempted = false;
-                        if self.banner.as_deref() == Some("Launched opad-daemon. Connecting...") {
-                            self.banner = None;
-                        }
                         self.mode = mode;
                         self.device_connected = device_connected;
                         self.device_info = device_info;
@@ -1008,16 +1048,19 @@ impl App {
                 return Task::perform(save_logs_dialog(text), Message::LogsSaved);
             }
             Message::LogsSaved(res) => match res {
-                Ok(path) => self.banner = Some(format!("Saved log to {}", path)),
+                Ok(path) => self.notify(Tone::Good, format!("Log saved to {path}")),
                 Err(e) if e.is_empty() => {}
-                Err(e) => self.banner = Some(format!("Failed to save log: {}", e)),
+                Err(e) => self.fail("The log could not be saved.", e),
             },
             Message::ToggleAutoScroll => {
                 self.log_auto_scroll = !self.log_auto_scroll;
             }
             Message::ExportBackup => {
                 if matches!(self.mode, RuntimeMode::Playing | RuntimeMode::Cooldown) {
-                    self.banner = Some("Cannot export backup during gameplay or cooldown.".into());
+                    self.notify(
+                        Tone::Bad,
+                        "Not during a map: export the backup once it has ended.",
+                    );
                     return Task::none();
                 }
                 return Task::perform(
@@ -1030,21 +1073,24 @@ impl App {
                     return Task::perform(export_backup_dialog(backup), Message::ExportBackupDone);
                 }
                 Ok(IpcResponse::OperationRejected { reason }) => {
-                    self.banner = Some(format!("Export rejected: {}", reason));
+                    self.notify(Tone::Bad, format!("The backup was not exported: {reason}"));
                 }
                 Ok(IpcResponse::Error(e)) | Err(e) => {
-                    self.banner = Some(format!("Export error: {}", e));
+                    self.fail("The backup could not be read. Try again.", e);
                 }
                 _ => {}
             },
             Message::ExportBackupDone(result) => match result {
-                Ok(path) => self.banner = Some(format!("Backup exported to {}", path)),
+                Ok(path) => self.notify(Tone::Good, format!("Backup saved to {path}")),
                 Err(e) if e.is_empty() => {}
-                Err(e) => self.banner = Some(format!("Export failed: {}", e)),
+                Err(e) => self.fail("The backup file could not be written.", e),
             },
             Message::StartImportBackup => {
                 if matches!(self.mode, RuntimeMode::Playing | RuntimeMode::Cooldown) {
-                    self.banner = Some("Cannot import backup during gameplay or cooldown.".into());
+                    self.notify(
+                        Tone::Bad,
+                        "Not during a map: import the backup once it has ended.",
+                    );
                     return Task::none();
                 }
                 return Task::perform(pick_backup_dialog(), Message::FilePickedForImport);
@@ -1057,7 +1103,7 @@ impl App {
                     );
                 }
                 Err(e) if e.is_empty() => {}
-                Err(e) => self.banner = Some(e),
+                Err(e) => self.notify(Tone::Bad, e),
             },
             Message::ImportPreviewReady(result) => match result {
                 Ok(IpcResponse::ImportPreview {
@@ -1077,10 +1123,10 @@ impl App {
                     });
                 }
                 Ok(IpcResponse::OperationRejected { reason }) => {
-                    self.banner = Some(format!("Import rejected: {}", reason));
+                    self.notify(Tone::Bad, format!("The backup was not imported: {reason}"));
                 }
                 Ok(IpcResponse::Error(e)) | Err(e) => {
-                    self.banner = Some(format!("Preview failed: {}", e));
+                    self.fail("The backup could not be checked. Try again.", e);
                 }
                 _ => {}
             },
@@ -1113,16 +1159,13 @@ impl App {
                     self.counters = counters.clone();
                     self.adopt_config(&config);
                     self.config = config;
-                    self.banner = Some(format!(
-                        "Backup successfully imported and synced! (generation: {})",
-                        counters.counter_generation
-                    ));
+                    self.notify(Tone::Good, "Backup imported.");
                 }
                 Ok(IpcResponse::OperationRejected { reason }) => {
-                    self.banner = Some(format!("Import rejected: {}", reason));
+                    self.notify(Tone::Bad, format!("The backup was not imported: {reason}"));
                 }
                 Ok(IpcResponse::Error(e)) | Err(e) => {
-                    self.banner = Some(format!("Import failed: {}", e));
+                    self.fail("The backup could not be imported.", e);
                 }
                 _ => {}
             },
@@ -1131,7 +1174,6 @@ impl App {
             }
             Message::ConfirmRestoreDeviceFromPc => {
                 self.recovery_modal = None;
-                self.banner = Some("Restoring pad counters from PC database...".into());
                 return Task::perform(
                     ipc::request(IpcRequest::RestoreDeviceFromPc { confirm: true }),
                     Message::RecoveryCompleted,
@@ -1142,7 +1184,6 @@ impl App {
             }
             Message::ConfirmImportPcFromDevice => {
                 self.recovery_modal = None;
-                self.banner = Some("Importing PC database counters from pad...".into());
                 return Task::perform(
                     ipc::request(IpcRequest::ImportPcFromDevice { confirm: true }),
                     Message::RecoveryCompleted,
@@ -1156,16 +1197,13 @@ impl App {
                     self.counters = counters.clone();
                     self.pc_counters = Some(counters.clone());
                     self.esp_counters = Some(counters.clone());
-                    self.banner = Some(format!(
-                        "Counters synchronized! New generation: {}",
-                        counters.counter_generation
-                    ));
+                    self.notify(Tone::Good, "The PC and the pad now have the same counters.");
                 }
                 Ok(IpcResponse::OperationRejected { reason }) => {
-                    self.banner = Some(format!("Operation rejected: {}", reason));
+                    self.notify(Tone::Bad, format!("Not done: {reason}"));
                 }
                 Ok(IpcResponse::Error(e)) | Err(e) => {
-                    self.banner = Some(format!("Operation failed: {}", e));
+                    self.fail("The counters could not be changed. Try again.", e);
                 }
                 _ => {}
             },
@@ -1334,7 +1372,7 @@ impl App {
                 }
             }
             Message::StartDaemon => {
-                self.banner = Some("Starting opad-daemon...".into());
+                self.notify(Tone::Info, "Starting the OPad service…");
                 self.log_event(
                     LogSource::Program,
                     LogLevel::Info,
@@ -1345,7 +1383,6 @@ impl App {
             }
             Message::DaemonStarted(res) => match res {
                 Ok(()) => {
-                    self.banner = Some("Launched opad-daemon. Connecting...".into());
                     self.log_event(
                         LogSource::Program,
                         LogLevel::Info,
@@ -1355,7 +1392,10 @@ impl App {
                     return self.poll();
                 }
                 Err(e) => {
-                    self.banner = Some(format!("Failed to start daemon: {}", e));
+                    self.fail(
+                        "The OPad service did not start. Try again, or restart your computer.",
+                        &e,
+                    );
                     self.log_event(
                         LogSource::Program,
                         LogLevel::Error,
@@ -1383,15 +1423,15 @@ impl App {
             Message::UdevRuleInstalled(res) => match res {
                 Ok(()) => {
                     self.appimage_udev = None;
-                    self.banner = Some(
-                        "Device permissions installed. Replug the pad if it is not detected."
-                            .into(),
+                    self.notify(
+                        Tone::Good,
+                        "Permissions installed. Unplug the pad and plug it back in if it is not found.",
                     );
                 }
-                Err(e) => self.banner = Some(e),
+                Err(e) => self.fail("The permissions were not installed.", e),
             },
             Message::StartTosu => {
-                self.banner = Some("Starting tosu...".into());
+                self.notify(Tone::Info, "Starting tosu…");
                 self.log_event(
                     LogSource::Program,
                     LogLevel::Info,
@@ -1405,7 +1445,7 @@ impl App {
             }
             Message::TosuStarted(res) => match res {
                 Ok(()) => {
-                    self.banner = Some("Launched tosu.".into());
+                    self.notify(Tone::Good, "tosu started. Open osu! to connect.");
                     self.log_event(
                         LogSource::Program,
                         LogLevel::Info,
@@ -1415,7 +1455,7 @@ impl App {
                     return self.poll();
                 }
                 Err(e) => {
-                    self.banner = Some(format!("Failed to start tosu: {}", e));
+                    self.fail("tosu did not start.", &e);
                     self.log_event(
                         LogSource::Program,
                         LogLevel::Error,
@@ -1428,7 +1468,6 @@ impl App {
                 #[cfg(target_os = "linux")]
                 {
                     let bin = find_daemon_executable();
-                    self.banner = Some("Installing systemd user service...".into());
                     return Task::perform(
                         async move { platform_linux::install_systemd_user_service(&bin) },
                         Message::SystemdServiceInstalled,
@@ -1437,7 +1476,6 @@ impl App {
                 #[cfg(windows)]
                 {
                     let bin = find_daemon_executable();
-                    self.banner = Some("Registering the daemon to start at login...".into());
                     return Task::perform(
                         async move { platform_windows::install_daemon_autostart(&bin) },
                         Message::SystemdServiceInstalled,
@@ -1445,24 +1483,26 @@ impl App {
                 }
                 #[cfg(not(any(target_os = "linux", windows)))]
                 {
-                    self.banner = Some("Daemon autostart is not supported on this platform".into());
+                    self.notify(
+                        Tone::Bad,
+                        "Starting the OPad service at login is not supported here.",
+                    );
                 }
             }
             Message::SystemdServiceInstalled(res) => match res {
                 Ok(()) => {
                     #[cfg(windows)]
                     {
-                        self.banner =
-                            Some("Daemon registered to start at login and started!".into());
+                        self.notify(Tone::Good, "The OPad service now starts when you sign in.");
                     }
                     #[cfg(not(windows))]
                     {
-                        self.banner = Some("systemd service installed and started!".into());
+                        self.notify(Tone::Good, "The OPad service now starts with your session.");
                     }
                     return self.poll();
                 }
                 Err(e) => {
-                    self.banner = Some(format!("Failed to install service: {}", e));
+                    self.fail("The OPad service could not be set to start at login.", e);
                 }
             },
             Message::CaptureKey(key) => {
@@ -1602,19 +1642,19 @@ impl App {
                         } else if key_id == 2 {
                             self.k2_gpio = gpio;
                         }
-                        self.banner = Some(format!(
-                            "Auto-detected Key {} on GPIO{}! Click 'Save settings' to apply.",
-                            key_id, gpio
-                        ));
+                        self.notify(
+                            Tone::Good,
+                            format!("Key {key_id} is on GPIO{gpio}. Save to pad to keep it."),
+                        );
                     }
                     Ok(IpcResponse::PinDetected { key_id, .. }) => {
-                        self.banner = Some(format!(
-                            "No key press detected for Key {} (timed out).",
-                            key_id
-                        ));
+                        self.notify(
+                            Tone::Bad,
+                            format!("No press was seen for Key {key_id}. Try again and press its switch."),
+                        );
                     }
                     Ok(IpcResponse::Error(e)) | Err(e) => {
-                        self.banner = Some(format!("Pin detection failed: {}", e));
+                        self.fail("The pin could not be detected. Try again.", e);
                     }
                     _ => {}
                 }
@@ -1627,13 +1667,13 @@ impl App {
                 #[cfg(target_os = "linux")]
                 {
                     if let Err(e) = platform_linux::set_gui_autostart_enabled(enabled) {
-                        self.banner = Some(format!("Failed to update autostart: {}", e));
+                        self.fail("Starting at login could not be changed.", e);
                     }
                 }
                 #[cfg(windows)]
                 {
                     if let Err(e) = platform_windows::set_gui_autostart_enabled(enabled) {
-                        self.banner = Some(format!("Failed to update autostart: {}", e));
+                        self.fail("Starting at login could not be changed.", e);
                     }
                 }
                 #[cfg(not(any(target_os = "linux", windows)))]
@@ -1801,7 +1841,7 @@ impl App {
                         }
                         Err(e) => {
                             self.diagnostics.last_ping_ms = None;
-                            self.banner = Some(format!("Ping failed: {}", e));
+                            self.fail("The OPad service did not answer.", e);
                         }
                     }
                 }
@@ -1828,7 +1868,7 @@ impl App {
             }
             Message::CopyDiagnosticBundle => {
                 let bundle = diagnostics::generate_diagnostic_bundle(self, &self.diagnostics);
-                self.banner = Some("Diagnostic bundle copied to clipboard! Ready to share.".into());
+                self.notify(Tone::Good, "Report copied.");
                 return iced::clipboard::write(bundle);
             }
             Message::SaveDiagnosticBundle => {
@@ -1839,9 +1879,9 @@ impl App {
                 );
             }
             Message::DiagnosticBundleSaved(res) => match res {
-                Ok(path) => self.banner = Some(format!("Saved diagnostic report to {}", path)),
+                Ok(path) => self.notify(Tone::Good, format!("Report saved to {path}")),
                 Err(e) if e.is_empty() => {}
-                Err(e) => self.banner = Some(format!("Failed to save diagnostic report: {}", e)),
+                Err(e) => self.fail("The report could not be saved.", e),
             },
             Message::SavePad => {
                 if !self.device_connected || self.pad_sent.is_some() || !self.pad_dirty() {
@@ -1860,7 +1900,6 @@ impl App {
             }
             Message::TogglePadDetails => self.pad_details = !self.pad_details,
             Message::Sync => {
-                self.banner = Some("Syncing counters and clock with the pad...".into());
                 return act(Action::Sync, IpcRequest::ForceSync);
             }
             Message::PromptResetCounters => {
@@ -1874,31 +1913,18 @@ impl App {
             }
             Message::ConfirmResetCounters => {
                 self.reset_modal = None;
-                self.banner = Some("Resetting lifetime counters...".into());
                 return act(
                     Action::ResetCounters,
                     IpcRequest::ResetCounters { confirm: true },
                 );
             }
             Message::ResolveReplacement(restore) => {
-                self.banner = Some(if restore {
-                    "Restoring counters from previous pad...".into()
-                } else {
-                    "Adopting new pad...".into()
-                });
                 return act(
                     Action::Replacement { restore },
                     IpcRequest::ResolveReplacement { restore },
                 );
             }
             Message::ResolveTakeover(take_over, keep_device_counters) => {
-                self.banner = Some(if !take_over {
-                    "Leaving the pad paired with its other installation...".into()
-                } else if keep_device_counters {
-                    "Taking over the pad, keeping its counters...".into()
-                } else {
-                    "Taking over the pad, using this PC's counters...".into()
-                });
                 return act(
                     Action::Takeover { take_over },
                     IpcRequest::ResolveTakeover {
@@ -1968,7 +1994,6 @@ impl App {
                 );
             }
             Message::InstallUpdate(component) => {
-                self.banner = Some("Installing the update...".into());
                 self.update_busy = true;
                 return act(
                     Action::InstallUpdate,
@@ -2015,7 +2040,7 @@ impl App {
                         let _ = std::fs::write(d.join("tosu_path"), p.to_string_lossy().as_bytes());
                     }
                     std::env::set_var("OPAD_TOSU_PATH", &p);
-                    self.banner = Some(format!("Using external tosu: {}", p.display()));
+                    self.notify(Tone::Good, format!("Using your tosu: {}", p.display()));
                     self.tosu_override_path = Some(p);
                 }
             }
@@ -2026,7 +2051,7 @@ impl App {
                 std::env::remove_var("OPAD_TOSU_PATH");
                 std::env::remove_var("OPAD_TOSU_PATH");
                 self.tosu_override_path = None;
-                self.banner = Some("Reset to bundled tosu".into());
+                self.notify(Tone::Good, "Using the tosu that comes with OPad.");
             }
             Message::ActionDone(action, result) => {
                 if action == Action::SavePad {
@@ -2047,14 +2072,33 @@ impl App {
                         self.keys.save_finished(false);
                     }
                 }
-                if let Some(text) = action_banner(action, result) {
-                    self.banner = Some(text);
+                if let Some((tone, text, raw)) = action_notice(action, result) {
+                    if let Some(raw) = raw {
+                        self.log_event(LogSource::Program, LogLevel::Error, "gui", raw);
+                    }
+                    self.notify(tone, text);
                 }
                 // An install may just have changed the update state
                 self.update_status_polled_at = None;
                 return self.poll();
             }
-            Message::DismissBanner => self.banner = None,
+            Message::DismissNotice(id) => self.notices.retain(|n| n.id != id),
+            Message::HoverNotice(id) => self.hovered_notice = id,
+            Message::NoticeTick => {
+                let now = std::time::Instant::now();
+                // Being read: it gets its time again once the pointer leaves
+                if let Some(n) = self
+                    .notices
+                    .iter_mut()
+                    .find(|n| Some(n.id) == self.hovered_notice)
+                {
+                    n.until = now + n.tone.stays();
+                }
+                self.notices.retain(|n| n.until > now);
+                if self.notices.is_empty() {
+                    self.hovered_notice = None;
+                }
+            }
             Message::Designer(msg) => return self.designer.update(msg).map(Message::Designer),
 
             Message::WindowOpened(_) => return self.poll(),
@@ -2080,9 +2124,7 @@ impl App {
                         // most) decides between hiding and exiting
                         return Task::none();
                     }
-                    if self.banner.is_none() {
-                        self.banner = Some(NO_TRAY_BANNER.into());
-                    }
+                    self.no_tray = true;
                     if self.window.is_none() {
                         return self.open_fallback_window();
                     }
@@ -2130,9 +2172,7 @@ impl App {
                         None
                     };
                     // The tray can come up after the 2 s fallback already fired
-                    if self.banner.as_deref() == Some(NO_TRAY_BANNER) {
-                        self.banner = None;
-                    }
+                    self.no_tray = false;
                     self.update_tray();
                     if let Some(hide) = hide {
                         return hide;
@@ -2143,9 +2183,7 @@ impl App {
                     if self.exit_if_no_tray {
                         return iced::exit();
                     }
-                    if self.banner.is_none() {
-                        self.banner = Some(NO_TRAY_BANNER.into());
-                    }
+                    self.no_tray = true;
                     if self.window.is_none() {
                         return self.open_fallback_window();
                     }
@@ -2184,6 +2222,9 @@ impl App {
         ];
         if self.window.is_some() && self.page == Page::Designer {
             subscriptions.push(self.designer.subscription().map(Message::Designer));
+        }
+        if !self.notices.is_empty() {
+            subscriptions.push(iced::time::every(NOTICE_TICK).map(|_| Message::NoticeTick));
         }
         if self.window.is_some() && self.capturing_key.is_some() {
             subscriptions.push(iced::event::listen().filter_map(|event| match event {
@@ -2291,6 +2332,16 @@ impl App {
             column![
                 nav,
                 Space::new().height(Length::Fill),
+                if self.no_tray {
+                    Element::from(
+                        container(theme::caption(
+                            "No system tray found: closing this window quits OPad. The pad keeps working.",
+                        ))
+                        .padding([6, 8]),
+                    )
+                } else {
+                    Space::new().height(0).into()
+                },
                 status_row(
                     self.device_connected,
                     if self.device_connected {
@@ -2335,7 +2386,7 @@ impl App {
             .height(Length::Fill);
 
         if !self.daemon_online {
-            let mut offline_actions = row![button(text("Start daemon").size(12))
+            let mut offline_actions = row![button(text("Start it").size(13))
                 .padding([6, 12])
                 .style(theme::primary)
                 .on_press(Message::StartDaemon),]
@@ -2345,7 +2396,7 @@ impl App {
             #[cfg(target_os = "linux")]
             {
                 offline_actions = offline_actions.push(
-                    button(text("Install user service").size(12))
+                    button(text("Start it with my session").size(13))
                         .padding([6, 12])
                         .style(theme::secondary)
                         .on_press(Message::InstallSystemdService),
@@ -2355,7 +2406,7 @@ impl App {
             #[cfg(windows)]
             if !platform_windows::daemon_autostart_installed() {
                 offline_actions = offline_actions.push(
-                    button(text("Start daemon at login").size(12))
+                    button(text("Start it when I sign in").size(13))
                         .padding([6, 12])
                         .style(theme::secondary)
                         .on_press(Message::InstallSystemdService),
@@ -2365,10 +2416,10 @@ impl App {
             main = main.push(
                 container(
                     row![
-                        text("⚠ opad-daemon is offline. Communication, synchronization, and persistence are paused.")
-                            .size(13)
-                            .color(theme::YELLOW),
-                        Space::new().width(Length::Fill),
+                        text("OPad's service is not running. The pad still types; counting, its screen and its settings wait for the service.")
+                            .size(14)
+                            .color(theme::YELLOW)
+                            .width(Length::Fill),
                         offline_actions,
                     ]
                     .spacing(12)
@@ -2382,8 +2433,8 @@ impl App {
             main = main.push(
                 container(
                     row![
-                        text(format!("⚠ Database offline: {}. Desktop persistence, backup restore, and PC counter authority are paused.", err))
-                            .size(13)
+                        text(format!("OPad cannot open its data on this PC, so counters and backups are not being saved here. The pad keeps its own count. ({err})"))
+                            .size(14)
                             .color(theme::RED),
                     ]
                     .align_y(Alignment::Center),
@@ -2424,16 +2475,15 @@ impl App {
                 container(
                     row![
                         text(format!(
-                            "This looks like a new pad. Restore counters from {}?",
-                            old_id
+                            "This looks like a new pad. Bring over the counts from your old pad ({old_id})?"
                         ))
-                        .size(14),
-                        Space::new().width(Length::Fill),
-                        button(text("Restore from previous pad").size(12))
+                        .size(14)
+                        .width(Length::Fill),
+                        button(text("Yes, bring them over").size(13))
                             .style(theme::primary)
                             .on_press(Message::ResolveReplacement(true)),
                         Space::new().width(8),
-                        button(text("Treat as new pad").size(12))
+                        button(text("Start from zero").size(13))
                             .style(theme::secondary)
                             .on_press(Message::ResolveReplacement(false)),
                     ]
@@ -2471,12 +2521,12 @@ impl App {
                 container(
                     row![
                         text(
-                            "The pad's device permissions (udev rule) are not installed, \
-                             so OPad cannot talk to it."
+                            "OPad is not allowed to talk to the pad yet: its permissions \
+                             are not installed on this computer."
                         )
-                        .size(14),
-                        Space::new().width(Length::Fill),
-                        button(text("Install (asks for your password)").size(12))
+                        .size(14)
+                        .width(Length::Fill),
+                        button(text("Install (asks for your password)").size(13))
                             .style(theme::primary)
                             .on_press(Message::InstallUdevRule),
                     ]
@@ -2487,63 +2537,45 @@ impl App {
             );
         }
         if let Some(t) = &self.pending_takeover {
-            // §W3-3: friction-light on purpose. The only other way out of this
-            // is a full reflash, so the wording points at that too rather than
-            // leaving anyone stuck.
+            // §W3-3: friction-light on purpose. One question, one recommended
+            // answer; the other way round is one click further.
             main = main.push(
                 container(
                     column![
-                        text("This OPad is paired with another installation.").size(14),
+                        text("This pad was set up on another computer. Use it here?").size(14),
                         text(format!(
-                            "Its counters: {} / {}   ·   this PC's: {} / {}",
+                            "The pad's counts: {} / {}   ·   this computer's: {} / {}",
                             pages::grouped(t.device_key1),
                             pages::grouped(t.device_key2),
                             pages::grouped(t.pc_key1),
                             pages::grouped(t.pc_key2),
                         ))
-                        .size(12)
+                        .size(13)
                         .color(theme::MUTED),
                         Space::new().height(6),
                         row![
-                            button(text("Take over, keep the pad's counters").size(12))
+                            button(text("Use it here").size(13))
                                 .style(theme::primary)
                                 .on_press(Message::ResolveTakeover(true, true)),
                             Space::new().width(8),
-                            button(text("Take over, use this PC's counters").size(12))
+                            button(text("Use this computer's counts instead").size(13))
                                 .style(theme::secondary)
                                 .on_press(Message::ResolveTakeover(true, false)),
                             Space::new().width(8),
-                            button(text("Leave it alone").size(12))
+                            button(text("Not now").size(13))
                                 .style(theme::secondary)
                                 .on_press(Message::ResolveTakeover(false, false)),
                         ]
                         .align_y(Alignment::Center),
                         Space::new().height(4),
                         text(
-                            "Leaving it alone keeps the pad working as a keyboard; \
-                             OPad just will not configure or count for it. \
-                             To unpair a pad completely, see docs/recovery.md."
+                            "Use it here keeps the pad's counts. Not now leaves the pad as it \
+                             is: it still types, and OPad does not count or configure it."
                         )
-                        .size(11)
+                        .size(13)
                         .color(theme::MUTED),
                     ]
                     .spacing(2),
-                )
-                .padding([8, 14])
-                .style(theme::banner),
-            );
-        }
-        if let Some(banner) = &self.banner {
-            main = main.push(
-                container(
-                    row![
-                        text(banner).size(14),
-                        Space::new().width(Length::Fill),
-                        button(text("Dismiss").size(12))
-                            .style(theme::secondary)
-                            .on_press(Message::DismissBanner),
-                    ]
-                    .align_y(Alignment::Center),
                 )
                 .padding([8, 14])
                 .style(theme::banner),
@@ -2556,6 +2588,11 @@ impl App {
             row![sidebar, main].height(Length::Fill)
         ];
         let framed = container(body).style(chrome::frame);
+        let framed: Element<'_, Message> = if self.notices.is_empty() {
+            framed.into()
+        } else {
+            stack![framed, notices_layer(&self.notices)].into()
+        };
 
         if self.leave_prompt.is_some() {
             let modal_box = container(
@@ -2588,7 +2625,7 @@ impl App {
                 .width(460),
             )
             .style(theme::card);
-            return modal_over(framed.into(), modal_box.into(), self.maximized);
+            return modal_over(framed, modal_box.into(), self.maximized);
         }
 
         if let Some(input_text) = &self.reset_modal {
@@ -2651,7 +2688,7 @@ impl App {
             )
             .style(theme::card);
 
-            return modal_over(framed.into(), modal_box.into(), self.maximized);
+            return modal_over(framed, modal_box.into(), self.maximized);
         }
 
         if let Some(modal) = &self.import_modal {
@@ -2906,7 +2943,7 @@ impl App {
                 .width(480)
                 .style(theme::card);
 
-            return modal_over(framed.into(), modal_box.into(), self.maximized);
+            return modal_over(framed, modal_box.into(), self.maximized);
         }
 
         if let Some(action) = self.recovery_modal {
@@ -3018,7 +3055,7 @@ impl App {
             )
             .style(theme::card);
 
-            return modal_over(framed.into(), modal_box.into(), self.maximized);
+            return modal_over(framed, modal_box.into(), self.maximized);
         }
 
         if let Some(modal) = &self.firmware_modal {
@@ -3224,11 +3261,11 @@ impl App {
                 }
             };
 
-            return modal_over(framed.into(), modal_box.into(), self.maximized);
+            return modal_over(framed, modal_box.into(), self.maximized);
         }
 
         if self.maximized {
-            framed.into()
+            framed
         } else {
             stack![framed, chrome::resize_edges()].into()
         }
@@ -3247,9 +3284,33 @@ impl App {
         self.prune_logs();
     }
 
-    /// Loads every Settings form field from `config`. The one place that does,
-    /// so an import and a pad (re)connect cannot disagree on which fields
-    /// exist (an import once left gameplay_display_hz behind).
+    /// Float a notice over the page; it goes away by itself
+    pub fn notify(&mut self, tone: Tone, text: impl Into<String>) {
+        self.next_notice = self.next_notice.wrapping_add(1);
+        self.notices.push(Notice {
+            id: self.next_notice,
+            tone,
+            text: text.into(),
+            until: std::time::Instant::now() + tone.stays(),
+        });
+        if self.notices.len() > MAX_NOTICES {
+            let excess = self.notices.len() - MAX_NOTICES;
+            self.notices.drain(..excess);
+        }
+    }
+
+    /// Something did not work: say what and what to do in a notice, and put
+    /// the raw error where it helps, in Logs
+    pub fn fail(&mut self, text: &str, raw: impl std::fmt::Display) {
+        self.log_event(
+            LogSource::Program,
+            LogLevel::Error,
+            "gui",
+            format!("{text} ({raw})"),
+        );
+        self.notify(Tone::Bad, text);
+    }
+
     /// Show the page and tab `target` names
     fn show(&mut self, target: Target) {
         self.page = target.page;
@@ -3378,6 +3439,9 @@ impl App {
         self.config = config;
     }
 
+    /// Loads every Keys and Screen field from `config`. The one place that
+    /// does, so an import and a pad (re)connect cannot disagree on which
+    /// fields exist (an import once left gameplay_display_hz behind).
     fn adopt_config(&mut self, config: &DeviceConfig) {
         self.k1_input = config.key1_char();
         self.k2_input = config.key2_char();
@@ -3790,50 +3854,109 @@ pub fn act(action: Action, request: IpcRequest) -> Task<Message> {
     })
 }
 
-/// The banner for the daemon's answer to `action`, or `None` when the control
-/// that was used already shows the result (a slider, a switch).
-fn action_banner(action: Action, result: Result<IpcResponse, String>) -> Option<String> {
-    let done = |text: &str| Some(text.to_string());
+/// The notices, newest on top, in the window's top right corner under the
+/// title bar. Only the notices themselves take clicks: the rest of the layer
+/// lets them through to the page.
+fn notices_layer(notices: &[Notice]) -> Element<'_, Message> {
+    let stack = column(notices.iter().rev().map(|n| {
+        let id = n.id;
+        iced::widget::opaque(
+            iced::widget::mouse_area(
+                container(
+                    row![
+                        text(n.text.as_str()).size(14).width(Length::Fill),
+                        button(text("Close").size(12))
+                            .padding([3, 8])
+                            .style(theme::secondary)
+                            .on_press(Message::DismissNotice(id)),
+                    ]
+                    .spacing(12)
+                    .align_y(Alignment::Center),
+                )
+                .padding([12, 14])
+                .width(380)
+                .style(theme::notice(n.tone)),
+            )
+            .on_enter(Message::HoverNotice(Some(id)))
+            .on_exit(Message::HoverNotice(None)),
+        )
+    }))
+    .spacing(8);
+    container(stack)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::End)
+        .padding(iced::Padding {
+            top: 52.0,
+            right: 22.0,
+            ..iced::Padding::ZERO
+        })
+        .into()
+}
+
+/// The notice for the daemon's answer to `action`: how it reads, what it
+/// says, and the raw error for Logs when there is one. `None` when the
+/// control that was used already shows the result (a switch).
+fn action_notice(
+    action: Action,
+    result: Result<IpcResponse, String>,
+) -> Option<(Tone, String, Option<String>)> {
+    let done = |text: &str| Some((Tone::Good, text.to_string(), None));
     match (action, result) {
-        (_, Err(e)) | (_, Ok(IpcResponse::Error(e))) => Some(format!("Error: {}", e)),
+        // The request never got an answer
+        (_, Err(e)) => Some((
+            Tone::Bad,
+            "OPad's service did not answer. Try again in a moment.".to_string(),
+            Some(e),
+        )),
+        // The daemon's own sentence for why not
+        (_, Ok(IpcResponse::Error(e))) => Some((Tone::Bad, e, None)),
         // Declining a takeover is answered as a refusal, but it is what was asked
         (
             Action::Takeover { take_over: false },
             Ok(IpcResponse::OperationRejected { .. } | IpcResponse::CountersRestored { .. }),
-        ) => done("The pad stays paired with its other installation"),
-        (_, Ok(IpcResponse::OperationDeferred { reason })) => Some(reason),
+        ) => done("The pad is left as it is."),
+        (_, Ok(IpcResponse::OperationDeferred { reason })) => Some((Tone::Info, reason, None)),
         (_, Ok(IpcResponse::OperationRejected { reason })) => {
-            Some(format!("Not possible right now: {}", reason))
+            Some((Tone::Bad, format!("Not possible right now: {reason}"), None))
         }
-        (Action::SavePad, Ok(IpcResponse::ConfigUpdated { .. })) => done("Saved to the pad"),
+        (Action::SavePad, Ok(IpcResponse::ConfigUpdated { .. })) => done("Saved to the pad."),
         (Action::UpdateToggle, Ok(IpcResponse::ConfigUpdated { .. })) => None,
-        (Action::PreviewAnimation, Ok(IpcResponse::AnimationPlayed)) => done("Playing on the pad"),
-        (Action::Sync, Ok(IpcResponse::SyncCompleted { success: true, .. })) => done("Pad synced"),
-        (Action::Sync, Ok(IpcResponse::SyncCompleted { success: false, .. })) => {
-            done("The sync did not finish")
-        }
+        (Action::PreviewAnimation, Ok(IpcResponse::AnimationPlayed)) => done("Playing on the pad."),
+        (Action::Sync, Ok(IpcResponse::SyncCompleted { success: true, .. })) => done("Pad synced."),
+        (Action::Sync, Ok(IpcResponse::SyncCompleted { success: false, .. })) => Some((
+            Tone::Bad,
+            "The sync did not finish. Check the pad's USB cable and try again.".to_string(),
+            None,
+        )),
         (Action::ResetCounters, Ok(IpcResponse::CountersReset { .. })) => {
-            done("Lifetime counters reset")
+            done("Lifetime counters reset.")
         }
         (Action::Replacement { restore: true }, Ok(IpcResponse::CountersReset { .. })) => {
-            done("The previous pad's lifetime counters are now on this pad")
+            done("Your old pad's counts are now on this pad.")
         }
         (Action::Replacement { restore: false }, Ok(IpcResponse::CountersReset { .. })) => {
-            done("New pad adopted")
+            done("This pad starts from zero.")
         }
         (Action::Takeover { take_over: true }, Ok(IpcResponse::CountersRestored { .. })) => {
-            done("The pad is now paired with this installation")
+            done("The pad now belongs to this computer.")
         }
         (Action::InstallUpdate, Ok(IpcResponse::UpdateStarted { .. })) => {
-            done("Installing the update...")
+            Some((Tone::Info, "Installing the update…".to_string(), None))
         }
         (Action::CheckUpdates, Ok(IpcResponse::UpdateCheckStarted)) => {
-            done("Checking for updates...")
+            Some((Tone::Info, "Checking for updates…".to_string(), None))
         }
         (Action::ResetLatency, Ok(IpcResponse::HandshakeAck { .. })) => {
-            done("Latency statistics reset")
+            done("Key speed measurements reset.")
         }
-        (_, Ok(other)) => Some(format!("Unexpected response: {:?}", other)),
+        (_, Ok(other)) => Some((
+            Tone::Bad,
+            "OPad got an answer it did not expect. Try again; if it keeps happening, send a \
+             report from Troubleshooting."
+                .to_string(),
+            Some(format!("Unexpected answer to {action:?}: {other:?}")),
+        )),
     }
 }
 
@@ -3843,6 +3966,8 @@ mod tests {
 
     #[test]
     fn an_answer_is_reported_as_the_result_of_the_action_that_asked() {
+        let said =
+            |action, result| action_notice(action, result).map(|(tone, text, _)| (tone, text));
         let config_updated = || {
             Ok(IpcResponse::ConfigUpdated {
                 config: DeviceConfig::default(),
@@ -3853,10 +3978,10 @@ mod tests {
         // The same answer, two different things done: a save announces
         // itself, a switch that was flipped does not
         assert_eq!(
-            action_banner(Action::SavePad, config_updated()).as_deref(),
-            Some("Saved to the pad")
+            said(Action::SavePad, config_updated()),
+            Some((Tone::Good, "Saved to the pad.".to_string()))
         );
-        assert_eq!(action_banner(Action::UpdateToggle, config_updated()), None);
+        assert_eq!(said(Action::UpdateToggle, config_updated()), None);
 
         let reset = || {
             Ok(IpcResponse::CountersReset {
@@ -3864,36 +3989,98 @@ mod tests {
             })
         };
         assert_eq!(
-            action_banner(Action::ResetCounters, reset()).as_deref(),
-            Some("Lifetime counters reset")
+            said(Action::ResetCounters, reset()),
+            Some((Tone::Good, "Lifetime counters reset.".to_string()))
         );
-        let restored = action_banner(Action::Replacement { restore: true }, reset()).unwrap();
+        let (_, restored) = said(Action::Replacement { restore: true }, reset()).unwrap();
         assert!(!restored.contains("reset"), "{restored}");
 
         // A takeover used to end in "Unexpected response", and leaving the pad
         // alone in "Not possible right now"
-        let taken = action_banner(
+        let (tone, _) = said(
             Action::Takeover { take_over: true },
             Ok(IpcResponse::CountersRestored {
                 counters: counters(),
             }),
         )
         .unwrap();
-        assert!(!taken.contains("Unexpected"), "{taken}");
-        let left = action_banner(
+        assert_eq!(tone, Tone::Good);
+        let (tone, left) = said(
             Action::Takeover { take_over: false },
             Ok(IpcResponse::OperationRejected {
                 reason: "Left the pad paired with its other installation".into(),
             }),
         )
         .unwrap();
+        assert_eq!(tone, Tone::Good);
         assert!(!left.contains("Not possible"), "{left}");
+    }
 
-        // A failure is always shown, whatever was asked
+    #[test]
+    fn a_failure_says_what_to_do_and_keeps_the_raw_error_for_logs() {
+        // No answer at all: a sentence for the person, the error for Logs
+        let (tone, text, raw) = action_notice(
+            Action::UpdateToggle,
+            Err("daemon unreachable: ECONNREFUSED".into()),
+        )
+        .unwrap();
+        assert_eq!(tone, Tone::Bad);
+        assert!(!text.contains("ECONNREFUSED"), "{text}");
+        assert_eq!(raw.as_deref(), Some("daemon unreachable: ECONNREFUSED"));
+
+        // The daemon's own reason is already a sentence: it is shown
+        let (tone, text, _) = action_notice(
+            Action::Sync,
+            Ok(IpcResponse::Error("The pad is not connected.".into())),
+        )
+        .unwrap();
         assert_eq!(
-            action_banner(Action::UpdateToggle, Err("daemon unreachable".into())).as_deref(),
-            Some("Error: daemon unreachable")
+            (tone, text.as_str()),
+            (Tone::Bad, "The pad is not connected.")
         );
+
+        // An answer that makes no sense for the action never shows its debug form
+        let (_, text, raw) = action_notice(Action::Sync, Ok(IpcResponse::PadRestarting)).unwrap();
+        assert!(!text.contains("PadRestarting"), "{text}");
+        assert!(raw.unwrap().contains("PadRestarting"));
+    }
+
+    #[tokio::test]
+    async fn notices_stack_three_deep_and_go_away_by_themselves() {
+        let (mut app, _) = App::new(true, None);
+        for n in 1..=5 {
+            app.notify(Tone::Good, format!("notice {n}"));
+        }
+        let texts: Vec<&str> = app.notices.iter().map(|n| n.text.as_str()).collect();
+        assert_eq!(
+            texts,
+            ["notice 3", "notice 4", "notice 5"],
+            "the oldest make room"
+        );
+
+        // A problem stays twice as long as a success
+        assert!(Tone::Bad.stays() > Tone::Good.stays());
+
+        // Past its time, a notice goes; the one under the pointer stays
+        let past = std::time::Instant::now() - Duration::from_secs(1);
+        for n in &mut app.notices {
+            n.until = past;
+        }
+        let kept = app.notices[1].id;
+        let _ = app.update(Message::HoverNotice(Some(kept)));
+        let _ = app.update(Message::NoticeTick);
+        assert_eq!(app.notices.len(), 1);
+        assert_eq!(app.notices[0].id, kept);
+        let _ = app.update(Message::HoverNotice(None));
+        app.notices[0].until = past;
+        let _ = app.update(Message::NoticeTick);
+        assert!(app.notices.is_empty());
+
+        // And it can be closed by hand
+        app.notify(Tone::Bad, "something");
+        let id = app.notices[0].id;
+        let _ = app.update(Message::DismissNotice(id));
+        assert!(app.notices.is_empty());
     }
 
     #[test]
