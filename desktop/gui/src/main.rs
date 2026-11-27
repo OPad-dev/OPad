@@ -2,6 +2,7 @@
 
 mod chrome;
 mod designer;
+mod feed;
 mod he_monitor;
 mod ipc;
 mod keys;
@@ -404,6 +405,11 @@ pub struct App {
     /// A check or install was just asked for and its result is not in yet:
     /// poll the update state quickly until it is
     update_busy: bool,
+    /// Whether the daemon sends its answers as they change (`feed`), or the
+    /// timers ask for them
+    feed: FeedState,
+    /// Counts the connections made for the feed: raising it makes a new one
+    feed_attempt: u32,
     /// Seq for entries the GUI logs itself (source Program), a separate
     /// numbering from the daemon's
     local_log_seq: u64,
@@ -450,6 +456,35 @@ pub struct App {
 const UPDATE_STATUS_POLL: Duration = Duration::from_secs(60);
 /// While a check or an install is running the answer is seconds away
 const UPDATE_STATUS_POLL_BUSY: Duration = Duration::from_secs(2);
+
+/// How often the daemon looks for a change in what it sends the app
+/// (`App::watches`). The pad and its counters; slower with the window closed,
+/// when only the tray shows any of it.
+const WATCH_STATUS_MS: u32 = 100;
+const WATCH_STATUS_HIDDEN_MS: u32 = 1000;
+/// tosu's live values: fast enough to follow a map, far below a redraw each
+/// frame
+const WATCH_UI_VALUES_MS: u32 = 250;
+const WATCH_UPDATES_MS: u32 = 500;
+const WATCH_FIRMWARE_MS: u32 = 1000;
+const WATCH_STATS_MS: u32 = 500;
+const WATCH_LOGS_MS: u32 = 250;
+/// The live key view: the pad sends ~50 samples a second
+const WATCH_HE_LIVE_MS: u32 = 20;
+
+/// Where the daemon's answers come from
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FeedState {
+    /// A connection is being made; the timers ask meanwhile
+    Starting,
+    /// The daemon sends them as they change; the timers are off
+    Live,
+    /// The connection failed or ended; the timers ask, and a new one is made
+    /// once the daemon answers again
+    Lost,
+    /// This daemon predates `Subscribe`; the timers ask, as they always did
+    Unsupported,
+}
 
 /// How a notice reads at a glance, and how long it stays
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -600,6 +635,8 @@ pub enum Message {
     /// (take over, keep the pad's counters rather than this PC's)
     ResolveTakeover(bool, bool),
     UpdateStatus(Result<IpcResponse, String>),
+    /// The daemon's answers as they change, in place of `Poll`
+    Feed(feed::Event),
     ToggleUpdater(opad_ipc::UpdateComponent, bool),
     InstallUpdate(opad_ipc::UpdateComponent),
     /// A release page from the verified update feed, in the browser
@@ -715,6 +752,8 @@ impl App {
             latest_log_seq: 0,
             update_status_polled_at: None,
             update_busy: false,
+            feed: FeedState::Starting,
+            feed_attempt: 0,
             local_log_seq: 0,
             log_cleared_at: None,
             log_filter_level: None,
@@ -807,7 +846,76 @@ impl App {
     /// it too), the rest only while the window shows something that reads it.
     /// Navigating and opening the window poll at once, so a page never waits a
     /// tick for its data.
+    /// What the daemon is asked to send as it changes: the same answers, on
+    /// the same pages, that `poll` asks for on a timer
+    fn watches(&self) -> Vec<opad_ipc::Watch> {
+        let watch = |request, every_ms| opad_ipc::Watch { request, every_ms };
+        let Some(page) = self.window.is_some().then_some(self.page) else {
+            // Only the tray shows anything
+            return vec![watch(IpcRequest::GetStatus, WATCH_STATUS_HIDDEN_MS)];
+        };
+        let mut watches = vec![
+            watch(IpcRequest::GetStatus, WATCH_STATUS_MS),
+            // "Restart to finish updating" shows on every page
+            watch(IpcRequest::GetUpdateStatus, WATCH_UPDATES_MS),
+        ];
+        if matches!(page, Page::Dashboard | Page::Designer) {
+            watches.push(watch(IpcRequest::GetUiValues, WATCH_UI_VALUES_MS));
+        }
+        if matches!(page, Page::Settings | Page::Pad | Page::Troubleshooting)
+            || self.incompatible.is_some()
+        {
+            watches.push(watch(IpcRequest::GetFirmwareUpdate, WATCH_FIRMWARE_MS));
+        }
+        if page == Page::Stats {
+            watches.push(watch(IpcRequest::GetTapStats, WATCH_STATS_MS));
+        }
+        if page == Page::Troubleshooting
+            && self.diagnostics.active_tab == troubleshooting::Tab::Logs
+        {
+            // From the newest entries on: the ones already shown are told
+            // apart by their numbers (`Message::Logs`)
+            let logs = IpcRequest::GetLogEntries {
+                since_seq: None,
+                limit: 200,
+                level: None,
+                source: None,
+            };
+            watches.push(watch(logs, WATCH_LOGS_MS));
+        }
+        if page == Page::Keys && !self.calibrating {
+            watches.push(watch(IpcRequest::GetHeLive, WATCH_HE_LIVE_MS));
+        }
+        watches
+    }
+
+    /// The message a watched answer becomes: the one the same answer to a
+    /// request would
+    fn watched(&self, answer: IpcResponse) -> Option<Message> {
+        Some(match answer {
+            IpcResponse::Status { .. } => Message::Status(Ok(answer)),
+            IpcResponse::UiValues(_) => Message::UiValues(Ok(answer)),
+            IpcResponse::UpdateStatus { .. } => Message::UpdateStatus(Ok(answer)),
+            IpcResponse::FirmwareUpdateOffer(_) => Message::FirmwareOffer(Ok(answer)),
+            IpcResponse::TapStats(_) => Message::TapStats(Ok(answer)),
+            IpcResponse::LogEntries { .. } => Message::Logs(Ok(answer)),
+            IpcResponse::HeLive { .. } => {
+                Message::Keys(keys::KeysMessage::Live(Box::new(Ok(answer))))
+            }
+            // The answer to Subscribe itself, or a watch this daemon cannot
+            // serve (`Error`): nothing to show
+            _ => return None,
+        })
+    }
+
+    /// Fetch what the open page shows, now. With the feed live that is a new
+    /// connection, on which the daemon sends every answer afresh: a request
+    /// beside the feed could arrive after a newer answer and stay on screen.
     fn poll(&mut self) -> Task<Message> {
+        if self.feed == FeedState::Live {
+            self.feed_attempt = self.feed_attempt.wrapping_add(1);
+            return Task::none();
+        }
         let mut tasks = vec![Task::perform(
             ipc::request(IpcRequest::GetStatus),
             Message::Status,
@@ -947,6 +1055,11 @@ impl App {
                     }) => {
                         let was_offline = !self.daemon_online;
                         let device_just_connected = !self.device_connected && device_connected;
+                        // The daemon answers, so the feed can be tried again
+                        if self.feed == FeedState::Lost {
+                            self.feed = FeedState::Starting;
+                            self.feed_attempt = self.feed_attempt.wrapping_add(1);
+                        }
                         if device_just_connected || !device_connected {
                             self.cal_epoch = self.cal_epoch.wrapping_add(1);
                             self.cal_progress = None;
@@ -995,6 +1108,10 @@ impl App {
                         restart_gui();
                     }
                     _ => {
+                        // The daemon that comes back may be another one
+                        if self.feed == FeedState::Unsupported {
+                            self.feed = FeedState::Lost;
+                        }
                         self.daemon_online = false;
                         self.device_connected = false;
                         self.cal_epoch = self.cal_epoch.wrapping_add(1);
@@ -1974,6 +2091,25 @@ impl App {
                     });
                 }
             }
+            Message::Feed(event) => match event {
+                feed::Event::Live => self.feed = FeedState::Live,
+                feed::Event::Answer(answer) => {
+                    if let Some(message) = self.watched(*answer) {
+                        return self.update(message);
+                    }
+                }
+                feed::Event::Lost(reason) => {
+                    tracing::debug!("The daemon's feed ended: {reason}");
+                    self.feed = FeedState::Lost;
+                    // Ask at once: this is how a daemon that went away shows
+                    return self.poll();
+                }
+                feed::Event::Unsupported => {
+                    tracing::info!("This daemon sends nothing by itself; asking on a timer");
+                    self.feed = FeedState::Unsupported;
+                    return self.poll();
+                }
+            },
             Message::OpenUrl(url) => {
                 // Only web pages: the URL comes from the signed feed, but a
                 // browser is the only thing it may open
@@ -2213,20 +2349,33 @@ impl App {
     }
 
     fn subscription(&self) -> Subscription<Message> {
+        // With the feed live the daemon sends what the timers would ask for
+        let live = self.feed == FeedState::Live;
         let mut subscriptions = vec![
-            iced::time::every(Duration::from_millis(if !self.daemon_online {
-                2000
-            } else if self.window.is_some() {
-                1000
-            } else {
-                3000
-            }))
-            .map(|_| Message::Poll),
             window::close_requests().map(Message::CloseRequested),
             window::resize_events().map(|_| Message::Resized),
             Subscription::run(tray::stream).map(Message::Tray),
             Subscription::run(single_instance::show_requests).map(Message::ShowRequested),
         ];
+        if !live {
+            subscriptions.push(
+                iced::time::every(Duration::from_millis(if !self.daemon_online {
+                    2000
+                } else if self.window.is_some() {
+                    1000
+                } else {
+                    3000
+                }))
+                .map(|_| Message::Poll),
+            );
+        }
+        if self.feed != FeedState::Unsupported {
+            let feed = feed::Feed {
+                attempt: self.feed_attempt,
+                watches: self.watches(),
+            };
+            subscriptions.push(Subscription::run_with(feed, feed::stream).map(Message::Feed));
+        }
         if self.window.is_some() && self.page == Page::Designer {
             subscriptions.push(self.designer.subscription().map(Message::Designer));
         }
@@ -2281,10 +2430,12 @@ impl App {
         if self.window.is_some() && self.page == Page::Keys && !self.calibrating {
             // The live switch view: the pad sends ~50 samples/s, and the
             // stems are redrawn every display frame so they glide
-            subscriptions.push(
-                iced::time::every(Duration::from_millis(20))
-                    .map(|_| Message::Keys(keys::KeysMessage::PollLive)),
-            );
+            if !live {
+                subscriptions.push(
+                    iced::time::every(Duration::from_millis(20))
+                        .map(|_| Message::Keys(keys::KeysMessage::PollLive)),
+                );
+            }
             subscriptions
                 .push(window::frames().map(|at| Message::Keys(keys::KeysMessage::Frame(at))));
         }
@@ -4143,6 +4294,134 @@ mod tests {
         let (text, fix) = incompatible_banner(&pad(ours + 1), Some(&offer(Some("9.0.0"), &[])));
         assert_eq!(fix, IncompatibleFix::OpenUpdates);
         assert!(text.contains("Update OPad"), "{text}");
+    }
+
+    /// What the daemon is asked to send, by the first word of each request
+    fn watched_names(app: &App) -> Vec<String> {
+        app.watches()
+            .iter()
+            .map(|w| {
+                let request = format!("{:?}", w.request);
+                let end = request.find([' ', '{', '(']).unwrap_or(request.len());
+                request[..end].to_string()
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn each_page_watches_what_it_shows() {
+        let (mut app, _) = App::new(true, None);
+        // Closed to the tray: the pad's state only, and seldom
+        assert_eq!(watched_names(&app), ["GetStatus"]);
+        assert_eq!(app.watches()[0].every_ms, WATCH_STATUS_HIDDEN_MS);
+
+        app.window = Some(window::Id::unique());
+        app.page = Page::Dashboard;
+        assert_eq!(
+            watched_names(&app),
+            ["GetStatus", "GetUpdateStatus", "GetUiValues"]
+        );
+        assert_eq!(app.watches()[0].every_ms, WATCH_STATUS_MS);
+
+        app.page = Page::Stats;
+        assert_eq!(
+            watched_names(&app),
+            ["GetStatus", "GetUpdateStatus", "GetTapStats"]
+        );
+
+        // The live key view, which stops while the pad is being calibrated
+        app.page = Page::Keys;
+        assert_eq!(
+            watched_names(&app),
+            ["GetStatus", "GetUpdateStatus", "GetHeLive"]
+        );
+        app.calibrating = true;
+        assert_eq!(watched_names(&app), ["GetStatus", "GetUpdateStatus"]);
+        app.calibrating = false;
+
+        app.page = Page::Troubleshooting;
+        app.diagnostics.active_tab = troubleshooting::Tab::Logs;
+        assert_eq!(
+            watched_names(&app),
+            [
+                "GetStatus",
+                "GetUpdateStatus",
+                "GetFirmwareUpdate",
+                "GetLogEntries"
+            ]
+        );
+        // Everything asked for is something the daemon agrees to watch
+        assert!(app.watches().iter().all(|w| w.request.can_be_watched()));
+    }
+
+    #[tokio::test]
+    async fn a_watched_answer_is_handled_like_the_answer_to_a_request() {
+        let (mut app, _) = App::new(true, None);
+        let update = || IpcResponse::UpdateStatus {
+            app: Default::default(),
+            tosu: Default::default(),
+            last_check: None,
+            last_error: None,
+            restart_required: true,
+            pending_version: None,
+            channel: "beta".to_string(),
+            checking: false,
+            last_result: None,
+        };
+        assert!(matches!(
+            app.watched(update()),
+            Some(Message::UpdateStatus(Ok(_)))
+        ));
+        assert!(matches!(
+            app.watched(IpcResponse::UiValues(vec![])),
+            Some(Message::UiValues(Ok(_)))
+        ));
+        assert!(matches!(
+            app.watched(IpcResponse::HeLive {
+                supported: true,
+                sample: None
+            }),
+            Some(Message::Keys(keys::KeysMessage::Live(_)))
+        ));
+        // The acknowledgement and a refusal are not answers to show
+        assert!(app.watched(IpcResponse::Subscribed).is_none());
+        assert!(app.watched(IpcResponse::Error("no".into())).is_none());
+
+        let _ = app.update(Message::Feed(feed::Event::Answer(Box::new(update()))));
+        let shown = app.updates.as_ref().expect("the update state is taken");
+        assert!(shown.restart_required);
+        assert_eq!(shown.channel, "beta");
+    }
+
+    #[tokio::test]
+    async fn the_timers_ask_whenever_the_feed_is_not_live() {
+        let (mut app, _) = App::new(true, None);
+        // The test never starts a daemon of its own
+        app.daemon_spawn_attempted = true;
+        assert_eq!(app.feed, FeedState::Starting);
+
+        let _ = app.update(Message::Feed(feed::Event::Live));
+        assert_eq!(app.feed, FeedState::Live);
+        // Fetching now is a new connection, not a request beside the feed
+        let attempt = app.feed_attempt;
+        let _ = app.poll();
+        assert_eq!(app.feed_attempt, attempt + 1);
+        assert_eq!(app.feed, FeedState::Live);
+
+        // The connection ended: back to asking, and no new one until the
+        // daemon answers
+        let _ = app.update(Message::Feed(feed::Event::Lost("gone".into())));
+        assert_eq!(app.feed, FeedState::Lost);
+        let attempt = app.feed_attempt;
+        let _ = app.update(Message::Status(Err("daemon unreachable".into())));
+        assert_eq!((app.feed, app.feed_attempt), (FeedState::Lost, attempt));
+
+        // A daemon that predates Subscribe: asked on a timer for good, until
+        // it goes away and another one may have taken its place
+        let _ = app.update(Message::Feed(feed::Event::Unsupported));
+        assert_eq!(app.feed, FeedState::Unsupported);
+        let _ = app.update(Message::Status(Err("daemon unreachable".into())));
+        assert_eq!(app.feed, FeedState::Lost);
     }
 
     #[test]
