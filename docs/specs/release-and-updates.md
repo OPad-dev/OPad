@@ -145,7 +145,7 @@ monorepo with several products.
 | Track | Tag | Release contains | GitHub "Latest" |
 |---|---|---|---|
 | **App** | `v1.2.0` | `OPad-Linux-1.2.0.AppImage`, `OPad-Linux-Arch-1.2.0.pkg.tar.zst`, `OPad-Linux-Debian-Ubuntu-1.2.0.deb`, `OPad-Linux-Fedora-1.2.0.rpm`, `OPad-Windows-Setup-1.2.0.exe`, `Source-tosu-*.tar.gz`, `Source-lazer-calculator-*.tar.gz` | **yes** |
-| **Firmware** | `firmware-v1.1.0` | `opad-firmware.bin`, `bootloader.bin`, `partition-table.bin`, `ota_data_initial.bin`, notices, source bundle (§13) | no |
+| **Firmware** | `firmware-v1.1.0` | `opad-firmware.bin`, `bootloader.bin`, `partition-table.bin`, `ota_data_initial.bin`, `opad-assets.bin`, notices, source bundle (§13) | no |
 | **tosu** | `tosu-v4.26.2-r1` | `tosu-linux-x86_64`, `tosu-windows-x86_64.exe`, tosu `NOTICE`, `THIRD_PARTY_NOTICES.txt`, LGPL source archive | no |
 
 - An app release carries only files a user may download, named for the system

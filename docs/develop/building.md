@@ -81,6 +81,7 @@ The outputs in `firmware/build/`:
 | `bootloader/bootloader.bin` | `0x0` | Full flash and recovery only |
 | `partition_table/partition-table.bin` | `0x8000` | Full flash and recovery only |
 | `ota_data_initial.bin` | `0xf000` | Full flash and recovery only |
+| `opad-assets.bin` | `0x430000` | Full flash and recovery only: the boot and update animations, built from `firmware/assets/` by `scripts/build_asset_pack.py` (`firmware/CMakeLists.txt`) |
 
 > [!IMPORTANT]
 > After editing [sdkconfig.defaults](https://github.com/OPad-dev/OPad/blob/main/firmware/sdkconfig.defaults), delete `firmware/sdkconfig` and rebuild. `idf.py fullclean` keeps the saved config, so the edit silently does nothing ([AGENTS.md](https://github.com/OPad-dev/OPad/blob/main/AGENTS.md) §5).

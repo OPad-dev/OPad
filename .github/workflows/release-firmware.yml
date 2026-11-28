@@ -107,6 +107,7 @@ jobs:
           cp firmware/build/bootloader/bootloader.bin out/
           cp firmware/build/partition_table/partition-table.bin out/
           cp firmware/build/ota_data_initial.bin out/
+          cp firmware/build/opad-assets.bin out/
           cp firmware/THIRD_PARTY_NOTICES.md out/FIRMWARE_THIRD_PARTY_NOTICES.md
           mv source.tar.gz "out/opad-firmware-${VERSION}-source.tar.gz"
           ls -l out

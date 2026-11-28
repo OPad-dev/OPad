@@ -154,7 +154,7 @@ No buttons are needed: `opadctl` sends the pad a `BOOTLOADER` command over its s
 
 ### 7.4 Erase, then flash
 
-You need the firmware's four files in one folder: an ESP-IDF `firmware/build` folder, or a folder with the four `.bin` files from a firmware release (`opad-firmware.bin`, `bootloader.bin`, `partition-table.bin`, `ota_data_initial.bin`). <!-- src: /desktop/cli/src/main.rs#resolve_flash_set --> <!-- src: /.github/workflows/release-firmware.yml -->
+You need the firmware's files in one folder: an ESP-IDF `firmware/build` folder, or a folder with the `.bin` files from a firmware release (`opad-firmware.bin`, `bootloader.bin`, `partition-table.bin`, `ota_data_initial.bin`, and `opad-assets.bin`, the screen animations, from 1.0.0-rc.3 on). <!-- src: /desktop/cli/src/main.rs#resolve_flash_set --> <!-- src: /.github/workflows/release-firmware.yml -->
 
 `espflash` comes with the app: `/usr/lib/opad/bin/espflash` from a Linux package, `espflash.exe` in `%LOCALAPPDATA%\Programs\opad` on Windows. Use that path if `espflash` is not on your `PATH`. <!-- src: /desktop/gui/Cargo.toml#package.metadata.deb --> <!-- src: /packaging/windows/installer.iss -->
 

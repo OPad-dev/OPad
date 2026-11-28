@@ -700,6 +700,7 @@ mod tests {
             "bootloader.bin",
             "partition-table.bin",
             "ota_data_initial.bin",
+            "opad-assets.bin",
         ] {
             assert_eq!(
                 classify(FIRMWARE, recovery),

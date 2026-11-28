@@ -154,7 +154,7 @@ No hacen falta botones: `opadctl` envía al teclado un comando `BOOTLOADER` por 
 
 ### 7.4 Borra y luego flashea
 
-Necesitas los cuatro archivos del firmware en una carpeta: una carpeta `firmware/build` de ESP-IDF o una carpeta con los cuatro archivos `.bin` de una versión publicada del firmware (`opad-firmware.bin`, `bootloader.bin`, `partition-table.bin`, `ota_data_initial.bin`). <!-- src: /desktop/cli/src/main.rs#resolve_flash_set --> <!-- src: /.github/workflows/release-firmware.yml -->
+Necesitas los archivos del firmware en una carpeta: una carpeta `firmware/build` de ESP-IDF o una carpeta con los archivos `.bin` de una versión publicada del firmware (`opad-firmware.bin`, `bootloader.bin`, `partition-table.bin`, `ota_data_initial.bin`, y `opad-assets.bin`, las animaciones de la pantalla, desde la 1.0.0-rc.3). <!-- src: /desktop/cli/src/main.rs#resolve_flash_set --> <!-- src: /.github/workflows/release-firmware.yml -->
 
 `espflash` viene con la app: `/usr/lib/opad/bin/espflash` en un paquete de Linux, `espflash.exe` en `%LOCALAPPDATA%\Programs\opad` en Windows. Usa esa ruta si `espflash` no está en tu `PATH`. <!-- src: /desktop/gui/Cargo.toml#package.metadata.deb --> <!-- src: /packaging/windows/installer.iss -->
 
