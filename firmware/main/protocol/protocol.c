@@ -1161,6 +1161,9 @@ void protocol_feed_cdc_bytes(const uint8_t *data, size_t len)
     uint32_t prev_resync = s_parser.resync_bytes;
     uint32_t prev_crc = s_parser.crc_errors;
     frame_parser_feed(&s_parser, data, len, current_accept(), on_frame_received, NULL);
+    // A frame handled above can take long (a firmware update erasing flash):
+    // a partial behind it is stale from now on, not from when it arrived
+    s_last_rx_us = esp_timer_get_time();
     uint32_t bad_crc = s_parser.crc_errors - prev_crc;
     if (bad_crc > 0) {
         diag_record(DIAG_EVENT_FRAME_TOO_LARGE, 2 /* WARN */, bad_crc, DIAG_FRAME_DROP_CRC);

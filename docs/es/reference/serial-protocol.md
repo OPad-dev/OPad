@@ -216,9 +216,9 @@ El teclado sigue funcionando como teclado y reproduce su animación `updating` m
 
 | Mensaje | Dirección | Propósito |
 |---|---|---|
-| `OtaBegin { image_size, sha256 }` → `OtaStatus READY` | anfitrión → teclado → anfitrión | Borra el sitio de la imagen en la otra ranura y después responde. |
-| `OtaChunk { offset, data }` → `OtaStatus WRITTEN` | anfitrión → teclado → anfitrión | El trozo siguiente; `offset` tiene que ser donde acabó el anterior. `written` es el total hasta ahora. El anfitrión mantiene dos en vuelo. |
-| `OtaEnd` → `OtaStatus DONE` | anfitrión → teclado → anfitrión | Comprueba tamaño, SHA-256 y la imagen, hace que la ranura nueva arranque una vez a prueba (se revierte si no configura el USB) y se reinicia en ella, con la animación siguiendo a través del reinicio. |
+| `OtaBegin { image_size, sha256 }` → `OtaStatus READY` | anfitrión → teclado → anfitrión | Responde enseguida; cada bloque de 64 KB de la otra ranura se borra cuando las escrituras llegan a él. |
+| `OtaChunk { offset, data }` → `OtaStatus WRITTEN` | anfitrión → teclado → anfitrión | El trozo siguiente; `offset` tiene que ser donde acabó el anterior. `written` es el total hasta ahora. El anfitrión mantiene dos en vuelo. Un trozo que no empieza ahí (uno anterior se perdió por el camino) recibe `RESEND` con lo escrito, y no se escribe nada de él; el anfitrión vuelve a enviar desde ahí, como hace tras 3 s sin respuesta, hasta 5 veces seguidas. |
+| `OtaEnd` → `OtaStatus DONE` | anfitrión → teclado → anfitrión | Comprueba tamaño, SHA-256 y la imagen, hace que la ranura nueva arranque una vez a prueba (se revierte si no configura el USB) y se reinicia en ella; su último frame de la animación se queda hasta que empieza el clip de boot. |
 | `ota_abort` | anfitrión → teclado | Abandonar; la imagen en ejecución queda como estaba. |
 | `OtaStatus ERROR` | teclado → anfitrión | La transferencia terminó; `message` dice por qué. |
 <!-- src: /protocol/opad.proto#OtaBegin, /firmware/main/ota/ota_usb.c, /desktop/crates/opad-device/src/ota.rs -->

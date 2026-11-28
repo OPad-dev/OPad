@@ -64,7 +64,11 @@ typedef enum _opad_OtaStage {
     opad_OtaStage_OTA_STAGE_READY = 1, /* OtaBegin accepted */
     opad_OtaStage_OTA_STAGE_WRITTEN = 2, /* an OtaChunk is written */
     opad_OtaStage_OTA_STAGE_DONE = 3, /* verified; restarting into the new image */
-    opad_OtaStage_OTA_STAGE_ERROR = 4 /* the transfer is over; message says why */
+    opad_OtaStage_OTA_STAGE_ERROR = 4, /* the transfer is over; message says why */
+    /* An OtaChunk that does not start where the image so far ends (one before
+ it was lost on the way): send again from written. Firmware predating it
+ answers ERROR instead. */
+    opad_OtaStage_OTA_STAGE_RESEND = 5
 } opad_OtaStage;
 
 /* Input module on the carrier's connector, from its ID voltage on GPIO8 (or
@@ -423,8 +427,9 @@ typedef struct _opad_OtaBegin {
 
 typedef PB_BYTES_ARRAY_T(4096) opad_OtaChunk_data_t;
 /* The next piece of the image: offset is where it goes, and must be where the
- last one ended. Answered with OtaStatus WRITTEN (written = bytes so far) or
- ERROR. A pad that hears nothing for 10 s gives up on the transfer. */
+ last one ended. Answered with OtaStatus WRITTEN (written = bytes so far),
+ RESEND (it was not: nothing written) or ERROR. A pad that hears nothing for
+ 10 s gives up on the transfer. */
 typedef struct _opad_OtaChunk {
     uint32_t offset;
     opad_OtaChunk_data_t data; /* up to HelloAck.ota_chunk_max bytes */
@@ -695,8 +700,8 @@ extern "C" {
 #define _opad_SwipeAction_ARRAYSIZE ((opad_SwipeAction)(opad_SwipeAction_SWIPE_ACTION_VOLUME_DOWN+1))
 
 #define _opad_OtaStage_MIN opad_OtaStage_OTA_STAGE_UNKNOWN
-#define _opad_OtaStage_MAX opad_OtaStage_OTA_STAGE_ERROR
-#define _opad_OtaStage_ARRAYSIZE ((opad_OtaStage)(opad_OtaStage_OTA_STAGE_ERROR+1))
+#define _opad_OtaStage_MAX opad_OtaStage_OTA_STAGE_RESEND
+#define _opad_OtaStage_ARRAYSIZE ((opad_OtaStage)(opad_OtaStage_OTA_STAGE_RESEND+1))
 
 #define _opad_InputModule_MIN opad_InputModule_INPUT_MODULE_UNKNOWN
 #define _opad_InputModule_MAX opad_InputModule_INPUT_MODULE_MX_V3

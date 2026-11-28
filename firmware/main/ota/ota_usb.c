@@ -3,6 +3,7 @@
 #include <string.h>
 #include "esp_log.h"
 #include "esp_ota_ops.h"
+#include "esp_partition.h"
 #include "esp_timer.h"
 #include "mbedtls/sha256.h"
 #include "runtime/runtime.h"
@@ -13,11 +14,13 @@ static const char *TAG = "ota_usb";
 
 // A host that stops sending for this long has gone (closed, unplugged)
 #define OTA_IDLE_TIMEOUT_US (10 * 1000 * 1000)
+// Erased as the writes reach it (ota_usb_chunk)
+#define ERASE_BLOCK (64 * 1024)
 
 static struct {
     bool active;
     bool animating;
-    esp_ota_handle_t handle;
+    uint32_t erased;  // bytes of the slot erased so far, from its start
     const esp_partition_t *part;
     uint32_t size;
     uint32_t written;
@@ -35,7 +38,6 @@ static ota_usb_reply_t reply(opad_OtaStage stage, const char *message)
 static void finish_failed(void)
 {
     if (s.active) {
-        esp_ota_abort(s.handle);
         mbedtls_sha256_free(&s.sha);
         s.active = false;
     }
@@ -82,20 +84,20 @@ ota_usb_reply_t ota_usb_begin(uint32_t image_size, const uint8_t *sha256, size_t
     if (image_size == 0 || image_size > s.part->size) {
         return reply(opad_OtaStage_OTA_STAGE_ERROR, "image does not fit the slot");
     }
-    // The animation first, so the screen moves while the slot is erased
     s.animating = flash_anim_start();
-    if (!s.animating) {
+    if (s.animating) {
+        flash_anim_run();
+    } else {
         ui_show_notice("Updating the firmware.\nKeep the cable in.");
     }
-    // The whole image's room is erased now, in 64 KB blocks: a few seconds
-    // with the odd stall. Erasing each 4 KB sector as it is written instead
-    // stopped both cores for ~45 ms per piece, all through the transfer, and
-    // the animation stuttered the whole time
-    esp_err_t err = esp_ota_begin(s.part, image_size, &s.handle);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "esp_ota_begin: %s", esp_err_to_name(err));
-        return fail("could not start writing");
-    }
+    // Written straight to the partition, not through esp_ota_begin/write:
+    // those erase either the whole image's room first (2.9 s for 1 MB, with
+    // the animation stalled) or a 4 KB sector per piece (~45 ms with both
+    // cores stopped, all through the transfer). Here a 64 KB block is erased
+    // when the writes reach it: a short stall every 16 pieces.
+    // esp_ota_set_boot_partition validates the image at the end, as
+    // esp_ota_end would.
+    s.erased = 0;
     s.active = true;
     s.size = image_size;
     memcpy(s.sha256, sha256, sizeof(s.sha256));
@@ -109,11 +111,22 @@ ota_usb_reply_t ota_usb_begin(uint32_t image_size, const uint8_t *sha256, size_t
 ota_usb_reply_t ota_usb_chunk(uint32_t offset, const uint8_t *data, size_t len)
 {
     if (!s.active) return reply(opad_OtaStage_OTA_STAGE_ERROR, "no update in progress");
-    if (offset != s.written) return fail("piece out of order");
+    // A piece before this one was lost on the way: the host starts again
+    // from what is written. Nothing is written from this one.
+    if (offset != s.written) {
+        s.last_us = esp_timer_get_time();
+        return reply(opad_OtaStage_OTA_STAGE_RESEND, NULL);
+    }
     if (len == 0 || len > s.size - s.written) return fail("more data than the image size");
-    esp_err_t err = esp_ota_write(s.handle, data, len);
+    esp_err_t err = ESP_OK;
+    while (err == ESP_OK && s.written + len > s.erased) {
+        uint32_t block = s.part->size - s.erased < ERASE_BLOCK ? s.part->size - s.erased : ERASE_BLOCK;
+        err = esp_partition_erase_range(s.part, s.erased, block);
+        s.erased += block;
+    }
+    if (err == ESP_OK) err = esp_partition_write(s.part, s.written, data, len);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "esp_ota_write: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "flash write at %lu: %s", (unsigned long)s.written, esp_err_to_name(err));
         return fail("flash write failed");
     }
     mbedtls_sha256_update(&s.sha, data, len);
@@ -135,21 +148,17 @@ ota_usb_reply_t ota_usb_end(void)
     uint8_t got[32];
     mbedtls_sha256_finish(&s.sha, got);
     mbedtls_sha256_free(&s.sha);
+    s.active = false;
     if (memcmp(got, s.sha256, sizeof(got)) != 0) {
-        esp_ota_abort(s.handle);
-        s.active = false;
         return fail("SHA-256 does not match");
     }
-    // Checks the image itself (header, chip, checksum) before it can boot
-    esp_err_t err = esp_ota_end(s.handle);
-    s.active = false;
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "esp_ota_end: %s", esp_err_to_name(err));
+    // Checks the image itself (header, chip, checksum) and makes it boot once
+    // on trial: confirmed only when the host configures USB (app_main.c),
+    // else the bootloader rolls back to the running image
+    esp_err_t err = esp_ota_set_boot_partition(s.part);
+    if (err == ESP_ERR_OTA_VALIDATE_FAILED) {
         return fail("not a valid image for this pad");
     }
-    // Boots once on trial: confirmed only when the host configures USB
-    // (app_main.c), else the bootloader rolls back to the running image
-    err = esp_ota_set_boot_partition(s.part);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_set_boot_partition: %s", esp_err_to_name(err));
         return fail("could not select the new image");

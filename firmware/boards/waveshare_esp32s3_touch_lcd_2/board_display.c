@@ -123,6 +123,10 @@ esp_err_t board_display_init(esp_lcd_panel_io_handle_t *out_io, esp_lcd_panel_ha
     }
 
     // Waveshare ST7789 configuration: landscape orientation (swap X/Y)
+    // FRCTRL2 back to its reset value (~60 Hz): the software reset above is
+    // skipped to keep an image up, and a test build once left the panel at
+    // ~119 Hz, which this panel shows as grey with lines until reset
+    esp_lcd_panel_io_tx_param(io_handle, 0xC6, (uint8_t[]){0x0F}, 1);
     esp_lcd_panel_swap_xy(panel_handle, true);
     esp_lcd_panel_mirror(panel_handle, true, false);
     esp_lcd_panel_invert_color(panel_handle, true);

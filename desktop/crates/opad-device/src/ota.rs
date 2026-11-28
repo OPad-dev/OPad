@@ -22,8 +22,11 @@ const BEGIN_TIMEOUT: Duration = Duration::from_secs(30);
 /// Pieces sent before the first of them is answered: the pad works on one
 /// while the next is on its way, instead of waiting for each round trip
 const IN_FLIGHT: usize = 2;
-/// One piece: a 4 KB sector erase plus the write, well under a second
-const CHUNK_TIMEOUT: Duration = Duration::from_secs(10);
+/// No answer to a piece for this long: it was lost on the way, so it is sent
+/// again. A piece takes well under a second, with a 64 KB erase in front of it.
+const RESEND_AFTER: Duration = Duration::from_secs(3);
+/// Times in a row a piece may go again before the update is given up
+const MAX_RETRIES: u32 = 5;
 /// `OtaEnd`: the pad reads the whole image back to check it
 const END_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -84,44 +87,58 @@ async fn run(
     .await?;
     expect(events, OtaStage::Ready, None, BEGIN_TIMEOUT, "start").await?;
 
-    // The pad answers each piece in order, with the bytes written so far
-    let mut sent = std::collections::VecDeque::new();
-    let mut offset = 0;
+    // The pad answers each piece, in order, with what it has written so far.
+    // A piece lost on the way (a frame that failed its CRC) makes it answer
+    // the next one with RESEND, or, with every piece in flight lost, nothing:
+    // either way the pieces go again from what it has.
+    let total = image.len() as u32;
+    let mut acked: u32 = 0;
+    let mut next: u32 = 0;
+    let mut in_flight = 0;
+    let mut retries = 0;
     progress(0, image.len());
-    for piece in image.chunks(chunk) {
-        if sent.len() == IN_FLIGHT {
-            let done = sent.pop_front().expect("IN_FLIGHT is not 0");
-            expect(
-                events,
-                OtaStage::Written,
-                Some(done),
-                CHUNK_TIMEOUT,
-                "write",
+    while acked < total {
+        while in_flight < IN_FLIGHT && next < total {
+            let end = (next as usize + chunk).min(image.len());
+            send(
+                dm,
+                Payload::OtaChunk(proto::OtaChunk {
+                    offset: next,
+                    data: image[next as usize..end].to_vec(),
+                }),
             )
             .await?;
-            progress(done as usize, image.len());
+            next = end as u32;
+            in_flight += 1;
         }
-        send(
-            dm,
-            Payload::OtaChunk(proto::OtaChunk {
-                offset: offset as u32,
-                data: piece.to_vec(),
-            }),
-        )
-        .await?;
-        offset += piece.len();
-        sent.push_back(offset as u32);
-    }
-    while let Some(done) = sent.pop_front() {
-        expect(
-            events,
-            OtaStage::Written,
-            Some(done),
-            CHUNK_TIMEOUT,
-            "write",
-        )
-        .await?;
-        progress(done as usize, image.len());
+        match next_status(events, RESEND_AFTER).await? {
+            Some(st) if st.stage == OtaStage::Written as i32 => {
+                in_flight = in_flight.saturating_sub(1);
+                if st.written > acked {
+                    acked = st.written;
+                    retries = 0;
+                    progress(acked as usize, image.len());
+                }
+            }
+            Some(st) if st.stage == OtaStage::Resend as i32 => {
+                acked = acked.max(st.written);
+                next = st.written;
+                in_flight = 0;
+                retries += 1;
+            }
+            Some(st) if st.stage == OtaStage::Error as i32 => {
+                return Err(OtaError::Refused(st.message));
+            }
+            Some(_) => {}
+            None => {
+                next = acked;
+                in_flight = 0;
+                retries += 1;
+            }
+        }
+        if retries > MAX_RETRIES {
+            return Err(OtaError::NoAnswer("write"));
+        }
     }
 
     send(dm, Payload::OtaEnd(proto::OtaEnd {})).await?;
@@ -137,6 +154,29 @@ async fn send(dm: &DeviceManager, payload: Payload) -> Result<(), OtaError> {
         }
     }
     Err(OtaError::Device(DeviceError::Busy))
+}
+
+/// The pad's next OtaStatus, or None after `timeout`
+async fn next_status(
+    events: &mut broadcast::Receiver<DeviceEvent>,
+    timeout: Duration,
+) -> Result<Option<proto::OtaStatus>, OtaError> {
+    let wait = async {
+        loop {
+            match events.recv().await {
+                Ok(DeviceEvent::OtaStatus(st)) => return Ok(st),
+                Ok(DeviceEvent::Disconnected) | Err(broadcast::error::RecvError::Closed) => {
+                    return Err(OtaError::Disconnected)
+                }
+                Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
+            }
+        }
+    };
+    match tokio::time::timeout(timeout, wait).await {
+        Ok(Ok(st)) => Ok(Some(st)),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Ok(None),
+    }
 }
 
 async fn expect(

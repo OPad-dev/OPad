@@ -26,8 +26,6 @@
 static const char *TAG = "ui";
 
 #define PAD_TIMER_PERIOD_MS 20
-// Longest the update animation carries on for after the restart into a new image
-#define FLASH_ANIM_RESUME_MS 4000
 #define KEY_FLASH_HOLD_US   80000     // keep a tap visible for at least one frame or two
 #define KPS_WINDOW          (1000 / PAD_TIMER_PERIOD_MS)
 
@@ -235,17 +233,14 @@ esp_err_t ui_init(void)
 
     esp_lcd_panel_io_handle_t io = NULL;
     esp_lcd_panel_handle_t panel = NULL;
-    // After an update over USB the panel still shows the update animation:
-    // it carries on from there, and LVGL's first frame takes over from it
+    // After an update over USB the panel still shows the update animation's
+    // last frame: it stays up until the boot clip starts
     bool resuming = flash_anim_resuming();
     board_display_keep_image(resuming);
     esp_err_t err = board_display_init(&io, &panel);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "board_display_init failed: %s", esp_err_to_name(err));
         return err;
-    }
-    if (resuming) {
-        flash_anim_resume(FLASH_ANIM_RESUME_MS);
     }
 
     // Core 1, low priority: rendering never competes with the key/USB path on core 0
@@ -286,6 +281,8 @@ esp_err_t ui_init(void)
     lvgl_port_stop();
     lv_tick_set_cb(ui_tick_ms);
     lv_timer_enable(true);
+    // The boot clip first; the screens below are built behind it
+    flash_anim_boot(s_disp);
     easter_egg_init();
 
     ui_data_init();

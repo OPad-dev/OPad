@@ -1,15 +1,17 @@
 #pragma once
-// The "updating" animation: the MJPEG named FLASH_ANIM_ASSET in the "assets"
-// partition, drawn straight to the panel without LVGL. Core 1 only; the keys
-// on core 0 keep working while it plays.
+// The "updating" and "boot" animations: the MJPEGs named FLASH_ANIM_ASSET
+// and BOOT_ANIM_ASSET in the "assets" partition, drawn straight to the panel
+// without LVGL. Core 1 only; the keys on core 0 keep working while they play.
 #include <stdbool.h>
 #include <stdint.h>
+#include "lvgl.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #define FLASH_ANIM_ASSET "updating"
+#define BOOT_ANIM_ASSET "boot"
 
 /*
  * ROM bootloader flash (usb_cdc.c, reboot_to_rom_download): play it for up to
@@ -21,19 +23,27 @@ extern "C" {
 void flash_anim_play(uint32_t max_ms);
 
 /*
- * Update over the protocol (ota/ota_usb.c): loop it from a task of its own
- * until flash_anim_stop(). LVGL stops drawing meanwhile, and the screen does
- * not go to sleep. False, and nothing changes, without the asset.
+ * Update over the protocol (ota/ota_usb.c): put its first frame up, still.
+ * LVGL stops drawing until flash_anim_stop(), and the screen does not go to
+ * sleep. False, and nothing changes, without the asset.
  */
 bool flash_anim_start(void);
 
 /*
+ * After flash_anim_start: loop it from a task of its own until
+ * flash_anim_stop(). Started once the slot is erased: the erase stops both
+ * cores for most of its ~1.5 s, and the first round of the loop stuttered.
+ */
+void flash_anim_run(void);
+
+/*
  * End flash_anim_start's loop. for_restart = false: LVGL gets the screen back
  * (the transfer failed). true: the frame on the panel stays, the backlight is
- * latched on through esp_restart(), and the next boot carries on from the
- * frame after it (flash_anim_resuming).
+ * latched on through esp_restart(), and the next boot leaves the frame up
+ * until its boot clip starts (flash_anim_resuming).
  */
 void flash_anim_stop(bool for_restart);
+
 
 /*
  * At boot, before board_display_init: whether the last run stopped for a
@@ -43,11 +53,12 @@ void flash_anim_stop(bool for_restart);
 bool flash_anim_resuming(void);
 
 /*
- * After board_display_init and before LVGL has the display: play the rest of
- * the clip, from where flash_anim_stop(true) left it, for up to max_ms.
- * Blocks; LVGL's first frame then replaces the last one.
+ * Every boot, from ui_init once LVGL has the display and under its lock:
+ * play the boot clip from a task on core 1 while the UI is built behind it,
+ * with nothing of LVGL's drawn until the clip has ended. Without the clip
+ * LVGL draws at once, as before.
  */
-void flash_anim_resume(uint32_t max_ms);
+void flash_anim_boot(lv_display_t *disp);
 
 #ifdef __cplusplus
 }

@@ -216,9 +216,9 @@ The pad keeps working as a keyboard and plays its `updating` animation while it 
 
 | Message | Direction | Purpose |
 |---|---|---|
-| `OtaBegin { image_size, sha256 }` → `OtaStatus READY` | host → pad → host | Erases room for the image in the other slot, then answers. |
-| `OtaChunk { offset, data }` → `OtaStatus WRITTEN` | host → pad → host | The next piece; `offset` must be where the last one ended. `written` is the total so far. The host keeps two in flight. |
-| `OtaEnd` → `OtaStatus DONE` | host → pad → host | Checks size, SHA-256 and the image, makes the new slot boot once on trial (rolled back unless it configures USB) and restarts into it, with the animation carrying on across the restart. |
+| `OtaBegin { image_size, sha256 }` → `OtaStatus READY` | host → pad → host | Answered at once; each 64 KB block of the other slot is erased when the writes reach it. |
+| `OtaChunk { offset, data }` → `OtaStatus WRITTEN` | host → pad → host | The next piece; `offset` must be where the last one ended. `written` is the total so far. The host keeps two in flight. A piece that does not start there (one before it was lost on the way) is answered `RESEND` with what is written, and nothing is written from it; the host sends again from there, as it does after 3 s without an answer, up to 5 times in a row. |
+| `OtaEnd` → `OtaStatus DONE` | host → pad → host | Checks size, SHA-256 and the image, makes the new slot boot once on trial (rolled back unless it configures USB) and restarts into it; its last animation frame stays up until the boot clip starts. |
 | `ota_abort` | host → pad | Give up; the running image is left as it was. |
 | `OtaStatus ERROR` | pad → host | The transfer is over; `message` says why. |
 <!-- src: /protocol/opad.proto#OtaBegin, /firmware/main/ota/ota_usb.c, /desktop/crates/opad-device/src/ota.rs -->

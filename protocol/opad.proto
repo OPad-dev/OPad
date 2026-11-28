@@ -378,8 +378,9 @@ message OtaBegin {
 }
 
 // The next piece of the image: offset is where it goes, and must be where the
-// last one ended. Answered with OtaStatus WRITTEN (written = bytes so far) or
-// ERROR. A pad that hears nothing for 10 s gives up on the transfer.
+// last one ended. Answered with OtaStatus WRITTEN (written = bytes so far),
+// RESEND (it was not: nothing written) or ERROR. A pad that hears nothing for
+// 10 s gives up on the transfer.
 message OtaChunk {
     uint32 offset = 1;
     bytes data = 2;          // up to HelloAck.ota_chunk_max bytes
@@ -398,6 +399,10 @@ enum OtaStage {
     OTA_STAGE_WRITTEN = 2;   // an OtaChunk is written
     OTA_STAGE_DONE = 3;      // verified; restarting into the new image
     OTA_STAGE_ERROR = 4;     // the transfer is over; message says why
+    // An OtaChunk that does not start where the image so far ends (one before
+    // it was lost on the way): send again from written. Firmware predating it
+    // answers ERROR instead.
+    OTA_STAGE_RESEND = 5;
 }
 
 message OtaStatus {
