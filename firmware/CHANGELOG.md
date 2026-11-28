@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.0.0-rc.3](https://github.com/OPad-dev/OPad/compare/firmware-v1.0.0-rc.2...firmware-v1.0.0-rc.3) (2026-11-28)
+
+
+### Features
+
+* **config:** a setting from newer firmware is not overwritten by an older app ([0cd9f32](https://github.com/OPad-dev/OPad/commit/0cd9f32ec11f75fdc687c399b53dfdd600c624c9))
+* **firmware:** an update comes over the pad's own USB connection and its animation carries on across the restart ([8de194c](https://github.com/OPad-dev/OPad/commit/8de194cd62a2f66928810d031209dcd5f00095f6))
+* **firmware:** the flash after the app slots holds a coredump and two asset packs ([057183b](https://github.com/OPad-dev/OPad/commit/057183be8d7e006427c159524499b8b8cea236ff))
+* **ui:** every boot plays the boot animation, and an update starts at once and survives a lost piece ([9694477](https://github.com/OPad-dev/OPad/commit/969447741a028ebbd473bf884ebd8072e8512360))
+* **ui:** the pad plays its "updating" animation when it is asked to be flashed ([8353b32](https://github.com/OPad-dev/OPad/commit/8353b32079abc6f19a0f09e95f8801b2a0022a37))
+* **usb:** the pad enumerates as 303a:8415, OPad's own PID from Espressif (0.9) ([b6c47ad](https://github.com/OPad-dev/OPad/commit/b6c47adf65853fcc0ef226292af42598af953cf9))
+
+
+### Bug Fixes
+
+* **usb:** a key changed while the host reads nothing is sent when it is back ([780862f](https://github.com/OPad-dev/OPad/commit/780862f4571cec246a063e261439fb785df72bb8))
+
 ## [1.0.0-rc.2](https://github.com/OPad-dev/OPad/compare/firmware-v1.0.0-rc.1...firmware-v1.0.0-rc.2) (2026-11-22)
 
 
