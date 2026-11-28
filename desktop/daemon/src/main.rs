@@ -477,6 +477,8 @@ async fn main() -> Result<()> {
                     DeviceEvent::KeyPresses { now_us, presses, dropped, received } => {
                         event_opt = Some(RuntimeEvent::PadPresses { now_us, presses, dropped, received });
                     }
+                    // Read by the update that asked for it (opad_device::ota)
+                    DeviceEvent::OtaStatus(_) => {}
                     DeviceEvent::HeCalibrationProgress(prog) => {
                         let stage = match prog.stage {
                             1 => opad_model::HeCalStage::Rest,

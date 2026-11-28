@@ -5,49 +5,63 @@
 #include "ui/ui.h"
 #include "board.h"
 #include "libs/tjpgd/tjpgd.h"
+#include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "esp_timer.h"
+#include "esp_lvgl_port.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 
 static const char *TAG = "flash_anim";
 
 /*
- * Frames go to the panel without LVGL: TJpgDec hands over one MCU (8 or 16
- * px square) at a time, left to right; a band of BAND_LINES lines collects one
- * row of MCUs and is sent as soon as the row is complete, so no frame buffer
- * is needed. Each band is sent and waited for before the next is decoded into
- * the same buffer.
+ * Frames go to the panel without LVGL. TJpgDec decodes a whole frame into
+ * s_frame (PSRAM) first, and only then is it sent, PUSH_LINES at a time
+ * through a DMA buffer in internal RAM, in about 20 ms: the panel refreshes
+ * every ~16 ms, so it shows at most one tear line. (Sending each row of JPEG
+ * blocks as it was decoded spread a frame over three or four refreshes, and
+ * the tearing showed.) After each piece a NOP command waits for it: the panel
+ * IO finishes queued pixels before it sends a command. LVGL's own "pixels
+ * sent" callback still sees those transfers; with LVGL not drawing, it has
+ * nothing to do.
  */
 #define SCREEN_W 320
 #define SCREEN_H 240
-#define BAND_LINES 16
+#define PUSH_LINES 40
 #define JPEG_WORK_SIZE 4096  // TJpgDec's pool, as LVGL's own decoder uses
-#define BAND_TIMEOUT_MS 100
+#define LCD_CMD_NOP 0x00
+#define TASK_STACK 4096
+#define TASK_PRIO 2          // as LVGL's task, which is idle meanwhile; below the protocol task
+#define RESUME_MAGIC 0x55AA0E7Au
 
 typedef struct {
     const uint8_t *p;
     size_t left;
 } jpeg_src_t;
 
+// Where flash_anim_stop(true) left the clip, kept through esp_restart()
+RTC_NOINIT_ATTR static uint32_t s_resume_magic;
+RTC_NOINIT_ATTR static uint32_t s_resume_frame;
+
+static asset_pack_t s_pack;
+static const asset_pack_entry_t *s_entry;
+static const uint8_t *s_data;
 static esp_lcd_panel_handle_t s_panel;
-static uint16_t *s_band;
-static int s_band_top;
-static SemaphoreHandle_t s_sent;
+static esp_lcd_panel_io_handle_t s_io;
+static uint16_t *s_frame;  // SCREEN_W x SCREEN_H, big-endian RGB565, PSRAM
+static uint16_t *s_push;   // SCREEN_W x PUSH_LINES, internal DMA RAM
+static uint8_t *s_work;
 static bool s_send_failed;
 
-static bool on_color_done(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_data_t *edata, void *ctx)
-{
-    (void)io;
-    (void)edata;
-    (void)ctx;
-    BaseType_t woken = pdFALSE;
-    xSemaphoreGiveFromISR(s_sent, &woken);
-    return woken == pdTRUE;
-}
+static TaskHandle_t s_task;
+static volatile bool s_stop;
+static SemaphoreHandle_t s_stopped;
+static volatile uint32_t s_last_frame;
 
 static size_t jpeg_in(JDEC *jd, uint8_t *buf, size_t n)
 {
@@ -59,11 +73,15 @@ static size_t jpeg_in(JDEC *jd, uint8_t *buf, size_t n)
     return n;
 }
 
-static void send_band(int lines)
+static void push_frame(void)
 {
-    if (esp_lcd_panel_draw_bitmap(s_panel, 0, s_band_top, SCREEN_W, s_band_top + lines, s_band) != ESP_OK ||
-        xSemaphoreTake(s_sent, pdMS_TO_TICKS(BAND_TIMEOUT_MS)) != pdTRUE) {
-        s_send_failed = true;
+    for (int y = 0; y < SCREEN_H && !s_send_failed; y += PUSH_LINES) {
+        int lines = SCREEN_H - y < PUSH_LINES ? SCREEN_H - y : PUSH_LINES;
+        memcpy(s_push, s_frame + y * SCREEN_W, (size_t)SCREEN_W * lines * 2);
+        if (esp_lcd_panel_draw_bitmap(s_panel, 0, y, SCREEN_W, y + lines, s_push) != ESP_OK ||
+            esp_lcd_panel_io_tx_param(s_io, LCD_CMD_NOP, NULL, 0) != ESP_OK) {
+            s_send_failed = true;
+        }
     }
 }
 
@@ -72,37 +90,29 @@ static void send_band(int lines)
 static int jpeg_out(JDEC *jd, void *bitmap, JRECT *r)
 {
     (void)jd;
-    if (r->top != s_band_top) {
-        s_band_top = r->top;
-    }
     const uint8_t *px = bitmap;
     for (unsigned y = r->top; y <= r->bottom; y++) {
         for (unsigned x = r->left; x <= r->right; x++, px += 3) {
-            if (x < SCREEN_W && y - s_band_top < BAND_LINES) {
+            if (x < SCREEN_W && y < SCREEN_H) {
                 uint16_t v = (uint16_t)(((px[2] & 0xF8) << 8) | ((px[1] & 0xFC) << 3) | (px[0] >> 3));
-                s_band[(y - s_band_top) * SCREEN_W + x] = (uint16_t)(v >> 8 | v << 8);
+                s_frame[y * SCREEN_W + x] = (uint16_t)(v >> 8 | v << 8);
             }
         }
     }
-    if (r->right + 1 >= SCREEN_W) {
-        int bottom = r->bottom < SCREEN_H ? r->bottom : SCREEN_H - 1;
-        send_band(bottom - s_band_top + 1);
-    }
-    return s_send_failed ? 0 : 1;
+    return 1;
 }
 
-static bool draw_frame(const asset_pack_entry_t *e, const uint8_t *data, uint32_t i, uint8_t *work)
+static bool draw_frame(uint32_t i)
 {
-    const uint32_t *ends = (const uint32_t *)data;  // 4-byte aligned by the pack builder
-    uint32_t start = i ? ends[i - 1] : 4 * e->frame_count;
+    const uint32_t *ends = (const uint32_t *)s_data;  // 4-byte aligned by the pack builder
+    uint32_t start = i ? ends[i - 1] : 4 * s_entry->frame_count;
     uint32_t end = ends[i];
-    if (end < start || end > e->size) return false;
+    if (end < start || end > s_entry->size) return false;
 
-    jpeg_src_t src = {data + start, end - start};
+    jpeg_src_t src = {s_data + start, end - start};
     JDEC jd;
-    JRESULT rc = jd_prepare(&jd, jpeg_in, work, JPEG_WORK_SIZE, &src);
-    // Bands are MCU rows: taller MCUs, or another size, would not fit them
-    if (rc == JDR_OK && (jd.width != SCREEN_W || jd.height != SCREEN_H || jd.msy * 8 > BAND_LINES)) {
+    JRESULT rc = jd_prepare(&jd, jpeg_in, s_work, JPEG_WORK_SIZE, &src);
+    if (rc == JDR_OK && (jd.width != SCREEN_W || jd.height != SCREEN_H)) {
         rc = JDR_FMT3;
     }
     if (rc == JDR_OK) rc = jd_decomp(&jd, jpeg_out, 0);
@@ -110,71 +120,158 @@ static bool draw_frame(const asset_pack_entry_t *e, const uint8_t *data, uint32_
         ESP_LOGW(TAG, "frame %lu: TJpgDec error %d", (unsigned long)i, rc);
         return false;
     }
+    push_frame();
+    s_last_frame = i;
     return true;
 }
 
-static const asset_pack_entry_t *find_asset(const asset_pack_t *pack, uint16_t *index)
+// Find the clip and get the buffers, once. False without the asset or memory.
+static bool prepare(void)
 {
-    for (uint16_t i = 0; i < pack->entry_count; i++) {
-        const asset_pack_entry_t *e = &pack->entries[i];
+    if (s_entry) return true;
+    if (asset_pack_open(ASSET_PART_OPAD, &s_pack) != ESP_OK) return false;
+    for (uint16_t i = 0; i < s_pack.entry_count; i++) {
+        const asset_pack_entry_t *e = &s_pack.entries[i];
         if (e->kind == ASSET_KIND_MJPEG && strcmp(e->name, FLASH_ANIM_ASSET) == 0 && e->frame_us > 0) {
-            *index = i;
-            return e;
+            s_data = asset_pack_data(&s_pack, i);
+            s_entry = e;
+            break;
         }
     }
-    return NULL;
-}
-
-void flash_anim_play(uint32_t max_ms)
-{
-    if (!ui_is_ok()) return;
-    asset_pack_t pack;
-    uint16_t index;
-    const asset_pack_entry_t *e;
-    if (asset_pack_open(ASSET_PART_OPAD, &pack) != ESP_OK || !(e = find_asset(&pack, &index))) {
+    if (!s_entry) {
         ESP_LOGI(TAG, "No \"%s\" animation in the assets partition", FLASH_ANIM_ASSET);
-        return;
+        return false;
     }
     s_panel = board_display_get_panel_handle();
-    esp_lcd_panel_io_handle_t io = board_display_get_io_handle();
-    s_band = heap_caps_malloc(SCREEN_W * BAND_LINES * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    uint8_t *work = heap_caps_malloc(JPEG_WORK_SIZE, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    s_sent = xSemaphoreCreateBinary();
-    if (!s_panel || !io || !s_band || !work || !s_sent) {
-        ESP_LOGE(TAG, "No memory for the animation");
-        return;  // leaks the little it got: the pad restarts next
+    s_io = board_display_get_io_handle();
+    if (!s_frame) s_frame = heap_caps_malloc(SCREEN_W * SCREEN_H * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!s_push) s_push = heap_caps_malloc(SCREEN_W * PUSH_LINES * 2, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (!s_work) s_work = heap_caps_malloc(JPEG_WORK_SIZE, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (!s_panel || !s_io || !s_frame || !s_push || !s_work) {
+        ESP_LOGE(TAG, "No display or no memory for the animation");
+        s_entry = NULL;
+        return false;
     }
+    return true;
+}
 
-    // LVGL stops drawing for good, then the panel's "color sent" event is
-    // ours: LVGL's would mark one of its flushes done
-    ui_lock();
-    const esp_lcd_panel_io_callbacks_t cbs = {.on_color_trans_done = on_color_done};
-    esp_lcd_panel_io_register_event_callbacks(io, &cbs, NULL);
-    // Full brightness from the first frame to the end of the flash: the latch
-    // that keeps the light on through the restart cannot dim it
-    board_display_wake();
-    board_backlight_hold_on();
-
-    const uint8_t *data = asset_pack_data(&pack, index);
+// Frames first..end of the clip (looping when loop), each when its time
+// comes, until max_us or *stop. A frame that is late is skipped, so a slow
+// stretch shows as fewer frames, not as slow motion.
+static uint32_t play(uint32_t first, bool loop, int64_t max_us, volatile bool *stop)
+{
+    const uint32_t n = s_entry->frame_count;
     int64_t t0 = esp_timer_get_time();
-    int64_t limit_us = (int64_t)max_ms * 1000;
-    int64_t clip_us = (int64_t)e->frame_us * e->frame_count;
-    if (clip_us < limit_us) limit_us = clip_us;
-    int32_t shown = -1;
+    int64_t shown = -1;
     uint32_t drawn = 0;
     s_send_failed = false;
-    for (;;) {
+    while (!(stop && *stop) && !s_send_failed) {
         int64_t elapsed = esp_timer_get_time() - t0;
-        if (elapsed >= limit_us || s_send_failed) break;
-        int32_t due = (int32_t)(elapsed / e->frame_us);
+        if (elapsed >= max_us) break;
+        int64_t due = elapsed / s_entry->frame_us;
+        if (!loop && first + due >= n) break;
         if (due == shown) {
             vTaskDelay(pdMS_TO_TICKS(5));
             continue;
         }
-        // Behind the clock: skip to the frame that is due
-        if (draw_frame(e, data, (uint32_t)due, work)) drawn++;
+        if (draw_frame((uint32_t)((first + due) % n))) drawn++;
         shown = due;
+        ui_notify_activity();  // no display sleep while it plays
     }
-    ESP_LOGI(TAG, "%lu of %ld frames in %lld ms; last frame stays up", (unsigned long)drawn, (long)(shown + 1),
+    return drawn;
+}
+
+// ---- ROM bootloader flash -----------------------------------------------------------
+
+void flash_anim_play(uint32_t max_ms)
+{
+    if (!ui_is_ok() || !prepare()) return;
+    // LVGL stops drawing for good: the pad restarts next
+    ui_lock();
+    lv_refr_now(NULL);  // whatever it had pending goes out before the panel is ours
+    board_display_wake();
+    board_backlight_hold_on();
+    int64_t t0 = esp_timer_get_time();
+    uint32_t drawn = play(0, false, (int64_t)max_ms * 1000, NULL);
+    ESP_LOGI(TAG, "%lu frames in %lld ms; the last one stays up", (unsigned long)drawn,
              (long long)((esp_timer_get_time() - t0) / 1000));
+}
+
+// ---- update over the protocol -------------------------------------------------------
+
+static void loop_task(void *arg)
+{
+    (void)arg;
+    uint32_t drawn = play(0, true, INT64_MAX, &s_stop);
+    ESP_LOGI(TAG, "loop stopped after %lu frames", (unsigned long)drawn);
+    xSemaphoreGive(s_stopped);
+    vTaskDelete(NULL);
+}
+
+bool flash_anim_start(void)
+{
+    if (s_task || !ui_is_ok() || !prepare()) return false;
+    if (!s_stopped) s_stopped = xSemaphoreCreateBinary();
+    if (!s_stopped) return false;
+
+    // LVGL keeps running but draws nothing until flash_anim_stop(false)
+    ui_lock();
+    lv_refr_now(NULL);
+    lv_display_enable_invalidation(NULL, false);
+    ui_unlock();
+    board_display_wake();
+    board_backlight_hold_on();
+
+    s_stop = false;
+    if (xTaskCreatePinnedToCore(loop_task, "flash_anim", TASK_STACK, NULL, TASK_PRIO, &s_task, 1) != pdPASS) {
+        s_task = NULL;
+        flash_anim_stop(false);
+        return false;
+    }
+    return true;
+}
+
+void flash_anim_stop(bool for_restart)
+{
+    if (s_task) {
+        s_stop = true;
+        xSemaphoreTake(s_stopped, portMAX_DELAY);  // its frame is finished
+        s_task = NULL;
+    }
+    if (for_restart) {
+        if (s_entry) {
+            s_resume_frame = (s_last_frame + 1) % s_entry->frame_count;
+            s_resume_magic = RESUME_MAGIC;
+        }
+        return;  // the latch holds the backlight through esp_restart()
+    }
+    board_backlight_release();
+    if (ui_lock()) {
+        lv_display_enable_invalidation(NULL, true);
+        lv_obj_invalidate(lv_screen_active());
+        lv_obj_invalidate(lv_layer_top());
+        ui_unlock();
+    }
+}
+
+// ---- next boot ----------------------------------------------------------------------
+
+bool flash_anim_resuming(void)
+{
+    static int s_resuming = -1;
+    if (s_resuming < 0) {
+        s_resuming = s_resume_magic == RESUME_MAGIC && esp_reset_reason() == ESP_RST_SW;
+        s_resume_magic = 0;
+    }
+    return s_resuming == 1;
+}
+
+void flash_anim_resume(uint32_t max_ms)
+{
+    if (!flash_anim_resuming() || !prepare()) return;
+    if (s_resume_frame >= s_entry->frame_count) return;
+    int64_t t0 = esp_timer_get_time();
+    uint32_t drawn = play(s_resume_frame, false, (int64_t)max_ms * 1000, NULL);
+    ESP_LOGI(TAG, "carried on from frame %lu: %lu frames in %lld ms", (unsigned long)s_resume_frame,
+             (unsigned long)drawn, (long long)((esp_timer_get_time() - t0) / 1000));
 }

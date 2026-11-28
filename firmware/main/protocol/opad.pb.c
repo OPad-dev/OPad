@@ -60,6 +60,18 @@ PB_BIND(opad_LayoutAck, opad_LayoutAck, AUTO)
 PB_BIND(opad_PlayAnimation, opad_PlayAnimation, AUTO)
 
 
+PB_BIND(opad_OtaBegin, opad_OtaBegin, AUTO)
+
+
+PB_BIND(opad_OtaChunk, opad_OtaChunk, 4)
+
+
+PB_BIND(opad_OtaEnd, opad_OtaEnd, AUTO)
+
+
+PB_BIND(opad_OtaStatus, opad_OtaStatus, AUTO)
+
+
 PB_BIND(opad_CounterState, opad_CounterState, AUTO)
 
 
@@ -105,10 +117,12 @@ PB_BIND(opad_HeCalibrationProgress, opad_HeCalibrationProgress, AUTO)
 PB_BIND(opad_HeLiveSample, opad_HeLiveSample, AUTO)
 
 
-PB_BIND(opad_HostToDevice, opad_HostToDevice, 2)
+PB_BIND(opad_HostToDevice, opad_HostToDevice, 4)
 
 
 PB_BIND(opad_DeviceToHost, opad_DeviceToHost, 2)
+
+
 
 
 

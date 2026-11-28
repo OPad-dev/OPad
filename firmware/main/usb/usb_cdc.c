@@ -200,6 +200,7 @@ static void usb_cdc_task_poll(void)
     protocol_poll_detect_pin();
     protocol_poll_he_calibration();
     protocol_poll_he_live();
+    protocol_poll_ota();
     protocol_send_he_debug_logs();
     protocol_send_key_presses();
     protocol_drain_diag_logs();

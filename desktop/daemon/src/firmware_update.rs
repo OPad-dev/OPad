@@ -252,6 +252,9 @@ pub enum FirmwareUpdateError {
     Sync(String),
     #[error("{0}")]
     Flash(#[from] flash::FlashError),
+    /// Sent over USB and given up on: the pad keeps the image it had
+    #[error("{0}. The pad keeps its current firmware.")]
+    OverUsb(opad_device::ota::OtaError),
     #[error("The serial port could not be released for the flash, so nothing was written")]
     PortNotReleased,
     #[error("{0}, so nothing was flashed")]
@@ -466,6 +469,36 @@ async fn flash_and_verify<D: DeviceLink>(
     state: &Arc<Mutex<DaemonState>>,
     device: &D,
 ) -> Result<FirmwareUpdateOutcome, FirmwareUpdateError> {
+    // Step 4a. A pad that takes the image over its own connection gets it
+    // there: it stays a keyboard and shows its update animation while it
+    // writes the slot it is not running, then restarts into it on trial
+    if device.ota_chunk_max() > 0 {
+        let bytes = std::fs::read(image).map_err(|e| {
+            FirmwareUpdateError::OverUsb(opad_device::ota::OtaError::Refused(e.to_string()))
+        })?;
+        let events = device.subscribe();
+        info!("Sending the firmware over USB");
+        match device
+            .update_over_usb(&bytes, &|done, total| {
+                if done % (128 * 1024) < 4096 || done == total {
+                    info!("Firmware over USB: {} of {} KB", done / 1024, total / 1024);
+                }
+            })
+            .await
+        {
+            Ok(()) => {
+                let target = match running {
+                    Some("ota_0") => Some("ota_1"),
+                    Some("ota_1") => Some("ota_0"),
+                    _ => None,
+                };
+                return verify_back(events, target, installed, available).await;
+            }
+            Err(opad_device::ota::OtaError::Unsupported) => {}
+            Err(e) => return Err(FirmwareUpdateError::OverUsb(e)),
+        }
+    }
+
     // Step 4. Windows serial handles are exclusive, so this is a precondition
     // for the flash rather than politeness towards the device loop (§W1-3).
     info!("Releasing the serial port for the firmware flash");
@@ -495,10 +528,20 @@ async fn flash_and_verify<D: DeviceLink>(
     // Step 6. Whatever happened, the device loop gets its port back: if the
     // write failed the pad may still be a working keyboard on the old image,
     // and refusing to talk to it again would help nobody.
-    let mut events = device.subscribe();
+    let events = device.subscribe();
     device.resume();
     flashed?;
+    verify_back(events, plan.target_slot, installed, available).await
+}
 
+/// Step 7: the pad has to come back, from the slot it was given, running the
+/// version it was given
+async fn verify_back(
+    mut events: tokio::sync::broadcast::Receiver<opad_device::DeviceEvent>,
+    target_slot: Option<&str>,
+    installed: &str,
+    available: &str,
+) -> Result<FirmwareUpdateOutcome, FirmwareUpdateError> {
     let reconnected = tokio::time::timeout(RECONNECT_TIMEOUT, async {
         loop {
             match events.recv().await {
@@ -515,7 +558,7 @@ async fn flash_and_verify<D: DeviceLink>(
         return Err(FirmwareUpdateError::NoReconnect(RECONNECT_TIMEOUT));
     };
 
-    if let (Some(target), Some(back)) = (plan.target_slot, info.running_partition.as_deref()) {
+    if let (Some(target), Some(back)) = (target_slot, info.running_partition.as_deref()) {
         if back != target {
             warn!("The pad rejected the image written to {target} and is back on {back}");
             return Err(FirmwareUpdateError::RolledBack(back.to_string()));

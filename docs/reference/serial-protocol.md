@@ -104,6 +104,7 @@ New features are announced in `HelloAck` instead of by version number. Firmware 
 | `key_count` | Keys the pad reads: `3` with a Hall Effect V3 module, else `2`; `0` reads as `2`. |
 | `input_module` | The module found at boot (`InputModule`); `UNKNOWN` from older firmware. |
 | `frame_crc` | The pad switched to checked frames. |
+| `ota_chunk_max` | The pad takes a new app image over this connection, in pieces of up to this many bytes (4096); `0` = it is flashed through the ROM bootloader. |
 <!-- src: /protocol/opad.proto#HelloAck -->
 
 ## Envelopes
@@ -133,6 +134,10 @@ Both envelopes carry a `sequence_number` and one `payload`:
 | 19 | `bool start_he_calibration` |
 | 20 | `bool cancel_he_calibration` |
 | 21 | `bool he_live_view` |
+| 22 | `OtaBegin ota_begin` |
+| 23 | `OtaChunk ota_chunk` |
+| 24 | `OtaEnd ota_end` |
+| 25 | `bool ota_abort` |
 
 | Tag | `DeviceToHost.payload` |
 |---|---|
@@ -147,6 +152,7 @@ Both envelopes carry a `sequence_number` and one `payload`:
 | 10 | `BoardTestResult board_test` |
 | 11 | `HeCalibrationProgress he_calibration_progress` |
 | 12 | `HeLiveSample he_live_sample` |
+| 13 | `OtaStatus ota_status` |
 <!-- src: /protocol/opad.proto#HostToDevice, /protocol/opad.proto#DeviceToHost -->
 
 ## Message catalogue
@@ -204,6 +210,19 @@ Both envelopes carry a `sequence_number` and one `payload`:
 | `he_live_view` → `HeLiveSample` | host → pad → host | `true` streams raw readings and pressed state per key about 50 times a second (`HE_LIVE_PERIOD_US` = 20 ms) for the next 2 s (`HE_LIVE_KEEPALIVE_US`); send it again to keep it going, `false` stops. Never streamed during a map or its cooldown. |
 <!-- src: /protocol/opad.proto#HeCalibrationStatus, /protocol/opad.proto#HeCalibrationProgress, /protocol/opad.proto#HeLiveSample, /firmware/main/protocol/protocol.c#HE_LIVE_PERIOD_US -->
 
+### Firmware update over USB
+
+The pad keeps working as a keyboard and plays its `updating` animation while it writes the app slot it is not running. Refused outside `IDLE`; given up if a map starts or the host is quiet for 10 s (`OTA_IDLE_TIMEOUT_US`), leaving the running image as it was.
+
+| Message | Direction | Purpose |
+|---|---|---|
+| `OtaBegin { image_size, sha256 }` → `OtaStatus READY` | host → pad → host | Erases room for the image in the other slot, then answers. |
+| `OtaChunk { offset, data }` → `OtaStatus WRITTEN` | host → pad → host | The next piece; `offset` must be where the last one ended. `written` is the total so far. The host keeps two in flight. |
+| `OtaEnd` → `OtaStatus DONE` | host → pad → host | Checks size, SHA-256 and the image, makes the new slot boot once on trial (rolled back unless it configures USB) and restarts into it, with the animation carrying on across the restart. |
+| `ota_abort` | host → pad | Give up; the running image is left as it was. |
+| `OtaStatus ERROR` | pad → host | The transfer is over; `message` says why. |
+<!-- src: /protocol/opad.proto#OtaBegin, /firmware/main/ota/ota_usb.c, /desktop/crates/opad-device/src/ota.rs -->
+
 ## nanopb size limits
 
 Strings, bytes and repeated fields have fixed bounds in `protocol/opad.options`, so the firmware encodes and decodes without heap allocation.
@@ -234,6 +253,9 @@ Strings, bytes and repeated fields have fixed bounds in `protocol/opad.options`,
 | `HeAdcTest.speeds` | 6 entries |
 | `HeAdcTest.channels` | 3 entries |
 | `HeCalibrationProgress.error_message` | 48 bytes |
+| `OtaBegin.sha256` | 32 bytes |
+| `OtaChunk.data` | 4096 bytes |
+| `OtaStatus.message` | 48 bytes |
 <!-- src: /protocol/opad.options -->
 
 To change a message, see [Protocol Changes](../develop/protocol-changes.md).

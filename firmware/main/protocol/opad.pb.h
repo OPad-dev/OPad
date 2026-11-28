@@ -59,6 +59,14 @@ typedef enum _opad_SwipeAction {
     opad_SwipeAction_SWIPE_ACTION_VOLUME_DOWN = 8
 } opad_SwipeAction;
 
+typedef enum _opad_OtaStage {
+    opad_OtaStage_OTA_STAGE_UNKNOWN = 0,
+    opad_OtaStage_OTA_STAGE_READY = 1, /* OtaBegin accepted */
+    opad_OtaStage_OTA_STAGE_WRITTEN = 2, /* an OtaChunk is written */
+    opad_OtaStage_OTA_STAGE_DONE = 3, /* verified; restarting into the new image */
+    opad_OtaStage_OTA_STAGE_ERROR = 4 /* the transfer is over; message says why */
+} opad_OtaStage;
+
 /* Input module on the carrier's connector, from its ID voltage on GPIO8 (or
  GPIO7 for a V3 module on a turned-over FFC). Hosts that predate a value
  read it as UNKNOWN. */
@@ -294,6 +302,11 @@ typedef struct _opad_HelloAck {
  them. This HelloAck itself is still a marked frame. False from firmware
  predating it, and when the host used the legacy framing. */
     bool frame_crc;
+    /* The pad takes a new app image over this connection (OtaBegin, OtaChunk,
+ OtaEnd) and writes it to the slot it is not running while it keeps
+ working: the largest OtaChunk.data it accepts. 0 from firmware predating
+ it: the host then flashes through the ROM bootloader as before. */
+    uint32_t ota_chunk_max;
 } opad_HelloAck;
 
 typedef struct _opad_SetConfig {
@@ -398,6 +411,38 @@ typedef struct _opad_PlayAnimation {
     uint32_t animation;
     char grade[4]; /* "SS", "S", "A", ... as tosu names it: what the built-ins draw */
 } opad_PlayAnimation;
+
+typedef PB_BYTES_ARRAY_T(32) opad_OtaBegin_sha256_t;
+/* Start writing a new app image to the slot the pad is not running. The pad
+ refuses it outside IDLE, and gives up on a transfer a map starts during
+ (no flash writes in a map). Answered with OtaStatus READY or ERROR. */
+typedef struct _opad_OtaBegin {
+    uint32_t image_size;
+    opad_OtaBegin_sha256_t sha256; /* of the whole image, checked before it is booted */
+} opad_OtaBegin;
+
+typedef PB_BYTES_ARRAY_T(4096) opad_OtaChunk_data_t;
+/* The next piece of the image: offset is where it goes, and must be where the
+ last one ended. Answered with OtaStatus WRITTEN (written = bytes so far) or
+ ERROR. A pad that hears nothing for 10 s gives up on the transfer. */
+typedef struct _opad_OtaChunk {
+    uint32_t offset;
+    opad_OtaChunk_data_t data; /* up to HelloAck.ota_chunk_max bytes */
+} opad_OtaChunk;
+
+/* All of it is sent: the pad checks size, SHA-256 and the image itself, makes
+ the new slot boot once on trial (rolled back unless it configures USB, as
+ after any flash), answers OtaStatus DONE and restarts into it. ERROR leaves
+ the running image as it was. */
+typedef struct _opad_OtaEnd {
+    char dummy_field;
+} opad_OtaEnd;
+
+typedef struct _opad_OtaStatus {
+    opad_OtaStage stage;
+    uint32_t written;
+    char message[48];
+} opad_OtaStatus;
 
 typedef struct _opad_CounterState {
     char device_id[32];
@@ -596,6 +641,11 @@ typedef struct _opad_HostToDevice {
      send it again to keep the stream going. false: stop now. Ignored on
      MX pads, and nothing is streamed during a map or its cooldown. */
         bool he_live_view;
+        opad_OtaBegin ota_begin;
+        opad_OtaChunk ota_chunk;
+        opad_OtaEnd ota_end;
+        /* Give up on the transfer; the running image is left as it was */
+        bool ota_abort;
     } payload;
 } opad_HostToDevice;
 
@@ -614,6 +664,7 @@ typedef struct _opad_DeviceToHost {
         opad_BoardTestResult board_test;
         opad_HeCalibrationProgress he_calibration_progress;
         opad_HeLiveSample he_live_sample;
+        opad_OtaStatus ota_status;
     } payload;
 } opad_DeviceToHost;
 
@@ -642,6 +693,10 @@ extern "C" {
 #define _opad_SwipeAction_MIN opad_SwipeAction_SWIPE_ACTION_KEEP
 #define _opad_SwipeAction_MAX opad_SwipeAction_SWIPE_ACTION_VOLUME_DOWN
 #define _opad_SwipeAction_ARRAYSIZE ((opad_SwipeAction)(opad_SwipeAction_SWIPE_ACTION_VOLUME_DOWN+1))
+
+#define _opad_OtaStage_MIN opad_OtaStage_OTA_STAGE_UNKNOWN
+#define _opad_OtaStage_MAX opad_OtaStage_OTA_STAGE_ERROR
+#define _opad_OtaStage_ARRAYSIZE ((opad_OtaStage)(opad_OtaStage_OTA_STAGE_ERROR+1))
 
 #define _opad_InputModule_MIN opad_InputModule_INPUT_MODULE_UNKNOWN
 #define _opad_InputModule_MAX opad_InputModule_INPUT_MODULE_MX_V3
@@ -683,6 +738,11 @@ extern "C" {
 
 
 
+#define opad_OtaStatus_stage_ENUMTYPE opad_OtaStage
+
+
+
+
 #define opad_LogEvent_level_ENUMTYPE opad_LogLevel
 
 
@@ -705,7 +765,7 @@ extern "C" {
 
 /* Initializer values for message structs */
 #define opad_Hello_init_default                  {0, "", 0, 0, 0}
-#define opad_HelloAck_init_default               {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, opad_ConfigPayload_init_default, 0, 0, 0, 0, 0, 0, 0, 0, 0, _opad_InputModule_MIN, 0}
+#define opad_HelloAck_init_default               {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, opad_ConfigPayload_init_default, 0, 0, 0, 0, 0, 0, 0, 0, 0, _opad_InputModule_MIN, 0, 0}
 #define opad_ClaimOwnership_init_default         {{0, {0}}}
 #define opad_DeviceStatus_init_default           {0, _opad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, opad_HeCalibrationStatus_init_default, 0, 0}
 #define opad_HeCalibrationStatus_init_default    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
@@ -722,6 +782,10 @@ extern "C" {
 #define opad_SetLayout_init_default              {0, 0, 0, {opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default, opad_UiWidget_init_default}}
 #define opad_LayoutAck_init_default              {0, 0, ""}
 #define opad_PlayAnimation_init_default          {0, ""}
+#define opad_OtaBegin_init_default               {0, {0, {0}}}
+#define opad_OtaChunk_init_default               {0, {0, {0}}}
+#define opad_OtaEnd_init_default                 {0}
+#define opad_OtaStatus_init_default              {_opad_OtaStage_MIN, 0, ""}
 #define opad_CounterState_init_default           {"", 0, 0, 0, false, 0}
 #define opad_CounterSyncRequest_init_default     {false, opad_CounterState_init_default, 0}
 #define opad_CounterSyncResponse_init_default    {0, false, opad_CounterState_init_default, ""}
@@ -740,7 +804,7 @@ extern "C" {
 #define opad_HostToDevice_init_default           {0, 0, {opad_Hello_init_default}}
 #define opad_DeviceToHost_init_default           {0, 0, {opad_HelloAck_init_default}}
 #define opad_Hello_init_zero                     {0, "", 0, 0, 0}
-#define opad_HelloAck_init_zero                  {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, opad_ConfigPayload_init_zero, 0, 0, 0, 0, 0, 0, 0, 0, 0, _opad_InputModule_MIN, 0}
+#define opad_HelloAck_init_zero                  {0, "", "", "", 0, 0, 0, {0, {0}}, "", false, opad_ConfigPayload_init_zero, 0, 0, 0, 0, 0, 0, 0, 0, 0, _opad_InputModule_MIN, 0, 0}
 #define opad_ClaimOwnership_init_zero            {{0, {0}}}
 #define opad_DeviceStatus_init_zero              {0, _opad_DeviceState_MIN, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, false, opad_HeCalibrationStatus_init_zero, 0, 0}
 #define opad_HeCalibrationStatus_init_zero       {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
@@ -757,6 +821,10 @@ extern "C" {
 #define opad_SetLayout_init_zero                 {0, 0, 0, {opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero, opad_UiWidget_init_zero}}
 #define opad_LayoutAck_init_zero                 {0, 0, ""}
 #define opad_PlayAnimation_init_zero             {0, ""}
+#define opad_OtaBegin_init_zero                  {0, {0, {0}}}
+#define opad_OtaChunk_init_zero                  {0, {0, {0}}}
+#define opad_OtaEnd_init_zero                    {0}
+#define opad_OtaStatus_init_zero                 {_opad_OtaStage_MIN, 0, ""}
 #define opad_CounterState_init_zero              {"", 0, 0, 0, false, 0}
 #define opad_CounterSyncRequest_init_zero        {false, opad_CounterState_init_zero, 0}
 #define opad_CounterSyncResponse_init_zero       {0, false, opad_CounterState_init_zero, ""}
@@ -870,6 +938,7 @@ extern "C" {
 #define opad_HelloAck_key_count_tag              19
 #define opad_HelloAck_input_module_tag           20
 #define opad_HelloAck_frame_crc_tag              21
+#define opad_HelloAck_ota_chunk_max_tag          22
 #define opad_SetConfig_config_tag                1
 #define opad_ConfigAck_success_tag               1
 #define opad_ConfigAck_message_tag               2
@@ -922,6 +991,13 @@ extern "C" {
 #define opad_LayoutAck_message_tag               3
 #define opad_PlayAnimation_animation_tag         1
 #define opad_PlayAnimation_grade_tag             2
+#define opad_OtaBegin_image_size_tag             1
+#define opad_OtaBegin_sha256_tag                 2
+#define opad_OtaChunk_offset_tag                 1
+#define opad_OtaChunk_data_tag                   2
+#define opad_OtaStatus_stage_tag                 1
+#define opad_OtaStatus_written_tag               2
+#define opad_OtaStatus_message_tag               3
 #define opad_CounterState_device_id_tag          1
 #define opad_CounterState_counter_generation_tag 2
 #define opad_CounterState_lifetime_key1_tag      3
@@ -1027,6 +1103,10 @@ extern "C" {
 #define opad_HostToDevice_start_he_calibration_tag 19
 #define opad_HostToDevice_cancel_he_calibration_tag 20
 #define opad_HostToDevice_he_live_view_tag       21
+#define opad_HostToDevice_ota_begin_tag          22
+#define opad_HostToDevice_ota_chunk_tag          23
+#define opad_HostToDevice_ota_end_tag            24
+#define opad_HostToDevice_ota_abort_tag          25
 #define opad_DeviceToHost_sequence_number_tag    1
 #define opad_DeviceToHost_hello_ack_tag          2
 #define opad_DeviceToHost_status_tag             3
@@ -1039,6 +1119,7 @@ extern "C" {
 #define opad_DeviceToHost_board_test_tag         10
 #define opad_DeviceToHost_he_calibration_progress_tag 11
 #define opad_DeviceToHost_he_live_sample_tag     12
+#define opad_DeviceToHost_ota_status_tag         13
 
 /* Struct field encoding specification for nanopb */
 #define opad_Hello_FIELDLIST(X, a) \
@@ -1071,7 +1152,8 @@ X(a, STATIC,   SINGULAR, BOOL,     he_live,          17) \
 X(a, STATIC,   SINGULAR, BOOL,     tap_rate_per_second,  18) \
 X(a, STATIC,   SINGULAR, UINT32,   key_count,        19) \
 X(a, STATIC,   SINGULAR, UENUM,    input_module,     20) \
-X(a, STATIC,   SINGULAR, BOOL,     frame_crc,        21)
+X(a, STATIC,   SINGULAR, BOOL,     frame_crc,        21) \
+X(a, STATIC,   SINGULAR, UINT32,   ota_chunk_max,    22)
 #define opad_HelloAck_CALLBACK NULL
 #define opad_HelloAck_DEFAULT NULL
 #define opad_HelloAck_current_config_MSGTYPE opad_ConfigPayload
@@ -1268,6 +1350,30 @@ X(a, STATIC,   SINGULAR, STRING,   grade,             2)
 #define opad_PlayAnimation_CALLBACK NULL
 #define opad_PlayAnimation_DEFAULT NULL
 
+#define opad_OtaBegin_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   image_size,        1) \
+X(a, STATIC,   SINGULAR, BYTES,    sha256,            2)
+#define opad_OtaBegin_CALLBACK NULL
+#define opad_OtaBegin_DEFAULT NULL
+
+#define opad_OtaChunk_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UINT32,   offset,            1) \
+X(a, STATIC,   SINGULAR, BYTES,    data,              2)
+#define opad_OtaChunk_CALLBACK NULL
+#define opad_OtaChunk_DEFAULT NULL
+
+#define opad_OtaEnd_FIELDLIST(X, a) \
+
+#define opad_OtaEnd_CALLBACK NULL
+#define opad_OtaEnd_DEFAULT NULL
+
+#define opad_OtaStatus_FIELDLIST(X, a) \
+X(a, STATIC,   SINGULAR, UENUM,    stage,             1) \
+X(a, STATIC,   SINGULAR, UINT32,   written,           2) \
+X(a, STATIC,   SINGULAR, STRING,   message,           3)
+#define opad_OtaStatus_CALLBACK NULL
+#define opad_OtaStatus_DEFAULT NULL
+
 #define opad_CounterState_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, STRING,   device_id,         1) \
 X(a, STATIC,   SINGULAR, UINT32,   counter_generation,   2) \
@@ -1440,7 +1546,11 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,play_animation,payload.play_animatio
 X(a, STATIC,   ONEOF,    BOOL,     (payload,restart,payload.restart),  18) \
 X(a, STATIC,   ONEOF,    BOOL,     (payload,start_he_calibration,payload.start_he_calibration),  19) \
 X(a, STATIC,   ONEOF,    BOOL,     (payload,cancel_he_calibration,payload.cancel_he_calibration),  20) \
-X(a, STATIC,   ONEOF,    BOOL,     (payload,he_live_view,payload.he_live_view),  21)
+X(a, STATIC,   ONEOF,    BOOL,     (payload,he_live_view,payload.he_live_view),  21) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,ota_begin,payload.ota_begin),  22) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,ota_chunk,payload.ota_chunk),  23) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,ota_end,payload.ota_end),  24) \
+X(a, STATIC,   ONEOF,    BOOL,     (payload,ota_abort,payload.ota_abort),  25)
 #define opad_HostToDevice_CALLBACK NULL
 #define opad_HostToDevice_DEFAULT NULL
 #define opad_HostToDevice_payload_hello_MSGTYPE opad_Hello
@@ -1454,6 +1564,9 @@ X(a, STATIC,   ONEOF,    BOOL,     (payload,he_live_view,payload.he_live_view), 
 #define opad_HostToDevice_payload_claim_ownership_MSGTYPE opad_ClaimOwnership
 #define opad_HostToDevice_payload_detect_pin_MSGTYPE opad_DetectPinRequest
 #define opad_HostToDevice_payload_play_animation_MSGTYPE opad_PlayAnimation
+#define opad_HostToDevice_payload_ota_begin_MSGTYPE opad_OtaBegin
+#define opad_HostToDevice_payload_ota_chunk_MSGTYPE opad_OtaChunk
+#define opad_HostToDevice_payload_ota_end_MSGTYPE opad_OtaEnd
 
 #define opad_DeviceToHost_FIELDLIST(X, a) \
 X(a, STATIC,   SINGULAR, UINT32,   sequence_number,   1) \
@@ -1467,7 +1580,8 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,detect_pin_resp,payload.detect_pin_r
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,key_presses,payload.key_presses),   9) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,board_test,payload.board_test),  10) \
 X(a, STATIC,   ONEOF,    MESSAGE,  (payload,he_calibration_progress,payload.he_calibration_progress),  11) \
-X(a, STATIC,   ONEOF,    MESSAGE,  (payload,he_live_sample,payload.he_live_sample),  12)
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,he_live_sample,payload.he_live_sample),  12) \
+X(a, STATIC,   ONEOF,    MESSAGE,  (payload,ota_status,payload.ota_status),  13)
 #define opad_DeviceToHost_CALLBACK NULL
 #define opad_DeviceToHost_DEFAULT NULL
 #define opad_DeviceToHost_payload_hello_ack_MSGTYPE opad_HelloAck
@@ -1481,6 +1595,7 @@ X(a, STATIC,   ONEOF,    MESSAGE,  (payload,he_live_sample,payload.he_live_sampl
 #define opad_DeviceToHost_payload_board_test_MSGTYPE opad_BoardTestResult
 #define opad_DeviceToHost_payload_he_calibration_progress_MSGTYPE opad_HeCalibrationProgress
 #define opad_DeviceToHost_payload_he_live_sample_MSGTYPE opad_HeLiveSample
+#define opad_DeviceToHost_payload_ota_status_MSGTYPE opad_OtaStatus
 
 extern const pb_msgdesc_t opad_Hello_msg;
 extern const pb_msgdesc_t opad_HelloAck_msg;
@@ -1500,6 +1615,10 @@ extern const pb_msgdesc_t opad_UiWidget_msg;
 extern const pb_msgdesc_t opad_SetLayout_msg;
 extern const pb_msgdesc_t opad_LayoutAck_msg;
 extern const pb_msgdesc_t opad_PlayAnimation_msg;
+extern const pb_msgdesc_t opad_OtaBegin_msg;
+extern const pb_msgdesc_t opad_OtaChunk_msg;
+extern const pb_msgdesc_t opad_OtaEnd_msg;
+extern const pb_msgdesc_t opad_OtaStatus_msg;
 extern const pb_msgdesc_t opad_CounterState_msg;
 extern const pb_msgdesc_t opad_CounterSyncRequest_msg;
 extern const pb_msgdesc_t opad_CounterSyncResponse_msg;
@@ -1537,6 +1656,10 @@ extern const pb_msgdesc_t opad_DeviceToHost_msg;
 #define opad_SetLayout_fields &opad_SetLayout_msg
 #define opad_LayoutAck_fields &opad_LayoutAck_msg
 #define opad_PlayAnimation_fields &opad_PlayAnimation_msg
+#define opad_OtaBegin_fields &opad_OtaBegin_msg
+#define opad_OtaChunk_fields &opad_OtaChunk_msg
+#define opad_OtaEnd_fields &opad_OtaEnd_msg
+#define opad_OtaStatus_fields &opad_OtaStatus_msg
 #define opad_CounterState_fields &opad_CounterState_msg
 #define opad_CounterSyncRequest_fields &opad_CounterSyncRequest_msg
 #define opad_CounterSyncResponse_fields &opad_CounterSyncResponse_msg
@@ -1578,7 +1701,7 @@ extern const pb_msgdesc_t opad_DeviceToHost_msg;
 #define opad_HeCalibrationStatus_size            58
 #define opad_HeKeySettings_size                  40
 #define opad_HeLiveSample_size                   24
-#define opad_HelloAck_size                       468
+#define opad_HelloAck_size                       475
 #define opad_Hello_size                          49
 #define opad_HostStatus_size                     12
 #define opad_HostToDevice_size                   4309
@@ -1587,6 +1710,10 @@ extern const pb_msgdesc_t opad_DeviceToHost_msg;
 #define opad_LayoutAck_size                      73
 #define opad_LogEventBatch_size                  880
 #define opad_LogEvent_size                       108
+#define opad_OtaBegin_size                       40
+#define opad_OtaChunk_size                       4105
+#define opad_OtaEnd_size                         0
+#define opad_OtaStatus_size                      57
 #define opad_PlayAnimation_size                  11
 #define opad_SetConfig_size                      263
 #define opad_SetLayout_size                      4300

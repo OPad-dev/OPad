@@ -86,6 +86,12 @@ void board_backlight_set(uint8_t percent);
 void board_backlight_hold_on(void);
 
 /**
+ * @brief Undo board_backlight_hold_on without a restart: back to the
+ * brightness last set.
+ */
+void board_backlight_release(void);
+
+/**
  * @brief Get current LCD backlight brightness percentage.
  */
 uint8_t board_backlight_get(void);
@@ -96,6 +102,12 @@ uint8_t board_backlight_get(void);
  * @param[out] out_panel Optional handle to the initialized esp_lcd panel.
  */
 esp_err_t board_display_init(esp_lcd_panel_io_handle_t *out_io, esp_lcd_panel_handle_t *out_panel);
+
+/**
+ * @brief Before board_display_init: leave the image the panel already shows
+ * (no software reset), e.g. an animation frame left up across a restart.
+ */
+void board_display_keep_image(bool keep);
 
 /**
  * @brief Get the initialized LCD panel handle.

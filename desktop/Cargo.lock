@@ -3879,6 +3879,7 @@ dependencies = [
  "opad-model",
  "opad-protocol",
  "serialport",
+ "sha2",
  "thiserror 1.0.69",
  "tokio",
  "tracing",

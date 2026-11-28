@@ -127,6 +127,17 @@ pub enum IpcRequest {
     /// no version bump: an older daemon cannot parse it and closes the
     /// connection, so clients fall back to FinishFlash on a new one.
     ResumeDevice,
+    /// Send this app image to the pad over its own connection
+    /// (HelloAck.ota_chunk_max): it stays a keyboard and shows its update
+    /// animation while it writes the slot it is not running, then restarts
+    /// into it on trial. Answered with FlashOverUsbFinished once it is back,
+    /// UsbFlashUnavailable when this pad has to be flashed through the ROM
+    /// bootloader (nothing was done), or an error. Added after IPC v1 shipped,
+    /// with no version bump: an older daemon cannot parse it and closes the
+    /// connection, and clients then flash through the bootloader.
+    FlashOverUsb {
+        image: String,
+    },
     ResetLatencyStats,
     /// Custom layouts saved in the daemon (None = the device's built-in default)
     GetLayouts,
@@ -466,6 +477,19 @@ pub enum IpcResponse {
     },
     /// Answer to ResumeDevice: the daemon is looking for the pad again
     DeviceResumed,
+    /// Answer to FlashOverUsb: the pad is back, and this is what it runs
+    FlashOverUsbFinished {
+        firmware_version: String,
+        running_partition: Option<String>,
+        protocol_version: u32,
+        compatible: bool,
+    },
+    /// Answer to FlashOverUsb: this pad is flashed through the ROM bootloader
+    /// (firmware predating the update over USB, or none connected). Nothing
+    /// was sent.
+    UsbFlashUnavailable {
+        reason: String,
+    },
     FirmwareUpdateOffer(FirmwareOffer),
     /// The pad came back, and this is what it came back as (§U-3b)
     FirmwareUpdateFinished {

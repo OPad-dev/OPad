@@ -104,6 +104,7 @@ Las funciones nuevas se anuncian en `HelloAck` en lugar de por número de versi�
 | `key_count` | Teclas que lee el teclado: `3` con un módulo Hall Effect V3, si no `2`; `0` se interpreta como `2`. |
 | `input_module` | El módulo encontrado al arrancar (`InputModule`); `UNKNOWN` en firmware antiguo. |
 | `frame_crc` | El teclado pasó a tramas comprobadas. |
+| `ota_chunk_max` | El teclado acepta una imagen de aplicación nueva por esta conexión, en trozos de hasta este número de bytes (4096); `0` = se flashea por el bootloader de la ROM. |
 <!-- src: /protocol/opad.proto#HelloAck -->
 
 ## Envolventes
@@ -133,6 +134,10 @@ Ambas envolventes llevan un `sequence_number` y un `payload`:
 | 19 | `bool start_he_calibration` |
 | 20 | `bool cancel_he_calibration` |
 | 21 | `bool he_live_view` |
+| 22 | `OtaBegin ota_begin` |
+| 23 | `OtaChunk ota_chunk` |
+| 24 | `OtaEnd ota_end` |
+| 25 | `bool ota_abort` |
 
 | Etiqueta | `DeviceToHost.payload` |
 |---|---|
@@ -147,6 +152,7 @@ Ambas envolventes llevan un `sequence_number` y un `payload`:
 | 10 | `BoardTestResult board_test` |
 | 11 | `HeCalibrationProgress he_calibration_progress` |
 | 12 | `HeLiveSample he_live_sample` |
+| 13 | `OtaStatus ota_status` |
 <!-- src: /protocol/opad.proto#HostToDevice, /protocol/opad.proto#DeviceToHost -->
 
 ## Catálogo de mensajes
@@ -204,6 +210,19 @@ Ambas envolventes llevan un `sequence_number` y un `payload`:
 | `he_live_view` → `HeLiveSample` | anfitrión → teclado → anfitrión | `true` transmite lecturas crudas y el estado de pulsación de cada tecla unas 50 veces por segundo (`HE_LIVE_PERIOD_US` = 20 ms) durante los 2 s siguientes (`HE_LIVE_KEEPALIVE_US`); hay que reenviarlo para mantenerlo, y `false` lo detiene. Nunca se transmite durante un mapa ni su enfriamiento. |
 <!-- src: /protocol/opad.proto#HeCalibrationStatus, /protocol/opad.proto#HeCalibrationProgress, /protocol/opad.proto#HeLiveSample, /firmware/main/protocol/protocol.c#HE_LIVE_PERIOD_US -->
 
+### Actualización del firmware por USB
+
+El teclado sigue funcionando como teclado y reproduce su animación `updating` mientras escribe la ranura de aplicación que no está ejecutando. Se rechaza fuera de `IDLE`; se abandona si empieza un mapa o el anfitrión calla 10 s (`OTA_IDLE_TIMEOUT_US`), y la imagen en ejecución queda como estaba.
+
+| Mensaje | Dirección | Propósito |
+|---|---|---|
+| `OtaBegin { image_size, sha256 }` → `OtaStatus READY` | anfitrión → teclado → anfitrión | Borra el sitio de la imagen en la otra ranura y después responde. |
+| `OtaChunk { offset, data }` → `OtaStatus WRITTEN` | anfitrión → teclado → anfitrión | El trozo siguiente; `offset` tiene que ser donde acabó el anterior. `written` es el total hasta ahora. El anfitrión mantiene dos en vuelo. |
+| `OtaEnd` → `OtaStatus DONE` | anfitrión → teclado → anfitrión | Comprueba tamaño, SHA-256 y la imagen, hace que la ranura nueva arranque una vez a prueba (se revierte si no configura el USB) y se reinicia en ella, con la animación siguiendo a través del reinicio. |
+| `ota_abort` | anfitrión → teclado | Abandonar; la imagen en ejecución queda como estaba. |
+| `OtaStatus ERROR` | teclado → anfitrión | La transferencia terminó; `message` dice por qué. |
+<!-- src: /protocol/opad.proto#OtaBegin, /firmware/main/ota/ota_usb.c, /desktop/crates/opad-device/src/ota.rs -->
+
 ## Límites de tamaño de nanopb
 
 Las cadenas, los bytes y los campos repetidos tienen límites fijos en `protocol/opad.options`, de modo que el firmware codifica y decodifica sin reservar memoria dinámica.
@@ -234,6 +253,9 @@ Las cadenas, los bytes y los campos repetidos tienen límites fijos en `protocol
 | `HeAdcTest.speeds` | 6 entradas |
 | `HeAdcTest.channels` | 3 entradas |
 | `HeCalibrationProgress.error_message` | 48 bytes |
+| `OtaBegin.sha256` | 32 bytes |
+| `OtaChunk.data` | 4096 bytes |
+| `OtaStatus.message` | 48 bytes |
 <!-- src: /protocol/opad.options -->
 
 Para cambiar un mensaje, consulta [Cambios de protocolo y evolución del esquema](../develop/protocol-changes.md).

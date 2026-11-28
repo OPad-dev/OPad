@@ -63,6 +63,7 @@ idf_component_register(
         "diag/hall_bench.c"
         "diag/ui_perf_test.c"
         "assets/asset_pack.c"
+        "ota/ota_usb.c"
     INCLUDE_DIRS
         "."
         ".."
@@ -75,6 +76,7 @@ idf_component_register(
         "runtime"
         "protocol"
         "protocol/nanopb"
+        "ota"
     LDFRAGMENTS
         "linker.lf"
     REQUIRES
@@ -89,4 +91,5 @@ idf_component_register(
         esp_adc
         esp_driver_tsens
         esp_partition
+        mbedtls
 )

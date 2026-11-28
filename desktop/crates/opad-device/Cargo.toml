@@ -16,3 +16,4 @@ chrono.workspace = true
 opad-model = { path = "../opad-model" }
 opad-layout = { path = "../opad-layout" }
 opad-protocol = { path = "../opad-protocol" }
+sha2 = "0.10"

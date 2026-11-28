@@ -285,7 +285,9 @@ Usage: opadctl flash [OPTIONS] <FIRMWARE>
 
 `<FIRMWARE>` is a file, or a directory that holds `opad-firmware.bin`. The app image's header is checked for the ESP32-S3 before anything is written. <!-- src: /desktop/cli/src/main.rs#resolve_flash_set, /desktop/cli/src/main.rs#run -->
 
-**App update (no `--full`).** `opadctl` asks the daemon which slot the pad runs from and writes the image to the other slot, followed by an `otadata` image that boots it once on trial. The running image stays as the fallback: the firmware confirms the new one only after the host configures USB, otherwise the bootloader returns to the old one. <!-- src: /desktop/crates/opad-device/src/flash.rs#plan_app_update -->
+**App update over USB (no `--full`, no `--port`).** With the daemon running and a pad whose firmware takes it (`HelloAck.ota_chunk_max`), the image goes over the pad's own connection (`FlashOverUsb`): the pad stays a keyboard, shows its update animation, and restarts into the new image on trial. Otherwise, or with an older daemon, it is flashed through the bootloader as below. <!-- src: /desktop/cli/src/main.rs#flash_over_usb -->
+
+**App update through the bootloader.** `opadctl` asks the daemon which slot the pad runs from and writes the image to the other slot, followed by an `otadata` image that boots it once on trial. The running image stays as the fallback: the firmware confirms the new one only after the host configures USB, otherwise the bootloader returns to the old one. <!-- src: /desktop/crates/opad-device/src/flash.rs#plan_app_update -->
 
 | Running slot | Writes |
 |---|---|

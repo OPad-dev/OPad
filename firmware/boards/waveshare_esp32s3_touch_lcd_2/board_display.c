@@ -9,6 +9,12 @@ static const char *TAG = "board_display";
 
 static esp_lcd_panel_handle_t s_panel_handle = NULL;
 static esp_lcd_panel_io_handle_t s_io_handle = NULL;
+static bool s_keep_image;
+
+void board_display_keep_image(bool keep)
+{
+    s_keep_image = keep;
+}
 
 esp_lcd_panel_handle_t board_display_get_panel_handle(void)
 {
@@ -101,7 +107,10 @@ esp_err_t board_display_init(esp_lcd_panel_io_handle_t *out_io, esp_lcd_panel_ha
         return ret;
     }
 
-    ret = esp_lcd_panel_reset(panel_handle);
+    // The software reset blanks the panel. Its reset pin is not wired, so a
+    // panel that stayed powered through a restart still shows what it last
+    // got, and the init below keeps it
+    ret = s_keep_image ? ESP_OK : esp_lcd_panel_reset(panel_handle);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to reset panel: %s", esp_err_to_name(ret));
         return ret;

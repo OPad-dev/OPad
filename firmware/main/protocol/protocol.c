@@ -24,6 +24,7 @@
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "esp_app_desc.h"
+#include "ota/ota_usb.h"
 #include "esp_ota_ops.h"
 #include "diag/diag.h"
 #include "diag/board_test.h"
@@ -360,6 +361,8 @@ esp_err_t protocol_send_hello_ack(uint32_t seq)
     // Shows UI_FLAG_PER_SECOND tap rates in KPS (issue #8)
     msg.payload.hello_ack.tap_rate_per_second = true;
     msg.payload.hello_ack.frame_crc = s_crc_answer;
+    // Takes a new image over this connection (ota/ota_usb.c)
+    msg.payload.hello_ack.ota_chunk_max = OTA_USB_CHUNK_MAX;
     // Hosts show the key pin settings only without a module (hand-wired)
     msg.payload.hello_ack.input_module = input_module_to_proto(board_boot_module());
 #ifdef OPAD_HE_INPUT
@@ -746,6 +749,27 @@ static struct {
 // A host that never says knows the first one.
 static uint32_t s_host_config_revision = CONFIG_REVISION_BASE;
 
+static void send_ota_status(ota_usb_reply_t r)
+{
+    opad_DeviceToHost out = opad_DeviceToHost_init_zero;
+    out.sequence_number = s_out_sequence++;
+    out.which_payload = opad_DeviceToHost_ota_status_tag;
+    out.payload.ota_status.stage = r.stage;
+    out.payload.ota_status.written = r.written;
+    if (r.message) {
+        strncpy(out.payload.ota_status.message, r.message, sizeof(out.payload.ota_status.message) - 1);
+    }
+    send_envelope(&out);
+}
+
+void protocol_poll_ota(void)
+{
+    ota_usb_reply_t r;
+    if (ota_usb_poll(&r)) {
+        send_ota_status(r);
+    }
+}
+
 static void handle_host_message(const opad_HostToDevice *msg)
 {
     switch (msg->which_payload) {
@@ -1058,6 +1082,28 @@ static void handle_host_message(const opad_HostToDevice *msg)
                               : 0;
         break;
 
+    case opad_HostToDevice_ota_begin_tag: {
+        const opad_OtaBegin *b = &msg->payload.ota_begin;
+        send_ota_status(ota_usb_begin(b->image_size, b->sha256.bytes, b->sha256.size));
+        break;
+    }
+
+    case opad_HostToDevice_ota_chunk_tag: {
+        const opad_OtaChunk *c = &msg->payload.ota_chunk;
+        send_ota_status(ota_usb_chunk(c->offset, c->data.bytes, c->data.size));
+        break;
+    }
+
+    case opad_HostToDevice_ota_end_tag:
+        send_ota_status(ota_usb_end());
+        break;
+
+    case opad_HostToDevice_ota_abort_tag:
+        if (msg->payload.ota_abort) {
+            ota_usb_abort();
+        }
+        break;
+
     default:
         diag_record(DIAG_EVENT_UNKNOWN_HOST_MSG, 0 /* DEBUG */, msg->which_payload, 0);
         ESP_LOGD(TAG, "Unhandled host message payload tag: %d", msg->which_payload);
@@ -1074,7 +1120,7 @@ static void on_frame_received(const uint8_t *payload, size_t payload_len, void *
         // nanopb accepts most varint garbage with no payload set: only a
         // recognised message is evidence of the host's framing
         if (!s_host_framing_known && msg.which_payload >= opad_HostToDevice_hello_tag &&
-            msg.which_payload <= opad_HostToDevice_cancel_he_calibration_tag) {
+            msg.which_payload <= opad_HostToDevice_ota_abort_tag) {
             // A checked frame is the marked framing with a CRC
             s_host_framing = s_parser.last_format == FRAME_FORMAT_LEGACY ? FRAME_FORMAT_LEGACY
                                                                           : FRAME_FORMAT_MARKED;

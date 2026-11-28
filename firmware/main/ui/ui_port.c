@@ -2,6 +2,7 @@
 #include "ui.h"
 #include "ui/ui_store.h"
 #include "ui/easter_egg.h"
+#include "ui/flash_anim.h"
 #include "ui/he_cal_ui.h"
 #include "input/he_backend.h"
 #include "ui/core/ui_internal.h"
@@ -25,6 +26,8 @@
 static const char *TAG = "ui";
 
 #define PAD_TIMER_PERIOD_MS 20
+// Longest the update animation carries on for after the restart into a new image
+#define FLASH_ANIM_RESUME_MS 4000
 #define KEY_FLASH_HOLD_US   80000     // keep a tap visible for at least one frame or two
 #define KPS_WINDOW          (1000 / PAD_TIMER_PERIOD_MS)
 
@@ -232,10 +235,17 @@ esp_err_t ui_init(void)
 
     esp_lcd_panel_io_handle_t io = NULL;
     esp_lcd_panel_handle_t panel = NULL;
+    // After an update over USB the panel still shows the update animation:
+    // it carries on from there, and LVGL's first frame takes over from it
+    bool resuming = flash_anim_resuming();
+    board_display_keep_image(resuming);
     esp_err_t err = board_display_init(&io, &panel);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "board_display_init failed: %s", esp_err_to_name(err));
         return err;
+    }
+    if (resuming) {
+        flash_anim_resume(FLASH_ANIM_RESUME_MS);
     }
 
     // Core 1, low priority: rendering never competes with the key/USB path on core 0

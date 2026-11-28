@@ -40,6 +40,12 @@ void runtime_notify_gameplay(bool is_playing);
 void runtime_request_restart(void);
 
 /**
+ * @brief runtime_request_restart, with before_restart run last, after the
+ * saves and right before esp_restart() (on the runtime task).
+ */
+void runtime_request_restart_then(void (*before_restart)(void));
+
+/**
  * @brief Get total system uptime in seconds.
  */
 uint32_t runtime_get_uptime_seconds(void);

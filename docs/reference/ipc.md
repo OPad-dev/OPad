@@ -50,7 +50,7 @@ It answers `HandshakeRejected { daemon_protocol, reason }` and closes the connec
 - `client_version` differs from the daemon's version. The GUI, daemon and CLI ship together, so this means the app was updated on disk while the old daemon still runs; the reason tells the user to restart `opad-daemon`.
 <!-- src: /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
 
-Requests added after IPC v1 shipped (`ResumeDevice`, `CheckForUpdates`, `SetUpdateChannel`, `GetTapStats`, `RunBoardTest`, `PlayAnimation`, `RestartPad`, `Subscribe`) came without a version bump. An older daemon cannot parse them and closes the connection, which clients treat as "not available".
+Requests added after IPC v1 shipped (`ResumeDevice`, `FlashOverUsb`, `CheckForUpdates`, `SetUpdateChannel`, `GetTapStats`, `RunBoardTest`, `PlayAnimation`, `RestartPad`, `Subscribe`) came without a version bump. An older daemon cannot parse them and closes the connection, which clients treat as "not available".
 <!-- src: /desktop/crates/opad-ipc/src/lib.rs#IpcRequest -->
 
 ## Requests
@@ -109,6 +109,7 @@ Counter resets, restores and replacements are refused during a map or its cooldo
 | `PrepareFlash` | `ReadyForFlash { port }` | The daemon releases the serial port. Refused during a map or cooldown. |
 | `FinishFlash` | `FlashFinished { firmware_version, protocol_version, compatible }` | The daemon looks for the pad again and waits up to 15 s for it. |
 | `ResumeDevice` | `DeviceResumed` | Hands the port back without waiting, after `opadctl pad bootloader` or a failed flash. |
+| `FlashOverUsb { image }` | `FlashOverUsbFinished { firmware_version, running_partition, protocol_version, compatible }` | Sends the app image at that path to the pad over its own connection and waits up to 45 s for it to come back. `UsbFlashUnavailable { reason }` when the pad is flashed through the bootloader instead (nothing sent); `Error` if it went back to the slot it ran. Refused during a map or cooldown. |
 | `GetFirmwareUpdate` | `FirmwareUpdateOffer(FirmwareOffer)` | Reads only; safe to poll. |
 | `InstallFirmwareUpdate { confirm }` | `FirmwareUpdateFinished { from, to, firmware_version, running_partition, protocol_version, compatible }` | Refused with `confirm: false`. Syncs the counters to this PC before writing. |
 | `RestartPad` | `PadRestarting` | `Error` without a pad, with firmware without restart, or during a map. |

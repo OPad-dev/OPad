@@ -302,10 +302,14 @@ bool IRAM_ATTR board_key2_read(void)
 // PWM) until the next RTC reset or board_backlight_init
 void board_backlight_hold_on(void)
 {
-    ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 1);
-    gpio_set_direction(BOARD_LCD_BL_GPIO, GPIO_MODE_OUTPUT);
-    gpio_set_level(BOARD_LCD_BL_GPIO, 1);
+    ledc_stop(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 1);  // LEDC's output parks high
     gpio_hold_en(BOARD_LCD_BL_GPIO);
+}
+
+void board_backlight_release(void)
+{
+    gpio_hold_dis(BOARD_LCD_BL_GPIO);
+    board_backlight_set(s_backlight_percent);  // LEDC drives the pin again
 }
 
 void board_backlight_set(uint8_t percent)

@@ -285,7 +285,9 @@ Usage: opadctl flash [OPTIONS] <FIRMWARE>
 
 `<FIRMWARE>` es un archivo, o un directorio que contiene `opad-firmware.bin`. Antes de escribir nada se comprueba que la cabecera de la imagen de la aplicación sea para el ESP32-S3. <!-- src: /desktop/cli/src/main.rs#resolve_flash_set, /desktop/cli/src/main.rs#run -->
 
-**Actualización de la aplicación (sin `--full`).** `opadctl` pregunta al daemon desde qué ranura funciona el teclado y escribe la imagen en la otra ranura, seguida de una imagen `otadata` que la arranca una vez a prueba. La imagen en ejecución se queda como respaldo: el firmware solo confirma la nueva después de que el anfitrión configure el USB; si no, el bootloader vuelve a la antigua. <!-- src: /desktop/crates/opad-device/src/flash.rs#plan_app_update -->
+**Actualización de la aplicación por USB (sin `--full` ni `--port`).** Con el daemon en marcha y un teclado cuyo firmware lo admite (`HelloAck.ota_chunk_max`), la imagen va por la propia conexión del teclado (`FlashOverUsb`): el teclado sigue siendo un teclado, muestra su animación de actualización y se reinicia en la imagen nueva a prueba. Si no, o con un daemon más antiguo, se flashea por el bootloader como se explica abajo. <!-- src: /desktop/cli/src/main.rs#flash_over_usb -->
+
+**Actualización de la aplicación por el bootloader.** `opadctl` pregunta al daemon desde qué ranura funciona el teclado y escribe la imagen en la otra ranura, seguida de una imagen `otadata` que la arranca una vez a prueba. La imagen en ejecución se queda como respaldo: el firmware solo confirma la nueva después de que el anfitrión configure el USB; si no, el bootloader vuelve a la antigua. <!-- src: /desktop/crates/opad-device/src/flash.rs#plan_app_update -->
 
 | Ranura en ejecución | Escribe |
 |---|---|

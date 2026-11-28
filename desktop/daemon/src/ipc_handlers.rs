@@ -1354,6 +1354,8 @@ pub async fn handle_ipc_request<D: DeviceLink>(
             }
         }
 
+        IpcRequest::FlashOverUsb { image } => flash_over_usb(&image, state, device).await,
+
         IpcRequest::ResumeDevice => {
             if let Some(refused) = release_client_flash(state) {
                 return refused;
@@ -1624,6 +1626,94 @@ async fn push_config_to_pad<D: DeviceLink>(
 /// Ends a client's flash pause before the port is handed back. The daemon's
 /// own firmware update is not a client's to end: resuming the device loop in
 /// the middle of it would reopen the port the flasher is writing through.
+/// `opadctl flash` to a pad that takes the image over its own connection
+async fn flash_over_usb<D: DeviceLink>(
+    image: &str,
+    state: &Arc<Mutex<DaemonState>>,
+    device: &D,
+) -> IpcResponse {
+    if !device.is_connected() || device.ota_chunk_max() == 0 {
+        return IpcResponse::UsbFlashUnavailable {
+            reason: "the pad is flashed through the ROM bootloader".to_string(),
+        };
+    }
+    let bytes = match std::fs::read(image) {
+        Ok(b) => b,
+        Err(e) => return IpcResponse::Error(format!("Cannot read {image}: {e}")),
+    };
+    if let Err(e) = opad_device::flash::check_esp32s3_image(&bytes) {
+        return IpcResponse::Error(format!("{image}: {e}"));
+    }
+    let before = {
+        let mut st = state.lock();
+        if st.mode == RuntimeMode::Playing || st.mode == RuntimeMode::Cooldown {
+            return IpcResponse::OperationRejected {
+                reason: "Cannot flash firmware during gameplay or cooldown".to_string(),
+            };
+        }
+        if let Some(holder) = st.flash {
+            return IpcResponse::OperationRejected {
+                reason: holder.busy_reason().to_string(),
+            };
+        }
+        st.flash = Some(FlashHolder::Client);
+        st.device_info
+            .as_ref()
+            .and_then(|i| i.running_partition.clone())
+    };
+
+    info!(
+        "Sending {} ({} KB) to the pad over USB",
+        image,
+        bytes.len() / 1024
+    );
+    let mut events = device.subscribe();
+    let sent = device
+        .update_over_usb(&bytes, &|done, total| {
+            if done % (128 * 1024) < 4096 || done == total {
+                info!("Firmware over USB: {} of {} KB", done / 1024, total / 1024);
+            }
+        })
+        .await;
+    if let Err(e) = sent {
+        state.lock().flash = None;
+        return IpcResponse::Error(format!("{e}. The pad keeps its current firmware."));
+    }
+
+    // It restarts into the new slot: back within the trial boot's window, or
+    // rolled back to the old one
+    let back = tokio::time::timeout(Duration::from_secs(45), async {
+        loop {
+            match events.recv().await {
+                Ok(DeviceEvent::Connected(info, _)) => return Some(info),
+                Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(_) => return None,
+            }
+        }
+    })
+    .await;
+    state.lock().flash = None;
+    match back {
+        Ok(Some(info)) => {
+            if before.is_some() && info.running_partition == before {
+                return IpcResponse::Error(format!(
+                    "The pad did not accept the new firmware and went back to the previous one on {}. It works as before.",
+                    before.unwrap_or_default()
+                ));
+            }
+            IpcResponse::FlashOverUsbFinished {
+                compatible: info.protocol_version == opad_protocol::DEVICE_PROTOCOL_VERSION,
+                firmware_version: info.firmware_version,
+                running_partition: info.running_partition,
+                protocol_version: info.protocol_version,
+            }
+        }
+        _ => IpcResponse::Error(
+            "The firmware was written, but the pad did not come back within 45 s. Run `opadctl recover` and replug it (docs/recovery.md).".to_string(),
+        ),
+    }
+}
+
 fn release_client_flash(state: &Arc<Mutex<DaemonState>>) -> Option<IpcResponse> {
     let mut st = state.lock();
     match st.flash {

@@ -94,6 +94,20 @@ pub trait DeviceLink: Send + Sync {
     fn he_live_poll(&self) -> Option<opad_model::HeLiveSample> {
         None
     }
+    /// Largest firmware piece the connected pad takes over this connection;
+    /// 0 when it is flashed through the ROM bootloader instead
+    fn ota_chunk_max(&self) -> u32 {
+        0
+    }
+    /// Send a firmware image over this connection and have the pad restart
+    /// into it (opad_device::ota). On an error the pad keeps its image.
+    async fn update_over_usb(
+        &self,
+        _image: &[u8],
+        _progress: opad_device::ota::Progress<'_>,
+    ) -> Result<(), opad_device::ota::OtaError> {
+        Err(opad_device::ota::OtaError::Unsupported)
+    }
     fn subscribe(&self) -> broadcast::Receiver<DeviceEvent>;
     async fn pause_and_release(&self, timeout: Duration) -> bool;
     fn resume(&self);
@@ -225,6 +239,18 @@ impl DeviceLink for DeviceManager {
 
     fn supports_he_calibration(&self) -> bool {
         DeviceManager::supports_he_calibration(self)
+    }
+
+    fn ota_chunk_max(&self) -> u32 {
+        self.ota_chunk_max()
+    }
+
+    async fn update_over_usb(
+        &self,
+        image: &[u8],
+        progress: opad_device::ota::Progress<'_>,
+    ) -> Result<(), opad_device::ota::OtaError> {
+        opad_device::ota::update_over_usb(self, image, progress).await
     }
 
     fn subscribe(&self) -> broadcast::Receiver<DeviceEvent> {

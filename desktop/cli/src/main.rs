@@ -1215,6 +1215,21 @@ async fn run(action: Action) -> Result<()> {
             flash::check_esp32s3_image_file(&app_image)
                 .map_err(|e| anyhow::anyhow!("{}: {}", app_image.display(), e))?;
 
+            // A pad that takes the image over its own connection gets it
+            // there: it stays a keyboard and shows its update animation. Any
+            // other, or an older daemon, is flashed through the bootloader.
+            if !full && port.is_none() {
+                if let Some(s) = stream.as_mut() {
+                    match flash_over_usb(s, &app_image).await? {
+                        UsbFlash::Done => return Ok(()),
+                        UsbFlash::Unavailable => {}
+                        UsbFlash::OldDaemon => {
+                            stream = opad_ipc::connect_and_handshake().await.ok().map(|(s, _)| s);
+                        }
+                    }
+                }
+            }
+
             // An app update goes beside the running image, which stays
             // there to fall back to (see flash::plan_app_update)
             let mut target_slot = None;
@@ -2126,6 +2141,45 @@ async fn running_slot(stream: Option<&mut IpcStream>) -> Option<String> {
             ..
         } => info.running_partition,
         _ => None,
+    }
+}
+
+enum UsbFlash {
+    /// Written over USB, and the pad is back running it
+    Done,
+    /// The pad (or no pad) is flashed through the bootloader; nothing was sent
+    Unavailable,
+    /// The daemon predates FlashOverUsb and closed the connection
+    OldDaemon,
+}
+
+async fn flash_over_usb(stream: &mut IpcStream, image: &Path) -> Result<UsbFlash> {
+    let image = std::fs::canonicalize(image).unwrap_or_else(|_| image.to_path_buf());
+    say!("Sending the firmware to the pad over USB; it keeps working meanwhile...");
+    let request = IpcRequest::FlashOverUsb {
+        image: image.display().to_string(),
+    };
+    match send_request(stream, &request).await {
+        Ok(IpcResponse::FlashOverUsbFinished {
+            firmware_version,
+            running_partition,
+            protocol_version,
+            compatible,
+        }) => {
+            if let Some(slot) = running_partition {
+                say!("The pad restarted into {slot}");
+            }
+            print_flash_success(&firmware_version, protocol_version, compatible);
+            Ok(UsbFlash::Done)
+        }
+        Ok(IpcResponse::UsbFlashUnavailable { reason }) => {
+            say!("Not over USB ({reason}): using the bootloader");
+            Ok(UsbFlash::Unavailable)
+        }
+        Ok(IpcResponse::Error(e)) => bail!("{e}"),
+        Ok(IpcResponse::OperationRejected { reason }) => bail!("{reason}"),
+        Ok(other) => bail!("Unexpected response from daemon: {other:?}"),
+        Err(_) => Ok(UsbFlash::OldDaemon),
     }
 }
 

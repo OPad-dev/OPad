@@ -27,3 +27,6 @@ opad.HeAdcTest.message max_size:48
 opad.HeAdcTest.speeds max_count:6
 opad.HeAdcTest.channels max_count:3
 opad.HeCalibrationProgress.error_message max_size:48
+opad.OtaBegin.sha256 max_size:32
+opad.OtaChunk.data max_size:4096
+opad.OtaStatus.message max_size:48

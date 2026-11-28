@@ -45,6 +45,9 @@ static bool image_confirmed(void)
            st != ESP_OTA_IMG_PENDING_VERIFY;
 }
 
+// Run last before a requested restart (runtime_request_restart_then)
+static void (*volatile s_before_restart)(void);
+
 static void restart_now(void)
 {
     ESP_LOGW(TAG, "Restarting (host request)");
@@ -52,6 +55,10 @@ static void restart_now(void)
     device_config_flush();
     flush_layouts();
     he_cal_flush();
+    void (*before)(void) = s_before_restart;
+    if (before) {
+        before();
+    }
     esp_restart();
 }
 
@@ -136,6 +143,12 @@ opad_state_t runtime_get_state(void)
 
 void runtime_request_restart(void)
 {
+    atomic_store(&s_restart_requested, true);
+}
+
+void runtime_request_restart_then(void (*before_restart)(void))
+{
+    s_before_restart = before_restart;
     atomic_store(&s_restart_requested, true);
 }
 

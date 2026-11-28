@@ -38,6 +38,8 @@ The host plans an update with [`plan_app_update()`](https://github.com/OPad-dev/
 
 Two cases fall outside this. A pad that reports no OTA slot (firmware too old to say, or the pre-OTA `factory` layout) cannot take an update from the app's updater, which reports `NeedsFullReflash` and asks for a one-time `opadctl flash --full`. And `opadctl flash` with no daemon running cannot learn the running slot, so it says so, writes `ota_0` and blanks the boot selection so that `ota_0` is what boots, with no fallback.
 
+**Over USB.** A pad whose `HelloAck` carries `ota_chunk_max` is not put into the bootloader at all: the daemon (an automatic update, or `opadctl flash` through `FlashOverUsb`) sends the image over the pad's own connection, and the firmware writes it to the other slot itself with `esp_ota_*`, checks its SHA-256 and the image, and selects it for one trial boot, the same trial as below. The pad stays a keyboard meanwhile, and its update animation runs from the first piece to after the restart. A pad without the flag, or an older daemon or `opadctl`, is flashed through the bootloader as above. <!-- src: /firmware/main/ota/ota_usb.c, /desktop/daemon/src/firmware_update.rs#flash_and_verify, /desktop/cli/src/main.rs#flash_over_usb -->
+
 ## The trial boot
 
 The bootloader boots an `OTA_IMG_NEW` slot once and marks it `ESP_OTA_IMG_PENDING_VERIFY`. From then on, the image has to confirm itself; an image still pending at the next reset is marked aborted and the previous `VALID` slot boots.

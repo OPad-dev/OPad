@@ -116,6 +116,9 @@ void protocol_poll_he_calibration(void);
  */
 void protocol_poll_he_live(void);
 
+// A firmware update over USB the host went quiet on, or a map started during, ends here
+void protocol_poll_ota(void);
+
 /** True while the host has the live key view open: the CDC task polls faster. */
 bool protocol_he_live_active(void);
 

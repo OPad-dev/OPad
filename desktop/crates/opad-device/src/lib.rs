@@ -1,4 +1,5 @@
 pub mod flash;
+pub mod ota;
 
 use bytes::BytesMut;
 use chrono::{Datelike, Local, Timelike};
@@ -98,6 +99,8 @@ pub enum DeviceEvent {
     },
     /// Live progress event during Hall Effect calibration
     HeCalibrationProgress(proto::HeCalibrationProgress),
+    /// The pad's answer to each step of a firmware update over USB
+    OtaStatus(proto::OtaStatus),
 }
 
 /// How often the worker looks for a pad while none is connected (§W1-2).
@@ -341,6 +344,9 @@ pub struct DeviceManager {
     tap_rate_per_second: Arc<AtomicBool>,
     /// The connected pad supports Hall Effect calibration (HelloAck.he_calibration)
     he_calibration: Arc<AtomicBool>,
+    /// Largest firmware piece the connected pad takes over this connection
+    /// (HelloAck.ota_chunk_max); 0 = it is flashed through the ROM bootloader
+    ota_chunk_max: Arc<AtomicU32>,
     /// Live key view: whether the pad streams it, the newest sample, and when
     /// the stream was last asked to keep going
     he_live: Arc<HeLiveState>,
@@ -394,6 +400,7 @@ impl DeviceManager {
                 restart,
                 tap_rate_per_second,
                 he_calibration,
+                ota_chunk_max: Arc::new(AtomicU32::new(0)),
                 he_live,
             },
             event_rx,
@@ -428,6 +435,8 @@ impl DeviceManager {
         let tap_rate_per_second_clone = tap_rate_per_second.clone();
         let he_calibration = Arc::new(AtomicBool::new(false));
         let he_calibration_clone = he_calibration.clone();
+        let ota_chunk_max = Arc::new(AtomicU32::new(0));
+        let ota_chunk_max_clone = ota_chunk_max.clone();
         let he_live = Arc::new(HeLiveState::default());
         let he_live_clone = he_live.clone();
 
@@ -611,6 +620,8 @@ impl DeviceManager {
                                                 .store(ack.tap_rate_per_second, Ordering::SeqCst);
                                             he_calibration_clone
                                                 .store(ack.he_calibration, Ordering::SeqCst);
+                                            ota_chunk_max_clone
+                                                .store(ack.ota_chunk_max, Ordering::SeqCst);
                                             he_live_clone
                                                 .supported
                                                 .store(ack.he_live, Ordering::SeqCst);
@@ -692,6 +703,7 @@ impl DeviceManager {
                 restart_clone.store(false, Ordering::SeqCst);
                 tap_rate_per_second_clone.store(false, Ordering::SeqCst);
                 he_calibration_clone.store(false, Ordering::SeqCst);
+                ota_chunk_max_clone.store(0, Ordering::SeqCst);
                 he_live_clone.supported.store(false, Ordering::SeqCst);
                 *he_live_clone.latest.lock().unwrap() = None;
                 *he_live_clone.requested_at.lock().unwrap() = None;
@@ -723,6 +735,7 @@ impl DeviceManager {
                 restart,
                 tap_rate_per_second,
                 he_calibration,
+                ota_chunk_max,
                 he_live,
             },
             event_rx,
@@ -1092,6 +1105,25 @@ impl DeviceManager {
         let msg = HostToDevice {
             sequence_number: self.next_seq(),
             payload: Some(host_to_device::Payload::CancelHeCalibration(true)),
+        };
+        self.send_msg(msg)
+    }
+
+    /// Largest firmware piece the connected pad takes over this connection
+    /// (HelloAck.ota_chunk_max); 0 when it is flashed through the ROM
+    /// bootloader instead, as firmware predating it is
+    pub fn ota_chunk_max(&self) -> u32 {
+        if !self.is_connected() {
+            return 0;
+        }
+        self.ota_chunk_max.load(Ordering::SeqCst)
+    }
+
+    /// One step of a firmware update over USB ([`ota::update_over_usb`])
+    pub fn send_ota(&self, payload: host_to_device::Payload) -> Result<(), DeviceError> {
+        let msg = HostToDevice {
+            sequence_number: self.next_seq(),
+            payload: Some(payload),
         };
         self.send_msg(msg)
     }
@@ -1478,6 +1510,9 @@ fn handle_device_message(msg: &DeviceToHost, tx: &broadcast::Sender<DeviceEvent>
             }
             // The reader keeps live samples for he_live_poll before this point
             proto::device_to_host::Payload::HeLiveSample(_) => {}
+            proto::device_to_host::Payload::OtaStatus(st) => {
+                let _ = tx.send(DeviceEvent::OtaStatus(st.clone()));
+            }
             proto::device_to_host::Payload::HeCalibrationProgress(prog) => {
                 let _ = tx.send(DeviceEvent::HeCalibrationProgress(prog.clone()));
             }

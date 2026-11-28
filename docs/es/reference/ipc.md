@@ -50,7 +50,7 @@ Responde `HandshakeRejected { daemon_protocol, reason }` y cierra la conexión c
 - `client_version` difiere de la versión del daemon. La GUI, el daemon y la CLI se publican juntos, así que esto significa que la aplicación se actualizó en disco mientras el daemon antiguo sigue en marcha; el motivo indica al usuario que reinicie `opad-daemon`.
 <!-- src: /desktop/daemon/src/ipc_handlers.rs#handle_ipc_request -->
 
-Las peticiones añadidas después de publicar IPC v1 (`ResumeDevice`, `CheckForUpdates`, `SetUpdateChannel`, `GetTapStats`, `RunBoardTest`, `PlayAnimation`, `RestartPad`, `Subscribe`) llegaron sin subir la versión. Un daemon más antiguo no puede interpretarlas y cierra la conexión, lo que los clientes tratan como «no disponible».
+Las peticiones añadidas después de publicar IPC v1 (`ResumeDevice`, `FlashOverUsb`, `CheckForUpdates`, `SetUpdateChannel`, `GetTapStats`, `RunBoardTest`, `PlayAnimation`, `RestartPad`, `Subscribe`) llegaron sin subir la versión. Un daemon más antiguo no puede interpretarlas y cierra la conexión, lo que los clientes tratan como «no disponible».
 <!-- src: /desktop/crates/opad-ipc/src/lib.rs#IpcRequest -->
 
 ## Peticiones
@@ -109,6 +109,7 @@ Los reinicios, restauraciones y sustituciones de contadores se rechazan durante 
 | `PrepareFlash` | `ReadyForFlash { port }` | El daemon libera el puerto serie. Se rechaza durante un mapa o el enfriamiento. |
 | `FinishFlash` | `FlashFinished { firmware_version, protocol_version, compatible }` | El daemon vuelve a buscar el teclado y lo espera hasta 15 s. |
 | `ResumeDevice` | `DeviceResumed` | Devuelve el puerto sin esperar, tras `opadctl pad bootloader` o un flasheo fallido. |
+| `FlashOverUsb { image }` | `FlashOverUsbFinished { firmware_version, running_partition, protocol_version, compatible }` | Envía al teclado la imagen de aplicación de esa ruta por su propia conexión y espera hasta 45 s a que vuelva. `UsbFlashUnavailable { reason }` si el teclado se flashea por el bootloader (no se envía nada); `Error` si volvió a la ranura que ejecutaba. Se rechaza durante un mapa o el enfriamiento. |
 | `GetFirmwareUpdate` | `FirmwareUpdateOffer(FirmwareOffer)` | Solo lee; se puede sondear sin riesgo. |
 | `InstallFirmwareUpdate { confirm }` | `FirmwareUpdateFinished { from, to, firmware_version, running_partition, protocol_version, compatible }` | Se rechaza con `confirm: false`. Sincroniza los contadores con este PC antes de escribir. |
 | `RestartPad` | `PadRestarting` | `Error` sin teclado, con un firmware sin reinicio o durante un mapa. |

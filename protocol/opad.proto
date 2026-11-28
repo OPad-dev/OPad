@@ -102,6 +102,11 @@ message HelloAck {
     // them. This HelloAck itself is still a marked frame. False from firmware
     // predating it, and when the host used the legacy framing.
     bool frame_crc = 21;
+    // The pad takes a new app image over this connection (OtaBegin, OtaChunk,
+    // OtaEnd) and writes it to the slot it is not running while it keeps
+    // working: the largest OtaChunk.data it accepts. 0 from firmware predating
+    // it: the host then flashes through the ROM bootloader as before.
+    uint32 ota_chunk_max = 22;
 }
 
 // Record a new owner in NVS (§W3-2). An NVS write, so the firmware must honour
@@ -361,6 +366,47 @@ message PlayAnimation {
 }
 
 // -----------------------------------------------------------------------------
+// Firmware update over this connection (HelloAck.ota_chunk_max)
+// -----------------------------------------------------------------------------
+
+// Start writing a new app image to the slot the pad is not running. The pad
+// refuses it outside IDLE, and gives up on a transfer a map starts during
+// (no flash writes in a map). Answered with OtaStatus READY or ERROR.
+message OtaBegin {
+    uint32 image_size = 1;
+    bytes sha256 = 2;        // of the whole image, checked before it is booted
+}
+
+// The next piece of the image: offset is where it goes, and must be where the
+// last one ended. Answered with OtaStatus WRITTEN (written = bytes so far) or
+// ERROR. A pad that hears nothing for 10 s gives up on the transfer.
+message OtaChunk {
+    uint32 offset = 1;
+    bytes data = 2;          // up to HelloAck.ota_chunk_max bytes
+}
+
+// All of it is sent: the pad checks size, SHA-256 and the image itself, makes
+// the new slot boot once on trial (rolled back unless it configures USB, as
+// after any flash), answers OtaStatus DONE and restarts into it. ERROR leaves
+// the running image as it was.
+message OtaEnd {
+}
+
+enum OtaStage {
+    OTA_STAGE_UNKNOWN = 0;
+    OTA_STAGE_READY = 1;     // OtaBegin accepted
+    OTA_STAGE_WRITTEN = 2;   // an OtaChunk is written
+    OTA_STAGE_DONE = 3;      // verified; restarting into the new image
+    OTA_STAGE_ERROR = 4;     // the transfer is over; message says why
+}
+
+message OtaStatus {
+    OtaStage stage = 1;
+    uint32 written = 2;
+    string message = 3;
+}
+
+// -----------------------------------------------------------------------------
 // Counter Synchronization & Recovery
 // -----------------------------------------------------------------------------
 
@@ -615,6 +661,11 @@ message HostToDevice {
         // send it again to keep the stream going. false: stop now. Ignored on
         // MX pads, and nothing is streamed during a map or its cooldown.
         bool he_live_view = 21;
+        OtaBegin ota_begin = 22;
+        OtaChunk ota_chunk = 23;
+        OtaEnd ota_end = 24;
+        // Give up on the transfer; the running image is left as it was
+        bool ota_abort = 25;
     }
 }
 
@@ -632,5 +683,6 @@ message DeviceToHost {
         BoardTestResult board_test = 10;
         HeCalibrationProgress he_calibration_progress = 11;
         HeLiveSample he_live_sample = 12;
+        OtaStatus ota_status = 13;
     }
 }
